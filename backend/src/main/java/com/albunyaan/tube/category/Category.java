@@ -27,15 +27,24 @@ public class Category extends AuditableEntity {
 
     @Convert(converter = LocaleMapConverter.class)
     @Column(name = "name", columnDefinition = "jsonb", nullable = false)
-    private Map<String, String> name = new HashMap<>();
+    private final Map<String, String> name = new HashMap<>();
+
+    @Convert(converter = LocaleMapConverter.class)
+    @Column(name = "description", columnDefinition = "jsonb", nullable = false)
+    private final Map<String, String> description = new HashMap<>();
 
     protected Category() {
         // JPA
     }
 
     public Category(String slug, Map<String, String> name) {
+        this(slug, name, Map.of());
+    }
+
+    public Category(String slug, Map<String, String> name, Map<String, String> description) {
         this.slug = slug;
         this.name.putAll(name);
+        this.description.putAll(description);
     }
 
     public UUID getId() {
@@ -48,5 +57,23 @@ public class Category extends AuditableEntity {
 
     public Map<String, String> getName() {
         return Collections.unmodifiableMap(name);
+    }
+
+    public Map<String, String> getDescription() {
+        return Collections.unmodifiableMap(description);
+    }
+
+    public void updateSlug(String slug) {
+        this.slug = slug;
+    }
+
+    public void updateName(Map<String, String> name) {
+        this.name.clear();
+        this.name.putAll(name);
+    }
+
+    public void updateDescription(Map<String, String> description) {
+        this.description.clear();
+        this.description.putAll(description);
     }
 }
