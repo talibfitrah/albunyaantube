@@ -25,6 +25,11 @@ This strategy covers localization for English (`en`), Modern Standard Arabic (`a
 - Admin SPA: read `Accept-Language`; allow manual switcher in header; persist in localStorage.
 - Backend: Accepts `X-Admin-Locale` override for admin operations when editing localized fields.
 
+## Android Implementation
+- **Resources**: Maintain base `values/strings.xml` with overlays in `values-ar/` and `values-nl/`, ensuring plural rules map to ICU message keys.
+- **Configuration Changes**: Wrap activities with `AppCompatDelegate.setApplicationLocales` to avoid full process restarts and ensure background services pick up locale changes.
+- **Testing Hooks**: Expose debug menu to force locale overrides and capture Paparazzi screenshots for QA (see [`../testing/test-strategy.md`](../testing/test-strategy.md#android-testing)).
+
 ## Content Entry Workflow
 1. Admin searches YouTube via `/admin/search` (see [`../api/openapi-draft.yaml`](../api/openapi-draft.yaml#paths-/admin/search)).
 2. On approval, admin enters localized metadata for en/ar/nl. UI enforces at least English and one additional translation.

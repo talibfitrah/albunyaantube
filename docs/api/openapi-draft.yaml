@@ -453,6 +453,9 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+  schemas:
+    CursorPagination:
+      $ref: '../data/json-schemas/cursor-page-info.json'
   parameters:
     CursorParam:
       name: cursor

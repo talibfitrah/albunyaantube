@@ -1,6 +1,6 @@
 # UI Specification
 
-This document codifies the canonical UI contract for Albunyaan Tube Android and Admin experiences. It references design tokens in [`design-tokens.json`](design-tokens.json) and aligns with the provided mockups (see attachments `1_splash_screen.png`–`10_player_screen.png`).
+This document codifies the canonical UI contract for Albunyaan Tube Android and Admin experiences. It references design tokens in [`design-tokens.json`](design-tokens.json) and aligns with the canonical mockups that live in the design team's Figma project (see [mockup asset location](mockups/README.md)). Exported PNGs follow the naming convention `1_splash_screen.png`–`10_player_screen.png` and should be downloaded from the Figma `Android` page when needed for local review or documentation. If a static snapshot is required inside this repository, store it under `docs/ux/mockups/` in a dated subfolder so the folder structure reflects the asset vintage.
 
 ## Global Principles
 - Respect the halal curation promise: no comments, ads, or autoplay.
@@ -30,6 +30,8 @@ This document codifies the canonical UI contract for Albunyaan Tube Android and 
 
 ## Screen Specifications (Android)
 Each screen references the mockups. Layout measurements assume 360dp width baseline.
+
+<a id="splash"></a>
 
 ### Splash (`1_splash_screen.png`)
 - Logo icon 96dp centered vertically with 24dp spacing to tagline.

@@ -31,10 +31,14 @@ This strategy spans backend, admin frontend, and Android client. It complements 
 ## Android Testing
 - **Unit**: JUnit + Mockito for ViewModels/use cases.
 - **Instrumentation**: Espresso for navigation flows (onboarding, bottom nav, filters).
-- **Playback Reliability** (Phase 8): Robolectric for state, device farm for PiP/background audio scenarios.
 - **Paging**: Paging 3 test helpers verifying cursor handoff.
 - **Download Service**: WorkManager test harness to validate pause/resume, quota enforcement.
 - **Localization**: Locale-specific screenshot tests using Paparazzi.
+
+### Player Reliability
+- **Scope**: End-to-end playback stability covering buffering recovery, audio-only fallback, and PiP transitions for the Phase 8 rollout.
+- **Tooling**: Robolectric for state-machine validation, Firebase Test Lab/device farm for real hardware scenarios, and ExoPlayer analytics assertions.
+- **Release Gate**: Require <1% playback crash rate and automated regression suites for background playback before enabling new player features.
 
 ## Test Data Management
 - Seed data via Flyway migrations for categories + sample content (Phase 1 exit criteria).
@@ -45,6 +49,11 @@ This strategy spans backend, admin frontend, and Android client. It complements 
 - Assert structured logs contain `traceId`, `userId`, `locale` fields.
 - Metrics tests verify custom counters (`downloads_started`, `moderation_pending`).
 - Alerting runbook stored in ops documentation (future `/ops` folder).
+
+## Performance Metrics
+- Track p95 API latency (<150ms) and payload size (<80KB) during Gatling runs; fail build when thresholds exceeded.
+- Monitor Crashlytics crash-free sessions (≥99%) and ANR rate (<0.5%) before promoting Android releases.
+- Compare Redis cache hit ratio (>85%) per locale to ensure caching strategy effectiveness.
 
 ## Release Management
 - Staging environment smoke tests triggered by CI pipeline.
