@@ -1,6 +1,9 @@
 spring:
   application:
     name: albunyaan-tube
+  docker:
+    compose:
+      enabled: false
   datasource:
     url: jdbc:postgresql://localhost:5432/albunyaan
     username: albunyaan

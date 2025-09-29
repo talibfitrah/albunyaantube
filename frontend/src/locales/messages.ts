@@ -34,7 +34,56 @@ export const messages = {
     },
     registry: {
       heading: 'Registry workspace',
-      description: 'Manage allow-listed channels, playlists, and videos. Detailed tables will appear here in the next milestone.'
+      description: 'Manage allow-listed channels, playlists, and videos from a single workspace.',
+      tabs: {
+        channels: 'Channels',
+        playlists: 'Playlists',
+        videos: 'Videos'
+      },
+      channels: {
+        description: 'Monitor approved channels and their category coverage.',
+        columns: {
+          channel: 'Channel',
+          categories: 'Categories',
+          subscribers: 'Subscribers'
+        }
+      },
+      playlists: {
+        description: 'Review curated playlists and confirm their download status.',
+        columns: {
+          playlist: 'Playlist',
+          owner: 'Owner',
+          categories: 'Categories',
+          items: 'Items',
+          download: 'Download'
+        },
+        download: {
+          available: 'Download enabled',
+          blocked: 'Blocked by policy'
+        }
+      },
+      videos: {
+        description: 'Inspect allow-listed videos along with channel, duration, and publish date.',
+        columns: {
+          video: 'Video',
+          channel: 'Channel',
+          categories: 'Categories',
+          duration: 'Duration',
+          views: 'Views',
+          published: 'Published'
+        }
+      },
+      table: {
+        empty: 'No results on this page.',
+        error: 'Unable to load {resource}.',
+        retry: 'Retry',
+        loading: 'Loading…'
+      },
+      pagination: {
+        previous: 'Previous',
+        next: 'Next',
+        showing: 'Showing {count} of {limit} items'
+      }
     },
     moderation: {
       heading: 'Moderation queue',

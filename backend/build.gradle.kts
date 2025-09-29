@@ -24,7 +24,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
     implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
-    implementation("org.flywaydb:flyway-core")
+    implementation("org.flywaydb:flyway-core:10.14.0")
     implementation("org.flywaydb:flyway-database-postgresql:10.14.0")
     implementation("org.springframework.data:spring-data-redis")
     implementation("io.jsonwebtoken:jjwt-api:0.12.5")

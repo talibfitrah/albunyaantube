@@ -25,13 +25,13 @@ public class User extends AuditableEntity {
     @GeneratedValue(strategy = GenerationType.AUTO)
     private UUID id;
 
-    @Column(name = "email", nullable = false, unique = true)
+    @Column(name = "email", nullable = false, unique = true, columnDefinition = "citext")
     private String email;
 
-    @Column(name = "password_hash", nullable = false)
+    @Column(name = "password_hash", nullable = false, columnDefinition = "text")
     private String passwordHash;
 
-    @Column(name = "display_name", nullable = false)
+    @Column(name = "display_name", nullable = false, columnDefinition = "text")
     private String displayName;
 
     @Enumerated(EnumType.STRING)
