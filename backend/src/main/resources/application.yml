@@ -40,3 +40,12 @@ app:
       secret: s5fQPZOwtMVQXVPyiKSTdlEPq8GMMd2CgrDeCB6Nekk=
       access-token-ttl-seconds: 900
       refresh-token-ttl-seconds: 259200
+    cors:
+      allowed-origins:
+        - http://localhost:5173
+        - http://127.0.0.1:5173
+    initial-admin:
+      email: admin@albunyaan.tube
+      password: ChangeMe!123
+      display-name: Initial Admin
+      reset-password-on-startup: true

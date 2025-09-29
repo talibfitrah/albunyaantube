@@ -68,6 +68,10 @@ public class User extends AuditableEntity {
         return passwordHash;
     }
 
+    public void updatePasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
+    }
+
     public String getDisplayName() {
         return displayName;
     }
