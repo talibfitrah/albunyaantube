@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AuditEntry",
+  "type": "object",
+  "required": ["id", "actor", "action", "entity", "metadata", "createdAt"],
+  "properties": {
+    "id": { "type": "string" },
+    "actor": { "$ref": "admin-user-response.json" },
+    "action": { "type": "string" },
+    "entity": {
+      "type": "object",
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "type": "string" },
+        "id": { "type": "string" },
+        "slug": { "type": ["string", "null"] }
+      }
+    },
+    "metadata": { "type": "object", "additionalProperties": true },
+    "createdAt": { "type": "string", "format": "date-time" }
+  }
+}

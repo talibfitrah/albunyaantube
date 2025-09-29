@@ -1,0 +1,20 @@
+Epic,Story ID,Story Title,Description,Estimate (d),Phase
+Vision,DISC-01,Document mission & success metrics,"Finalize vision in docs/vision/vision.md",1,0
+Architecture,ARCH-01,Publish C4 diagrams,"Complete context/container/component diagrams",2,0
+Architecture,ARCH-02,Define security architecture,"Detail JWT, RBAC, rate limits in solution-architecture.md",2,1
+Backend,BACK-01,Implement Auth & JWT rotation,"Build login/refresh/logout endpoints with blacklist",5,1
+Backend,BACK-02,Seed categories via Flyway,"Create baseline categories in migration",2,1
+Backend,BACK-03,Implement cursor pagination,"Add cursor service covering all list endpoints",4,2
+Moderation,MOD-01,Moderation proposal workflow,"Approve/reject endpoints with audit logging",5,2
+Admin UI,ADMIN-01,Admin shell & auth,"Bootstrap Vue app with login & protected routes",4,3
+Admin UI,ADMIN-02,Registry tables,"Channel/Playlist/Video tables with cursor pagination",5,3
+Admin UI,ADMIN-03,Exclusions editor,"UI to manage exclusions, validations",4,4
+Admin UI,ADMIN-04,Audit viewer,"Paginated audit log with filters",3,4
+Android,AND-01,Navigation skeleton,"Implement splash, onboarding, bottom nav per spec",5,5
+Android,AND-02,Category filter state,"Global category filter persisted across tabs",3,6
+Android,AND-03,Channel tabs,"Implement Videos/Live/Shorts/Playlists/Posts tabs",5,7
+Android,AND-04,Player core,"Integrate ExoPlayer with audio-only toggle",6,8
+Android,AND-05,Downloads manager,"Foreground service with queue, notifications",7,9
+Quality,QA-01,Performance benchmarking,"Automate home feed & cold start benchmarks",4,10
+Quality,QA-02,Localization audit,"Run en/ar/nl QA checklist",3,11
+Launch,LAUNCH-01,Beta rollout plan,"Define telemetry, crash reporting, release gating",2,12

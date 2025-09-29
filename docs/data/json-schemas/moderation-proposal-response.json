@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ModerationProposal",
+  "type": "object",
+  "required": ["id", "kind", "ytId", "status", "suggestedCategories", "proposer", "createdAt", "decidedBy", "decidedAt"],
+  "properties": {
+    "id": { "type": "string" },
+    "kind": { "type": "string", "enum": ["CHANNEL", "PLAYLIST", "VIDEO"] },
+    "ytId": { "type": "string" },
+    "status": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"] },
+    "suggestedCategories": {
+      "type": "array",
+      "items": { "$ref": "category-tag.json" }
+    },
+    "proposer": { "$ref": "admin-user-response.json" },
+    "notes": { "type": ["string", "null"] },
+    "decidedBy": { "$ref": "admin-user-response.json" },
+    "decidedAt": { "type": ["string", "null"], "format": "date-time" },
+    "createdAt": { "type": "string", "format": "date-time" }
+  }
+}

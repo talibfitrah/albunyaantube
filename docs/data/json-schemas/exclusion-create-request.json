@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ExclusionCreateRequest",
+  "type": "object",
+  "required": ["parentType", "parentId", "excludeType", "excludeId", "reason"],
+  "properties": {
+    "parentType": { "type": "string", "enum": ["CHANNEL", "PLAYLIST"] },
+    "parentId": { "type": "string" },
+    "excludeType": { "type": "string", "enum": ["VIDEO", "PLAYLIST"] },
+    "excludeId": { "type": "string" },
+    "reason": { "type": "string", "maxLength": 500 }
+  }
+}

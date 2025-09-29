@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ChannelPostSummary",
+  "type": "object",
+  "required": ["id", "ytId", "content", "publishedAt", "attachments"],
+  "properties": {
+    "id": { "type": "string" },
+    "ytId": { "type": "string" },
+    "content": { "type": "string", "maxLength": 5000 },
+    "publishedAt": { "type": "string", "format": "date-time" },
+    "attachments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "type": { "type": "string", "enum": ["IMAGE", "POLL", "LINK"] },
+          "url": { "type": ["string", "null"], "format": "uri" },
+          "text": { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}

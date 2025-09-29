@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VideoPage",
+  "type": "object",
+  "required": ["data", "pageInfo"],
+  "properties": {
+    "data": {
+      "type": "array",
+      "items": { "$ref": "video-summary.json" }
+    },
+    "pageInfo": { "$ref": "cursor-page-info.json" }
+  }
+}

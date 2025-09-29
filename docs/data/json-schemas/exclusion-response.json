@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Exclusion",
+  "type": "object",
+  "required": ["id", "parentType", "parentId", "excludeType", "excludeId", "reason", "createdAt", "createdBy"],
+  "properties": {
+    "id": { "type": "string" },
+    "parentType": { "type": "string", "enum": ["CHANNEL", "PLAYLIST"] },
+    "parentId": { "type": "string" },
+    "excludeType": { "type": "string", "enum": ["VIDEO", "PLAYLIST"] },
+    "excludeId": { "type": "string" },
+    "reason": { "type": "string" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "createdBy": { "$ref": "admin-user-response.json" }
+  }
+}
