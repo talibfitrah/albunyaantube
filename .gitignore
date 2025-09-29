@@ -1,0 +1,157 @@
+# -----------------------
+# OS / Editor junk
+# -----------------------
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.kate-swp
+*~
+._*
+.nfs*
+.idea/
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# -----------------------
+# Root-level env & secrets
+# -----------------------
+.env
+.env.*
+!.env.example
+**/*.secret
+**/*.secrets.*
+**/*_secret.*
+**/*-secret.*
+
+# -----------------------
+# Logs / reports
+# -----------------------
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+coverage/
+lcov.info
+.nyc_output/
+
+# -----------------------
+# Node / Vite (frontend admin)
+# -----------------------
+/frontend/node_modules/
+frontend/.vite/
+frontend/dist/
+frontend/.cache/
+frontend/.eslintcache
+frontend/*.tsbuildinfo
+# Generated API clients (OpenAPI)
+frontend/src/api/generated/
+
+# -----------------------
+# Java / Gradle (backend)
+# -----------------------
+/backend/.gradle/
+/backend/build/
+/backend/out/
+/backend/target/
+backend/.classpath
+backend/.project
+backend/.settings/
+backend/*.iml
+# Generated sources (keep wrapper!)
+backend/buildGenerated/
+backend/src/generated/
+
+# Gradle wrapper (keep these in VCS)
+!backend/gradlew
+!backend/gradlew.bat
+!backend/gradle/wrapper/gradle-wrapper.jar
+!backend/gradle/wrapper/gradle-wrapper.properties
+
+# -----------------------
+# Android (native app)
+# -----------------------
+/android/.gradle/
+/android/build/
+/android/**/build/
+/android/**/out/
+/android/.idea/
+/android/*.iml
+/android/local.properties
+/android/captures/
+/android/.cxx/
+/android/.externalNativeBuild/
+/android/.navigation/
+/android/generated/
+/android/app/release/output-metadata.json
+# Keystores & signing (never commit real ones)
+**/*.jks
+**/*.keystore
+**/keystore.properties
+
+# Gradle wrapper for Android (keep)
+/android/gradle/
+/android/gradlew
+/android/gradlew.bat
+/android/gradle/wrapper/gradle-wrapper.jar
+/android/gradle/wrapper/gradle-wrapper.properties
+!android/gradlew
+!android/gradlew.bat
+!android/gradle/wrapper/gradle-wrapper.jar
+!android/gradle/wrapper/gradle-wrapper.properties
+
+# -----------------------
+# Docker / Ops
+# -----------------------
+/ops/.env
+/ops/**/data/
+/ops/**/tmp/
+/ops/**/logs/
+/ops/**/secrets/
+*.pid
+
+# -----------------------
+# Documentation builds / temp
+# -----------------------
+/docs/.cache/
+/docs/**/.cache/
+/docs/**/build/
+/docs/**/dist/
+/docs/**/.DS_Store
+/docs/**/.drawio.bkp
+/docs/**/.~lock*
+
+# -----------------------
+# Misc language & tooling
+# -----------------------
+*.bak
+*.orig
+*.rej
+*.tmp
+*.temp
+*.lock-wscript
+.eslintcache
+.stylelintcache
+.turbo/
+.pnp.*
+.pnpm-store/
+.cache/
+.parcel-cache/
+.npm/
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+
+# -----------------------
+# Monorepo generated artifacts
+# -----------------------
+/shared/**/generated/
+/shared/**/openapi-client/
+
