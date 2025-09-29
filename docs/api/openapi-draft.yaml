@@ -182,6 +182,66 @@ paths:
       tags: [Categories]
       responses:
         '204': { description: Deleted }
+  /admin/registry/channels:
+    get:
+      summary: Admin list channels
+      operationId: adminListChannels
+      tags: ['Admin Registry']
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - $ref: '#/components/parameters/CategoryIdQuery'
+      responses:
+        '200':
+          description: Channels page
+          content:
+            application/json:
+              schema:
+                $ref: '../data/json-schemas/channel-page.json'
+  /admin/registry/playlists:
+    get:
+      summary: Admin list playlists
+      operationId: adminListPlaylists
+      tags: ['Admin Registry']
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - $ref: '#/components/parameters/CategoryIdQuery'
+      responses:
+        '200':
+          description: Playlists page
+          content:
+            application/json:
+              schema:
+                $ref: '../data/json-schemas/playlist-page.json'
+  /admin/registry/videos:
+    get:
+      summary: Admin list videos
+      operationId: adminListVideos
+      tags: ['Admin Registry']
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - $ref: '#/components/parameters/CategoryIdQuery'
+        - name: q
+          in: query
+          schema: { type: string, maxLength: 120 }
+        - name: length
+          in: query
+          schema: { type: string, enum: [SHORT, MEDIUM, LONG] }
+        - name: date
+          in: query
+          schema: { type: string, enum: [LAST_24_HOURS, LAST_7_DAYS, LAST_30_DAYS, ANYTIME] }
+        - name: sort
+          in: query
+          schema: { type: string, enum: [RECENT, POPULAR] }
+      responses:
+        '200':
+          description: Video page
+          content:
+            application/json:
+              schema:
+                $ref: '../data/json-schemas/video-page.json'
   /home:
     get:
       summary: Aggregated home feed
