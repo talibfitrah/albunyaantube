@@ -38,7 +38,7 @@ public class User extends AuditableEntity {
     @Column(name = "status", nullable = false)
     private UserStatus status = UserStatus.ACTIVE;
 
-    @ManyToMany(fetch = FetchType.LAZY)
+    @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(
         name = "user_roles",
         joinColumns = @JoinColumn(name = "user_id"),
@@ -78,6 +78,18 @@ public class User extends AuditableEntity {
 
     public Set<Role> getRoles() {
         return roles;
+    }
+
+    public void assignRole(Role role) {
+        this.roles.add(role);
+    }
+
+    public void updateDisplayName(String displayName) {
+        this.displayName = displayName;
+    }
+
+    public void updateStatus(UserStatus status) {
+        this.status = status;
     }
 
     public void suspend() {

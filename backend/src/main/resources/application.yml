@@ -30,3 +30,9 @@ management:
     web:
       exposure:
         include: health,info
+app:
+  security:
+    jwt:
+      secret: s5fQPZOwtMVQXVPyiKSTdlEPq8GMMd2CgrDeCB6Nekk=
+      access-token-ttl-seconds: 900
+      refresh-token-ttl-seconds: 259200
