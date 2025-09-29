@@ -87,7 +87,59 @@ export const messages = {
     },
     moderation: {
       heading: 'Moderation queue',
-      description: 'Track submitted proposals and approve or reject them. Detailed tooling ships in the moderation milestone.'
+      description: 'Track submitted proposals and approve or reject them. Detailed tooling ships in the moderation milestone.',
+      filters: {
+        label: 'Status',
+        all: 'All',
+        pending: 'Pending',
+        approved: 'Approved',
+        rejected: 'Rejected'
+      },
+      table: {
+        columns: {
+          kind: 'Type',
+          resource: 'Resource',
+          categories: 'Categories',
+          proposer: 'Proposed by',
+          submitted: 'Submitted',
+          notes: 'Notes',
+          status: 'Status / Actions'
+        },
+        empty: 'No proposals match this filter.',
+        error: 'Unable to load moderation proposals.',
+        loading: 'Loading proposals…'
+      },
+      actions: {
+        approve: 'Approve',
+        approving: 'Approving…',
+        reject: 'Reject',
+        rejecting: 'Rejecting…',
+        cancel: 'Cancel',
+        confirmReject: 'Reject proposal',
+        confirmRejectDescription: 'Provide an optional reason to help the submitter understand the decision.',
+        reasonLabel: 'Rejection reason (optional)',
+        submitReject: 'Submit decision'
+      },
+      status: {
+        pending: 'Pending',
+        approved: 'Approved',
+        rejected: 'Rejected'
+      },
+      kind: {
+        CHANNEL: 'Channel',
+        PLAYLIST: 'Playlist',
+        VIDEO: 'Video'
+      },
+      decision: {
+        approvedBy: 'Approved by {name}',
+        rejectedBy: 'Rejected by {name}',
+        decidedOn: 'on {date}',
+        reason: 'Reason: {reason}'
+      },
+      errors: {
+        actionFailed: 'Unable to update the proposal. Please try again.'
+      },
+      notesPlaceholder: 'No notes provided.'
     },
     users: {
       heading: 'User management',

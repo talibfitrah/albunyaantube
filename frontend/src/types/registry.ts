@@ -3,18 +3,6 @@ export interface CategoryTag {
   label: string;
 }
 
-export interface CursorPageInfo {
-  cursor: string | null;
-  nextCursor: string | null;
-  hasNext: boolean;
-  limit?: number;
-}
-
-export interface CursorPage<T> {
-  data: T[];
-  pageInfo: CursorPageInfo;
-}
-
 export interface ChannelSummary {
   id: string;
   ytId: string;

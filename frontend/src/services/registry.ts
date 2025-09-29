@@ -1,10 +1,6 @@
 import { authorizedJsonFetch } from '@/services/http';
-import type {
-  ChannelSummary,
-  CursorPage,
-  PlaylistSummary,
-  VideoSummary
-} from '@/types/registry';
+import type { CursorPage } from '@/types/pagination';
+import type { ChannelSummary, PlaylistSummary, VideoSummary } from '@/types/registry';
 
 interface PaginationParams {
   cursor?: string | null;

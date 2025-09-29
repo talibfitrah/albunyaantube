@@ -1,5 +1,5 @@
 import { computed, ref } from 'vue';
-import type { CursorPage, CursorPageInfo } from '@/types/registry';
+import type { CursorPage, CursorPageInfo } from '@/types/pagination';
 
 type LoadMode = 'reset' | 'append' | 'replace';
 

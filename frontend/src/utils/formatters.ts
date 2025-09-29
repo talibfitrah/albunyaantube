@@ -10,6 +10,14 @@ export function formatDate(value: string, locale: string): string {
   return new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(date);
 }
 
+export function formatDateTime(value: string, locale: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+}
+
 export function formatDuration(seconds: number, locale: string): string {
   if (!Number.isFinite(seconds) || seconds < 0) {
     return '–';

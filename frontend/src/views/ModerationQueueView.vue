@@ -1,0 +1,853 @@
+<template>
+  <section class="moderation-queue">
+    <header class="workspace-header">
+      <div>
+        <h1>{{ t('moderation.heading') }}</h1>
+        <p>{{ t('moderation.description') }}</p>
+      </div>
+      <div class="filter-controls">
+        <span class="filter-label" id="status-filter-label">{{ t('moderation.filters.label') }}</span>
+        <div class="filter-options" role="radiogroup" aria-labelledby="status-filter-label">
+          <button
+            v-for="option in statusOptions"
+            :key="option.value"
+            type="button"
+            class="filter-option"
+            role="radio"
+            :aria-checked="statusFilter === option.value"
+            :class="{ active: statusFilter === option.value }"
+            :tabindex="statusFilter === option.value ? 0 : -1"
+            :data-status-option="option.value"
+            @keydown="handleStatusKeydown($event, option.value)"
+            @click="setStatusFilter(option.value)"
+          >
+            {{ option.label }}
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div v-if="actionError" class="action-error" role="alert">
+      {{ actionError }}
+    </div>
+
+    <div class="table-wrapper" role="region" aria-live="polite">
+      <div v-if="error" class="error-state">
+        <p>{{ t('moderation.table.error') }}</p>
+        <button type="button" class="retry" @click="handleRetry" :disabled="isLoading">
+          {{ t('registry.table.retry') }}
+        </button>
+      </div>
+
+      <table v-else class="data-table">
+        <thead>
+          <tr>
+            <th scope="col">{{ t('moderation.table.columns.kind') }}</th>
+            <th scope="col">{{ t('moderation.table.columns.resource') }}</th>
+            <th scope="col">{{ t('moderation.table.columns.categories') }}</th>
+            <th scope="col">{{ t('moderation.table.columns.proposer') }}</th>
+            <th scope="col">{{ t('moderation.table.columns.submitted') }}</th>
+            <th scope="col">{{ t('moderation.table.columns.notes') }}</th>
+            <th scope="col">{{ t('moderation.table.columns.status') }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-if="isLoading && !items.length">
+            <td :colspan="7">
+              <div class="skeleton-stack" aria-hidden="true">
+                <div v-for="index in 5" :key="index" class="skeleton-row"></div>
+              </div>
+            </td>
+          </tr>
+          <tr v-else-if="!items.length">
+            <td :colspan="7" class="empty-state">{{ t('moderation.table.empty') }}</td>
+          </tr>
+          <tr v-for="proposal in items" :key="proposal.id">
+            <td class="kind-cell">
+              <span class="kind-badge">{{ kindLabel(proposal.kind) }}</span>
+            </td>
+            <td class="resource-cell">
+              <span class="resource-id">{{ proposal.ytId }}</span>
+            </td>
+            <td>
+              <ul class="category-tags">
+                <li v-for="tag in proposal.suggestedCategories" :key="tag.id" class="category-tag">
+                  {{ tag.label }}
+                </li>
+              </ul>
+            </td>
+            <td>
+              <div class="user-meta">
+                <span class="user-name">{{ proposal.proposer.displayName || proposal.proposer.email }}</span>
+                <span class="user-email">{{ proposal.proposer.email }}</span>
+              </div>
+            </td>
+            <td>{{ formatSubmittedAt(proposal.createdAt) }}</td>
+            <td class="notes-cell">
+              <span v-if="proposal.notes">{{ proposal.notes }}</span>
+              <span v-else class="notes-placeholder">{{ t('moderation.notesPlaceholder') }}</span>
+            </td>
+            <td>
+              <div class="status-cell">
+                <span class="status-badge" :class="statusBadgeClass(proposal.status)">
+                  {{ statusLabel(proposal.status) }}
+                </span>
+                <div v-if="proposal.status === 'PENDING'" class="action-buttons">
+                  <button
+                    type="button"
+                    class="approve"
+                    @click="handleApprove(proposal)"
+                    :disabled="isActionLoading(proposal.id) || isLoading"
+                  >
+                    {{ isActionLoading(proposal.id) && pendingAction === 'approve'
+                      ? t('moderation.actions.approving')
+                      : t('moderation.actions.approve') }}
+                  </button>
+                  <button
+                    type="button"
+                    class="reject"
+                    @click="openRejectDialog(proposal)"
+                    :disabled="isActionLoading(proposal.id) || isLoading"
+                  >
+                    {{ isActionLoading(proposal.id) && pendingAction === 'reject'
+                      ? t('moderation.actions.rejecting')
+                      : t('moderation.actions.reject') }}
+                  </button>
+                </div>
+                <div v-else class="status-meta">
+                  <span v-for="(line, index) in decisionMeta(proposal)" :key="index">{{ line }}</span>
+                  <span v-if="proposal.decisionReason" class="status-reason">
+                    {{ t('moderation.decision.reason', { reason: proposal.decisionReason }) }}
+                  </span>
+                </div>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <footer class="table-footer">
+      <button type="button" class="pager" @click="handlePrevious" :disabled="!hasPrevious || isLoading">
+        {{ t('registry.pagination.previous') }}
+      </button>
+      <div class="footer-status">
+        <span v-if="isLoading">{{ t('moderation.table.loading') }}</span>
+        <span v-else>{{ paginationSummary }}</span>
+      </div>
+      <button type="button" class="pager" @click="handleNext" :disabled="!hasNext || isLoading">
+        {{ t('registry.pagination.next') }}
+      </button>
+    </footer>
+  </section>
+
+  <div v-if="rejectDialog.visible" class="modal-backdrop">
+    <div class="modal" role="dialog" aria-modal="true" :aria-labelledby="rejectDialogTitleId">
+      <h2 :id="rejectDialogTitleId">{{ t('moderation.actions.confirmReject') }}</h2>
+      <p class="modal-description">{{ t('moderation.actions.confirmRejectDescription') }}</p>
+      <form @submit.prevent="confirmReject">
+        <label class="modal-label" :for="rejectDialogTextareaId">
+          {{ t('moderation.actions.reasonLabel') }}
+        </label>
+        <textarea
+          :id="rejectDialogTextareaId"
+          ref="rejectTextareaRef"
+          v-model="rejectDialog.reason"
+          rows="4"
+          class="modal-textarea"
+          :disabled="isRejectSubmitting"
+        ></textarea>
+        <div class="modal-actions">
+          <button type="button" class="modal-secondary" @click="closeRejectDialog" :disabled="isRejectSubmitting">
+            {{ t('moderation.actions.cancel') }}
+          </button>
+          <button type="submit" class="modal-primary" :disabled="isRejectSubmitting">
+            {{ isRejectSubmitting ? t('moderation.actions.rejecting') : t('moderation.actions.submitReject') }}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { useCursorPagination } from '@/composables/useCursorPagination';
+import {
+  approveModerationProposal,
+  fetchModerationProposals,
+  rejectModerationProposal
+} from '@/services/moderation';
+import type { ModerationProposal, ModerationProposalStatus } from '@/types/moderation';
+import { formatDateTime } from '@/utils/formatters';
+
+const { t, locale } = useI18n();
+const currentLocale = computed(() => locale.value);
+
+type StatusFilter = ModerationProposalStatus | 'ALL';
+
+const statusFilter = ref<StatusFilter>('PENDING');
+const statusOptions = computed(() => [
+  { value: 'PENDING' as StatusFilter, label: t('moderation.filters.pending') },
+  { value: 'APPROVED' as StatusFilter, label: t('moderation.filters.approved') },
+  { value: 'REJECTED' as StatusFilter, label: t('moderation.filters.rejected') },
+  { value: 'ALL' as StatusFilter, label: t('moderation.filters.all') }
+]);
+
+const statusOptionValues = computed(() => statusOptions.value.map(option => option.value));
+
+const pagination = useCursorPagination<ModerationProposal>(async (cursor, limit) => {
+  const status = statusFilter.value === 'ALL' ? undefined : statusFilter.value;
+  return fetchModerationProposals({ cursor, limit, status });
+});
+
+const { items, isLoading, error, load, next, previous, hasNext, hasPrevious, pageInfo } = pagination;
+
+const actionError = ref<string | null>(null);
+const actionLoadingId = ref<string | null>(null);
+const pendingAction = ref<'approve' | 'reject' | null>(null);
+
+const rejectDialog = reactive({
+  visible: false,
+  proposal: null as ModerationProposal | null,
+  reason: ''
+});
+
+const rejectTextareaRef = ref<HTMLTextAreaElement | null>(null);
+const rejectDialogTitleId = 'reject-dialog-title';
+const rejectDialogTextareaId = 'reject-dialog-textarea';
+
+const paginationSummary = computed(() => {
+  if (!pageInfo.value) {
+    return '';
+  }
+  const count = new Intl.NumberFormat(currentLocale.value).format(items.value.length);
+  const pageLimit = pageInfo.value.limit ?? items.value.length;
+  return t('registry.pagination.showing', {
+    count,
+    limit: new Intl.NumberFormat(currentLocale.value).format(pageLimit)
+  });
+});
+
+const isRejectSubmitting = computed(
+  () => actionLoadingId.value !== null && pendingAction.value === 'reject'
+);
+
+onMounted(() => {
+  load(null, 'reset');
+});
+
+watch(statusFilter, async () => {
+  actionError.value = null;
+  closeRejectDialog();
+  await load(null, 'reset');
+});
+
+function setStatusFilter(nextStatus: StatusFilter) {
+  statusFilter.value = nextStatus;
+}
+
+function focusStatusOption(value: StatusFilter) {
+  nextTick(() => {
+    const button = document.querySelector<HTMLButtonElement>(
+      `button[data-status-option="${value}"]`
+    );
+    button?.focus();
+  });
+}
+
+function handleStatusKeydown(event: KeyboardEvent, value: StatusFilter) {
+  const options = statusOptionValues.value;
+  const currentIndex = options.indexOf(value);
+  if (currentIndex === -1) {
+    return;
+  }
+
+  if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+    event.preventDefault();
+    const nextValue = options[(currentIndex + 1) % options.length];
+    statusFilter.value = nextValue;
+    focusStatusOption(nextValue);
+  } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+    event.preventDefault();
+    const nextValue = options[(currentIndex - 1 + options.length) % options.length];
+    statusFilter.value = nextValue;
+    focusStatusOption(nextValue);
+  } else if (event.key === 'Home') {
+    event.preventDefault();
+    const nextValue = options[0];
+    statusFilter.value = nextValue;
+    focusStatusOption(nextValue);
+  } else if (event.key === 'End') {
+    event.preventDefault();
+    const nextValue = options[options.length - 1];
+    statusFilter.value = nextValue;
+    focusStatusOption(nextValue);
+  }
+}
+
+function kindLabel(kind: ModerationProposal['kind']) {
+  return t(`moderation.kind.${kind}`);
+}
+
+function statusLabel(status: ModerationProposalStatus) {
+  const key = status.toLowerCase() as 'pending' | 'approved' | 'rejected';
+  return t(`moderation.status.${key}`);
+}
+
+function statusBadgeClass(status: ModerationProposalStatus) {
+  return `status-${status.toLowerCase()}`;
+}
+
+function formatSubmittedAt(value: string) {
+  return formatDateTime(value, currentLocale.value);
+}
+
+function decisionMeta(proposal: ModerationProposal) {
+  if (proposal.status === 'PENDING') {
+    return [] as string[];
+  }
+  const lines: string[] = [];
+  if (proposal.decidedBy) {
+    const name = proposal.decidedBy.displayName || proposal.decidedBy.email;
+    const key = proposal.status === 'APPROVED' ? 'approvedBy' : 'rejectedBy';
+    lines.push(t(`moderation.decision.${key}`, { name }));
+  }
+  if (proposal.decidedAt) {
+    lines.push(t('moderation.decision.decidedOn', {
+      date: formatDateTime(proposal.decidedAt, currentLocale.value)
+    }));
+  }
+  return lines;
+}
+
+function isActionLoading(id: string) {
+  return actionLoadingId.value === id;
+}
+
+async function reloadCurrentPage() {
+  const cursor = pageInfo.value?.cursor ?? null;
+  await load(cursor, 'replace');
+}
+
+async function handleApprove(proposal: ModerationProposal) {
+  actionError.value = null;
+  actionLoadingId.value = proposal.id;
+  pendingAction.value = 'approve';
+  try {
+    await approveModerationProposal(proposal.id);
+    await reloadCurrentPage();
+  } catch (err) {
+    actionError.value = err instanceof Error ? err.message : t('moderation.errors.actionFailed');
+  } finally {
+    actionLoadingId.value = null;
+    pendingAction.value = null;
+  }
+}
+
+function openRejectDialog(proposal: ModerationProposal) {
+  actionError.value = null;
+  rejectDialog.visible = true;
+  rejectDialog.proposal = proposal;
+  rejectDialog.reason = '';
+  pendingAction.value = null;
+  nextTick(() => {
+    rejectTextareaRef.value?.focus();
+  });
+}
+
+function closeRejectDialog() {
+  rejectDialog.visible = false;
+  rejectDialog.proposal = null;
+  rejectDialog.reason = '';
+}
+
+async function confirmReject() {
+  if (!rejectDialog.proposal) {
+    return;
+  }
+  actionError.value = null;
+  actionLoadingId.value = rejectDialog.proposal.id;
+  pendingAction.value = 'reject';
+  try {
+    await rejectModerationProposal(rejectDialog.proposal.id, rejectDialog.reason);
+    closeRejectDialog();
+    await reloadCurrentPage();
+  } catch (err) {
+    actionError.value = err instanceof Error ? err.message : t('moderation.errors.actionFailed');
+  } finally {
+    actionLoadingId.value = null;
+    pendingAction.value = null;
+  }
+}
+
+async function handleNext() {
+  await next();
+}
+
+async function handlePrevious() {
+  await previous();
+}
+
+async function handleRetry() {
+  await load(pageInfo.value?.cursor ?? null, 'replace');
+}
+</script>
+
+<style scoped>
+.moderation-queue {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.workspace-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  background: white;
+  border-radius: 1rem;
+  padding: 1.75rem 2rem;
+  box-shadow: 0 20px 45px -30px rgba(15, 23, 42, 0.35);
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.workspace-header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.workspace-header p {
+  margin: 0.5rem 0 0;
+  color: #475569;
+  font-size: 1rem;
+  max-width: 520px;
+}
+
+.filter-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.filter-label {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.filter-options {
+  display: inline-flex;
+  gap: 0.5rem;
+  background: #f1f5f9;
+  padding: 0.4rem;
+  border-radius: 999px;
+}
+
+.filter-option {
+  border: none;
+  background: transparent;
+  padding: 0.4rem 1.2rem;
+  border-radius: 999px;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.filter-option.active {
+  background: #0f172a;
+  color: white;
+  box-shadow: 0 10px 25px -18px rgba(15, 23, 42, 0.6);
+}
+
+.action-error {
+  background: #fee2e2;
+  color: #991b1b;
+  border-radius: 0.75rem;
+  padding: 0.75rem 1rem;
+}
+
+.table-wrapper {
+  background: white;
+  border-radius: 1rem;
+  box-shadow: 0 20px 45px -30px rgba(15, 23, 42, 0.35);
+  overflow: hidden;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 1080px;
+}
+
+th {
+  position: sticky;
+  top: 0;
+  background: #f1f5f9;
+  color: #0f172a;
+  text-align: left;
+  padding: 0.75rem 1.25rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border-bottom: 1px solid #e2e8f0;
+  z-index: 1;
+}
+
+td {
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid #e2e8f0;
+  vertical-align: top;
+  font-size: 0.95rem;
+  color: #1e293b;
+}
+
+.kind-cell {
+  width: 120px;
+}
+
+.kind-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #e2e8f0;
+  color: #0f172a;
+  border-radius: 999px;
+  padding: 0.25rem 0.9rem;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.resource-cell {
+  font-family: 'IBM Plex Mono', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  color: #334155;
+}
+
+.resource-id {
+  word-break: break-all;
+}
+
+.category-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.category-tag {
+  background: #e2e8f0;
+  color: #0f172a;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.user-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.user-name {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.user-email {
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.notes-cell {
+  max-width: 260px;
+}
+
+.notes-cell span {
+  display: block;
+  white-space: pre-wrap;
+}
+
+.notes-placeholder {
+  color: #94a3b8;
+  font-style: italic;
+}
+
+.status-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 0.25rem 0.75rem;
+  font-weight: 600;
+  font-size: 0.85rem;
+  width: fit-content;
+}
+
+.status-pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-approved {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status-rejected {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.approve,
+.reject {
+  border: none;
+  border-radius: 0.75rem;
+  padding: 0.45rem 1.25rem;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.approve {
+  background: #0f172a;
+  color: white;
+}
+
+.approve:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}
+
+.approve:not(:disabled):hover {
+  background: #1e293b;
+}
+
+.reject {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.reject:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.reject:not(:disabled):hover {
+  background: #fee2e2;
+}
+
+.status-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  color: #475569;
+  font-size: 0.85rem;
+}
+
+.status-reason {
+  color: #b91c1c;
+}
+
+.skeleton-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.skeleton-row {
+  height: 16px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #f8fafc 25%, #e2e8f0 50%, #f8fafc 75%);
+  animation: shimmer 1.6s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200px 0;
+  }
+  100% {
+    background-position: 200px 0;
+  }
+}
+
+.empty-state {
+  text-align: center;
+  color: #64748b;
+  padding: 2rem 0;
+}
+
+.error-state {
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+  color: #b91c1c;
+}
+
+.retry {
+  background: #0f172a;
+  color: white;
+  border: none;
+  border-radius: 0.5rem;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+}
+
+.retry:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.table-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.75rem 1.5rem;
+  gap: 1rem;
+}
+
+.footer-status {
+  color: #475569;
+  font-size: 0.9rem;
+}
+
+.pager {
+  background: #0f172a;
+  color: white;
+  border: none;
+  padding: 0.5rem 1.25rem;
+  border-radius: 0.75rem;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 0.2s ease;
+}
+
+.pager:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}
+
+.pager:not(:disabled):hover {
+  background: #1e293b;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  z-index: 20;
+}
+
+.modal {
+  background: white;
+  border-radius: 1rem;
+  padding: 1.75rem;
+  max-width: 520px;
+  width: 100%;
+  box-shadow: 0 30px 60px -40px rgba(15, 23, 42, 0.6);
+}
+
+.modal-description {
+  color: #475569;
+  margin: 0.5rem 0 1.5rem;
+}
+
+.modal-label {
+  display: block;
+  font-weight: 600;
+  color: #0f172a;
+  margin-bottom: 0.5rem;
+}
+
+.modal-textarea {
+  width: 100%;
+  border-radius: 0.75rem;
+  border: 1px solid #cbd5f5;
+  padding: 0.75rem;
+  resize: vertical;
+  font-family: inherit;
+  min-height: 120px;
+}
+
+.modal-textarea:disabled {
+  background: #f1f5f9;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.modal-secondary,
+.modal-primary {
+  border: none;
+  border-radius: 0.75rem;
+  padding: 0.55rem 1.5rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.modal-secondary {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.modal-secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.modal-primary {
+  background: #0f172a;
+  color: white;
+}
+
+.modal-primary:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}
+
+.modal-primary:not(:disabled):hover {
+  background: #1e293b;
+}
+
+@media (max-width: 960px) {
+  .workspace-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filter-controls {
+    align-self: flex-start;
+  }
+
+  .data-table {
+    min-width: 960px;
+  }
+}
+</style>

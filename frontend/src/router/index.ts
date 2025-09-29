@@ -2,7 +2,7 @@ import { createRouter, createWebHistory, type NavigationGuardNext, type RouteLoc
 import LoginView from '@/views/LoginView.vue';
 import DashboardView from '@/views/DashboardView.vue';
 import RegistryLandingView from '@/views/RegistryLandingView.vue';
-import ModerationQueuePlaceholder from '@/views/ModerationQueuePlaceholder.vue';
+import ModerationQueueView from '@/views/ModerationQueueView.vue';
 import UsersPlaceholderView from '@/views/UsersPlaceholderView.vue';
 import AuditPlaceholderView from '@/views/AuditPlaceholderView.vue';
 import AdminLayout from '@/layouts/AdminLayout.vue';
@@ -24,7 +24,7 @@ const protectedChildRoutes = [
   {
     path: 'moderation',
     name: 'moderation',
-    component: ModerationQueuePlaceholder,
+    component: ModerationQueueView,
     meta: { requiresAuth: true }
   },
   {
