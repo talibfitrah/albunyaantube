@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PlaylistDetail",
+  "allOf": [
+    { "$ref": "playlist-summary.json" },
+    {
+      "type": "object",
+      "required": ["description", "durationSeconds", "downloadPolicy", "lastSyncedAt"],
+      "properties": {
+        "description": { "type": ["string", "null"], "maxLength": 4000 },
+        "durationSeconds": { "type": "integer", "minimum": 0 },
+        "downloadPolicy": { "type": "string", "enum": ["ENABLED", "DISABLED_BY_POLICY"] },
+        "lastSyncedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ChannelSummary",
+  "type": "object",
+  "required": ["id", "ytId", "name", "avatarUrl", "subscriberCount", "categories"],
+  "properties": {
+    "id": { "type": "string" },
+    "ytId": { "type": "string" },
+    "name": { "type": "string" },
+    "avatarUrl": { "type": "string", "format": "uri" },
+    "subscriberCount": { "type": "integer", "minimum": 0 },
+    "categories": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "category-tag.json" }
+    }
+  }
+}

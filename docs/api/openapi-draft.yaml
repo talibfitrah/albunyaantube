@@ -1,0 +1,492 @@
+openapi: 3.1.0
+info:
+  title: Albunyaan Tube API
+  version: 0.1.0
+  description: |
+    Draft REST contract for Albunyaan Tube backend. All list endpoints use cursor-based pagination with opaque cursors.
+    Localized fields respond to `Accept-Language` header with fallback to English.
+servers:
+  - url: https://api.albunyaan.tld/v1
+    description: Production
+  - url: https://staging-api.albunyaan.tld/v1
+    description: Staging
+security:
+  - bearerAuth: []
+paths:
+  /auth/login:
+    post:
+      summary: Authenticate admin or moderator
+      operationId: login
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../data/json-schemas/auth-login-request.json'
+      responses:
+        '200':
+          description: Tokens issued
+          content:
+            application/json:
+              schema:
+                $ref: '../data/json-schemas/auth-login-response.json'
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+  /auth/refresh:
+    post:
+      summary: Rotate refresh token
+      operationId: refreshToken
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../data/json-schemas/auth-refresh-request.json'
+      responses:
+        '200':
+          description: Tokens rotated
+          content:
+            application/json:
+              schema:
+                $ref: '../data/json-schemas/auth-login-response.json'
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+  /auth/logout:
+    post:
+      summary: Invalidate refresh token and blacklist access token
+      operationId: logout
+      tags: [Auth]
+      responses:
+        '204': { description: Logged out }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+  /admin/users:
+    get:
+      summary: List users
+      operationId: listUsers
+      tags: [Users]
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Users page
+          content:
+            application/json:
+              schema:
+                $ref: '../data/json-schemas/admin-users-page.json'
+    post:
+      summary: Create user
+      operationId: createUser
+      tags: [Users]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../data/json-schemas/admin-user-create-request.json'
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '../data/json-schemas/admin-user-response.json'
+  /admin/users/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdPathParam'
+    get:
+      summary: Get user
+      operationId: getUser
+      tags: [Users]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '../data/json-schemas/admin-user-response.json' } } } }
+    put:
+      summary: Update user
+      operationId: updateUser
+      tags: [Users]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../data/json-schemas/admin-user-update-request.json'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '../data/json-schemas/admin-user-response.json'
+    delete:
+      summary: Delete user
+      operationId: deleteUser
+      tags: [Users]
+      responses:
+        '204': { description: Deleted }
+  /categories:
+    get:
+      summary: List categories
+      operationId: listCategories
+      tags: [Categories]
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Category page
+          content:
+            application/json:
+              schema:
+                $ref: '../data/json-schemas/category-page.json'
+    post:
+      summary: Create category
+      operationId: createCategory
+      tags: [Categories]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../data/json-schemas/category-create-request.json'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '../data/json-schemas/category-response.json'
+  /categories/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdPathParam'
+    get:
+      summary: Get category
+      operationId: getCategory
+      tags: [Categories]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '../data/json-schemas/category-response.json' } } } }
+    put:
+      summary: Update category
+      operationId: updateCategory
+      tags: [Categories]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../data/json-schemas/category-update-request.json'
+      responses:
+        '200': { description: Updated, content: { application/json: { schema: { $ref: '../data/json-schemas/category-response.json' } } } }
+    delete:
+      summary: Archive category
+      operationId: deleteCategory
+      tags: [Categories]
+      responses:
+        '204': { description: Deleted }
+  /home:
+    get:
+      summary: Aggregated home feed
+      operationId: getHome
+      tags: [Registry]
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - $ref: '#/components/parameters/CategoryIdQuery'
+      responses:
+        '200':
+          description: Home sections with 3-latest rule
+          content:
+            application/json:
+              schema:
+                $ref: '../data/json-schemas/home-response.json'
+  /channels:
+    get:
+      summary: List channels
+      operationId: listChannels
+      tags: [Registry]
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - $ref: '#/components/parameters/CategoryIdQuery'
+      responses:
+        '200': { description: Channels page, content: { application/json: { schema: { $ref: '../data/json-schemas/channel-page.json' } } } }
+  /channels/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdPathParam'
+    get:
+      summary: Channel detail
+      operationId: getChannel
+      tags: [Registry]
+      responses:
+        '200': { description: Channel detail, content: { application/json: { schema: { $ref: '../data/json-schemas/channel-detail.json' } } } }
+  /channels/{id}/videos:
+    get:
+      summary: Channel videos
+      operationId: getChannelVideos
+      tags: [Registry]
+      parameters:
+        - $ref: '#/components/parameters/IdPathParam'
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200': { description: Video page, content: { application/json: { schema: { $ref: '../data/json-schemas/video-page.json' } } } }
+  /channels/{id}/live:
+    get:
+      summary: Channel live streams
+      operationId: getChannelLive
+      tags: [Registry]
+      parameters:
+        - $ref: '#/components/parameters/IdPathParam'
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200': { description: Live page, content: { application/json: { schema: { $ref: '../data/json-schemas/live-page.json' } } } }
+  /channels/{id}/shorts:
+    get:
+      summary: Channel shorts
+      operationId: getChannelShorts
+      tags: [Registry]
+      parameters:
+        - $ref: '#/components/parameters/IdPathParam'
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200': { description: Shorts page, content: { application/json: { schema: { $ref: '../data/json-schemas/video-page.json' } } } }
+  /channels/{id}/playlists:
+    get:
+      summary: Channel playlists
+      operationId: getChannelPlaylists
+      tags: [Registry]
+      parameters:
+        - $ref: '#/components/parameters/IdPathParam'
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200': { description: Playlist page, content: { application/json: { schema: { $ref: '../data/json-schemas/playlist-page.json' } } } }
+  /channels/{id}/posts:
+    get:
+      summary: Channel posts (community)
+      operationId: getChannelPosts
+      tags: [Registry]
+      parameters:
+        - $ref: '#/components/parameters/IdPathParam'
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200': { description: Posts page, content: { application/json: { schema: { $ref: '../data/json-schemas/post-page.json' } } } }
+  /playlists:
+    get:
+      summary: List playlists
+      operationId: listPlaylists
+      tags: [Registry]
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - $ref: '#/components/parameters/CategoryIdQuery'
+      responses:
+        '200': { description: Playlists page, content: { application/json: { schema: { $ref: '../data/json-schemas/playlist-page.json' } } } }
+  /playlists/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdPathParam'
+    get:
+      summary: Playlist detail
+      operationId: getPlaylist
+      tags: [Registry]
+      responses:
+        '200': { description: Playlist detail, content: { application/json: { schema: { $ref: '../data/json-schemas/playlist-detail.json' } } } }
+  /playlists/{id}/videos:
+    get:
+      summary: Videos in playlist
+      operationId: getPlaylistVideos
+      tags: [Registry]
+      parameters:
+        - $ref: '#/components/parameters/IdPathParam'
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200': { description: Video page, content: { application/json: { schema: { $ref: '../data/json-schemas/video-page.json' } } } }
+  /videos:
+    get:
+      summary: Search videos
+      operationId: listVideos
+      tags: [Registry]
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: categoryId
+          in: query
+          schema: { type: string }
+        - name: q
+          in: query
+          schema: { type: string, maxLength: 120 }
+        - name: length
+          in: query
+          schema: { type: string, enum: [SHORT, MEDIUM, LONG] }
+        - name: date
+          in: query
+          schema: { type: string, enum: [LAST_24_HOURS, LAST_7_DAYS, LAST_30_DAYS, ANYTIME] }
+        - name: sort
+          in: query
+          schema: { type: string, enum: [RECENT, POPULAR] }
+      responses:
+        '200': { description: Video page, content: { application/json: { schema: { $ref: '../data/json-schemas/video-page.json' } } } }
+  /videos/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdPathParam'
+    get:
+      summary: Video detail
+      operationId: getVideo
+      tags: [Registry]
+      responses:
+        '200': { description: Video detail, content: { application/json: { schema: { $ref: '../data/json-schemas/video-detail.json' } } } }
+  /next-up:
+    get:
+      summary: Up-next recommendations
+      operationId: getNextUp
+      tags: [Registry]
+      parameters:
+        - name: videoId
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Next up list, content: { application/json: { schema: { $ref: '../data/json-schemas/video-page.json' } } } }
+  /moderation/proposals:
+    post:
+      summary: Submit moderation proposal
+      operationId: createProposal
+      tags: [Moderation]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../data/json-schemas/moderation-proposal-create-request.json'
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '../data/json-schemas/moderation-proposal-response.json' } } } }
+    get:
+      summary: List moderation proposals
+      operationId: listProposals
+      tags: [Moderation]
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: status
+          in: query
+          schema: { type: string, enum: [PENDING, APPROVED, REJECTED] }
+      responses:
+        '200': { description: Proposal page, content: { application/json: { schema: { $ref: '../data/json-schemas/moderation-proposal-page.json' } } } }
+  /moderation/proposals/{id}/approve:
+    post:
+      summary: Approve proposal
+      operationId: approveProposal
+      tags: [Moderation]
+      parameters:
+        - $ref: '#/components/parameters/IdPathParam'
+      responses:
+        '200': { description: Approved, content: { application/json: { schema: { $ref: '../data/json-schemas/moderation-proposal-response.json' } } } }
+  /moderation/proposals/{id}/reject:
+    post:
+      summary: Reject proposal
+      operationId: rejectProposal
+      tags: [Moderation]
+      parameters:
+        - $ref: '#/components/parameters/IdPathParam'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '../data/json-schemas/moderation-proposal-reject-request.json'
+      responses:
+        '200': { description: Rejected, content: { application/json: { schema: { $ref: '../data/json-schemas/moderation-proposal-response.json' } } } }
+  /exclusions:
+    post:
+      summary: Create exclusion
+      operationId: createExclusion
+      tags: [Moderation]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../data/json-schemas/exclusion-create-request.json'
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '../data/json-schemas/exclusion-response.json' } } } }
+  /exclusions/{id}:
+    delete:
+      summary: Delete exclusion
+      operationId: deleteExclusion
+      tags: [Moderation]
+      parameters:
+        - $ref: '#/components/parameters/IdPathParam'
+      responses:
+        '204': { description: Deleted }
+  /admin/search:
+    get:
+      summary: Search YouTube via server-side API
+      operationId: adminSearch
+      tags: [Admin]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, maxLength: 120 }
+        - name: type
+          in: query
+          required: true
+          schema: { type: string, enum: [CHANNEL, PLAYLIST, VIDEO] }
+      responses:
+        '200': { description: Search results, content: { application/json: { schema: { $ref: '../data/json-schemas/admin-search-response.json' } } } }
+  /admin/audit:
+    get:
+      summary: List audit logs
+      operationId: listAudit
+      tags: [Admin]
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200': { description: Audit page, content: { application/json: { schema: { $ref: '../data/json-schemas/audit-page.json' } } } }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    CursorParam:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque base64 cursor provided in previous response.
+      schema:
+        type: string
+        maxLength: 512
+    LimitParam:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    IdPathParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    CategoryIdQuery:
+      name: categoryId
+      in: query
+      required: false
+      schema:
+        type: string
+  responses:
+    UnauthorizedError:
+      description: Authentication failed
+      content:
+        application/json:
+          schema:
+            $ref: '../data/json-schemas/error-response.json'

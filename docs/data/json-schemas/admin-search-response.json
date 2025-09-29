@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AdminSearchResponse",
+  "type": "object",
+  "required": ["kind", "results"],
+  "properties": {
+    "kind": { "type": "string", "enum": ["CHANNEL", "PLAYLIST", "VIDEO"] },
+    "results": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "$ref": "channel-summary.json" },
+          { "$ref": "playlist-summary.json" },
+          { "$ref": "video-summary.json" }
+        ]
+      }
+    }
+  }
+}
