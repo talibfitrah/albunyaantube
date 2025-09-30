@@ -10,9 +10,9 @@ This document summarizes the end-to-end architecture for Albunyaan Tube. Detaile
 
 ## Backend Architecture
 - **Language/Framework**: Java 17, Spring Boot 3 with Web, Security, Validation, Data JPA modules.
-- **Persistence**: PostgreSQL 15 (primary data store) managed via Flyway migrations; Redis for caching, rate limiting, JWT blacklist.
-- **Integration**: NewPipeExtractor library used via dedicated integration component to fetch metadata and stream URLs for allow-listed IDs.
-- **API Style**: REST with JSON; localized responses based on `Accept-Language` with fallback to English.
+- **Persistence**: PostgreSQL 15 (primary data store) managed via Flyway migrations; Redis for caching, rate limiting, JWT blacklist. Channel/Playlist/Video tables store Albunyaan-controlled data only (YouTube IDs, category links, inclusion/exclusion state, optional localized overrides) and maintain excluded item ID lists instead of mirroring remote metadata blobs.
+- **Integration**: NewPipeExtractor ships with the Android client to resolve metadata and stream URLs at runtime for allow-listed IDs. The backend uses the YouTube Data API solely for admin search previews and never persists remote metadata.
+- **API Style**: REST with JSON; localized responses based on `Accept-Language` with fallback to English. Metadata fields returned by read APIs combine Albunyaan overrides with runtime extractor payloads provided by clients when available.
 - **Caching Strategy**: Redis caches popular list queries keyed by locale + category + cursor. Time-to-live 5 minutes with cache stampede protection (locking). Downloadable assets served via signed URLs; consider CDN for thumbnails.
 - **Security Architecture**: JWT-based auth with rotation and blacklist (see [`../security/threat-model.md`](../security/threat-model.md#controls)). RBAC roles ADMIN and MODERATOR enforced through Spring Security method-level annotations. Rate limiting via Redis sliding window.
 - **Observability**: Structured logging (JSON), distributed tracing with OpenTelemetry, metrics exported to Prometheus. Error taxonomy defined in [`../testing/test-strategy.md`](../testing/test-strategy.md#error-taxonomy).
@@ -21,12 +21,13 @@ This document summarizes the end-to-end architecture for Albunyaan Tube. Detaile
 Entities defined in [`../data/json-schemas`](../data/json-schemas):
 - User, Role (RBAC)
 - Category (i18n map, slug)
-- Channel, Playlist, Video (each referencing categories and i18n fields)
+- Channel, Playlist, Video (store YouTube IDs + Albunyaan overrides, with Channel tracking `excludedVideoIds`/`excludedPlaylistIds` and Playlist tracking `excludedVideoIds`)
 - ModerationItem, Exclusion, AuditLog
 These schemas inform JPA entities and API payloads.
 
 ## Android Architecture
 - **Layers**: Presentation (Jetpack ViewModel), Domain (use cases), Data (Repository → Retrofit/OkHttp for backend, Room for offline downloads metadata).
+- **Metadata Pipeline**: Repositories use NewPipeExtractor to hydrate channel/playlist/video metadata at runtime, merging Albunyaan overrides from backend responses before caching locally.
 - **Navigation**: Single-activity pattern with Navigation Component; bottom nav (Home, Channels, Playlists, Videos). Onboarding flow controlled via DataStore preference.
 - **Playback Engine**: ExoPlayer integrated with MediaSession + Notification for background playback. Audio-only toggle selects audio stream variant from backend-provided manifest. PiP supported via Android 12 APIs. See Phase 8 plan in [`../testing/test-strategy.md`](../testing/test-strategy.md#player-reliability).
 - **Downloads**: Foreground service with WorkManager orchestrating downloads; store files in app-private storage with quotas (see [`../security/threat-model.md`](../security/threat-model.md#policy-controls)).
@@ -36,13 +37,14 @@ These schemas inform JPA entities and API payloads.
 - Vue 3 + Vite + TypeScript, Pinia for state management, Vue Router for routing, vue-i18n for localization.
 - Modules: Auth shell, Registry management, Moderation queue, Users, Audit logs.
 - API client generated from OpenAPI via `openapi-typescript`. State stores align with pagination contract (cursor-based).
+- Search & Import workspace consumes blended `/admin/search` response, renders tri-state include/exclude toggles, and batches mutations to backend bulk endpoints.
 - Security: JWT stored in HTTP-only cookies; CSRF tokens for state-changing operations.
 
 ## Data Flow
-1. Admin allow-lists content by storing Channel/Playlist/Video entries with categories.
-2. Backend sync job (WorkManager or scheduled) enriches metadata via NewPipeExtractor when new IDs added.
-3. Android client requests lists with cursor pagination; backend enforces category filters and 3-latest rule on home.
-4. Playback requests return stream URLs and caption metadata (localized when available). Download requests ensure policy compliance.
+1. Admin allow-lists content by storing Channel/Playlist/Video entries with categories and optional localized overrides.
+2. The admin console performs live previews by calling `/admin/search`, while persisted records retain only YouTube IDs and Albunyaan overrides; no remote metadata is stored server-side.
+3. Android client requests lists with cursor pagination; backend enforces category filters and 3-latest rule on home while returning only IDs and policy fields. The client resolves full metadata on-device via NewPipeExtractor, merging overrides when provided.
+4. Playback requests return signed stream manifests referencing YouTube sources; download requests ensure policy compliance without persisting media.
 5. Moderation proposals flow through dedicated endpoints with audit logging.
 
 ## Performance & Scaling

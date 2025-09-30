@@ -37,15 +37,19 @@ This document enumerates verifiable acceptance criteria linked to requirements, 
 - **AC-ADM-003**: Moderation queue supports status filter, default `PENDING` sorted oldest first.
 - **AC-ADM-004**: Category editor prevents deleting category assigned to content; suggests reassignment.
 - **AC-ADM-005**: Exclusions view shows parent + excluded entity with reason.
+- **AC-ADM-006**: Admin search blends Channels, Playlists, and Videos in a single results view with Include/Exclude toggles and bulk actions for each section.
+- **AC-ADM-007**: Channel and playlist drawers expose tabbed detail (Videos, Shorts, Live, Playlists, Posts) with per-item Include/Exclude controls and unsaved-change prompts.
 
 ## Backend Criteria
 - **AC-BE-001**: Cursor parameters validated; invalid cursor returns 400 with `error=CLIENT_ERROR`.
 - **AC-BE-002**: `/next-up` returns only allow-listed IDs not excluded by parent.
 - **AC-BE-003**: Redis cache invalidated within 5s after moderation approval.
+- **AC-BE-004**: Channel/Playlist/Video persistence stores only YouTube IDs plus Albunyaan overrides; runtime metadata comes from NewPipeExtractor clients.
+- **AC-BE-005**: Channel and playlist detail responses surface `excludedVideoIds` / `excludedPlaylistIds` matching stored exclusion state.
 
 ## Internationalization Criteria
 - **AC-I18N-003**: Numeric values use locale digits (Arabic Indic digits for `ar`).
-- **AC-I18N-004**: Dates formatted using Umm al-Qura calendar? (Decision: use Gregorian with localized month names, documented here.)
+- **AC-I18N-004**: Dates formatted using Gregorian calendar with locale-specific month names; document rationale for not adopting Umm al-Qura in `docs/i18n/strategy.md`.
 
 ## Accessibility Criteria
 - **AC-A11Y-001**: All interactive elements have TalkBack labels (Android) or `aria-label` (Admin).

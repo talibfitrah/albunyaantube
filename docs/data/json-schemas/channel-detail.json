@@ -5,7 +5,7 @@
     { "$ref": "channel-summary.json" },
     {
       "type": "object",
-      "required": ["description", "videoCount", "liveCount", "shortsCount", "playlistsCount", "postsCount", "links"],
+      "required": ["description", "videoCount", "liveCount", "shortsCount", "playlistsCount", "postsCount", "links", "excludedVideoIds", "excludedPlaylistIds"],
       "properties": {
         "description": { "type": ["string", "null"], "maxLength": 2000 },
         "videoCount": { "type": "integer", "minimum": 0 },
@@ -23,6 +23,14 @@
               "url": { "type": "string", "format": "uri" }
             }
           }
+        },
+        "excludedVideoIds": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "excludedPlaylistIds": {
+          "type": "array",
+          "items": { "type": "string" }
         },
         "lastSyncedAt": { "type": "string", "format": "date-time" }
       }

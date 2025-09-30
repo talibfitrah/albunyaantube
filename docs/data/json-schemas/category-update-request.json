@@ -7,6 +7,7 @@
     "name": {
       "type": "object",
       "minProperties": 1,
+      "required": ["en"],
       "additionalProperties": { "type": "string", "maxLength": 80 }
     },
     "description": {

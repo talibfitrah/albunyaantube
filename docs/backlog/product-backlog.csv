@@ -2,19 +2,50 @@ Epic,Story ID,Story Title,Description,Estimate (d),Phase
 Vision,DISC-01,Document mission & success metrics,"Finalize vision in docs/vision/vision.md",1,0
 Architecture,ARCH-01,Publish C4 diagrams,"Complete context/container/component diagrams",2,0
 Architecture,ARCH-02,Define security architecture,"Detail JWT, RBAC, rate limits in solution-architecture.md",2,1
+API,API-01,Draft OpenAPI contracts,"Maintain docs/api/openapi-draft.yaml and link schemas",2,0
+Backend Planning,BACK-PLAN-01,Platform & tooling baseline,"Scaffold backend project per phase-1-backend-plan.md",0.5,1
+Backend Planning,BACK-PLAN-02,Authentication & RBAC blueprint,"Design JWT rotation, roles, initial admin workflow",0.75,1
+Backend Planning,BACK-PLAN-03,Persistence & seed data plan,"Author Flyway outline, locale map converters, seed categories",0.5,1
+Backend Planning,BACK-PLAN-04,Quality gates & CI readiness,"Define backend CI workflow, testing gates",0.5,1
+Backend Planning,BACK-PLAN-05,Backlog & traceability refresh,"Update backlog/criteria cross-links for Phase 1",0.25,1
 Backend,BACK-01,Implement Auth & JWT rotation,"Build login/refresh/logout endpoints with blacklist",5,1
 Backend,BACK-02,Seed categories via Flyway,"Create baseline categories in migration",2,1
 Backend,BACK-03,Implement cursor pagination,"Add cursor service covering all list endpoints",4,2
 Moderation,MOD-01,Moderation proposal workflow,"Approve/reject endpoints with audit logging",5,2
-Admin UI,ADMIN-01,Admin shell & auth,"Bootstrap Vue app with login & protected routes",4,3
-Admin UI,ADMIN-02,Registry tables,"Channel/Playlist/Video tables with cursor pagination",5,3
-Admin UI,ADMIN-03,Exclusions editor,"UI to manage exclusions, validations",4,4
-Admin UI,ADMIN-04,Audit viewer,"Paginated audit log with filters",3,4
-Android,AND-01,Navigation skeleton,"Implement splash, onboarding, bottom nav per spec",5,5
-Android,AND-02,Category filter state,"Global category filter persisted across tabs",3,6
-Android,AND-03,Channel tabs,"Implement Videos/Live/Shorts/Playlists/Posts tabs",5,7
-Android,AND-04,Player core,"Integrate ExoPlayer with audio-only toggle",6,8
-Android,AND-05,Downloads manager,"Foreground service with queue, notifications",7,9
-Quality,QA-01,Performance benchmarking,"Automate home feed & cold start benchmarks",4,10
-Quality,QA-02,Localization audit,"Run en/ar/nl QA checklist",3,11
-Launch,LAUNCH-01,Beta rollout plan,"Define telemetry, crash reporting, release gating",2,12
+Admin UI MVP,ADMIN-MVP-01,Admin locale switcher,"Implement locale dropdown + persistence per i18n strategy",0.4,3
+Admin UI MVP,ADMIN-MVP-02,Ship Arabic & Dutch bundles,"Split locale files and enable RTL mirroring",0.5,3
+Admin UI MVP,ADMIN-MVP-03,Registry category filter,"Add shared category filter and API integration",0.5,3
+Admin UI MVP,ADMIN-MVP-04,Video query controls,"Expose search/length/date/sort filters",0.5,3
+Admin UI MVP,ADMIN-MVP-05,Dashboard metrics contract,"Define backend endpoint + frontend consumption plan",0.4,3
+Admin UI MVP,ADMIN-MVP-06,Moderation queue UX polish,"Finalize queue interactions, audit logging hooks",0.4,3
+Admin UI MVP,ADMIN-MVP-07,Documentation & onboarding refresh,"Update README/runbooks/backlog for admin MVP",0.25,3
+Admin UI MVP,ADMIN-MVP-08,Search & import workspace,"Design blended search results view with include/exclude toggles and bulk actions",0.6,3
+Admin UI MVP,ADMIN-MVP-09,Channel & playlist drawers,"Define tabbed drawer flows with per-item toggles and unsaved-change prompts",0.5,3
+Admin UI Complete,ADMIN-COMP-01,Exclusions editor,"Deliver exclusions CRUD UI aligned with UX spec",0.5,4
+Admin UI Complete,ADMIN-COMP-02,User management & audit viewer,"Ship admin user CRUD and audit table UI",0.5,4
+Admin UI Complete,ADMIN-COMP-03,Accessibility & localization hardening,"Execute WCAG + RTL sweeps for admin",0.4,4
+Android Skeleton,AND-SKEL-01,Navigation graph & bottom nav,"Plan nav graph, bottom navigation, state retention",0.5,5
+Android Skeleton,AND-SKEL-02,Onboarding carousel,"Design onboarding flow with help modal & persistence",0.4,5
+Android Skeleton,AND-SKEL-03,Locale switcher foundation,"Specify Android locale switcher + RTL support",0.4,5
+Android Lists,AND-LISTS-01,Paging integration,"Design Paging 3 + caching for home and lists",0.5,6
+Android Lists,AND-LISTS-02,Filter row controls,"Document list filter interactions and API mapping",0.5,6
+Android Lists,AND-LISTS-03,Error/loading states,"Define skeleton/error UX + metrics",0.4,6
+Android Details,AND-DETAILS-01,Channel tabs behavior,"Plan tabbed channel detail screens with state retention",0.4,7
+Android Details,AND-DETAILS-02,Playlist detail & download CTA,"Specify playlist hero and download policy states",0.4,7
+Android Details,AND-DETAILS-03,Deep links & exclusions,"Design deep link handling and exclusion messaging",0.4,7
+Android Player,AND-PLAYER-01,Core playback & audio-only,"Detail ExoPlayer setup, audio-only toggle",0.5,8
+Android Player,AND-PLAYER-02,MediaSession & PiP,"Plan background playback notification and PiP",0.5,8
+Android Player,AND-PLAYER-03,Up Next & analytics,"Specify Up Next queue and instrumentation",0.4,8
+Downloads,AND-DL-01,Download queue & storage,"Document WorkManager queue and storage quotas",0.5,9
+Downloads,AND-DL-02,EULA gate & policy,"Plan EULA acceptance gating for downloads",0.4,9
+Downloads,AND-DL-03,Offline QA & telemetry,"Build QA matrix and telemetry for offline playback",0.4,9
+Hardening,HARDEN-01,Caching & performance,"Finalize caching strategy and perf budgets",0.5,10
+Hardening,HARDEN-02,Security sweep,"Execute pen-test checklist and mitigation plan",0.5,10
+Hardening,HARDEN-03,Observability & SLOs,"Define SLIs/SLOs and instrumentation",0.4,10
+Localization,QA-L10N-01,Localization audit,"Run en/ar/nl QA pass and capture findings",0.4,11
+Accessibility,QA-A11Y-01,Accessibility verification,"Conduct TalkBack/axe-core sweeps",0.4,11
+Compliance,QA-COMP-01,Compile compliance report,"Publish Phase 11 compliance summary",0.3,11
+Launch,LAUNCH-01,Telemetry & crash reporting,"Enable analytics/crash tooling and dashboards",0.5,12
+Launch,LAUNCH-02,Beta program execution,"Coordinate closed beta cohort and triage",0.4,12
+Launch,LAUNCH-03,Launch checklist & rollback,"Produce go-live checklist and rollback plan",0.5,12
+Backend Planning,BACK-PLAN-06,Search aggregation contract,"Define admin search response schema and toggle state semantics",0.5,2

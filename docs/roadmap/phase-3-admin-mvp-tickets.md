@@ -1,215 +1,247 @@
 # Phase 3 — Admin UI MVP Ticket Breakdown
 
-This plan enumerates the remaining work required to complete the Phase 3 exit criteria for the admin console. Phase 3 focuses on delivering the admin information architecture, routing, shared state, and localization wiring described in the roadmap and UX spec.【F:docs/roadmap/roadmap.md†L9-L15】【F:docs/ux/ui-spec.md†L84-L97】
+Phase 3 delivers the admin shell, registry tables, moderation queue, and localization wiring required for MVP exit criteria. Tickets follow the `Estimate → Goals → Propose diff → Tests → Implement → Reflect` cadence and reference design artifacts instead of code so engineering teams can pick them up when implementation begins. Supporting docs: `docs/ux/ui-spec.md`, `docs/i18n/strategy.md`, `docs/api/openapi-draft.yaml`, `docs/testing/test-strategy.md`, and `docs/acceptance/criteria.md`.
 
-## Current Status
-- Admin shell, authentication, and protected routing are in place via the Vue 3 SPA scaffold.【F:frontend/src/layouts/AdminLayout.vue†L1-L88】【F:frontend/src/stores/auth.ts†L1-L166】
-- Registry workspace renders paginated tables for channels, playlists, and videos backed by the admin registry endpoints.【F:frontend/src/views/RegistryLandingView.vue†L1-L83】【F:frontend/src/components/registry/VideosTable.vue†L1-L143】
-- Moderation queue provides the required status filter, approve/reject actions, and localized copy.【F:frontend/src/views/ModerationQueueView.vue†L1-L271】【F:frontend/src/locales/messages.ts†L33-L104】
-- Localization is currently English-only and the dashboard metrics remain static placeholders.【F:frontend/src/locales/messages.ts†L1-L108】【F:frontend/src/views/DashboardView.vue†L1-L47】
+## ADMIN-MVP-01 — Admin Locale Switcher & Persistence
+**Estimate**: 3h.
 
-The following tickets decompose the remaining Phase 3 scope into 2–4 hour tasks. Each ticket follows the "plan → propose diff → tests → implement → reflect" workflow to reinforce disciplined delivery.【F:docs/testing/test-strategy.md†L19-L41】
-
-## Ticket Backlog
-
-### ADMIN-MVP-01 — Add admin locale switcher
-- **Estimate**: 3h
-- **Goal**: Provide the manual locale switcher mandated by the i18n strategy so admins can toggle between en/ar/nl within the console.【F:docs/i18n/strategy.md†L24-L44】
-
-**Plan**
-1. Audit existing layout to identify insertion point for a locale dropdown in the top bar.
-2. Create a preferences store to persist the selected locale to `localStorage`.
-3. Update `vue-i18n` initialization to hydrate from the persisted locale and expose a setter.
+**Goals**
+- Provide manual locale switcher in admin shell per i18n strategy.
+- Persist locale selection across reloads and sessions.
+- Respect Accept-Language fallback guide for future API requests.
 
 **Propose diff**
-- `frontend/src/layouts/AdminLayout.vue`: add dropdown UI and wire change handler.
-- `frontend/src/stores/preferences.ts` (new): manage persisted locale.
-- `frontend/src/main.ts` / `frontend/src/locales/index.ts` (new or updated): bootstrap i18n with stored locale.
+- `frontend/src/layouts/AdminLayout.vue` (future implementation): add switcher UI referencing design tokens.
+- `frontend/src/stores/preferences.ts` (planned): persist locale to storage and expose getter/setter.
+- `docs/i18n/strategy.md`: ensure admin locale switching behavior is documented (already referenced) and update if gaps appear.
 
 **Tests**
-- Vitest unit test verifying the preferences store reads/writes locale from storage.
-- Component test asserting locale change updates rendered navigation labels.
+- Vitest component + store tests verifying locale persists and emits change events.
+- Manual QA checklist for en/ar/nl verifying directionality updates.
 
 **Implement**
-- Build dropdown with accessible markup and success-color focus ring per UI spec.
-- Persist locale selection and trigger `i18n.global.locale` updates.
+- Design dropdown interaction aligned with UI spec (48dp touch target, success focus ring).
+- Persist selection (localStorage) and update `Accept-Language` header usage plan.
+- Capture analytics requirement for locale switch usage (deferred to Phase 10).
 
 **Reflect**
-- Confirm locale survives reload and log a follow-up if we need backend propagation via `X-Admin-Locale` header.
+- Note requirement for backend override header (`X-Admin-Locale`) and file follow-up ticket.
+- Update backlog if additional locales planned post-launch.
 
-### ADMIN-MVP-02 — Ship Arabic and Dutch locale bundles with RTL support
-- **Estimate**: 4h
-- **Goal**: Expand admin copy to ar/nl, ensure CSS respects RTL mirroring, and satisfy localization wiring requirements.【F:docs/ux/ui-spec.md†L84-L115】【F:docs/i18n/strategy.md†L1-L44】
+## ADMIN-MVP-02 — Ship Arabic & Dutch Locale Bundles
+**Estimate**: 4h.
 
-**Plan**
-1. Split `messages.ts` into per-locale modules and populate translations sourced from localization spreadsheet.
-2. Introduce a utility that toggles `dir="rtl"` on the document when locale is Arabic.
-3. Replace directional CSS in layout/components with logical properties so mirroring works automatically.
+**Goals**
+- Provide localized admin copy for en/ar/nl using ICU patterns.
+- Enable RTL rendering when locale is Arabic.
+- Ensure layout uses CSS logical properties for mirrored alignment.
 
 **Propose diff**
-- `frontend/src/locales/messages.ts` → refactor into `en.ts`, `ar.ts`, `nl.ts`, plus an index exporter.
-- `frontend/src/layouts/AdminLayout.vue` and registry/moderation components: adjust padding/margin to use logical properties.
-- `frontend/src/main.ts`: toggle `document.dir` based on current locale.
-- `frontend/src/utils/rtl.ts` (new): helper for direction management.
+- `frontend/src/locales/{en,ar,nl}.ts` (planned): split message bundles.
+- `frontend/src/utils/rtl.ts` (planned): helper toggling `dir` attribute.
+- `docs/i18n/strategy.md`: add translation key list + QA notes.
 
 **Tests**
-- Vitest snapshot tests for key components under Arabic locale to ensure copy and alignment update.
-- Playwright visual diff (if feasible) or DOM assertions verifying `dir` attribute flips.
+- Snapshot/unit tests verifying locale modules export expected keys.
+- Playwright smoke tests capturing screenshots for RTL vs LTR.
+- Accessibility audit ensuring focus order preserved under RTL.
 
 **Implement**
-- Import translations, ensure pluralization/ICU placeholders preserved.
-- Apply CSS logical properties (e.g., `padding-inline`, `margin-inline`) and flex alignment that is direction-agnostic.
+- Populate translation spreadsheet → transform into locale files.
+- Apply logical CSS properties in shared layout components.
+- Document translation handoff + update workflow.
 
 **Reflect**
-- Validate no regressions in LTR layout; capture RTL screenshots for localization QA.
+- Record missing translations or ambiguous copy for localization follow-up.
+- Update risk register if additional typography assets needed.
 
-### ADMIN-MVP-03 — Implement shared category filter for registry tables
-- **Estimate**: 4h
-- **Goal**: Allow admins to filter channels/playlists/videos by category using the backend `categoryId` query, aligning with registry workflow expectations.【F:docs/api/openapi-draft.yaml†L185-L230】【F:docs/acceptance/criteria.md†L15-L37】
+## ADMIN-MVP-03 — Registry Category Filter & Shared State
+**Estimate**: 4h.
 
-**Plan**
-1. Design a filter toolbar component that renders above each table and surfaces available categories (seeded via API or static list for now).
-2. Introduce a registry store to hold filter state so pagination components can react when filters change.
-3. Update fetch calls to include the selected category in query params.
+**Goals**
+- Provide category filter shared across channels/playlists/videos tables.
+- Align UI behavior with UX spec (chips/dropdowns, skeleton states).
+- Ensure API requests include `categoryId` parameter to honor allow-list policy.
 
 **Propose diff**
-- `frontend/src/components/registry/RegistryFilters.vue` (new) with category select.
-- `frontend/src/stores/registryFilters.ts` (new) to share filter state.
-- `frontend/src/services/catalog.ts` (new) or extend existing services to load category options.
-- Modify `ChannelsTable.vue`, `PlaylistsTable.vue`, `VideosTable.vue`, and `RegistryLandingView.vue` to incorporate the filter toolbar and pass category ID into `fetch*Page` calls.
+- `frontend/src/components/registry/RegistryFilters.vue` (planned) with filter controls.
+- `frontend/src/stores/registryFilters.ts` (planned) for centralized filter state.
+- `frontend/src/services/catalog.ts` (planned) to retrieve categories (cursor pagination).
+- `docs/api/openapi-draft.yaml`: confirm `/categories` + registry endpoints surface required fields.
 
 **Tests**
-- Vitest unit test for the store ensuring state resets when switching tabs.
-- Component test verifying category change triggers a new fetch with expected query.
+- Unit tests for store ensuring resets when switching tabs.
+- Component tests verifying query strings include category filters.
+- Cross-check against acceptance criteria AC-REG-001/002.
 
 **Implement**
-- Render the filter toolbar with localization-ready labels and skeleton while categories load.
-- Debounce filter changes to avoid spamming network requests.
+- Design filter interactions (debounce, loading skeleton) per UI spec.
+- Document fallback behavior when no categories exist.
+- Capture analytics requirements for filter usage (Phase 10).
 
 **Reflect**
-- Confirm UX meets accessibility requirements (labels, keyboard navigation) and note follow-up if multi-select becomes necessary.
+- Identify need for multi-select or advanced filters (log backlog item).
+- Note backend dependency for localized category labels.
 
-### ADMIN-MVP-04 — Add video query controls (search, length, date, sort)
-- **Estimate**: 3.5h
-- **Goal**: Surface the remaining `/videos` query parameters so admins can quickly locate entries by title, duration, publish window, or popularity.【F:docs/api/openapi-draft.yaml†L217-L248】
+## ADMIN-MVP-04 — Video Query Controls (Search/Length/Date/Sort)
+**Estimate**: 3.5h.
 
-**Plan**
-1. Extend the registry filters component with inputs for free-text search and dropdowns for length/date/sort options.
-2. Ensure the registry filter store exposes video-specific state without affecting channels/playlists.
-3. Update `fetchVideosPage` invocation and pagination summary to reflect applied filters.
+**Goals**
+- Surface additional `/videos` parameters (search text, length, date range, popularity).
+- Maintain consistent shared state across registry tabs.
+- Provide accessible form controls with localization-ready labels.
 
 **Propose diff**
-- Update `RegistryFilters.vue` to render conditional controls when active tab is videos.
-- Extend `registryFilters` store with namespaced state for video filters plus reset logic on tab change.
-- Modify `services/registry.ts` to accept new parameters from the store.
+- Extend `RegistryFilters.vue` and filter store to include video-specific state.
+- Update `frontend/src/services/videos.ts` (planned) to accept new query params.
+- `docs/ux/ui-spec.md`: ensure filter control layout + states are captured (update if needed).
 
 **Tests**
-- Vitest test verifying search input debounces and updates store correctly.
-- Integration-style component test mocking fetch to confirm query string contains expected params for each filter.
+- Unit tests verifying debounce + query parameter construction.
+- Playwright tests covering filter combinations and pagination reset.
+- Localization QA to ensure filter labels translate without truncation.
 
 **Implement**
-- Add accessible labels/tooltips for filter inputs and ensure keyboard focus order respects spec.
-- Use `watch` hooks to trigger reloads when filters change, resetting to first page.
+- Add filter UI per spec (bottom sheet or dropdown) with keyboard navigation.
+- Document default filter values and interplay with category filter.
+- Capture instrumentation needs for search/filter usage.
 
 **Reflect**
-- Capture metrics on query frequency during manual QA to validate backend readiness; file performance follow-up if needed.
+- Note backend performance considerations for search queries; feed into Phase 6 perf planning.
+- Update risk register if complex query building adds API load.
 
-### ADMIN-MVP-05 — Expose dashboard metrics endpoint (backend)
-- **Estimate**: 3h
-- **Goal**: Provide backend support for dashboard KPIs (pending moderation count, total categories, active moderators) so the UI can display live data.【F:docs/roadmap/phase-1-backend-plan.md†L22-L39】【F:docs/acceptance/criteria.md†L31-L40】
+## ADMIN-MVP-05 — Dashboard Metrics Contract
+**Estimate**: 3h (backend + frontend coordination).
 
-**Plan**
-1. Define DTO returning the three counts and add repository methods to compute them.
-2. Implement `/api/v1/admins/dashboard` controller that aggregates counts using existing services/entities.
-3. Document the endpoint in the OpenAPI draft and add integration coverage.
+**Goals**
+- Define backend endpoint returning moderation pending count, total categories, active moderators.
+- Specify frontend consumption plan with loading/error states.
+- Align metrics with observability requirements.
 
 **Propose diff**
-- `backend/src/main/java/com/albunyaan/tube/admin/AdminDashboardController.java` (new).
-- Repository/service updates under `com.albunyaan.tube.moderation`, `com.albunyaan.tube.catalog`, and `com.albunyaan.tube.user` to expose count queries.
-- `docs/api/openapi-draft.yaml`: add dashboard path + schema.
-- `backend/src/test/java/...` integration test verifying counts with seeded data.
+- `docs/api/openapi-draft.yaml`: add `/admin/dashboard` schema.
+- `docs/architecture/solution-architecture.md`: outline aggregation strategy + caching.
+- `frontend/src/services/dashboard.ts` (planned) + composable to fetch metrics.
 
 **Tests**
-- Integration test using Testcontainers to validate counts and RBAC (only ADMIN can access).
-- Unit tests for any helper services introduced.
+- Integration test plan verifying counts with seeded data.
+- Contract test ensuring schema matches dashboard needs.
+- Playwright/Visual check for skeleton/error UI.
 
 **Implement**
-- Wire controller with `@PreAuthorize` to restrict to ADMIN.
-- Ensure response includes `traceId` header to satisfy observability criteria.
+- Document backend responsibilities (RBAC, audit logging) and add to backlog (BACK-XX new).
+- Define frontend state machine (loading → success/error) referencing UI spec.
+- Note metrics instrumentation for Phase 10 SLO tracking.
 
 **Reflect**
-- Note performance of count queries; consider caching if metrics become expensive later.
+- Identify additional KPIs requested by stakeholders (log backlog items).
+- Update acceptance criteria if new metrics become mandatory.
 
-### ADMIN-MVP-06 — Consume dashboard metrics in frontend
-- **Estimate**: 2.5h
-- **Goal**: Replace placeholder metrics with live data from the new backend endpoint and localize number formatting.【F:frontend/src/views/DashboardView.vue†L1-L47】【F:docs/testing/test-strategy.md†L19-L41】
+## ADMIN-MVP-06 — Moderation Queue UX Polish
+**Estimate**: 3h.
 
-**Plan**
-1. Create a lightweight dashboard service calling `/api/v1/admins/dashboard`.
-2. Introduce a composable to load metrics on mount with loading/error states.
-3. Update dashboard cards to display formatted counts and handle failures gracefully.
+**Goals**
+- Finalize moderation queue table interactions (status filtering, approve/reject flows).
+- Ensure audit logging requirements and acceptance criteria AC-ADM-003 satisfied.
+- Provide localized copy for statuses, tooltips, and empty states.
 
 **Propose diff**
-- `frontend/src/services/dashboard.ts` (new) with fetch helper.
-- `frontend/src/composables/useDashboardMetrics.ts` (new) to manage loading state.
-- `frontend/src/views/DashboardView.vue`: consume composable, render skeleton/error UI, and adjust localization strings if needed.
+- `frontend/src/views/ModerationQueueView.vue` (planned) with action dialogs.
+- `docs/ux/ui-spec.md`: attach moderation flow annotations (update if missing).
+- `docs/testing/test-strategy.md`: call out Playwright scenarios for queue actions.
 
 **Tests**
-- Vitest test for composable ensuring it handles success/error cases and formats numbers per locale.
-- Component test verifying loading skeleton renders before data resolves.
+- Component tests verifying approve/reject actions issue API calls + optimistic updates.
+- Accessibility audit for keyboard navigation + focus handling.
+- Localization QA ensuring status badges translate correctly.
 
 **Implement**
-- Display spinner or skeleton while fetching; show inline error with retry button on failure.
-- Use existing `formatNumber` utility to honor locale digits.
+- Outline state transitions for queue items, including audit log payloads.
+- Document notification/toast patterns for success/failure.
+- Plan for moderation proposal filters (status, category) aligned with backend endpoints.
 
 **Reflect**
-- Confirm dashboard loads within acceptable time; capture TODO if we need polling or websockets in later phases.
+- Capture moderator feedback on workflow ergonomics for future enhancements.
+- Update risk register if moderation SLA risks remain.
 
-### ADMIN-MVP-07 — Add Playwright smoke test for admin workflows
-- **Estimate**: 4h
-- **Goal**: Establish an end-to-end test covering login, registry pagination, and moderation actions in line with the admin frontend test strategy.【F:docs/testing/test-strategy.md†L25-L33】
+## ADMIN-MVP-07 — Documentation & Onboarding Refresh
+**Estimate**: 2h.
 
-**Plan**
-1. Scaffold Playwright config targeting the Vite dev server and mocked backend endpoints.
-2. Write a smoke test that logs in with seeded admin credentials, verifies registry table renders, and walks through a moderation approve flow using API mocks.
-3. Integrate the Playwright run into CI (reusing existing GitHub Actions workflow or adding a new job).
+**Goals**
+- Align README, runbooks, and backlog with MVP functionality.
+- Provide onboarding notes for new admin contributors focusing on localization + accessibility expectations.
+- Ensure traceability matrix references new admin acceptance criteria.
 
 **Propose diff**
-- `frontend/playwright.config.ts` and `/tests/admin-smoke.spec.ts` (new) with fixtures for auth and API mocks.
-- `package.json`: add Playwright scripts and dependencies.
-- `.github/workflows/ci.yml`: append job to run Playwright headless (if workflow exists) or document manual run instructions in README.
+- `README.md`: update navigation + status callouts for admin artifacts.
+- `docs/runbooks/admin-login.md`: adjust instructions once auth implementation details finalize.
+- `docs/backlog/product-backlog.csv`: include ADMIN-* tickets with estimates/owners.
+- `docs/acceptance/criteria.md`: cross-link admin-specific ACs with ticket IDs.
 
 **Tests**
-- The Playwright smoke test itself acts as coverage; ensure it runs in CI.
-- Optional: add unit tests for API mock helpers if complex.
+- Content review with Product + Design leads to confirm documentation accuracy.
+- Spellcheck/markdown lint as applicable.
+- Verify all links resolve inside repository.
 
 **Implement**
-- Use `msw` or Playwright route intercepts to stub backend responses for deterministic assertions.
-- Capture video/screenshot artifacts for debugging failures.
+- Refresh documentation sections to reflect MVP scope and responsibilities.
+- Add onboarding checklist (accounts, tooling, locale QA) for new engineers.
+- Update backlog to flag dependencies on backend Phases 1–2.
 
 **Reflect**
-- Evaluate runtime and flake rate; adjust fixtures or CI parallelism as needed.
+- Gather feedback from onboarding pilot and iterate on documentation.
+- Note additional runbooks or tooling guides required before implementation.
 
-### ADMIN-MVP-08 — Update developer documentation for Phase 3 features
-- **Estimate**: 2h
-- **Goal**: Refresh developer docs so onboarding instructions cover locale switcher, filters, metrics endpoint, and Playwright usage, ensuring traceability of Phase 3 deliverables.【F:README.md†L1-L24】【F:frontend/README.md†L1-L22】
+## ADMIN-MVP-08 — Search & Import Workspace Contract
+**Estimate**: 3.5h.
 
-**Plan**
-1. Document new environment variables or backend prerequisites for dashboard metrics.
-2. Add instructions for running Playwright tests and switching locales locally.
-3. Update roadmap/backlog status to reflect Phase 3 progress if needed.
+**Goals**
+- Define blended search experience mirroring YouTube: single surface showing Channels, Playlists, Videos with thumbnails and stats.
+- Specify Include/Exclude tri-state toggle states and bulk selection bar behavior.
+- Document error, loading, and empty states for each section with localization guidance.
 
 **Propose diff**
-- `frontend/README.md`: add sections for locale switcher, filters, testing commands.
-- `README.md`: note Phase 3 readiness and point to new tickets.
-- `docs/backlog/product-backlog.csv`: mark Phase 3 stories as in-progress/done if statuses tracked (optional, confirm with PM).
+- `docs/ux/ui-spec.md`: expand admin search section with card layouts, sticky headers, RTL notes.
+- `docs/api/openapi-draft.yaml`: update `/admin/search` contract to return aggregated results and toggle state metadata.
+- `docs/data/json-schemas/admin-search-*.json` (new): schema for channel/playlist/video search results with include state.
 
 **Tests**
-- N/A (documentation), but run markdown lint if available.
+- Run design review with admins to validate blended layout and toggle semantics.
+- Add Vitest component test plan ensuring bulk selection bar appears/disappears correctly.
+- Include accessibility checklist for keyboard navigation across sections.
 
 **Implement**
-- Ensure instructions cross-link to relevant docs (roadmap, i18n strategy, test strategy).
+- Capture interaction diagrams (state machine) for toggles and bulk actions; ensure analytics hooks identified for Phase 10.
+- Coordinate with backend on include-state enum semantics.
+- Update localization key matrix for section titles, tooltips, bulk action prompts.
 
 **Reflect**
-- Validate docs with a teammate walkthrough; capture any gaps for future doc sprints.
+- Record feedback on layout density (cards vs. list) for potential iteration.
+- Log risk if YouTube API result quotas constrain blended queries.
 
+## ADMIN-MVP-09 — Channel & Playlist Drawers
+**Estimate**: 3h.
+
+**Goals**
+- Mirror YouTube channel and playlist detail layouts within admin drawer UX, including tabbed navigation (Videos, Shorts, Live, Playlists, Posts).
+- Ensure per-item Include/Exclude toggles with unsaved-change prompts and Apply/Discard flow.
+- Plan bulk controls inside drawers (select all, exclude all) and keyboard accessibility.
+
+**Propose diff**
+- `docs/ux/ui-spec.md`: add channel/playlist drawer specs with measurements, tab behavior, and confirmation dialogues.
+- `docs/api/openapi-draft.yaml`: confirm channel/playlist detail responses expose excluded item ID arrays for drawer hydration.
+- `docs/data/json-schemas/channel-detail.json`, `playlist-detail.json`: include excluded ID lists.
+
+**Tests**
+- Define component/unit tests verifying unsaved-change modals trigger properly.
+- Accessibility review for focus trapping inside drawer and tab order.
+- Manual QA plan for bulk apply/cancel flows across locales.
+
+**Implement**
+- Outline state model for pending changes vs. persisted state; document optimistic update strategy.
+- Coordinate with backend to batch include/exclude mutations and audit logging.
+- Draft analytics events for Apply/Discard actions.
+
+**Reflect**
+- Capture moderator feedback on drawer ergonomics; adjust backlog if additional filtering needed.
+- Note dependency on Exclusions revamp in Phase 4.

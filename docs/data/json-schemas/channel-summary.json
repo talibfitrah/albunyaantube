@@ -2,12 +2,19 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "ChannelSummary",
   "type": "object",
-  "required": ["id", "ytId", "name", "avatarUrl", "subscriberCount", "categories"],
+  "required": ["id", "ytId", "subscriberCount", "categories"],
   "properties": {
     "id": { "type": "string" },
     "ytId": { "type": "string" },
-    "name": { "type": "string" },
-    "avatarUrl": { "type": "string", "format": "uri" },
+    "name": {
+      "type": ["string", "null"],
+      "description": "Optional Albunyaan override. Clients fetch canonical name via NewPipeExtractor when null."
+    },
+    "avatarUrl": {
+      "type": ["string", "null"],
+      "format": "uri",
+      "description": "Optional override thumbnail. Clients fetch from YouTube when null."
+    },
     "subscriberCount": { "type": "integer", "minimum": 0 },
     "categories": {
       "type": "array",

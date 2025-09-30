@@ -5,12 +5,20 @@
     { "$ref": "playlist-summary.json" },
     {
       "type": "object",
-      "required": ["description", "durationSeconds", "downloadPolicy", "lastSyncedAt"],
+      "required": ["description", "durationSeconds", "downloadPolicy", "lastSyncedAt", "videos", "excludedVideoIds"],
       "properties": {
         "description": { "type": ["string", "null"], "maxLength": 4000 },
         "durationSeconds": { "type": "integer", "minimum": 0 },
         "downloadPolicy": { "type": "string", "enum": ["ENABLED", "DISABLED_BY_POLICY"] },
-        "lastSyncedAt": { "type": "string", "format": "date-time" }
+        "lastSyncedAt": { "type": "string", "format": "date-time" },
+        "videos": {
+          "type": "array",
+          "items": { "$ref": "video-summary.json" }
+        },
+        "excludedVideoIds": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
       }
     }
   ]

@@ -12,7 +12,7 @@ This strategy covers localization for English (`en`), Modern Standard Arabic (`a
 
 ## Pluralization & ICU
 - Use ICU plurals for counts (`{count, plural, one {...} other {...}}`) respecting each locale's rules (Arabic has 6 plural forms).
-- Date/time formatting via `Intl.DateTimeFormat` on web and `java.time` on backend/Android with locale-specific numerals.
+- Date/time formatting via `Intl.DateTimeFormat` on web and `java.time` on backend/Android using the Gregorian calendar with locale-specific month names; decision recorded to defer Umm al-Qura adoption for launch while monitoring feedback.
 - Dynamic inserts sanitized (no HTML injection).
 
 ## RTL Support

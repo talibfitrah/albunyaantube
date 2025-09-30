@@ -2,12 +2,19 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "PlaylistSummary",
   "type": "object",
-  "required": ["id", "ytId", "title", "thumbnailUrl", "itemCount", "owner", "categories"],
+  "required": ["id", "ytId", "itemCount", "owner", "categories"],
   "properties": {
     "id": { "type": "string" },
     "ytId": { "type": "string" },
-    "title": { "type": "string" },
-    "thumbnailUrl": { "type": "string", "format": "uri" },
+    "title": {
+      "type": ["string", "null"],
+      "description": "Optional Albunyaan override. Clients fetch original title via NewPipeExtractor when null."
+    },
+    "thumbnailUrl": {
+      "type": ["string", "null"],
+      "format": "uri",
+      "description": "Optional override thumbnail."
+    },
     "itemCount": { "type": "integer", "minimum": 0 },
     "owner": { "$ref": "channel-summary.json" },
     "categories": {

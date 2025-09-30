@@ -24,7 +24,7 @@ This strategy spans backend, admin frontend, and Android client. It complements 
 
 ## Admin Frontend Testing
 - **Unit**: Vitest for components; ensure tokens from [`../ux/design-tokens.json`](../ux/design-tokens.json) applied.
-- **E2E**: Playwright hitting staging backend mock; scenarios include moderation approval, exclusions editing, audit pagination.
+- **E2E**: Playwright hitting staging backend mock; scenarios include moderation approval, exclusions editing, audit pagination, and blended search/import flows (single-surface results, bulk include/exclude).
 - **i18n**: Snapshot tests verifying ar/nl translations, directionality (RTL snapshots).
 - **Accessibility**: axe-core integration ensures WCAG AA.
 

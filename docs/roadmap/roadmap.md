@@ -1,27 +1,384 @@
 # Phased Roadmap
 
-This roadmap aligns with the phased deliverables outlined in the program brief. Each phase lists objectives, key artifacts (with repo links), and exit criteria.
+This roadmap expresses Albunyaan Tube's design-first delivery strategy. Every phase lists an estimate plus the activities required to exit the phase using the cadence `Estimate → Goals → Proposed Diff → Tests → Implement → Reflect`. Linked artifacts live in this repository so future engineering teams inherit a complete, traceable blueprint.
 
-| Phase | Objective | Key Deliverables | Exit Criteria |
-| --- | --- | --- | --- |
-| 0 — Discovery & Contracts | Establish product vision, architecture outline, UX contract, localization approach. | - [`docs/vision/vision.md`](../vision/vision.md) <br> - [`docs/api/openapi-draft.yaml`](../api/openapi-draft.yaml) <br> - [`docs/architecture/solution-architecture.md`](../architecture/solution-architecture.md) <br> - [`docs/ux/ui-spec.md`](../ux/ui-spec.md) <br> - [`docs/i18n/strategy.md`](../i18n/strategy.md) | Stakeholder sign-off on scope and contracts. |
-| 1 — Backend Foundations | Plan authentication, RBAC, schema baseline, migrations, seeds. | - Auth/RBAC implementation plan (see [`docs/architecture/solution-architecture.md`](../architecture/solution-architecture.md#security-architecture)) <br> - Testing approach (see [`docs/testing/test-strategy.md`](../testing/test-strategy.md)) | Engineering backlog for Auth/Categories ready. |
-| 2 — Registry & Moderation | Finalize domain model, pagination, caching, moderation flows. | - Data model schematics (see [`docs/data/json-schemas`](../data/json-schemas)) <br> - Moderation sequence diagram (see [`docs/architecture/diagrams/moderation-sequence.md`](../architecture/diagrams/moderation-sequence.md)) | Tickets with acceptance criteria approved. |
-| 3 — Admin UI MVP | IA, routing, state, localization wiring for admin console. | - Admin UI flows (see [`docs/ux/ui-spec.md`](../ux/ui-spec.md#admin-flows)) <br> - Task list in [`docs/backlog/product-backlog.csv`](../backlog/product-backlog.csv) | MVP scope frozen and estimated. |
-| 4 — Admin UI Complete | Add exclusions editor, user management, audit viewer, a11y polish. | - Updated backlog stories <br> - Accessibility guidelines (see [`docs/ux/ui-spec.md`](../ux/ui-spec.md#accessibility)) | Feature-complete admin console spec. |
-| 5 — Android Skeleton | Navigation graph, onboarding, bottom nav, category sheet, locale switch. | - Android architecture plan (see [`docs/architecture/solution-architecture.md`](../architecture/solution-architecture.md#android-architecture)) <br> - Screen specs (see [`docs/ux/ui-spec.md`](../ux/ui-spec.md#android-screens)) | UI kit approved. |
-| 6 — Lists & Home Rules | Paging, “3-latest” logic, error handling. | - Paging contract (see [`docs/api/openapi-draft.yaml`](../api/openapi-draft.yaml#components-schemas-CursorPagination)) <br> - Test cases (see [`docs/testing/test-strategy.md`](../testing/test-strategy.md#android-client)) | QA checklist ready. |
-| 7 — Channel/Playlist Details | Tab behaviors, deep links, exclusions enforcement. | - Sequence diagrams (see [`docs/architecture/diagrams/channel-tabs-sequence.md`](../architecture/diagrams/channel-tabs-sequence.md)) | Test matrix in [`docs/testing/test-strategy.md`](../testing/test-strategy.md). |
-| 8 — Player & Background Audio | ExoPlayer, PiP, captions, quality selector, background controls. | - Media session plan (see [`docs/architecture/solution-architecture.md`](../architecture/solution-architecture.md#playback-engine)) | Reliability scenarios documented. |
-| 9 — Downloads & Offline | Queue, notifications, policy gating, storage quotas. | - Offline policy (see [`docs/security/threat-model.md`](../security/threat-model.md#policy-controls)) <br> - Storage strategy in [`docs/architecture/solution-architecture.md`](../architecture/solution-architecture.md#offline-downloads) | Storage & policy checklist complete. |
-| 10 — Perf & Security Hardening | Caching, performance budgets, pen-test prep. | - Perf plan (see [`docs/architecture/solution-architecture.md`](../architecture/solution-architecture.md#performance)) <br> - Security checklist (see [`docs/security/threat-model.md`](../security/threat-model.md#controls)) | Sign-off by security & performance leads. |
-| 11 — i18n & Accessibility Polish | Localization QA, bidi, numeral handling, TalkBack. | - Localization QA guide (see [`docs/i18n/strategy.md`](../i18n/strategy.md#qa-guidelines)) | Compliance report delivered. |
-| 12 — Beta & Launch | Telemetry, crash reporting, rollout & rollback plan. | - Launch checklist (see [`docs/testing/test-strategy.md`](../testing/test-strategy.md#release-management)) | Go-live approval. |
+## Phase 0 — Discovery & Contracts
+**Estimate**: 2 calendar weeks cross-discipline (Product, Architecture, UX, Security).
 
-## Dependencies & Milestones
-- Phase 1 depends on Phase 0 sign-off.
-- Android Phases (5–9) depend on backend API stability from Phases 1–2.
-- Localization polish (Phase 11) requires UI text freeze.
-- Launch (Phase 12) depends on prior phase exit criteria being met.
+**Goals**
+- Capture the product vision, success metrics, and constraints in `docs/vision/vision.md`.
+- Produce canonical contracts: API draft, architecture diagrams, UX spec, and i18n plan.
+- Establish traceability between requirements, future APIs, and acceptance criteria.
 
-See [`docs/backlog/product-backlog.csv`](../backlog/product-backlog.csv) for story-level planning.
+**Proposed Diff**
+- `README.md`: orient contributors on how to consume the design artifacts.
+- `docs/api/openapi-draft.yaml`: end-to-end endpoint coverage per brief.
+- `docs/architecture/solution-architecture.md` + `docs/architecture/diagrams/*.md`: C4 + key sequences.
+- `docs/ux/ui-spec.md` + `docs/ux/design-tokens.json`: UI contract and tokens.
+- `docs/i18n/strategy.md`, `docs/testing/test-strategy.md`, `docs/security/threat-model.md`.
+
+**Tests**
+- Structured stakeholder review covering Product, Engineering, Design, Localization.
+- OpenAPI validation (`spectral`, TODO) and schema cross-check against `docs/data/json-schemas`.
+- Accessibility + i18n heuristic review of UI spec (contrast, RTL, bidi scenarios).
+
+**Implement**
+- Facilitate discovery workshops; log assumptions in `docs/vision/vision.md`.
+- Draft and iterate on diagrams + contracts; ensure all artifacts cite dependencies.
+- Populate `docs/backlog/product-backlog.csv` with epic/story seeds tagged to Phase 0.
+
+**Reflect**
+- Record unresolved risks in `docs/risk-register.md`.
+- Summarize stakeholder feedback and acceptance status inside `docs/acceptance/criteria.md` references.
+
+## Phase 1 — Backend Foundations (Plan)
+**Estimate**: 3 engineering weeks (backend + DevOps pairing).
+
+**Goals**
+- Finalize backend auth/RBAC, migration, and seeding plan aligned with Phase 0 contracts.
+- Detail caching, persistence, and seed data strategies before implementation.
+- Produce ticket-ready backlog entries for auth, categories, migrations, and CI scaffolding.
+
+**Proposed Diff**
+- `docs/roadmap/phase-1-backend-plan.md`: ticketized plan using Estimate/Goals/Proposed diff/Tests/Implement/Reflect format.
+- `docs/backlog/product-backlog.csv`: refine BACK-* stories with acceptance IDs.
+- `docs/api/openapi-draft.yaml`: annotate auth endpoints with RBAC + rate-limit notes.
+- `docs/testing/test-strategy.md`: expand Testcontainers + security regression coverage detail.
+
+**Tests**
+- Design review with Backend + Security leads focusing on JWT rotation, Redis usage, and Flyway strategy.
+- Schema sanity check ensuring locale maps and category slugs satisfy data requirements.
+- Risk assessment update verifying mitigations for seeding + bootstrap flows.
+
+**Implement**
+- Write migration design notes (naming, rollback strategy) inside `phase-1-backend-plan.md`.
+- Define integration test matrix referencing acceptance criteria IDs (AC-BE-001..).
+- Update backlog with groomed tasks including effort, dependencies, and owners placeholder.
+
+**Reflect**
+- Capture open questions (e.g., admin bootstrap secrets handling) and feed into Phase 2 prerequisites.
+- Adjust risk register likelihood/impact based on backend findings.
+
+## Phase 2 — Registry & Moderation (Plan)
+**Estimate**: 3 engineering weeks (backend focus with moderation stakeholder input).
+
+**Goals**
+- Lock data model for channels/playlists/videos including pagination policy and cache invalidation rules.
+- Define moderation proposal lifecycle and exclusions interplay.
+- Specify blended admin search contract returning channels/playlists/videos with include/exclude state and bulk semantics.
+- Produce ready-to-build tickets for registry endpoints, moderation workflows, and caching.
+
+**Proposed Diff**
+- `docs/data/json-schemas/*.json`: finalize catalogue + moderation schemas (ensure ≥1 category requirement).
+- `docs/api/openapi-draft.yaml`: document pagination parameters, error taxonomy, cache headers, and blended `/admin/search` response.
+- `docs/architecture/diagrams/moderation-sequence.md` & `channel-tabs-sequence.md`: confirm flows.
+- `docs/roadmap/phases-4-12-ticket-breakdown.md`: seed Phase 2 section with tickets.
+
+**Tests**
+- Architecture review covering cache invalidation, Redis TTL, and category enforcement.
+- Schema round-trip validation (example payloads exercised through `jsonschema` tooling TBD).
+- Moderation policy walkthrough with content board to validate statuses + audit coverage.
+
+**Implement**
+- Write ticket entries (MOD-*, BACK-*) in backlog referencing acceptance IDs (AC-REG-001, AC-REG-002, AC-ADM-006/007).
+- Document cache warming + invalidation approach within architecture doc (cross-link tests).
+- Update threat model with moderation abuse scenarios discovered.
+
+**Reflect**
+- Identify dependencies for Admin UI (Phase 3) and Android (Phase 6+) needing stable API fields.
+- Note outstanding legal/policy review items for exclusions in risk register.
+
+## Phase 3 — Admin UI MVP (Plan)
+**Estimate**: 4 engineering weeks (frontend + localization pairing).
+
+**Goals**
+- Specify admin IA, routing, shared state, and localization wiring for MVP scope.
+- Detail data table contracts for registry lists with cursor pagination.
+- Lock the Search & Import workspace that mirrors YouTube blended results, tri-state include/exclude toggles, and tabbed channel/playlist drawers.
+- Define tasks for locale switcher, initial translations, and moderation queue UI.
+
+**Proposed Diff**
+- `docs/roadmap/phase-3-admin-mvp-tickets.md`: update tickets to required format with design references only.
+- `docs/ux/ui-spec.md`: append admin flows/table specs plus Search & Import workspace/drawer specs.
+- `docs/api/openapi-draft.yaml`: adjust `/admin/search` response to blended schema with include/exclude state.
+- `docs/data/json-schemas`: add admin search result schemas and excluded ID lists on channel/playlist detail.
+- `docs/i18n/strategy.md`: clarify admin locale switcher + Accept-Language handling.
+- `docs/backlog/product-backlog.csv`: enrich ADMIN-* stories with estimates + acceptance IDs.
+
+**Tests**
+- Design QA: alignment of admin wireframes with tokens + accessibility heuristics.
+- Localization review verifying copy coverage for en/ar/nl with ICU placeholders.
+- Usability walkthrough with moderators to confirm queue ergonomics.
+
+**Implement**
+- Produce ticket breakdown covering locale switcher, registry filters, search/import workspace, moderation queue, dashboard metrics contracts.
+- Capture API dependencies (e.g., `/admin/users`, `/moderation/proposals`, `/admin/search`) alongside expected response fields and include-state semantics.
+- Update testing strategy with Playwright + accessibility automation scope.
+
+**Reflect**
+- Document outstanding tooling needs (design assets, translation pipeline) and add to backlog.
+- Reassess risk register for admin UX debt or localization blockers.
+
+## Phase 4 — Admin UI Complete (Plan)
+**Estimate**: 4 engineering weeks (frontend + backend threading for exclusions/audit).
+
+**Goals**
+- Plan for exclusions editor, user management, audit viewer, and accessibility polish.
+- Ensure Admin backlog covers all acceptance criteria (AC-ADM-003..005, AC-A11Y-*).
+- Align frontend/backend sequencing so data contracts and UI ship together.
+
+**Proposed Diff**
+- `docs/roadmap/phases-4-12-ticket-breakdown.md`: refresh Phase 4 tickets to required format.
+- `docs/api/openapi-draft.yaml`: finalize exclusions endpoints, audit pagination details.
+- `docs/ux/ui-spec.md`: document exclusions/user management flows.
+- `docs/testing/test-strategy.md`: specify accessibility + e2e automation gating for admin.
+
+**Tests**
+- Accessibility review (WCAG AA) for admin components.
+- Security review for user admin flows (RBAC, audit logging).
+- Localization QA to ensure RTL admin experience remains intact.
+
+**Implement**
+- Ticketize front/back tasks for exclusions CRUD, audit table, user management UI.
+- Update backlog with dependency ordering + estimates.
+- Capture instrumentation requirements (metrics/toasts) to feed Phase 10.
+
+**Reflect**
+- Summarize admin readiness status; flag any features slipping to later phases.
+- Feed new risks (e.g., audit data volume) into risk register.
+
+## Phase 5 — Android Skeleton (Plan)
+**Estimate**: 3 engineering weeks (Android feature squad).
+
+**Goals**
+- Define navigation graph, onboarding flow, bottom navigation shell, global category filter.
+- Document locale switcher behavior and RTL mirroring on Android.
+- Prepare UI kit + layout specs for main surfaces (Splash, Onboarding, Home shell).
+
+**Proposed Diff**
+- `docs/ux/ui-spec.md`: expand Android sections with navigation, onboarding, and category sheet specs.
+- `docs/architecture/solution-architecture.md`: add Android nav + locale management subsections.
+- `docs/roadmap/phases-4-12-ticket-breakdown.md`: update Phase 5 tickets to required format.
+- `docs/testing/test-strategy.md`: note Android test harness (Macrobenchmark, Espresso) for skeleton pieces.
+
+**Tests**
+- Design QA ensuring mockups align with specs (Spacing, tokens, assets).
+- Accessibility/RTL review for onboarding and navigation.
+- Performance baseline capturing cold start metric instrumentation plan.
+
+**Implement**
+- Break down Android tasks (nav graph, onboarding carousel, DataStore for locale flag) in tickets with dependencies.
+- Document required backend stubs/mocks for navigation flows.
+- Outline instrumentation hooks for analytics + crash reporting to revisit in Phase 12.
+
+**Reflect**
+- Capture open questions on asset delivery (thumbnails, fonts) and offline storage constraints.
+- Update backlog with follow-on tasks for dynamic content once API stabilizes.
+
+## Phase 6 — Lists & Home Rules (Plan)
+**Estimate**: 3 engineering weeks (Android + backend pairing on paging rules).
+
+**Goals**
+- Specify Paging 3 integration, 3-latest per channel/playlist algorithm, error handling + retry UX.
+- Document filtering controls (Category, Length, Date, Popular) and data contract expectations.
+- Define test cases + metrics for home feed and list performance budgets.
+
+**Proposed Diff**
+- `docs/api/openapi-draft.yaml`: annotate list endpoints with sorting, filtering, cursor semantics.
+- `docs/testing/test-strategy.md`: add paging + performance test plans (Gatling + Android benchmarks).
+- `docs/ux/ui-spec.md`: detail filter interactions and skeleton states.
+- `docs/roadmap/phases-4-12-ticket-breakdown.md`: adjust Phase 6 tickets to new format.
+
+**Tests**
+- Algorithm review with backend leads focusing on fairness of 3-latest logic.
+- Performance modeling vs. 80KB payload budget.
+- QA test plan for offline fallback (cached lists) and error taxonomy alignment.
+
+**Implement**
+- Ticketize backend tasks for cursor services & caching invalidation; Android tasks for Paging adapters.
+- Document instrumentation needs (cache hit ratio, error rates) for metrics dashboard.
+- Extend acceptance criteria with pagination edge cases.
+
+**Reflect**
+- Identify data dependencies (thumbnail CDN, metadata update cadence) and log in risk register.
+- Record learnings to inform Phase 7 deep-linking and Phase 8 Up Next experience.
+
+## Phase 7 — Channel & Playlist Details (Plan)
+**Estimate**: 2.5 engineering weeks.
+
+**Goals**
+- Outline detail screens with tab behaviors (Videos/Live/Shorts/Playlists/Posts) and deep-link handling.
+- Document exclusions enforcement rules on detail pages.
+- Produce test matrix covering tab switching, state retention, and locale variations.
+
+**Proposed Diff**
+- `docs/ux/ui-spec.md`: add detail screen annotations + deep-link states.
+- `docs/api/openapi-draft.yaml`: ensure `/channels/{id}/...` and `/playlists/{id}` endpoints capture needed fields.
+- `docs/testing/test-strategy.md`: append Phase 7 test matrix references.
+- `docs/roadmap/phases-4-12-ticket-breakdown.md`: refresh Phase 7 tickets format.
+
+**Tests**
+- UX review verifying tab focus order + RTL mirroring.
+- Backend contract check for exclusions + up-next interplay.
+- QA scenario planning for offline/partially cached detail screens.
+
+**Implement**
+- Ticketize Android tasks (tabbed UI, state restoration, deep link routes) and backend tasks (tabbed data endpoints).
+- Update acceptance criteria with AC-AND-006/007 expansions for detail flows.
+- Plan analytics to observe tab engagement.
+
+**Reflect**
+- Document cross-phase dependencies (Phase 8 Player using detail context for Up Next).
+- Update risk register with potential API pagination edge cases discovered.
+
+## Phase 8 — Player & Background Audio (Plan)
+**Estimate**: 4 engineering weeks (Android + backend streaming focus).
+
+**Goals**
+- Define ExoPlayer configuration, MediaSession strategy, PiP behavior, audio-only toggle, quality selector, captions.
+- Document Up Next experience sourced from backend `/next-up` endpoint.
+- Outline reliability scenarios, including network transitions and playback recovery.
+
+**Proposed Diff**
+- `docs/architecture/solution-architecture.md`: expand Playback Engine section with sequence diagrams.
+- `docs/architecture/diagrams/player-session.md` (new): capture playback handshake, audio-only toggle, and download rights gating.
+- `docs/api/openapi-draft.yaml`: finalize `/videos/{id}`, `/next-up` fields (streams, captions, bookmarks, download policy).
+- `docs/testing/test-strategy.md`: add Player reliability suite + metrics gating.
+- `docs/roadmap/phases-4-12-ticket-breakdown.md`: update Phase 8 tickets to new format.
+
+**Tests**
+- Media playback design review with Android audio experts.
+- Security review for download authorization + token gating.
+- Performance modeling for buffering, bitrate selection, and offline storage impact.
+
+**Implement**
+- Ticketize tasks for audio-only toggle, caption track selection, PiP controls, notification service.
+- Document backend needs (manifest generation, signed URLs) and caching layers.
+- Update acceptance criteria (AC-AND-003, AC-DL-004, AC-OBS-001) for playback scenarios.
+
+**Reflect**
+- Capture instrumentation + analytics requirements for playback KPIs.
+- Note outstanding licensing/legal compliance tasks for offline audio/video.
+
+## Phase 9 — Downloads & Offline (Plan)
+**Estimate**: 3.5 engineering weeks (Android + backend).
+
+**Goals**
+- Plan download queue, notifications, pause/resume/cancel flows, storage quotas, and policy gating.
+- Define EULA acceptance workflow and backend enforcement.
+- Outline storage + encryption strategy with compliance requirements.
+
+**Proposed Diff**
+- `docs/security/threat-model.md`: extend policy controls + threat scenarios for offline media.
+- `docs/architecture/solution-architecture.md`: add downloads architecture subsection.
+- `docs/testing/test-strategy.md`: update with download service tests and storage quota automation.
+- `docs/roadmap/phases-4-12-ticket-breakdown.md`: adjust Phase 9 tickets format.
+- `docs/acceptance/criteria.md`: expand downloads section with new ACs.
+
+**Tests**
+- Security/privacy review for offline storage & EULA gating.
+- Performance test for download throughput + battery impact.
+- QA matrix covering partial downloads, network changes, storage exhaustion.
+
+**Implement**
+- Ticketize backend manifest generation, token revocation on logout, Android foreground service, notification UI.
+- Document policy flags + admin controls for enabling downloads.
+- Update backlog with compliance tasks (legal review, EULA copy localization).
+
+**Reflect**
+- Record open compliance/legal risk follow-ups.
+- Note metrics to monitor (downloads_active, storage_usage) feeding Phase 10.
+
+## Phase 10 — Performance & Security Hardening (Plan)
+**Estimate**: 3 engineering weeks (multi-discipline strike team).
+
+**Goals**
+- Consolidate caching, performance budgets, pen-test checklist, dependency policy.
+- Define SLIs/SLOs for backend, admin, Android clients.
+- Prepare security threat exercises and mitigation backlog.
+
+**Proposed Diff**
+- `docs/security/threat-model.md`: add pen-test checklist, dependency governance.
+- `docs/testing/test-strategy.md`: document performance benchmarking suites + alert thresholds.
+- `docs/architecture/solution-architecture.md`: include observability + scaling plans.
+- `docs/risk-register.md`: update residual risks and mitigation owners.
+- `docs/roadmap/phases-4-12-ticket-breakdown.md`: ensure Phase 10 tickets use new format.
+
+**Tests**
+- Performance capacity planning review with Ops.
+- Security tabletop exercise review (JWT rotation, incident response).
+- Tooling validation (Gatling, OWASP ZAP, dependency scanners).
+
+**Implement**
+- Ticketize caching improvements, load test scripts, security hardening tasks.
+- Update backlog with SLO monitoring + alert configuration tasks.
+- Document release gating metrics ahead of Phase 12 launch.
+
+**Reflect**
+- Capture outcomes of load/security reviews and adjust risk register accordingly.
+- Highlight outstanding tech debt items for leadership prioritization.
+
+## Phase 11 — i18n & Accessibility Polish (Plan)
+**Estimate**: 2 engineering weeks (localization + QA + design).
+
+**Goals**
+- Conduct full localization audit for en/ar/nl plus bidi/numeric checks.
+- Validate accessibility (TalkBack, keyboard navigation, contrast) across admin + Android.
+- Document compliance report summarizing readiness.
+
+**Proposed Diff**
+- `docs/i18n/strategy.md`: add QA checklist results and tooling references.
+- `docs/testing/test-strategy.md`: include localization regression automation and accessibility testing playbook.
+- `docs/acceptance/criteria.md`: mark AC-I18N and AC-A11Y items with verification notes.
+- `docs/roadmap/phases-4-12-ticket-breakdown.md`: update Phase 11 tickets format.
+
+**Tests**
+- Localization QA sessions with native speakers covering UI + error states.
+- Accessibility testing on devices (TalkBack, Switch Access) and admin (axe-core).
+- Regression pass for locale toggling, numeral display, layout mirroring.
+
+**Implement**
+- Ticketize translation sign-off, screenshot cataloging, accessibility fixes.
+- Update backlog with residual issues requiring engineering follow-up.
+- Produce compliance report stored under `docs/acceptance` or `docs/i18n`.
+
+**Reflect**
+- Summarize residual localization risks and plan for post-launch updates.
+- Feed lessons learned into product backlog for future locale expansion.
+
+## Phase 12 — Beta & Launch (Plan)
+**Estimate**: 3 engineering weeks (cross-discipline launch readiness).
+
+**Goals**
+- Define telemetry, crash reporting, beta program, release/rollback plan, and SLO monitoring.
+- Produce launch checklist with owner matrix and go/no-go criteria.
+- Align marketing/support readiness with product capabilities.
+
+**Proposed Diff**
+- `docs/testing/test-strategy.md`: expand Release Management section with telemetry + rollout steps.
+- `docs/acceptance/criteria.md`: add launch checklist linkage and go-live requirements.
+- `docs/risk-register.md`: update with launch-specific risks (store approvals, CDN readiness).
+- `docs/backlog/product-backlog.csv`: append launch tasks (telemetry setup, beta feedback loop).
+- `docs/roadmap/phases-4-12-ticket-breakdown.md`: finalize Phase 12 tickets format.
+
+**Tests**
+- Beta program dry run including crash/analytics verification.
+- Operational readiness review (incident response, on-call runbook).
+- Rollback simulation for backend deploy + Play Store staged rollout.
+
+**Implement**
+- Ticketize telemetry instrumentation, crash reporting integration, beta cohort management, release comms.
+- Produce launch checklist artifact in `docs/acceptance/launch-checklist.md` (to be created).
+- Coordinate with Ops/Support to finalize on-call and escalation procedures.
+
+**Reflect**
+- Document launch retrospective inputs, capturing metrics and stakeholder sign-off.
+- Plan post-launch iteration backlog (Phase 13+ placeholder) if required.
+
+## Dependencies & Cross-Cutting Notes
+- Phase 1 depends on Phase 0 sign-off; later phases inherit stabilized contracts.
+- Android Phases (5–9) rely on backend registry stability (Phase 1–2) and player APIs (Phase 8).
+- Localization polish (Phase 11) requires UI text freeze post Phase 8/9.
+- Launch (Phase 12) contingent on completion of all prior phase exit criteria.
+
+Refer to `docs/backlog/product-backlog.csv` for story-level tracking and `docs/acceptance/criteria.md` for traceability.

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AdminSearchChannelResult",
+  "allOf": [
+    { "$ref": "channel-summary.json" },
+    {
+      "type": "object",
+      "required": ["includeState", "excludedItemCounts"],
+      "properties": {
+        "includeState": {
+          "type": "string",
+          "enum": ["NOT_INCLUDED", "INCLUDED", "EXCLUDED"]
+        },
+        "excludedItemCounts": {
+          "type": "object",
+          "required": ["videos", "playlists"],
+          "properties": {
+            "videos": { "type": "integer", "minimum": 0 },
+            "playlists": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "bulkEligible": { "type": "boolean", "default": true }
+      }
+    }
+  ]
+}

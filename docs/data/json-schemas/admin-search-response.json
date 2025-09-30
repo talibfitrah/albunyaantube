@@ -2,18 +2,21 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "AdminSearchResponse",
   "type": "object",
-  "required": ["kind", "results"],
+  "required": ["query", "channels", "playlists", "videos"],
   "properties": {
-    "kind": { "type": "string", "enum": ["CHANNEL", "PLAYLIST", "VIDEO"] },
-    "results": {
+    "query": { "type": "string" },
+    "channels": {
       "type": "array",
-      "items": {
-        "oneOf": [
-          { "$ref": "channel-summary.json" },
-          { "$ref": "playlist-summary.json" },
-          { "$ref": "video-summary.json" }
-        ]
-      }
+      "items": { "$ref": "admin-search-channel-result.json" }
+    },
+    "playlists": {
+      "type": "array",
+      "items": { "$ref": "admin-search-playlist-result.json" }
+    },
+    "videos": {
+      "type": "array",
+      "items": { "$ref": "admin-search-video-result.json" }
     }
-  }
+  },
+  "additionalProperties": false
 }

@@ -86,6 +86,29 @@ Each screen references the mockups. Layout measurements assume 360dp width basel
 - Data tables use sticky headers, column sorting, 16px rows, inline badges for statuses.
 - Forms for categories and content editing use i18n input tabs (en/ar/nl). See [`docs/i18n/strategy.md`](../i18n/strategy.md#admin-ui).
 
+### Search & Import Workspace
+- Global search input centered atop the workspace with pill-shaped field, 12px inset shadow, and inline locale-aware placeholder (e.g., “Search Qur’an”). Search triggers on Enter or Search icon press; results update in place without page reload.
+- Results view mirrors YouTube’s blended layout: stacked sections for Channels, Playlists, and Videos rendered in a single scroll surface. Each section title (H2) remains sticky while its cards scroll.
+- Cards reuse existing channel/playlist/video summary components with 120×120 thumbnails (channels) or 16:9 previews (playlists/videos) and show subscriber/video counts. Buttons on the right expose the Include/Exclude toggle described below.
+
+#### Include / Exclude Controls
+- Every result row includes a tri-state toggle (`Include`, `Pending`, `Excluded`). Default is `Pending` for unseen IDs, `Include` for already allow-listed items, and `Excluded` when the parent has explicit exclusions.
+- Bulk actions: a multi-select checkbox column enables selecting multiple items per section. When ≥1 selected, a sticky bulk action bar appears with `Include Selected`, `Exclude Selected`, and `Clear Selection` buttons. Bulk confirmations summarize how many items will be affected and warn if they belong to different parent channels/playlists.
+- Tooltips surface localized explanations (e.g., “Excluded items remain hidden in Albunyaan Tube even if the channel is included”).
+
+#### Channel Detail Drawer
+- Selecting a channel card opens a right-aligned drawer (720px wide) replicating YouTube’s tabbed channel detail: tabs for Videos, Shorts, Live, Playlists, Posts. Drawer header shows avatar, subscriber counts, and Include/Exclude toggle for the channel itself.
+- Each tab lists child items with inline toggles and bulk selection identical to the search results surface. Tabs lazy-load on first entry and retain scroll position while the drawer stays open.
+- Drawer footer includes `Apply Changes` and `Discard` buttons; closing without applying prompts a confirmation when pending modifications exist.
+
+#### Playlist Detail Drawer
+- Playlist cards open a drawer mirroring YouTube’s playlist layout: hero image left, metadata on right, followed by ordered video list. Each video row exposes Include/Exclude toggle. Bulk select supports range selection (shift+click) and an “Exclude All” control for rapid curation.
+
+#### Interaction States
+- Loading states use skeleton cards; errors render inline banners at top of each section with retry action.
+- Keyboard navigation: Tab focuses search field, arrow keys navigate results, space toggles selection; bulk bar is reachable via Shift+Tab.
+- RTL: section headers, counts, and toggles mirror positions; bulk bar anchors bottom-right in RTL contexts.
+
 ## Accessibility & Localization
 - Contrast ratios ≥4.5:1; ensure success color on white meets 3:1 for large text.
 - Provide TalkBack labels for media controls (e.g., “Audio-only playback”).
