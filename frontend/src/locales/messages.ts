@@ -27,13 +27,34 @@ export const messages = {
     dashboard: {
       heading: 'Salaam, welcome back',
       subtitle: 'Review the latest moderation activity and registry health.',
+      lastUpdated: 'Last updated {timestamp}',
       cards: {
         pendingModeration: 'Pending moderation',
         pendingModerationCaption: 'Awaiting review',
         categories: 'Categories',
         categoriesCaption: 'Allow-listed topics',
         moderators: 'Moderators',
-        moderatorsCaption: 'Active staff'
+        moderatorsCaption: 'Active staff',
+        deltaUp: 'Up {value} vs previous period',
+        deltaDown: 'Down {value} vs previous period',
+        deltaFlat: 'No change vs previous period',
+        previousValue: 'Previous: {value}',
+        categoriesNewThisPeriod: '{count} new this period',
+        categoriesPreviousTotal: 'Previously {count}',
+        thresholdBreached: 'Action required'
+      },
+      timeframe: {
+        label: 'Timeframe',
+        last24h: 'Last 24 hours',
+        last7: 'Last 7 days',
+        last30: 'Last 30 days'
+      },
+      error: {
+        title: 'Unable to load dashboard metrics.',
+        retry: 'Retry'
+      },
+      warnings: {
+        stale: 'Metrics may be out of date. Refresh to update.'
       }
     },
     registry: {
@@ -233,13 +254,34 @@ export const messages = {
     dashboard: {
       heading: 'سلام عليكم، مرحباً بعودتك',
       subtitle: 'راجع أحدث نشاط الإشراف وصحة السجل.',
+      lastUpdated: 'آخر تحديث {timestamp}',
       cards: {
         pendingModeration: 'طلبات قيد المراجعة',
         pendingModerationCaption: 'بانتظار الموافقة',
         categories: 'الفئات',
         categoriesCaption: 'الموضوعات المسموح بها',
         moderators: 'المشرفون',
-        moderatorsCaption: 'أعضاء نشطون'
+        moderatorsCaption: 'أعضاء نشطون',
+        deltaUp: 'ارتفاع بنسبة {value} مقارنة بالفترة السابقة',
+        deltaDown: 'انخفاض بنسبة {value} مقارنة بالفترة السابقة',
+        deltaFlat: 'لا تغيير مقارنة بالفترة السابقة',
+        previousValue: 'القيمة السابقة: {value}',
+        categoriesNewThisPeriod: 'جديد خلال الفترة: {count}',
+        categoriesPreviousTotal: 'الإجمالي السابق: {count}',
+        thresholdBreached: 'يتطلب إجراءً'
+      },
+      timeframe: {
+        label: 'الإطار الزمني',
+        last24h: 'آخر 24 ساعة',
+        last7: 'آخر 7 أيام',
+        last30: 'آخر 30 يومًا'
+      },
+      error: {
+        title: 'تعذر تحميل مؤشرات لوحة التحكم.',
+        retry: 'إعادة المحاولة'
+      },
+      warnings: {
+        stale: 'قد تكون المؤشرات قديمة. قم بالتحديث للحصول على أحدث القيم.'
       }
     },
     registry: {
@@ -439,13 +481,34 @@ export const messages = {
     dashboard: {
       heading: 'Salaam, welkom terug',
       subtitle: 'Bekijk de laatste moderatie-activiteit en gezondheid van het register.',
+      lastUpdated: 'Laatst bijgewerkt {timestamp}',
       cards: {
         pendingModeration: 'Openstaande moderatie',
         pendingModerationCaption: 'Wacht op beoordeling',
         categories: 'Categorieën',
         categoriesCaption: 'Toegestane onderwerpen',
         moderators: 'Moderators',
-        moderatorsCaption: 'Actieve medewerkers'
+        moderatorsCaption: 'Actieve medewerkers',
+        deltaUp: 'Stijging van {value} ten opzichte van de vorige periode',
+        deltaDown: 'Daling van {value} ten opzichte van de vorige periode',
+        deltaFlat: 'Geen verandering ten opzichte van de vorige periode',
+        previousValue: 'Vorige waarde: {value}',
+        categoriesNewThisPeriod: 'Nieuw in deze periode: {count}',
+        categoriesPreviousTotal: 'Vorige totaal: {count}',
+        thresholdBreached: 'Actie nodig'
+      },
+      timeframe: {
+        label: 'Tijdsperiode',
+        last24h: 'Laatste 24 uur',
+        last7: 'Laatste 7 dagen',
+        last30: 'Laatste 30 dagen'
+      },
+      error: {
+        title: 'Dashboardstatistieken kunnen niet worden geladen.',
+        retry: 'Opnieuw proberen'
+      },
+      warnings: {
+        stale: 'Statistieken kunnen verouderd zijn. Vernieuw om bij te werken.'
       }
     },
     registry: {

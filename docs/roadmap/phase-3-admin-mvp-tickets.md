@@ -161,12 +161,12 @@ Status: Planned
 ```yaml
 meta:
   id: ADMIN-MVP-05
-  status: planned
-  owner: TBD-frontend-backend
+  status: in-review
+  owner: Frontend
   depends: []
-  lastReviewed: 2025-09-30
+  lastReviewed: 2025-10-02
 ```
-Status: Planned
+Status: In review
 **Estimate**: 3h (backend + frontend coordination).
 
 **Goals**
@@ -177,21 +177,25 @@ Status: Planned
 **Propose diff**
 - `docs/api/openapi-draft.yaml`: add `/admin/dashboard` schema.
 - `docs/architecture/solution-architecture.md`: outline aggregation strategy + caching.
-- `frontend/src/services/dashboard.ts` (planned) + composable to fetch metrics.
+- `frontend/src/services/dashboard.ts` + composable to fetch metrics.
 
 **Tests**
+- Vitest coverage for `useDashboardMetrics` composable + `DashboardView` wiring.
 - Integration test plan verifying counts with seeded data.
 - Contract test ensuring schema matches dashboard needs.
 - Playwright/Visual check for skeleton/error UI.
 
 **Implement**
+- `frontend/src/composables/useDashboardMetrics.ts` normalizes API response, warnings, and timeframe switching.
+- `frontend/src/views/DashboardView.vue` renders timeframe controls plus skeleton/error/warning states.
+- `frontend/src/services/dashboard.ts` issues authorized requests to `/api/v1/admins/dashboard`.
 - Document backend responsibilities (RBAC, audit logging) and add to backlog (BACK-XX new).
-- Define frontend state machine (loading → success/error) referencing UI spec.
 - Note metrics instrumentation for Phase 10 SLO tracking.
 
 **Reflect**
+- Backend aggregation/cache refresh still pending; coordinate with platform owners.
 - Identify additional KPIs requested by stakeholders (log backlog items).
-- Update acceptance criteria if new metrics become mandatory.
+- Update acceptance criteria if new metrics become mandatory once backend SLA confirmed.
 
 ## ADMIN-MVP-06 — Moderation Queue UX Polish
 ```yaml

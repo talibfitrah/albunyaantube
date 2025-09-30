@@ -4,27 +4,182 @@
       <h1>{{ t('dashboard.heading') }}</h1>
       <p>{{ t('dashboard.subtitle') }}</p>
     </header>
-    <div class="cards">
-      <article class="card" v-for="card in cards" :key="card.title">
-        <div class="card-title">{{ t(card.title) }}</div>
-        <div class="card-value">{{ card.value }}</div>
-        <div class="card-caption">{{ t(card.caption) }}</div>
-      </article>
+
+    <div class="dashboard-toolbar">
+      <div class="timeframe" role="radiogroup" :aria-label="t('dashboard.timeframe.label')">
+        <span class="timeframe-label">{{ t('dashboard.timeframe.label') }}</span>
+        <div class="timeframe-options">
+          <button
+            v-for="option in timeframeOptions"
+            :key="option.value"
+            type="button"
+            class="timeframe-button"
+            :class="{ active: option.value === timeframe }"
+            role="radio"
+            :aria-checked="option.value === timeframe"
+            @click="handleTimeframe(option.value)"
+          >
+            {{ t(option.labelKey) }}
+          </button>
+        </div>
+      </div>
+      <div v-if="lastUpdatedLabel" class="last-updated">
+        {{ t('dashboard.lastUpdated', { timestamp: lastUpdatedLabel }) }}
+      </div>
+    </div>
+
+    <div v-if="warningMessages.length" class="warning-banner" role="alert">
+      <ul>
+        <li v-for="message in warningMessages" :key="message">{{ message }}</li>
+      </ul>
+    </div>
+
+    <div v-if="errorMessage" class="error-panel" role="alert">
+      <p>{{ t('dashboard.error.title') }}</p>
+      <p class="error-detail">{{ errorMessage }}</p>
+      <button type="button" class="retry" @click="handleRetry">
+        {{ t('dashboard.error.retry') }}
+      </button>
+    </div>
+
+    <div v-else>
+      <div v-if="isLoading && !cards.length" class="cards cards-skeleton">
+        <article v-for="index in 3" :key="index" class="card card-skeleton" aria-hidden="true">
+          <div class="skeleton-line short"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line thin"></div>
+        </article>
+      </div>
+
+      <div v-else class="cards" aria-live="polite">
+        <article class="card" v-for="card in cards" :key="card.id">
+          <div class="card-title">{{ t(card.titleKey) }}</div>
+          <div class="card-value">{{ card.value }}</div>
+          <div class="card-caption">{{ t(card.captionKey) }}</div>
+          <ul class="card-meta">
+            <li v-for="line in card.meta" :key="line">{{ line }}</li>
+          </ul>
+          <span v-if="card.threshold" class="card-warning">{{ t('dashboard.cards.thresholdBreached') }}</span>
+        </article>
+      </div>
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useDashboardMetrics } from '@/composables/useDashboardMetrics';
+import type { DashboardCard } from '@/composables/useDashboardMetrics';
+import type { DashboardTimeframe } from '@/types/dashboard';
+import { formatDateTime, formatNumber } from '@/utils/formatters';
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
+const metrics = useDashboardMetrics();
 
-const cards = computed(() => [
-  { title: 'dashboard.cards.pendingModeration', value: '—', caption: 'dashboard.cards.pendingModerationCaption' },
-  { title: 'dashboard.cards.categories', value: '—', caption: 'dashboard.cards.categoriesCaption' },
-  { title: 'dashboard.cards.moderators', value: '—', caption: 'dashboard.cards.moderatorsCaption' }
-]);
+const currentLocale = computed(() => locale.value);
+
+const timeframeOptions: Array<{ value: DashboardTimeframe; labelKey: string }> = [
+  { value: 'LAST_24_HOURS', labelKey: 'dashboard.timeframe.last24h' },
+  { value: 'LAST_7_DAYS', labelKey: 'dashboard.timeframe.last7' },
+  { value: 'LAST_30_DAYS', labelKey: 'dashboard.timeframe.last30' }
+];
+
+const timeframe = computed(() => metrics.timeframe.value);
+
+const cards = computed(() => buildDisplayCards(metrics.cards.value, currentLocale.value));
+
+const warningMessages = computed(() => {
+  if (!metrics.warnings.value.length) {
+    return [] as string[];
+  }
+  return metrics.warnings.value.map((warning) => {
+    if (warning === 'STALE_DATA') {
+      return t('dashboard.warnings.stale');
+    }
+    return warning;
+  });
+});
+
+const lastUpdatedLabel = computed(() => {
+  const timestamp = metrics.lastUpdated.value;
+  if (!timestamp) {
+    return null;
+  }
+  return formatDateTime(timestamp, currentLocale.value);
+});
+
+const isLoading = computed(() => metrics.isLoading.value);
+const errorMessage = computed(() => metrics.error.value);
+
+function formatPercent(value: number, localeCode: string): string {
+  const formatter = new Intl.NumberFormat(localeCode, {
+    style: 'percent',
+    maximumFractionDigits: 1
+  });
+  return formatter.format(value);
+}
+
+function buildDisplayCards(source: DashboardCard[], localeCode: string) {
+  return source.map((card) => {
+    if (card.kind === 'comparison') {
+      const current = formatNumber(card.metric.current, localeCode);
+      const previous = formatNumber(card.metric.previous, localeCode);
+      const diff = card.metric.current - card.metric.previous;
+      const base = card.metric.previous > 0 ? Math.abs(diff / card.metric.previous) : card.metric.current > 0 ? 1 : 0;
+      const percent = formatPercent(base, localeCode);
+      const trendKey = card.metric.trend === 'UP'
+        ? 'dashboard.cards.deltaUp'
+        : card.metric.trend === 'DOWN'
+          ? 'dashboard.cards.deltaDown'
+          : 'dashboard.cards.deltaFlat';
+      const meta = [
+        card.metric.trend === 'FLAT'
+          ? t('dashboard.cards.deltaFlat')
+          : t(trendKey, { value: percent }),
+        t('dashboard.cards.previousValue', { value: previous })
+      ];
+      return {
+        id: card.id,
+        titleKey: card.titleKey,
+        captionKey: card.captionKey,
+        value: current,
+        meta,
+        threshold: Boolean(card.metric.thresholdBreached)
+      };
+    }
+
+    const total = formatNumber(card.total, localeCode);
+    const newCount = formatNumber(card.newThisPeriod, localeCode);
+    const previous = formatNumber(card.previousTotal, localeCode);
+      return {
+        id: card.id,
+        titleKey: card.titleKey,
+        captionKey: card.captionKey,
+        value: total,
+        meta: [
+          t('dashboard.cards.categoriesNewThisPeriod', { count: newCount }),
+          t('dashboard.cards.categoriesPreviousTotal', { count: previous })
+        ],
+        threshold: false
+      };
+  });
+}
+
+function handleTimeframe(next: DashboardTimeframe) {
+  if (next === timeframe.value && metrics.cards.value.length) {
+    return;
+  }
+  metrics.changeTimeframe(next);
+}
+
+function handleRetry() {
+  metrics.refresh();
+}
+
+onMounted(() => {
+  metrics.refresh();
+});
 </script>
 
 <style scoped>
@@ -50,9 +205,110 @@ header p {
   color: var(--color-text-secondary);
 }
 
+.dashboard-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+}
+
+.timeframe {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.timeframe-label {
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+
+.timeframe-options {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.timeframe-button {
+  appearance: none;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: transparent;
+  color: var(--color-text-primary);
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.timeframe-button:hover,
+.timeframe-button:focus-visible {
+  background: var(--color-surface-alt);
+  outline: none;
+}
+
+.timeframe-button.active {
+  background: var(--color-brand);
+  color: var(--color-text-inverse);
+  border-color: var(--color-brand);
+}
+
+.last-updated {
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+
+.warning-banner {
+  background: rgba(255, 196, 0, 0.18);
+  border: 1px solid rgba(255, 196, 0, 0.45);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  color: var(--color-text-primary);
+}
+
+.warning-banner ul {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.error-panel {
+  background: rgba(217, 45, 32, 0.15);
+  border: 1px solid rgba(217, 45, 32, 0.35);
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.error-detail {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+}
+
+.retry {
+  align-self: flex-start;
+  appearance: none;
+  border: none;
+  background: var(--color-brand);
+  color: var(--color-text-inverse);
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.retry:hover,
+.retry:focus-visible {
+  background: var(--color-accent);
+  outline: none;
+}
+
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 1.25rem;
 }
 
@@ -80,5 +336,72 @@ header p {
 .card-caption {
   font-size: 0.85rem;
   opacity: 0.85;
+}
+
+.card-meta {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+}
+
+.card-warning {
+  align-self: flex-start;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  background: rgba(217, 45, 32, 0.2);
+  color: var(--color-text-inverse);
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.5rem;
+}
+
+.cards-skeleton .card {
+  background: var(--color-surface-alt);
+  color: transparent;
+}
+
+.card-skeleton {
+  position: relative;
+  overflow: hidden;
+}
+
+.skeleton-line {
+  height: 1.25rem;
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.skeleton-line.short {
+  width: 40%;
+}
+
+.skeleton-line.thin {
+  height: 0.75rem;
+  width: 60%;
+}
+
+.card-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.5) 50%, transparent 100%);
+  transform: translateX(-100%);
+  animation: shimmer 1.4s infinite;
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@media (max-width: 640px) {
+  .dashboard-toolbar {
+    align-items: flex-start;
+  }
 }
 </style>
