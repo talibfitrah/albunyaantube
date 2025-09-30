@@ -55,7 +55,12 @@ public class CategoryManagementController {
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<CategoryResponse> createCategory(@Valid @RequestBody CreateCategoryRequest request) {
-        var category = categoryService.createCategory(request.slug(), request.name(), request.description());
+        var category = categoryService.createCategory(
+            request.slug(),
+            request.name(),
+            request.description(),
+            request.subcategories()
+        );
         var response = CategoryResponse.fromCategory(category);
         return ResponseEntity
             .created(URI.create("/api/v1/admins/categories/" + response.id()))
@@ -67,7 +72,13 @@ public class CategoryManagementController {
         @PathVariable("id") UUID id,
         @Valid @RequestBody UpdateCategoryRequest request
     ) {
-        var category = categoryService.updateCategory(id, request.slug(), request.name(), request.description());
+        var category = categoryService.updateCategory(
+            id,
+            request.slug(),
+            request.name(),
+            request.description(),
+            request.subcategories()
+        );
         return ResponseEntity.ok(CategoryResponse.fromCategory(category));
     }
 

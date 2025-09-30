@@ -18,7 +18,11 @@ export const messages = {
       registry: 'Registry',
       moderation: 'Moderation',
       users: 'Users',
-      audit: 'Audit log'
+      audit: 'Audit log',
+      home: 'Home',
+      channels: 'Channels',
+      playlists: 'Playlists',
+      videos: 'Videos'
     },
     dashboard: {
       heading: 'Salaam, welcome back',

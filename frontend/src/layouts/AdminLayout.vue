@@ -63,8 +63,8 @@ async function handleLogout() {
 }
 
 .sidebar {
-  background: #0f172a;
-  color: white;
+  background: var(--color-surface-inverse);
+  color: var(--color-text-inverse);
   padding: 1.5rem 1rem;
   display: flex;
   flex-direction: column;
@@ -74,6 +74,7 @@ async function handleLogout() {
 .brand {
   font-size: 1.25rem;
   font-weight: 600;
+  color: var(--color-text-inverse);
 }
 
 nav {
@@ -85,20 +86,20 @@ nav {
 .nav-item {
   padding: 0.75rem 1rem;
   border-radius: 0.5rem;
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--color-text-inverse-muted);
   transition: background 0.2s ease, color 0.2s ease;
 }
 
 .nav-item:hover,
 .nav-item.active {
-  background: rgba(148, 163, 184, 0.2);
-  color: white;
+  background: var(--color-brand-soft);
+  color: var(--color-text-inverse);
 }
 
 .content {
   display: flex;
   flex-direction: column;
-  background: white;
+  background: var(--color-surface);
 }
 
 .topbar {
@@ -106,13 +107,13 @@ nav {
   justify-content: space-between;
   align-items: center;
   padding: 1.25rem 1.5rem;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .logout {
   border: none;
-  background: #dc2626;
-  color: white;
+  background: var(--color-danger);
+  color: var(--color-text-inverse);
   padding: 0.5rem 1rem;
   border-radius: 0.5rem;
   cursor: pointer;
@@ -120,12 +121,12 @@ nav {
 }
 
 .logout:hover {
-  background: #b91c1c;
+  background: var(--color-danger-strong);
 }
 
 main {
   padding: 1.5rem;
   flex: 1;
-  background: #f8fafc;
+  background: var(--color-bg);
 }
 </style>

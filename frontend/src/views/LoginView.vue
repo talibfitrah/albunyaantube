@@ -100,17 +100,17 @@ async function handleSubmit() {
   display: grid;
   place-items: center;
   padding: 2rem 1rem;
-  background: radial-gradient(circle at 10% 20%, rgba(14, 165, 233, 0.18) 0%, transparent 60%),
-    radial-gradient(circle at 90% 10%, rgba(99, 102, 241, 0.24) 0%, transparent 55%),
-    #0f172a;
+  background: radial-gradient(circle at 10% 20%, var(--gradient-auth-a) 0%, transparent 60%),
+    radial-gradient(circle at 90% 10%, var(--gradient-auth-b) 0%, transparent 55%),
+    var(--color-surface-inverse);
 }
 
 .panel {
   width: min(420px, 100%);
-  background: white;
+  background: var(--color-surface);
   padding: 2.5rem 2.25rem;
   border-radius: 1.25rem;
-  box-shadow: 0 40px 80px -32px rgba(15, 23, 42, 0.35);
+  box-shadow: var(--shadow-elevated);
   display: flex;
   flex-direction: column;
   gap: 2rem;
@@ -120,12 +120,12 @@ header h1 {
   margin: 0;
   font-size: 1.75rem;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--color-text-primary);
 }
 
 header p {
   margin: 0.5rem 0 0;
-  color: #475569;
+  color: var(--color-text-secondary);
 }
 
 form {
@@ -142,25 +142,25 @@ form {
 
 label {
   font-weight: 600;
-  color: #0f172a;
+  color: var(--color-text-primary);
 }
 
 input {
   padding: 0.75rem 0.85rem;
   border-radius: 0.75rem;
-  border: 1px solid #cbd5f5;
-  background: #f8fafc;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-alt);
   transition: border 0.2s ease, box-shadow 0.2s ease;
 }
 
 input:focus {
   outline: none;
-  border-color: #6366f1;
-  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.15);
+  border-color: var(--color-brand);
+  box-shadow: var(--shadow-focus);
 }
 
 .error {
-  color: #dc2626;
+  color: var(--color-danger);
   margin: 0;
   font-size: 0.875rem;
 }
@@ -169,8 +169,8 @@ input:focus {
   border: none;
   border-radius: 0.75rem;
   padding: 0.85rem 1rem;
-  background: linear-gradient(120deg, #6366f1, #0ea5e9);
-  color: white;
+  background: linear-gradient(120deg, var(--color-brand), var(--color-accent));
+  color: var(--color-text-inverse);
   font-weight: 600;
   cursor: pointer;
   transition: filter 0.2s ease;

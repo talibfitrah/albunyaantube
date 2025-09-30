@@ -13,10 +13,10 @@ const { t } = useI18n();
 
 <style scoped>
 .placeholder {
-  background: white;
+  background: var(--color-surface);
   border-radius: 1rem;
   padding: 2rem;
-  box-shadow: 0 10px 40px -24px rgba(15, 23, 42, 0.2);
+  box-shadow: var(--shadow-elevated);
 }
 
 h1 {
@@ -25,6 +25,6 @@ h1 {
 
 p {
   margin: 0;
-  color: #475569;
+  color: var(--color-text-secondary);
 }
 </style>

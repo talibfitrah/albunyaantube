@@ -122,9 +122,9 @@ async function handleRetry() {
 
 <style scoped>
 .registry-card {
-  background: white;
+  background: var(--color-surface);
   border-radius: 1rem;
-  box-shadow: 0 20px 45px -30px rgba(15, 23, 42, 0.35);
+  box-shadow: var(--shadow-elevated);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -132,19 +132,19 @@ async function handleRetry() {
 
 .card-header {
   padding: 1.5rem 1.75rem 1rem;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .card-header h2 {
   margin: 0;
   font-size: 1.125rem;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--color-text-primary);
 }
 
 .card-header p {
   margin: 0.375rem 0 0;
-  color: #475569;
+  color: var(--color-text-secondary);
   font-size: 0.95rem;
 }
 
@@ -161,22 +161,22 @@ async function handleRetry() {
 th {
   position: sticky;
   top: 0;
-  background: #f1f5f9;
-  color: #0f172a;
+  background: var(--color-surface-alt);
+  color: var(--color-text-primary);
   text-align: left;
   padding: 0.75rem 1.25rem;
   font-size: 0.9rem;
   font-weight: 600;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--color-border);
   z-index: 1;
 }
 
 td {
   padding: 0.75rem 1.25rem;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--color-border);
   vertical-align: middle;
   font-size: 0.95rem;
-  color: #1e293b;
+  color: var(--color-text-primary);
 }
 
 .numeric {
@@ -194,8 +194,8 @@ td {
   height: 48px;
   border-radius: 50%;
   object-fit: cover;
-  border: 1px solid #e2e8f0;
-  background: #cbd5f5;
+  border: 1px solid var(--color-border);
+  background: var(--color-brand-soft);
 }
 
 .entity-meta {
@@ -206,11 +206,11 @@ td {
 
 .entity-name {
   font-weight: 600;
-  color: #0f172a;
+  color: var(--color-text-primary);
 }
 
 .entity-subtitle {
-  color: #64748b;
+  color: var(--color-text-secondary);
   font-size: 0.85rem;
 }
 
@@ -224,8 +224,8 @@ td {
 }
 
 .category-tag {
-  background: #e2e8f0;
-  color: #0f172a;
+  background: var(--color-surface-alt);
+  color: var(--color-text-primary);
   padding: 0.25rem 0.75rem;
   border-radius: 999px;
   font-size: 0.8rem;
@@ -241,7 +241,12 @@ td {
 .skeleton-row {
   height: 16px;
   border-radius: 999px;
-  background: linear-gradient(90deg, #f8fafc 25%, #e2e8f0 50%, #f8fafc 75%);
+  background: linear-gradient(
+    90deg,
+    var(--color-surface-alt) 25%,
+    var(--color-border) 50%,
+    var(--color-surface-alt) 75%
+  );
   animation: shimmer 1.6s infinite;
 }
 
@@ -256,7 +261,7 @@ td {
 
 .empty-state {
   text-align: center;
-  color: #64748b;
+  color: var(--color-text-secondary);
   padding: 2rem 0;
 }
 
@@ -266,12 +271,12 @@ td {
   flex-direction: column;
   align-items: flex-start;
   gap: 0.75rem;
-  color: #b91c1c;
+  color: var(--color-danger);
 }
 
 .retry {
-  background: #0f172a;
-  color: white;
+  background: var(--color-brand);
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 0.5rem;
   padding: 0.5rem 1rem;
@@ -292,13 +297,13 @@ td {
 }
 
 .footer-status {
-  color: #475569;
+  color: var(--color-text-secondary);
   font-size: 0.9rem;
 }
 
 .pager {
-  background: #0f172a;
-  color: white;
+  background: var(--color-brand);
+  color: var(--color-text-inverse);
   border: none;
   padding: 0.5rem 1.25rem;
   border-radius: 0.75rem;
@@ -308,11 +313,11 @@ td {
 }
 
 .pager:disabled {
-  background: #94a3b8;
+  background: var(--color-disabled);
   cursor: not-allowed;
 }
 
 .pager:not(:disabled):hover {
-  background: #1e293b;
+  background: var(--color-accent);
 }
 </style>

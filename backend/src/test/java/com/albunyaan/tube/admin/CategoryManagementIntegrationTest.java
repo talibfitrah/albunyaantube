@@ -10,12 +10,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.albunyaan.tube.admin.dto.CategoryPageResponse;
 import com.albunyaan.tube.admin.dto.CategoryResponse;
 import com.albunyaan.tube.admin.dto.CreateCategoryRequest;
+import com.albunyaan.tube.admin.dto.SubcategoryRequest;
+import com.albunyaan.tube.admin.dto.SubcategoryResponse;
 import com.albunyaan.tube.admin.dto.UpdateCategoryRequest;
 import com.albunyaan.tube.auth.dto.LoginRequest;
 import com.albunyaan.tube.auth.dto.TokenResponse;
 import com.albunyaan.tube.support.IntegrationTestSupport;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,7 +41,8 @@ class CategoryManagementIntegrationTest extends IntegrationTestSupport {
         var createRequest = new CreateCategoryRequest(
             "stories",
             Map.of("en", "Stories"),
-            Map.of("en", "Story focused lectures")
+            Map.of("en", "Story focused lectures"),
+            List.of(new SubcategoryRequest(null, "stories-classics", Map.of("en", "Classics")))
         );
 
         var createResult = mockMvc
@@ -58,6 +62,12 @@ class CategoryManagementIntegrationTest extends IntegrationTestSupport {
 
         assertThat(created.slug()).isEqualTo("stories");
         assertThat(created.name()).containsEntry("en", "Stories");
+        assertThat(created.subcategories())
+            .singleElement()
+            .satisfies(subcategory -> {
+                assertThat(subcategory.slug()).isEqualTo("stories-classics");
+                assertThat(subcategory.name()).containsEntry("en", "Classics");
+            });
 
         var listResult = mockMvc
             .perform(
@@ -80,7 +90,15 @@ class CategoryManagementIntegrationTest extends IntegrationTestSupport {
         var updateRequest = new UpdateCategoryRequest(
             "storytime",
             Map.of("en", "Story Time"),
-            Map.of("en", "Updated description")
+            Map.of("en", "Updated description"),
+            List.of(
+                new SubcategoryRequest(
+                    created.subcategories().get(0).id(),
+                    "stories-classics",
+                    Map.of("en", "Classic Library")
+                ),
+                new SubcategoryRequest(null, "stories-modern", Map.of("en", "Modern Stories"))
+            )
         );
 
         var updateResult = mockMvc
@@ -100,6 +118,9 @@ class CategoryManagementIntegrationTest extends IntegrationTestSupport {
 
         assertThat(updated.slug()).isEqualTo("storytime");
         assertThat(updated.name()).containsEntry("en", "Story Time");
+        assertThat(updated.subcategories())
+            .extracting(SubcategoryResponse::slug)
+            .containsExactly("stories-classics", "stories-modern");
 
         mockMvc
             .perform(

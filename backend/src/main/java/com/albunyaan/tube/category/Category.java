@@ -11,6 +11,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -33,18 +35,32 @@ public class Category extends AuditableEntity {
     @Column(name = "description", columnDefinition = "jsonb", nullable = false)
     private final Map<String, String> description = new HashMap<>();
 
+    @Convert(converter = SubcategoryListConverter.class)
+    @Column(name = "subcategories", columnDefinition = "jsonb", nullable = false)
+    private final List<Subcategory> subcategories = new ArrayList<>();
+
     protected Category() {
         // JPA
     }
 
     public Category(String slug, Map<String, String> name) {
-        this(slug, name, Map.of());
+        this(slug, name, Map.of(), List.of());
     }
 
     public Category(String slug, Map<String, String> name, Map<String, String> description) {
+        this(slug, name, description, List.of());
+    }
+
+    public Category(
+        String slug,
+        Map<String, String> name,
+        Map<String, String> description,
+        List<Subcategory> subcategories
+    ) {
         this.slug = slug;
         this.name.putAll(name);
         this.description.putAll(description);
+        this.subcategories.addAll(subcategories);
     }
 
     public UUID getId() {
@@ -63,6 +79,10 @@ public class Category extends AuditableEntity {
         return Collections.unmodifiableMap(description);
     }
 
+    public List<Subcategory> getSubcategories() {
+        return Collections.unmodifiableList(subcategories);
+    }
+
     public void updateSlug(String slug) {
         this.slug = slug;
     }
@@ -75,5 +95,10 @@ public class Category extends AuditableEntity {
     public void updateDescription(Map<String, String> description) {
         this.description.clear();
         this.description.putAll(description);
+    }
+
+    public void updateSubcategories(List<Subcategory> subcategories) {
+        this.subcategories.clear();
+        this.subcategories.addAll(subcategories);
     }
 }

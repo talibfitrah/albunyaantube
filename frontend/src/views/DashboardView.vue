@@ -29,10 +29,10 @@ const cards = computed(() => [
 
 <style scoped>
 .panel {
-  background: white;
+  background: var(--color-surface);
   border-radius: 1rem;
   padding: 2rem;
-  box-shadow: 0 10px 40px -24px rgba(15, 23, 42, 0.4);
+  box-shadow: var(--shadow-elevated);
   display: flex;
   flex-direction: column;
   gap: 2rem;
@@ -42,12 +42,12 @@ header h1 {
   margin: 0;
   font-size: 1.75rem;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--color-text-primary);
 }
 
 header p {
   margin: 0.5rem 0 0;
-  color: #475569;
+  color: var(--color-text-secondary);
 }
 
 .cards {
@@ -57,8 +57,8 @@ header p {
 }
 
 .card {
-  background: linear-gradient(135deg, #0ea5e9, #6366f1);
-  color: white;
+  background: linear-gradient(135deg, var(--color-brand), var(--color-accent));
+  color: var(--color-text-inverse);
   border-radius: 0.75rem;
   padding: 1.5rem;
   display: flex;

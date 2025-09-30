@@ -406,10 +406,10 @@ async function handleRetry() {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  background: white;
+  background: var(--color-surface);
   border-radius: 1rem;
   padding: 1.75rem 2rem;
-  box-shadow: 0 20px 45px -30px rgba(15, 23, 42, 0.35);
+  box-shadow: var(--shadow-elevated);
   gap: 1rem;
   flex-wrap: wrap;
 }
@@ -418,12 +418,12 @@ async function handleRetry() {
   margin: 0;
   font-size: 1.5rem;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--color-text-primary);
 }
 
 .workspace-header p {
   margin: 0.5rem 0 0;
-  color: #475569;
+  color: var(--color-text-secondary);
   font-size: 1rem;
   max-width: 520px;
 }
@@ -436,13 +436,13 @@ async function handleRetry() {
 
 .filter-label {
   font-weight: 600;
-  color: #0f172a;
+  color: var(--color-text-primary);
 }
 
 .filter-options {
   display: inline-flex;
   gap: 0.5rem;
-  background: #f1f5f9;
+  background: var(--color-surface-alt);
   padding: 0.4rem;
   border-radius: 999px;
 }
@@ -453,28 +453,28 @@ async function handleRetry() {
   padding: 0.4rem 1.2rem;
   border-radius: 999px;
   font-weight: 600;
-  color: #475569;
+  color: var(--color-text-secondary);
   cursor: pointer;
   transition: background 0.2s ease, color 0.2s ease;
 }
 
 .filter-option.active {
-  background: #0f172a;
-  color: white;
-  box-shadow: 0 10px 25px -18px rgba(15, 23, 42, 0.6);
+  background: var(--color-brand);
+  color: var(--color-text-inverse);
+  box-shadow: 0 10px 25px -18px var(--color-overlay);
 }
 
 .action-error {
-  background: #fee2e2;
-  color: #991b1b;
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
   border-radius: 0.75rem;
   padding: 0.75rem 1rem;
 }
 
 .table-wrapper {
-  background: white;
+  background: var(--color-surface);
   border-radius: 1rem;
-  box-shadow: 0 20px 45px -30px rgba(15, 23, 42, 0.35);
+  box-shadow: var(--shadow-elevated);
   overflow: hidden;
 }
 
@@ -487,22 +487,22 @@ async function handleRetry() {
 th {
   position: sticky;
   top: 0;
-  background: #f1f5f9;
-  color: #0f172a;
+  background: var(--color-surface-alt);
+  color: var(--color-text-primary);
   text-align: left;
   padding: 0.75rem 1.25rem;
   font-size: 0.9rem;
   font-weight: 600;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--color-border);
   z-index: 1;
 }
 
 td {
   padding: 0.75rem 1.25rem;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--color-border);
   vertical-align: top;
   font-size: 0.95rem;
-  color: #1e293b;
+  color: var(--color-text-primary);
 }
 
 .kind-cell {
@@ -513,8 +513,8 @@ td {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #e2e8f0;
-  color: #0f172a;
+  background: var(--color-surface-alt);
+  color: var(--color-text-primary);
   border-radius: 999px;
   padding: 0.25rem 0.9rem;
   font-weight: 600;
@@ -523,7 +523,7 @@ td {
 
 .resource-cell {
   font-family: 'IBM Plex Mono', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
-  color: #334155;
+  color: var(--color-text-secondary);
 }
 
 .resource-id {
@@ -540,8 +540,8 @@ td {
 }
 
 .category-tag {
-  background: #e2e8f0;
-  color: #0f172a;
+  background: var(--color-surface-alt);
+  color: var(--color-text-primary);
   padding: 0.25rem 0.75rem;
   border-radius: 999px;
   font-size: 0.8rem;
@@ -556,11 +556,11 @@ td {
 
 .user-name {
   font-weight: 600;
-  color: #0f172a;
+  color: var(--color-text-primary);
 }
 
 .user-email {
-  color: #64748b;
+  color: var(--color-text-secondary);
   font-size: 0.85rem;
 }
 
@@ -574,7 +574,8 @@ td {
 }
 
 .notes-placeholder {
-  color: #94a3b8;
+  color: var(--color-text-secondary);
+  opacity: 0.75;
   font-style: italic;
 }
 
@@ -596,18 +597,18 @@ td {
 }
 
 .status-pending {
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
 }
 
 .status-approved {
-  background: #dcfce7;
-  color: #166534;
+  background: var(--color-success-soft);
+  color: var(--color-success);
 }
 
 .status-rejected {
-  background: #fee2e2;
-  color: #991b1b;
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
 }
 
 .action-buttons {
@@ -627,22 +628,22 @@ td {
 }
 
 .approve {
-  background: #0f172a;
-  color: white;
+  background: var(--color-brand);
+  color: var(--color-text-inverse);
 }
 
 .approve:disabled {
-  background: #94a3b8;
+  background: var(--color-disabled);
   cursor: not-allowed;
 }
 
 .approve:not(:disabled):hover {
-  background: #1e293b;
+  background: var(--color-accent);
 }
 
 .reject {
-  background: #fef2f2;
-  color: #b91c1c;
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
 }
 
 .reject:disabled {
@@ -651,19 +652,20 @@ td {
 }
 
 .reject:not(:disabled):hover {
-  background: #fee2e2;
+  background: var(--color-danger);
+  color: var(--color-text-inverse);
 }
 
 .status-meta {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  color: #475569;
+  color: var(--color-text-secondary);
   font-size: 0.85rem;
 }
 
 .status-reason {
-  color: #b91c1c;
+  color: var(--color-danger);
 }
 
 .skeleton-stack {
@@ -675,7 +677,12 @@ td {
 .skeleton-row {
   height: 16px;
   border-radius: 999px;
-  background: linear-gradient(90deg, #f8fafc 25%, #e2e8f0 50%, #f8fafc 75%);
+  background: linear-gradient(
+    90deg,
+    var(--color-surface-alt) 25%,
+    var(--color-border) 50%,
+    var(--color-surface-alt) 75%
+  );
   animation: shimmer 1.6s infinite;
 }
 
@@ -690,7 +697,7 @@ td {
 
 .empty-state {
   text-align: center;
-  color: #64748b;
+  color: var(--color-text-secondary);
   padding: 2rem 0;
 }
 
@@ -700,12 +707,12 @@ td {
   flex-direction: column;
   align-items: flex-start;
   gap: 0.75rem;
-  color: #b91c1c;
+  color: var(--color-danger);
 }
 
 .retry {
-  background: #0f172a;
-  color: white;
+  background: var(--color-brand);
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 0.5rem;
   padding: 0.5rem 1rem;
@@ -726,13 +733,13 @@ td {
 }
 
 .footer-status {
-  color: #475569;
+  color: var(--color-text-secondary);
   font-size: 0.9rem;
 }
 
 .pager {
-  background: #0f172a;
-  color: white;
+  background: var(--color-brand);
+  color: var(--color-text-inverse);
   border: none;
   padding: 0.5rem 1.25rem;
   border-radius: 0.75rem;
@@ -742,18 +749,18 @@ td {
 }
 
 .pager:disabled {
-  background: #94a3b8;
+  background: var(--color-disabled);
   cursor: not-allowed;
 }
 
 .pager:not(:disabled):hover {
-  background: #1e293b;
+  background: var(--color-accent);
 }
 
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.45);
+  background: var(--color-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -762,30 +769,30 @@ td {
 }
 
 .modal {
-  background: white;
+  background: var(--color-surface);
   border-radius: 1rem;
   padding: 1.75rem;
   max-width: 520px;
   width: 100%;
-  box-shadow: 0 30px 60px -40px rgba(15, 23, 42, 0.6);
+  box-shadow: var(--shadow-elevated);
 }
 
 .modal-description {
-  color: #475569;
+  color: var(--color-text-secondary);
   margin: 0.5rem 0 1.5rem;
 }
 
 .modal-label {
   display: block;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--color-text-primary);
   margin-bottom: 0.5rem;
 }
 
 .modal-textarea {
   width: 100%;
   border-radius: 0.75rem;
-  border: 1px solid #cbd5f5;
+  border: 1px solid var(--color-border);
   padding: 0.75rem;
   resize: vertical;
   font-family: inherit;
@@ -793,7 +800,7 @@ td {
 }
 
 .modal-textarea:disabled {
-  background: #f1f5f9;
+  background: var(--color-surface-alt);
 }
 
 .modal-actions {
@@ -813,8 +820,8 @@ td {
 }
 
 .modal-secondary {
-  background: #e2e8f0;
-  color: #0f172a;
+  background: var(--color-surface-alt);
+  color: var(--color-text-primary);
 }
 
 .modal-secondary:disabled {
@@ -823,17 +830,17 @@ td {
 }
 
 .modal-primary {
-  background: #0f172a;
-  color: white;
+  background: var(--color-brand);
+  color: var(--color-text-inverse);
 }
 
 .modal-primary:disabled {
-  background: #94a3b8;
+  background: var(--color-disabled);
   cursor: not-allowed;
 }
 
 .modal-primary:not(:disabled):hover {
-  background: #1e293b;
+  background: var(--color-accent);
 }
 
 @media (max-width: 960px) {

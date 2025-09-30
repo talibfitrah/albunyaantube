@@ -422,10 +422,10 @@ async function toggleVideoInclusion(video: AdminSearchVideoResult) {
   flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
-  background: white;
+  background: var(--color-surface);
   border-radius: 1rem;
   padding: 1.75rem 2rem;
-  box-shadow: 0 20px 45px -30px rgba(15, 23, 42, 0.35);
+  box-shadow: var(--shadow-elevated);
   gap: 1rem;
 }
 
@@ -433,12 +433,12 @@ async function toggleVideoInclusion(video: AdminSearchVideoResult) {
   margin: 0;
   font-size: 1.5rem;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--color-text-primary);
 }
 
 .workspace-header p {
   margin: 0.5rem 0 0;
-  color: #475569;
+  color: var(--color-text-secondary);
   font-size: 1rem;
 }
 
@@ -452,10 +452,10 @@ async function toggleVideoInclusion(video: AdminSearchVideoResult) {
   position: relative;
   display: flex;
   align-items: center;
-  background: #f8fafc;
+  background: var(--color-surface-alt);
   border-radius: 999px;
   padding: 0.25rem 0.75rem;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--color-border);
 }
 
 .search-field input {
@@ -472,23 +472,24 @@ async function toggleVideoInclusion(video: AdminSearchVideoResult) {
   background: transparent;
   font-size: 1.25rem;
   cursor: pointer;
-  color: #94a3b8;
+  color: var(--color-text-secondary);
+  opacity: 0.8;
 }
 
 .category-filter select {
   border-radius: 999px;
-  border: 1px solid #e2e8f0;
-  background: #f8fafc;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-alt);
   padding: 0.5rem 1rem;
   font-size: 0.95rem;
-  color: #0f172a;
+  color: var(--color-text-primary);
 }
 
 .error-banner {
   padding: 0.85rem 1.25rem;
   border-radius: 0.75rem;
-  background: #fee2e2;
-  color: #991b1b;
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
 }
 
 .skeleton-grid {
@@ -500,7 +501,12 @@ async function toggleVideoInclusion(video: AdminSearchVideoResult) {
 .skeleton-card {
   height: 160px;
   border-radius: 1rem;
-  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 37%, #f1f5f9 63%);
+  background: linear-gradient(
+    90deg,
+    var(--color-surface-alt) 25%,
+    var(--color-border) 37%,
+    var(--color-surface-alt) 63%
+  );
   background-size: 400% 100%;
   animation: shimmer 1.4s ease infinite;
 }
@@ -536,17 +542,17 @@ async function toggleVideoInclusion(video: AdminSearchVideoResult) {
   margin: 0;
   font-size: 1.2rem;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--color-text-primary);
 }
 
 .section-header .meta {
   font-size: 0.85rem;
-  color: #64748b;
+  color: var(--color-text-secondary);
 }
 
 .section-hint {
   margin: 0;
-  color: #64748b;
+  color: var(--color-text-secondary);
   font-size: 0.9rem;
 }
 
@@ -560,9 +566,9 @@ async function toggleVideoInclusion(video: AdminSearchVideoResult) {
 }
 
 .card {
-  background: white;
+  background: var(--color-surface);
   border-radius: 1rem;
-  box-shadow: 0 20px 45px -32px rgba(15, 23, 42, 0.35);
+  box-shadow: var(--shadow-elevated);
   padding: 1.25rem;
   display: flex;
 }
@@ -575,11 +581,11 @@ async function toggleVideoInclusion(video: AdminSearchVideoResult) {
 
 .card-title {
   font-weight: 600;
-  color: #0f172a;
+  color: var(--color-text-primary);
 }
 
 .card-subtitle {
-  color: #64748b;
+  color: var(--color-text-secondary);
   font-size: 0.85rem;
 }
 
@@ -592,7 +598,8 @@ async function toggleVideoInclusion(video: AdminSearchVideoResult) {
 
 .card-meta dt {
   font-size: 0.75rem;
-  color: #94a3b8;
+  color: var(--color-text-secondary);
+  opacity: 0.75;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -600,7 +607,7 @@ async function toggleVideoInclusion(video: AdminSearchVideoResult) {
 .card-meta dd {
   margin: 0;
   font-weight: 500;
-  color: #0f172a;
+  color: var(--color-text-primary);
 }
 
 .card-actions {
@@ -609,9 +616,9 @@ async function toggleVideoInclusion(video: AdminSearchVideoResult) {
 }
 
 .chip {
-  border: 1px solid #0f172a;
+  border: 1px solid var(--color-brand);
   background: transparent;
-  color: #0f172a;
+  color: var(--color-brand);
   border-radius: 999px;
   padding: 0.4rem 1rem;
   font-weight: 600;
@@ -620,8 +627,8 @@ async function toggleVideoInclusion(video: AdminSearchVideoResult) {
 }
 
 .chip.active {
-  background: #0f172a;
-  color: #fff;
+  background: var(--color-brand);
+  color: var(--color-text-inverse);
 }
 
 .chip:disabled {
@@ -632,8 +639,8 @@ async function toggleVideoInclusion(video: AdminSearchVideoResult) {
 .empty-state {
   padding: 1rem;
   border-radius: 0.75rem;
-  border: 1px dashed #cbd5f5;
-  color: #64748b;
+  border: 1px dashed var(--color-border);
+  color: var(--color-text-secondary);
   font-size: 0.9rem;
 }
 

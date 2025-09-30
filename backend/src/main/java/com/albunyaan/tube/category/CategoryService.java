@@ -1,5 +1,7 @@
 package com.albunyaan.tube.category;
 
+import com.albunyaan.tube.admin.dto.SubcategoryRequest;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -23,6 +25,7 @@ public class CategoryService {
     private static final Pattern LOCALE_PATTERN = Pattern.compile("^[a-z]{2,8}(?:-[a-z]{2,8})?$");
     private static final int MAX_NAME_LENGTH = 80;
     private static final int MAX_DESCRIPTION_LENGTH = 240;
+    private static final int MAX_SUBCATEGORY_COUNT = 40;
     private static final int MIN_LIMIT = 1;
     private static final int MAX_LIMIT = 100;
 
@@ -54,13 +57,19 @@ public class CategoryService {
     }
 
     @Transactional
-    public Category createCategory(String slug, Map<String, String> name, Map<String, String> description) {
+    public Category createCategory(
+        String slug,
+        Map<String, String> name,
+        Map<String, String> description,
+        List<SubcategoryRequest> subcategories
+    ) {
         var normalizedSlug = normalizeSlug(slug);
         ensureSlugIsAvailable(normalizedSlug, null);
         var sanitizedName = sanitizeLocalizedMap(name, true, MAX_NAME_LENGTH, "name");
         var sanitizedDescription = sanitizeLocalizedMap(description, false, MAX_DESCRIPTION_LENGTH, "description");
+        var sanitizedSubcategories = sanitizeSubcategories(subcategories);
 
-        var category = new Category(normalizedSlug, sanitizedName, sanitizedDescription);
+        var category = new Category(normalizedSlug, sanitizedName, sanitizedDescription, sanitizedSubcategories);
         return categoryRepository.save(category);
     }
 
@@ -69,9 +78,10 @@ public class CategoryService {
         UUID id,
         String slug,
         Map<String, String> name,
-        Map<String, String> description
+        Map<String, String> description,
+        List<SubcategoryRequest> subcategories
     ) {
-        if (slug == null && name == null && description == null) {
+        if (slug == null && name == null && description == null && subcategories == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "At least one field must be provided for update");
         }
 
@@ -93,6 +103,11 @@ public class CategoryService {
         if (description != null) {
             var sanitizedDescription = sanitizeLocalizedMap(description, false, MAX_DESCRIPTION_LENGTH, "description");
             category.updateDescription(sanitizedDescription);
+        }
+
+        if (subcategories != null) {
+            var sanitizedSubcategories = sanitizeSubcategories(subcategories);
+            category.updateSubcategories(sanitizedSubcategories);
         }
 
         return categoryRepository.save(category);
@@ -182,6 +197,44 @@ public class CategoryService {
         }
 
         return Map.copyOf(sanitized);
+    }
+
+    private List<Subcategory> sanitizeSubcategories(List<SubcategoryRequest> subcategories) {
+        if (subcategories == null || subcategories.isEmpty()) {
+            return List.of();
+        }
+
+        if (subcategories.size() > MAX_SUBCATEGORY_COUNT) {
+            throw new ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "Subcategories cannot exceed %d entries".formatted(MAX_SUBCATEGORY_COUNT)
+            );
+        }
+
+        var seenSlugs = new java.util.LinkedHashSet<String>();
+        var sanitized = new ArrayList<Subcategory>(subcategories.size());
+
+        for (var subcategory : subcategories) {
+            var normalizedSlug = normalizeSlug(subcategory.slug());
+            if (!seenSlugs.add(normalizedSlug)) {
+                throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Duplicate subcategory slug '%s'".formatted(normalizedSlug)
+                );
+            }
+
+            var sanitizedName = sanitizeLocalizedMap(
+                subcategory.name(),
+                true,
+                MAX_NAME_LENGTH,
+                "subcategory name"
+            );
+
+            var id = subcategory.id() != null ? subcategory.id() : UUID.randomUUID();
+            sanitized.add(new Subcategory(id, normalizedSlug, sanitizedName));
+        }
+
+        return List.copyOf(sanitized);
     }
 
     public record CategoryPage(

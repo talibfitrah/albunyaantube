@@ -23,3 +23,20 @@ Every document references related artifacts to ensure consistency:
 4. Submit for stakeholder review per phase exit criteria.
 
 These documents will evolve through the pre-development phases until implementation is approved.
+
+## Dark Mode Tokens
+| Token | Light | Dark | Component Mapping |
+| --- | --- | --- | --- |
+| `--color-bg` | `#f5f8f6` | `#041712` | Workspace backgrounds, admin layout main area |
+| `--color-surface` | `#ffffff` | `#0b231c` | Panels, tables, cards, login form |
+| `--color-surface-alt` | `#e8f1ec` | `#102c24` | Filter controls, table headers, muted tags |
+| `--color-text-primary` | `#132820` | `#eef6f2` | Headings, entity names |
+| `--color-text-secondary` | `#4f665c` | `#9ec9b4` | Body copy, helper text, empty states |
+| `--color-brand` | `#16835a` | `#35c491` | Primary actions, active chips, progress accents |
+| `--color-accent` | `#2fa172` | `#7cdcb3` | Hover states for actions, tab highlights |
+| `--color-danger` | `#dc2626` | `#f87171` | Error banners, moderation rejection badges |
+
+The token definitions live in `frontend/src/assets/main.css` and are referenced by all Vue views and registry tables. Tokens are also mirrored in the design asset at [`docs/ux/design-tokens.json`](docs/ux/design-tokens.json) for Figma parity.
+
+## Canonical Navigation Tabs
+The end-user app shell uses a single source of truth for the Home/Channels/Playlists/Videos tabs defined in `frontend/src/constants/tabs.ts`. A reusable navigation component (`frontend/src/components/navigation/MainTabBar.vue`) consumes that config so every surface renders the same iconography and labels.

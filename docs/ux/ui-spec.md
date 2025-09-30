@@ -4,7 +4,7 @@ This document codifies the canonical UI contract for Albunyaan Tube Android and 
 
 ## Global Principles
 - Respect the halal curation promise: no comments, ads, or autoplay.
-- Primary color: `#275E4B`; background: `#F6F9F9`; text `#1F2937` / `#6B7280`.
+- Primary color: light `#275E4B` / dark `#35C491`; backgrounds rely on tokens `--color-bg` (`#F6F9F9` light, `#041712` dark) with text `--color-text-primary` and `--color-text-secondary` for contrast-compliant copy.
 - Corner radii 16–20dp with subtle shadows (`card` elevation token).
 - Minimum touch target: 48dp.
 - Typography scale: H1 28sp, H2 22sp, Body 16sp, Caption 13sp.
