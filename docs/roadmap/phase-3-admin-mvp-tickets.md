@@ -83,16 +83,17 @@ Status: Planned
 ```yaml
 meta:
   id: ADMIN-MVP-03
-  status: partial
-  owner: TBD-frontend
+  status: in-review
+  owner: Frontend
   depends: []
-  lastReviewed: 2025-09-30
+  lastReviewed: 2025-10-01
 ```
-Status: Partially delivered
+Status: In review
 Delivered so far
-- Category dropdown + query wiring in `frontend/src/views/RegistryLandingView.vue` and services.
+- Shared `useRegistryFiltersStore` managing category/query state across registry surfaces.
+- `RegistryFilters` component with skeleton + clear affordances wired into landing view and services.
 Gaps
-- Shared store abstraction, skeletonized filter component, and cross-tab state sync.
+- Expanded filters (length/date/sort) remain for ADMIN-MVP-04.
 **Estimate**: 4h.
 
 **Goals**

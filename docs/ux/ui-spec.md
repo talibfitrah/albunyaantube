@@ -86,6 +86,13 @@ Each screen references the mockups. Layout measurements assume 360dp width basel
 - Data tables use sticky headers, column sorting, 16px rows, inline badges for statuses.
 - Forms for categories and content editing use i18n input tabs (en/ar/nl). See [`docs/i18n/strategy.md`](../i18n/strategy.md#admin-ui).
 
+### Moderation Queue (Phase 3)
+- Status filter pill group defaults to `PENDING`, keyboard navigable with arrow keys, and announces the current selection via `aria-checked`.
+- Approve/Reject controls stay inline with each pending row; once actioned, queue refreshes with latest cursor slice.
+- Reject confirmation modal traps focus (Tab/Shift+Tab loop), focuses the textarea on open, and restores focus to the triggering button on close. Escape key cancels when submission is not in progress.
+- Modal leverages tokenized surfaces (`--color-surface`, `--color-brand`) and keeps the underlying table inert/aria-hidden while open to aid screen readers.
+- Approve and reject flows emit audit hooks (`admin:audit` custom event payload) containing proposal ID, ISO timestamp, and optional trimmed rejection reason for downstream logging.
+
 ### Search & Import Workspace
 - Global search input centered atop the workspace with pill-shaped field, 12px inset shadow, and inline locale-aware placeholder (e.g., “Search Qur’an”). Search triggers on Enter or Search icon press; results update in place without page reload.
 - Results view mirrors YouTube’s blended layout: stacked sections for Channels, Playlists, and Videos rendered in a single scroll surface. Each section title (H2) remains sticky while its cards scroll.

@@ -22,7 +22,7 @@ This strategy covers localization for English (`en`), Modern Standard Arabic (`a
 
 ## Locale Detection & Switching
 - Android: on first launch detect via `LocaleListCompat.getAdjustedDefault()`. Prompt user with onboarding to confirm; store preference in DataStore. Provide in-app locale switcher (Settings) with immediate restart of activity.
-- Admin SPA: read `Accept-Language`; allow manual switcher in header; persist in localStorage.
+- Admin SPA: read `Accept-Language`; allow manual switcher in header; persist in localStorage via the `preferences` Pinia store (`albunyaan.admin.locale` key). The topbar switcher updates `vue-i18n` immediately and survives reloads.
 - Backend: Accepts `X-Admin-Locale` override for admin operations when editing localized fields.
 
 ## Android Implementation

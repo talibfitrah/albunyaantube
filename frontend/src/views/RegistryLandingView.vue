@@ -6,32 +6,7 @@
         <p>{{ t('registry.description') }}</p>
       </div>
       <div class="workspace-controls">
-        <div class="search-field">
-          <input
-            v-model="query"
-            type="search"
-            :placeholder="t('registry.search.placeholder')"
-            aria-label="Search"
-          />
-          <button
-            v-if="query"
-            type="button"
-            class="clear"
-            @click="clearQuery"
-            :aria-label="t('registry.search.clear')"
-          >
-            ×
-          </button>
-        </div>
-        <label class="category-filter">
-          <span class="sr-only">{{ t('registry.search.categoryLabel') }}</span>
-          <select v-model="categoryId">
-            <option value="">{{ t('registry.search.categoryLabel') }}</option>
-            <option v-for="category in categories" :key="category.id" :value="category.slug">
-              {{ category.label }}
-            </option>
-          </select>
-        </label>
+        <RegistryFilters />
       </div>
     </header>
 
@@ -179,7 +154,8 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { fetchAllCategories, type CategoryOption } from '@/services/categories';
+import { storeToRefs } from 'pinia';
+import RegistryFilters from '@/components/registry/RegistryFilters.vue';
 import {
   searchRegistry,
   updateChannelExclusions,
@@ -192,6 +168,7 @@ import type {
   CategoryTag
 } from '@/types/registry';
 import { formatNumber } from '@/utils/formatters';
+import { useRegistryFiltersStore } from '@/stores/registryFilters';
 
 interface ChannelState {
   ytId: string;
@@ -206,9 +183,8 @@ interface PlaylistState {
 
 const { t, locale } = useI18n();
 
-const query = ref('');
-const categoryId = ref<string>('');
-const categories = ref<CategoryOption[]>([]);
+const filtersStore = useRegistryFiltersStore();
+const { query, categoryId, searchParams } = storeToRefs(filtersStore);
 const results = ref<AdminSearchResponse | null>(null);
 const isLoading = ref(false);
 const error = ref<string | null>(null);
@@ -239,17 +215,9 @@ watch(categoryId, () => {
 });
 
 onMounted(() => {
-  loadCategories();
+  filtersStore.fetchCategories();
   loadResults();
 });
-
-async function loadCategories() {
-  try {
-    categories.value = await fetchAllCategories();
-  } catch (err) {
-    console.warn('Failed to load categories', err);
-  }
-}
 
 async function loadResults() {
   if (isLoading.value) {
@@ -258,9 +226,10 @@ async function loadResults() {
   isLoading.value = true;
   error.value = null;
   try {
+    const params = searchParams.value;
     const response = await searchRegistry({
-      q: query.value.trim() || undefined,
-      categoryId: categoryId.value || undefined,
+      q: params.q ?? undefined,
+      categoryId: params.categoryId ?? undefined,
       limit: 30
     });
     results.value = response;
@@ -289,11 +258,6 @@ function synchroniseStates(response: AdminSearchResponse) {
       excludedVideoIds: new Set(playlist.excludedVideoIds ?? [])
     };
   });
-}
-
-function clearQuery() {
-  query.value = '';
-  loadResults();
 }
 
 function formatCategoryList(categories: CategoryTag[]): string {
@@ -440,49 +404,6 @@ async function toggleVideoInclusion(video: AdminSearchVideoResult) {
   margin: 0.5rem 0 0;
   color: var(--color-text-secondary);
   font-size: 1rem;
-}
-
-.workspace-controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-}
-
-.search-field {
-  position: relative;
-  display: flex;
-  align-items: center;
-  background: var(--color-surface-alt);
-  border-radius: 999px;
-  padding: 0.25rem 0.75rem;
-  border: 1px solid var(--color-border);
-}
-
-.search-field input {
-  border: none;
-  background: transparent;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.95rem;
-  outline: none;
-  min-width: 220px;
-}
-
-.search-field .clear {
-  border: none;
-  background: transparent;
-  font-size: 1.25rem;
-  cursor: pointer;
-  color: var(--color-text-secondary);
-  opacity: 0.8;
-}
-
-.category-filter select {
-  border-radius: 999px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface-alt);
-  padding: 0.5rem 1rem;
-  font-size: 0.95rem;
-  color: var(--color-text-primary);
 }
 
 .error-banner {
@@ -644,32 +565,7 @@ async function toggleVideoInclusion(video: AdminSearchVideoResult) {
   font-size: 0.9rem;
 }
 
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  border: 0;
-}
-
 @media (max-width: 640px) {
-  .workspace-controls {
-    width: 100%;
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .search-field {
-    width: 100%;
-  }
-
-  .search-field input {
-    width: 100%;
-  }
-
   .card-meta {
     grid-template-columns: 1fr;
   }

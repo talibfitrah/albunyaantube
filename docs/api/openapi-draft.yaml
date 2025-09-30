@@ -242,6 +242,22 @@ paths:
             application/json:
               schema:
                 $ref: '../data/json-schemas/video-page.json'
+  /admin/dashboard:
+    get:
+      summary: Fetch admin dashboard metrics snapshot
+      operationId: getAdminDashboardMetrics
+      tags: ['Admin Dashboard']
+      parameters:
+        - $ref: '#/components/parameters/DashboardTimeframeParam'
+      responses:
+        '200':
+          description: Aggregated moderation, catalog, and staff counts
+          content:
+            application/json:
+              schema:
+                $ref: '../data/json-schemas/admin-dashboard-metrics-response.json'
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '403': { $ref: '#/components/responses/ForbiddenError' }
   /home:
     get:
       summary: Aggregated home feed
@@ -545,9 +561,23 @@ components:
       required: false
       schema:
         type: string
+    DashboardTimeframeParam:
+      name: timeframe
+      in: query
+      required: false
+      description: Optional window to compare metrics against (defaults to LAST_24_HOURS).
+      schema:
+        type: string
+        enum: [LAST_24_HOURS, LAST_7_DAYS, LAST_30_DAYS]
   responses:
     UnauthorizedError:
       description: Authentication failed
+      content:
+        application/json:
+          schema:
+            $ref: '../data/json-schemas/error-response.json'
+    ForbiddenError:
+      description: Authenticated principal lacks permission for resource.
       content:
         application/json:
           schema:

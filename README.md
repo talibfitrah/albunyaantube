@@ -9,6 +9,7 @@ Welcome to the design workspace for Albunyaan Tube, an ad-free, admin-curated ha
 - Solution architecture, C4 diagrams, and integration sequences are in [`docs/architecture`](docs/architecture).
 - API contracts are drafted in [`docs/api/openapi-draft.yaml`](docs/api/openapi-draft.yaml) with supporting JSON Schemas under [`docs/data/json-schemas`](docs/data/json-schemas).
 - Security, internationalization, testing, and acceptance criteria are documented in their respective folders.
+- Admin onboarding, login, and locale QA runbooks live in [`docs/runbooks`](docs/runbooks) for day-one setup guidance.
 - Product backlog and risk register are maintained in [`docs/backlog/product-backlog.csv`](docs/backlog/product-backlog.csv) and [`docs/risk-register.md`](docs/risk-register.md).
 
 ## Traceability
@@ -22,7 +23,10 @@ Every document references related artifacts to ensure consistency:
 3. Run documentation linters (TBD in future phases).
 4. Submit for stakeholder review per phase exit criteria.
 
-These documents will evolve through the pre-development phases until implementation is approved.
+These documents will evolve through the pre-development phases until implementation is approved. When onboarding new
+administrators, pair the README with the [`Admin Onboarding` runbook](docs/runbooks/admin-onboarding.md) and
+[`Admin Workspace Login Guide`](docs/runbooks/admin-login.md) to validate environment setup, credential rotation, and
+locale QA expectations.
 
 ## Dark Mode Tokens
 | Token | Light | Dark | Component Mapping |

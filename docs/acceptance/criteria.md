@@ -40,6 +40,9 @@ This document enumerates verifiable acceptance criteria linked to requirements, 
 - **AC-ADM-005**: Exclusions view shows parent + excluded entity with reason.
 - **AC-ADM-006**: Admin search blends Channels, Playlists, and Videos in a single results view with Include/Exclude toggles and bulk actions for each section.
 - **AC-ADM-007**: Channel and playlist drawers expose tabbed detail (Videos, Shorts, Live, Playlists, Posts) with per-item Include/Exclude controls and unsaved-change prompts.
+- **AC-ADM-008**: Admin onboarding runbook documents environment setup, credential rotation, and communication touchpoints so a new administrator can complete first-day tasks without external guidance.
+- **AC-ADM-009**: Locale QA checklist covers en/ar/nl smoke tests (navigation, tables, forms, moderation queue, dashboard) with instructions to capture and log discrepancies before onboarding sign-off.
+- **AC-ADM-010**: Admin dashboard displays pending moderation, category totals, and active moderators from `/admin/dashboard`; data newer than 60s renders without warning and stale results display toast per backend `warnings`.
 
 ## Backend Criteria
 - **AC-BE-001**: Cursor parameters validated; invalid cursor returns 400 with `error=CLIENT_ERROR`.

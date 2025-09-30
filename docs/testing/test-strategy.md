@@ -23,10 +23,16 @@ This strategy spans backend, admin frontend, and Android client. It complements 
 - `POLICY_BLOCK` for download-disabled scenarios.
 
 ## Admin Frontend Testing
-- **Unit**: Vitest for components; ensure tokens from [`../ux/design-tokens.json`](../ux/design-tokens.json) applied.
+- **Unit**: Vitest for components; ensure tokens from [`../ux/design-tokens.json`](../ux/design-tokens.json) applied. Moderation queue spec covers approve/reject flows, audit hook emission, and reject modal focus traps.
 - **E2E**: Playwright hitting staging backend mock; scenarios include moderation approval, exclusions editing, audit pagination, and blended search/import flows (single-surface results, bulk include/exclude).
 - **i18n**: Snapshot tests verifying ar/nl translations, directionality (RTL snapshots).
-- **Accessibility**: axe-core integration ensures WCAG AA.
+- **Accessibility**: axe-core integration ensures WCAG AA; reject confirmation modal enforces focus loop + Escape handling in coverage checklist.
+
+### Admin Dashboard Metrics
+- **Contract**: Validate `/admin/dashboard` responses against `admin-dashboard-metrics-response.json` using OpenAPI schema checks in CI.
+- **Unit**: `useDashboardMetrics` composable tests mock API client to assert loading → success/error transitions and localization helpers.
+- **E2E**: Playwright scenario loads dashboard with mocked API delays to capture skeleton state, retries, and warning toast when backend flags stale data.
+- **Observability**: Smoke test hits metrics endpoint and asserts Prometheus counter `admin.dashboard.generated` increments with `cache_hit` label.
 
 ## Android Testing
 - **Unit**: JUnit + Mockito for ViewModels/use cases.

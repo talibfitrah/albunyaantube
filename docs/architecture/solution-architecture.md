@@ -40,6 +40,14 @@ These schemas inform JPA entities and API payloads.
 - Search & Import workspace consumes blended `/admin/search` response, renders tri-state include/exclude toggles, and batches mutations to backend bulk endpoints.
 - Security: JWT stored in HTTP-only cookies; CSRF tokens for state-changing operations.
 
+### Dashboard Metrics
+- `/admin/dashboard` aggregates counts for pending moderation proposals, total allow-listed categories, and active moderators.
+- Snapshot produced via SQL CTE using moderation proposal status + age filters (<48h SLA) and `users` table role flags; results cached in Redis (`admin:dashboard:<timeframe>`) for 60s with background refresh to keep load low.
+- Only `ADMIN` and `MODERATOR` roles may call the endpoint; backend enforces RBAC via method-level annotations and returns `403` on violation.
+- Response includes comparison against previous timeframe to power trend arrows; backend computes previous window in the same query to keep data consistent.
+- Observability: emit `admin.dashboard.generated` metric with latency + cache hit label, and log structured event carrying `timeframe`, counts, and `traceId` for auditing.
+- Failure plan: fall back to stale Redis value when database unavailable (flagged via `warnings[]` array) and surface toast in UI; stale data older than 15 minutes invalidates cache and triggers error.
+
 ## Data Flow
 1. Admin allow-lists content by storing Channel/Playlist/Video entries with categories and optional localized overrides.
 2. The admin console performs live previews by calling `/admin/search`, while persisted records retain only YouTube IDs and Albunyaan overrides; no remote metadata is stored server-side.

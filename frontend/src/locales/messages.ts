@@ -175,6 +175,14 @@ export const messages = {
     audit: {
       heading: 'Audit log',
       description: 'A chronological list of sensitive changes. The viewer will be implemented in a later phase.'
+    },
+    preferences: {
+      localeLabel: 'Interface language',
+      locales: {
+        en: 'English',
+        ar: 'العربية',
+        nl: 'Nederlands'
+      }
     }
   }
 };

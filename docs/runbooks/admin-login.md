@@ -1,6 +1,7 @@
 # Admin Workspace Login Guide
 
-This guide covers how to sign into the Albunyaan Tube admin workspace when running the stack locally.
+This guide covers how to sign into the Albunyaan Tube admin workspace when running the stack locally. Pair it with the
+[`Admin Onboarding Runbook`](admin-onboarding.md) for end-to-end environment preparation and locale QA expectations.
 
 ## Prerequisites
 
@@ -19,11 +20,12 @@ screen of the admin SPA:
 - **Email:** `admin@albunyaan.tube`
 - **Password:** `ChangeMe!123`
 
-After signing in you should immediately update the password in a secure environment. To change the default locally, override
-the properties (for example with environment variables `APP_SECURITY_INITIAL_ADMIN_PASSWORD` and friends). By default the
-backend resets the password and reactivates the account on each startup so the credentials above always work even if the
-database previously contained an out-of-sync admin record. Set `app.security.initial-admin.reset-password-on-startup` to
-`false` if you want to keep manual password changes between restarts.
+After signing in you should immediately update the password in a secure environment. Capture the new secret in the shared
+password vault per the onboarding runbook and notify the rotation lead when credentials change. To change the default locally,
+override the properties (for example with environment variables `APP_SECURITY_INITIAL_ADMIN_PASSWORD` and friends). By default
+the backend resets the password and reactivates the account on each startup so the credentials above always work even if the
+database previously contained an out-of-sync admin record. Set `app.security.initial-admin.reset-password-on-startup` to `false`
+if you want to keep manual password changes between restarts.
 
 ## Troubleshooting
 
@@ -40,3 +42,9 @@ If you still encounter authentication errors:
 - Make sure you are accessing the frontend over `http://localhost:5173` or `http://127.0.0.1:5173`, which are authorized by the CORS configuration.
 
 For other origins, add them under `app.security.cors.allowed-origins` in `backend/src/main/resources/application.yml` and restart the backend.
+
+## Post-Login Locale QA Smoke Test
+Immediately after verifying access, switch between English, Arabic, and Dutch locales using the admin header toggle. Confirm
+that navigation labels, action buttons, and validation messages update accordingly. If any locale fails to load or strings
+appear untranslated, record the issue in the localization QA tracker referenced in `docs/i18n/strategy.md` before continuing
+onboarding tasks.

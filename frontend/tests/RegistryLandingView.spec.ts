@@ -1,10 +1,12 @@
 import '@testing-library/jest-dom';
-import { fireEvent, render, screen, within } from '@testing-library/vue';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/vue';
 import { createI18n } from 'vue-i18n';
+import { createPinia, setActivePinia } from 'pinia';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import RegistryLandingView from '@/views/RegistryLandingView.vue';
 import { messages } from '@/locales/messages';
 import type { AdminSearchResponse } from '@/types/registry';
+import { useRegistryFiltersStore } from '@/stores/registryFilters';
 
 const fetchAllCategoriesMock = vi.fn();
 const searchRegistryMock = vi.fn();
@@ -103,7 +105,11 @@ async function flushPromises() {
 }
 
 describe('RegistryLandingView', () => {
+  let pinia: ReturnType<typeof createPinia>;
+
   beforeEach(() => {
+    pinia = createPinia();
+    setActivePinia(pinia);
     vi.clearAllMocks();
     fetchAllCategoriesMock.mockResolvedValue([
       { id: 'cat-1', slug: 'quran', label: 'Quran' }
@@ -116,7 +122,7 @@ describe('RegistryLandingView', () => {
   function renderView() {
     return render(RegistryLandingView, {
       global: {
-        plugins: [buildI18n()]
+        plugins: [buildI18n(), pinia]
       }
     });
   }
@@ -175,6 +181,22 @@ describe('RegistryLandingView', () => {
     });
     expect(updatePlaylistExclusionsMock).toHaveBeenCalledWith('playlist-1', {
       excludedVideoIds: ['VID123']
+    });
+  });
+
+  it('applies category filters when searching the registry', async () => {
+    renderView();
+    const store = useRegistryFiltersStore();
+
+    await screen.findByText('UC123', { selector: '.card-title' });
+    store.setCategoryId('quran');
+
+    await waitFor(() => {
+      expect(searchRegistryMock).toHaveBeenLastCalledWith({
+        q: undefined,
+        categoryId: 'quran',
+        limit: 30
+      });
     });
   });
 });

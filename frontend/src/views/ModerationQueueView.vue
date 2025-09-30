@@ -1,5 +1,9 @@
 <template>
-  <section class="moderation-queue">
+  <section
+    class="moderation-queue"
+    :aria-hidden="rejectDialog.visible ? 'true' : undefined"
+    :inert="rejectDialog.visible ? '' : undefined"
+  >
     <header class="workspace-header">
       <div>
         <h1>{{ t('moderation.heading') }}</h1>
@@ -106,7 +110,8 @@
                   <button
                     type="button"
                     class="reject"
-                    @click="openRejectDialog(proposal)"
+                    :data-focus-return="`reject-${proposal.id}`"
+                    @click="openRejectDialog(proposal, $event)"
                     :disabled="isActionLoading(proposal.id) || isLoading"
                   >
                     {{ isActionLoading(proposal.id) && pendingAction === 'reject'
@@ -142,9 +147,20 @@
   </section>
 
   <div v-if="rejectDialog.visible" class="modal-backdrop">
-    <div class="modal" role="dialog" aria-modal="true" :aria-labelledby="rejectDialogTitleId">
+    <div
+      ref="rejectDialogRef"
+      class="modal"
+      role="dialog"
+      aria-modal="true"
+      :aria-labelledby="rejectDialogTitleId"
+      :aria-describedby="rejectDialogDescriptionId"
+      tabindex="-1"
+      @keydown="handleModalKeydown"
+    >
       <h2 :id="rejectDialogTitleId">{{ t('moderation.actions.confirmReject') }}</h2>
-      <p class="modal-description">{{ t('moderation.actions.confirmRejectDescription') }}</p>
+      <p :id="rejectDialogDescriptionId" class="modal-description">
+        {{ t('moderation.actions.confirmRejectDescription') }}
+      </p>
       <form @submit.prevent="confirmReject">
         <label class="modal-label" :for="rejectDialogTextareaId">
           {{ t('moderation.actions.reasonLabel') }}
@@ -181,6 +197,7 @@ import {
 } from '@/services/moderation';
 import type { ModerationProposal, ModerationProposalStatus } from '@/types/moderation';
 import { formatDateTime } from '@/utils/formatters';
+import { emitAuditEvent } from '@/services/audit';
 
 const { t, locale } = useI18n();
 const currentLocale = computed(() => locale.value);
@@ -215,8 +232,16 @@ const rejectDialog = reactive({
 });
 
 const rejectTextareaRef = ref<HTMLTextAreaElement | null>(null);
+const rejectDialogRef = ref<HTMLDivElement | null>(null);
 const rejectDialogTitleId = 'reject-dialog-title';
 const rejectDialogTextareaId = 'reject-dialog-textarea';
+const rejectDialogDescriptionId = 'reject-dialog-description';
+const lastFocusedElement = ref<HTMLElement | null>(null);
+interface FocusRestoreTarget {
+  element: HTMLElement | null;
+  fallbackId: string | null;
+}
+const deferredFocusTarget = ref<FocusRestoreTarget | null>(null);
 
 const paginationSummary = computed(() => {
   if (!pageInfo.value) {
@@ -337,6 +362,11 @@ async function handleApprove(proposal: ModerationProposal) {
   pendingAction.value = 'approve';
   try {
     await approveModerationProposal(proposal.id);
+    emitAuditEvent({
+      name: 'moderation:approve',
+      proposalId: proposal.id,
+      timestamp: new Date().toISOString()
+    });
     await reloadCurrentPage();
   } catch (err) {
     actionError.value = err instanceof Error ? err.message : t('moderation.errors.actionFailed');
@@ -346,21 +376,32 @@ async function handleApprove(proposal: ModerationProposal) {
   }
 }
 
-function openRejectDialog(proposal: ModerationProposal) {
+function openRejectDialog(proposal: ModerationProposal, event?: Event) {
   actionError.value = null;
+  const trigger = event?.currentTarget as HTMLElement | null;
+  lastFocusedElement.value = trigger ?? (document.activeElement as HTMLElement) ?? null;
   rejectDialog.visible = true;
   rejectDialog.proposal = proposal;
   rejectDialog.reason = '';
   pendingAction.value = null;
   nextTick(() => {
+    rejectDialogRef.value?.focus();
     rejectTextareaRef.value?.focus();
   });
 }
 
-function closeRejectDialog() {
+function closeRejectDialog(options: { deferFocus?: boolean } = {}) {
+  const target: FocusRestoreTarget = {
+    element: lastFocusedElement.value,
+    fallbackId: lastFocusedElement.value?.getAttribute('data-focus-return') ?? null
+  };
   rejectDialog.visible = false;
   rejectDialog.proposal = null;
   rejectDialog.reason = '';
+  nextTick(() => {
+    scheduleFocusRestore(target, options.deferFocus ?? false);
+    lastFocusedElement.value = null;
+  });
 }
 
 async function confirmReject() {
@@ -371,14 +412,22 @@ async function confirmReject() {
   actionLoadingId.value = rejectDialog.proposal.id;
   pendingAction.value = 'reject';
   try {
-    await rejectModerationProposal(rejectDialog.proposal.id, rejectDialog.reason);
-    closeRejectDialog();
+    const trimmedReason = rejectDialog.reason.trim();
+    await rejectModerationProposal(rejectDialog.proposal.id, trimmedReason);
+    emitAuditEvent({
+      name: 'moderation:reject',
+      proposalId: rejectDialog.proposal.id,
+      timestamp: new Date().toISOString(),
+      metadata: trimmedReason ? { reason: trimmedReason } : undefined
+    });
+    closeRejectDialog({ deferFocus: true });
     await reloadCurrentPage();
   } catch (err) {
     actionError.value = err instanceof Error ? err.message : t('moderation.errors.actionFailed');
   } finally {
     actionLoadingId.value = null;
     pendingAction.value = null;
+    restoreDeferredFocus();
   }
 }
 
@@ -392,6 +441,92 @@ async function handlePrevious() {
 
 async function handleRetry() {
   await load(pageInfo.value?.cursor ?? null, 'replace');
+}
+
+function scheduleFocusRestore(target: FocusRestoreTarget, defer: boolean) {
+  if (defer) {
+    deferredFocusTarget.value = target;
+    return;
+  }
+  nextTick(() => {
+    restoreFocusTarget(target);
+  });
+}
+
+function restoreDeferredFocus() {
+  if (!deferredFocusTarget.value) {
+    return;
+  }
+  const target = deferredFocusTarget.value;
+  deferredFocusTarget.value = null;
+  nextTick(() => {
+    restoreFocusTarget(target);
+  });
+}
+
+function restoreFocusTarget(target: FocusRestoreTarget | null) {
+  if (!target) {
+    return;
+  }
+  const { element, fallbackId } = target;
+  if (element && document.contains(element) && !element.hasAttribute('disabled')) {
+    element.focus();
+    return;
+  }
+  if (fallbackId) {
+    const fallback = document.querySelector<HTMLElement>(`[data-focus-return="${fallbackId}"]`);
+    fallback?.focus();
+  }
+}
+
+function getModalFocusableElements() {
+  if (!rejectDialogRef.value) {
+    return [] as HTMLElement[];
+  }
+  const selector =
+    'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  return Array.from(rejectDialogRef.value.querySelectorAll<HTMLElement>(selector));
+}
+
+function handleModalKeydown(event: KeyboardEvent) {
+  if (!rejectDialog.visible) {
+    return;
+  }
+
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    if (!isRejectSubmitting.value) {
+      closeRejectDialog();
+    }
+    return;
+  }
+
+  if (event.key !== 'Tab') {
+    return;
+  }
+
+  const focusable = getModalFocusableElements();
+  if (focusable.length === 0) {
+    event.preventDefault();
+    return;
+  }
+
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  const active = document.activeElement as HTMLElement | null;
+
+  if (event.shiftKey) {
+    if (!active || active === first) {
+      event.preventDefault();
+      last.focus();
+    }
+    return;
+  }
+
+  if (!active || active === last) {
+    event.preventDefault();
+    first.focus();
+  }
 }
 </script>
 
