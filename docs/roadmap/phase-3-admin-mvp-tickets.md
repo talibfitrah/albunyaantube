@@ -310,6 +310,14 @@ Status: Planned
 - Log risk if YouTube API result quotas constrain blended queries.
 
 ## ADMIN-MVP-09 — Channel & Playlist Drawers
+```yaml
+meta:
+  id: ADMIN-MVP-09
+  status: planned
+  owner: TBD-frontend
+  depends: [ADMIN-MVP-08]
+  lastReviewed: 2025-09-30
+```
 **Estimate**: 3h.
 
 **Goals**
