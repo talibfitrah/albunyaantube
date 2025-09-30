@@ -18,7 +18,7 @@ Admin UI MVP,ADMIN-MVP-03,Registry category filter,"Add shared category filter a
 Admin UI MVP,ADMIN-MVP-04,Video query controls,"Expose search/length/date/sort filters",0.5,3,in-progress,Frontend,ADMIN-MVP-03,AC-ADM-011,"frontend/tests/RegistryFilters.spec.ts; frontend/tests/registryFiltersStore.spec.ts; frontend/tests/RegistryLandingView.spec.ts","2025-10-01"
 Admin UI MVP,ADMIN-MVP-05,Dashboard metrics contract,"Define backend endpoint + frontend consumption plan",0.4,3,in-review,Frontend,,AC-ADM-010,"docs/testing/test-strategy.md#admin-dashboard-metrics","2025-10-02"
 Admin UI MVP,ADMIN-MVP-06,Moderation queue UX polish,"Finalize queue interactions, audit logging hooks",0.4,3,partial,TBD-frontend,,"",,"2025-09-30"
-Admin UI MVP,ADMIN-MVP-07,Documentation & onboarding refresh,"Update README/runbooks/backlog for admin MVP",0.25,3,in-progress,Product+Frontend,,AC-ADM-008|AC-ADM-009,"docs/runbooks/admin-onboarding.md; docs/runbooks/admin-login.md","2025-09-30"
+Admin UI MVP,ADMIN-MVP-07,Documentation & onboarding refresh,"Update README/runbooks/backlog for admin MVP",0.25,3,in-review,Product+Frontend,,AC-ADM-008|AC-ADM-009,"docs/runbooks/admin-onboarding.md; docs/runbooks/admin-login.md","2025-10-02"
 Admin UI MVP,ADMIN-MVP-08,Search & import workspace,"Design blended search results view with include/exclude toggles and bulk actions",0.6,3,,,,,,
 Admin UI MVP,ADMIN-MVP-09,Channel & playlist drawers,"Define tabbed drawer flows with per-item toggles and unsaved-change prompts",0.5,3,planned,TBD-frontend,ADMIN-MVP-08,,,"2025-09-30"
 Admin UI Complete,ADMIN-COMP-01,Exclusions editor,"Deliver exclusions CRUD UI aligned with UX spec",0.5,4,,,,,,

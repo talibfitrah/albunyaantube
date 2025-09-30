@@ -241,16 +241,17 @@ Gaps
 ```yaml
 meta:
   id: ADMIN-MVP-07
-  status: in-progress
+  status: in-review
   owner: Product+Frontend
   depends: []
-  lastReviewed: 2025-09-30
+  lastReviewed: 2025-10-02
 ```
-Status: In progress
+Status: In review
 Delivered so far
 - README dark-mode token table, roadmap execution metadata (this change).
+- Updated onboarding and login runbooks with registry filter + dashboard locale QA steps.
 Gaps
-- Admin onboarding runbook and locale QA checklist.
+- README callouts for admin assets (pending design sign-off).
 **Estimate**: 2h.
 
 **Goals**

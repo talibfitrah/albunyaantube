@@ -45,6 +45,7 @@ For other origins, add them under `app.security.cors.allowed-origins` in `backen
 
 ## Post-Login Locale QA Smoke Test
 Immediately after verifying access, switch between English, Arabic, and Dutch locales using the admin header toggle. Confirm
-that navigation labels, action buttons, and validation messages update accordingly. If any locale fails to load or strings
-appear untranslated, record the issue in the localization QA tracker referenced in `docs/i18n/strategy.md` before continuing
-onboarding tasks.
+that navigation labels, action buttons, and validation messages update accordingly. Exercise the registry search controls
+(category, length, publish window, sort) and the dashboard timeframe chips to make sure each selection localizes and persists
+across tabs. If any locale fails to load, strings appear untranslated, or stale-data warnings remain in English, record the
+issue in the localization QA tracker referenced in `docs/i18n/strategy.md` before continuing onboarding tasks.

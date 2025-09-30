@@ -31,7 +31,7 @@ This strategy spans backend, admin frontend, and Android client. It complements 
 
 ### Admin Dashboard Metrics
 - **Contract**: Validate `/admin/dashboard` responses against `admin-dashboard-metrics-response.json` using OpenAPI schema checks in CI.
-- **Unit**: `useDashboardMetrics` composable tests mock API client to assert loading → success/error transitions and localization helpers.
+- **Unit**: `frontend/tests/useDashboardMetrics.spec.ts` and `frontend/tests/DashboardView.spec.ts` mock the service to assert loading → success/error transitions, warning propagation, and localized number formatting.
 - **E2E**: Playwright scenario loads dashboard with mocked API delays to capture skeleton state, retries, and warning toast when backend flags stale data.
 - **Observability**: Smoke test hits metrics endpoint and asserts Prometheus counter `admin.dashboard.generated` increments with `cache_hit` label.
 

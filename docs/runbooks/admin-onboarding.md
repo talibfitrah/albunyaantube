@@ -35,17 +35,19 @@ admin specs. Record findings in the localization QA tracker referenced in `docs/
 1. **Navigation Shell** – Confirm tab labels and icons match the canonical set from `frontend/src/constants/tabs.ts` and mirror
    correctly in RTL (Arabic).
 2. **Registry Tables** – Validate column headers, filter chips, and empty states use the localized strings with no truncation.
-3. **Forms & Drawers** – Submit include/exclude actions and ensure validation errors render in the active locale.
-4. **Moderation Queue** – Verify status filter labels and action tooltips translate without breaking layout width.
-5. **Dashboard/Home** – Ensure metric cards and hero copy use localized numerals per `docs/i18n/strategy.md` guidance.
-6. Capture screenshots for any discrepancies and log them with reproduction steps before concluding onboarding.
+3. **Registry Filters** – Exercise category, video length, publish window, and sort dropdowns across Channels/Playlists/Videos to confirm selections propagate between tabs and reflect translated labels.
+4. **Forms & Drawers** – Submit include/exclude actions and ensure validation errors render in the active locale.
+5. **Moderation Queue** – Verify status filter labels and action tooltips translate without breaking layout width.
+6. **Dashboard/Home** – Confirm metric cards, timeframe chips, and stale-data warnings localize correctly and display numerals through the locale formatter described in `docs/i18n/strategy.md`.
+7. Capture screenshots for any discrepancies and log them with reproduction steps before concluding onboarding.
 
 ## 5. Sign-off & Handoff
 - Update this runbook with clarifications discovered during onboarding.
-- Confirm the backlog ticket for your onboarding cohort references completion of AC-ADM-008 and AC-ADM-009.
+- Confirm the backlog ticket for your onboarding cohort references completion of AC-ADM-008 and AC-ADM-009, and loop in QA so Playwright coverage for AC-ADM-010/011 stays aligned with dashboard/filter updates.
 - Notify the admin lead that onboarding is complete and schedule a follow-up shadowing session for the first moderation shift.
 
 ## Appendix A — Quick Commands
 - Restart backend with clean state: `./gradlew bootRun --args='--spring.profiles.active=local'`
 - Reset database (destructive): `docker compose down -v && docker compose up postgres redis`
 - Run targeted frontend tests with timeout enforcement: `timeout 300s npm test -- --run TestName`
+- Dashboard metrics regression: `timeout 300s npm test -- --run useDashboardMetrics`
