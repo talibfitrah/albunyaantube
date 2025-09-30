@@ -1,311 +1,527 @@
 package com.albunyaan.tube.registry;
 
+import com.albunyaan.tube.category.Category;
+import com.albunyaan.tube.category.CategoryLocalizationService;
+import com.albunyaan.tube.common.AuditableEntity;
 import com.albunyaan.tube.registry.dto.CategoryTagDto;
 import com.albunyaan.tube.registry.dto.ChannelSummaryDto;
 import com.albunyaan.tube.registry.dto.CursorPage;
 import com.albunyaan.tube.registry.dto.CursorPageInfo;
 import com.albunyaan.tube.registry.dto.PlaylistSummaryDto;
 import com.albunyaan.tube.registry.dto.VideoSummaryDto;
+import com.albunyaan.tube.registry.dto.admin.AdminSearchChannelResultDto;
+import com.albunyaan.tube.registry.dto.admin.AdminSearchPlaylistResultDto;
+import com.albunyaan.tube.registry.dto.admin.AdminSearchResponseDto;
+import com.albunyaan.tube.registry.dto.admin.AdminSearchVideoResultDto;
+import com.albunyaan.tube.registry.dto.admin.ChannelSummarySnapshotDto;
+import com.albunyaan.tube.registry.dto.admin.ExcludedItemCountsDto;
+import com.albunyaan.tube.registry.dto.admin.IncludeState;
+import com.albunyaan.tube.registry.model.ChannelRegistry;
+import com.albunyaan.tube.registry.model.PlaylistRegistry;
+import com.albunyaan.tube.registry.model.VideoRegistry;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import jakarta.persistence.TypedQuery;
+import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.JoinType;
+import jakarta.persistence.criteria.Predicate;
+import jakarta.persistence.criteria.Root;
+import jakarta.persistence.criteria.SetJoin;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
-import java.util.Objects;
-import java.util.stream.Collectors;
+import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
+@Transactional(readOnly = true)
 public class RegistryQueryService {
 
     private static final int MIN_LIMIT = 1;
     private static final int MAX_LIMIT = 100;
+    private static final OffsetDateTime DEFAULT_PUBLISHED_AT = OffsetDateTime.ofInstant(Instant.EPOCH, ZoneOffset.UTC);
 
-    private static final CategoryTagDto QURAN = new CategoryTagDto("quran", "Quran");
-    private static final CategoryTagDto SEERAH = new CategoryTagDto("seerah", "Seerah");
-    private static final CategoryTagDto KIDS = new CategoryTagDto("kids", "Kids");
-    private static final CategoryTagDto LECTURES = new CategoryTagDto("lectures", "Lectures");
+    @PersistenceContext
+    private EntityManager entityManager;
 
-    private static final ChannelSummaryDto YAQEEN_CHANNEL = new ChannelSummaryDto(
-        "chan-yaqeen",
-        "UC9jKNK9E8bZMXsFQ0iCFJMw",
-        "Yaqeen Institute",
-        "https://yt3.googleusercontent.com/ytc/AIf8zZS0Q8Wn1x-yaqeen=s88-c-k-c0x00ffffff-no-rj",
-        325_000L,
-        List.of(LECTURES)
-    );
+    private final CategoryLocalizationService categoryLocalizationService;
 
-    private static final ChannelSummaryDto BAYYINAH_CHANNEL = new ChannelSummaryDto(
-        "chan-bayyina",
-        "UC3o5hQk_lJ0Y9rJ1Z2J6Rmg",
-        "Bayyinah",
-        "https://yt3.googleusercontent.com/ytc/AIf8zZSbayyinah=s88-c-k-c0x00ffffff-no-rj",
-        2_040_000L,
-        List.of(QURAN, LECTURES)
-    );
-
-    private static final ChannelSummaryDto MIRACLE_KIDS_CHANNEL = new ChannelSummaryDto(
-        "chan-miracle-kids",
-        "UCx4fVJQ4J5BVQxZsR3aohKg",
-        "Miracle Kids",
-        "https://yt3.googleusercontent.com/ytc/AIf8zZSmiraclekids=s88-c-k-c0x00ffffff-no-rj",
-        185_000L,
-        List.of(KIDS)
-    );
-
-    private static final ChannelSummaryDto FIRDOWS_CHANNEL = new ChannelSummaryDto(
-        "chan-firdaws",
-        "UC1l1FirdawszzU8uY2",
-        "Firdaws",
-        "https://yt3.googleusercontent.com/ytc/AIf8zZSfirdaws=s88-c-k-c0x00ffffff-no-rj",
-        92_500L,
-        List.of(SEERAH, LECTURES)
-    );
-
-    private static final ChannelSummaryDto ALHIKMAH_CHANNEL = new ChannelSummaryDto(
-        "chan-alhikmah",
-        "UC5alHikmah837Lmqg",
-        "Al-Hikmah",
-        "https://yt3.googleusercontent.com/ytc/AIf8zZSalhikmah=s88-c-k-c0x00ffffff-no-rj",
-        58_200L,
-        List.of(QURAN)
-    );
-
-    private static final List<ChannelSummaryDto> CHANNELS = List.of(
-        YAQEEN_CHANNEL,
-        BAYYINAH_CHANNEL,
-        MIRACLE_KIDS_CHANNEL,
-        FIRDOWS_CHANNEL,
-        ALHIKMAH_CHANNEL,
-        new ChannelSummaryDto(
-            "chan-nasirj",
-            "UC8NasirJLectures",
-            "Nasir J Lectures",
-            "https://yt3.googleusercontent.com/ytc/AIf8zZSnasirj=s88-c-k-c0x00ffffff-no-rj",
-            143_000L,
-            List.of(LECTURES)
-        ),
-        new ChannelSummaryDto(
-            "chan-qalam",
-            "UC1QalamInstitute",
-            "Qalam Institute",
-            "https://yt3.googleusercontent.com/ytc/AIf8zZSqalam=s88-c-k-c0x00ffffff-no-rj",
-            420_000L,
-            List.of(SEERAH, LECTURES)
-        ),
-        new ChannelSummaryDto(
-            "chan-mina",
-            "UC7MinasGarden",
-            "Mina's Garden",
-            "https://yt3.googleusercontent.com/ytc/AIf8zSminasgarden=s88-c-k-c0x00ffffff-no-rj",
-            78_400L,
-            List.of(KIDS, SEERAH)
-        )
-    );
-
-    private static final List<PlaylistSummaryDto> PLAYLISTS = List.of(
-        new PlaylistSummaryDto(
-            "pl-yaqeen-doubt",
-            "PLyaqeen001",
-            "Doubts & Faith",
-            "https://img.youtube.com/vi/yaqeen01/hqdefault.jpg",
-            18,
-            YAQEEN_CHANNEL,
-            List.of(LECTURES),
-            Boolean.TRUE
-        ),
-        new PlaylistSummaryDto(
-            "pl-bayyina-grammar",
-            "PLbayyinah001",
-            "Quranic Arabic Grammar",
-            "https://img.youtube.com/vi/bayyina01/hqdefault.jpg",
-            24,
-            BAYYINAH_CHANNEL,
-            List.of(QURAN),
-            Boolean.TRUE
-        ),
-        new PlaylistSummaryDto(
-            "pl-miracle-bedtime",
-            "PLmiracleKids001",
-            "Bedtime Stories",
-            "https://img.youtube.com/vi/miracle01/hqdefault.jpg",
-            12,
-            MIRACLE_KIDS_CHANNEL,
-            List.of(KIDS),
-            Boolean.FALSE
-        ),
-        new PlaylistSummaryDto(
-            "pl-firdaws-seerah",
-            "PLfirdaws001",
-            "Seerah Series",
-            "https://img.youtube.com/vi/firdaws01/hqdefault.jpg",
-            30,
-            FIRDOWS_CHANNEL,
-            List.of(SEERAH),
-            Boolean.TRUE
-        ),
-        new PlaylistSummaryDto(
-            "pl-alhikmah-recitation",
-            "PLhikmah001",
-            "Quran Recitations",
-            "https://img.youtube.com/vi/hikmah01/hqdefault.jpg",
-            40,
-            ALHIKMAH_CHANNEL,
-            List.of(QURAN),
-            Boolean.TRUE
-        ),
-        new PlaylistSummaryDto(
-            "pl-qalam-ramadan",
-            "PLqalam001",
-            "Ramadan Reflections",
-            "https://img.youtube.com/vi/qalam01/hqdefault.jpg",
-            10,
-            new ChannelSummaryDto(
-                "chan-qalam",
-                "UC1QalamInstitute",
-                "Qalam Institute",
-                "https://yt3.googleusercontent.com/ytc/AIf8zZSqalam=s88-c-k-c0x00ffffff-no-rj",
-                420_000L,
-                List.of(SEERAH, LECTURES)
-            ),
-            List.of(SEERAH),
-            Boolean.TRUE
-        )
-    );
-
-    private static final List<VideoSummaryDto> VIDEOS;
-
-    static {
-        var videos = new ArrayList<VideoSummaryDto>();
-        videos.add(new VideoSummaryDto(
-            "vid-yaqeen-01",
-            "yaqeen01",
-            "Dealing with Doubt",
-            "https://img.youtube.com/vi/yaqeen01/hqdefault.jpg",
-            1_200,
-            Instant.parse("2024-04-12T10:00:00Z"),
-            125_000L,
-            YAQEEN_CHANNEL,
-            List.of(LECTURES),
-            null,
-            null
-        ));
-        videos.add(new VideoSummaryDto(
-            "vid-bayyina-01",
-            "bayyina01",
-            "Arabic Grammar Lesson 1",
-            "https://img.youtube.com/vi/bayyina01/hqdefault.jpg",
-            900,
-            Instant.parse("2024-03-05T08:30:00Z"),
-            210_000L,
-            BAYYINAH_CHANNEL,
-            List.of(QURAN),
-            null,
-            null
-        ));
-        videos.add(new VideoSummaryDto(
-            "vid-miracle-01",
-            "miracle01",
-            "Prophet Stories for Kids",
-            "https://img.youtube.com/vi/miracle01/hqdefault.jpg",
-            480,
-            Instant.parse("2024-04-20T18:15:00Z"),
-            45_000L,
-            MIRACLE_KIDS_CHANNEL,
-            List.of(KIDS, SEERAH),
-            Boolean.TRUE,
-            Boolean.FALSE
-        ));
-        videos.add(new VideoSummaryDto(
-            "vid-firdaws-01",
-            "firdaws01",
-            "Early Life of the Prophet ﷺ",
-            "https://img.youtube.com/vi/firdaws01/hqdefault.jpg",
-            1_560,
-            Instant.parse("2024-02-14T14:00:00Z"),
-            62_000L,
-            FIRDOWS_CHANNEL,
-            List.of(SEERAH),
-            null,
-            null
-        ));
-        videos.add(new VideoSummaryDto(
-            "vid-hikmah-01",
-            "hikmah01",
-            "Surah Yasin Recitation",
-            "https://img.youtube.com/vi/hikmah01/hqdefault.jpg",
-            1_020,
-            Instant.parse("2024-04-01T04:45:00Z"),
-            31_000L,
-            ALHIKMAH_CHANNEL,
-            List.of(QURAN),
-            null,
-            null
-        ));
-        videos.add(new VideoSummaryDto(
-            "vid-qalam-01",
-            "qalam01",
-            "Ramadan Day 10 Reminder",
-            "https://img.youtube.com/vi/qalam01/hqdefault.jpg",
-            780,
-            Instant.parse("2024-03-20T21:00:00Z"),
-            54_000L,
-            new ChannelSummaryDto(
-                "chan-qalam",
-                "UC1QalamInstitute",
-                "Qalam Institute",
-                "https://yt3.googleusercontent.com/ytc/AIf8zZSqalam=s88-c-k-c0x00ffffff-no-rj",
-                420_000L,
-                List.of(SEERAH, LECTURES)
-            ),
-            List.of(SEERAH, LECTURES),
-            null,
-            null
-        ));
-        VIDEOS = List.copyOf(videos);
+    public RegistryQueryService(CategoryLocalizationService categoryLocalizationService) {
+        this.categoryLocalizationService = categoryLocalizationService;
     }
 
-    public CursorPage<ChannelSummaryDto> listChannels(String cursor, int requestedLimit, String categoryId) {
+    public CursorPage<ChannelSummaryDto> listChannels(String cursor, int requestedLimit, String categorySlug) {
         var limit = normalizeLimit(requestedLimit);
-        var filtered = filterByCategory(CHANNELS, categoryId);
-        return paginate(filtered, cursor, limit);
+        var decodedCursor = decodeCursor(cursor);
+
+        var cb = entityManager.getCriteriaBuilder();
+        var cq = cb.createQuery(ChannelRegistry.class);
+        var root = cq.from(ChannelRegistry.class);
+        root.fetch("categories", JoinType.LEFT);
+        root.fetch("excludedVideoIds", JoinType.LEFT);
+        root.fetch("excludedPlaylistIds", JoinType.LEFT);
+        cq.select(root).distinct(true);
+
+        var predicates = new ArrayList<Predicate>();
+
+        if (StringUtils.hasText(categorySlug)) {
+            var normalized = normalizeCategorySlug(categorySlug);
+            SetJoin<ChannelRegistry, Category> join = root.joinSet("categories", JoinType.INNER);
+            predicates.add(cb.equal(cb.lower(join.get("slug")), normalized));
+        }
+
+        addCursorPredicate(decodedCursor, cb, root, predicates);
+
+        if (!predicates.isEmpty()) {
+            cq.where(predicates.toArray(Predicate[]::new));
+        }
+
+        cq.orderBy(cb.desc(root.get("createdAt")), cb.desc(root.get("id")));
+
+        var query = entityManager.createQuery(cq);
+        query.setMaxResults(limit + 1);
+        var slice = executeSlice(query, limit, entity -> Cursor.from(entity.getCreatedAt(), entity.getId()));
+
+        var data = slice.items()
+            .stream()
+            .map(this::toChannelSummary)
+            .toList();
+
+        var pageInfo = buildPageInfo(cursor, slice.nextCursor(), slice.hasNext(), limit);
+        return new CursorPage<>(data, pageInfo);
     }
 
-    public CursorPage<PlaylistSummaryDto> listPlaylists(String cursor, int requestedLimit, String categoryId) {
+    public CursorPage<PlaylistSummaryDto> listPlaylists(String cursor, int requestedLimit, String categorySlug) {
         var limit = normalizeLimit(requestedLimit);
-        var filtered = filterByCategory(PLAYLISTS, categoryId);
-        return paginate(filtered, cursor, limit);
+        var decodedCursor = decodeCursor(cursor);
+
+        var cb = entityManager.getCriteriaBuilder();
+        var cq = cb.createQuery(PlaylistRegistry.class);
+        var root = cq.from(PlaylistRegistry.class);
+        root.fetch("channel", JoinType.INNER);
+        root.fetch("categories", JoinType.LEFT);
+        root.fetch("excludedVideoIds", JoinType.LEFT);
+        cq.select(root).distinct(true);
+
+        var predicates = new ArrayList<Predicate>();
+
+        if (StringUtils.hasText(categorySlug)) {
+            var normalized = normalizeCategorySlug(categorySlug);
+            SetJoin<PlaylistRegistry, Category> join = root.joinSet("categories", JoinType.INNER);
+            predicates.add(cb.equal(cb.lower(join.get("slug")), normalized));
+        }
+
+        addCursorPredicate(decodedCursor, cb, root, predicates);
+
+        if (!predicates.isEmpty()) {
+            cq.where(predicates.toArray(Predicate[]::new));
+        }
+
+        cq.orderBy(cb.desc(root.get("createdAt")), cb.desc(root.get("id")));
+
+        var query = entityManager.createQuery(cq);
+        query.setMaxResults(limit + 1);
+        var slice = executeSlice(query, limit, entity -> Cursor.from(entity.getCreatedAt(), entity.getId()));
+
+        var data = slice.items()
+            .stream()
+            .map(this::toPlaylistSummary)
+            .toList();
+
+        var pageInfo = buildPageInfo(cursor, slice.nextCursor(), slice.hasNext(), limit);
+        return new CursorPage<>(data, pageInfo);
     }
 
     public CursorPage<VideoSummaryDto> listVideos(
         String cursor,
         int requestedLimit,
-        String categoryId,
+        String categorySlug,
         String query,
         String length,
         String date,
         String sort
     ) {
+        rejectUnsupportedFilters(length, date, sort);
+
         var limit = normalizeLimit(requestedLimit);
-        var filtered = filterVideos(categoryId, query, length, date, sort);
-        return paginate(filtered, cursor, limit);
+        var decodedCursor = decodeCursor(cursor);
+
+        var cb = entityManager.getCriteriaBuilder();
+        var cq = cb.createQuery(VideoRegistry.class);
+        var root = cq.from(VideoRegistry.class);
+        root.fetch("channel", JoinType.INNER);
+        root.fetch("playlist", JoinType.LEFT);
+        root.fetch("categories", JoinType.LEFT);
+        cq.select(root).distinct(true);
+
+        var predicates = new ArrayList<Predicate>();
+
+        if (StringUtils.hasText(categorySlug)) {
+            var normalized = normalizeCategorySlug(categorySlug);
+            SetJoin<VideoRegistry, Category> join = root.joinSet("categories", JoinType.INNER);
+            predicates.add(cb.equal(cb.lower(join.get("slug")), normalized));
+        }
+
+        if (StringUtils.hasText(query)) {
+            var normalized = query.trim().toLowerCase(Locale.ROOT);
+            predicates.add(cb.like(cb.lower(root.get("ytVideoId")), "%" + normalized + "%"));
+        }
+
+        addCursorPredicate(decodedCursor, cb, root, predicates);
+
+        if (!predicates.isEmpty()) {
+            cq.where(predicates.toArray(Predicate[]::new));
+        }
+
+        cq.orderBy(cb.desc(root.get("createdAt")), cb.desc(root.get("id")));
+
+        var jpaQuery = entityManager.createQuery(cq);
+        jpaQuery.setMaxResults(limit + 1);
+        var slice = executeSlice(jpaQuery, limit, entity -> Cursor.from(entity.getCreatedAt(), entity.getId()));
+
+        var data = slice.items()
+            .stream()
+            .map(this::toVideoSummary)
+            .toList();
+
+        var pageInfo = buildPageInfo(cursor, slice.nextCursor(), slice.hasNext(), limit);
+        return new CursorPage<>(data, pageInfo);
     }
 
-    private <T> CursorPage<T> paginate(List<T> source, String cursor, int limit) {
-        var offset = normalizeCursor(cursor, source.size());
-        var end = Math.min(offset + limit, source.size());
-        var items = source.subList(offset, end);
-        var hasNext = end < source.size();
-        var pageInfo = new CursorPageInfo(
-            offset > 0 ? String.valueOf(offset) : null,
-            hasNext ? String.valueOf(end) : null,
-            hasNext,
-            limit
+    public AdminSearchResponseDto searchAdminRegistry(String query, String categorySlug, int requestedLimit) {
+        var limit = normalizeLimit(requestedLimit);
+        var trimmedQuery = StringUtils.hasText(query) ? query.trim() : "";
+
+        var channels = findChannels(categorySlug, trimmedQuery, limit);
+        var playlists = findPlaylists(categorySlug, trimmedQuery, limit);
+        var videos = findVideos(categorySlug, trimmedQuery, limit);
+
+        var channelResults = channels.stream().map(this::toAdminChannelResult).toList();
+        var playlistResults = playlists.stream().map(this::toAdminPlaylistResult).toList();
+        var videoResults = videos.stream().map(this::toAdminVideoResult).toList();
+
+        return new AdminSearchResponseDto(trimmedQuery, channelResults, playlistResults, videoResults);
+    }
+
+    private List<ChannelRegistry> findChannels(String categorySlug, String query, int limit) {
+        var cb = entityManager.getCriteriaBuilder();
+        var cq = cb.createQuery(ChannelRegistry.class);
+        var root = cq.from(ChannelRegistry.class);
+        root.fetch("categories", JoinType.LEFT);
+        root.fetch("excludedVideoIds", JoinType.LEFT);
+        root.fetch("excludedPlaylistIds", JoinType.LEFT);
+        cq.select(root).distinct(true);
+
+        var predicates = new ArrayList<Predicate>();
+
+        if (StringUtils.hasText(categorySlug)) {
+            var normalized = normalizeCategorySlug(categorySlug);
+            SetJoin<ChannelRegistry, Category> join = root.joinSet("categories", JoinType.INNER);
+            predicates.add(cb.equal(cb.lower(join.get("slug")), normalized));
+        }
+
+        if (StringUtils.hasText(query)) {
+            var normalized = query.trim().toLowerCase(Locale.ROOT);
+            predicates.add(cb.like(cb.lower(root.get("ytChannelId")), "%" + normalized + "%"));
+        }
+
+        if (!predicates.isEmpty()) {
+            cq.where(predicates.toArray(Predicate[]::new));
+        }
+
+        cq.orderBy(cb.desc(root.get("createdAt")), cb.desc(root.get("id")));
+
+        var typedQuery = entityManager.createQuery(cq);
+        typedQuery.setMaxResults(limit);
+        return typedQuery.getResultList();
+    }
+
+    private List<PlaylistRegistry> findPlaylists(String categorySlug, String query, int limit) {
+        var cb = entityManager.getCriteriaBuilder();
+        var cq = cb.createQuery(PlaylistRegistry.class);
+        var root = cq.from(PlaylistRegistry.class);
+        root.fetch("channel", JoinType.INNER);
+        root.fetch("categories", JoinType.LEFT);
+        root.fetch("excludedVideoIds", JoinType.LEFT);
+        cq.select(root).distinct(true);
+
+        var predicates = new ArrayList<Predicate>();
+
+        if (StringUtils.hasText(categorySlug)) {
+            var normalized = normalizeCategorySlug(categorySlug);
+            SetJoin<PlaylistRegistry, Category> join = root.joinSet("categories", JoinType.INNER);
+            predicates.add(cb.equal(cb.lower(join.get("slug")), normalized));
+        }
+
+        if (StringUtils.hasText(query)) {
+            var normalized = query.trim().toLowerCase(Locale.ROOT);
+            predicates.add(cb.like(cb.lower(root.get("ytPlaylistId")), "%" + normalized + "%"));
+        }
+
+        if (!predicates.isEmpty()) {
+            cq.where(predicates.toArray(Predicate[]::new));
+        }
+
+        cq.orderBy(cb.desc(root.get("createdAt")), cb.desc(root.get("id")));
+
+        var typedQuery = entityManager.createQuery(cq);
+        typedQuery.setMaxResults(limit);
+        return typedQuery.getResultList();
+    }
+
+    private List<VideoRegistry> findVideos(String categorySlug, String query, int limit) {
+        var cb = entityManager.getCriteriaBuilder();
+        var cq = cb.createQuery(VideoRegistry.class);
+        var root = cq.from(VideoRegistry.class);
+        root.fetch("channel", JoinType.INNER);
+        root.fetch("playlist", JoinType.LEFT);
+        root.fetch("categories", JoinType.LEFT);
+        cq.select(root).distinct(true);
+
+        var predicates = new ArrayList<Predicate>();
+
+        if (StringUtils.hasText(categorySlug)) {
+            var normalized = normalizeCategorySlug(categorySlug);
+            SetJoin<VideoRegistry, Category> join = root.joinSet("categories", JoinType.INNER);
+            predicates.add(cb.equal(cb.lower(join.get("slug")), normalized));
+        }
+
+        if (StringUtils.hasText(query)) {
+            var normalized = query.trim().toLowerCase(Locale.ROOT);
+            predicates.add(cb.like(cb.lower(root.get("ytVideoId")), "%" + normalized + "%"));
+        }
+
+        if (!predicates.isEmpty()) {
+            cq.where(predicates.toArray(Predicate[]::new));
+        }
+
+        cq.orderBy(cb.desc(root.get("createdAt")), cb.desc(root.get("id")));
+
+        var typedQuery = entityManager.createQuery(cq);
+        typedQuery.setMaxResults(limit);
+        return typedQuery.getResultList();
+    }
+
+    private AdminSearchChannelResultDto toAdminChannelResult(ChannelRegistry entity) {
+        var categories = entity
+            .getCategories()
+            .stream()
+            .sorted(Comparator.comparing(categoryLocalizationService::resolveLabel))
+            .map(categoryLocalizationService::toTagDto)
+            .toList();
+        var excludedVideoIds = entity
+            .getExcludedVideoIds()
+            .stream()
+            .sorted()
+            .toList();
+        var excludedPlaylistIds = entity
+            .getExcludedPlaylistIds()
+            .stream()
+            .sorted()
+            .toList();
+        var excludedCounts = new ExcludedItemCountsDto(excludedVideoIds.size(), excludedPlaylistIds.size());
+        return new AdminSearchChannelResultDto(
+            entity.getId(),
+            entity.getYtChannelId(),
+            null,
+            null,
+            0L,
+            categories,
+            IncludeState.INCLUDED,
+            excludedCounts,
+            excludedPlaylistIds,
+            excludedVideoIds,
+            true
         );
-        return new CursorPage<>(List.copyOf(items), pageInfo);
+    }
+
+    private ChannelSummarySnapshotDto toChannelSnapshot(ChannelRegistry entity) {
+        var categories = entity
+            .getCategories()
+            .stream()
+            .sorted(Comparator.comparing(categoryLocalizationService::resolveLabel))
+            .map(categoryLocalizationService::toTagDto)
+            .toList();
+        return new ChannelSummarySnapshotDto(entity.getId(), entity.getYtChannelId(), null, null, 0L, categories);
+    }
+
+    private AdminSearchPlaylistResultDto toAdminPlaylistResult(PlaylistRegistry entity) {
+        var categories = entity
+            .getCategories()
+            .stream()
+            .sorted(Comparator.comparing(categoryLocalizationService::resolveLabel))
+            .map(categoryLocalizationService::toTagDto)
+            .toList();
+
+        var channel = entity.getChannel();
+        var excludedVideoIds = entity
+            .getExcludedVideoIds()
+            .stream()
+            .sorted()
+            .toList();
+
+        return new AdminSearchPlaylistResultDto(
+            entity.getId(),
+            entity.getYtPlaylistId(),
+            null,
+            null,
+            0,
+            toChannelSnapshot(channel),
+            categories,
+            true,
+            IncludeState.INCLUDED,
+            channel.getId(),
+            excludedVideoIds.size(),
+            excludedVideoIds,
+            true
+        );
+    }
+
+    private AdminSearchVideoResultDto toAdminVideoResult(VideoRegistry entity) {
+        var categories = entity
+            .getCategories()
+            .stream()
+            .sorted(Comparator.comparing(categoryLocalizationService::resolveLabel))
+            .map(categoryLocalizationService::toTagDto)
+            .toList();
+
+        var channel = entity.getChannel();
+        var playlist = entity.getPlaylist();
+        var ytId = entity.getYtVideoId();
+        var channelExcluded = channel.getExcludedVideoIds().contains(ytId);
+        var playlistExcluded = playlist != null && playlist.getExcludedVideoIds().contains(ytId);
+        var includeState = (channelExcluded || playlistExcluded) ? IncludeState.EXCLUDED : IncludeState.INCLUDED;
+
+        var parentPlaylists = playlist != null ? List.of(playlist.getYtPlaylistId()) : List.<String>of();
+
+        return new AdminSearchVideoResultDto(
+            entity.getId(),
+            ytId,
+            null,
+            null,
+            0,
+            DEFAULT_PUBLISHED_AT,
+            0L,
+            toChannelSnapshot(channel),
+            categories,
+            Boolean.FALSE,
+            Boolean.FALSE,
+            includeState,
+            channel.getId(),
+            parentPlaylists
+        );
+    }
+
+    private ChannelSummaryDto toChannelSummary(ChannelRegistry entity) {
+        var categories = entity
+            .getCategories()
+            .stream()
+            .sorted(Comparator.comparing(categoryLocalizationService::resolveLabel))
+            .map(categoryLocalizationService::toTagDto)
+            .toList();
+
+        var excludedPlaylists = entity
+            .getExcludedPlaylistIds()
+            .stream()
+            .sorted()
+            .toList();
+
+        var excludedVideos = entity
+            .getExcludedVideoIds()
+            .stream()
+            .sorted()
+            .toList();
+
+        return new ChannelSummaryDto(entity.getId(), entity.getYtChannelId(), categories, excludedPlaylists, excludedVideos);
+    }
+
+    private PlaylistSummaryDto toPlaylistSummary(PlaylistRegistry entity) {
+        var categories = entity
+            .getCategories()
+            .stream()
+            .sorted(Comparator.comparing(categoryLocalizationService::resolveLabel))
+            .map(categoryLocalizationService::toTagDto)
+            .toList();
+
+        var excludedVideos = entity
+            .getExcludedVideoIds()
+            .stream()
+            .sorted()
+            .toList();
+
+        var channel = entity.getChannel();
+
+        return new PlaylistSummaryDto(
+            entity.getId(),
+            entity.getYtPlaylistId(),
+            channel.getId(),
+            channel.getYtChannelId(),
+            categories,
+            excludedVideos
+        );
+    }
+
+    private VideoSummaryDto toVideoSummary(VideoRegistry entity) {
+        var categories = entity
+            .getCategories()
+            .stream()
+            .sorted(Comparator.comparing(categoryLocalizationService::resolveLabel))
+            .map(categoryLocalizationService::toTagDto)
+            .toList();
+
+        var channel = entity.getChannel();
+        var playlist = entity.getPlaylist();
+        var ytId = entity.getYtVideoId();
+
+        var channelExcluded = channel.getExcludedVideoIds().contains(ytId);
+        var playlistExcluded = playlist != null && playlist.getExcludedVideoIds().contains(ytId);
+
+        return new VideoSummaryDto(
+            entity.getId(),
+            ytId,
+            channel.getId(),
+            channel.getYtChannelId(),
+            playlist != null ? playlist.getId() : null,
+            playlist != null ? playlist.getYtPlaylistId() : null,
+            categories,
+            channelExcluded,
+            playlistExcluded
+        );
+    }
+
+    private void rejectUnsupportedFilters(String length, String date, String sort) {
+        if (StringUtils.hasText(length) || StringUtils.hasText(date) || StringUtils.hasText(sort)) {
+            throw new ResponseStatusException(HttpStatus.NOT_IMPLEMENTED, "Length, date, and sort filters require runtime metadata support");
+        }
+    }
+
+    private void addCursorPredicate(
+        Cursor cursor,
+        CriteriaBuilder cb,
+        Root<? extends AuditableEntity> root,
+        List<Predicate> predicates
+    ) {
+        if (cursor == null) {
+            return;
+        }
+        var createdAtPath = root.<OffsetDateTime>get("createdAt");
+        var idPath = root.<UUID>get("id");
+        predicates.add(cb.or(
+            cb.lessThan(createdAtPath, cursor.createdAt()),
+            cb.and(cb.equal(createdAtPath, cursor.createdAt()), cb.lessThan(idPath, cursor.id()))
+        ));
+    }
+
+    private static String normalizeCategorySlug(String slug) {
+        return slug.trim().toLowerCase(Locale.ROOT);
     }
 
     private int normalizeLimit(int requestedLimit) {
@@ -318,95 +534,42 @@ public class RegistryQueryService {
         return requestedLimit;
     }
 
-    private int normalizeCursor(String cursor, int size) {
+    private Cursor decodeCursor(String cursor) {
         if (!StringUtils.hasText(cursor)) {
-            return 0;
+            return null;
+        }
+        var trimmed = cursor.trim();
+        var parts = trimmed.split("\\|", 2);
+        if (parts.length != 2) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid cursor");
         }
         try {
-            var value = Integer.parseInt(cursor);
-            if (value < 0 || value > size) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cursor is out of range");
-            }
-            return value;
-        } catch (NumberFormatException ex) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cursor must be a non-negative integer");
+            return new Cursor(trimmed, OffsetDateTime.parse(parts[0]), UUID.fromString(parts[1]));
+        } catch (Exception ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid cursor", ex);
         }
     }
 
-    private <T> List<T> filterByCategory(List<T> source, String categoryId) {
-        if (!StringUtils.hasText(categoryId)) {
-            return source;
-        }
-        var normalized = categoryId.trim().toLowerCase(Locale.ROOT);
-        return source
-            .stream()
-            .filter(item -> {
-                if (item instanceof ChannelSummaryDto channel) {
-                    return channel.categories().stream().anyMatch(tag -> tag.id().equals(normalized));
-                }
-                if (item instanceof PlaylistSummaryDto playlist) {
-                    return playlist.categories().stream().anyMatch(tag -> tag.id().equals(normalized));
-                }
-                if (item instanceof VideoSummaryDto video) {
-                    return video.categories().stream().anyMatch(tag -> tag.id().equals(normalized));
-                }
-                return false;
-            })
-            .collect(Collectors.toUnmodifiableList());
+    private CursorPageInfo buildPageInfo(String currentCursor, Cursor nextCursor, boolean hasNext, int limit) {
+        return new CursorPageInfo(currentCursor, nextCursor != null ? nextCursor.raw() : null, hasNext, limit);
     }
 
-    private List<VideoSummaryDto> filterVideos(String categoryId, String query, String length, String date, String sort) {
-        var stream = VIDEOS.stream();
-
-        if (StringUtils.hasText(categoryId)) {
-            var normalized = categoryId.trim().toLowerCase(Locale.ROOT);
-            stream = stream.filter(video -> video.categories().stream().anyMatch(tag -> tag.id().equals(normalized)));
+    private <T> SliceResult<T> executeSlice(TypedQuery<T> query, int limit, java.util.function.Function<T, Cursor> cursorFn) {
+        var results = query.getResultList();
+        var hasNext = results.size() > limit;
+        if (hasNext) {
+            results = results.subList(0, limit);
         }
-
-        if (StringUtils.hasText(query)) {
-            var normalized = query.trim().toLowerCase(Locale.ROOT);
-            stream = stream.filter(video -> video.title().toLowerCase(Locale.ROOT).contains(normalized));
-        }
-
-        if (StringUtils.hasText(length)) {
-            var normalized = length.trim().toUpperCase(Locale.ROOT);
-            stream = stream.filter(video -> switch (normalized) {
-                case "SHORT" -> video.durationSeconds() < 300;
-                case "MEDIUM" -> video.durationSeconds() >= 300 && video.durationSeconds() < 1_200;
-                case "LONG" -> video.durationSeconds() >= 1_200;
-                default -> true;
-            });
-        }
-
-        if (StringUtils.hasText(date)) {
-            var normalized = date.trim().toUpperCase(Locale.ROOT);
-            var now = Instant.parse("2024-05-01T00:00:00Z");
-            stream = stream.filter(video -> {
-                var published = video.publishedAt();
-                return switch (normalized) {
-                    case "LAST_24_HOURS" -> published.isAfter(now.minusSeconds(86_400));
-                    case "LAST_7_DAYS" -> published.isAfter(now.minusSeconds(7 * 86_400L));
-                    case "LAST_30_DAYS" -> published.isAfter(now.minusSeconds(30 * 86_400L));
-                    case "ANYTIME" -> true;
-                    default -> true;
-                };
-            });
-        }
-
-        var videos = stream.collect(Collectors.toCollection(ArrayList::new));
-
-        if (StringUtils.hasText(sort)) {
-            var normalized = sort.trim().toUpperCase(Locale.ROOT);
-            if (Objects.equals(normalized, "POPULAR")) {
-                videos.sort(Comparator.comparingLong(VideoSummaryDto::viewCount).reversed());
-            } else if (Objects.equals(normalized, "RECENT")) {
-                videos.sort(Comparator.comparing(VideoSummaryDto::publishedAt).reversed());
-            }
-        } else {
-            videos.sort(Comparator.comparing(VideoSummaryDto::publishedAt).reversed());
-        }
-
-        return List.copyOf(videos);
+        var items = List.copyOf(results);
+        var nextCursor = hasNext ? cursorFn.apply(items.get(items.size() - 1)) : null;
+        return new SliceResult<>(items, nextCursor, hasNext);
     }
+
+    private record Cursor(String raw, OffsetDateTime createdAt, UUID id) {
+        static Cursor from(OffsetDateTime createdAt, UUID id) {
+            return new Cursor(createdAt.toString() + "|" + id, createdAt, id);
+        }
+    }
+
+    private record SliceResult<T>(List<T> items, Cursor nextCursor, boolean hasNext) {}
 }
-

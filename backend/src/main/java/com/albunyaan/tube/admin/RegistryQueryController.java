@@ -5,6 +5,7 @@ import com.albunyaan.tube.registry.dto.ChannelSummaryDto;
 import com.albunyaan.tube.registry.dto.CursorPage;
 import com.albunyaan.tube.registry.dto.PlaylistSummaryDto;
 import com.albunyaan.tube.registry.dto.VideoSummaryDto;
+import com.albunyaan.tube.registry.dto.admin.AdminSearchResponseDto;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import org.springframework.http.MediaType;
@@ -59,5 +60,14 @@ public class RegistryQueryController {
         var page = registryQueryService.listVideos(cursor, limit, categoryId, query, length, date, sort);
         return ResponseEntity.ok(page);
     }
-}
 
+    @GetMapping(path = "/search")
+    public ResponseEntity<AdminSearchResponseDto> searchRegistry(
+        @RequestParam(name = "q", required = false) String query,
+        @RequestParam(name = "categoryId", required = false) String categoryId,
+        @RequestParam(name = "limit", defaultValue = "20") @Min(1) @Max(100) int limit
+    ) {
+        var response = registryQueryService.searchAdminRegistry(query, categoryId, limit);
+        return ResponseEntity.ok(response);
+    }
+}

@@ -1,18 +1,23 @@
 package com.albunyaan.tube.moderation;
 
+import com.albunyaan.tube.audit.AuditAction;
+import com.albunyaan.tube.audit.AuditLogService;
+import com.albunyaan.tube.audit.AuditResourceType;
 import com.albunyaan.tube.category.Category;
+import com.albunyaan.tube.category.CategoryLocalizationService;
 import com.albunyaan.tube.category.CategoryRepository;
 import com.albunyaan.tube.user.User;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.regex.Pattern;
-import org.springframework.context.i18n.LocaleContextHolder;
+import java.util.Map;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -30,13 +35,19 @@ public class ModerationProposalService {
 
     private final ModerationProposalRepository moderationProposalRepository;
     private final CategoryRepository categoryRepository;
+    private final CategoryLocalizationService categoryLocalizationService;
+    private final AuditLogService auditLogService;
 
     public ModerationProposalService(
         ModerationProposalRepository moderationProposalRepository,
-        CategoryRepository categoryRepository
+        CategoryRepository categoryRepository,
+        CategoryLocalizationService categoryLocalizationService,
+        AuditLogService auditLogService
     ) {
         this.moderationProposalRepository = moderationProposalRepository;
         this.categoryRepository = categoryRepository;
+        this.categoryLocalizationService = categoryLocalizationService;
+        this.auditLogService = auditLogService;
     }
 
     public ModerationProposal createProposal(
@@ -91,6 +102,14 @@ public class ModerationProposalService {
         proposal.approve(actor);
         var saved = moderationProposalRepository.save(proposal);
         saved.getSuggestedCategories().size();
+        auditLogService.recordEntry(
+            AuditAction.MODERATION_APPROVED,
+            AuditResourceType.MODERATION_PROPOSAL,
+            saved.getId().toString(),
+            null,
+            actor,
+            buildModerationMetadata(saved)
+        );
         return saved;
     }
 
@@ -102,6 +121,14 @@ public class ModerationProposalService {
         proposal.reject(actor, sanitizeDecisionReason(reason));
         var saved = moderationProposalRepository.save(proposal);
         saved.getSuggestedCategories().size();
+        auditLogService.recordEntry(
+            AuditAction.MODERATION_REJECTED,
+            AuditResourceType.MODERATION_PROPOSAL,
+            saved.getId().toString(),
+            null,
+            actor,
+            buildModerationMetadata(saved)
+        );
         return saved;
     }
 
@@ -203,28 +230,6 @@ public class ModerationProposalService {
         return trimmed;
     }
 
-    private String resolveCategoryLabel(Category category) {
-        var names = category.getName();
-        if (names.isEmpty()) {
-            return category.getSlug();
-        }
-        var locale = LocaleContextHolder.getLocale();
-        if (locale != null) {
-            var fullTag = locale.toLanguageTag().toLowerCase(Locale.ROOT);
-            if (names.containsKey(fullTag)) {
-                return names.get(fullTag);
-            }
-            var language = locale.getLanguage().toLowerCase(Locale.ROOT);
-            if (StringUtils.hasText(language) && names.containsKey(language)) {
-                return names.get(language);
-            }
-        }
-        if (names.containsKey("en")) {
-            return names.get("en");
-        }
-        return names.values().iterator().next();
-    }
-
     public record ProposalPage(
         List<ModerationProposal> proposals,
         String cursor,
@@ -238,13 +243,28 @@ public class ModerationProposalService {
     public List<CategoryTag> toCategoryTags(List<Category> categories) {
         return categories
             .stream()
-            .map(category -> new CategoryTag(category.getSlug(), resolveCategoryLabel(category)))
+            .map(this::toCategoryTag)
             .toList();
     }
 
     public CategoryTag toCategoryTag(Category category) {
-        return new CategoryTag(category.getSlug(), resolveCategoryLabel(category));
+        return new CategoryTag(category.getSlug(), categoryLocalizationService.resolveLabel(category));
     }
 
     public record CategoryTag(String id, String label) {}
+
+    private Map<String, Object> buildModerationMetadata(ModerationProposal proposal) {
+        var metadata = new LinkedHashMap<String, Object>();
+        metadata.put("ytId", proposal.getYtId());
+        metadata.put("kind", proposal.getKind().name());
+        metadata.put("status", proposal.getStatus().name());
+        metadata.put(
+            "suggestedCategories",
+            proposal.getSuggestedCategories().stream().map(Category::getSlug).toList()
+        );
+        if (proposal.getDecisionReason() != null) {
+            metadata.put("decisionReason", proposal.getDecisionReason());
+        }
+        return metadata;
+    }
 }

@@ -27,4 +27,6 @@ public interface ModerationProposalRepository extends JpaRepository<ModerationPr
         @Param("idCursor") UUID idCursor,
         Pageable pageable
     );
+
+    long countByStatus(ModerationProposalStatus status);
 }

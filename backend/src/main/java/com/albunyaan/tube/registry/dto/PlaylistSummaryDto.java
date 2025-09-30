@@ -1,15 +1,13 @@
 package com.albunyaan.tube.registry.dto;
 
 import java.util.List;
+import java.util.UUID;
 
 public record PlaylistSummaryDto(
-    String id,
+    UUID id,
     String ytId,
-    String title,
-    String thumbnailUrl,
-    int itemCount,
-    ChannelSummaryDto owner,
+    UUID channelId,
+    String channelYtId,
     List<CategoryTagDto> categories,
-    Boolean downloadable
+    List<String> excludedVideoIds
 ) {}
-

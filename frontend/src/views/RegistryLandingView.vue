@@ -5,61 +5,409 @@
         <h1>{{ t('registry.heading') }}</h1>
         <p>{{ t('registry.description') }}</p>
       </div>
+      <div class="workspace-controls">
+        <div class="search-field">
+          <input
+            v-model="query"
+            type="search"
+            :placeholder="t('registry.search.placeholder')"
+            aria-label="Search"
+          />
+          <button
+            v-if="query"
+            type="button"
+            class="clear"
+            @click="clearQuery"
+            :aria-label="t('registry.search.clear')"
+          >
+            ×
+          </button>
+        </div>
+        <label class="category-filter">
+          <span class="sr-only">{{ t('registry.search.categoryLabel') }}</span>
+          <select v-model="categoryId">
+            <option value="">{{ t('registry.search.categoryLabel') }}</option>
+            <option v-for="category in categories" :key="category.id" :value="category.slug">
+              {{ category.label }}
+            </option>
+          </select>
+        </label>
+      </div>
     </header>
 
-    <nav class="tabs" role="tablist" aria-label="Registry sections">
-      <button
-        v-for="tab in tabItems"
-        :key="tab.key"
-        class="tab"
-        type="button"
-        role="tab"
-        :id="`registry-tab-${tab.key}`"
-        :aria-controls="`registry-panel-${tab.key}`"
-        :aria-selected="tab.key === activeTab"
-        :tabindex="tab.key === activeTab ? 0 : -1"
-        @click="setActiveTab(tab.key)"
-      >
-        {{ tab.label }}
-      </button>
-    </nav>
+    <div v-if="error" class="error-banner" role="alert">{{ error }}</div>
 
-    <div class="tab-panel" :id="`registry-panel-${activeTab}`" role="tabpanel" :aria-labelledby="`registry-tab-${activeTab}`">
-      <component :is="activeComponent" />
+    <div v-if="isLoading" class="skeleton-grid" aria-hidden="true">
+      <div v-for="index in 6" :key="index" class="skeleton-card"></div>
+    </div>
+
+    <div v-else class="results-grid">
+      <section class="results-section">
+        <header class="section-header">
+          <h2>{{ t('registry.sections.channels') }}</h2>
+          <span class="meta" v-if="channelResults.length">
+            {{ formatNumber(channelResults.length, currentLocale) }}
+          </span>
+        </header>
+        <p class="section-hint">{{ t('registry.channels.description') }}</p>
+        <div v-if="!channelResults.length" class="empty-state">
+          {{ t('registry.state.emptyChannels') }}
+        </div>
+        <ul v-else class="card-list">
+          <li v-for="channel in channelResults" :key="channel.id" class="card">
+            <article>
+              <header class="card-header">
+                <div class="card-title">{{ channel.ytId }}</div>
+                <div class="card-subtitle">{{ formatCategoryList(channel.categories) }}</div>
+              </header>
+              <dl class="card-meta">
+                <div>
+                  <dt>{{ t('registry.playlists.columns.items') }}</dt>
+                  <dd>{{ formatNumber(channel.excludedItemCounts.playlists, currentLocale) }}</dd>
+                </div>
+                <div>
+                  <dt>{{ t('registry.videos.columns.views') }}</dt>
+                  <dd>{{ formatNumber(channel.excludedItemCounts.videos, currentLocale) }}</dd>
+                </div>
+              </dl>
+            </article>
+          </li>
+        </ul>
+      </section>
+
+      <section class="results-section">
+        <header class="section-header">
+          <h2>{{ t('registry.sections.playlists') }}</h2>
+          <span class="meta" v-if="playlistResults.length">
+            {{ formatNumber(playlistResults.length, currentLocale) }}
+          </span>
+        </header>
+        <p class="section-hint">{{ t('registry.playlists.description') }}</p>
+        <div v-if="!playlistResults.length" class="empty-state">
+          {{ t('registry.state.emptyPlaylists') }}
+        </div>
+        <ul v-else class="card-list">
+          <li v-for="playlist in playlistResults" :key="playlist.id" class="card">
+            <article>
+              <header class="card-header">
+                <div class="card-title">{{ playlist.ytId }}</div>
+                <div class="card-subtitle">{{ formatCategoryList(playlist.categories) }}</div>
+              </header>
+              <dl class="card-meta">
+                <div>
+                  <dt>{{ t('registry.playlists.columns.owner') }}</dt>
+                  <dd>{{ playlist.owner.ytId }}</dd>
+                </div>
+                <div>
+                  <dt>{{ t('registry.playlists.columns.items') }}</dt>
+                  <dd>{{ formatNumber(playlist.excludedVideoCount, currentLocale) }}</dd>
+                </div>
+              </dl>
+              <footer class="card-actions">
+                <button
+                  type="button"
+                  class="chip"
+                  :class="{ active: playlist.includeState === 'EXCLUDED' }"
+                  :disabled="isPending(`playlist-${playlist.id}`)"
+                  @click="togglePlaylistInclusion(playlist)"
+                >
+                  <span v-if="isPending(`playlist-${playlist.id}`)">
+                    {{ playlist.includeState === 'EXCLUDED' ? t('registry.actions.including') : t('registry.actions.excluding') }}
+                  </span>
+                  <span v-else>
+                    {{ playlist.includeState === 'EXCLUDED' ? t('registry.actions.include') : t('registry.actions.exclude') }}
+                  </span>
+                </button>
+              </footer>
+            </article>
+          </li>
+        </ul>
+      </section>
+
+      <section class="results-section">
+        <header class="section-header">
+          <h2>{{ t('registry.sections.videos') }}</h2>
+          <span class="meta" v-if="videoResults.length">
+            {{ formatNumber(videoResults.length, currentLocale) }}
+          </span>
+        </header>
+        <p class="section-hint">{{ t('registry.videos.description') }}</p>
+        <div v-if="!videoResults.length" class="empty-state">
+          {{ t('registry.state.emptyVideos') }}
+        </div>
+        <ul v-else class="card-list">
+          <li v-for="video in videoResults" :key="video.id" class="card">
+            <article>
+              <header class="card-header">
+                <div class="card-title">{{ video.ytId }}</div>
+                <div class="card-subtitle">{{ formatCategoryList(video.categories) }}</div>
+              </header>
+              <dl class="card-meta">
+                <div>
+                  <dt>{{ t('registry.videos.columns.channel') }}</dt>
+                  <dd>{{ video.channel.ytId }}</dd>
+                </div>
+                <div>
+                  <dt>{{ t('registry.videos.columns.duration') }}</dt>
+                  <dd>{{ video.durationSeconds }}s</dd>
+                </div>
+              </dl>
+              <footer class="card-actions">
+                <button
+                  type="button"
+                  class="chip"
+                  :class="{ active: video.includeState === 'EXCLUDED' }"
+                  :disabled="isPending(`video-${video.id}`)"
+                  @click="toggleVideoInclusion(video)"
+                >
+                  <span v-if="isPending(`video-${video.id}`)">
+                    {{ video.includeState === 'EXCLUDED' ? t('registry.actions.including') : t('registry.actions.excluding') }}
+                  </span>
+                  <span v-else>
+                    {{ video.includeState === 'EXCLUDED' ? t('registry.actions.include') : t('registry.actions.exclude') }}
+                  </span>
+                </button>
+              </footer>
+            </article>
+          </li>
+        </ul>
+      </section>
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import ChannelsTable from '@/components/registry/ChannelsTable.vue';
-import PlaylistsTable from '@/components/registry/PlaylistsTable.vue';
-import VideosTable from '@/components/registry/VideosTable.vue';
+import { fetchAllCategories, type CategoryOption } from '@/services/categories';
+import {
+  searchRegistry,
+  updateChannelExclusions,
+  updatePlaylistExclusions
+} from '@/services/registry';
+import type {
+  AdminSearchPlaylistResult,
+  AdminSearchResponse,
+  AdminSearchVideoResult,
+  CategoryTag
+} from '@/types/registry';
+import { formatNumber } from '@/utils/formatters';
 
-type TabKey = 'channels' | 'playlists' | 'videos';
-
-const tabComponents = {
-  channels: ChannelsTable,
-  playlists: PlaylistsTable,
-  videos: VideosTable
-} as const;
-
-const { t } = useI18n();
-
-const activeTab = ref<TabKey>('channels');
-
-const tabItems = computed(() => [
-  { key: 'channels' as TabKey, label: t('registry.tabs.channels') },
-  { key: 'playlists' as TabKey, label: t('registry.tabs.playlists') },
-  { key: 'videos' as TabKey, label: t('registry.tabs.videos') }
-]);
-
-const activeComponent = computed(() => tabComponents[activeTab.value]);
-
-function setActiveTab(tab: TabKey) {
-  activeTab.value = tab;
+interface ChannelState {
+  ytId: string;
+  excludedPlaylistIds: Set<string>;
+  excludedVideoIds: Set<string>;
 }
+
+interface PlaylistState {
+  ytId: string;
+  excludedVideoIds: Set<string>;
+}
+
+const { t, locale } = useI18n();
+
+const query = ref('');
+const categoryId = ref<string>('');
+const categories = ref<CategoryOption[]>([]);
+const results = ref<AdminSearchResponse | null>(null);
+const isLoading = ref(false);
+const error = ref<string | null>(null);
+
+const channelStates = reactive<Record<string, ChannelState>>({});
+const playlistStates = reactive<Record<string, PlaylistState>>({});
+const pendingKeys = reactive(new Set<string>());
+
+const currentLocale = computed(() => locale.value);
+
+const channelResults = computed(() => results.value?.channels ?? []);
+const playlistResults = computed(() => results.value?.playlists ?? []);
+const videoResults = computed(() => results.value?.videos ?? []);
+
+let searchDebounce: number | undefined;
+
+watch(query, () => {
+  if (searchDebounce) {
+    window.clearTimeout(searchDebounce);
+  }
+  searchDebounce = window.setTimeout(() => {
+    loadResults();
+  }, 350);
+});
+
+watch(categoryId, () => {
+  loadResults();
+});
+
+onMounted(() => {
+  loadCategories();
+  loadResults();
+});
+
+async function loadCategories() {
+  try {
+    categories.value = await fetchAllCategories();
+  } catch (err) {
+    console.warn('Failed to load categories', err);
+  }
+}
+
+async function loadResults() {
+  if (isLoading.value) {
+    return;
+  }
+  isLoading.value = true;
+  error.value = null;
+  try {
+    const response = await searchRegistry({
+      q: query.value.trim() || undefined,
+      categoryId: categoryId.value || undefined,
+      limit: 30
+    });
+    results.value = response;
+    synchroniseStates(response);
+  } catch (err) {
+    console.error('Failed to load registry search', err);
+    error.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    isLoading.value = false;
+  }
+}
+
+function synchroniseStates(response: AdminSearchResponse) {
+  Object.keys(channelStates).forEach(key => delete channelStates[key]);
+  response.channels.forEach(channel => {
+    channelStates[channel.id] = {
+      ytId: channel.ytId,
+      excludedPlaylistIds: new Set(channel.excludedPlaylistIds ?? []),
+      excludedVideoIds: new Set(channel.excludedVideoIds ?? [])
+    };
+  });
+  Object.keys(playlistStates).forEach(key => delete playlistStates[key]);
+  response.playlists.forEach(playlist => {
+    playlistStates[playlist.id] = {
+      ytId: playlist.ytId,
+      excludedVideoIds: new Set(playlist.excludedVideoIds ?? [])
+    };
+  });
+}
+
+function clearQuery() {
+  query.value = '';
+  loadResults();
+}
+
+function formatCategoryList(categories: CategoryTag[]): string {
+  if (!categories.length) {
+    return t('registry.table.empty');
+  }
+  return categories.map(category => category.label).join(', ');
+}
+
+function isPending(key: string): boolean {
+  return pendingKeys.has(key);
+}
+
+async function togglePlaylistInclusion(playlist: AdminSearchPlaylistResult) {
+  const channel = channelStates[playlist.parentChannelId];
+  if (!channel) {
+    return;
+  }
+  const key = `playlist-${playlist.id}`;
+  if (pendingKeys.has(key)) {
+    return;
+  }
+  pendingKeys.add(key);
+  const shouldExclude = playlist.includeState !== 'EXCLUDED';
+  const nextSet = new Set(channel.excludedPlaylistIds);
+  if (shouldExclude) {
+    nextSet.add(playlist.ytId);
+  } else {
+    nextSet.delete(playlist.ytId);
+  }
+  try {
+    await updateChannelExclusions(playlist.parentChannelId, {
+      excludedPlaylistIds: Array.from(nextSet),
+      excludedVideoIds: Array.from(channel.excludedVideoIds)
+    });
+    channel.excludedPlaylistIds = nextSet;
+    playlist.includeState = shouldExclude ? 'EXCLUDED' : 'INCLUDED';
+    const channelEntry = results.value?.channels.find(item => item.id === playlist.parentChannelId);
+    if (channelEntry) {
+      channelEntry.excludedPlaylistIds = Array.from(nextSet);
+      channelEntry.excludedItemCounts = {
+        playlists: nextSet.size,
+        videos: channel.excludedVideoIds.size
+      };
+    }
+  } catch (err) {
+    console.error('Failed to update playlist inclusion', err);
+    error.value = t('registry.actions.error');
+  } finally {
+    pendingKeys.delete(key);
+  }
+}
+
+async function toggleVideoInclusion(video: AdminSearchVideoResult) {
+  const channel = channelStates[video.parentChannelId];
+  if (!channel) {
+    return;
+  }
+  const key = `video-${video.id}`;
+  if (pendingKeys.has(key)) {
+    return;
+  }
+  pendingKeys.add(key);
+  const shouldExclude = video.includeState !== 'EXCLUDED';
+  const nextChannelSet = new Set(channel.excludedVideoIds);
+  if (shouldExclude) {
+    nextChannelSet.add(video.ytId);
+  } else {
+    nextChannelSet.delete(video.ytId);
+  }
+  try {
+    await updateChannelExclusions(video.parentChannelId, {
+      excludedPlaylistIds: Array.from(channel.excludedPlaylistIds),
+      excludedVideoIds: Array.from(nextChannelSet)
+    });
+    channel.excludedVideoIds = nextChannelSet;
+    video.includeState = shouldExclude ? 'EXCLUDED' : 'INCLUDED';
+    const channelEntry = results.value?.channels.find(item => item.id === video.parentChannelId);
+    if (channelEntry) {
+      channelEntry.excludedVideoIds = Array.from(nextChannelSet);
+      channelEntry.excludedItemCounts = {
+        playlists: channel.excludedPlaylistIds.size,
+        videos: nextChannelSet.size
+      };
+    }
+
+    if (video.parentPlaylistIds.length > 0) {
+      const playlistEntry = results.value?.playlists.find(item => item.ytId === video.parentPlaylistIds[0]);
+      if (playlistEntry) {
+        const playlistState = playlistStates[playlistEntry.id];
+        if (playlistState) {
+          const nextPlaylistSet = new Set(playlistState.excludedVideoIds);
+          if (shouldExclude) {
+            nextPlaylistSet.add(video.ytId);
+          } else {
+            nextPlaylistSet.delete(video.ytId);
+          }
+          await updatePlaylistExclusions(playlistEntry.id, {
+            excludedVideoIds: Array.from(nextPlaylistSet)
+          });
+          playlistState.excludedVideoIds = nextPlaylistSet;
+          playlistEntry.excludedVideoIds = Array.from(nextPlaylistSet);
+          playlistEntry.excludedVideoCount = nextPlaylistSet.size;
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Failed to update video inclusion', err);
+    error.value = t('registry.actions.error');
+  } finally {
+    pendingKeys.delete(key);
+  }
+}
+
 </script>
 
 <style scoped>
@@ -71,12 +419,14 @@ function setActiveTab(tab: TabKey) {
 
 .workspace-header {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   background: white;
   border-radius: 1rem;
   padding: 1.75rem 2rem;
   box-shadow: 0 20px 45px -30px rgba(15, 23, 42, 0.35);
+  gap: 1rem;
 }
 
 .workspace-header h1 {
@@ -92,43 +442,229 @@ function setActiveTab(tab: TabKey) {
   font-size: 1rem;
 }
 
-.tabs {
-  display: inline-flex;
+.workspace-controls {
+  display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  background: white;
-  padding: 0.5rem;
-  border-radius: 999px;
-  box-shadow: 0 12px 30px -22px rgba(15, 23, 42, 0.45);
-  width: fit-content;
+  gap: 0.75rem;
 }
 
-.tab {
+.search-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: #f8fafc;
+  border-radius: 999px;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid #e2e8f0;
+}
+
+.search-field input {
   border: none;
-  padding: 0.5rem 1.25rem;
-  border-radius: 999px;
   background: transparent;
-  font-weight: 600;
-  color: #475569;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.95rem;
+  outline: none;
+  min-width: 220px;
+}
+
+.search-field .clear {
+  border: none;
+  background: transparent;
+  font-size: 1.25rem;
   cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease;
+  color: #94a3b8;
 }
 
-.tab[aria-selected='true'] {
-  background: #0f172a;
-  color: white;
-  box-shadow: 0 10px 20px -15px rgba(15, 23, 42, 0.6);
+.category-filter select {
+  border-radius: 999px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  padding: 0.5rem 1rem;
+  font-size: 0.95rem;
+  color: #0f172a;
 }
 
-.tab:hover {
-  background: rgba(15, 23, 42, 0.08);
+.error-banner {
+  padding: 0.85rem 1.25rem;
+  border-radius: 0.75rem;
+  background: #fee2e2;
+  color: #991b1b;
 }
 
-.tab-panel {
+.skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1rem;
+}
+
+.skeleton-card {
+  height: 160px;
+  border-radius: 1rem;
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 37%, #f1f5f9 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.results-grid {
+  display: grid;
+  gap: 2rem;
+}
+
+.results-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.section-header h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.section-header .meta {
+  font-size: 0.85rem;
+  color: #64748b;
+}
+
+.section-hint {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.card-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+
+.card {
+  background: white;
+  border-radius: 1rem;
+  box-shadow: 0 20px 45px -32px rgba(15, 23, 42, 0.35);
+  padding: 1.25rem;
   display: flex;
 }
 
-.tab-panel :deep(.registry-card) {
-  width: 100%;
+.card-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.card-title {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.card-subtitle {
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.card-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+
+.card-meta dt {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.card-meta dd {
+  margin: 0;
+  font-weight: 500;
+  color: #0f172a;
+}
+
+.card-actions {
+  margin-top: auto;
+  display: flex;
+}
+
+.chip {
+  border: 1px solid #0f172a;
+  background: transparent;
+  color: #0f172a;
+  border-radius: 999px;
+  padding: 0.4rem 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.chip.active {
+  background: #0f172a;
+  color: #fff;
+}
+
+.chip:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.empty-state {
+  padding: 1rem;
+  border-radius: 0.75rem;
+  border: 1px dashed #cbd5f5;
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
+@media (max-width: 640px) {
+  .workspace-controls {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .search-field {
+    width: 100%;
+  }
+
+  .search-field input {
+    width: 100%;
+  }
+
+  .card-meta {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

@@ -35,7 +35,17 @@ export const messages = {
     registry: {
       heading: 'Registry workspace',
       description: 'Manage allow-listed channels, playlists, and videos from a single workspace.',
+      search: {
+        placeholder: 'Search channels, playlists, or videos',
+        categoryLabel: 'Filter by category',
+        clear: 'Clear search'
+      },
       tabs: {
+        channels: 'Channels',
+        playlists: 'Playlists',
+        videos: 'Videos'
+      },
+      sections: {
         channels: 'Channels',
         playlists: 'Playlists',
         videos: 'Videos'
@@ -78,6 +88,19 @@ export const messages = {
         error: 'Unable to load {resource}.',
         retry: 'Retry',
         loading: 'Loading…'
+      },
+      state: {
+        loading: 'Fetching registry…',
+        emptyChannels: 'No channels match this search.',
+        emptyPlaylists: 'No playlists match this search.',
+        emptyVideos: 'No videos match this search.'
+      },
+      actions: {
+        include: 'Include',
+        exclude: 'Exclude',
+        including: 'Including…',
+        excluding: 'Excluding…',
+        error: 'Unable to update selection. Please try again.'
       },
       pagination: {
         previous: 'Previous',
