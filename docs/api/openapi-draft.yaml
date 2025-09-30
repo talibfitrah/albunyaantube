@@ -505,13 +505,43 @@ paths:
       parameters:
         - name: q
           in: query
-          required: true
+          required: false
           schema: { type: string, maxLength: 120 }
+        - name: categoryId
+          in: query
+          required: false
+          description: Optional category slug used to limit results across channels, playlists, and videos.
+          schema: { type: string }
+        - name: videoLength
+          in: query
+          required: false
+          description: Constrains video matches to short/medium/long buckets aligned with YouTube duration groupings.
+          schema:
+            type: string
+            enum: [SHORT, MEDIUM, LONG]
+        - name: videoDateRange
+          in: query
+          required: false
+          description: Filters video matches to a recency window relative to the current time.
+          schema:
+            type: string
+            enum: [LAST_24_HOURS, LAST_7_DAYS, LAST_30_DAYS]
+        - name: videoSort
+          in: query
+          required: false
+          description: Sort clause applied to the blended results before slicing to `maxResults`.
+          schema:
+            type: string
+            enum: [RECENT, POPULAR]
         - name: maxResults
           in: query
           schema: { type: integer, minimum: 1, maximum: 25, default: 10 }
       responses:
-        '200': { description: Search results grouped by resource type, content: { application/json: { schema: { $ref: '../data/json-schemas/admin-search-response.json' } } } }
+        '200':
+          description: Blended search results grouped by resource type with include/exclude metadata for each entry.
+          content:
+            application/json:
+              schema: { $ref: '../data/json-schemas/admin-search-response.json' }
   /admin/audit:
     get:
       summary: List audit logs

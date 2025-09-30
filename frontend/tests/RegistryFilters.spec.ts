@@ -56,7 +56,7 @@ describe('RegistryFilters', () => {
       { id: 'cat-1', slug: 'quran', label: 'Quran' }
     ]);
     await flushPromises();
-    await screen.findByRole('combobox');
+    await screen.findByLabelText('Filter by category');
 
     expect(screen.queryByTestId('category-skeleton')).toBeNull();
   });
@@ -74,7 +74,7 @@ describe('RegistryFilters', () => {
     });
 
     await screen.findByRole('option', { name: 'Quran' });
-    const select = await screen.findByRole('combobox');
+    const select = await screen.findByLabelText('Filter by category');
 
     store.setCategoryId('quran');
     await flushPromises();
@@ -102,5 +102,29 @@ describe('RegistryFilters', () => {
 
     const store = useRegistryFiltersStore();
     expect(store.query).toBe('');
+  });
+
+  it('updates video-specific filters through selects', async () => {
+    fetchAllCategoriesMock.mockResolvedValue([]);
+
+    render(RegistryFilters, {
+      global: {
+        plugins: [buildI18n(), pinia]
+      }
+    });
+
+    const lengthSelect = await screen.findByLabelText('Video length');
+    await fireEvent.update(lengthSelect, 'SHORT');
+
+    const dateSelect = await screen.findByLabelText('Published date');
+    await fireEvent.update(dateSelect, 'LAST_7_DAYS');
+
+    const sortSelect = await screen.findByLabelText('Sort order');
+    await fireEvent.update(sortSelect, 'POPULAR');
+
+    const store = useRegistryFiltersStore();
+    expect(store.videoLength).toBe('SHORT');
+    expect(store.videoDateRange).toBe('LAST_7_DAYS');
+    expect(store.videoSort).toBe('POPULAR');
   });
 });

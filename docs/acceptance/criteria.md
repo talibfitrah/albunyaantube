@@ -43,6 +43,7 @@ This document enumerates verifiable acceptance criteria linked to requirements, 
 - **AC-ADM-008**: Admin onboarding runbook documents environment setup, credential rotation, and communication touchpoints so a new administrator can complete first-day tasks without external guidance.
 - **AC-ADM-009**: Locale QA checklist covers en/ar/nl smoke tests (navigation, tables, forms, moderation queue, dashboard) with instructions to capture and log discrepancies before onboarding sign-off.
 - **AC-ADM-010**: Admin dashboard displays pending moderation, category totals, and active moderators from `/admin/dashboard`; data newer than 60s renders without warning and stale results display toast per backend `warnings`.
+- **AC-ADM-011**: Registry video filters support free-text search plus length, publish window, and sort controls that propagate across tabs and expose accessible labels in en/ar/nl.
 
 ## Backend Criteria
 - **AC-BE-001**: Cursor parameters validated; invalid cursor returns 400 with `error=CLIENT_ERROR`.

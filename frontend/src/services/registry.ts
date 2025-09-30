@@ -31,6 +31,9 @@ export interface VideoListParams extends PaginationParams {
 export interface RegistrySearchParams {
   q?: string | null;
   categoryId?: string | null;
+  videoLength?: VideoListParams['length'];
+  videoDateRange?: VideoListParams['date'];
+  videoSort?: VideoListParams['sort'];
   limit?: number;
 }
 
@@ -82,6 +85,9 @@ export async function searchRegistry(params: RegistrySearchParams = {}): Promise
   const query = buildQuery({
     q: params.q ?? undefined,
     categoryId: params.categoryId ?? undefined,
+    videoLength: params.videoLength ?? undefined,
+    videoDateRange: params.videoDateRange ?? undefined,
+    videoSort: params.videoSort ?? undefined,
     limit: params.limit
   });
   return authorizedJsonFetch<AdminSearchResponse>(`${REGISTRY_BASE_PATH}/search${query}`);

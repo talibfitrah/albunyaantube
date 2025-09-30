@@ -6,5 +6,8 @@ QA-ADMIN-01,AC-A11Y-002,"frontend/tests/ThemeTokens.spec.ts; frontend/tests/Main
 ADMIN-MVP-03,AC-REG-001|AC-REG-003,"frontend/tests/RegistryFilters.spec.ts; frontend/tests/registryFiltersStore.spec.ts; frontend/tests/RegistryLandingView.spec.ts","Shared registry filter store/component enforce category coverage across search results"
 ADMIN-MVP-06,AC-ADM-003,"frontend/tests/ModerationQueueView.spec.ts","Moderation queue modal focus + audit hook coverage"
 ADMIN-MVP-01,,"frontend/tests/PreferencesStore.spec.ts; frontend/tests/AdminLayoutLocaleSwitcher.spec.ts","Admin locale switcher preferences persistence and UI dropdown"
+ADMIN-MVP-02,AC-I18N-001|AC-I18N-003|AC-I18N-004,"frontend/tests/AdminLayoutLocaleSwitcher.spec.ts","Arabic/Dutch bundles keep locale switch, numerals, and date formatting aligned with strategy"
 ADMIN-MVP-05,AC-ADM-010,"docs/testing/test-strategy.md#admin-dashboard-metrics","/admin/dashboard contract in docs/api/openapi-draft.yaml; frontend plan in frontend/docs/dashboard-metrics-plan.md"
+ADMIN-MVP-04,AC-ADM-011,"frontend/tests/RegistryFilters.spec.ts; frontend/tests/registryFiltersStore.spec.ts; frontend/tests/RegistryLandingView.spec.ts","Video query controls share state across registry tabs with length/date/sort parameters"
+ADMIN-MVP-08,AC-ADM-006,"frontend/tests/RegistryLandingView.spec.ts","Blended search workspace supports include/exclude toggles, bulk actions, and aggregated results"
 ADMIN-MVP-07,AC-ADM-008|AC-ADM-009,"docs/runbooks/admin-onboarding.md; docs/runbooks/admin-login.md","Onboarding & locale QA documentation ensures administrators can self-serve setup"

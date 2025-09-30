@@ -24,6 +24,7 @@ This strategy spans backend, admin frontend, and Android client. It complements 
 
 ## Admin Frontend Testing
 - **Unit**: Vitest for components; ensure tokens from [`../ux/design-tokens.json`](../ux/design-tokens.json) applied. Moderation queue spec covers approve/reject flows, audit hook emission, and reject modal focus traps.
+- **Filters**: Pinia store + component tests validate shared registry search filters, including video length/date/sort parameters and debounced text queries propagating across tabs.
 - **E2E**: Playwright hitting staging backend mock; scenarios include moderation approval, exclusions editing, audit pagination, and blended search/import flows (single-surface results, bulk include/exclude).
 - **i18n**: Snapshot tests verifying ar/nl translations, directionality (RTL snapshots).
 - **Accessibility**: axe-core integration ensures WCAG AA; reject confirmation modal enforces focus loop + Escape handling in coverage checklist.

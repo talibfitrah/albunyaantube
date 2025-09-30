@@ -15,7 +15,7 @@ meta:
   status: planned
   owner: TBD-frontend
   depends: []
-  lastReviewed: 2025-09-30
+  lastReviewed: 2025-10-01
 ```
 Status: Planned
 **Estimate**: 3h.
@@ -50,7 +50,7 @@ meta:
   status: planned
   owner: TBD-frontend
   depends: [ADMIN-MVP-01]
-  lastReviewed: 2025-09-30
+  lastReviewed: 2025-10-01
 ```
 Status: Planned
 **Estimate**: 4h.
@@ -125,10 +125,10 @@ Gaps
 ```yaml
 meta:
   id: ADMIN-MVP-04
-  status: planned
-  owner: TBD-frontend
+  status: in-progress
+  owner: Frontend
   depends: [ADMIN-MVP-03]
-  lastReviewed: 2025-09-30
+  lastReviewed: 2025-10-01
 ```
 Status: Planned
 **Estimate**: 3.5h.

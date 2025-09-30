@@ -195,6 +195,30 @@ describe('RegistryLandingView', () => {
       expect(searchRegistryMock).toHaveBeenLastCalledWith({
         q: undefined,
         categoryId: 'quran',
+        videoLength: undefined,
+        videoDateRange: undefined,
+        videoSort: undefined,
+        limit: 30
+      });
+    });
+  });
+
+  it('applies video filters when updated in the store', async () => {
+    renderView();
+    const store = useRegistryFiltersStore();
+
+    await screen.findByText('UC123', { selector: '.card-title' });
+    store.setVideoLength('SHORT');
+    store.setVideoDateRange('LAST_24_HOURS');
+    store.setVideoSort('POPULAR');
+
+    await waitFor(() => {
+      expect(searchRegistryMock).toHaveBeenLastCalledWith({
+        q: undefined,
+        categoryId: undefined,
+        videoLength: 'SHORT',
+        videoDateRange: 'LAST_24_HOURS',
+        videoSort: 'POPULAR',
         limit: 30
       });
     });

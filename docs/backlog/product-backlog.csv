@@ -13,9 +13,9 @@ Backend,BACK-02,Seed categories via Flyway,"Create baseline categories in migrat
 Backend,BACK-03,Implement cursor pagination,"Add cursor service covering all list endpoints",4,2,,,,,,
 Moderation,MOD-01,Moderation proposal workflow,"Approve/reject endpoints with audit logging",5,2,,,,,,
 Admin UI MVP,ADMIN-MVP-01,Admin locale switcher,"Implement locale dropdown + persistence per i18n strategy",0.4,3,,,,,,
-Admin UI MVP,ADMIN-MVP-02,Ship Arabic & Dutch bundles,"Split locale files and enable RTL mirroring",0.5,3,,,,,,
+Admin UI MVP,ADMIN-MVP-02,Ship Arabic & Dutch bundles,"Split locale files and enable RTL mirroring",0.5,3,in-review,Frontend,,AC-I18N-001|AC-I18N-003|AC-I18N-004,"frontend/tests/AdminLayoutLocaleSwitcher.spec.ts","2025-10-01"
 Admin UI MVP,ADMIN-MVP-03,Registry category filter,"Add shared category filter and API integration",0.5,3,in-review,Frontend,,AC-REG-001|AC-REG-003,"frontend/tests/RegistryFilters.spec.ts; frontend/tests/registryFiltersStore.spec.ts; frontend/tests/RegistryLandingView.spec.ts",2025-10-01
-Admin UI MVP,ADMIN-MVP-04,Video query controls,"Expose search/length/date/sort filters",0.5,3,,,,,,
+Admin UI MVP,ADMIN-MVP-04,Video query controls,"Expose search/length/date/sort filters",0.5,3,in-progress,Frontend,ADMIN-MVP-03,AC-ADM-011,"frontend/tests/RegistryFilters.spec.ts; frontend/tests/registryFiltersStore.spec.ts; frontend/tests/RegistryLandingView.spec.ts","2025-10-01"
 Admin UI MVP,ADMIN-MVP-05,Dashboard metrics contract,"Define backend endpoint + frontend consumption plan",0.4,3,planned,TBD-frontend-backend,,AC-ADM-010,"docs/testing/test-strategy.md#admin-dashboard-metrics","2025-09-30"
 Admin UI MVP,ADMIN-MVP-06,Moderation queue UX polish,"Finalize queue interactions, audit logging hooks",0.4,3,partial,TBD-frontend,,"",,"2025-09-30"
 Admin UI MVP,ADMIN-MVP-07,Documentation & onboarding refresh,"Update README/runbooks/backlog for admin MVP",0.25,3,in-progress,Product+Frontend,,AC-ADM-008|AC-ADM-009,"docs/runbooks/admin-onboarding.md; docs/runbooks/admin-login.md","2025-09-30"

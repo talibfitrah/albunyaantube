@@ -38,6 +38,7 @@ This strategy covers localization for English (`en`), Modern Standard Arabic (`a
 
 ## QA Guidelines
 - **Truncation**: Validate key screens with longest translations; ensure 20% text expansion tolerance.
+- **Registry filters**: Verify Category/Video Length/Published Date/Sort dropdown labels and options translate without clipping and mirror order in RTL contexts.
 - **BiDi**: Test Arabic strings with embedded English numbers; ensure correct direction via Unicode control characters where needed.
 - **Numerals**: Use locale digits for durations and counts; Arabic uses Eastern Arabic numerals (via `NumberFormat`).
 - **Input**: Admin forms allow RTL input with text alignment toggles.
@@ -47,6 +48,7 @@ This strategy covers localization for English (`en`), Modern Standard Arabic (`a
 - Manage strings in a shared spreadsheet/export pipeline producing JSON for admin and XML for Android.
 - Use `crowdin` or `lokalise` for translation management; include context screenshots (see UI spec).
 - CI step verifies keys across platforms (no missing translations).
+- Admin SPA bundles English (`en`), Arabic (`ar`), and Dutch (`nl`) dictionaries in `frontend/src/locales/messages.ts`; run locale switcher smoke test after updating bundles to confirm RTL layout and translation coverage, including the blended search workspace (filter chips, include/exclude buttons, bulk bar copy).
 
 ## Traceability
 - Requirements tracked in Phase 11 plan (see [`../roadmap/roadmap.md`](../roadmap/roadmap.md)).

@@ -14,14 +14,26 @@ describe('useRegistryFiltersStore', () => {
     fetchAllCategoriesMock.mockReset();
   });
 
-  it('updates query and category state', () => {
+  it('updates query and filter state', () => {
     const store = useRegistryFiltersStore();
     store.setQuery('  halal ');
     store.setCategoryId('quran');
+    store.setVideoLength('SHORT');
+    store.setVideoDateRange('LAST_7_DAYS');
+    store.setVideoSort('POPULAR');
 
     expect(store.query).toBe('  halal ');
     expect(store.categoryId).toBe('quran');
-    expect(store.searchParams).toEqual({ q: 'halal', categoryId: 'quran' });
+    expect(store.videoLength).toBe('SHORT');
+    expect(store.videoDateRange).toBe('LAST_7_DAYS');
+    expect(store.videoSort).toBe('POPULAR');
+    expect(store.searchParams).toEqual({
+      q: 'halal',
+      categoryId: 'quran',
+      videoLength: 'SHORT',
+      videoDateRange: 'LAST_7_DAYS',
+      videoSort: 'POPULAR'
+    });
     expect(store.hasActiveFilters).toBe(true);
   });
 
@@ -29,12 +41,24 @@ describe('useRegistryFiltersStore', () => {
     const store = useRegistryFiltersStore();
     store.setQuery('value');
     store.setCategoryId('cat-1');
+    store.setVideoLength('MEDIUM');
+    store.setVideoDateRange('LAST_24_HOURS');
+    store.setVideoSort('RECENT');
 
     store.reset();
 
     expect(store.query).toBe('');
     expect(store.categoryId).toBeNull();
-    expect(store.searchParams).toEqual({ q: undefined, categoryId: undefined });
+    expect(store.videoLength).toBeNull();
+    expect(store.videoDateRange).toBeNull();
+    expect(store.videoSort).toBeNull();
+    expect(store.searchParams).toEqual({
+      q: undefined,
+      categoryId: undefined,
+      videoLength: undefined,
+      videoDateRange: undefined,
+      videoSort: undefined
+    });
     expect(store.hasActiveFilters).toBe(false);
   });
 

@@ -95,12 +95,15 @@ Each screen references the mockups. Layout measurements assume 360dp width basel
 
 ### Search & Import Workspace
 - Global search input centered atop the workspace with pill-shaped field, 12px inset shadow, and inline locale-aware placeholder (e.g., “Search Qur’an”). Search triggers on Enter or Search icon press; results update in place without page reload.
+- Filter row lives to the right of the search bar and includes dropdowns for Category, Video Length, Published Date, and Sort order. Controls use rounded 12px corners, accessible labels, and persist selections across Channels/Playlists/Videos tabs.
 - Results view mirrors YouTube’s blended layout: stacked sections for Channels, Playlists, and Videos rendered in a single scroll surface. Each section title (H2) remains sticky while its cards scroll.
 - Cards reuse existing channel/playlist/video summary components with 120×120 thumbnails (channels) or 16:9 previews (playlists/videos) and show subscriber/video counts. Buttons on the right expose the Include/Exclude toggle described below.
+- Filter dropdown labels and include/exclude toggles inherit localized copy from the i18n bundles; ensure Arabic renders RTL with mirrored bulk action bar alignment.
 
 #### Include / Exclude Controls
 - Every result row includes a tri-state toggle (`Include`, `Pending`, `Excluded`). Default is `Pending` for unseen IDs, `Include` for already allow-listed items, and `Excluded` when the parent has explicit exclusions.
 - Bulk actions: a multi-select checkbox column enables selecting multiple items per section. When ≥1 selected, a sticky bulk action bar appears with `Include Selected`, `Exclude Selected`, and `Clear Selection` buttons. Bulk confirmations summarize how many items will be affected and warn if they belong to different parent channels/playlists.
+- Bulk action bar labels must adapt to locale width—allow two-line wrapping at 320px and honour RTL alignment when Arabic is active.
 - Tooltips surface localized explanations (e.g., “Excluded items remain hidden in Albunyaan Tube even if the channel is included”).
 
 #### Channel Detail Drawer

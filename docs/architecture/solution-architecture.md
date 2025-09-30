@@ -38,6 +38,7 @@ These schemas inform JPA entities and API payloads.
 - Modules: Auth shell, Registry management, Moderation queue, Users, Audit logs.
 - API client generated from OpenAPI via `openapi-typescript`. State stores align with pagination contract (cursor-based).
 - Search & Import workspace consumes blended `/admin/search` response, renders tri-state include/exclude toggles, and batches mutations to backend bulk endpoints.
+- Registry filter store centralizes search query, category, video length/date/sort preferences and fans updates out to all tabs with debounced API calls.
 - Security: JWT stored in HTTP-only cookies; CSRF tokens for state-changing operations.
 
 ### Dashboard Metrics

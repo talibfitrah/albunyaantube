@@ -184,7 +184,7 @@ interface PlaylistState {
 const { t, locale } = useI18n();
 
 const filtersStore = useRegistryFiltersStore();
-const { query, categoryId, searchParams } = storeToRefs(filtersStore);
+const { query, categoryId, videoLength, videoDateRange, videoSort, searchParams } = storeToRefs(filtersStore);
 const results = ref<AdminSearchResponse | null>(null);
 const isLoading = ref(false);
 const error = ref<string | null>(null);
@@ -214,6 +214,10 @@ watch(categoryId, () => {
   loadResults();
 });
 
+watch([videoLength, videoDateRange, videoSort], () => {
+  loadResults();
+});
+
 onMounted(() => {
   filtersStore.fetchCategories();
   loadResults();
@@ -230,6 +234,9 @@ async function loadResults() {
     const response = await searchRegistry({
       q: params.q ?? undefined,
       categoryId: params.categoryId ?? undefined,
+      videoLength: params.videoLength,
+      videoDateRange: params.videoDateRange,
+      videoSort: params.videoSort,
       limit: 30
     });
     results.value = response;

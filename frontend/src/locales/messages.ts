@@ -42,7 +42,27 @@ export const messages = {
       search: {
         placeholder: 'Search channels, playlists, or videos',
         categoryLabel: 'Filter by category',
-        clear: 'Clear search'
+        clear: 'Clear search',
+        length: {
+          label: 'Video length',
+          any: 'Any length',
+          short: 'Under 4 minutes',
+          medium: '4-20 minutes',
+          long: 'Over 20 minutes'
+        },
+        published: {
+          label: 'Published date',
+          any: 'Any date',
+          last24h: 'Last 24 hours',
+          last7: 'Last 7 days',
+          last30: 'Last 30 days'
+        },
+        sort: {
+          label: 'Sort order',
+          default: 'Default order',
+          recent: 'Newest first',
+          popular: 'Most viewed'
+        }
       },
       tabs: {
         channels: 'Channels',
@@ -181,6 +201,418 @@ export const messages = {
       locales: {
         en: 'English',
         ar: 'العربية',
+        nl: 'Nederlands'
+      }
+    }
+  },
+  ar: {
+    auth: {
+      title: 'إدارة Albunyaan Tube',
+      subtitle: 'سجّل الدخول باستخدام حساب المشرف للمتابعة.',
+      email: 'البريد الإلكتروني للعمل',
+      password: 'كلمة المرور',
+      signIn: 'تسجيل الدخول',
+      signingIn: 'جارٍ تسجيل الدخول…',
+      logout: 'تسجيل الخروج',
+      errors: {
+        invalidEmail: 'أدخل عنوان بريد إلكتروني صالح.',
+        passwordLength: 'يجب أن تتكون كلمة المرور من 8 أحرف على الأقل.'
+      }
+    },
+    navigation: {
+      dashboard: 'لوحة التحكم',
+      registry: 'السجل',
+      moderation: 'الإشراف',
+      users: 'المستخدمون',
+      audit: 'سجل التدقيق',
+      home: 'الرئيسية',
+      channels: 'القنوات',
+      playlists: 'قوائم التشغيل',
+      videos: 'الفيديوهات'
+    },
+    dashboard: {
+      heading: 'سلام عليكم، مرحباً بعودتك',
+      subtitle: 'راجع أحدث نشاط الإشراف وصحة السجل.',
+      cards: {
+        pendingModeration: 'طلبات قيد المراجعة',
+        pendingModerationCaption: 'بانتظار الموافقة',
+        categories: 'الفئات',
+        categoriesCaption: 'الموضوعات المسموح بها',
+        moderators: 'المشرفون',
+        moderatorsCaption: 'أعضاء نشطون'
+      }
+    },
+    registry: {
+      heading: 'مساحة عمل السجل',
+      description: 'أدر القنوات وقوائم التشغيل والفيديوهات المسموح بها من مكان واحد.',
+      search: {
+        placeholder: 'ابحث في القنوات أو قوائم التشغيل أو الفيديوهات',
+        categoryLabel: 'التصفية حسب الفئة',
+        clear: 'مسح البحث',
+        length: {
+          label: 'مدة الفيديو',
+          any: 'أي مدة',
+          short: 'أقل من 4 دقائق',
+          medium: '4-20 دقيقة',
+          long: 'أكثر من 20 دقيقة'
+        },
+        published: {
+          label: 'تاريخ النشر',
+          any: 'أي تاريخ',
+          last24h: 'آخر 24 ساعة',
+          last7: 'آخر 7 أيام',
+          last30: 'آخر 30 يومًا'
+        },
+        sort: {
+          label: 'ترتيب الفرز',
+          default: 'الترتيب الافتراضي',
+          recent: 'الأحدث أولاً',
+          popular: 'الأكثر مشاهدة'
+        }
+      },
+      tabs: {
+        channels: 'القنوات',
+        playlists: 'قوائم التشغيل',
+        videos: 'الفيديوهات'
+      },
+      sections: {
+        channels: 'القنوات',
+        playlists: 'قوائم التشغيل',
+        videos: 'الفيديوهات'
+      },
+      channels: {
+        description: 'راقب القنوات المعتمدة وتغطيتها للفئات.',
+        columns: {
+          channel: 'القناة',
+          categories: 'الفئات',
+          subscribers: 'المشتركون'
+        }
+      },
+      playlists: {
+        description: 'راجع القوائم المنسقة وتحقق من حالة التنزيل.',
+        columns: {
+          playlist: 'قائمة التشغيل',
+          owner: 'المالك',
+          categories: 'الفئات',
+          items: 'العناصر',
+          download: 'التنزيل'
+        },
+        download: {
+          available: 'التنزيل متاح',
+          blocked: 'محظور حسب السياسة'
+        }
+      },
+      videos: {
+        description: 'تفقد الفيديوهات المسموح بها مع القناة والمدة وتاريخ النشر.',
+        columns: {
+          video: 'الفيديو',
+          channel: 'القناة',
+          categories: 'الفئات',
+          duration: 'المدة',
+          views: 'المشاهدات',
+          published: 'تاريخ النشر'
+        }
+      },
+      table: {
+        empty: 'لا توجد نتائج في هذه الصفحة.',
+        error: 'تعذر تحميل {resource}.',
+        retry: 'إعادة المحاولة',
+        loading: 'جارٍ التحميل…'
+      },
+      state: {
+        loading: 'جارٍ جلب السجل…',
+        emptyChannels: 'لا توجد قنوات تطابق هذا البحث.',
+        emptyPlaylists: 'لا توجد قوائم تطابق هذا البحث.',
+        emptyVideos: 'لا توجد فيديوهات تطابق هذا البحث.'
+      },
+      actions: {
+        include: 'تضمين',
+        exclude: 'استبعاد',
+        including: 'جارٍ التضمين…',
+        excluding: 'جارٍ الاستبعاد…',
+        error: 'تعذر تحديث الاختيار. حاول مرة أخرى.'
+      },
+      pagination: {
+        previous: 'السابق',
+        next: 'التالي',
+        showing: 'إظهار {count} من {limit} عناصر'
+      }
+    },
+    moderation: {
+      heading: 'قائمة الإشراف',
+      description: 'تابع المقترحات وأقرها أو ارفضها.',
+      filters: {
+        label: 'الحالة',
+        all: 'الكل',
+        pending: 'قيد الانتظار',
+        approved: 'مقبول',
+        rejected: 'مرفوض'
+      },
+      table: {
+        columns: {
+          kind: 'النوع',
+          resource: 'المورد',
+          categories: 'الفئات',
+          proposer: 'المقترح',
+          submitted: 'تاريخ الإرسال',
+          notes: 'ملاحظات',
+          status: 'الحالة / الإجراءات'
+        },
+        empty: 'لا توجد مقترحات تطابق هذا التصفية.',
+        error: 'تعذر تحميل المقترحات.',
+        loading: 'جارٍ تحميل المقترحات…'
+      },
+      actions: {
+        approve: 'موافقة',
+        approving: 'جارٍ الموافقة…',
+        reject: 'رفض',
+        rejecting: 'جارٍ الرفض…',
+        cancel: 'إلغاء',
+        confirmReject: 'رفض المقترح',
+        confirmRejectDescription: 'أضف سببًا اختياريًا لمساعدة المرسل على فهم القرار.',
+        reasonLabel: 'سبب الرفض (اختياري)',
+        submitReject: 'إرسال القرار'
+      },
+      status: {
+        pending: 'قيد الانتظار',
+        approved: 'مقبول',
+        rejected: 'مرفوض'
+      },
+      kind: {
+        CHANNEL: 'قناة',
+        PLAYLIST: 'قائمة تشغيل',
+        VIDEO: 'فيديو'
+      },
+      decision: {
+        approvedBy: 'تمت الموافقة بواسطة {name}',
+        rejectedBy: 'تم الرفض بواسطة {name}',
+        decidedOn: 'في {date}',
+        reason: 'السبب: {reason}'
+      },
+      errors: {
+        actionFailed: 'تعذر تحديث المقترح. حاول مرة أخرى.'
+      },
+      notesPlaceholder: 'لا توجد ملاحظات.'
+    },
+    users: {
+      heading: 'إدارة المستخدمين',
+      description: 'أنشئ حسابات المدراء والمشرفين وأدرها.'
+    },
+    audit: {
+      heading: 'سجل التدقيق',
+      description: 'سجل زمني للتغييرات الحساسة. سيتم تنفيذ العارض لاحقًا.'
+    },
+    preferences: {
+      localeLabel: 'لغة الواجهة',
+      locales: {
+        en: 'الإنجليزية',
+        ar: 'العربية',
+        nl: 'الهولندية'
+      }
+    }
+  },
+  nl: {
+    auth: {
+      title: 'Albunyaan Tube Beheer',
+      subtitle: 'Meld je aan met je beheerdersaccount om door te gaan.',
+      email: 'Werk e-mailadres',
+      password: 'Wachtwoord',
+      signIn: 'Inloggen',
+      signingIn: 'Bezig met inloggen…',
+      logout: 'Afmelden',
+      errors: {
+        invalidEmail: 'Voer een geldig e-mailadres in.',
+        passwordLength: 'Het wachtwoord moet minstens 8 tekens bevatten.'
+      }
+    },
+    navigation: {
+      dashboard: 'Dashboard',
+      registry: 'Registerbeheer',
+      moderation: 'Moderatie',
+      users: 'Gebruikers',
+      audit: 'Auditlogboek',
+      home: 'Home',
+      channels: 'Kanalen',
+      playlists: 'Afspeellijsten',
+      videos: 'Video\'s'
+    },
+    dashboard: {
+      heading: 'Salaam, welkom terug',
+      subtitle: 'Bekijk de laatste moderatie-activiteit en gezondheid van het register.',
+      cards: {
+        pendingModeration: 'Openstaande moderatie',
+        pendingModerationCaption: 'Wacht op beoordeling',
+        categories: 'Categorieën',
+        categoriesCaption: 'Toegestane onderwerpen',
+        moderators: 'Moderators',
+        moderatorsCaption: 'Actieve medewerkers'
+      }
+    },
+    registry: {
+      heading: 'Registerwerkruimte',
+      description: 'Beheer goedgekeurde kanalen, afspeellijsten en video\'s vanuit één workspace.',
+      search: {
+        placeholder: 'Zoek naar kanalen, afspeellijsten of video\'s',
+        categoryLabel: 'Filter op categorie',
+        clear: 'Zoekopdracht wissen',
+        length: {
+          label: 'Videolengte',
+          any: 'Elke lengte',
+          short: 'Korter dan 4 minuten',
+          medium: '4-20 minuten',
+          long: 'Langer dan 20 minuten'
+        },
+        published: {
+          label: 'Publicatiedatum',
+          any: 'Elke datum',
+          last24h: 'Laatste 24 uur',
+          last7: 'Laatste 7 dagen',
+          last30: 'Laatste 30 dagen'
+        },
+        sort: {
+          label: 'Sorteervolgorde',
+          default: 'Standaardvolgorde',
+          recent: 'Nieuwste eerst',
+          popular: 'Meest bekeken'
+        }
+      },
+      tabs: {
+        channels: 'Kanalen',
+        playlists: 'Afspeellijsten',
+        videos: 'Video\'s'
+      },
+      sections: {
+        channels: 'Kanalen',
+        playlists: 'Afspeellijsten',
+        videos: 'Video\'s'
+      },
+      channels: {
+        description: 'Bewaking van goedgekeurde kanalen en hun categoriedekking.',
+        columns: {
+          channel: 'Kanaal',
+          categories: 'Categorieën',
+          subscribers: 'Abonnees'
+        }
+      },
+      playlists: {
+        description: 'Controleer samengestelde afspeellijsten en bevestig de downloadstatus.',
+        columns: {
+          playlist: 'Afspeellijst',
+          owner: 'Eigenaar',
+          categories: 'Categorieën',
+          items: 'Items',
+          download: 'Download'
+        },
+        download: {
+          available: 'Download beschikbaar',
+          blocked: 'Geblokkeerd door beleid'
+        }
+      },
+      videos: {
+        description: 'Bekijk goedgekeurde video\'s met kanaal, duur en publicatiedatum.',
+        columns: {
+          video: 'Video',
+          channel: 'Kanaal',
+          categories: 'Categorieën',
+          duration: 'Duur',
+          views: 'Weergaven',
+          published: 'Gepubliceerd'
+        }
+      },
+      table: {
+        empty: 'Geen resultaten op deze pagina.',
+        error: '{resource} kan niet worden geladen.',
+        retry: 'Opnieuw proberen',
+        loading: 'Laden…'
+      },
+      state: {
+        loading: 'Register wordt geladen…',
+        emptyChannels: 'Geen kanalen voldoen aan deze zoekopdracht.',
+        emptyPlaylists: 'Geen afspeellijsten voldoen aan deze zoekopdracht.',
+        emptyVideos: 'Geen video\'s voldoen aan deze zoekopdracht.'
+      },
+      actions: {
+        include: 'Opnemen',
+        exclude: 'Uitsluiten',
+        including: 'Wordt opgenomen…',
+        excluding: 'Wordt uitgesloten…',
+        error: 'Selectie kan niet worden bijgewerkt. Probeer het opnieuw.'
+      },
+      pagination: {
+        previous: 'Vorige',
+        next: 'Volgende',
+        showing: '{count} van {limit} items getoond'
+      }
+    },
+    moderation: {
+      heading: 'Moderatie wachtrij',
+      description: 'Volg ingediende voorstellen en keur ze goed of af.',
+      filters: {
+        label: 'Status',
+        all: 'Alle',
+        pending: 'In behandeling',
+        approved: 'Goedgekeurd',
+        rejected: 'Afgewezen'
+      },
+      table: {
+        columns: {
+          kind: 'Type',
+          resource: 'Item',
+          categories: 'Categorieën',
+          proposer: 'Ingediend door',
+          submitted: 'Ingediend',
+          notes: 'Notities',
+          status: 'Status / Acties'
+        },
+        empty: 'Geen voorstellen gevonden voor dit filter.',
+        error: 'Kan moderatievoorstellen niet laden.',
+        loading: 'Voorstellen laden…'
+      },
+      actions: {
+        approve: 'Goedkeuren',
+        approving: 'Bezig met goedkeuren…',
+        reject: 'Afwijzen',
+        rejecting: 'Bezig met afwijzen…',
+        cancel: 'Annuleren',
+        confirmReject: 'Voorstel afwijzen',
+        confirmRejectDescription: 'Voeg een optionele reden toe zodat de indiener het besluit begrijpt.',
+        reasonLabel: 'Reden voor afwijzing (optioneel)',
+        submitReject: 'Beslissing verzenden'
+      },
+      status: {
+        pending: 'In behandeling',
+        approved: 'Goedgekeurd',
+        rejected: 'Afgewezen'
+      },
+      kind: {
+        CHANNEL: 'Kanaal',
+        PLAYLIST: 'Afspeellijst',
+        VIDEO: 'Video'
+      },
+      decision: {
+        approvedBy: 'Goedgekeurd door {name}',
+        rejectedBy: 'Afgewezen door {name}',
+        decidedOn: 'op {date}',
+        reason: 'Reden: {reason}'
+      },
+      errors: {
+        actionFailed: 'Het voorstel kan niet worden bijgewerkt. Probeer het opnieuw.'
+      },
+      notesPlaceholder: 'Geen notities toegevoegd.'
+    },
+    users: {
+      heading: 'Gebruikersbeheer',
+      description: 'Maak en beheer accounts voor beheerders en moderators.'
+    },
+    audit: {
+      heading: 'Auditlogboek',
+      description: 'Een chronologisch overzicht van gevoelige wijzigingen. De viewer volgt in een latere fase.'
+    },
+    preferences: {
+      localeLabel: 'Interfacetaal',
+      locales: {
+        en: 'Engels',
+        ar: 'Arabisch',
         nl: 'Nederlands'
       }
     }
