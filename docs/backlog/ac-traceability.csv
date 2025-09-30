@@ -1,0 +1,5 @@
+Story ID,AC IDs,Tests,Notes
+FRONT-THEME-01,AC-A11Y-002,"frontend/tests/ThemeTokens.spec.ts","Tokens applied across admin views; dark palette verifies presence and usage"
+FRONT-NAV-01,,"frontend/tests/MainTabBar.spec.ts","Canonical tab icon/labels parity; no explicit AC yet — consider adding AC-UI-001 if needed"
+BACK-CAT-04,AC-REG-003,"backend/src/test/java/com/albunyaan/tube/admin/CategoryManagementIntegrationTest.java","DTOs + migration + service; frontend service maps nested subcategories"
+QA-ADMIN-01,AC-A11Y-002,"frontend/tests/ThemeTokens.spec.ts; frontend/tests/MainTabBar.spec.ts","Covers palette + icon set consistency"

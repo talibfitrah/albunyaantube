@@ -1,8 +1,22 @@
 # Phase 1 — Backend Foundations Ticket Breakdown
 
+Execution Metadata
+- Status: Partially planned (migrations, category service, and locale converters exist)
+- Last reviewed: 2025-09-30
+- Dependencies: JWT/Redis choices, CI scaffolding
+- Owners: TBD (Backend)
+
 Phase 1 converts the discovery artifacts into actionable backend tickets. Each ticket observes the format `Estimate → Goals → Propose diff → Tests → Implement → Reflect` so implementation teams inherit ready-to-execute guidance without additional scoping. Reference materials: `docs/architecture/solution-architecture.md`, `docs/api/openapi-draft.yaml`, `docs/testing/test-strategy.md`, and `docs/security/threat-model.md`.
 
 ## BACK-PLAN-01 — Platform & Tooling Baseline
+```yaml
+meta:
+  id: BACK-PLAN-01
+  status: planned
+  owner: TBD-backend
+  depends: []
+  lastReviewed: 2025-09-30
+```
 **Estimate**: 2 days (1 backend engineer).
 
 **Goals**
@@ -32,6 +46,14 @@ Phase 1 converts the discovery artifacts into actionable backend tickets. Each t
 - Update risk register if local environment hurdles remain.
 
 ## BACK-PLAN-02 — Authentication & RBAC Blueprint
+```yaml
+meta:
+  id: BACK-PLAN-02
+  status: planned
+  owner: TBD-backend
+  depends: [BACK-PLAN-01]
+  lastReviewed: 2025-09-30
+```
 **Estimate**: 3 days (backend engineer + security reviewer).
 
 **Goals**
@@ -60,6 +82,14 @@ Phase 1 converts the discovery artifacts into actionable backend tickets. Each t
 - Update acceptance criteria cross-links verifying coverage.
 
 ## BACK-PLAN-03 — Persistence & Seed Data Plan
+```yaml
+meta:
+  id: BACK-PLAN-03
+  status: planned
+  owner: TBD-backend
+  depends: [BACK-PLAN-01]
+  lastReviewed: 2025-09-30
+```
 **Estimate**: 2 days (backend engineer).
 
 **Goals**
@@ -88,6 +118,14 @@ Phase 1 converts the discovery artifacts into actionable backend tickets. Each t
 - Update risk register if schema complexity or locale handling introduces new concerns.
 
 ## BACK-PLAN-04 — Quality Gates & CI Readiness
+```yaml
+meta:
+  id: BACK-PLAN-04
+  status: planned
+  owner: TBD-backend
+  depends: [BACK-PLAN-01, BACK-PLAN-02]
+  lastReviewed: 2025-09-30
+```
 **Estimate**: 2 days (backend engineer + DevOps partner).
 
 **Goals**
@@ -116,6 +154,14 @@ Phase 1 converts the discovery artifacts into actionable backend tickets. Each t
 - Update risk register if pipeline stability risks remain (Testcontainers flakiness, secret handling).
 
 ## BACK-PLAN-05 — Backlog & Traceability Refresh
+```yaml
+meta:
+  id: BACK-PLAN-05
+  status: planned
+  owner: Product+Engineering
+  depends: [BACK-PLAN-01, BACK-PLAN-02, BACK-PLAN-03, BACK-PLAN-04]
+  lastReviewed: 2025-09-30
+```
 **Estimate**: 1 day (product + engineering pairing).
 
 **Goals**

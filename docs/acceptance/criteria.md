@@ -12,6 +12,7 @@ This document enumerates verifiable acceptance criteria linked to requirements, 
 | REQ | Description | AC ID | Acceptance Criterion | API | TEST |
 | --- | --- | --- | --- | --- | --- |
 | R1 | Halal allow-listed catalog | AC-REG-001 | All Channels/Playlists/Videos require ≥1 category; attempts to save without fail validation. | `/channels`, `/playlists`, `/videos` | Backend Integration |
+| R1 | Halal allow-listed catalog | AC-REG-003 | Category may include optional subcategories; APIs return `subcategories` as an array (empty when none). UI skips subcategory route when empty. | `/categories` | Backend Integration + Admin UI tests |
 | R1 |  | AC-REG-002 | Moderation approval logs decision with actor, timestamp. | `/moderation/proposals/{id}/approve` | Backend Integration + Audit tests |
 | R2 | Frictionless consumption | AC-AND-001 | Home feed renders sections (Channels/Playlists/Videos) each limited to 3 latest per source. | `/home` | Android Paging tests |
 | R2 |  | AC-AND-002 | Player disables autoplay on completion; shows replay button. | N/A (client logic) | Android Instrumentation |

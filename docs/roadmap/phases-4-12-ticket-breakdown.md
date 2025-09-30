@@ -1,10 +1,24 @@
 # Phases 4–12 Ticket Breakdown
 
+Execution Metadata
+- Status: Planned
+- Last reviewed: 2025-09-30
+- Dependencies: Phase 3 Admin MVP exit
+- Owners: TBD
+
 This appendix extends the roadmap with ready-to-groom tickets for Phases 4 through 12. Each ticket adheres to the `Estimate → Goals → Propose diff → Tests → Implement → Reflect` template and references design artifacts only. When implementation begins, engineers can convert these tickets directly into user stories/backlog items.
 
 ## Phase 4 — Admin UI Complete
 
 ### ADMIN-COMP-01 — Exclusions Editor Experience
+```yaml
+meta:
+  id: ADMIN-COMP-01
+  status: planned
+  owner: TBD-frontend
+  depends: [ADMIN-MVP-06]
+  lastReviewed: 2025-09-30
+```
 **Estimate**: 4h.
 
 **Goals**
@@ -32,6 +46,14 @@ This appendix extends the roadmap with ready-to-groom tickets for Phases 4 throu
 - Log risks around exclusions scale (pagination, filtering) in risk register.
 
 ### ADMIN-COMP-02 — Admin User Management & Audit Viewer
+```yaml
+meta:
+  id: ADMIN-COMP-02
+  status: planned
+  owner: TBD-frontend-backend
+  depends: [BACK-PLAN-02]
+  lastReviewed: 2025-09-30
+```
 **Estimate**: 4h.
 
 **Goals**
@@ -59,6 +81,14 @@ This appendix extends the roadmap with ready-to-groom tickets for Phases 4 throu
 - Note data volume considerations for audit table (indexing, archiving).
 
 ### ADMIN-COMP-03 — Accessibility & Localization Hardening
+```yaml
+meta:
+  id: ADMIN-COMP-03
+  status: planned
+  owner: TBD-frontend
+  depends: [ADMIN-MVP-07]
+  lastReviewed: 2025-09-30
+```
 **Estimate**: 3h.
 
 **Goals**

@@ -1,5 +1,35 @@
 # Phased Roadmap
 
+> Execution metadata — Last reviewed: 2025-09-30
+
+## Status Snapshot
+- Delivered
+  - Dark-mode tokenization + component mappings in Admin UI
+    - Code: `frontend/src/assets/main.css`, views/components now map to tokens
+    - Tests: `frontend/tests/ThemeTokens.spec.ts`
+    - Docs: token table in `README.md`, dark palette added to `docs/ux/design-tokens.json`
+    - AC linkage: satisfies contrast requirements in **AC-A11Y-002**
+  - Canonical bottom tab config + reusable tab bar component (for shared parity and future Android mapping)
+    - Code: `frontend/src/constants/tabs.ts`, `frontend/src/components/navigation/MainTabBar.vue`
+    - Tests: `frontend/tests/MainTabBar.spec.ts`
+  - Optional Category.subcategories (DTO, schema, migration)
+    - Backend: entity + converter + service updates, DTOs, controller
+      (`backend/src/main/java/com/albunyaan/tube/category/*`,
+      `backend/src/main/java/com/albunyaan/tube/admin/dto/*`,
+      `backend/src/main/java/com/albunyaan/tube/admin/CategoryManagementController.java`)
+    - Migration: `backend/src/main/resources/db/migration/V9__add_category_subcategories.sql`
+    - Frontend Admin service now returns optional nested subcategories
+      (`frontend/src/services/categories.ts`)
+    - API/Schema docs: updated JSON Schemas under `docs/data/json-schemas/`
+
+- In progress / planned
+  - Phase 1–2 backend hardening and Phase 3 Admin MVP items per files in this folder
+
+## How To Use This Roadmap (multi-agent)
+- Each phase below begins with “Execution Metadata” listing Status, Last Reviewed, Dependencies, and Owners (TBD where unassigned).
+- When work lands, append a short “Delivered in this repo” snippet under the relevant phase with file paths and any follow‑ups required.
+- Keep `docs/backlog/product-backlog.csv` in sync (append rows for newly discovered work; mark status inline in Description until a formal “Status” column is introduced).
+
 This roadmap expresses Albunyaan Tube's design-first delivery strategy. Every phase lists an estimate plus the activities required to exit the phase using the cadence `Estimate → Goals → Proposed Diff → Tests → Implement → Reflect`. Linked artifacts live in this repository so future engineering teams inherit a complete, traceable blueprint.
 
 ## Phase 0 — Discovery & Contracts
@@ -32,6 +62,15 @@ This roadmap expresses Albunyaan Tube's design-first delivery strategy. Every ph
 - Summarize stakeholder feedback and acceptance status inside `docs/acceptance/criteria.md` references.
 
 ## Phase 1 — Backend Foundations (Plan)
+Execution Metadata
+- Status: Partially planned (some foundations already implemented in repo)
+- Last reviewed: 2025-09-30
+- Dependencies: Postgres + Flyway, Redis (design), JWT strategy
+- Owners: TBD (Backend)
+
+Delivered in this repo
+- Flyway migrations baseline present (`backend/src/main/resources/db/migration/` V1–V9).
+- Locale map converter implemented (`backend/src/main/java/com/albunyaan/tube/common/LocaleMapConverter.java`).
 **Estimate**: 3 engineering weeks (backend + DevOps pairing).
 
 **Goals**
@@ -60,6 +99,14 @@ This roadmap expresses Albunyaan Tube's design-first delivery strategy. Every ph
 - Adjust risk register likelihood/impact based on backend findings.
 
 ## Phase 2 — Registry & Moderation (Plan)
+Execution Metadata
+- Status: Partially delivered
+- Last reviewed: 2025-09-30
+- Dependencies: Phase 1 auth + data foundations
+- Owners: TBD (Backend)
+
+Delivered in this repo
+- Category model extended with optional `subcategories` including DTOs + migration (see Status Snapshot).
 **Estimate**: 3 engineering weeks (backend focus with moderation stakeholder input).
 
 **Goals**
@@ -89,6 +136,16 @@ This roadmap expresses Albunyaan Tube's design-first delivery strategy. Every ph
 - Note outstanding legal/policy review items for exclusions in risk register.
 
 ## Phase 3 — Admin UI MVP (Plan)
+Execution Metadata
+- Status: In progress
+- Last reviewed: 2025-09-30
+- Dependencies: Phase 2 registry contracts
+- Owners: TBD (Frontend)
+
+Delivered in this repo (subset)
+- Tokenized dark theme applied across admin views; tests in `frontend/tests/ThemeTokens.spec.ts`.
+- Registry landing surface implemented with category filter and debounce; services align with `/admins/categories` (`frontend/src/views/RegistryLandingView.vue`, `frontend/src/services/categories.ts`).
+- Reusable canonical tab bar + icons (`frontend/src/components/navigation/MainTabBar.vue`).
 **Estimate**: 4 engineering weeks (frontend + localization pairing).
 
 **Goals**
@@ -120,6 +177,11 @@ This roadmap expresses Albunyaan Tube's design-first delivery strategy. Every ph
 - Reassess risk register for admin UX debt or localization blockers.
 
 ## Phase 4 — Admin UI Complete (Plan)
+Execution Metadata
+- Status: Planned
+- Last reviewed: 2025-09-30
+- Dependencies: Phase 3 completion
+- Owners: TBD (Frontend/Backend)
 **Estimate**: 4 engineering weeks (frontend + backend threading for exclusions/audit).
 
 **Goals**
@@ -148,6 +210,11 @@ This roadmap expresses Albunyaan Tube's design-first delivery strategy. Every ph
 - Feed new risks (e.g., audit data volume) into risk register.
 
 ## Phase 5 — Android Skeleton (Plan)
+Execution Metadata
+- Status: Planned
+- Last reviewed: 2025-09-30
+- Dependencies: Phase 0 contracts + shared icons/tabs mapping
+- Owners: TBD (Android)
 **Estimate**: 3 engineering weeks (Android feature squad).
 
 **Goals**

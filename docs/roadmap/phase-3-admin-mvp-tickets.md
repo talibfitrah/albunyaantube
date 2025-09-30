@@ -1,8 +1,23 @@
 # Phase 3 — Admin UI MVP Ticket Breakdown
 
+Execution Metadata
+- Status: In progress (several tickets partially delivered)
+- Last reviewed: 2025-09-30
+- Dependencies: Phase 2 registry/search contracts
+- Owners: TBD (Frontend)
+
 Phase 3 delivers the admin shell, registry tables, moderation queue, and localization wiring required for MVP exit criteria. Tickets follow the `Estimate → Goals → Propose diff → Tests → Implement → Reflect` cadence and reference design artifacts instead of code so engineering teams can pick them up when implementation begins. Supporting docs: `docs/ux/ui-spec.md`, `docs/i18n/strategy.md`, `docs/api/openapi-draft.yaml`, `docs/testing/test-strategy.md`, and `docs/acceptance/criteria.md`.
 
 ## ADMIN-MVP-01 — Admin Locale Switcher & Persistence
+```yaml
+meta:
+  id: ADMIN-MVP-01
+  status: planned
+  owner: TBD-frontend
+  depends: []
+  lastReviewed: 2025-09-30
+```
+Status: Planned
 **Estimate**: 3h.
 
 **Goals**
@@ -29,6 +44,15 @@ Phase 3 delivers the admin shell, registry tables, moderation queue, and localiz
 - Update backlog if additional locales planned post-launch.
 
 ## ADMIN-MVP-02 — Ship Arabic & Dutch Locale Bundles
+```yaml
+meta:
+  id: ADMIN-MVP-02
+  status: planned
+  owner: TBD-frontend
+  depends: [ADMIN-MVP-01]
+  lastReviewed: 2025-09-30
+```
+Status: Planned
 **Estimate**: 4h.
 
 **Goals**
@@ -56,6 +80,19 @@ Phase 3 delivers the admin shell, registry tables, moderation queue, and localiz
 - Update risk register if additional typography assets needed.
 
 ## ADMIN-MVP-03 — Registry Category Filter & Shared State
+```yaml
+meta:
+  id: ADMIN-MVP-03
+  status: partial
+  owner: TBD-frontend
+  depends: []
+  lastReviewed: 2025-09-30
+```
+Status: Partially delivered
+Delivered so far
+- Category dropdown + query wiring in `frontend/src/views/RegistryLandingView.vue` and services.
+Gaps
+- Shared store abstraction, skeletonized filter component, and cross-tab state sync.
 **Estimate**: 4h.
 
 **Goals**
@@ -84,6 +121,15 @@ Phase 3 delivers the admin shell, registry tables, moderation queue, and localiz
 - Note backend dependency for localized category labels.
 
 ## ADMIN-MVP-04 — Video Query Controls (Search/Length/Date/Sort)
+```yaml
+meta:
+  id: ADMIN-MVP-04
+  status: planned
+  owner: TBD-frontend
+  depends: [ADMIN-MVP-03]
+  lastReviewed: 2025-09-30
+```
+Status: Planned
 **Estimate**: 3.5h.
 
 **Goals**
@@ -111,6 +157,15 @@ Phase 3 delivers the admin shell, registry tables, moderation queue, and localiz
 - Update risk register if complex query building adds API load.
 
 ## ADMIN-MVP-05 — Dashboard Metrics Contract
+```yaml
+meta:
+  id: ADMIN-MVP-05
+  status: planned
+  owner: TBD-frontend-backend
+  depends: []
+  lastReviewed: 2025-09-30
+```
+Status: Planned
 **Estimate**: 3h (backend + frontend coordination).
 
 **Goals**
@@ -138,6 +193,19 @@ Phase 3 delivers the admin shell, registry tables, moderation queue, and localiz
 - Update acceptance criteria if new metrics become mandatory.
 
 ## ADMIN-MVP-06 — Moderation Queue UX Polish
+```yaml
+meta:
+  id: ADMIN-MVP-06
+  status: partial
+  owner: TBD-frontend
+  depends: []
+  lastReviewed: 2025-09-30
+```
+Status: Partially delivered
+Delivered so far
+- Queue surface with approve/reject actions present; color tokens applied in `frontend/src/views/ModerationQueueView.vue`.
+Gaps
+- Modal polish + accessibility sweeps and audit hooks.
 **Estimate**: 3h.
 
 **Goals**
@@ -165,6 +233,19 @@ Phase 3 delivers the admin shell, registry tables, moderation queue, and localiz
 - Update risk register if moderation SLA risks remain.
 
 ## ADMIN-MVP-07 — Documentation & Onboarding Refresh
+```yaml
+meta:
+  id: ADMIN-MVP-07
+  status: in-progress
+  owner: Product+Frontend
+  depends: []
+  lastReviewed: 2025-09-30
+```
+Status: In progress
+Delivered so far
+- README dark-mode token table, roadmap execution metadata (this change).
+Gaps
+- Admin onboarding runbook and locale QA checklist.
 **Estimate**: 2h.
 
 **Goals**
@@ -193,6 +274,15 @@ Phase 3 delivers the admin shell, registry tables, moderation queue, and localiz
 - Note additional runbooks or tooling guides required before implementation.
 
 ## ADMIN-MVP-08 — Search & Import Workspace Contract
+```yaml
+meta:
+  id: ADMIN-MVP-08
+  status: planned
+  owner: TBD-frontend
+  depends: [ADMIN-MVP-03]
+  lastReviewed: 2025-09-30
+```
+Status: Planned
 **Estimate**: 3.5h.
 
 **Goals**
