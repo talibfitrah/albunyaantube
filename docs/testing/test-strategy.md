@@ -27,7 +27,7 @@ This strategy spans backend, admin frontend, and Android client. It complements 
 - **Filters**: Pinia store + component tests validate shared registry search filters, including video length/date/sort parameters and debounced text queries propagating across tabs.
 - **E2E**: Playwright hitting staging backend mock; scenarios include moderation approval, exclusions editing, audit pagination, and blended search/import flows (single-surface results, bulk include/exclude).
 - **i18n**: Snapshot tests verifying ar/nl translations, directionality (RTL snapshots).
-- **Accessibility**: axe-core integration ensures WCAG AA; reject confirmation modal enforces focus loop + Escape handling in coverage checklist.
+- **Accessibility**: axe-core integration ensures WCAG AA; coverage includes skip-to-content focus target, keyboard traversal for locale switcher/search/table controls, and dialog focus traps (moderation reject, exclusions CRUD). Document violations in the Phase 4 accessibility log and re-test after fixes land.
 
 ### Admin Dashboard Metrics
 - **Contract**: Validate `/admin/dashboard` responses against `admin-dashboard-metrics-response.json` using OpenAPI schema checks in CI.

@@ -36,13 +36,13 @@ This strategy covers localization for English (`en`), Modern Standard Arabic (`a
 3. Validation ensures strings ≤ defined lengths (see schemas).
 4. Audit log captures locale changes.
 
-## QA Guidelines
 - **Truncation**: Validate key screens with longest translations; ensure 20% text expansion tolerance.
 - **Registry filters**: Verify Category/Video Length/Published Date/Sort dropdown labels and options translate without clipping and mirror order in RTL contexts.
 - **BiDi**: Test Arabic strings with embedded English numbers; ensure correct direction via Unicode control characters where needed.
 - **Numerals**: Use locale digits for durations and counts; Arabic uses Eastern Arabic numerals (via `NumberFormat`).
 - **Input**: Admin forms allow RTL input with text alignment toggles.
 - **Regression**: Run pseudo-localization (accented English) before string freeze.
+- **Accessibility sweep**: During Phase 4 hardening, execute axe/lighthouse runs in each locale, verify skip link announces target content, ensure dialogs read localized titles/descriptions, and confirm screen reader tables announce `aria-sort` and pagination updates.
 
 ## Localization Tooling
 - Manage strings in a shared spreadsheet/export pipeline producing JSON for admin and XML for Android.

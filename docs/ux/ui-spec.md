@@ -122,6 +122,10 @@ Each screen references the mockups. Layout measurements assume 360dp width basel
 ## Accessibility & Localization
 - Contrast ratios ≥4.5:1; ensure success color on white meets 3:1 for large text.
 - Provide TalkBack labels for media controls (e.g., “Audio-only playback”).
+- Add a skip-to-content link at the top of each admin view; target `main[tabindex="-1"]` region and restore focus after dialogs close.
+- Keyboard order: header locale switcher → skip link → primary search/filter controls → tables → pagination; action buttons expose visible focus rings using the 2dp success color token.
+- Dialogs (moderation reject, exclusions CRUD) trap focus, announce titles/descriptions via `aria-labelledby`/`aria-describedby`, and return focus to the invoking control on close.
+- Tables expose `aria-sort`/`aria-live` messaging when filters change; empty states retain `role="status"` copy for screen readers.
 - RTL: mirror layout, align text per locale, swap navigation order. Validate in [`docs/i18n/strategy.md`](../i18n/strategy.md#rtl-support).
 - Numerals: use locale digits in captions/durations (Arabic Indic digits for ar).
 

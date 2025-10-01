@@ -11,3 +11,4 @@ ADMIN-MVP-05,AC-ADM-010,"docs/testing/test-strategy.md#admin-dashboard-metrics; 
 ADMIN-MVP-04,AC-ADM-011,"frontend/tests/RegistryFilters.spec.ts; frontend/tests/registryFiltersStore.spec.ts; frontend/tests/RegistryLandingView.spec.ts","Video query controls share state across registry tabs with length/date/sort parameters"
 ADMIN-MVP-08,AC-ADM-006,"frontend/tests/RegistryLandingView.spec.ts","Blended search workspace supports include/exclude toggles, bulk actions, and aggregated results"
 ADMIN-MVP-07,AC-ADM-008|AC-ADM-009,"docs/runbooks/admin-onboarding.md; docs/runbooks/admin-login.md","Onboarding & locale QA documentation covers registry filters, dashboard metrics, and multilingual smoke checks"
+ADMIN-COMP-03,AC-A11Y-002|AC-I18N-003,"docs/ux/ui-spec.md; docs/i18n/strategy.md; docs/testing/test-strategy.md","Phase 4 accessibility plan defines skip links, keyboard order, RTL sweeps, and automated axe coverage"

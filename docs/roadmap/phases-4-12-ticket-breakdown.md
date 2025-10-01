@@ -84,10 +84,10 @@ meta:
 ```yaml
 meta:
   id: ADMIN-COMP-03
-  status: planned
-  owner: TBD-frontend
+  status: in-review
+  owner: Product+Frontend
   depends: [ADMIN-MVP-07]
-  lastReviewed: 2025-09-30
+  lastReviewed: 2025-10-02
 ```
 **Estimate**: 3h.
 
@@ -97,19 +97,19 @@ meta:
 - Ensure Arabic RTL review complete with screenshots.
 
 **Propose diff**
-- `docs/ux/ui-spec.md`: add accessibility annotations for admin components.
-- `docs/i18n/strategy.md`: expand admin QA checklist.
-- `docs/testing/test-strategy.md`: document axe-core automation plan.
+- `docs/ux/ui-spec.md`: add accessibility annotations for admin components ✅
+- `docs/i18n/strategy.md`: expand admin QA checklist ✅
+- `docs/testing/test-strategy.md`: document axe-core automation plan ✅
 
 **Tests**
-- Run axe-core/lighthouse accessibility checks on key screens.
-- Localization QA walkthrough for en/ar/nl.
-- Contrast verification using design tokens.
+- Run axe-core/lighthouse accessibility checks on key screens (pending automation implementation).
+- Localization QA walkthrough for en/ar/nl (scheduled with QA once automation lands).
+- Contrast verification using design tokens (documented; execution pending design sign-off).
 
 **Implement**
-- Ticketize UI updates (focus rings, aria labels, skip links) referencing tokens.
-- Capture screenshot set for localization QA.
-- Update backlog with recurring accessibility regression suite tasks.
+- Ticketize UI updates (focus rings, aria labels, skip links) referencing tokens — tracked via follow-up dev tasks.
+- Capture screenshot set for localization QA — assign to QA once UI adjustments merged.
+- Update backlog with recurring accessibility regression suite tasks — aligned via ADMIN-COMP-03 traceability entry.
 
 **Reflect**
 - Document remaining medium-risk issues and escalate to leadership if deferral required.
