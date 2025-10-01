@@ -711,6 +711,76 @@ meta:
 - Record performance debt requiring post-hardening follow-up.
 - Update risk register with residual performance risks.
 
+### HARDEN-EXTRACT-01 — Extractor Telemetry & Circuit Breakers
+```yaml
+meta:
+  id: HARDEN-EXTRACT-01
+  status: planned
+  owner: Android+Backend
+  depends: [AND-EXTRACT-01]
+  lastReviewed: 2025-10-05
+```
+**Estimate**: 2.5h.
+
+**Goals**
+- Instrument extractor resolution and hydration with latency, error taxonomy, and retry counts.
+- Add circuit breakers/backoff to protect UX during upstream issues; define offline fallbacks.
+- Align metrics with observability plan and alert thresholds.
+
+**Propose diff**
+- `docs/testing/test-strategy.md`: add extractor telemetry validation and alert scenarios.
+- `docs/architecture/solution-architecture.md`: document breaker policies and fallback order.
+- `docs/risk-register.md`: update RSK-001 mitigations with telemetry coverage.
+
+**Tests**
+- Simulate extractor failures and verify breaker engagement + user messaging.
+- Validate metrics/alerts emitted for threshold breaches.
+- Performance checks ensuring breaker logic doesn’t regress list/playback budgets.
+
+**Implement**
+- Outline counters/timers, labels, and dashboards; add backlog tasks for dashboard wiring.
+- Define breaker thresholds and retries; capture in runbooks.
+- Coordinate backend rate limits and client retries to avoid thundering herds.
+
+**Reflect**
+- Capture findings to tune thresholds before launch.
+- Note any gaps requiring additional instrumentation.
+
+### DEVOPS-YT-01 — YouTube API Key Secrets Management
+```yaml
+meta:
+  id: DEVOPS-YT-01
+  status: planned
+  owner: DevOps
+  depends: []
+  lastReviewed: 2025-10-05
+```
+**Estimate**: 2h.
+
+**Goals**
+- Provision Google API project and YouTube Data API key.
+- Store secrets in Vault/SM; inject via CI/environment; define rotation playbook.
+- Ensure no secrets in code or build artifacts; document runbook updates.
+
+**Propose diff**
+- `docs/security/threat-model.md`: reference secrets rotation and storage controls.
+- `docs/runbooks/admin-onboarding.md`: add admin note for credential handling.
+- `docs/runbooks/roadmap-sync.md`: include reminder to review secrets before release.
+
+**Tests**
+- CI validation that builds/tests run with injected key (mocked in non-prod).
+- Secrets scanning gate passes with no plaintext leaks.
+- Rotation drill documented with success criteria.
+
+**Implement**
+- Document environment variable names, storage location, and rotation cadence.
+- Add backlog tasks for rotation automation and alerts on impending expiry.
+- Coordinate access controls (least privilege) and audit logging for secret access.
+
+**Reflect**
+- Record outcomes of rotation drill and update playbook.
+- Note any infra gaps to address pre-launch.
+
 ### HARDEN-02 — Security & Compliance Sweep
 **Estimate**: 3h.
 
@@ -876,6 +946,41 @@ meta:
 **Reflect**
 - Note telemetry gaps requiring post-launch follow-up.
 - Update risk register with analytics/privacy risks.
+
+### LAUNCH-04 — Admin Search Integration (YouTube Data API)
+```yaml
+meta:
+  id: BACK-YT-01
+  status: planned
+  owner: Backend
+  depends: [HARDEN-02, DEVOPS-YT-01]
+  lastReviewed: 2025-10-05
+```
+**Estimate**: 4h.
+
+**Goals**
+- Finalize `/admin/search` integration using YouTube Data API for blended previews.
+- Enforce quotas and throttling; no remote metadata persistence.
+- Respect `Accept-Language`; ensure error/warning propagation to Admin UI.
+
+**Propose diff**
+- `docs/api/openapi-draft.yaml`: confirm `/admin/search` response and warning fields.
+- `docs/runbooks/backend-search-alignment.md`: add implementation notes and limits.
+- `docs/testing/test-strategy.md`: document integration test coverage and quota simulation.
+
+**Tests**
+- Contract tests verifying blended results shape + include/exclude state.
+- Rate-limit/quota simulation returning 429 with localized error.
+- Admin UI smoke verifying toggles and bulk actions on live previews.
+
+**Implement**
+- Document endpoint wiring, rate limits, and caching.
+- Align audit logging for admin-initiated search actions.
+- Update backlog with any residual follow-ups.
+
+**Reflect**
+- Capture risk notes if quotas constrain admin workflows; plan mitigations.
+- Confirm de-scope plan if integration slips post-launch.
 
 ### LAUNCH-02 — Beta Program Execution
 **Estimate**: 2.5h.
