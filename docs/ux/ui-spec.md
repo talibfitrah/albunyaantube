@@ -14,6 +14,13 @@ This document codifies the canonical UI contract for Albunyaan Tube Android and 
 - Content max width 640dp (see tokens).
 - Bottom navigation height 72dp, icons 24dp with 8dp label gap.
 
+### Android Navigation Blueprint (Phase 5)
+- Single-activity structure: Splash → Onboarding carousel → Main shell with bottom navigation.
+- Bottom nav labels (left-to-right order): Home, Channels, Playlists, Videos. Active tab uses success tint background + 12dp top indicator; inactive tabs display secondary text color.
+- Preserve scroll position per tab; switching tabs restores previous vertical offset and list filters.
+- Floating Action Buttons intentionally excluded for MVP to maintain single tap affordances.
+- Deep links (phase 6+) map to `/channel/{id}`, `/playlist/{id}`, `/video/{id}` and open inside the main shell; navigation graph reserves actions for those routes.
+
 ## Component Library
 | Component | Description | States | Accessibility |
 | --- | --- | --- | --- |

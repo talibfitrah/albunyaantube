@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/app_nav_graph"
+    app:startDestination="@id/splashFragment">
+
+    <fragment
+        android:id="@+id/splashFragment"
+        android:name="com.albunyaan.tube.ui.SplashFragment"
+        android:label="Splash">
+        <action
+            android:id="@+id/action_splash_to_onboarding"
+            app:destination="@id/onboardingFragment"
+            app:launchSingleTop="true"/>
+        <action
+            android:id="@+id/action_splash_to_main"
+            app:destination="@id/mainShellFragment"
+            app:popUpTo="@id/app_nav_graph"
+            app:popUpToInclusive="true"
+            app:launchSingleTop="true"/>
+    </fragment>
+
+    <fragment
+        android:id="@+id/onboardingFragment"
+        android:name="com.albunyaan.tube.ui.OnboardingFragment"
+        android:label="Onboarding">
+        <action
+            android:id="@+id/action_onboarding_to_main"
+            app:destination="@id/mainShellFragment"
+            app:popUpTo="@id/app_nav_graph"
+            app:popUpToInclusive="true"
+            app:launchSingleTop="true"/>
+    </fragment>
+
+    <fragment
+        android:id="@+id/mainShellFragment"
+        android:name="com.albunyaan.tube.ui.MainShellFragment"
+        android:label="Albunyaan Tube">
+        <action
+            android:id="@+id/action_open_home"
+            app:destination="@id/homeFragment"/>
+        <action
+            android:id="@+id/action_open_channels"
+            app:destination="@id/channelsFragment"/>
+        <action
+            android:id="@+id/action_open_playlists"
+            app:destination="@id/playlistsFragment"/>
+        <action
+            android:id="@+id/action_open_videos"
+            app:destination="@id/videosFragment"/>
+    </fragment>
+
+    <fragment
+        android:id="@+id/homeFragment"
+        android:name="com.albunyaan.tube.ui.HomeFragment"
+        android:label="Home"/>
+
+    <fragment
+        android:id="@+id/channelsFragment"
+        android:name="com.albunyaan.tube.ui.ChannelsFragment"
+        android:label="Channels"/>
+
+    <fragment
+        android:id="@+id/playlistsFragment"
+        android:name="com.albunyaan.tube.ui.PlaylistsFragment"
+        android:label="Playlists"/>
+
+    <fragment
+        android:id="@+id/videosFragment"
+        android:name="com.albunyaan.tube.ui.VideosFragment"
+        android:label="Videos"/>
+
+</navigation>

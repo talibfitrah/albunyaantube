@@ -28,7 +28,7 @@ These schemas inform JPA entities and API payloads.
 ## Android Architecture
 - **Layers**: Presentation (Jetpack ViewModel), Domain (use cases), Data (Repository → Retrofit/OkHttp for backend, Room for offline downloads metadata).
 - **Metadata Pipeline**: Repositories use NewPipeExtractor to hydrate channel/playlist/video metadata at runtime, merging Albunyaan overrides from backend responses before caching locally.
-- **Navigation**: Single-activity pattern with Navigation Component; bottom nav (Home, Channels, Playlists, Videos) sourced from the canonical config in `frontend/src/constants/tabs.ts`. Onboarding flow controlled via DataStore preference.
+- **Navigation (Phase 5 skeleton)**: Single-activity pattern with Navigation Component. `MainActivity` hosts `NavHostFragment` for `app_nav_graph.xml`, driving Splash → Onboarding → Main shell flow. Bottom navigation tabs (Home, Channels, Playlists, Videos) retain per-tab back stacks via `NavController` state saving. Deep links map to channel/playlist/video destinations and bypass onboarding once the DataStore flag `onboarding_completed` is set.
 - **Playback Engine**: ExoPlayer integrated with MediaSession + Notification for background playback. Audio-only toggle selects audio stream variant from backend-provided manifest. PiP supported via Android 12 APIs. See Phase 8 plan in [`../testing/test-strategy.md`](../testing/test-strategy.md#player-reliability).
 - **Downloads**: Foreground service with WorkManager orchestrating downloads; store files in app-private storage with quotas (see [`../security/threat-model.md`](../security/threat-model.md#policy-controls)).
 - **Localization**: Locale switcher per [`../i18n/strategy.md`](../i18n/strategy.md#android-implementation); full RTL mirroring.
