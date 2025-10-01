@@ -7,7 +7,7 @@ import com.albunyaan.tube.data.model.CursorResponse
 interface ContentService {
     suspend fun fetchContent(
         type: ContentType,
-        page: Int,
+        cursor: String?,
         pageSize: Int,
         filters: FilterState
     ): CursorResponse

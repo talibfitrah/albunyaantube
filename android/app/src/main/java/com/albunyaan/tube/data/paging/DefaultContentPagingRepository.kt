@@ -13,15 +13,7 @@ class DefaultContentPagingRepository(
     private val service: ContentService
 ) : ContentPagingRepository {
 
-    override fun homePager(filters: FilterState): Pager<Int, ContentItem> = createPager(ContentType.HOME, filters)
-
-    override fun channelsPager(filters: FilterState): Pager<Int, ContentItem> = createPager(ContentType.CHANNELS, filters)
-
-    override fun playlistsPager(filters: FilterState): Pager<Int, ContentItem> = createPager(ContentType.PLAYLISTS, filters)
-
-    override fun videosPager(filters: FilterState): Pager<Int, ContentItem> = createPager(ContentType.VIDEOS, filters)
-
-    private fun createPager(type: ContentType, filters: FilterState): Pager<Int, ContentItem> {
+    override fun pager(type: ContentType, filters: FilterState): Pager<String, ContentItem> {
         return Pager(PagingConfig(pageSize = PAGE_SIZE, enablePlaceholders = false)) {
             CursorPagingSource(service, type, filters, PAGE_SIZE)
         }

@@ -1,0 +1,81 @@
+package com.albunyaan.tube.data.source
+
+import com.albunyaan.tube.data.filters.FilterState
+import com.albunyaan.tube.data.filters.PublishedDate
+import com.albunyaan.tube.data.filters.SortOption
+import com.albunyaan.tube.data.filters.VideoLength
+import com.albunyaan.tube.data.model.ContentItem
+import com.albunyaan.tube.data.model.ContentType
+import com.albunyaan.tube.data.model.CursorResponse
+import com.albunyaan.tube.data.source.api.ContentApi
+import com.albunyaan.tube.data.source.api.ContentDto
+
+class RetrofitContentService(
+    private val api: ContentApi
+) : ContentService {
+
+    override suspend fun fetchContent(
+        type: ContentType,
+        cursor: String?,
+        pageSize: Int,
+        filters: FilterState
+    ): CursorResponse {
+        val response = api.fetchContent(
+            type = type.name,
+            cursor = cursor,
+            limit = pageSize,
+            category = filters.category,
+            length = filters.videoLength.toQueryValue(),
+            date = filters.publishedDate.toQueryValue(),
+            sort = filters.sortOption.toQueryValue()
+        )
+        val items = response.data.mapNotNull { it.toModel() }
+        return CursorResponse(items, response.pageInfo.nextCursor)
+    }
+
+    private fun ContentDto.toModel(): ContentItem? {
+        return when (type?.uppercase()) {
+            "VIDEO" -> ContentItem.Video(
+                id = id,
+                title = title.orEmpty(),
+                category = category.orEmpty(),
+                durationMinutes = durationMinutes ?: 0,
+                uploadedDaysAgo = uploadedDaysAgo ?: 0,
+                description = description.orEmpty()
+            )
+            "CHANNEL" -> ContentItem.Channel(
+                id = id,
+                name = name ?: title.orEmpty(),
+                category = category.orEmpty(),
+                subscribers = subscribers ?: 0
+            )
+            "PLAYLIST" -> ContentItem.Playlist(
+                id = id,
+                title = title.orEmpty(),
+                category = category.orEmpty(),
+                itemCount = itemCount ?: 0
+            )
+            else -> null
+        }
+    }
+
+    private fun VideoLength.toQueryValue(): String? = when (this) {
+        VideoLength.ANY -> null
+        VideoLength.UNDER_FOUR_MIN -> "SHORT"
+        VideoLength.FOUR_TO_TWENTY_MIN -> "MEDIUM"
+        VideoLength.OVER_TWENTY_MIN -> "LONG"
+    }
+
+    private fun PublishedDate.toQueryValue(): String? = when (this) {
+        PublishedDate.ANY -> null
+        PublishedDate.LAST_24_HOURS -> "LAST_24_HOURS"
+        PublishedDate.LAST_7_DAYS -> "LAST_7_DAYS"
+        PublishedDate.LAST_30_DAYS -> "LAST_30_DAYS"
+    }
+
+    private fun SortOption.toQueryValue(): String? = when (this) {
+        SortOption.DEFAULT -> null
+        SortOption.MOST_POPULAR -> "POPULAR"
+        SortOption.NEWEST -> "NEWEST"
+    }
+}

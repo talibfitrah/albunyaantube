@@ -5,6 +5,10 @@
     android:layout_height="match_parent">
 
     <include
+        android:id="@+id/filterRow"
+        layout="@layout/view_filter_row" />
+
+    <include
         android:id="@+id/listState"
         layout="@layout/view_list_state" />
 

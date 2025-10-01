@@ -1,6 +1,8 @@
 package com.albunyaan.tube.ui
 
-import androidx.fragment.app.Fragment
-import com.albunyaan.tube.R
+import com.albunyaan.tube.data.model.ContentType
+import com.albunyaan.tube.ui.list.ContentListFragment
 
-class ChannelsFragment : Fragment(R.layout.fragment_channels)
+class ChannelsFragment : ContentListFragment() {
+    override val contentType: ContentType = ContentType.CHANNELS
+}

@@ -1,6 +1,8 @@
 package com.albunyaan.tube.ui
 
-import androidx.fragment.app.Fragment
-import com.albunyaan.tube.R
+import com.albunyaan.tube.data.model.ContentType
+import com.albunyaan.tube.ui.list.ContentListFragment
 
-class PlaylistsFragment : Fragment(R.layout.fragment_playlists)
+class PlaylistsFragment : ContentListFragment() {
+    override val contentType: ContentType = ContentType.PLAYLISTS
+}

@@ -1,4 +1,4 @@
-package com.albunyaan.tube.ui.home
+package com.albunyaan.tube.ui.list
 
 import android.view.LayoutInflater
 import android.view.ViewGroup

@@ -2,6 +2,7 @@ package com.albunyaan.tube.data.source
 
 import com.albunyaan.tube.data.filters.FilterState
 import com.albunyaan.tube.data.filters.PublishedDate
+import com.albunyaan.tube.data.filters.SortOption
 import com.albunyaan.tube.data.filters.VideoLength
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
@@ -30,32 +31,36 @@ class FakeContentService : ContentService {
         )
     }
 
+    private val channels = List(40) { index ->
+        val category = categories[index % categories.size]
+        ContentItem.Channel(
+            id = "channel-$index",
+            name = "Channel $category #$index",
+            category = category,
+            subscribers = 10_000 + index * 250
+        )
+    }
+
+    private val playlists = List(30) { index ->
+        val category = categories[index % categories.size]
+        ContentItem.Playlist(
+            id = "playlist-$index",
+            title = "$category playlist #$index",
+            category = category,
+            itemCount = 12 + index
+        )
+    }
+
     override suspend fun fetchContent(
         type: ContentType,
-        page: Int,
+        cursor: String?,
         pageSize: Int,
         filters: FilterState
     ): CursorResponse {
         val sourceItems: List<ContentItem> = when (type) {
-            ContentType.HOME, ContentType.VIDEOS -> videos.map { it.first }
-            ContentType.CHANNELS -> List(40) { index ->
-                val category = categories[index % categories.size]
-                ContentItem.Channel(
-                    id = "channel-$index",
-                    name = "Channel $category #$index",
-                    category = category,
-                    subscribers = 10_000 + index * 250
-                )
-            }
-            ContentType.PLAYLISTS -> List(30) { index ->
-                val category = categories[index % categories.size]
-                ContentItem.Playlist(
-                    id = "playlist-$index",
-                    title = "$category playlist #$index",
-                    category = category,
-                    itemCount = 12 + index
-                )
-            }
+            ContentType.HOME, ContentType.VIDEOS -> videos
+            ContentType.CHANNELS -> channels
+            ContentType.PLAYLISTS -> playlists
         }
 
         val filtered = sourceItems.filter { item ->
@@ -64,14 +69,15 @@ class FakeContentService : ContentService {
                 is ContentItem.Channel -> filters.category?.let { item.category == it } ?: true
                 is ContentItem.Playlist -> filters.category?.let { item.category == it } ?: true
             }
-        }
+        }.sortByOption(filters.sortOption)
 
-        val fromIndex = page * pageSize
+        val pageIndex = cursor?.toIntOrNull() ?: 0
+        val fromIndex = pageIndex * pageSize
         val toIndex = min(fromIndex + pageSize, filtered.size)
         val pageItems = if (fromIndex >= filtered.size) emptyList() else filtered.subList(fromIndex, toIndex)
-        val hasNext = toIndex < filtered.size
+        val nextCursor = if (toIndex < filtered.size) (pageIndex + 1).toString() else null
 
-        return CursorResponse(pageItems, hasNext)
+        return CursorResponse(pageItems, nextCursor)
     }
 
     private fun FilterState.matchesVideo(video: ContentItem.Video): Boolean {
@@ -88,7 +94,23 @@ class FakeContentService : ContentService {
             PublishedDate.LAST_7_DAYS -> video.uploadedDaysAgo <= 7
             PublishedDate.LAST_30_DAYS -> video.uploadedDaysAgo <= 30
         }
-        val sortMatch = true
-        return categoryMatch && lengthMatch && publishedMatch && sortMatch
+        return categoryMatch && lengthMatch && publishedMatch
+    }
+
+    private fun List<ContentItem>.sortByOption(option: SortOption): List<ContentItem> = when (option) {
+        SortOption.DEFAULT -> this
+        SortOption.NEWEST -> sortedBy {
+            when (it) {
+                is ContentItem.Video -> it.uploadedDaysAgo
+                else -> 0
+            }
+        }
+        SortOption.MOST_POPULAR -> sortedByDescending {
+            when (it) {
+                is ContentItem.Channel -> it.subscribers
+                is ContentItem.Playlist -> it.itemCount
+                is ContentItem.Video -> 100 - it.uploadedDaysAgo
+            }
+        }
     }
 }

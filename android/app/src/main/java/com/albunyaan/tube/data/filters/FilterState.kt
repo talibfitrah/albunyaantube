@@ -2,7 +2,7 @@ package com.albunyaan.tube.data.filters
 
 /**
  * Represents the global filter state shared across paged lists (home, channels, playlists, videos).
- * This skeleton will evolve into a DataStore-backed state holder once the Android module is active.
+ * State is persisted via DataStore so selections survive process restarts and tab switches.
  */
 data class FilterState(
     val category: String? = null,

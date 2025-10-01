@@ -2,8 +2,21 @@
 <resources>
     <string name="app_name">Albunyaan Tube</string>
     <string name="filter_category">Category</string>
+    <string name="filter_category_all">All categories</string>
     <string name="filter_length">Length</string>
+    <string name="filter_length_any">Any length</string>
+    <string name="filter_length_short">Under 4 minutes</string>
+    <string name="filter_length_medium">4–20 minutes</string>
+    <string name="filter_length_long">Over 20 minutes</string>
     <string name="filter_date">Date</string>
+    <string name="filter_date_any">Any time</string>
+    <string name="filter_date_last_24_hours">Last 24 hours</string>
+    <string name="filter_date_last_7_days">Last 7 days</string>
+    <string name="filter_date_last_30_days">Last 30 days</string>
     <string name="filter_sort">Sort</string>
+    <string name="filter_sort_default">Default order</string>
+    <string name="filter_sort_popular">Most popular</string>
+    <string name="filter_sort_newest">Newest first</string>
     <string name="filter_clear">Clear filters</string>
+    <string name="filter_chip_value">%1$s • %2$s</string>
 </resources>
