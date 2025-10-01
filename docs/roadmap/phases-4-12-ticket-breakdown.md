@@ -330,6 +330,14 @@ meta:
 ## Phase 7 — Channel & Playlist Details
 
 ### AND-DETAILS-01 — Channel Tabs & State Retention
+```yaml
+meta:
+  id: AND-DETAILS-01
+  status: done
+  owner: Android
+  depends: [AND-LISTS-03]
+  lastReviewed: 2025-10-05
+```
 **Estimate**: 3h.
 
 **Goals**
@@ -355,6 +363,7 @@ meta:
 **Reflect**
 - Identify data dependencies (live counts) for backend team.
 - Update risk register with potential load/performance issues for multi-tab fetches.
+- 2025-10-05: Android skeleton ships ViewPager2 tabs + placeholder fragments; pending backend feeds for real data + analytics.
 
 ### AND-DETAILS-02 — Playlist Detail & Download CTA Rules
 **Estimate**: 2.5h.

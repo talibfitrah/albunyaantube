@@ -82,6 +82,7 @@ Each screen references the mockups. Layout measurements assume 360dp width basel
 - Subscribe button: success color, 20dp radius.
 - Tabs across top with 16dp padding; maintain horizontal scroll for overflow.
 - Content area uses grid or list based on tab (Videos grid, Live list, etc.).
+- Android skeleton (2025-10-05): ViewPager2 with tabs (Videos/Live/Shorts/Playlists/Posts) and placeholder copy until backend feeds arrive; titles persist when navigating back from nested screens.
 
 ### Playlists List (`7_playlist_list_screen.png`)
 - Card height 132dp, image left 40%, text right with Body + Caption for counts.

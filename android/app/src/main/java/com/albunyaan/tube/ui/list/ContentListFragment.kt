@@ -22,6 +22,7 @@ import com.albunyaan.tube.data.filters.FilterState
 import com.albunyaan.tube.data.filters.PublishedDate
 import com.albunyaan.tube.data.filters.SortOption
 import com.albunyaan.tube.data.filters.VideoLength
+import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.databinding.FragmentHomeBinding
 import com.albunyaan.tube.databinding.DialogFilterListBinding
@@ -64,6 +65,7 @@ abstract class ContentListFragment : Fragment(R.layout.fragment_home) {
         super.onViewCreated(view, savedInstanceState)
         val binding = FragmentHomeBinding.bind(view).also { binding = it }
         setupFilterRow(binding)
+        adapter.setOnItemClickListener(::onContentClicked)
         binding.recyclerView.apply {
             layoutManager = LinearLayoutManager(requireContext())
             adapter = this@ContentListFragment.adapter
@@ -396,6 +398,8 @@ abstract class ContentListFragment : Fragment(R.layout.fragment_home) {
             chip.isChipIconVisible = true
         }
     }
+
+    protected open fun onContentClicked(item: ContentItem) = Unit
 
     private sealed interface UiState {
         object Loading : UiState

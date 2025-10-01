@@ -62,6 +62,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.fragment:fragment-ktx:1.6.2")
     implementation("androidx.paging:paging-runtime-ktx:3.2.1")
+    implementation("androidx.viewpager2:viewpager2:1.0.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("androidx.datastore:datastore-preferences:1.0.0")
     implementation("com.squareup.retrofit2:retrofit:2.9.0")

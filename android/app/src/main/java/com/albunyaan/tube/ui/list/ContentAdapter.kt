@@ -10,16 +10,25 @@ import com.albunyaan.tube.databinding.ItemContentBinding
 
 class ContentAdapter : PagingDataAdapter<ContentItem, ContentAdapter.ContentViewHolder>(DIFF) {
 
+    private var onItemClick: ((ContentItem) -> Unit)? = null
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ContentViewHolder {
         val binding = ItemContentBinding.inflate(LayoutInflater.from(parent.context), parent, false)
-        return ContentViewHolder(binding)
+        return ContentViewHolder(binding, onItemClick)
     }
 
     override fun onBindViewHolder(holder: ContentViewHolder, position: Int) {
         getItem(position)?.let(holder::bind)
     }
 
-    class ContentViewHolder(private val binding: ItemContentBinding) : RecyclerView.ViewHolder(binding.root) {
+    fun setOnItemClickListener(listener: ((ContentItem) -> Unit)?) {
+        onItemClick = listener
+    }
+
+    class ContentViewHolder(
+        private val binding: ItemContentBinding,
+        private val clickListener: ((ContentItem) -> Unit)?
+    ) : RecyclerView.ViewHolder(binding.root) {
         fun bind(item: ContentItem) {
             when (item) {
                 is ContentItem.Video -> {
@@ -38,6 +47,7 @@ class ContentAdapter : PagingDataAdapter<ContentItem, ContentAdapter.ContentView
                     binding.description.text = "Playlist for ${item.category}"
                 }
             }
+            binding.root.setOnClickListener { clickListener?.invoke(item) }
         }
     }
 

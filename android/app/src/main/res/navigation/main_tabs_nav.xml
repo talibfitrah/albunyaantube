@@ -12,7 +12,11 @@
     <fragment
         android:id="@+id/channelsFragment"
         android:name="com.albunyaan.tube.ui.ChannelsFragment"
-        android:label="Channels" />
+        android:label="Channels">
+        <action
+            android:id="@+id/action_channelsFragment_to_channelDetailFragment"
+            app:destination="@id/channelDetailFragment"/>
+    </fragment>
 
     <fragment
         android:id="@+id/playlistsFragment"
@@ -23,4 +27,17 @@
         android:id="@+id/videosFragment"
         android:name="com.albunyaan.tube.ui.VideosFragment"
         android:label="Videos" />
+
+    <fragment
+        android:id="@+id/channelDetailFragment"
+        android:name="com.albunyaan.tube.ui.detail.ChannelDetailFragment"
+        android:label="Channel Detail">
+        <argument
+            android:name="channelId"
+            app:argType="string" />
+        <argument
+            android:name="channelName"
+            app:argType="string"
+            app:nullable="true" />
+    </fragment>
 </navigation>
