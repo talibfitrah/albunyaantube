@@ -589,10 +589,10 @@ meta:
 ```yaml
 meta:
   id: AND-EXTRACT-02
-  status: planned
+  status: done
   owner: Android
   depends: [AND-PLAYER-01]
-  lastReviewed: 2025-10-05
+  lastReviewed: 2025-10-07
 ```
 **Estimate**: 3h.
 
@@ -615,10 +615,12 @@ meta:
 - Outline player repository flow for requesting/refreshing streams via extractor.
 - Document fallback hierarchy (lower bitrate → audio-only → user-visible error).
 - Update backlog with monitoring dashboards for resolution KPIs.
+- 2025-10-07: Player ViewModel now resolves streams through `NewPipeExtractorClient`, caches responses, logs telemetry, and updates ExoPlayer with automatic audio-only fallback + quality selection defaults.
 
 **Reflect**
 - Capture lessons for Phase 10 hardening (circuit breakers, offline manifests).
 - Note any API or design adjustments needed based on reliability findings.
+- Instrumentation plan documented for latency, fallback messaging, and TalkBack verification once backend streams wire in.
 
 ## Phase 9 — Downloads & Offline
 

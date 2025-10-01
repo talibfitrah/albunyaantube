@@ -5,7 +5,9 @@ import com.albunyaan.tube.data.extractor.cache.MetadataCache
 import com.albunyaan.tube.data.model.ContentType
 import java.io.IOException
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.regex.Pattern
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.NewPipe
@@ -35,9 +37,39 @@ class NewPipeExtractorClient(
     private val playlistLinkHandlerFactory = YoutubePlaylistLinkHandlerFactory.getInstance()
     private val localization = Localization.fromLocale(Locale.US)
     private val contentCountry = ContentCountry("US")
+    private val streamCache = ConcurrentHashMap<String, CacheEntry<ResolvedStreams>>()
 
     init {
         initializeNewPipe()
+    }
+
+    suspend fun resolveStreams(videoId: String): ResolvedStreams? = withContext(Dispatchers.IO) {
+        if (!YOUTUBE_ID_PATTERN.matcher(videoId).matches()) return@withContext null
+        val now = clock()
+        streamCache[videoId]?.takeIf { now - it.timestamp <= STREAM_CACHE_TTL_MILLIS }?.let {
+            metrics.onCacheHit(ContentType.VIDEOS, 1)
+            return@withContext it.value
+        }
+        metrics.onCacheMiss(ContentType.VIDEOS, 1)
+        val start = clock()
+        try {
+            val handler = streamLinkHandlerFactory.fromId(videoId)
+            val extractor = youtubeService.getStreamExtractor(handler)
+            val info = StreamInfo.getInfo(extractor)
+            val resolved = info.toResolvedStreams(videoId) ?: return@withContext null
+            streamCache[videoId] = CacheEntry(resolved, clock())
+            metrics.onStreamResolveSuccess(videoId, clock() - start)
+            resolved
+        } catch (c: CancellationException) {
+            throw c
+        } catch (throwable: Throwable) {
+            metrics.onStreamResolveFailure(videoId, throwable)
+            if (throwable is IOException || throwable is ExtractionException) {
+                throw throwable
+            } else {
+                throw ExtractionException("Unexpected stream extraction failure", throwable)
+            }
+        }
     }
 
     override suspend fun fetchVideoMetadata(ids: List<String>): Map<String, VideoMetadata> {
@@ -90,6 +122,7 @@ class NewPipeExtractorClient(
             val metadata = try {
                 loader(id)
             } catch (t: Throwable) {
+                if (t is CancellationException) throw t
                 metrics.onFetchFailure(type, listOf(id), t)
                 null
             }
@@ -240,11 +273,58 @@ class NewPipeExtractorClient(
         }
     }
 
+    private fun StreamInfo.toResolvedStreams(streamId: String): ResolvedStreams? {
+        val videoTracks = videoStreams
+            .filter { !it.isVideoOnly && it.content.isNotBlank() }
+            .map { stream ->
+                VideoTrack(
+                    url = stream.content,
+                    mimeType = stream.format?.mimeType,
+                    width = stream.width.takeIf { it > 0 },
+                    height = stream.height.takeIf { it > 0 },
+                    bitrate = stream.bitrate.takeIf { it > 0 },
+                    qualityLabel = stream.quality,
+                    fps = stream.fps.takeIf { it > 0 }
+                )
+            }
+
+        val audioTracksRaw = audioStreams
+            .filter { it.content.isNotBlank() }
+            .map { stream ->
+                AudioTrack(
+                    url = stream.content,
+                    mimeType = stream.format?.mimeType,
+                    bitrate = stream.averageBitrate.takeIf { it > 0 },
+                    codec = stream.codec
+                )
+            }
+
+        val audioTracks = when {
+            audioTracksRaw.isNotEmpty() -> audioTracksRaw
+            videoTracks.isNotEmpty() -> listOf(
+                AudioTrack(
+                    url = videoTracks.first().url,
+                    mimeType = videoTracks.first().mimeType,
+                    bitrate = videoTracks.first().bitrate,
+                    codec = null
+                )
+            )
+            else -> emptyList()
+        }
+
+        if (videoTracks.isEmpty() && audioTracks.isEmpty()) return null
+
+        val durationSeconds = duration.takeIf { it > 0 }?.toInt()
+        return ResolvedStreams(streamId, videoTracks, audioTracks, durationSeconds)
+    }
+
     private fun Long.toIntSafely(): Int? = when {
         this <= 0L -> null
         this > Int.MAX_VALUE -> Int.MAX_VALUE
         else -> toInt()
     }
+
+    private data class CacheEntry<T>(val value: T, val timestamp: Long)
 
     private fun initializeNewPipe() {
         synchronized(NewPipeExtractorClient::class.java) {
@@ -257,6 +337,7 @@ class NewPipeExtractorClient(
     }
 
     companion object {
+        private const val STREAM_CACHE_TTL_MILLIS = 10 * 60 * 1000L
         private val YOUTUBE_ID_PATTERN: Pattern = Pattern.compile("^[a-zA-Z0-9_-]{11}")
     }
 }

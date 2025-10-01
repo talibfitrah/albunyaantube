@@ -8,6 +8,9 @@ interface ExtractorMetricsReporter {
     fun onCacheMiss(type: ContentType, missCount: Int)
     fun onFetchSuccess(type: ContentType, fetchedCount: Int, durationMillis: Long)
     fun onFetchFailure(type: ContentType, ids: List<String>, throwable: Throwable)
+
+    fun onStreamResolveSuccess(videoId: String, durationMillis: Long) {}
+    fun onStreamResolveFailure(videoId: String, throwable: Throwable) {}
 }
 
 class LogExtractorMetricsReporter : ExtractorMetricsReporter {
@@ -26,6 +29,14 @@ class LogExtractorMetricsReporter : ExtractorMetricsReporter {
 
     override fun onFetchFailure(type: ContentType, ids: List<String>, throwable: Throwable) {
         Log.w(TAG, "extractor_fetch_failure type=${type.name} ids=$ids", throwable)
+    }
+
+    override fun onStreamResolveSuccess(videoId: String, durationMillis: Long) {
+        Log.d(TAG, "stream_resolve_success videoId=$videoId durationMs=$durationMillis")
+    }
+
+    override fun onStreamResolveFailure(videoId: String, throwable: Throwable) {
+        Log.w(TAG, "stream_resolve_failure videoId=$videoId", throwable)
     }
 
     private companion object {

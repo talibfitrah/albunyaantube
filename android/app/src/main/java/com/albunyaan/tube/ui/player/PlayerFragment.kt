@@ -13,9 +13,12 @@ import androidx.lifecycle.lifecycleScope
 import androidx.core.view.isVisible
 import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.LinearLayoutManager
+import com.albunyaan.tube.ServiceLocator
 import com.albunyaan.tube.R
 import com.albunyaan.tube.databinding.FragmentPlayerBinding
+import com.albunyaan.tube.data.extractor.PlaybackSelection
 import com.albunyaan.tube.player.PlaybackService
+import com.google.android.exoplayer2.MediaItem
 import com.google.android.exoplayer2.ExoPlayer
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -28,8 +31,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
     private var binding: FragmentPlayerBinding? = null
     private var player: ExoPlayer? = null
-    private val viewModel: PlayerViewModel by viewModels()
+    private val viewModel: PlayerViewModel by viewModels {
+        PlayerViewModel.Factory(ServiceLocator.providePlayerRepository())
+    }
     private val upNextAdapter = UpNextAdapter { item -> viewModel.playItem(item) }
+    private var preparedStreamKey: Pair<String, Boolean>? = null
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -59,6 +65,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
     override fun onDestroyView() {
         binding?.playerView?.player = null
+        preparedStreamKey = null
         player?.release()
         player = null
         binding = null
@@ -83,15 +90,12 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         viewLifecycleOwner.lifecycleScope.launch {
             viewModel.state.collectLatest { state ->
                 binding.audioOnlyToggle.isChecked = state.audioOnly
-                binding.playerStatus.text = when {
-                    state.audioOnly -> getString(R.string.player_status_audio_only)
-                    else -> getString(R.string.player_status_video_playing)
-                }
+                updatePlayerStatus(binding, state)
                 val currentItem = state.currentItem
                 binding.currentlyPlaying.text = currentItem?.let {
                     getString(R.string.player_current_item, it.title)
                 } ?: getString(R.string.player_no_current_item)
-                binding.completeButton.isEnabled = currentItem != null
+                binding.completeButton.isEnabled = state.streamState is StreamState.Ready
                 upNextAdapter.submitList(state.upNext)
                 binding.upNextList.isVisible = state.upNext.isNotEmpty()
                 binding.upNextEmpty.isVisible = state.upNext.isEmpty()
@@ -103,6 +107,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     )
                 }
                 binding.analyticsStatus.text = renderAnalytics(state.lastAnalyticsEvent)
+                maybePrepareStream(state)
                 // Future: apply real track selection when backend streams available.
             }
         }
@@ -156,6 +161,67 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 getString(R.string.player_event_audio_only_off)
             }
             null -> getString(R.string.player_analytics_none)
+            is PlaybackAnalyticsEvent.StreamResolved -> getString(
+                R.string.player_event_stream_resolved,
+                event.qualityLabel ?: getString(R.string.player_event_stream_resolved_unknown)
+            )
+            is PlaybackAnalyticsEvent.StreamFailed -> getString(R.string.player_event_stream_failed)
         }
+    }
+
+    private fun updatePlayerStatus(binding: FragmentPlayerBinding, state: PlayerState) {
+        when (val streamState = state.streamState) {
+            StreamState.Idle -> binding.playerStatus.text = getString(R.string.player_status_initializing)
+            StreamState.Loading -> binding.playerStatus.text = getString(R.string.player_status_resolving)
+            is StreamState.Error -> binding.playerStatus.text = getString(streamState.messageRes)
+            is StreamState.Ready -> binding.playerStatus.text = when {
+                state.audioOnly -> getString(R.string.player_status_audio_only)
+                else -> getString(R.string.player_status_video_playing)
+            }
+        }
+    }
+
+    private fun maybePrepareStream(state: PlayerState) {
+        val streamState = state.streamState
+        if (streamState !is StreamState.Ready) {
+            if (streamState is StreamState.Error) {
+                player?.stop()
+                preparedStreamKey = null
+            }
+            return
+        }
+        val key = streamState.streamId to state.audioOnly
+        if (preparedStreamKey == key) return
+        val (url, mimeType) = selectTrack(streamState.selection, state.audioOnly) ?: return
+        val mediaItem = MediaItem.Builder()
+            .setUri(url)
+            .setMimeType(mimeType)
+            .build()
+        player?.let {
+            it.setMediaItem(mediaItem)
+            it.prepare()
+            it.playWhenReady = true
+        }
+        preparedStreamKey = key
+    }
+
+    private fun selectTrack(selection: PlaybackSelection, audioOnly: Boolean): Pair<String, String>? {
+        return if (audioOnly) {
+            val audio = selection.audio
+            audio.url to (audio.mimeType ?: DEFAULT_AUDIO_MIME)
+        } else {
+            val video = selection.video
+            if (video != null) {
+                video.url to (video.mimeType ?: DEFAULT_VIDEO_MIME)
+            } else {
+                val audio = selection.audio
+                audio.url to (audio.mimeType ?: DEFAULT_AUDIO_MIME)
+            }
+        }
+    }
+
+    private companion object {
+        private const val DEFAULT_AUDIO_MIME = "audio/mp4"
+        private const val DEFAULT_VIDEO_MIME = "video/mp4"
     }
 }

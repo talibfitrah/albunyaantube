@@ -20,6 +20,8 @@ import com.albunyaan.tube.data.source.FakeContentService
 import com.albunyaan.tube.data.source.FallbackContentService
 import com.albunyaan.tube.data.source.RetrofitContentService
 import com.albunyaan.tube.data.source.api.ContentApi
+import com.albunyaan.tube.player.DefaultPlayerRepository
+import com.albunyaan.tube.player.PlayerRepository
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import java.io.File
@@ -55,6 +57,7 @@ object ServiceLocator {
     private val contentService: ContentService by lazy { FallbackContentService(retrofitContentService, fakeContentService) }
     private val pagingRepository: ContentPagingRepository by lazy { DefaultContentPagingRepository(contentService) }
     private val listMetricsReporter: ListMetricsReporter by lazy { LogListMetricsReporter() }
+    private val playerRepository: PlayerRepository by lazy { DefaultPlayerRepository(extractorClient) }
 
     private val moshi: Moshi by lazy {
         Moshi.Builder()
@@ -91,4 +94,6 @@ object ServiceLocator {
     fun provideContentRepository(): ContentPagingRepository = pagingRepository
 
     fun provideListMetricsReporter(): ListMetricsReporter = listMetricsReporter
+
+    fun providePlayerRepository(): PlayerRepository = playerRepository
 }

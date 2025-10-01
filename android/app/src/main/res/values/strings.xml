@@ -38,6 +38,9 @@
     <string name="player_status_audio_only">Playing audio-only stream.</string>
     <string name="player_status_video_playing">Playing video stream.</string>
     <string name="player_status_initializing">Initializing player…</string>
+    <string name="player_status_resolving">Resolving stream…</string>
+    <string name="player_stream_error">Playback unavailable. Please try again later.</string>
+    <string name="player_stream_unavailable">This video is not available for playback.</string>
     <string name="player_notification_channel_name">Playback</string>
     <string name="player_notification_channel_desc">Controls playback while the app is in the background.</string>
     <string name="player_action_enter_pip">Picture-in-picture</string>
@@ -56,6 +59,9 @@
     <string name="player_event_play_completed">Playback completed: %1$s</string>
     <string name="player_event_audio_only_on">Audio-only enabled</string>
     <string name="player_event_audio_only_off">Audio-only disabled</string>
+    <string name="player_event_stream_resolved">Stream resolved (%1$s)</string>
+    <string name="player_event_stream_resolved_unknown">unknown quality</string>
+    <string name="player_event_stream_failed">Stream resolution failed</string>
     <string name="player_start_reason_auto">Auto-advance</string>
     <string name="player_start_reason_user_selected">Manual selection</string>
     <string name="player_start_reason_resume">Resume playback</string>
