@@ -11,6 +11,7 @@ import com.albunyaan.tube.analytics.LogListMetricsReporter
 import com.albunyaan.tube.download.DefaultDownloadRepository
 import com.albunyaan.tube.download.DownloadRepository
 import com.albunyaan.tube.download.DownloadScheduler
+import com.albunyaan.tube.download.DownloadStorage
 import com.albunyaan.tube.data.extractor.MetadataHydrator
 import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
 import com.albunyaan.tube.data.extractor.OkHttpDownloader
@@ -63,8 +64,9 @@ object ServiceLocator {
     private val listMetricsReporter: ListMetricsReporter by lazy { LogListMetricsReporter() }
     private val playerRepository: PlayerRepository by lazy { DefaultPlayerRepository(extractorClient) }
     private val downloadScheduler: DownloadScheduler by lazy { DownloadScheduler(workManager) }
+    private val downloadStorage: DownloadStorage by lazy { DownloadStorage(appContext, DOWNLOAD_QUOTA_BYTES) }
     private val downloadRepository: DownloadRepository by lazy {
-        DefaultDownloadRepository(workManager, downloadScheduler, scope)
+        DefaultDownloadRepository(workManager, downloadScheduler, downloadStorage, extractorMetrics, scope)
     }
 
     private val moshi: Moshi by lazy {
@@ -107,4 +109,10 @@ object ServiceLocator {
     fun providePlayerRepository(): PlayerRepository = playerRepository
 
     fun provideDownloadRepository(): DownloadRepository = downloadRepository
+
+    fun provideExtractorMetricsReporter(): ExtractorMetricsReporter = extractorMetrics
+
+    fun provideDownloadStorage(): DownloadStorage = downloadStorage
+
+    private const val DOWNLOAD_QUOTA_BYTES = 500L * 1024 * 1024 // 500 MB
 }

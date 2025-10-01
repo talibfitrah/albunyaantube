@@ -654,12 +654,12 @@ meta:
 - Outline queue state machine, WorkManager jobs, and notification templates.
 - Document storage directory structure + cleanup policy.
 - Update backlog with analytics for download success/failure.
-- 2025-10-07: WorkManager-based `DownloadWorker`, notification channel, and queue repository scaffolded with pause/resume/cancel hooks and telemetry placeholders.
+- 2025-10-07: WorkManager `DownloadWorker` now resolves NewPipe streams, writes to app-private storage with a 500 MB quota, emits telemetry hooks, and surfaces notifications; repository exposes pause/resume/cancel wiring.
 
 **Reflect**
 - Identify legal/compliance considerations for storage retention.
 - Update risk register if storage quotas remain unresolved.
-- Documented placeholder download flow and noted need for storage quota policy + legal review.
+- Documented download flow, quota strategy, and noted need for legal review of offline retention + analytics.
 
 ### AND-DL-02 — EULA Gate & Policy Enforcement
 **Estimate**: 3h.

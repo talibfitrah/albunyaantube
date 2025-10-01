@@ -11,6 +11,11 @@ interface ExtractorMetricsReporter {
 
     fun onStreamResolveSuccess(videoId: String, durationMillis: Long) {}
     fun onStreamResolveFailure(videoId: String, throwable: Throwable) {}
+
+    fun onDownloadStarted(downloadId: String, videoId: String) {}
+    fun onDownloadProgress(downloadId: String, progress: Int) {}
+    fun onDownloadCompleted(downloadId: String, filePath: String) {}
+    fun onDownloadFailed(downloadId: String, throwable: Throwable) {}
 }
 
 class LogExtractorMetricsReporter : ExtractorMetricsReporter {
@@ -37,6 +42,22 @@ class LogExtractorMetricsReporter : ExtractorMetricsReporter {
 
     override fun onStreamResolveFailure(videoId: String, throwable: Throwable) {
         Log.w(TAG, "stream_resolve_failure videoId=$videoId", throwable)
+    }
+
+    override fun onDownloadStarted(downloadId: String, videoId: String) {
+        Log.d(TAG, "download_started id=$downloadId videoId=$videoId")
+    }
+
+    override fun onDownloadProgress(downloadId: String, progress: Int) {
+        Log.d(TAG, "download_progress id=$downloadId progress=$progress")
+    }
+
+    override fun onDownloadCompleted(downloadId: String, filePath: String) {
+        Log.d(TAG, "download_completed id=$downloadId file=$filePath")
+    }
+
+    override fun onDownloadFailed(downloadId: String, throwable: Throwable) {
+        Log.w(TAG, "download_failed id=$downloadId", throwable)
     }
 
     private companion object {

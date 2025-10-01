@@ -44,6 +44,7 @@ class DownloadScheduler(
         internal const val KEY_AUDIO_ONLY = "audio_only"
         internal const val KEY_WORK_ID = "work_id"
         internal const val KEY_PROGRESS = "progress"
+        internal const val KEY_FILE_PATH = "file_path"
 
         private val NETWORK_CONSTRAINTS = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)

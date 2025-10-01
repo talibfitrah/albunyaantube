@@ -3,7 +3,9 @@ package com.albunyaan.tube.download
 import androidx.lifecycle.asFlow
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import com.albunyaan.tube.analytics.ExtractorMetricsReporter
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_DOWNLOAD_ID
+import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_FILE_PATH
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_PROGRESS
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -28,6 +30,8 @@ interface DownloadRepository {
 class DefaultDownloadRepository(
     private val workManager: WorkManager,
     private val scheduler: DownloadScheduler,
+    private val storage: DownloadStorage,
+    private val metrics: ExtractorMetricsReporter,
     private val scope: CoroutineScope
 ) : DownloadRepository {
 
@@ -41,6 +45,7 @@ class DefaultDownloadRepository(
         val workId = scheduler.schedule(request)
         workIds[request.id] = workId
         updateEntry(request) { it.copy(status = DownloadStatus.QUEUED, progress = 0, message = null) }
+        metrics.onDownloadStarted(request.id, request.videoId)
         observeWork(workId, request)
     }
 
@@ -58,12 +63,16 @@ class DefaultDownloadRepository(
     }
 
     override fun cancel(requestId: String) {
+        val entry = entries.value.firstOrNull { it.request.id == requestId }
         val workId = workIds[requestId]
         if (workId != null) {
             workManager.cancelWorkById(workId)
             workIds.remove(requestId)
         }
         paused -= requestId
+        if (entry != null) {
+            storage.delete(entry.request.id, entry.request.audioOnly)
+        }
         updateEntry(requestId) { it.copy(status = DownloadStatus.CANCELLED, progress = 0) }
     }
 
@@ -81,8 +90,12 @@ class DefaultDownloadRepository(
                         }
                         WorkInfo.State.SUCCEEDED -> {
                             workIds.remove(request.id)
+                            val filePath = info.outputData.getString(KEY_FILE_PATH)
                             updateEntry(request) {
                                 it.copy(status = DownloadStatus.COMPLETED, progress = 100)
+                            }
+                            if (filePath != null) {
+                                metrics.onDownloadCompleted(request.id, filePath)
                             }
                         }
                         WorkInfo.State.FAILED -> {
@@ -90,6 +103,7 @@ class DefaultDownloadRepository(
                             updateEntry(request) {
                                 it.copy(status = DownloadStatus.FAILED, message = null)
                             }
+                            metrics.onDownloadFailed(request.id, IllegalStateException("Download failed"))
                         }
                         WorkInfo.State.CANCELLED -> {
                             workIds.remove(request.id)
@@ -97,6 +111,7 @@ class DefaultDownloadRepository(
                                 updateEntry(request) { it.copy(status = DownloadStatus.PAUSED) }
                             } else {
                                 updateEntry(request) { it.copy(status = DownloadStatus.CANCELLED) }
+                                metrics.onDownloadFailed(request.id, IllegalStateException("Cancelled"))
                             }
                         }
                         WorkInfo.State.BLOCKED -> {
