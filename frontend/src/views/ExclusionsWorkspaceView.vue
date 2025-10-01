@@ -17,8 +17,8 @@
           :id="searchInputId"
           :placeholder="t('exclusions.search.placeholder')"
           :value="searchQuery"
-          @input="onSearchChange"
           type="search"
+          @input="onSearchChange"
         />
         <button v-if="searchQuery" type="button" class="clear" @click="clearSearch">
           {{ t('exclusions.actions.clearSearch') }}
@@ -44,8 +44,13 @@
     <div v-if="hasSelection" class="bulk-bar" aria-live="polite">
       <span>{{ t('exclusions.summary.selection', { count: selectedIds.length }) }}</span>
       <div class="bulk-actions">
-        <button type="button" class="bulk-primary" @click="handleBulkInclude">
-          {{ t('exclusions.actions.bulkInclude') }}
+        <button
+          type="button"
+          class="bulk-primary"
+          @click="handleBulkRemove"
+          :disabled="isBulkProcessing"
+        >
+          {{ isBulkProcessing ? t('exclusions.actions.removing') : t('exclusions.actions.removeSelected') }}
         </button>
         <button type="button" class="bulk-secondary" @click="clearSelection">
           {{ t('exclusions.actions.clearSelection') }}
@@ -53,8 +58,15 @@
       </div>
     </div>
 
-    <div class="table-wrapper" role="region" :aria-live="filteredItems.length ? 'off' : 'polite'">
-      <table class="exclusions-table">
+    <div class="table-wrapper" role="region" aria-live="polite">
+      <div v-if="isLoading" class="table-state">
+        {{ t('exclusions.table.loading') }}
+      </div>
+      <div v-else-if="loadError" class="table-state error-state">
+        <span>{{ loadError }}</span>
+        <button type="button" class="retry" @click="reload">{{ t('exclusions.table.retry') }}</button>
+      </div>
+      <table v-else class="exclusions-table">
         <thead>
           <tr>
             <th scope="col">
@@ -69,8 +81,8 @@
             <th scope="col">{{ t('exclusions.table.columns.type') }}</th>
             <th scope="col">{{ t('exclusions.table.columns.parent') }}</th>
             <th scope="col">{{ t('exclusions.table.columns.reason') }}</th>
-            <th scope="col">{{ t('exclusions.table.columns.updated') }}</th>
-            <th scope="col">{{ t('exclusions.table.columns.status') }}</th>
+            <th scope="col">{{ t('exclusions.table.columns.created') }}</th>
+            <th scope="col">{{ t('exclusions.table.columns.actions') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -81,45 +93,44 @@
             <td>
               <input
                 type="checkbox"
-                :aria-label="t('exclusions.table.rowSelect', { name: entry.label })"
+                :aria-label="t('exclusions.table.rowSelect', { name: entry.excludeId })"
                 :checked="isSelected(entry.id)"
                 @change="toggleSelection(entry.id, $event)"
               />
             </td>
             <td>
               <div class="entity-cell">
-                <span class="entity-label">{{ entry.label }}</span>
-                <span class="entity-id">{{ entry.id }}</span>
+                <span class="entity-label">{{ entry.excludeId }}</span>
+                <span class="entity-subtle">{{ entitySummary(entry) }}</span>
               </div>
             </td>
             <td>
-              <span class="pill" :data-type="entry.type">{{ typeLabel(entry.type) }}</span>
+              <span class="pill" :data-type="entry.excludeType">{{ resourceTypeLabel(entry.excludeType) }}</span>
             </td>
             <td>
-              <span class="parent-label">{{ entry.parentLabel }}</span>
-            </td>
-            <td>
-              <span v-if="entry.reason" class="reason-text">{{ entry.reason }}</span>
-              <span v-else class="reason-missing">{{ t('exclusions.table.noReason') }}</span>
-            </td>
-            <td>
-              <time :datetime="entry.updatedAt">{{ formatUpdated(entry.updatedAt) }}</time>
-            </td>
-            <td>
-              <div class="status-toggle" role="radiogroup" :aria-label="t('exclusions.table.columns.status')">
-                <button
-                  v-for="state in statusOptions"
-                  :key="state"
-                  type="button"
-                  class="status-option"
-                  role="radio"
-                  :aria-checked="entry.status === state"
-                  :class="{ active: entry.status === state }"
-                  @click="setEntryStatus(entry, state)"
-                >
-                  {{ statusLabel(state) }}
-                </button>
+              <div class="entity-cell">
+                <span class="entity-label">{{ entry.parentId }}</span>
+                <span class="entity-subtle">{{ parentTypeLabel(entry.parentType) }}</span>
               </div>
+            </td>
+            <td>
+              <span>{{ entry.reason || t('exclusions.table.noReason') }}</span>
+            </td>
+            <td>
+              <div class="timestamp">
+                <time :datetime="entry.createdAt">{{ formatUpdated(entry.createdAt) }}</time>
+                <span class="entity-subtle">{{ entry.createdBy.email }}</span>
+              </div>
+            </td>
+            <td>
+              <button
+                type="button"
+                class="link-action"
+                @click="handleRemove(entry.id)"
+                :disabled="isRemoving(entry.id)"
+              >
+                {{ isRemoving(entry.id) ? t('exclusions.actions.removing') : t('exclusions.actions.remove') }}
+              </button>
             </td>
           </tr>
         </tbody>
@@ -146,38 +157,60 @@
         {{ t('exclusions.dialog.description') }}
       </p>
       <form @submit.prevent="handleAdd">
-        <label class="modal-label" :for="addDialogTargetId">
-          {{ t('exclusions.dialog.targetLabel') }}
-        </label>
-        <input
-          :id="addDialogTargetId"
-          ref="addDialogTargetRef"
-          v-model.trim="addDialog.label"
-          type="text"
-          required
-          autocomplete="off"
-        />
+        <div class="form-grid">
+          <label class="modal-label" :for="addDialogParentTypeId">
+            {{ t('exclusions.dialog.parentTypeLabel') }}
+          </label>
+          <select :id="addDialogParentTypeId" v-model="addDialog.parentType">
+            <option value="CHANNEL">{{ t('exclusions.dialog.parentChannel') }}</option>
+            <option value="PLAYLIST">{{ t('exclusions.dialog.parentPlaylist') }}</option>
+          </select>
 
-        <label class="modal-label" :for="addDialogTypeId">
-          {{ t('exclusions.dialog.typeLabel') }}
-        </label>
-        <select :id="addDialogTypeId" v-model="addDialog.type">
-          <option v-for="option in typeOptions.filter(option => option.value !== 'all')" :key="option.value" :value="option.value">
-            {{ option.label }}
-          </option>
-        </select>
+          <label class="modal-label" :for="addDialogParentId">
+            {{ t('exclusions.dialog.parentIdLabel') }}
+          </label>
+          <input
+            :id="addDialogParentId"
+            v-model.trim="addDialog.parentId"
+            type="text"
+            required
+            autocomplete="off"
+          />
+
+          <label class="modal-label" :for="addDialogTypeId">
+            {{ t('exclusions.dialog.typeLabel') }}
+          </label>
+          <select :id="addDialogTypeId" v-model="addDialog.excludeType">
+            <option value="PLAYLIST">{{ t('navigation.playlists') }}</option>
+            <option value="VIDEO">{{ t('navigation.videos') }}</option>
+          </select>
+
+          <label class="modal-label" :for="addDialogTargetId">
+            {{ t('exclusions.dialog.targetLabel') }}
+          </label>
+          <input
+            :id="addDialogTargetId"
+            ref="addDialogTargetRef"
+            v-model.trim="addDialog.excludeId"
+            type="text"
+            required
+            autocomplete="off"
+          />
+        </div>
 
         <label class="modal-label" :for="addDialogReasonId">
           {{ t('exclusions.dialog.reasonLabel') }}
         </label>
-        <textarea :id="addDialogReasonId" v-model.trim="addDialog.reason" rows="3"></textarea>
+        <textarea :id="addDialogReasonId" v-model.trim="addDialog.reason" rows="3" required></textarea>
+
+        <p v-if="formError" class="form-error" role="alert">{{ formError }}</p>
 
         <div class="modal-actions">
-          <button type="button" class="modal-secondary" @click="closeAddDialog">
+          <button type="button" class="modal-secondary" @click="closeAddDialog" :disabled="isSubmitting">
             {{ t('exclusions.actions.cancel') }}
           </button>
-          <button type="submit" class="modal-primary">
-            {{ t('exclusions.actions.create') }}
+          <button type="submit" class="modal-primary" :disabled="isSubmitting">
+            {{ isSubmitting ? t('exclusions.actions.creating') : t('exclusions.actions.create') }}
           </button>
         </div>
       </form>
@@ -186,104 +219,51 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@/utils/formatters';
 import { useFocusTrap } from '@/composables/useFocusTrap';
-
-type ExclusionType = 'channel' | 'playlist' | 'video';
-type ExclusionStatus = 'excluded' | 'pending' | 'included';
-
-interface ExclusionEntry {
-  id: string;
-  label: string;
-  type: ExclusionType;
-  parentLabel: string;
-  reason: string | null;
-  status: ExclusionStatus;
-  updatedAt: string;
-}
+import { createExclusion, deleteExclusion, listExclusions } from '@/services/exclusions';
+import type { Exclusion, ExclusionParentType, ExclusionResourceType } from '@/types/exclusions';
 
 const { t, locale } = useI18n();
 const currentLocale = computed(() => locale.value);
 
 const searchQuery = ref('');
-const typeFilter = ref<'all' | ExclusionType>('all');
+const typeFilter = ref<'all' | ExclusionParentType | ExclusionResourceType>('all');
 const selectedIds = ref<string[]>([]);
+const entries = ref<Exclusion[]>([]);
+const isLoading = ref(false);
+const loadError = ref<string | null>(null);
 const actionMessage = ref<string | null>(null);
+const isSubmitting = ref(false);
+const formError = ref<string | null>(null);
+const isBulkProcessing = ref(false);
+const removingIds = ref<string[]>([]);
 
-const entries = ref<ExclusionEntry[]>([
-  {
-    id: 'channel:al-qalam',
-    label: 'Al-Qalam Foundation',
-    type: 'channel',
-    parentLabel: '—',
-    reason: 'Requested removal by moderation team pending review.',
-    status: 'excluded',
-    updatedAt: '2025-09-20T08:30:00Z'
-  },
-  {
-    id: 'playlist:recitations-juz-amma',
-    label: 'Recitations — Juz Amma (HQ)',
-    type: 'playlist',
-    parentLabel: 'Al-Qalam Foundation',
-    reason: null,
-    status: 'excluded',
-    updatedAt: '2025-09-22T12:40:00Z'
-  },
-  {
-    id: 'video:daily-halaqa-231',
-    label: 'Daily Halaqa 231: Mercy and Neighbours',
-    type: 'video',
-    parentLabel: 'Iman Circle Live',
-    reason: 'Contains unrelated promotional segment.',
-    status: 'excluded',
-    updatedAt: '2025-09-25T18:10:00Z'
-  }
-]);
-
-const visibleEntries = computed(() => entries.value.filter((entry) => entry.status !== 'included'));
-
-const filteredItems = computed(() => {
-  const normalizedQuery = searchQuery.value.trim().toLowerCase();
-  return visibleEntries.value.filter((entry) => {
-    const matchesType = typeFilter.value === 'all' || entry.type === typeFilter.value;
-    if (!matchesType) {
-      return false;
-    }
-    if (!normalizedQuery) {
-      return true;
-    }
-    return (
-      entry.label.toLowerCase().includes(normalizedQuery) ||
-      entry.parentLabel.toLowerCase().includes(normalizedQuery) ||
-      entry.id.toLowerCase().includes(normalizedQuery)
-    );
-  });
-});
-
-const hasSelection = computed(() => selectedIds.value.length > 0);
 const actionMessageId = 'exclusions-action-message';
 const searchInputId = 'exclusions-search-input';
 const addDialogTitleId = 'exclusions-dialog-title';
 const addDialogDescriptionId = 'exclusions-dialog-description';
+const addDialogParentTypeId = 'exclusions-dialog-parent-type';
+const addDialogParentId = 'exclusions-dialog-parent-id';
 const addDialogTargetId = 'exclusions-dialog-target';
 const addDialogReasonId = 'exclusions-dialog-reason';
 const addDialogTypeId = 'exclusions-dialog-type';
 
-const statusOptions: ExclusionStatus[] = ['excluded', 'pending', 'included'];
-
 const typeOptions = computed(() => [
   { value: 'all' as const, label: t('exclusions.filter.all') },
-  { value: 'channel' as const, label: t('exclusions.filter.channels') },
-  { value: 'playlist' as const, label: t('exclusions.filter.playlists') },
-  { value: 'video' as const, label: t('exclusions.filter.videos') }
+  { value: 'CHANNEL' as const, label: t('exclusions.filter.channels') },
+  { value: 'PLAYLIST' as const, label: t('exclusions.filter.playlists') },
+  { value: 'VIDEO' as const, label: t('exclusions.filter.videos') }
 ]);
 
 const addDialog = reactive({
   visible: false,
-  label: '',
-  type: 'channel' as ExclusionType,
+  parentType: 'CHANNEL' as ExclusionParentType,
+  parentId: '',
+  excludeType: 'PLAYLIST' as ExclusionResourceType,
+  excludeId: '',
   reason: ''
 });
 
@@ -292,14 +272,60 @@ const addDialogTargetRef = ref<HTMLInputElement | null>(null);
 
 const { activate: activateAddTrap, deactivate: deactivateAddTrap } = useFocusTrap(addDialogRef, {
   onEscape: () => {
-    closeAddDialog();
+    if (!isSubmitting.value) {
+      closeAddDialog();
+    }
   }
 });
 
-watch(filteredItems, (items) => {
-  const visibleIds = new Set(items.map((item) => item.id));
-  selectedIds.value = selectedIds.value.filter((id) => visibleIds.has(id));
+const hasSelection = computed(() => selectedIds.value.length > 0);
+
+const filteredItems = computed(() => {
+  const normalizedQuery = searchQuery.value.trim().toLowerCase();
+  return entries.value.filter((entry) => {
+    const matchesFilter = matchFilter(entry);
+    if (!matchesFilter) {
+      return false;
+    }
+    if (!normalizedQuery) {
+      return true;
+    }
+    const haystack = [
+      entry.excludeId,
+      entry.parentId,
+      entry.reason,
+      entry.createdBy.email
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    return haystack.includes(normalizedQuery);
+  });
 });
+
+const isAllVisibleSelected = computed(() => {
+  if (!filteredItems.value.length) {
+    return false;
+  }
+  return filteredItems.value.every((entry) => selectedIds.value.includes(entry.id));
+});
+
+onMounted(async () => {
+  await reload();
+});
+
+function matchFilter(entry: Exclusion): boolean {
+  if (typeFilter.value === 'all') {
+    return true;
+  }
+  if (typeFilter.value === 'CHANNEL') {
+    return entry.parentType === 'CHANNEL';
+  }
+  if (typeFilter.value === 'PLAYLIST') {
+    return entry.excludeType === 'PLAYLIST' || entry.parentType === 'PLAYLIST';
+  }
+  return entry.excludeType === 'VIDEO';
+}
 
 function onSearchChange(event: Event) {
   const target = event.target as HTMLInputElement;
@@ -310,20 +336,13 @@ function clearSearch() {
   searchQuery.value = '';
 }
 
-function setTypeFilter(value: 'all' | ExclusionType) {
+function setTypeFilter(value: 'all' | ExclusionParentType | ExclusionResourceType) {
   typeFilter.value = value;
 }
 
 function isSelected(id: string) {
   return selectedIds.value.includes(id);
 }
-
-const isAllVisibleSelected = computed(() => {
-  if (!filteredItems.value.length) {
-    return false;
-  }
-  return filteredItems.value.every((entry) => selectedIds.value.includes(entry.id));
-});
 
 function toggleSelection(id: string, event: Event) {
   const target = event.target as HTMLInputElement;
@@ -340,11 +359,12 @@ function toggleSelection(id: string, event: Event) {
 function toggleSelectAll(event: Event) {
   const target = event.target as HTMLInputElement;
   if (target.checked) {
-    const unique = new Set([...selectedIds.value, ...filteredItems.value.map((entry) => entry.id)]);
+    const visibleIds = filteredItems.value.map((entry) => entry.id);
+    const unique = new Set([...selectedIds.value, ...visibleIds]);
     selectedIds.value = Array.from(unique);
   } else {
-    const visibleIds = new Set(filteredItems.value.map((entry) => entry.id));
-    selectedIds.value = selectedIds.value.filter((id) => !visibleIds.has(id));
+    const visibleSet = new Set(filteredItems.value.map((entry) => entry.id));
+    selectedIds.value = selectedIds.value.filter((id) => !visibleSet.has(id));
   }
 }
 
@@ -352,82 +372,127 @@ function clearSelection() {
   selectedIds.value = [];
 }
 
-function typeLabel(type: ExclusionType) {
-  if (type === 'channel') {
-    return t('navigation.channels');
+function entitySummary(entry: Exclusion) {
+  if (entry.excludeType === 'PLAYLIST') {
+    return t('exclusions.table.playlistSummary', { id: entry.excludeId });
   }
-  if (type === 'playlist') {
-    return t('navigation.playlists');
-  }
-  return t('navigation.videos');
+  return t('exclusions.table.videoSummary', { id: entry.excludeId });
 }
 
-function statusLabel(status: ExclusionStatus) {
-  return t(`exclusions.status.${status}`);
+function resourceTypeLabel(type: ExclusionResourceType) {
+  return type === 'PLAYLIST' ? t('navigation.playlists') : t('navigation.videos');
+}
+
+function parentTypeLabel(type: ExclusionParentType) {
+  return type === 'CHANNEL' ? t('navigation.channels') : t('navigation.playlists');
 }
 
 function formatUpdated(value: string) {
   return formatDateTime(value, currentLocale.value);
 }
 
+function isRemoving(id: string) {
+  return removingIds.value.includes(id);
+}
+
+async function reload() {
+  isLoading.value = true;
+  loadError.value = null;
+  try {
+    entries.value = await listExclusions();
+  } catch (err) {
+    loadError.value = err instanceof Error ? err.message : t('exclusions.table.error');
+  } finally {
+    isLoading.value = false;
+  }
+}
+
 function openAddDialog() {
   addDialog.visible = true;
+  formError.value = null;
   nextTick(() => {
     activateAddTrap({ initialFocus: addDialogTargetRef.value ?? null });
   });
 }
 
+function resetDialog() {
+  addDialog.parentType = 'CHANNEL';
+  addDialog.parentId = '';
+  addDialog.excludeType = 'PLAYLIST';
+  addDialog.excludeId = '';
+  addDialog.reason = '';
+}
+
 function closeAddDialog() {
   deactivateAddTrap();
   addDialog.visible = false;
-  addDialog.label = '';
-  addDialog.reason = '';
-  addDialog.type = 'channel';
+  resetDialog();
+  isSubmitting.value = false;
 }
 
-function handleAdd() {
-  if (!addDialog.label.trim()) {
+async function handleAdd() {
+  if (isSubmitting.value) {
     return;
   }
-  const now = new Date().toISOString();
-  const entry: ExclusionEntry = {
-    id: `${addDialog.type}:${addDialog.label.trim().toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`,
-    label: addDialog.label.trim(),
-    type: addDialog.type,
-    parentLabel: addDialog.type === 'channel' ? '—' : t('exclusions.table.parentUnknown'),
-    reason: addDialog.reason.trim() ? addDialog.reason.trim() : null,
-    status: 'excluded',
-    updatedAt: now
-  };
-  entries.value = [entry, ...entries.value];
-  actionMessage.value = t('exclusions.toasts.added', { name: entry.label });
-  closeAddDialog();
+  if (!addDialog.parentId || !addDialog.excludeId || !addDialog.reason) {
+    formError.value = t('exclusions.dialog.validation');
+    return;
+  }
+  isSubmitting.value = true;
+  formError.value = null;
+  try {
+    const payload = {
+      parentType: addDialog.parentType,
+      parentId: addDialog.parentId.trim(),
+      excludeType: addDialog.excludeType,
+      excludeId: addDialog.excludeId.trim(),
+      reason: addDialog.reason.trim()
+    };
+    const created = await createExclusion(payload);
+    entries.value = [created, ...entries.value];
+    actionMessage.value = t('exclusions.toasts.added', { name: created.excludeId });
+    closeAddDialog();
+  } catch (err) {
+    formError.value = err instanceof Error ? err.message : t('exclusions.errors.createFailed');
+  } finally {
+    isSubmitting.value = false;
+  }
 }
 
-function setEntryStatus(entry: ExclusionEntry, status: ExclusionStatus) {
-  if (entry.status === status) {
+async function handleRemove(id: string) {
+  if (isRemoving(id)) {
     return;
   }
-  entry.status = status;
-  entry.updatedAt = new Date().toISOString();
-  const stateLabel = statusLabel(status);
-  actionMessage.value = t('exclusions.toasts.statusChanged', { name: entry.label, state: stateLabel });
+  removingIds.value = [...removingIds.value, id];
+  try {
+    await deleteExclusion(id);
+    entries.value = entries.value.filter((entry) => entry.id !== id);
+    selectedIds.value = selectedIds.value.filter((value) => value !== id);
+    actionMessage.value = t('exclusions.toasts.removed');
+  } catch (err) {
+    actionMessage.value = err instanceof Error ? err.message : t('exclusions.errors.removeFailed');
+  } finally {
+    removingIds.value = removingIds.value.filter((value) => value !== id);
+  }
 }
 
-function handleBulkInclude() {
-  if (!selectedIds.value.length) {
+async function handleBulkRemove() {
+  if (!selectedIds.value.length || isBulkProcessing.value) {
     return;
   }
-  const set = new Set(selectedIds.value);
-  entries.value = entries.value.map((entry) => {
-    if (set.has(entry.id)) {
-      return { ...entry, status: 'included', updatedAt: new Date().toISOString() };
-    }
-    return entry;
-  });
-  const count = selectedIds.value.length;
-  actionMessage.value = t('exclusions.toasts.bulkIncluded', { count });
-  clearSelection();
+  isBulkProcessing.value = true;
+  const ids = [...selectedIds.value];
+  try {
+    await Promise.all(ids.map((id) => deleteExclusion(id)));
+    const idSet = new Set(ids);
+    entries.value = entries.value.filter((entry) => !idSet.has(entry.id));
+    selectedIds.value = [];
+    actionMessage.value = t('exclusions.toasts.bulkRemoved', { count: ids.length });
+  } catch (err) {
+    actionMessage.value = err instanceof Error ? err.message : t('exclusions.errors.removeFailed');
+  } finally {
+    isBulkProcessing.value = false;
+  }
 }
 </script>
 
@@ -601,6 +666,34 @@ function handleBulkInclude() {
   overflow: hidden;
 }
 
+.table-state {
+  padding: 2rem;
+  text-align: center;
+  color: var(--color-text-secondary);
+}
+
+.error-state {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: center;
+  color: var(--color-danger);
+}
+
+.retry {
+  border: none;
+  border-radius: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: var(--color-brand);
+  color: var(--color-text-inverse);
+  cursor: pointer;
+}
+
+.retry:focus-visible,
+.retry:hover {
+  background: var(--color-accent);
+}
+
 .exclusions-table {
   width: 100%;
   border-collapse: collapse;
@@ -628,17 +721,16 @@ td {
 .entity-cell {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.2rem;
 }
 
 .entity-label {
   font-weight: 600;
 }
 
-.entity-id {
+.entity-subtle {
   color: var(--color-text-secondary);
   font-size: 0.8rem;
-  word-break: break-all;
 }
 
 .pill {
@@ -653,47 +745,10 @@ td {
   color: var(--color-text-secondary);
 }
 
-.parent-label {
-  color: var(--color-text-secondary);
-}
-
-.reason-text {
-  display: block;
-  white-space: pre-wrap;
-}
-
-.reason-missing {
-  color: var(--color-text-secondary);
-  font-style: italic;
-}
-
-.status-toggle {
-  display: inline-flex;
-  gap: 0.5rem;
-  background: var(--color-surface-alt);
-  border-radius: 999px;
-  padding: 0.3rem;
-}
-
-.status-option {
-  border: none;
-  background: transparent;
-  border-radius: 999px;
-  padding: 0.35rem 0.9rem;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease;
-}
-
-.status-option.active {
-  background: var(--color-brand);
-  color: var(--color-text-inverse);
-}
-
-.status-option:focus-visible {
-  background: var(--color-brand-soft);
-  color: var(--color-text-primary);
+.timestamp {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
 }
 
 .empty {
@@ -706,6 +761,20 @@ td {
   margin: 0;
   color: var(--color-text-secondary);
   font-size: 0.95rem;
+}
+
+.link-action {
+  background: transparent;
+  border: none;
+  color: var(--color-brand);
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+.link-action:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .modal-backdrop {
@@ -723,7 +792,7 @@ td {
   background: var(--color-surface);
   border-radius: 1rem;
   padding: 1.75rem;
-  max-width: 540px;
+  max-width: 560px;
   width: 100%;
   box-shadow: var(--shadow-elevated);
 }
@@ -733,26 +802,38 @@ td {
   margin: 0.5rem 0 1.5rem;
 }
 
-.modal-label {
-  display: block;
-  font-weight: 600;
-  margin-bottom: 0.35rem;
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem 1rem;
+  margin-bottom: 1rem;
 }
 
-.modal input,
+.modal-label {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
 .modal select,
+.modal input,
 .modal textarea {
   width: 100%;
   border-radius: 0.75rem;
   border: 1px solid var(--color-border);
   padding: 0.6rem 0.75rem;
-  margin-bottom: 1rem;
   font: inherit;
 }
 
 .modal textarea {
   resize: vertical;
   min-height: 96px;
+  margin-top: 0.25rem;
+}
+
+.form-error {
+  color: var(--color-danger);
+  margin: 0.5rem 0 0;
+  font-size: 0.9rem;
 }
 
 .modal-actions {

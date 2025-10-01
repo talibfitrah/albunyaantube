@@ -234,25 +234,27 @@ export const messages = {
           type: 'Type',
           parent: 'Parent',
           reason: 'Reason',
-          updated: 'Updated',
-          status: 'Status'
+          created: 'Created',
+          actions: 'Actions'
         },
         noReason: 'No reason provided.',
-        parentUnknown: 'Parent pending sync',
         empty: 'No exclusions match this filter.',
-        rowSelect: 'Select {name} for bulk action'
-      },
-      status: {
-        excluded: 'Excluded',
-        pending: 'Pending review',
-        included: 'Included'
+        rowSelect: 'Select {name} for bulk action',
+        loading: 'Loading exclusions…',
+        retry: 'Retry',
+        error: 'Unable to load exclusions.',
+        playlistSummary: 'Playlist exclusion',
+        videoSummary: 'Video exclusion'
       },
       actions: {
         add: 'Add exclusion',
         clearSelection: 'Clear selection',
-        bulkInclude: 'Move selected to include',
+        removeSelected: 'Remove selected',
+        remove: 'Remove',
+        removing: 'Removing…',
         cancel: 'Cancel',
-        create: 'Save exclusion',
+        create: 'Create exclusion',
+        creating: 'Creating…',
         clearSearch: 'Clear search'
       },
       summary: {
@@ -260,15 +262,24 @@ export const messages = {
       },
       dialog: {
         title: 'Add exclusion',
-        description: 'Define a resource to exclude across Albunyaan Tube.',
-        targetLabel: 'Resource identifier',
-        typeLabel: 'Resource type',
-        reasonLabel: 'Reason (optional)'
+        description: 'Provide parent and child identifiers to register a manual exclusion.',
+        parentTypeLabel: 'Parent type',
+        parentChannel: 'Channel',
+        parentPlaylist: 'Playlist',
+        parentIdLabel: 'Parent ID',
+        typeLabel: 'Excluded type',
+        targetLabel: 'Excluded ID',
+        reasonLabel: 'Reason',
+        validation: 'All fields are required.'
       },
       toasts: {
         added: '{name} added to exclusions.',
-        statusChanged: '{name} marked as {state}.',
-        bulkIncluded: '{count} exclusions moved to include.'
+        removed: 'Exclusion removed.',
+        bulkRemoved: '{count} exclusions removed.'
+      },
+      errors: {
+        createFailed: 'Unable to create exclusion. Please try again.',
+        removeFailed: 'Unable to remove exclusion. Please try again.'
       }
     },
     users: {
@@ -523,41 +534,52 @@ export const messages = {
           type: 'النوع',
           parent: 'المصدر الرئيسي',
           reason: 'السبب',
-          updated: 'آخر تحديث',
-          status: 'الحالة'
+          created: 'تاريخ الإنشاء',
+          actions: 'الإجراءات'
         },
         noReason: 'لا يوجد سبب مذكور.',
-        parentUnknown: 'المصدر الرئيسي قيد المزامنة',
         empty: 'لا توجد استثناءات تطابق هذا التصفية.',
-        rowSelect: 'تحديد {name} لتطبيق الإجراءات المجمعة'
-      },
-      status: {
-        excluded: 'مستثنى',
-        pending: 'بانتظار المراجعة',
-        included: 'مضمَّن'
+        rowSelect: 'تحديد {name} لتطبيق الإجراءات المجمعة',
+        loading: 'جارٍ تحميل الاستثناءات…',
+        retry: 'إعادة المحاولة',
+        error: 'تعذر تحميل الاستثناءات.',
+        playlistSummary: 'استثناء قائمة تشغيل',
+        videoSummary: 'استثناء فيديو'
       },
       actions: {
         add: 'إضافة استثناء',
         clearSelection: 'مسح التحديد',
-        bulkInclude: 'إرجاع المحدد إلى التضمين',
+        removeSelected: 'إزالة التحديد',
+        remove: 'إزالة',
+        removing: 'جارٍ الإزالة…',
         cancel: 'إلغاء',
-        create: 'حفظ الاستثناء',
+        create: 'إنشاء استثناء',
+        creating: 'جارٍ الإنشاء…',
         clearSearch: 'مسح البحث'
       },
       summary: {
-        selection: '{count} محدد'
+        selection: 'تم تحديد {count}'
       },
       dialog: {
         title: 'إضافة استثناء',
-        description: 'حدد مورداً لاستثنائه عبر منصة Albunyaan Tube.',
-        targetLabel: 'معرّف المورد',
-        typeLabel: 'نوع المورد',
-        reasonLabel: 'السبب (اختياري)'
+        description: 'قدم معرّفات المصدر الأصلي والعنصر المستبعد لتسجيل استثناء يدوي.',
+        parentTypeLabel: 'نوع المصدر الرئيسي',
+        parentChannel: 'قناة',
+        parentPlaylist: 'قائمة تشغيل',
+        parentIdLabel: 'معرّف المصدر الرئيسي',
+        typeLabel: 'نوع العنصر المستبعد',
+        targetLabel: 'معرّف العنصر المستبعد',
+        reasonLabel: 'السبب',
+        validation: 'جميع الحقول مطلوبة.'
       },
       toasts: {
         added: 'تمت إضافة {name} إلى الاستثناءات.',
-        statusChanged: 'تم تعيين {name} إلى حالة {state}.',
-        bulkIncluded: 'تمت إعادة {count} من الاستثناءات إلى التضمين.'
+        removed: 'تمت إزالة الاستثناء.',
+        bulkRemoved: 'تمت إزالة {count} من الاستثناءات.'
+      },
+      errors: {
+        createFailed: 'تعذر إنشاء الاستثناء. حاول مرة أخرى.',
+        removeFailed: 'تعذر إزالة الاستثناء. حاول مرة أخرى.'
       }
     },
     users: {
@@ -812,25 +834,27 @@ export const messages = {
           type: 'Type',
           parent: 'Bovenliggend',
           reason: 'Reden',
-          updated: 'Bijgewerkt',
-          status: 'Status'
+          created: 'Gemaakt',
+          actions: 'Acties'
         },
         noReason: 'Geen reden opgegeven.',
-        parentUnknown: 'Bovenliggende bron wordt gesynchroniseerd',
         empty: 'Geen uitzonderingen voor dit filter.',
-        rowSelect: '{name} selecteren voor bulkactie'
-      },
-      status: {
-        excluded: 'Uitgesloten',
-        pending: 'In behandeling',
-        included: 'Toegestaan'
+        rowSelect: '{name} selecteren voor bulkactie',
+        loading: 'Uitzonderingen laden…',
+        retry: 'Opnieuw proberen',
+        error: 'Kan uitzonderingen niet laden.',
+        playlistSummary: 'Uitzondering voor afspeellijst',
+        videoSummary: 'Uitzondering voor video'
       },
       actions: {
         add: 'Uitzondering toevoegen',
         clearSelection: 'Selectie wissen',
-        bulkInclude: 'Zet selectie terug naar toestaan',
+        removeSelected: 'Selectie verwijderen',
+        remove: 'Verwijderen',
+        removing: 'Bezig met verwijderen…',
         cancel: 'Annuleren',
-        create: 'Uitzondering opslaan',
+        create: 'Uitzondering maken',
+        creating: 'Bezig met maken…',
         clearSearch: 'Zoekopdracht wissen'
       },
       summary: {
@@ -838,15 +862,24 @@ export const messages = {
       },
       dialog: {
         title: 'Uitzondering toevoegen',
-        description: 'Definieer een bron die buiten Albunyaan Tube moet blijven.',
-        targetLabel: 'Resource-id',
-        typeLabel: 'Resourcetype',
-        reasonLabel: 'Reden (optioneel)'
+        description: 'Geef de bovenliggende en uitgesloten id\'s op om een handmatige uitzondering te registreren.',
+        parentTypeLabel: 'Type bovenliggende bron',
+        parentChannel: 'Kanaal',
+        parentPlaylist: 'Afspeellijst',
+        parentIdLabel: 'Bovenliggend ID',
+        typeLabel: 'Type uitgesloten item',
+        targetLabel: 'Uitgesloten ID',
+        reasonLabel: 'Reden',
+        validation: 'Alle velden zijn verplicht.'
       },
       toasts: {
         added: '{name} toegevoegd aan uitzonderingen.',
-        statusChanged: '{name} gemarkeerd als {state}.',
-        bulkIncluded: '{count} uitzonderingen teruggezet naar toestaan.'
+        removed: 'Uitzondering verwijderd.',
+        bulkRemoved: '{count} uitzonderingen verwijderd.'
+      },
+      errors: {
+        createFailed: 'Uitzondering kan niet worden gemaakt. Probeer het opnieuw.',
+        removeFailed: 'Uitzondering kan niet worden verwijderd. Probeer het opnieuw.'
       }
     },
     users: {

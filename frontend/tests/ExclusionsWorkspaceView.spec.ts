@@ -1,8 +1,17 @@
 import '@testing-library/jest-dom';
 import { render, screen, fireEvent, waitFor } from '@testing-library/vue';
 import { createI18n } from 'vue-i18n';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ExclusionsWorkspaceView from '@/views/ExclusionsWorkspaceView.vue';
 import { messages } from '@/locales/messages';
+import { listExclusions, createExclusion, deleteExclusion } from '@/services/exclusions';
+import type { Exclusion } from '@/types/exclusions';
+
+vi.mock('@/services/exclusions', () => ({
+  listExclusions: vi.fn(),
+  createExclusion: vi.fn(),
+  deleteExclusion: vi.fn()
+}));
 
 const i18n = createI18n({
   legacy: false,
@@ -10,7 +19,7 @@ const i18n = createI18n({
   messages
 });
 
-function setup() {
+function renderView() {
   return render(ExclusionsWorkspaceView, {
     global: {
       plugins: [i18n]
@@ -18,71 +27,128 @@ function setup() {
   });
 }
 
-describe('ExclusionsWorkspaceView', () => {
-  it('filters results by search query', async () => {
-    setup();
+const baseUser = {
+  id: 'user-1',
+  email: 'admin@example.com',
+  displayName: 'Admin Example',
+  roles: ['ADMIN'],
+  status: 'ACTIVE',
+  lastLoginAt: null,
+  createdAt: '2025-09-01T00:00:00Z',
+  updatedAt: '2025-09-01T00:00:00Z'
+} as const;
 
-    const entity = await screen.findByText('Al-Qalam Foundation', {
-      selector: '.entity-label'
-    });
-    expect(entity).toBeInTheDocument();
+describe('ExclusionsWorkspaceView', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (listExclusions as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: 'exclusion-1',
+        parentType: 'CHANNEL',
+        parentId: 'channel:alqalam',
+        excludeType: 'PLAYLIST',
+        excludeId: 'playlist:alqalam-foundation',
+        reason: 'Manual removal pending QA',
+        createdAt: '2025-09-20T08:30:00Z',
+        createdBy: baseUser
+      },
+      {
+        id: 'exclusion-2',
+        parentType: 'PLAYLIST',
+        parentId: 'playlist:series-halaqa',
+        excludeType: 'VIDEO',
+        excludeId: 'video:daily-halaqa-231',
+        reason: 'Contains unrelated segment',
+        createdAt: '2025-09-25T12:40:00Z',
+        createdBy: baseUser
+      }
+    ] satisfies Exclusion[]);
+    (createExclusion as unknown as vi.Mock).mockReset();
+    (deleteExclusion as unknown as vi.Mock).mockReset();
+  });
+
+  it('filters results by search query', async () => {
+    renderView();
+
+    await screen.findByText('playlist:alqalam-foundation', { selector: '.entity-label' });
 
     const search = screen.getByRole('searchbox', { name: /search exclusions/i });
-    await fireEvent.update(search, 'Halaqa');
+    await fireEvent.update(search, 'daily');
 
     await waitFor(() => {
       expect(
-        screen.queryByText('Al-Qalam Foundation', {
-          selector: '.entity-label'
-        })
+        screen.queryByText('playlist:alqalam-foundation', { selector: '.entity-label' })
       ).not.toBeInTheDocument();
-      expect(screen.getByText('Daily Halaqa 231: Mercy and Neighbours')).toBeInTheDocument();
+      expect(
+        screen.getByText('video:daily-halaqa-231', { selector: '.entity-label' })
+      ).toBeInTheDocument();
     });
   });
 
-  it('shows bulk actions when rows are selected and can clear them', async () => {
-    setup();
+  it('removes selected exclusions in bulk', async () => {
+    renderView();
 
-    const rowCheckbox = await screen.findByRole('checkbox', {
-      name: /select al-qalam foundation for bulk action/i
+    const checkbox = await screen.findByRole('checkbox', {
+      name: /select playlist:alqalam-foundation for bulk action/i
     });
-    await fireEvent.click(rowCheckbox);
+    await fireEvent.click(checkbox);
 
-    const summary = await screen.findByText('1 selected');
-    expect(summary).toBeInTheDocument();
+    expect(await screen.findByText('1 selected')).toBeInTheDocument();
 
-    const bulkInclude = screen.getByRole('button', { name: /move selected to include/i });
-    await fireEvent.click(bulkInclude);
+    const bulkRemove = screen.getByRole('button', { name: /remove selected/i });
+    (deleteExclusion as unknown as vi.Mock).mockResolvedValue(undefined);
+    await fireEvent.click(bulkRemove);
 
     await waitFor(() => {
+      expect(deleteExclusion).toHaveBeenCalledWith('exclusion-1');
       expect(
-        screen.queryByText('Al-Qalam Foundation', {
-          selector: '.entity-label'
-        })
+        screen.queryByText('playlist:alqalam-foundation', { selector: '.entity-label' })
       ).not.toBeInTheDocument();
+      expect(screen.getByRole('status')).toHaveTextContent('1 exclusions removed.');
     });
-    expect(screen.getByRole('status')).toHaveTextContent(/exclusions moved to include/i);
   });
 
-  it('adds a new exclusion via the dialog and restores focus to the trigger', async () => {
-    setup();
+  it('adds a new exclusion via the dialog', async () => {
+    renderView();
 
-    const trigger = screen.getByRole('button', { name: /add exclusion/i });
+    const trigger = await screen.findByRole('button', { name: /add exclusion/i });
     await fireEvent.click(trigger);
 
-    const targetField = await screen.findByLabelText(/resource identifier/i);
-    await waitFor(() => expect(targetField).toHaveFocus());
-
-    await fireEvent.update(targetField, 'Friday Circle');
-    const typeSelect = screen.getByLabelText(/resource type/i);
-    await fireEvent.update(typeSelect, 'playlist');
+    const parentIdField = await screen.findByLabelText(/parent id/i);
+    const excludedIdField = screen.getByLabelText(/excluded id/i);
     const reasonField = screen.getByLabelText(/reason/i);
+
+    await fireEvent.update(parentIdField, 'channel:new-parent');
+    const typeSelect = screen.getByLabelText(/excluded type/i);
+    await fireEvent.update(typeSelect, 'VIDEO');
+    await fireEvent.update(excludedIdField, 'video:new');
     await fireEvent.update(reasonField, 'Manual QA hold');
 
-    const createButton = screen.getByRole('button', { name: /save exclusion/i });
-    await fireEvent.click(createButton);
+    const response: Exclusion = {
+      id: 'exclusion-3',
+      parentType: 'CHANNEL',
+      parentId: 'channel:new-parent',
+      excludeType: 'VIDEO',
+      excludeId: 'video:new',
+      reason: 'Manual QA hold',
+      createdAt: '2025-10-01T10:00:00Z',
+      createdBy: baseUser
+    };
+    (createExclusion as unknown as vi.Mock).mockResolvedValue(response);
 
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    await waitFor(() => expect(screen.getByText('Friday Circle')).toBeInTheDocument());
+    const submit = screen.getByRole('button', { name: /create exclusion/i });
+    await fireEvent.click(submit);
+
+    await waitFor(() => {
+      expect(createExclusion).toHaveBeenCalledWith({
+        parentType: 'CHANNEL',
+        parentId: 'channel:new-parent',
+        excludeType: 'VIDEO',
+        excludeId: 'video:new',
+        reason: 'Manual QA hold'
+      });
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(screen.getByText('video:new', { selector: '.entity-label' })).toBeInTheDocument();
+    });
   });
 });
