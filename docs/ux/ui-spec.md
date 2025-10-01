@@ -57,6 +57,13 @@ Each screen references the mockups. Layout measurements assume 360dp width basel
 - Sections: Channels, Playlists, Videos each with H2 title and “See all” text button (Body style). Each section shows 3 cards horizontally scrollable with 16dp gutter.
 - Up Next from backend is not present here (only in player).
 
+#### Filter Row Interactions (Phase 6 planning)
+- **Filters displayed**: Category (chips), Video Length (dropdown), Published Date (dropdown), Popular sort toggle. On phones, the row scrolls horizontally with snap alignment; on tablets, show all filters in one row.
+- **Selection states**: Selected filter shows success-colored fill and icon; inactive filters in surface variant. Each filter triggers an announcement to TalkBack summarizing applied criteria.
+- **Reset behavior**: A contextual “Clear filters” chip appears when any non-default filter is active. Tapping resets to default (All categories, Any length/date, Default sort) and triggers list refresh.
+- **Badges**: When filters applied, show count badge on the filter chip (e.g., “Length • 2–20 min”). This mirrors the admin registry filter semantics.
+- **Accessibility**: Filter dropdowns open modal bottom sheets; focus returns to triggering chip after dismissal. Ensure chips support keyboard navigation with `role="tab"` semantics.
+
 ### Channels Tab (`5_channes_list_screen.png`)
 - List items: avatar 56dp circle, left margin 24dp, 16dp spacing to text.
 - Metadata: subscriber count (Body), category tags (chips) below.

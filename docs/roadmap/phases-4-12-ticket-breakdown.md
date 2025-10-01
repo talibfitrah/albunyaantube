@@ -256,6 +256,14 @@ meta:
 - Capture lessons for later phases (detail pages, player Up Next).
 
 ### AND-LISTS-02 — Filter Row & Query Controls
+```yaml
+meta:
+  id: AND-LISTS-02
+  status: in-progress
+  owner: Android
+  depends: [AND-LISTS-01]
+  lastReviewed: 2025-10-04
+```
 **Estimate**: 3.5h.
 
 **Goals**

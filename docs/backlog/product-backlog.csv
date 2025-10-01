@@ -28,7 +28,7 @@ Android Skeleton,AND-SKEL-01,Navigation graph & bottom nav,"Plan nav graph, bott
 Android Skeleton,AND-SKEL-02,Onboarding carousel,"Design onboarding flow with help modal & persistence",0.4,5,DONE,Android,,,"2025-10-04"
 Android Skeleton,AND-SKEL-03,Locale switcher foundation,"Specify Android locale switcher + RTL support",0.4,5,DONE,Android,,,"2025-10-04"
 Android Lists,AND-LISTS-01,Paging integration,"Design Paging 3 + caching for home and lists",0.5,6,in-progress,Android,,,
-Android Lists,AND-LISTS-02,Filter row controls,"Document list filter interactions and API mapping",0.5,6,,,,,,
+Android Lists,AND-LISTS-02,Filter row controls,"Document list filter interactions and API mapping",0.5,6,in-progress,Android,,,
 Android Lists,AND-LISTS-03,Error/loading states,"Define skeleton/error UX + metrics",0.4,6,,,,,,
 Android Details,AND-DETAILS-01,Channel tabs behavior,"Plan tabbed channel detail screens with state retention",0.4,7,,,,,,
 Android Details,AND-DETAILS-02,Playlist detail & download CTA,"Specify playlist hero and download policy states",0.4,7,,,,,,
