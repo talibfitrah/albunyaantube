@@ -4,8 +4,8 @@ import DashboardView from '@/views/DashboardView.vue';
 import RegistryLandingView from '@/views/RegistryLandingView.vue';
 import ModerationQueueView from '@/views/ModerationQueueView.vue';
 import ExclusionsWorkspaceView from '@/views/ExclusionsWorkspaceView.vue';
-import UsersPlaceholderView from '@/views/UsersPlaceholderView.vue';
-import AuditPlaceholderView from '@/views/AuditPlaceholderView.vue';
+import UsersManagementView from '@/views/UsersManagementView.vue';
+import AuditLogView from '@/views/AuditLogView.vue';
 import AdminLayout from '@/layouts/AdminLayout.vue';
 import { useAuthStore } from '@/stores/auth';
 
@@ -37,13 +37,13 @@ const protectedChildRoutes = [
   {
     path: 'users',
     name: 'users',
-    component: UsersPlaceholderView,
+    component: UsersManagementView,
     meta: { requiresAuth: true }
   },
   {
     path: 'audit',
     name: 'audit',
-    component: AuditPlaceholderView,
+    component: AuditLogView,
     meta: { requiresAuth: true }
   }
 ];

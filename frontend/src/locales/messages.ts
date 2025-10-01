@@ -294,11 +294,131 @@ export const messages = {
     },
     users: {
       heading: 'User management',
-      description: 'Create and manage admin and moderator accounts. Controls will become available after authentication hardening.'
+      description: 'Create, update, and deactivate administrator and moderator accounts.',
+      search: {
+        label: 'Search users',
+        placeholder: 'Search by email or ID',
+        clear: 'Clear search'
+      },
+      filters: {
+        role: 'Role',
+        roleAll: 'All roles',
+        status: 'Status',
+        statusAll: 'All statuses'
+      },
+      roles: {
+        admin: 'Administrator',
+        moderator: 'Moderator'
+      },
+      status: {
+        active: 'Active',
+        disabled: 'Disabled'
+      },
+      actions: {
+        add: 'Add user',
+        edit: 'Edit user',
+        deactivate: 'Deactivate',
+        deactivating: 'Deactivating…',
+        activate: 'Activate',
+        activating: 'Activating…'
+      },
+      columns: {
+        email: 'Email',
+        roles: 'Roles',
+        status: 'Status',
+        lastLogin: 'Last login',
+        created: 'Created',
+        actions: 'Actions'
+      },
+      table: {
+        empty: 'No users match this view.',
+        loading: 'Loading users…',
+        error: 'Unable to load users.',
+        retry: 'Retry',
+        never: 'Never'
+      },
+      pagination: {
+        previous: 'Previous',
+        next: 'Next',
+        showing: 'Showing {count} of {limit} users'
+      },
+      dialogs: {
+        actions: {
+          cancel: 'Cancel'
+        },
+        create: {
+          title: 'Invite admin or moderator',
+          description: 'Enter the email address and assign at least one role. New users receive an email once provisioning completes.',
+          email: 'Work email',
+          roles: 'Assign roles',
+          submit: 'Create user',
+          submitting: 'Creating…',
+          errors: {
+            email: 'Enter an email address.',
+            roles: 'Select at least one role.',
+            generic: 'Unable to create user. Try again.'
+          }
+        },
+        edit: {
+          title: 'Edit {email}',
+          description: 'Update role assignments or toggle the account status.',
+          roles: 'Roles',
+          status: 'Account status',
+          submit: 'Save changes',
+          submitting: 'Saving…',
+          errors: {
+            roles: 'Assign at least one role.',
+            generic: 'Unable to update user. Try again.'
+          }
+        }
+      },
+      toasts: {
+        created: '{email} invited.',
+        updated: '{email} updated.',
+        deactivated: '{email} deactivated.',
+        activated: '{email} activated.'
+      },
+      errors: {
+        deactivate: 'Unable to deactivate user. Try again.',
+        activate: 'Unable to activate user. Try again.'
+      },
+      confirm: {
+        deactivate: 'Deactivate {email}?'
+      }
     },
     audit: {
       heading: 'Audit log',
-      description: 'A chronological list of sensitive changes. The viewer will be implemented in a later phase.'
+      description: 'Review sensitive changes across the admin console.',
+      filters: {
+        actorLabel: 'Filter by actor email',
+        actorPlaceholder: 'Filter by actor email',
+        actionLabel: 'Filter by action name',
+        actionPlaceholder: 'Filter by action name'
+      },
+      columns: {
+        actor: 'Actor',
+        action: 'Action',
+        entity: 'Entity',
+        metadata: 'Metadata',
+        timestamp: 'Timestamp'
+      },
+      table: {
+        empty: 'No audit events found.',
+        loading: 'Loading audit events…',
+        error: 'Unable to load audit events.',
+        retry: 'Retry'
+      },
+      metadata: {
+        unavailable: 'Not available'
+      },
+      roles: {
+        none: 'No roles'
+      },
+      pagination: {
+        previous: 'Previous',
+        next: 'Next',
+        showing: 'Showing {count} of {limit} events'
+      }
     },
     preferences: {
       localeLabel: 'Interface language',
@@ -604,11 +724,131 @@ export const messages = {
     },
     users: {
       heading: 'إدارة المستخدمين',
-      description: 'أنشئ حسابات المدراء والمشرفين وأدرها.'
+      description: 'أنشئ أو حدّث أو عطّل حسابات المشرفين والمراقبين.',
+      search: {
+        label: 'بحث عن المستخدمين',
+        placeholder: 'ابحث بالبريد الإلكتروني أو المعرّف',
+        clear: 'مسح البحث'
+      },
+      filters: {
+        role: 'الدور',
+        roleAll: 'جميع الأدوار',
+        status: 'الحالة',
+        statusAll: 'كل الحالات'
+      },
+      roles: {
+        admin: 'مشرف',
+        moderator: 'مراقب'
+      },
+      status: {
+        active: 'نشط',
+        disabled: 'معطّل'
+      },
+      actions: {
+        add: 'إضافة مستخدم',
+        edit: 'تعديل المستخدم',
+        deactivate: 'تعطيل',
+        deactivating: 'جارٍ التعطيل…',
+        activate: 'تنشيط',
+        activating: 'جارٍ التنشيط…'
+      },
+      columns: {
+        email: 'البريد الإلكتروني',
+        roles: 'الأدوار',
+        status: 'الحالة',
+        lastLogin: 'آخر تسجيل دخول',
+        created: 'تاريخ الإنشاء',
+        actions: 'إجراءات'
+      },
+      table: {
+        empty: 'لا يوجد مستخدمون مطابقون.',
+        loading: 'جارٍ تحميل المستخدمين…',
+        error: 'تعذّر تحميل المستخدمين.',
+        retry: 'إعادة المحاولة',
+        never: 'لم يحدث'
+      },
+      pagination: {
+        previous: 'السابق',
+        next: 'التالي',
+        showing: 'يتم عرض {count} من أصل {limit} مستخدمين'
+      },
+      dialogs: {
+        actions: {
+          cancel: 'إلغاء'
+        },
+        create: {
+          title: 'دعوة مشرف أو مراقب',
+          description: 'أدخل البريد الإلكتروني وعيِّن دورًا واحدًا على الأقل. سيتلقى المستخدم الجديد رسالة عند تجهيز الحساب.',
+          email: 'البريد الإلكتروني للعمل',
+          roles: 'تعيين الأدوار',
+          submit: 'إنشاء مستخدم',
+          submitting: 'جارٍ الإنشاء…',
+          errors: {
+            email: 'أدخل البريد الإلكتروني.',
+            roles: 'اختر دورًا واحدًا على الأقل.',
+            generic: 'تعذّر إنشاء المستخدم. حاول مجددًا.'
+          }
+        },
+        edit: {
+          title: 'تعديل {email}',
+          description: 'حدّث الأدوار أو غيّر حالة الحساب.',
+          roles: 'الأدوار',
+          status: 'حالة الحساب',
+          submit: 'حفظ التغييرات',
+          submitting: 'جارٍ الحفظ…',
+          errors: {
+            roles: 'عيّن دورًا واحدًا على الأقل.',
+            generic: 'تعذّر تحديث المستخدم. حاول مجددًا.'
+          }
+        }
+      },
+      toasts: {
+        created: 'تمت دعوة {email}.',
+        updated: 'تم تحديث {email}.',
+        deactivated: 'تم تعطيل {email}.',
+        activated: 'تم تنشيط {email}.'
+      },
+      errors: {
+        deactivate: 'تعذّر تعطيل المستخدم. حاول مجددًا.',
+        activate: 'تعذّر تنشيط المستخدم. حاول مجددًا.'
+      },
+      confirm: {
+        deactivate: 'هل ترغب في تعطيل {email}؟'
+      }
     },
     audit: {
       heading: 'سجل التدقيق',
-      description: 'سجل زمني للتغييرات الحساسة. سيتم تنفيذ العارض لاحقًا.'
+      description: 'راجع التغييرات الحساسة ضمن لوحة الإدارة.',
+      filters: {
+        actorLabel: 'تصفية حسب البريد الإلكتروني للمنفّذ',
+        actorPlaceholder: 'تصفية حسب البريد الإلكتروني للمنفّذ',
+        actionLabel: 'تصفية حسب اسم الإجراء',
+        actionPlaceholder: 'تصفية حسب اسم الإجراء'
+      },
+      columns: {
+        actor: 'المنفّذ',
+        action: 'الإجراء',
+        entity: 'الكيان',
+        metadata: 'البيانات الوصفية',
+        timestamp: 'الوقت'
+      },
+      table: {
+        empty: 'لا توجد أحداث تدقيق.',
+        loading: 'جارٍ تحميل أحداث التدقيق…',
+        error: 'تعذّر تحميل أحداث التدقيق.',
+        retry: 'إعادة المحاولة'
+      },
+      metadata: {
+        unavailable: 'غير متوفّر'
+      },
+      roles: {
+        none: 'بدون أدوار'
+      },
+      pagination: {
+        previous: 'السابق',
+        next: 'التالي',
+        showing: 'عرض {count} من {limit} أحداث'
+      }
     },
     preferences: {
       localeLabel: 'لغة الواجهة',
@@ -914,11 +1154,131 @@ export const messages = {
     },
     users: {
       heading: 'Gebruikersbeheer',
-      description: 'Maak en beheer accounts voor beheerders en moderators.'
+      description: 'Maak, bewerk en deactiveer beheer- en moderatoraccounts.',
+      search: {
+        label: 'Zoek gebruikers',
+        placeholder: 'Zoek op e-mail of ID',
+        clear: 'Zoekopdracht wissen'
+      },
+      filters: {
+        role: 'Rol',
+        roleAll: 'Alle rollen',
+        status: 'Status',
+        statusAll: 'Alle statussen'
+      },
+      roles: {
+        admin: 'Beheerder',
+        moderator: 'Moderator'
+      },
+      status: {
+        active: 'Actief',
+        disabled: 'Uitgeschakeld'
+      },
+      actions: {
+        add: 'Gebruiker toevoegen',
+        edit: 'Gebruiker bewerken',
+        deactivate: 'Deactiveren',
+        deactivating: 'Bezig met deactiveren…',
+        activate: 'Activeren',
+        activating: 'Bezig met activeren…'
+      },
+      columns: {
+        email: 'E-mail',
+        roles: 'Rollen',
+        status: 'Status',
+        lastLogin: 'Laatste login',
+        created: 'Aangemaakt',
+        actions: 'Acties'
+      },
+      table: {
+        empty: 'Geen gebruikers gevonden voor deze weergave.',
+        loading: 'Gebruikers laden…',
+        error: 'Gebruikers kunnen niet worden geladen.',
+        retry: 'Opnieuw proberen',
+        never: 'Nooit'
+      },
+      pagination: {
+        previous: 'Vorige',
+        next: 'Volgende',
+        showing: '{count} van {limit} gebruikers'
+      },
+      dialogs: {
+        actions: {
+          cancel: 'Annuleren'
+        },
+        create: {
+          title: 'Beheerder of moderator uitnodigen',
+          description: 'Voer een e-mailadres in en ken minimaal één rol toe. Nieuwe gebruikers ontvangen een e-mail zodra het account klaarstaat.',
+          email: 'Werk e-mailadres',
+          roles: 'Rollen toewijzen',
+          submit: 'Gebruiker aanmaken',
+          submitting: 'Bezig met aanmaken…',
+          errors: {
+            email: 'Voer een e-mailadres in.',
+            roles: 'Selecteer minimaal één rol.',
+            generic: 'Gebruiker kan niet worden aangemaakt. Probeer het opnieuw.'
+          }
+        },
+        edit: {
+          title: '{email} bewerken',
+          description: 'Werk roltoewijzingen of de accountstatus bij.',
+          roles: 'Rollen',
+          status: 'Accountstatus',
+          submit: 'Wijzigingen opslaan',
+          submitting: 'Bezig met opslaan…',
+          errors: {
+            roles: 'Wijs minimaal één rol toe.',
+            generic: 'Gebruiker kan niet worden bijgewerkt. Probeer het opnieuw.'
+          }
+        }
+      },
+      toasts: {
+        created: '{email} uitgenodigd.',
+        updated: '{email} bijgewerkt.',
+        deactivated: '{email} gedeactiveerd.',
+        activated: '{email} geactiveerd.'
+      },
+      errors: {
+        deactivate: 'Deactiveren is mislukt. Probeer het opnieuw.',
+        activate: 'Activeren is mislukt. Probeer het opnieuw.'
+      },
+      confirm: {
+        deactivate: '{email} deactiveren?'
+      }
     },
     audit: {
       heading: 'Auditlogboek',
-      description: 'Een chronologisch overzicht van gevoelige wijzigingen. De viewer volgt in een latere fase.'
+      description: 'Bekijk gevoelige wijzigingen binnen de beheerconsole.',
+      filters: {
+        actorLabel: 'Filter op e-mailadres van actor',
+        actorPlaceholder: 'Filter op e-mailadres van actor',
+        actionLabel: 'Filter op actienaam',
+        actionPlaceholder: 'Filter op actienaam'
+      },
+      columns: {
+        actor: 'Actor',
+        action: 'Actie',
+        entity: 'Entiteit',
+        metadata: 'Metadata',
+        timestamp: 'Tijdstip'
+      },
+      table: {
+        empty: 'Geen auditevenementen gevonden.',
+        loading: 'Auditevenementen laden…',
+        error: 'Auditevenementen kunnen niet worden geladen.',
+        retry: 'Opnieuw proberen'
+      },
+      metadata: {
+        unavailable: 'Niet beschikbaar'
+      },
+      roles: {
+        none: 'Geen rollen'
+      },
+      pagination: {
+        previous: 'Vorige',
+        next: 'Volgende',
+        showing: '{count} van {limit} gebeurtenissen'
+      }
     },
     preferences: {
       localeLabel: 'Interfacetaal',

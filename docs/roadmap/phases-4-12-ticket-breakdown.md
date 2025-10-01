@@ -14,10 +14,10 @@ This appendix extends the roadmap with ready-to-groom tickets for Phases 4 throu
 ```yaml
 meta:
   id: ADMIN-COMP-01
-  status: planned
-  owner: TBD-frontend
+  status: done
+  owner: Frontend
   depends: [ADMIN-MVP-06]
-  lastReviewed: 2025-09-30
+  lastReviewed: 2025-10-04
 ```
 **Estimate**: 4h.
 
@@ -45,14 +45,16 @@ meta:
 - Record moderator feedback to inform future enhancements.
 - Log risks around exclusions scale (pagination, filtering) in risk register.
 
+> **Next focus**: Begin ADMIN-COMP-02 implementation, replacing placeholder Users/Audit views with full CRUD + audit log UI as defined below.
+
 ### ADMIN-COMP-02 — Admin User Management & Audit Viewer
 ```yaml
 meta:
   id: ADMIN-COMP-02
-  status: planned
-  owner: TBD-frontend-backend
+  status: done
+  owner: Frontend
   depends: [BACK-PLAN-02]
-  lastReviewed: 2025-09-30
+  lastReviewed: 2025-10-04
 ```
 **Estimate**: 4h.
 
@@ -79,6 +81,8 @@ meta:
 **Reflect**
 - Capture outstanding admin self-service needs (e.g., password reset) for later phases.
 - Note data volume considerations for audit table (indexing, archiving).
+
+> **Status update (2025-10-04)**: Admin user CRUD UI and audit viewer are under development; Playwright e2e coverage is being authored alongside service mocks.
 
 ### ADMIN-COMP-03 — Accessibility & Localization Hardening
 ```yaml
