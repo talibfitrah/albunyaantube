@@ -25,4 +25,12 @@
     <string name="channel_tab_playlists">Playlists</string>
     <string name="channel_tab_posts">Posts</string>
     <string name="channel_detail_placeholder">%1$s tab for %2$s coming soon.</string>
+    <string name="playlist_detail_title_placeholder">%1$s</string>
+    <string name="playlist_detail_category">Category: %1$s</string>
+    <string name="playlist_detail_item_count">%1$d videos</string>
+    <string name="playlist_detail_description_placeholder">Curated playlist overview coming soon.</string>
+    <string name="playlist_detail_download">Download playlist</string>
+    <string name="playlist_detail_downloading">Download queued</string>
+    <string name="playlist_detail_download_disabled">Download unavailable</string>
+    <string name="playlist_detail_download_hint">Downloads respect policy AC-DL-001. Content becomes available offline once completed.</string>
 </resources>

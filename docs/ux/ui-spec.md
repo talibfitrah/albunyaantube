@@ -92,6 +92,7 @@ Each screen references the mockups. Layout measurements assume 360dp width basel
 - Hero uses gradient overlay on thumbnail, includes owner info (avatar 32dp, name Body) and description (Body).
 - Download playlist button anchored under hero; success color.
 - Video list inherits list card style with per-item download toggles.
+- Android skeleton (2025-10-05): Scrollable layout with hero placeholder initial, metadata, and download CTA reflecting policy states (enabled/queued/disabled) while awaiting backend feeds.
 
 ### Videos Tab (`9_all_videos_screen.png`)
 - Filters row pinned under header: Category, Length, Date, Popular dropdowns.

@@ -366,6 +366,14 @@ meta:
 - 2025-10-05: Android skeleton ships ViewPager2 tabs + placeholder fragments; pending backend feeds for real data + analytics.
 
 ### AND-DETAILS-02 — Playlist Detail & Download CTA Rules
+```yaml
+meta:
+  id: AND-DETAILS-02
+  status: done
+  owner: Android
+  depends: [AND-DETAILS-01]
+  lastReviewed: 2025-10-05
+```
 **Estimate**: 2.5h.
 
 **Goals**
@@ -391,6 +399,7 @@ meta:
 **Reflect**
 - Capture open questions about partial download progress display.
 - Note backend dependency for aggregated download progress endpoint.
+- 2025-10-05: Android scaffold includes playlist hero + download CTA with placeholder policy evaluation; awaiting backend wiring for real states.
 
 ### AND-DETAILS-03 — Deep Links & Exclusions Enforcement
 **Estimate**: 3h.
