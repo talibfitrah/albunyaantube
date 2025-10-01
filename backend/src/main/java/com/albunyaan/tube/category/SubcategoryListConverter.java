@@ -5,7 +5,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
-import java.util.Collections;
+import java.util.ArrayList;
 import java.util.List;
 
 @Converter
@@ -33,7 +33,7 @@ public class SubcategoryListConverter implements AttributeConverter<List<Subcate
         }
         try {
             var value = OBJECT_MAPPER.readValue(dbData, TYPE);
-            return Collections.unmodifiableList(value);
+            return new ArrayList<>(value);
         } catch (JsonProcessingException ex) {
             throw new IllegalStateException("Failed to deserialize subcategories", ex);
         }

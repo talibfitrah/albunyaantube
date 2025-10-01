@@ -65,7 +65,7 @@ public class ModerationProposalService {
         var proposal = new ModerationProposal(kind, normalizedYtId, categories, sanitizedNotes, proposer);
         proposal.markPending();
         var saved = moderationProposalRepository.save(proposal);
-        saved.getSuggestedCategories().size();
+        initializeProposal(saved);
         return saved;
     }
 
@@ -75,14 +75,20 @@ public class ModerationProposalService {
         var normalizedCursor = normalizeCursor(cursor);
         var pageable = PageRequest.of(0, limit + 1);
 
-        var proposals = moderationProposalRepository.findPage(
-            status,
-            normalizedCursor != null ? normalizedCursor.createdAt() : null,
-            normalizedCursor != null ? normalizedCursor.id() : null,
-            pageable
-        );
+        List<ModerationProposal> proposals;
+        if (normalizedCursor == null) {
+            proposals = status != null
+                ? moderationProposalRepository.findByStatusOrderByCreatedAtAscIdAsc(status, pageable)
+                : moderationProposalRepository.findAllByOrderByCreatedAtAscIdAsc(pageable);
+        } else {
+            var createdAtCursor = normalizedCursor.createdAt();
+            var idCursor = normalizedCursor.id();
+            proposals = status != null
+                ? moderationProposalRepository.findPageByStatus(status, createdAtCursor, idCursor, pageable)
+                : moderationProposalRepository.findPageAll(createdAtCursor, idCursor, pageable);
+        }
 
-        proposals.forEach(proposal -> proposal.getSuggestedCategories().size());
+        proposals.forEach(this::initializeProposal);
 
         var items = new ArrayList<>(proposals);
         var hasNext = items.size() > limit;
@@ -101,7 +107,7 @@ public class ModerationProposalService {
         }
         proposal.approve(actor);
         var saved = moderationProposalRepository.save(proposal);
-        saved.getSuggestedCategories().size();
+        initializeProposal(saved);
         auditLogService.recordEntry(
             AuditAction.MODERATION_APPROVED,
             AuditResourceType.MODERATION_PROPOSAL,
@@ -120,7 +126,7 @@ public class ModerationProposalService {
         }
         proposal.reject(actor, sanitizeDecisionReason(reason));
         var saved = moderationProposalRepository.save(proposal);
-        saved.getSuggestedCategories().size();
+        initializeProposal(saved);
         auditLogService.recordEntry(
             AuditAction.MODERATION_REJECTED,
             AuditResourceType.MODERATION_PROPOSAL,
@@ -165,6 +171,18 @@ public class ModerationProposalService {
 
     private String formatCursor(ModerationProposal proposal) {
         return proposal.getCreatedAt().toString() + "|" + proposal.getId();
+    }
+
+    private void initializeProposal(ModerationProposal proposal) {
+        proposal.getSuggestedCategories().size();
+        if (proposal.getProposer() != null) {
+            proposal.getProposer().getEmail();
+            proposal.getProposer().getRoles().size();
+        }
+        if (proposal.getDecidedBy() != null) {
+            proposal.getDecidedBy().getEmail();
+            proposal.getDecidedBy().getRoles().size();
+        }
     }
 
     private List<Category> resolveCategories(List<String> slugs) {
