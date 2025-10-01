@@ -4,4 +4,10 @@
     <color name="primary_variant">#35C491</color>
     <color name="surface_variant">#E3E9E7</color>
     <color name="accent_red">#D32F2F</color>
+
+    <!-- Material aliases so legacy drawables/layouts compile against Material 3 naming -->
+    <color name="primary">@color/primary_green</color>
+    <color name="primaryContainer">@color/primary_variant</color>
+    <color name="surfaceVariant">@color/surface_variant</color>
+    <color name="onPrimary">#FFFFFFFF</color>
 </resources>
