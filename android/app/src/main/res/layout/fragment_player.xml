@@ -24,7 +24,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Audio only"
+            android:text="@string/player_audio_only_label"
             android:textAppearance="@style/TextAppearance.MaterialComponents.Body1"/>
 
         <Switch
@@ -39,6 +39,70 @@
         android:layout_height="wrap_content"
         android:paddingTop="8dp"
         android:textAppearance="@style/TextAppearance.MaterialComponents.Caption"
-        android:text="Initializing player…"/>
+        android:text="@string/player_status_initializing"/>
+
+    <TextView
+        android:id="@+id/currentlyPlaying"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingTop="12dp"
+        android:textAppearance="@style/TextAppearance.MaterialComponents.Body1"
+        android:text="@string/player_no_current_item"/>
+
+    <Button
+        android:id="@+id/completeButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/player_mark_current_complete"/>
+
+    <TextView
+        android:id="@+id/upNextHeader"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingTop="16dp"
+        android:text="@string/player_up_next_header"
+        android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1"/>
+
+    <TextView
+        android:id="@+id/excludedMessage"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingTop="4dp"
+        android:textAppearance="@style/TextAppearance.MaterialComponents.Caption"
+        android:visibility="gone"
+        android:text="@string/player_excluded_placeholder"/>
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/upNextList"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:nestedScrollingEnabled="false"/>
+
+    <TextView
+        android:id="@+id/upNextEmpty"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingTop="8dp"
+        android:text="@string/player_up_next_empty"
+        android:textAppearance="@style/TextAppearance.MaterialComponents.Caption"
+        android:visibility="gone"/>
+
+    <TextView
+        android:id="@+id/analyticsHeader"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingTop="16dp"
+        android:text="@string/player_analytics_header"
+        android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1"/>
+
+    <TextView
+        android:id="@+id/analyticsStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingTop="4dp"
+        android:text="@string/player_analytics_none"
+        android:textAppearance="@style/TextAppearance.MaterialComponents.Caption"/>
 
 </LinearLayout>

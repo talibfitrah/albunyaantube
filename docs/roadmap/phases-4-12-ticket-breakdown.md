@@ -512,6 +512,14 @@ meta:
 - 2025-10-05: Foreground service + MediaSession skeleton, notification channel, and PiP affordance added; awaiting real playback controls/analytics.
 
 ### AND-PLAYER-03 — Up Next & Analytics Instrumentation
+```yaml
+meta:
+  id: AND-PLAYER-03
+  status: done
+  owner: Android
+  depends: [AND-PLAYER-01, AND-PLAYER-02]
+  lastReviewed: 2025-10-06
+```
 **Estimate**: 3h.
 
 **Goals**
@@ -533,10 +541,12 @@ meta:
 - Outline queue management logic (prefetch, skip, reorder) and UI states.
 - Document backend requirements for prefetch caching.
 - Update backlog with dashboards for playback analytics (Phase 12).
+- 2025-10-05: Android scaffold surfaces Up Next list, analytics debug banner, and exclusion filtering in `PlayerViewModel` + `PlayerFragment` pending real `/next-up` endpoint wiring.
 
 **Reflect**
 - Capture user research questions (e.g., manual queue editing) for backlog.
 - Note dependencies on backend caching/performance for Up Next.
+- Documented queue scaffolding and analytics placeholder in Solution Architecture + Test Strategy so future backend hooks can reuse the same ViewModel contract.
 
 ### AND-EXTRACT-01 — NewPipeExtractor Metadata Hydration (Lists)
 ```yaml
