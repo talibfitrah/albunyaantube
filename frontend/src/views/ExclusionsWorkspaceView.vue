@@ -368,6 +368,10 @@ function scheduleReload() {
   }, 250);
 }
 
+async function reload() {
+  await load(null, 'reset');
+}
+
 onBeforeUnmount(() => {
   if (reloadTimeout) {
     clearTimeout(reloadTimeout);

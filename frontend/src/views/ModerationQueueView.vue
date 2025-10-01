@@ -2,7 +2,7 @@
   <section
     class="moderation-queue"
     :aria-hidden="rejectDialog.visible ? 'true' : undefined"
-    :inert="rejectDialog.visible ? '' : undefined"
+    :inert="rejectDialog.visible ? true : undefined"
   >
     <header class="workspace-header">
       <div>
@@ -173,7 +173,12 @@
           :disabled="isRejectSubmitting"
         ></textarea>
         <div class="modal-actions">
-          <button type="button" class="modal-secondary" @click="closeRejectDialog" :disabled="isRejectSubmitting">
+          <button
+            type="button"
+            class="modal-secondary"
+            @click="closeRejectDialog()"
+            :disabled="isRejectSubmitting"
+          >
             {{ t('moderation.actions.cancel') }}
           </button>
           <button type="submit" class="modal-primary" :disabled="isRejectSubmitting">

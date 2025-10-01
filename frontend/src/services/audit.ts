@@ -8,8 +8,9 @@ export type AuditEventName =
 
 export interface AuditEventDetail {
   name: AuditEventName;
-  proposalId: string;
   timestamp: string;
+  proposalId?: string;
+  exclusionId?: string;
   metadata?: Record<string, unknown>;
 }
 
