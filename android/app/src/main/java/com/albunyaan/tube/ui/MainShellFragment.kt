@@ -6,15 +6,22 @@ import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.setupWithNavController
 import com.albunyaan.tube.R
-import com.google.android.material.bottomnavigation.BottomNavigationView
+import com.albunyaan.tube.databinding.FragmentMainShellBinding
 
 class MainShellFragment : Fragment(R.layout.fragment_main_shell) {
 
+    private var binding: FragmentMainShellBinding? = null
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        binding = FragmentMainShellBinding.bind(view)
         val navHost = childFragmentManager.findFragmentById(R.id.main_shell_nav_host) as? NavHostFragment
         val navController = navHost?.navController ?: return
-        val bottomNav = view.findViewById<BottomNavigationView>(R.id.mainBottomNav)
-        bottomNav.setupWithNavController(navController)
+        binding?.mainBottomNav?.setupWithNavController(navController)
+    }
+
+    override fun onDestroyView() {
+        binding = null
+        super.onDestroyView()
     }
 }

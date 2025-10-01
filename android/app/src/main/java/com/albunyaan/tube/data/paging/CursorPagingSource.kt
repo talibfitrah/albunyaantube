@@ -9,12 +9,36 @@ package com.albunyaan.tube.data.paging
  */
 import androidx.paging.PagingSource
 import androidx.paging.PagingState
+import com.albunyaan.tube.data.filters.FilterState
+import com.albunyaan.tube.data.model.ContentItem
+import com.albunyaan.tube.data.model.ContentType
+import com.albunyaan.tube.data.source.ContentService
 
-/** Placeholder PagingSource implementation returning empty data. */
-class CursorPagingSource : PagingSource<Int, Any>() {
-    override suspend fun load(params: LoadParams<Int>): LoadResult<Int, Any> {
-        return LoadResult.Page(data = emptyList(), prevKey = null, nextKey = null)
+class CursorPagingSource(
+    private val service: ContentService,
+    private val type: ContentType,
+    private val filters: FilterState,
+    private val pageSize: Int
+) : PagingSource<Int, ContentItem>() {
+
+    override suspend fun load(params: LoadParams<Int>): LoadResult<Int, ContentItem> {
+        return try {
+            val page = params.key ?: 0
+            val response = service.fetchContent(type, page, pageSize, filters)
+            LoadResult.Page(
+                data = response.items,
+                prevKey = if (page == 0) null else page - 1,
+                nextKey = if (response.hasNext) page + 1 else null
+            )
+        } catch (t: Throwable) {
+            LoadResult.Error(t)
+        }
     }
 
-    override fun getRefreshKey(state: PagingState<Int, Any>): Int? = null
+    override fun getRefreshKey(state: PagingState<Int, ContentItem>): Int? {
+        return state.anchorPosition?.let { position ->
+            val page = state.closestPageToPosition(position)
+            page?.prevKey?.plus(1) ?: page?.nextKey?.minus(1)
+        }
+    }
 }
