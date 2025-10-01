@@ -119,7 +119,7 @@ Delivered in this repo
 - `docs/data/json-schemas/*.json`: finalize catalogue + moderation schemas (ensure ≥1 category requirement).
 - `docs/api/openapi-draft.yaml`: document pagination parameters, error taxonomy, cache headers, and blended `/admin/search` response.
 - `docs/architecture/diagrams/moderation-sequence.md` & `channel-tabs-sequence.md`: confirm flows.
-- `docs/roadmap/phases-4-12-ticket-breakdown.md`: seed Phase 2 section with tickets.
+ - `docs/roadmap/phases-4-12-ticket-breakdown.md`: seed Phase 2 section with tickets.
 
 **Tests**
 - Architecture review covering cache invalidation, Redis TTL, and category enforcement.
@@ -254,7 +254,7 @@ Execution Metadata
 - `docs/api/openapi-draft.yaml`: annotate list endpoints with sorting, filtering, cursor semantics.
 - `docs/testing/test-strategy.md`: add paging + performance test plans (Gatling + Android benchmarks).
 - `docs/ux/ui-spec.md`: detail filter interactions and skeleton states.
-- `docs/roadmap/phases-4-12-ticket-breakdown.md`: adjust Phase 6 tickets to new format.
+ - `docs/roadmap/phases-4-12-ticket-breakdown.md`: adjust Phase 6 tickets to new format.
 
 **Tests**
 - Algorithm review with backend leads focusing on fairness of 3-latest logic.
@@ -311,7 +311,8 @@ Execution Metadata
 - `docs/architecture/diagrams/player-session.md` (new): capture playback handshake, audio-only toggle, and download rights gating.
 - `docs/api/openapi-draft.yaml`: finalize `/videos/{id}`, `/next-up` fields (streams, captions, bookmarks, download policy).
 - `docs/testing/test-strategy.md`: add Player reliability suite + metrics gating.
-- `docs/roadmap/phases-4-12-ticket-breakdown.md`: update Phase 8 tickets to new format.
+ - `docs/roadmap/phases-4-12-ticket-breakdown.md`: update Phase 8 tickets to new format.
+ - `docs/backlog/product-backlog.csv`: add AND-EXTRACT-01 (Extractor metadata hydration for lists) and AND-EXTRACT-02 (stream resolution for playback).
 
 **Tests**
 - Media playback design review with Android audio experts.
@@ -368,8 +369,10 @@ Execution Metadata
 - `docs/security/threat-model.md`: add pen-test checklist, dependency governance.
 - `docs/testing/test-strategy.md`: document performance benchmarking suites + alert thresholds.
 - `docs/architecture/solution-architecture.md`: include observability + scaling plans.
-- `docs/risk-register.md`: update residual risks and mitigation owners.
-- `docs/roadmap/phases-4-12-ticket-breakdown.md`: ensure Phase 10 tickets use new format.
+ - `docs/risk-register.md`: update residual risks and mitigation owners.
+ - `docs/roadmap/phases-4-12-ticket-breakdown.md`: ensure Phase 10 tickets use new format.
+ - `docs/backlog/product-backlog.csv`: add DEVOPS-YT-01 (YouTube API key secrets) and HARDEN-EXTRACT-01 (Extractor telemetry & circuit breakers).
+ 
 
 **Tests**
 - Performance capacity planning review with Ops.
@@ -425,7 +428,7 @@ Execution Metadata
 - `docs/testing/test-strategy.md`: expand Release Management section with telemetry + rollout steps.
 - `docs/acceptance/criteria.md`: add launch checklist linkage and go-live requirements.
 - `docs/risk-register.md`: update with launch-specific risks (store approvals, CDN readiness).
-- `docs/backlog/product-backlog.csv`: append launch tasks (telemetry setup, beta feedback loop).
+ - `docs/backlog/product-backlog.csv`: append launch tasks (telemetry setup, beta feedback loop) and BACK-YT-01 (admin search integration) if pending.
 - `docs/roadmap/phases-4-12-ticket-breakdown.md`: finalize Phase 12 tickets format.
 
 **Tests**

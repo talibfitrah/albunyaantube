@@ -529,6 +529,76 @@ meta:
 - Capture user research questions (e.g., manual queue editing) for backlog.
 - Note dependencies on backend caching/performance for Up Next.
 
+### AND-EXTRACT-01 — NewPipeExtractor Metadata Hydration (Lists)
+```yaml
+meta:
+  id: AND-EXTRACT-01
+  status: planned
+  owner: Android
+  depends: [AND-LISTS-01]
+  lastReviewed: 2025-10-05
+```
+**Estimate**: 3h.
+
+**Goals**
+- Invoke NewPipeExtractor on-device to hydrate list items (channels/playlists/videos) with titles, thumbnails, and stats.
+- Merge Albunyaan backend overrides when present and cache results per paging policy.
+- Define error handling, retries, and offline fallback behavior consistent with error taxonomy.
+
+**Propose diff**
+- `docs/architecture/solution-architecture.md`: expand Metadata Pipeline with list hydration flow and merge strategy.
+- `docs/testing/test-strategy.md`: add Android unit/instrumentation tests for extractor list hydration.
+- `docs/acceptance/criteria.md`: reference AC-AND-001/AC-PERF-001 for list performance + failure states.
+
+**Tests**
+- Unit tests verifying merge of overrides vs extractor payloads and fallback when extractor fails.
+- Instrumentation test simulating paging refresh with extractor latency and failures.
+- Performance check to ensure payload + render budgets are respected.
+
+**Implement**
+- Document repository integration points (PagingSource/RemoteMediator) and caching TTL.
+- Specify retry/backoff and user-visible messaging for failures.
+- Update backlog with telemetry for extractor failures and list hydration timings.
+
+**Reflect**
+- Record device performance findings and adjust cache policy if needed.
+- Update risk register if extractor updates require app-side compatibility work.
+
+### AND-EXTRACT-02 — Extractor Stream Resolution for Playback
+```yaml
+meta:
+  id: AND-EXTRACT-02
+  status: planned
+  owner: Android
+  depends: [AND-PLAYER-01]
+  lastReviewed: 2025-10-05
+```
+**Estimate**: 3h.
+
+**Goals**
+- Resolve playable stream URLs via NewPipeExtractor for allow-listed IDs.
+- Support audio-only mode and quality selection with graceful downgrade on errors.
+- Define telemetry for resolution latency, failures, and fallback paths.
+
+**Propose diff**
+- `docs/architecture/solution-architecture.md`: expand Playback Engine with extractor resolution sequence.
+- `docs/architecture/diagrams/player-session.md` (planned): include extractor handshake.
+- `docs/testing/test-strategy.md`: add reliability scenarios for resolution failures + retries.
+
+**Tests**
+- Unit tests ensuring player switches tracks and handles extractor errors without crashes.
+- Instrumentation tests covering audio-only toggle and quality changes under flaky networks.
+- Metrics validation ensuring resolution timings and errors are emitted.
+
+**Implement**
+- Outline player repository flow for requesting/refreshing streams via extractor.
+- Document fallback hierarchy (lower bitrate → audio-only → user-visible error).
+- Update backlog with monitoring dashboards for resolution KPIs.
+
+**Reflect**
+- Capture lessons for Phase 10 hardening (circuit breakers, offline manifests).
+- Note any API or design adjustments needed based on reliability findings.
+
 ## Phase 9 — Downloads & Offline
 
 ### AND-DL-01 — Download Queue & Storage Management
