@@ -16,6 +16,8 @@ import androidx.paging.LoadState
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.albunyaan.tube.R
 import com.albunyaan.tube.ServiceLocator
+import com.albunyaan.tube.analytics.ErrorCategory
+import com.albunyaan.tube.analytics.ListMetricsReporter
 import com.albunyaan.tube.data.filters.FilterState
 import com.albunyaan.tube.data.filters.PublishedDate
 import com.albunyaan.tube.data.filters.SortOption
@@ -28,6 +30,8 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import java.io.IOException
+import retrofit2.HttpException
 
 abstract class ContentListFragment : Fragment(R.layout.fragment_home) {
 
@@ -41,6 +45,8 @@ abstract class ContentListFragment : Fragment(R.layout.fragment_home) {
     private var dateChip: Chip? = null
     private var sortChip: Chip? = null
     private var clearChip: Chip? = null
+    private val metricsReporter: ListMetricsReporter = ServiceLocator.provideListMetricsReporter()
+    private var lastMetricsSnapshot: MetricsSnapshot? = null
     private val viewModel: ContentListViewModel by viewModels {
         ContentListViewModel.Factory(
             ServiceLocator.provideFilterManager(),
@@ -63,7 +69,11 @@ abstract class ContentListFragment : Fragment(R.layout.fragment_home) {
             adapter = this@ContentListFragment.adapter
         }
 
-        binding.listState.retryButton.setOnClickListener { adapter.retry() }
+        binding.listState.retryButton.setOnClickListener {
+            metricsReporter.onRetry(contentType)
+            adapter.retry()
+        }
+        binding.listState.clearFiltersButton.setOnClickListener { clearAllFilters() }
 
         viewLifecycleOwner.lifecycleScope.launch {
             repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
@@ -86,21 +96,15 @@ abstract class ContentListFragment : Fragment(R.layout.fragment_home) {
                 adapter.loadStateFlow.collect { loadStates ->
                     val binding = binding ?: return@collect
                     val refreshState = loadStates.refresh
-                    val isLoading = refreshState is LoadState.Loading
-                    val isError = refreshState is LoadState.Error
-                    val isEmpty = refreshState is LoadState.NotLoading && adapter.itemCount == 0
-
-                    binding.listState.skeletonContainer.isVisible = isLoading
-                    binding.listState.errorContainer.isVisible = isError
-                    binding.listState.emptyContainer.isVisible = isEmpty
-                    if (isError) {
-                        val error = (refreshState as? LoadState.Error)?.error
-                        binding.listState.errorDescription.text = error?.localizedMessage
-                            ?: getString(R.string.list_error_description)
+                    val uiState = when {
+                        refreshState is LoadState.Loading -> UiState.Loading
+                        refreshState is LoadState.Error -> UiState.Error(categorizeError(refreshState.error))
+                        refreshState is LoadState.NotLoading && adapter.itemCount == 0 -> UiState.Empty(currentFilterState.hasActiveFilters)
+                        refreshState is LoadState.NotLoading -> UiState.Data(adapter.itemCount)
+                        else -> UiState.Loading
                     }
-                    binding.listFooter.root.isVisible = !isLoading
-                    binding.listFooter.paginationStatus.text =
-                        getString(R.string.list_footer_status, adapter.itemCount)
+                    renderUi(binding, uiState)
+                    reportMetrics(uiState)
                 }
             }
         }
@@ -143,7 +147,7 @@ abstract class ContentListFragment : Fragment(R.layout.fragment_home) {
                 true
             }
             R.id.filter_clear -> {
-                viewModel.clearFilters()
+                clearAllFilters()
                 true
             }
             else -> super.onOptionsItemSelected(item)
@@ -162,7 +166,7 @@ abstract class ContentListFragment : Fragment(R.layout.fragment_home) {
             .also(chipGroup::addView)
         sortChip = createFilterChip(getString(R.string.filter_sort)) { showSortDialog() }
             .also(chipGroup::addView)
-        clearChip = createFilterChip(getString(R.string.filter_clear)) { viewModel.clearFilters() }
+        clearChip = createFilterChip(getString(R.string.filter_clear)) { clearAllFilters() }
             .also(chipGroup::addView)
         clearChip?.isVisible = false
 
@@ -274,6 +278,87 @@ abstract class ContentListFragment : Fragment(R.layout.fragment_home) {
         }
     }
 
+    private fun renderUi(binding: FragmentHomeBinding, state: UiState) {
+        val stateBinding = binding.listState
+        stateBinding.skeletonContainer.isVisible = state is UiState.Loading
+        stateBinding.errorContainer.isVisible = state is UiState.Error
+        stateBinding.emptyContainer.isVisible = state is UiState.Empty
+
+        when (state) {
+            UiState.Loading -> {
+                binding.listFooter.root.isVisible = false
+                stateBinding.clearFiltersButton.isVisible = false
+            }
+            is UiState.Error -> {
+                val titleRes = when (state.category) {
+                    ErrorCategory.OFFLINE -> R.string.list_error_offline_title
+                    else -> R.string.list_error_title
+                }
+                val bodyRes = when (state.category) {
+                    ErrorCategory.OFFLINE -> R.string.list_error_offline_body
+                    ErrorCategory.SERVER -> R.string.list_error_server_body
+                    ErrorCategory.UNKNOWN -> R.string.list_error_description
+                }
+                stateBinding.errorTitle.setText(titleRes)
+                stateBinding.errorDescription.setText(bodyRes)
+                binding.listFooter.root.isVisible = false
+                stateBinding.clearFiltersButton.isVisible = false
+            }
+            is UiState.Empty -> {
+                stateBinding.clearFiltersButton.isVisible = state.filtersActive
+                binding.listFooter.root.isVisible = true
+                binding.listFooter.paginationStatus.text =
+                    getString(R.string.list_footer_status, 0)
+            }
+            is UiState.Data -> {
+                stateBinding.clearFiltersButton.isVisible = false
+                binding.listFooter.root.isVisible = true
+                binding.listFooter.paginationStatus.text =
+                    getString(R.string.list_footer_status, state.count)
+            }
+        }
+    }
+
+    private fun reportMetrics(state: UiState) {
+        when (state) {
+            UiState.Loading -> {
+                lastMetricsSnapshot = null
+            }
+            is UiState.Data -> {
+                val snapshot = MetricsSnapshot.Success(state.count)
+                if (snapshot != lastMetricsSnapshot) {
+                    metricsReporter.onLoadSuccess(contentType, state.count)
+                    lastMetricsSnapshot = snapshot
+                }
+            }
+            is UiState.Empty -> {
+                val snapshot = MetricsSnapshot.Empty
+                if (snapshot != lastMetricsSnapshot) {
+                    metricsReporter.onLoadEmpty(contentType)
+                    lastMetricsSnapshot = snapshot
+                }
+            }
+            is UiState.Error -> {
+                val snapshot = MetricsSnapshot.Error(state.category)
+                if (snapshot != lastMetricsSnapshot) {
+                    metricsReporter.onLoadError(contentType, state.category)
+                    lastMetricsSnapshot = snapshot
+                }
+            }
+        }
+    }
+
+    private fun categorizeError(throwable: Throwable): ErrorCategory = when (throwable) {
+        is IOException -> ErrorCategory.OFFLINE
+        is HttpException -> if (throwable.code() >= 500) ErrorCategory.SERVER else ErrorCategory.UNKNOWN
+        else -> ErrorCategory.UNKNOWN
+    }
+
+    private fun clearAllFilters() {
+        metricsReporter.onClearFilters(contentType)
+        viewModel.clearFilters()
+    }
+
     private fun showSingleChoiceBottomSheet(
         titleRes: Int,
         entries: Array<String>,
@@ -310,6 +395,19 @@ abstract class ContentListFragment : Fragment(R.layout.fragment_home) {
             chip.chipIcon = ContextCompat.getDrawable(chipContext, R.drawable.ic_chip_check)
             chip.isChipIconVisible = true
         }
+    }
+
+    private sealed interface UiState {
+        object Loading : UiState
+        data class Data(val count: Int) : UiState
+        data class Empty(val filtersActive: Boolean) : UiState
+        data class Error(val category: ErrorCategory) : UiState
+    }
+
+    private sealed interface MetricsSnapshot {
+        data class Success(val count: Int) : MetricsSnapshot
+        object Empty : MetricsSnapshot
+        data class Error(val category: ErrorCategory) : MetricsSnapshot
     }
 
     private fun videoLengthLabel(option: VideoLength): String = when (option) {

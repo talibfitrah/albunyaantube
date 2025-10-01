@@ -67,6 +67,7 @@ Each screen references the mockups. Layout measurements assume 360dp width basel
 #### Loading & Error States (Phase 6 planning)
 - **Skeletons**: Each tab displays 6 shimmer cards matching card layout (list vs. grid). Skeletons hide from accessibility tree (`android:importantForAccessibility="no"`).
 - **Empty**: If API returns zero results after filters apply, show `EmptyState` with localized message and CTA to clear filters.
+  - When filters are active, surface a primary "Clear filters" chip/button inside the empty state for quick recovery.
 - **Error**: Inline error card with retry button per tab. Message references filter context (e.g., “Unable to load videos. Check your connection or adjust filters.”). Toasts used only for transient errors.
 - **Metrics banner**: Footer text shows page size (ex: “Showing 20 of 20 items”) and surfaces cache freshness (“Last refreshed 2m ago”).
 - **Offline**: Provide “Go offline” state that shows cached content when available, else offline empty state with instructions to reconnect.

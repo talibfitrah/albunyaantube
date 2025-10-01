@@ -295,10 +295,10 @@ meta:
 ```yaml
 meta:
   id: AND-LISTS-03
-  status: in-progress
+  status: done
   owner: Android
   depends: [AND-LISTS-02]
-  lastReviewed: 2025-10-04
+  lastReviewed: 2025-10-05
 ```
 **Estimate**: 2.5h.
 
@@ -325,6 +325,7 @@ meta:
 **Reflect**
 - Feed learnings into Phase 10 performance hardening plan.
 - Update risk register if error handling requires additional backend support.
+- 2025-10-05: Added offline-specific messaging, clear-filters recovery CTA, and Logcat metrics hooks pending real telemetry wiring.
 
 ## Phase 7 — Channel & Playlist Details
 

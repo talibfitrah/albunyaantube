@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
+import com.albunyaan.tube.analytics.ListMetricsReporter
+import com.albunyaan.tube.analytics.LogListMetricsReporter
 import com.albunyaan.tube.data.filters.FilterManager
 import com.albunyaan.tube.data.paging.ContentPagingRepository
 import com.albunyaan.tube.data.paging.DefaultContentPagingRepository
@@ -39,6 +41,7 @@ object ServiceLocator {
     private val fakeContentService: ContentService by lazy { FakeContentService() }
     private val contentService: ContentService by lazy { FallbackContentService(retrofitContentService, fakeContentService) }
     private val pagingRepository: ContentPagingRepository by lazy { DefaultContentPagingRepository(contentService) }
+    private val listMetricsReporter: ListMetricsReporter by lazy { LogListMetricsReporter() }
 
     private val moshi: Moshi by lazy {
         Moshi.Builder()
@@ -73,4 +76,6 @@ object ServiceLocator {
     fun provideFilterManager(): FilterManager = filterManager
 
     fun provideContentRepository(): ContentPagingRepository = pagingRepository
+
+    fun provideListMetricsReporter(): ListMetricsReporter = listMetricsReporter
 }
