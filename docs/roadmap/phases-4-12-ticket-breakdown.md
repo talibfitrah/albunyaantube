@@ -741,6 +741,8 @@ meta:
 - Document caching config (keys, TTL, invalidation) in architecture doc.
 - Outline performance regression gating in CI.
 - Update backlog with tasks to optimize slow paths identified.
+- 2025-10-08: PERF-API-01 runbook published; Gatling + EXPLAIN workflow documented in `docs/runbooks/perf-playlist-hydration.md`.
+- 2025-10-08: PERF-ANDROID-01 macrobenchmark guide added in `docs/testing/android-macrobenchmark.md` to capture baseline measurements.
 
 **Reflect**
 - Record performance debt requiring post-hardening follow-up.

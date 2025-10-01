@@ -82,8 +82,8 @@ This strategy spans backend, admin frontend, and Android client. It complements 
 - Perf dashboards aggregate Gatling, Prometheus, Firebase, and Macrobenchmark outputs; release gate ensures two consecutive green runs.
 
 ## Phase 10 Performance Hardening
-- **Backend**: Gatling scenario `perf/listing-sweep.scala` stresses catalog endpoints with mixed locales/tabs; asserts Redis hit ratio and ensures soft-expiry refresh completes <250ms. Fails pipeline if refresh queue backlog >5.
-- **Android**: Macrobenchmark tests run on Pixel 4a + Moto G Power to capture low-end performance. Scroll tests instrument `HomeFragment` infinite list while measuring jank; results logged to `perf/android-scroll.csv` for trend analysis. Download telemetry validated against local collector to confirm start/progress/completed events emitted.
+- **Backend**: Gatling scenario `perf/listing-sweep.scala` stresses catalog endpoints with mixed locales/tabs; asserts Redis hit ratio and ensures soft-expiry refresh completes <250ms. Runbook: [`perf-playlist-hydration`](../runbooks/perf-playlist-hydration.md).
+- **Android**: Macrobenchmark tests run on Pixel 4a + Moto G Power to capture low-end performance. Scroll tests instrument `HomeFragment` infinite list while measuring jank; results logged to `perf/android-scroll.csv` for trend analysis. Guide: [`android-macrobenchmark`](android-macrobenchmark.md). Download telemetry validated against local collector to confirm start/progress/completed events emitted.
 - **Data Collection**: Grafana dashboards `Perf:API` and `Perf:Android` capture budgets. Alerts escalate to Android Lead/SRE on sustained breach. Perf backlog items (PERF-API-01, PERF-ANDROID-01) capture remediation work when thresholds missed.
 
 ## Release Management
