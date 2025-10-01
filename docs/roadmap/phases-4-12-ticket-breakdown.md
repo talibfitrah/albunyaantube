@@ -152,7 +152,7 @@ meta:
 ```yaml
 meta:
   id: AND-SKEL-02
-  status: in-progress
+  status: done
   owner: Android
   depends: [AND-SKEL-01]
   lastReviewed: 2025-10-04
@@ -187,7 +187,7 @@ meta:
 ```yaml
 meta:
   id: AND-SKEL-03
-  status: in-progress
+  status: done
   owner: Android
   depends: [AND-SKEL-02]
   lastReviewed: 2025-10-04
@@ -221,6 +221,14 @@ meta:
 ## Phase 6 — Lists & Home Rules
 
 ### AND-LISTS-01 — Paging 3 Integration & Cache Strategy
+```yaml
+meta:
+  id: AND-LISTS-01
+  status: in-progress
+  owner: Android
+  depends: [AND-SKEL-03]
+  lastReviewed: 2025-10-04
+```
 **Estimate**: 4h.
 
 **Goals**
