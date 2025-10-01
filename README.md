@@ -12,6 +12,13 @@ Welcome to the design workspace for Albunyaan Tube, an ad-free, admin-curated ha
 - Admin onboarding, login, and locale QA runbooks live in [`docs/runbooks`](docs/runbooks) for day-one setup guidance.
 - Product backlog and risk register are maintained in [`docs/backlog/product-backlog.csv`](docs/backlog/product-backlog.csv) and [`docs/risk-register.md`](docs/risk-register.md).
 
+### Admin UI Quick Links
+- **Frontend prototypes & state**: see [`frontend/src/views`](frontend/src/views) for registry, moderation, and dashboard implementations aligning with Phase 3 specs.
+- **Locale bundles**: translation sources for English, Arabic, and Dutch live in [`frontend/src/locales/messages.ts`](frontend/src/locales/messages.ts).
+- **Registry search filters**: shared Pinia store and component located in [`frontend/src/stores/registryFilters.ts`](frontend/src/stores/registryFilters.ts) and [`frontend/src/components/registry/RegistryFilters.vue`](frontend/src/components/registry/RegistryFilters.vue).
+- **Dashboard metrics plan**: refer to [`frontend/docs/dashboard-metrics-plan.md`](frontend/docs/dashboard-metrics-plan.md) and contract details in [`docs/api/openapi-draft.yaml`](docs/api/openapi-draft.yaml#L220).
+- **Onboarding & QA**: pair this README with the [`Admin Onboarding`](docs/runbooks/admin-onboarding.md) and [`Admin Workspace Login`](docs/runbooks/admin-login.md) guides to validate locale smoke tests, dashboard warnings, and registry filters.
+
 ## Traceability
 Every document references related artifacts to ensure consistency:
 - Requirements → APIs → Acceptance criteria are linked through the traceability matrix in [`docs/acceptance/criteria.md`](docs/acceptance/criteria.md).
