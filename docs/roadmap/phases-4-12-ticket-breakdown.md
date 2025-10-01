@@ -711,6 +711,7 @@ meta:
 - Define analytics schema for download events (JSON contract).
 - Update backlog with dashboard/reporting tasks.
 - Wire download events into the shared telemetry client and surface stored file metadata across the downloads list and player launcher.
+- Coordinate with backend for manifest flag + telemetry ingestion (see backlog BE-DL-01/02) and legal copy review (LEGAL-01) before launch.
 
 **Reflect**
 - Identify gaps requiring Ops/Analytics involvement.
