@@ -75,9 +75,16 @@ This strategy spans backend, admin frontend, and Android client. It complements 
 - Alerting runbook stored in ops documentation (future `/ops` folder).
 
 ## Performance Metrics
-- Track p95 API latency (<150ms) and payload size (<80KB) during Gatling runs; fail build when thresholds exceeded.
-- Monitor Crashlytics crash-free sessions (≥99%) and ANR rate (<0.5%) before promoting Android releases.
-- Compare Redis cache hit ratio (>85%) per locale to ensure caching strategy effectiveness.
+- Track p95 API latency (<150ms) and payload size (<80KB) during Gatling runs; fail build when thresholds exceeded. Gatling job runs nightly and on release branches.
+- Monitor Crashlytics crash-free sessions (≥99%) and ANR rate (<0.5%) before promoting Android releases; Firebase Performance traces enforce cold-start budget ≤2.5s on Pixel 4a.
+- Compare Redis cache hit ratio (>85%) per locale to ensure caching strategy effectiveness; Prometheus alert fires at 60% threshold.
+- Android Macrobenchmark suite (`app:macrobenchmarks`) covers cold start, scroll frame pacing, and download enqueue-to-notification latency (<3s). Baseline Profiles generated weekly and checked into repo to prevent regressions.
+- Perf dashboards aggregate Gatling, Prometheus, Firebase, and Macrobenchmark outputs; release gate ensures two consecutive green runs.
+
+## Phase 10 Performance Hardening
+- **Backend**: Gatling scenario `perf/listing-sweep.scala` stresses catalog endpoints with mixed locales/tabs; asserts Redis hit ratio and ensures soft-expiry refresh completes <250ms. Fails pipeline if refresh queue backlog >5.
+- **Android**: Macrobenchmark tests run on Pixel 4a + Moto G Power to capture low-end performance. Scroll tests instrument `HomeFragment` infinite list while measuring jank; results logged to `perf/android-scroll.csv` for trend analysis. Download telemetry validated against local collector to confirm start/progress/completed events emitted.
+- **Data Collection**: Grafana dashboards `Perf:API` and `Perf:Android` capture budgets. Alerts escalate to Android Lead/SRE on sustained breach. Perf backlog items (PERF-API-01, PERF-ANDROID-01) capture remediation work when thresholds missed.
 
 ## Release Management
 - Staging environment smoke tests triggered by CI pipeline.

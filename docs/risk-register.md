@@ -6,7 +6,8 @@
 | RSK-002 | Localization quality issues in Arabic shaping | Medium | Medium | Localization Lead | Adopt Noto fonts, run pseudo-localization, include Arabic QA early. | Open |
 | RSK-003 | Legal challenge for offline downloads | High | Low | Product Lead | Secure legal review, provide EULA, enforce download policy flag. | Open |
 | RSK-004 | Moderator backlog exceeding SLA | Medium | Medium | Moderation Lead | Add alerts for >12h pending, scale staffing, implement bulk actions. | Open |
-| RSK-005 | Performance degradation on low-end devices | Medium | Medium | Android Lead | Profile using Macrobenchmark, optimize image caching (Coil), enforce 80KB payload budget. | Open |
+| RSK-005 | Performance degradation on low-end devices | Medium | Medium | Android Lead | Macrobenchmark cold-start/scroll suites gate releases; Coil cache capped at 64MB; PERF-ANDROID-01 tracks remaining optimizations. | Mitigating |
+| RSK-008 | Redis cache drift increases API latency | Medium | Low | Backend Lead | Soft-expiry refresh jobs, Prometheus alert on hit ratio <0.6, PERF-API-01 backlog for query tuning. | Open |
 | RSK-006 | Security breach via stolen refresh token | High | Low | Security Lead | Device binding, refresh rotation, anomaly detection, revoke tokens. | Open |
 | RSK-007 | Redis outage causing API latency | Medium | Low | DevOps Lead | Implement cache fallback with circuit breaker, monitor with Prometheus alerts. | Open |
 

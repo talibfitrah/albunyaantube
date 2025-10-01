@@ -62,11 +62,12 @@ These schemas inform JPA entities and API payloads.
 4. Playback requests return signed stream manifests referencing YouTube sources; download requests ensure policy compliance without persisting media.
 5. Moderation proposals flow through dedicated endpoints with audit logging.
 
-## Performance & Scaling
-- Target 200 RPS sustained on backend with autoscaling (Kubernetes future). Redis reduces list query latency to <50ms.
-- Database indexing on ytId, category relationships, publishedAt for sorting.
-- Image assets served via CloudFront-like CDN to minimize cold start downloads.
-- Android caches responses using Room + Paging 3 to minimize network calls.
+## Performance & Scaling (Phase 10 hardening)
+- **Service Budgets**: Backend list endpoints must stay under 150 ms p95 and 80 KB payload at 200 RPS. Android cold start budget is 2.5 s on Pixel 4a, with frame time budget ≤11 ms for 90% of frames during endless scroll. Downloads must transition from enqueue → notification in <3 s.
+- **Caching Controls**: Redis keys follow `list:{locale}:{tab}:{cursor}` with a 5 minute TTL and 4 minute soft-expiry refresh to maintain ≥85% cache hit ratio. RemoteMediator entries in Room expire after 15 minutes (aligned with Redis) and purge when disk usage exceeds 80 MB. Coil image cache capped at 64 MB LRU.
+- **Monitoring & Alerting**: Prometheus scrapes Redis/server metrics feeding Grafana dashboards with SLO panels (latency, hit ratio). Gatling CI stage fails when latency/payload budgets regress. Android macrobenchmark + Baseline Profile tasks run weekly; Firebase Crashlytics/Performance dashboards gate release if crash-free <99% or ANR >0.5%. Alerts trigger when cache hit ratio <0.6 or latency budget breached for 3 consecutive intervals.
+- **Scalability Levers**: Database indexing on `ytId`, category relations, and `publishedAt` keeps pagination bounded. CDN-backed media (CloudFront-style) reduces cold-start bandwidth. Kubernetes HPA (future) scales pods on CPU and queue depth; circuit breakers fall back to stale cache when Redis down.
+- **Follow-up Backlog**: PERF-API-01 targets slow playlist hydration queries; PERF-ANDROID-01 tackles list diffing and image prefetch tuning. These backlog items ensure optimization debt is traceable post-hardening.
 
 ## Deployment & Ops
 - Docker Compose for local dev: services for backend, Postgres, Redis (see future `/ops/docker-compose.yml`).
