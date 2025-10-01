@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import androidx.work.Data
 import com.albunyaan.tube.ServiceLocator
 import com.albunyaan.tube.analytics.ExtractorMetricsReporter
 import com.albunyaan.tube.data.extractor.AudioTrack
@@ -11,6 +12,9 @@ import com.albunyaan.tube.data.extractor.VideoTrack
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_AUDIO_ONLY
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_DOWNLOAD_ID
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_FILE_PATH
+import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_FILE_SIZE
+import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_COMPLETED_AT
+import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_MIME_TYPE
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_PROGRESS
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_TITLE
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_VIDEO_ID
@@ -52,8 +56,18 @@ class DownloadWorker(
             try {
                 downloadToFile(mediaUrl, tempFile, downloadId, title, contentLength)
                 val finalFile = storage.commit(downloadId, audioOnly, tempFile)
+                val metadata = storage.metadataFor(downloadId, audioOnly)
+                metadata?.let { metrics.onDownloadSizeKnown(downloadId, it.sizeBytes) }
                 notifications.notifyCompletion(downloadId, title)
-                Result.success(workDataOf(KEY_FILE_PATH to finalFile.absolutePath, KEY_PROGRESS to 100))
+                val output = Data.Builder()
+                    .putString(KEY_FILE_PATH, finalFile.absolutePath)
+                    .putInt(KEY_PROGRESS, 100)
+                metadata?.let {
+                    output.putLong(KEY_FILE_SIZE, it.sizeBytes)
+                    output.putLong(KEY_COMPLETED_AT, it.completedAtMillis)
+                    output.putString(KEY_MIME_TYPE, it.mimeType)
+                }
+                Result.success(output.build())
             } catch (t: Throwable) {
                 storage.discardTemp(tempFile)
                 metrics.onDownloadFailed(downloadId, t)

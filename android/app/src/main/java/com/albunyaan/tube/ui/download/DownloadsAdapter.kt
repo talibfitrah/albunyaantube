@@ -1,5 +1,7 @@
 package com.albunyaan.tube.ui.download
 
+import android.text.format.DateUtils
+import android.text.format.Formatter
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -39,6 +41,19 @@ class DownloadsAdapter(
             binding.downloadStatus.text = binding.root.context.getString(statusText(entry.status))
             binding.downloadProgress.isVisible = entry.status == DownloadStatus.RUNNING
             binding.downloadProgress.progress = entry.progress
+
+            val details = entry.metadata?.let { metadata ->
+                val context = binding.root.context
+                val size = Formatter.formatShortFileSize(context, metadata.sizeBytes)
+                val relativeTime = DateUtils.getRelativeTimeSpanString(
+                    metadata.completedAtMillis,
+                    System.currentTimeMillis(),
+                    DateUtils.MINUTE_IN_MILLIS
+                )
+                context.getString(R.string.download_details_format, size, relativeTime)
+            }
+            binding.downloadDetails.isVisible = details != null
+            binding.downloadDetails.text = details
 
             val pauseResumeText = when (entry.status) {
                 DownloadStatus.RUNNING -> R.string.download_action_pause

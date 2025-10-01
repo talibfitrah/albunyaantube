@@ -23,6 +23,15 @@
         android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
         android:text="Status" />
 
+    <TextView
+        android:id="@+id/downloadDetails"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingTop="2dp"
+        android:textAppearance="@style/TextAppearance.MaterialComponents.Caption"
+        android:visibility="gone"
+        android:text="Details" />
+
     <com.google.android.material.progressindicator.LinearProgressIndicator
         android:id="@+id/downloadProgress"
         android:layout_width="match_parent"

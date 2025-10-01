@@ -9,10 +9,17 @@ data class DownloadRequest(
 
 enum class DownloadStatus { QUEUED, RUNNING, PAUSED, COMPLETED, FAILED, CANCELLED }
 
+data class DownloadFileMetadata(
+    val sizeBytes: Long,
+    val completedAtMillis: Long,
+    val mimeType: String
+)
+
 data class DownloadEntry(
     val request: DownloadRequest,
     val status: DownloadStatus,
     val progress: Int = 0,
     val message: String? = null,
-    val filePath: String? = null
+    val filePath: String? = null,
+    val metadata: DownloadFileMetadata? = null
 )

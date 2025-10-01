@@ -680,7 +680,7 @@ meta:
 - Localization QA for EULA content.
 
 **Implement**
-- Outline acceptance flow (modal, settings screen) and persistence.
+- Outline acceptance flow (modal, settings screen) and persistence. ✅ Player download CTA now launches an EULA dialog backed by DataStore, gating WorkManager enqueues until accepted.
 - Document audit logging + analytics for EULA acceptance.
 - Update backlog with legal review tasks for EULA copy.
 
@@ -710,6 +710,7 @@ meta:
 - Draft QA checklist (devices, locales, storage states) for regression cycles.
 - Define analytics schema for download events (JSON contract).
 - Update backlog with dashboard/reporting tasks.
+- Wire download events into the shared telemetry client and surface stored file metadata across the downloads list and player launcher.
 
 **Reflect**
 - Identify gaps requiring Ops/Analytics involvement.

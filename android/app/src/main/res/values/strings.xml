@@ -68,6 +68,16 @@
     <string name="player_duration_minutes_seconds">%1$d:%2$02d</string>
     <string name="player_current_item">Now playing: %1$s</string>
     <string name="player_download_current">Download for offline</string>
+    <string name="player_open_download">Open offline</string>
+    <string name="player_download_in_progress">Download in progress (%1$d%%)</string>
+    <string name="player_download_ready">Downloaded %1$s • %2$s</string>
+    <string name="player_download_status_placeholder">Download status</string>
+    <string name="player_review_eula">Review EULA</string>
+    <string name="player_download_requires_eula">Accept the offline downloads EULA to continue.</string>
+    <string name="eula_dialog_title">Offline Downloads Agreement</string>
+    <string name="eula_dialog_body">Offline access is provided for personal study only. By accepting, you agree not to redistribute downloads, respect content takedown requests, and delete files when access is revoked.</string>
+    <string name="eula_dialog_accept">I Agree</string>
+    <string name="eula_dialog_decline">Not Now</string>
     <string name="nav_downloads">Downloads</string>
     <string name="downloads_empty">No downloads yet. Start saving content for offline playback.</string>
     <string name="download_action_pause">Pause</string>
@@ -81,6 +91,7 @@
     <string name="download_status_failed">Failed</string>
     <string name="download_status_cancelled">Cancelled</string>
     <string name="download_item_content_description">Download %1$s. Status %2$s. %3$d%% complete.</string>
+    <string name="download_details_format">%1$s • %2$s</string>
     <string name="download_toast_no_viewer">Unable to open this file on your device.</string>
     <string name="download_notification_channel_name">Downloads</string>
     <string name="download_notification_channel_desc">Shows progress for offline downloads.</string>

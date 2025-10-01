@@ -4,7 +4,12 @@ import com.albunyaan.tube.data.extractor.AudioTrack
 import com.albunyaan.tube.data.extractor.PlaybackSelection
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.VideoTrack
+import com.albunyaan.tube.download.DownloadEntry
+import com.albunyaan.tube.download.DownloadFileMetadata
+import com.albunyaan.tube.download.DownloadRequest
+import com.albunyaan.tube.download.DownloadStatus
 import com.albunyaan.tube.player.PlayerRepository
+import com.albunyaan.tube.policy.EulaManager
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -15,12 +20,19 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlayerViewModelTest {
 
     private val testDispatcher = StandardTestDispatcher()
     private val scope = TestScope(testDispatcher)
+    private val eulaManager = EulaManager(
+        PreferenceDataStoreFactory.create(scope = scope) {
+            File.createTempFile("eula", ".preferences_pb").apply { deleteOnExit() }
+        }
+    )
     private val repository = object : PlayerRepository {
         override suspend fun resolveStreams(videoId: String): ResolvedStreams? {
             return ResolvedStreams(
@@ -51,7 +63,10 @@ class PlayerViewModelTest {
 
     private val downloadRepository = object : com.albunyaan.tube.download.DownloadRepository {
         override val downloads = MutableStateFlow<List<com.albunyaan.tube.download.DownloadEntry>>(emptyList())
-        override fun enqueue(request: com.albunyaan.tube.download.DownloadRequest) {}
+        val enqueued = mutableListOf<com.albunyaan.tube.download.DownloadRequest>()
+        override fun enqueue(request: com.albunyaan.tube.download.DownloadRequest) {
+            enqueued += request
+        }
         override fun pause(requestId: String) {}
         override fun resume(requestId: String) {}
         override fun cancel(requestId: String) {}
@@ -59,7 +74,7 @@ class PlayerViewModelTest {
 
     @Test
     fun `hydrateQueue picks first playable item and filters exclusions`() = scope.runTest {
-        val viewModel = PlayerViewModel(repository, downloadRepository, testDispatcher)
+        val viewModel = PlayerViewModel(repository, downloadRepository, eulaManager, testDispatcher)
         advanceUntilIdle()
         val state = viewModel.state.value
 
@@ -71,7 +86,7 @@ class PlayerViewModelTest {
 
     @Test
     fun `markCurrentComplete advances to next item and emits event`() = scope.runTest {
-        val viewModel = PlayerViewModel(repository, downloadRepository, testDispatcher)
+        val viewModel = PlayerViewModel(repository, downloadRepository, eulaManager, testDispatcher)
         advanceUntilIdle()
 
         val initialState = viewModel.state.value
@@ -93,7 +108,7 @@ class PlayerViewModelTest {
 
     @Test
     fun `playItem moves selection and re-queues previous current`() = scope.runTest {
-        val viewModel = PlayerViewModel(repository, downloadRepository, testDispatcher)
+        val viewModel = PlayerViewModel(repository, downloadRepository, eulaManager, testDispatcher)
         advanceUntilIdle()
 
         val initialCurrent = requireNotNull(viewModel.state.value.currentItem)
@@ -110,7 +125,7 @@ class PlayerViewModelTest {
 
     @Test
     fun `setAudioOnly ignores duplicate state`() = scope.runTest {
-        val viewModel = PlayerViewModel(repository, downloadRepository, testDispatcher)
+        val viewModel = PlayerViewModel(repository, downloadRepository, eulaManager, testDispatcher)
         advanceUntilIdle()
 
         viewModel.setAudioOnly(true)
@@ -120,5 +135,44 @@ class PlayerViewModelTest {
         val secondEvent = viewModel.state.value.lastAnalyticsEvent
 
         assertEquals(firstEvent, secondEvent)
+    }
+
+    @Test
+    fun `downloads flow updates current download metadata`() = scope.runTest {
+        val viewModel = PlayerViewModel(repository, downloadRepository, eulaManager, testDispatcher)
+        advanceUntilIdle()
+
+        val metadata = DownloadFileMetadata(2_048_000, System.currentTimeMillis(), "audio/mp4")
+        val request = DownloadRequest("M7lc1UVf-VE_1", "Foundations Orientation", "M7lc1UVf-VE", audioOnly = true)
+        val entry = DownloadEntry(
+            request = request,
+            status = DownloadStatus.COMPLETED,
+            progress = 100,
+            filePath = "/tmp/${request.id}.m4a",
+            metadata = metadata
+        )
+
+        downloadRepository.downloads.value = listOf(entry)
+        advanceUntilIdle()
+
+        val state = viewModel.state.value
+        assertEquals(entry, state.currentDownload)
+    }
+
+    @Test
+    fun `downloadCurrent returns false until EULA accepted`() = scope.runTest {
+        val viewModel = PlayerViewModel(repository, downloadRepository, eulaManager, testDispatcher)
+        advanceUntilIdle()
+
+        val allowedBefore = viewModel.downloadCurrent()
+        assertTrue(!allowedBefore)
+        assertTrue(downloadRepository.enqueued.isEmpty())
+
+        eulaManager.setAccepted(true)
+        advanceUntilIdle()
+
+        val allowedAfter = viewModel.downloadCurrent()
+        assertTrue(allowedAfter)
+        assertTrue(downloadRepository.enqueued.isNotEmpty())
     }
 }

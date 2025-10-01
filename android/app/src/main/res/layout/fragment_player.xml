@@ -64,6 +64,15 @@
         android:text="@string/player_download_current"/>
 
     <TextView
+        android:id="@+id/downloadStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingTop="4dp"
+        android:textAppearance="@style/TextAppearance.MaterialComponents.Caption"
+        android:visibility="gone"
+        android:text="@string/player_download_status_placeholder"/>
+
+    <TextView
         android:id="@+id/upNextHeader"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

@@ -1,28 +1,28 @@
 package com.albunyaan.tube.download
 
 import android.content.Context
-import androidx.test.core.app.ApplicationProvider
-import androidx.test.ext.junit.runners.AndroidJUnit4
+import android.content.ContextWrapper
+import java.io.File
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
-import org.junit.runner.RunWith
 
-@RunWith(AndroidJUnit4::class)
-class DownloadStorageTest {
+class DownloadStorageJvmTest {
 
-    private lateinit var storage: DownloadStorage
-    private lateinit var context: Context
+    @get:Rule
+    val tmp = TemporaryFolder()
 
-    @Before
-    fun setUp() {
-        context = ApplicationProvider.getApplicationContext()
-        storage = DownloadStorage(context, 1024) // 1 KB quota
+    private fun context(root: File): Context = object : ContextWrapper(null) {
+        override fun getFilesDir(): File = root
     }
 
     @Test
-    fun ensureSpace_prunesOldestFilesWhenOverQuota() {
+    fun ensureSpace_prunesOldestFileWhenOverQuota() {
+        val root = tmp.newFolder("files")
+        val storage = DownloadStorage(context(root), 1024) // 1 KB
+
         val firstTemp = storage.createTempFile("first")
         firstTemp.outputStream().use { it.write(ByteArray(600)) }
         storage.commit("first", true, firstTemp)
@@ -48,6 +48,6 @@ class DownloadStorageTest {
             .filter { it.exists() }
             .map { it.length() }
             .sum()
-        assertTrue("Quota exceeded after pruning", totalSize <= 1024)
+        assertTrue(totalSize <= 1024)
     }
 }

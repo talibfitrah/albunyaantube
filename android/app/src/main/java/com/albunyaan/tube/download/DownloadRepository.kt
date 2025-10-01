@@ -4,8 +4,10 @@ import androidx.lifecycle.asFlow
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.albunyaan.tube.analytics.ExtractorMetricsReporter
-import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_DOWNLOAD_ID
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_FILE_PATH
+import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_FILE_SIZE
+import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_COMPLETED_AT
+import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_MIME_TYPE
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_PROGRESS
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -44,9 +46,22 @@ class DefaultDownloadRepository(
     override fun enqueue(request: DownloadRequest) {
         val workId = scheduler.schedule(request)
         workIds[request.id] = workId
-        updateEntry(request) { it.copy(status = DownloadStatus.QUEUED, progress = 0, message = null, filePath = null) }
+        updateEntry(request) {
+            it.copy(status = DownloadStatus.QUEUED, progress = 0, message = null, filePath = null, metadata = null)
+        }
         metrics.onDownloadStarted(request.id, request.videoId)
         observeWork(workId, request)
+    }
+
+    private fun metadataFrom(info: WorkInfo): DownloadFileMetadata? {
+        val size = info.outputData.getLong(KEY_FILE_SIZE, -1L).takeIf { it >= 0 }
+        val completedAt = info.outputData.getLong(KEY_COMPLETED_AT, -1L).takeIf { it >= 0 }
+        val mimeType = info.outputData.getString(KEY_MIME_TYPE)
+        return if (size != null && completedAt != null && mimeType != null) {
+            DownloadFileMetadata(size, completedAt, mimeType)
+        } else {
+            null
+        }
     }
 
     override fun pause(requestId: String) {
@@ -73,7 +88,9 @@ class DefaultDownloadRepository(
         if (entry != null) {
             storage.delete(entry.request.id, entry.request.audioOnly)
         }
-        updateEntry(requestId) { it.copy(status = DownloadStatus.CANCELLED, progress = 0, filePath = null) }
+        updateEntry(requestId) {
+            it.copy(status = DownloadStatus.CANCELLED, progress = 0, filePath = null, metadata = null)
+        }
     }
 
     private fun observeWork(workId: UUID, request: DownloadRequest) {
@@ -91,8 +108,15 @@ class DefaultDownloadRepository(
                         WorkInfo.State.SUCCEEDED -> {
                             workIds.remove(request.id)
                             val filePath = info.outputData.getString(KEY_FILE_PATH)
+                            val metadata = metadataFrom(info)
+                            metadata?.let { metrics.onDownloadSizeKnown(request.id, it.sizeBytes) }
                             updateEntry(request) {
-                                it.copy(status = DownloadStatus.COMPLETED, progress = 100, filePath = filePath)
+                                it.copy(
+                                    status = DownloadStatus.COMPLETED,
+                                    progress = 100,
+                                    filePath = filePath,
+                                    metadata = metadata
+                                )
                             }
                             if (filePath != null) {
                                 metrics.onDownloadCompleted(request.id, filePath)
@@ -101,7 +125,7 @@ class DefaultDownloadRepository(
                         WorkInfo.State.FAILED -> {
                             workIds.remove(request.id)
                             updateEntry(request) {
-                                it.copy(status = DownloadStatus.FAILED, message = null, filePath = null)
+                                it.copy(status = DownloadStatus.FAILED, message = null, filePath = null, metadata = null)
                             }
                             metrics.onDownloadFailed(request.id, IllegalStateException("Download failed"))
                         }
@@ -110,7 +134,9 @@ class DefaultDownloadRepository(
                             if (paused.contains(request.id)) {
                                 updateEntry(request) { it.copy(status = DownloadStatus.PAUSED) }
                             } else {
-                                updateEntry(request) { it.copy(status = DownloadStatus.CANCELLED, filePath = null) }
+                                updateEntry(request) {
+                                    it.copy(status = DownloadStatus.CANCELLED, filePath = null, metadata = null)
+                                }
                                 metrics.onDownloadFailed(request.id, IllegalStateException("Cancelled"))
                             }
                         }

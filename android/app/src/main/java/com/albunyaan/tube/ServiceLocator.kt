@@ -8,6 +8,9 @@ import com.albunyaan.tube.analytics.ExtractorMetricsReporter
 import com.albunyaan.tube.analytics.LogExtractorMetricsReporter
 import com.albunyaan.tube.analytics.ListMetricsReporter
 import com.albunyaan.tube.analytics.LogListMetricsReporter
+import com.albunyaan.tube.analytics.TelemetryExtractorMetricsReporter
+import com.albunyaan.tube.telemetry.LogTelemetryClient
+import com.albunyaan.tube.telemetry.TelemetryClient
 import com.albunyaan.tube.download.DefaultDownloadRepository
 import com.albunyaan.tube.download.DownloadRepository
 import com.albunyaan.tube.download.DownloadScheduler
@@ -29,6 +32,7 @@ import com.albunyaan.tube.player.PlayerRepository
 import androidx.work.WorkManager
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import com.albunyaan.tube.policy.EulaManager
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -49,6 +53,10 @@ object ServiceLocator {
     private var overrideDownloadStorage: DownloadStorage? = null
     @Volatile
     private var overrideMetrics: ExtractorMetricsReporter? = null
+    @Volatile
+    private var overrideTelemetryClient: TelemetryClient? = null
+    @Volatile
+    private var overrideEulaManager: EulaManager? = null
 
     private val dataStore: DataStore<Preferences> by lazy {
         PreferenceDataStoreFactory.create(scope = scope) {
@@ -56,8 +64,17 @@ object ServiceLocator {
         }
     }
 
+    private val policyDataStore: DataStore<Preferences> by lazy {
+        PreferenceDataStoreFactory.create(scope = scope) {
+            File(appContext.filesDir, "policy.preferences_pb")
+        }
+    }
+
     private val filterManager: FilterManager by lazy { FilterManager(dataStore, scope) }
-    private val extractorMetrics: ExtractorMetricsReporter by lazy { LogExtractorMetricsReporter() }
+    private val telemetryClient: TelemetryClient by lazy { LogTelemetryClient() }
+    private val extractorMetrics: ExtractorMetricsReporter by lazy {
+        TelemetryExtractorMetricsReporter(LogExtractorMetricsReporter(), telemetryClient)
+    }
     private val extractorCache: MetadataCache by lazy { MetadataCache(ttlMillis = 15 * 60 * 1000L, maxEntriesPerBucket = 200) }
     private val extractorDownloader: OkHttpDownloader by lazy { OkHttpDownloader(httpClient) }
     private val extractorClient by lazy {
@@ -75,6 +92,7 @@ object ServiceLocator {
     private val downloadRepository: DownloadRepository by lazy {
         DefaultDownloadRepository(workManager, downloadScheduler, downloadStorage, extractorMetrics, scope)
     }
+    private val eulaManager: EulaManager by lazy { EulaManager(policyDataStore) }
 
     private val moshi: Moshi by lazy {
         Moshi.Builder()
@@ -119,7 +137,11 @@ object ServiceLocator {
 
     fun provideExtractorMetricsReporter(): ExtractorMetricsReporter = overrideMetrics ?: extractorMetrics
 
+    fun provideTelemetryClient(): TelemetryClient = overrideTelemetryClient ?: telemetryClient
+
     fun provideDownloadStorage(): DownloadStorage = overrideDownloadStorage ?: downloadStorage
+
+    fun provideEulaManager(): EulaManager = overrideEulaManager ?: eulaManager
 
     fun setDownloadRepositoryForTesting(repository: DownloadRepository?) {
         overrideDownloadRepository = repository
@@ -131,6 +153,14 @@ object ServiceLocator {
 
     fun setExtractorMetricsForTesting(metrics: ExtractorMetricsReporter?) {
         overrideMetrics = metrics
+    }
+
+    fun setTelemetryClientForTesting(client: TelemetryClient?) {
+        overrideTelemetryClient = client
+    }
+
+    fun setEulaManagerForTesting(manager: EulaManager?) {
+        overrideEulaManager = manager
     }
 
     private const val DOWNLOAD_QUOTA_BYTES = 500L * 1024 * 1024 // 500 MB

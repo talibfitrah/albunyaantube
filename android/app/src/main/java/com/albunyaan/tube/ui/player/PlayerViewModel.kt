@@ -9,9 +9,11 @@ import com.albunyaan.tube.data.extractor.AudioTrack
 import com.albunyaan.tube.data.extractor.PlaybackSelection
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.VideoTrack
-import com.albunyaan.tube.player.PlayerRepository
+import com.albunyaan.tube.download.DownloadEntry
 import com.albunyaan.tube.download.DownloadRepository
 import com.albunyaan.tube.download.DownloadRequest
+import com.albunyaan.tube.player.PlayerRepository
+import com.albunyaan.tube.policy.EulaManager
 import com.google.android.exoplayer2.Player
 import com.google.android.exoplayer2.video.VideoSize
 import kotlinx.coroutines.CoroutineDispatcher
@@ -27,6 +29,7 @@ import kotlinx.coroutines.launch
 class PlayerViewModel(
     private val repository: PlayerRepository,
     private val downloadRepository: DownloadRepository,
+    private val eulaManager: EulaManager,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate
 ) : ViewModel() {
 
@@ -36,6 +39,7 @@ class PlayerViewModel(
     private val queue = mutableListOf<UpNextItem>()
     private var currentItem: UpNextItem? = null
     private var resolveJob: Job? = null
+    private var latestDownloads: List<DownloadEntry> = emptyList()
 
     private val _analyticsEvents = MutableSharedFlow<PlaybackAnalyticsEvent>(
         replay = 0,
@@ -52,6 +56,8 @@ class PlayerViewModel(
 
     init {
         hydrateQueue()
+        observeDownloads()
+        observeEulaAcceptance()
     }
 
     fun setAudioOnly(audioOnly: Boolean) {
@@ -85,8 +91,12 @@ class PlayerViewModel(
         }
     }
 
-    fun downloadCurrent() {
-        val item = _state.value.currentItem ?: return
+    fun downloadCurrent(): Boolean {
+        val state = _state.value
+        if (!state.isEulaAccepted) {
+            return false
+        }
+        val item = state.currentItem ?: return false
         val request = DownloadRequest(
             id = item.streamId + "_" + System.currentTimeMillis(),
             title = item.title,
@@ -94,6 +104,32 @@ class PlayerViewModel(
             audioOnly = _state.value.audioOnly
         )
         downloadRepository.enqueue(request)
+        return true
+    }
+
+    private fun observeDownloads() {
+        viewModelScope.launch(dispatcher) {
+            downloadRepository.downloads.collect { entries ->
+                latestDownloads = entries
+                updateState { state ->
+                    state.copy(currentDownload = findDownloadFor(state.currentItem, entries))
+                }
+            }
+        }
+    }
+
+    private fun observeEulaAcceptance() {
+        viewModelScope.launch(dispatcher) {
+            eulaManager.isAccepted.collect { accepted ->
+                updateState { it.copy(isEulaAccepted = accepted) }
+            }
+        }
+    }
+
+    fun acceptEula() {
+        viewModelScope.launch(dispatcher) {
+            eulaManager.setAccepted(true)
+        }
     }
 
     private fun hydrateQueue() {
@@ -106,7 +142,8 @@ class PlayerViewModel(
             it.copy(
                 currentItem = currentItem,
                 upNext = queue.toList(),
-                excludedItems = excluded
+                excludedItems = excluded,
+                currentDownload = findDownloadFor(currentItem, latestDownloads)
             )
         }
         publishAnalytics(
@@ -126,7 +163,8 @@ class PlayerViewModel(
         updateState { state ->
             state.copy(
                 currentItem = currentItem,
-                upNext = queue.toList()
+                upNext = queue.toList(),
+                currentDownload = findDownloadFor(currentItem, latestDownloads)
             )
         }
     }
@@ -162,6 +200,12 @@ class PlayerViewModel(
         }
     }
 
+    private fun findDownloadFor(item: UpNextItem?, entries: List<DownloadEntry>): DownloadEntry? {
+        return item?.let { current ->
+            entries.firstOrNull { it.request.videoId == current.streamId }
+        }
+    }
+
     private fun publishAnalytics(event: PlaybackAnalyticsEvent) {
         _analyticsEvents.tryEmit(event)
         updateState { it.copy(lastAnalyticsEvent = event) }
@@ -174,12 +218,13 @@ class PlayerViewModel(
     class Factory(
         private val repository: PlayerRepository,
         private val downloadRepository: DownloadRepository,
+        private val eulaManager: EulaManager,
         private val dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate
     ) : ViewModelProvider.Factory {
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             if (modelClass.isAssignableFrom(PlayerViewModel::class.java)) {
                 @Suppress("UNCHECKED_CAST")
-                return PlayerViewModel(repository, downloadRepository, dispatcher) as T
+                return PlayerViewModel(repository, downloadRepository, eulaManager, dispatcher) as T
             }
             throw IllegalArgumentException("Unknown ViewModel class")
         }
@@ -192,6 +237,8 @@ data class PlayerState(
     val currentItem: UpNextItem? = null,
     val upNext: List<UpNextItem> = emptyList(),
     val excludedItems: List<UpNextItem> = emptyList(),
+    val currentDownload: DownloadEntry? = null,
+    val isEulaAccepted: Boolean = false,
     val streamState: StreamState = StreamState.Idle,
     val lastAnalyticsEvent: PlaybackAnalyticsEvent? = null
 )

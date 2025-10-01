@@ -1,6 +1,7 @@
 package com.albunyaan.tube.ui.download
 
 import android.content.Context
+import androidx.fragment.app.testing.FragmentScenario
 import androidx.fragment.app.testing.launchFragmentInContainer
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ApplicationProvider
@@ -9,6 +10,7 @@ import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers.hasDescendant
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
 import androidx.test.espresso.matcher.ViewMatchers.withId
+import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.espresso.contrib.RecyclerViewActions
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
@@ -18,9 +20,13 @@ import com.albunyaan.tube.ServiceLocator
 import com.albunyaan.tube.analytics.ExtractorMetricsReporter
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.download.DownloadEntry
+import com.albunyaan.tube.download.DownloadFileMetadata
 import com.albunyaan.tube.download.DownloadRequest
 import com.albunyaan.tube.download.DownloadRepository
 import com.albunyaan.tube.download.DownloadStatus
+import java.util.concurrent.TimeUnit
+import android.text.format.Formatter
+import android.text.format.DateUtils
 import com.albunyaan.tube.download.DownloadStorage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -40,6 +46,7 @@ class DownloadsFragmentTest {
 
     private lateinit var fakeRepository: FakeDownloadRepository
     private lateinit var storage: DownloadStorage
+    private var scenario: FragmentScenario<DownloadsFragment>? = null
 
     @Before
     fun setUp() {
@@ -49,12 +56,14 @@ class DownloadsFragmentTest {
         ServiceLocator.setDownloadRepositoryForTesting(fakeRepository)
         ServiceLocator.setDownloadStorageForTesting(storage)
         ServiceLocator.setExtractorMetricsForTesting(NoopMetrics)
-        launchFragmentInContainer<DownloadsFragment>(themeResId = R.style.Theme_Albunyaan)
+        scenario = launchFragmentInContainer(themeResId = R.style.Theme_Albunyaan)
         InstrumentationRegistry.getInstrumentation().waitForIdleSync()
     }
 
     @After
     fun tearDown() {
+        scenario?.close()
+        scenario = null
         ServiceLocator.setDownloadRepositoryForTesting(null)
         ServiceLocator.setDownloadStorageForTesting(null)
         ServiceLocator.setExtractorMetricsForTesting(null)
@@ -125,6 +134,36 @@ class DownloadsFragmentTest {
 
         onView(withId(R.id.downloadList))
             .check(matches(hasDescendant(withContentDescription(expected))))
+    }
+
+    @Test
+    fun completedDownload_showsMetadataDetails() {
+        val metadata = DownloadFileMetadata(
+            sizeBytes = 5_000_000,
+            completedAtMillis = System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(10),
+            mimeType = "audio/mp4"
+        )
+        val entry = DownloadEntry(
+            request = DownloadRequest("download-3", "Metadata Video", "ysz5S6PUM-U", audioOnly = true),
+            status = DownloadStatus.COMPLETED,
+            progress = 100,
+            filePath = "/tmp/download-3.m4a",
+            metadata = metadata
+        )
+        fakeRepository.emit(listOf(entry))
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val size = Formatter.formatShortFileSize(context, metadata.sizeBytes)
+        val relative = DateUtils.getRelativeTimeSpanString(
+            metadata.completedAtMillis,
+            System.currentTimeMillis(),
+            DateUtils.MINUTE_IN_MILLIS
+        ).toString()
+        val expected = context.getString(R.string.download_details_format, size, relative)
+
+        onView(withId(R.id.downloadList))
+            .check(matches(hasDescendant(withText(expected))))
     }
 
     private class FakeDownloadRepository : DownloadRepository {

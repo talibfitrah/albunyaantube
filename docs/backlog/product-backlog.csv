@@ -37,8 +37,8 @@ Android Player,AND-PLAYER-01,Core playback & audio-only,"Detail ExoPlayer setup,
 Android Player,AND-PLAYER-02,MediaSession & PiP,"Plan background playback notification and PiP",0.5,8,,,,,,
 Android Player,AND-PLAYER-03,Up Next & analytics,"Specify Up Next queue and instrumentation",0.4,8,,,,,,
 Downloads,AND-DL-01,Download queue & storage,"Document WorkManager queue and storage quotas",0.5,9,,,,,,
-Downloads,AND-DL-02,EULA gate & policy,"Plan EULA acceptance gating for downloads",0.4,9,,,,,,
-Downloads,AND-DL-03,Offline QA & telemetry,"Build QA matrix and telemetry for offline playback",0.4,9,,,,,,
+Downloads,AND-DL-02,EULA gate & policy,"Plan EULA acceptance gating for downloads",0.4,9,in-progress,Android,,AC-DL-002,"android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerViewModelTest.kt",2025-10-08
+Downloads,AND-DL-03,Offline QA & telemetry,"Build QA matrix and telemetry for offline playback",0.4,9,in-progress,Android,,,"android/app/src/androidTest/java/com/albunyaan/tube/ui/download/DownloadsFragmentTest.kt",2025-10-08
 Hardening,HARDEN-01,Caching & performance,"Finalize caching strategy and perf budgets",0.5,10,,,,,,
 Hardening,HARDEN-02,Security sweep,"Execute pen-test checklist and mitigation plan",0.5,10,,,,,,
 Hardening,HARDEN-03,Observability & SLOs,"Define SLIs/SLOs and instrumentation",0.4,10,,,,,,

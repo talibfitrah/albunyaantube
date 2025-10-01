@@ -23,7 +23,7 @@ This document enumerates verifiable acceptance criteria linked to requirements, 
 | R4 | Localization quality | AC-I18N-001 | API responses honor `Accept-Language` (ar, nl) with fallback to `en`. | all localized endpoints | Backend Integration |
 | R4 |  | AC-I18N-002 | Android UI mirrors layout in Arabic including bottom nav order. | N/A | Android Localization |
 | R5 | Downloads policy | AC-DL-001 | Playlist download button disabled when `downloadPolicy=DISABLED_BY_POLICY`. | `/playlists/{id}` | Android Instrumentation |
-| R5 |  | AC-DL-002 | Offline playback blocked until EULA accepted; acceptance recorded. | `/auth/login` (EULA flag) | Android Instrumentation + Backend |
+| R5 |  | AC-DL-002 | Offline playback blocked until EULA accepted; acceptance recorded. | `/auth/login` (EULA flag) | PlayerViewModelTest + Android Instrumentation (device) + Backend |
 | R6 | Security | AC-SEC-001 | Access token expires 15m; refresh rotates and blacklists prior tokens. | `/auth/refresh` | Security Tests |
 | R6 |  | AC-SEC-002 | Rate limit exceeded returns 429 with localized error. | all endpoints | Performance/Security |
 | R7 | Performance | AC-PERF-001 | List payloads ≤80KB per page at limit=20. | `/videos`, `/channels`, `/playlists` | Performance Tests |

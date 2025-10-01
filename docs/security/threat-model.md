@@ -29,6 +29,7 @@ This document applies STRIDE analysis to Albunyaan Tube and enumerates required 
 - **Token Storage**: Admin SPA stores access token in memory, refresh token as HTTP-only secure cookie.
 - **Audit Log Integrity**: Use write-only Postgres table with partitioning; daily export to immutable storage (S3 with Object Lock).
 - **Download Policy Enforcement**: Backend verifies `downloadPolicy=ENABLED` before issuing download manifest; offline EULA acceptance recorded per device.
+- **Download Policy Enforcement**: Backend verifies `downloadPolicy=ENABLED` before issuing download manifest; offline EULA acceptance recorded per device and the Android client now blocks queueing WorkManager requests until the user accepts the dialog.
 - **Data Retention**: Prune audit logs >7 years; purge inactive downloads after 30 days.
 
 ## Incident Response

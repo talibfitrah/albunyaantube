@@ -14,6 +14,7 @@ interface ExtractorMetricsReporter {
 
     fun onDownloadStarted(downloadId: String, videoId: String) {}
     fun onDownloadProgress(downloadId: String, progress: Int) {}
+    fun onDownloadSizeKnown(downloadId: String, sizeBytes: Long) {}
     fun onDownloadCompleted(downloadId: String, filePath: String) {}
     fun onDownloadFailed(downloadId: String, throwable: Throwable) {}
 }
@@ -50,6 +51,10 @@ class LogExtractorMetricsReporter : ExtractorMetricsReporter {
 
     override fun onDownloadProgress(downloadId: String, progress: Int) {
         Log.d(TAG, "download_progress id=$downloadId progress=$progress")
+    }
+
+    override fun onDownloadSizeKnown(downloadId: String, sizeBytes: Long) {
+        Log.d(TAG, "download_size id=$downloadId bytes=$sizeBytes")
     }
 
     override fun onDownloadCompleted(downloadId: String, filePath: String) {
