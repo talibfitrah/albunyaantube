@@ -29,6 +29,7 @@ This strategy covers localization for English (`en`), Modern Standard Arabic (`a
 - **Resources**: Maintain base `values/strings.xml` with overlays in `values-ar/` and `values-nl/`, ensuring plural rules map to ICU message keys.
 - **Configuration Changes**: Wrap activities with `AppCompatDelegate.setApplicationLocales` to avoid full process restarts and ensure background services pick up locale changes.
 - **Testing Hooks**: Expose debug menu to force locale overrides and capture Paparazzi screenshots for QA (see [`../testing/test-strategy.md`](../testing/test-strategy.md#android-testing)).
+- **Onboarding Copy**: Slides and help modal content sourced from localized string resources. Content team reviews Arabic phrasing to keep mission/halal commitment consistent. Ensure RTL slide visuals mirror arrow indicators and skip CTA alignment.
 
 ## Content Entry Workflow
 1. Admin searches YouTube via `/admin/search` (see [`../api/openapi-draft.yaml`](../api/openapi-draft.yaml#paths-/admin/search)).

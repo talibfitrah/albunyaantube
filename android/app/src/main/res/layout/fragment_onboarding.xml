@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="24dp">
+
+    <!-- Placeholder carousel. Replace with ViewPager2 + indicator once project scaffolds. -->
+    <FrameLayout
+        android:id="@+id/onboardingCarousel"
+        android:layout_width="0dp"
+        android:layout_height="320dp"
+        android:background="@color/surfaceVariant"
+        android:contentDescription="@string/onboarding_carousel_content"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"/>
+
+    <LinearLayout
+        android:id="@+id/indicatorRow"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:layout_marginTop="16dp"
+        app:layout_constraintTop_toBottomOf="@id/onboardingCarousel"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <!-- Dot indicators represented as 8dp circles -->
+        <View
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:layout_margin="6dp"
+            android:background="@drawable/onboarding_indicator_inactive"/>
+
+        <View
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:layout_margin="6dp"
+            android:background="@drawable/onboarding_indicator_inactive"/>
+
+        <View
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:layout_margin="6dp"
+            android:background="@drawable/onboarding_indicator_active"/>
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/helpButton"
+        style="@style/Widget.MaterialComponents.Button.TextButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="?"
+        android:contentDescription="@string/onboarding_help"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"/>
+
+    <Button
+        android:id="@+id/primaryCta"
+        style="@style/Widget.MaterialComponents.Button"
+        android:layout_width="0dp"
+        android:layout_height="56dp"
+        android:text="@string/onboarding_continue"
+        app:layout_constraintTop_toBottomOf="@id/indicatorRow"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/skipButton"
+        android:layout_marginTop="32dp"/>
+
+    <Button
+        android:id="@+id/skipButton"
+        style="@style/Widget.MaterialComponents.Button.TextButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/onboarding_skip"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"/>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

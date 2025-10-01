@@ -149,6 +149,14 @@ meta:
 - Update risk register if nav complexity introduces edge cases.
 
 ### AND-SKEL-02 — Onboarding Carousel & Help Modal
+```yaml
+meta:
+  id: AND-SKEL-02
+  status: in-progress
+  owner: Android
+  depends: [AND-SKEL-01]
+  lastReviewed: 2025-10-04
+```
 **Estimate**: 3h.
 
 **Goals**

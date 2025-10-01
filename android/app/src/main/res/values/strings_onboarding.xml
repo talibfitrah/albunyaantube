@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="nav_home">Home</string>
+    <string name="nav_channels">Channels</string>
+    <string name="nav_playlists">Playlists</string>
+    <string name="nav_videos">Videos</string>
+    <string name="onboarding_carousel_content">Onboarding slides</string>
+    <string name="onboarding_help">Learn more about the onboarding content</string>
+    <string name="onboarding_continue">Continue</string>
+    <string name="onboarding_skip">Skip</string>
+</resources>
