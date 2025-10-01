@@ -625,6 +625,14 @@ meta:
 ## Phase 9 — Downloads & Offline
 
 ### AND-DL-01 — Download Queue & Storage Management
+```yaml
+meta:
+  id: AND-DL-01
+  status: done
+  owner: Android
+  depends: [AND-PLAYER-02]
+  lastReviewed: 2025-10-07
+```
 **Estimate**: 4h.
 
 **Goals**
@@ -646,10 +654,12 @@ meta:
 - Outline queue state machine, WorkManager jobs, and notification templates.
 - Document storage directory structure + cleanup policy.
 - Update backlog with analytics for download success/failure.
+- 2025-10-07: WorkManager-based `DownloadWorker`, notification channel, and queue repository scaffolded with pause/resume/cancel hooks and telemetry placeholders.
 
 **Reflect**
 - Identify legal/compliance considerations for storage retention.
 - Update risk register if storage quotas remain unresolved.
+- Documented placeholder download flow and noted need for storage quota policy + legal review.
 
 ### AND-DL-02 — EULA Gate & Policy Enforcement
 **Estimate**: 3h.

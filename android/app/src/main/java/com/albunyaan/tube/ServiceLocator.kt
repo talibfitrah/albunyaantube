@@ -4,10 +4,13 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
-import com.albunyaan.tube.analytics.ListMetricsReporter
-import com.albunyaan.tube.analytics.LogListMetricsReporter
 import com.albunyaan.tube.analytics.ExtractorMetricsReporter
 import com.albunyaan.tube.analytics.LogExtractorMetricsReporter
+import com.albunyaan.tube.analytics.ListMetricsReporter
+import com.albunyaan.tube.analytics.LogListMetricsReporter
+import com.albunyaan.tube.download.DefaultDownloadRepository
+import com.albunyaan.tube.download.DownloadRepository
+import com.albunyaan.tube.download.DownloadScheduler
 import com.albunyaan.tube.data.extractor.MetadataHydrator
 import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
 import com.albunyaan.tube.data.extractor.OkHttpDownloader
@@ -22,6 +25,7 @@ import com.albunyaan.tube.data.source.RetrofitContentService
 import com.albunyaan.tube.data.source.api.ContentApi
 import com.albunyaan.tube.player.DefaultPlayerRepository
 import com.albunyaan.tube.player.PlayerRepository
+import androidx.work.WorkManager
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import java.io.File
@@ -58,6 +62,10 @@ object ServiceLocator {
     private val pagingRepository: ContentPagingRepository by lazy { DefaultContentPagingRepository(contentService) }
     private val listMetricsReporter: ListMetricsReporter by lazy { LogListMetricsReporter() }
     private val playerRepository: PlayerRepository by lazy { DefaultPlayerRepository(extractorClient) }
+    private val downloadScheduler: DownloadScheduler by lazy { DownloadScheduler(workManager) }
+    private val downloadRepository: DownloadRepository by lazy {
+        DefaultDownloadRepository(workManager, downloadScheduler, scope)
+    }
 
     private val moshi: Moshi by lazy {
         Moshi.Builder()
@@ -82,6 +90,7 @@ object ServiceLocator {
     }
 
     private val contentApi: ContentApi by lazy { retrofit.create(ContentApi::class.java) }
+    private val workManager: WorkManager by lazy { WorkManager.getInstance(appContext) }
 
     fun init(context: Context) {
         if (!::appContext.isInitialized) {
@@ -96,4 +105,6 @@ object ServiceLocator {
     fun provideListMetricsReporter(): ListMetricsReporter = listMetricsReporter
 
     fun providePlayerRepository(): PlayerRepository = playerRepository
+
+    fun provideDownloadRepository(): DownloadRepository = downloadRepository
 }
