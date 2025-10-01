@@ -21,7 +21,7 @@ Admin UI MVP,ADMIN-MVP-06,Moderation queue UX polish,"Finalize queue interaction
 Admin UI MVP,ADMIN-MVP-07,Documentation & onboarding refresh,"Update README/runbooks/backlog for admin MVP",0.25,3,in-review,Product+Frontend,,AC-ADM-008|AC-ADM-009,"docs/runbooks/admin-onboarding.md; docs/runbooks/admin-login.md","2025-10-02"
 Admin UI MVP,ADMIN-MVP-08,Search & import workspace,"Design blended search results view with include/exclude toggles and bulk actions",0.6,3,,,,,,
 Admin UI MVP,ADMIN-MVP-09,Channel & playlist drawers,"Define tabbed drawer flows with per-item toggles and unsaved-change prompts",0.5,3,planned,TBD-frontend,ADMIN-MVP-08,,,"2025-09-30"
-Admin UI Complete,ADMIN-COMP-01,Exclusions editor,"Deliver exclusions CRUD UI aligned with UX spec",0.5,4,in-progress,Frontend,,,,"2025-10-03"
+Admin UI Complete,ADMIN-COMP-01,Exclusions editor,"Deliver exclusions CRUD UI aligned with UX spec",0.5,4,in-review,Frontend,,,,"2025-10-03"
 Admin UI Complete,ADMIN-COMP-02,User management & audit viewer,"Ship admin user CRUD and audit table UI",0.5,4,,,,,,
 Admin UI Complete,ADMIN-COMP-03,Accessibility & localization hardening,"Execute WCAG + RTL sweeps for admin",0.4,4,DONE,Product+Frontend,,AC-A11Y-002|AC-I18N-003,"docs/ux/ui-spec.md; docs/i18n/strategy.md; docs/testing/test-strategy.md","2025-10-03"
 Android Skeleton,AND-SKEL-01,Navigation graph & bottom nav,"Plan nav graph, bottom navigation, state retention",0.5,5,,,,,,
