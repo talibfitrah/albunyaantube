@@ -291,6 +291,14 @@ meta:
 - Note backend dependency for fast filtered queries.
 
 ### AND-LISTS-03 — Error & Loading States + Metrics
+```yaml
+meta:
+  id: AND-LISTS-03
+  status: in-progress
+  owner: Android
+  depends: [AND-LISTS-02]
+  lastReviewed: 2025-10-04
+```
 **Estimate**: 2.5h.
 
 **Goals**

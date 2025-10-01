@@ -10,6 +10,7 @@ This strategy covers localization for English (`en`), Modern Standard Arabic (`a
 - Android uses string resources with `values/`, `values-ar/`, `values-nl/`; fonts include Arabic shaping support (Noto Naskh Arabic).
 - Admin SPA uses `vue-i18n` with lazy-loaded locale chunks; fallback to English.
 - Android filter labels replicate admin wording. Ensure `values-ar/strings.xml` uses localized phrasing for category/length/date/sort filters and that the “Clear filters” action conveys resetting state. Include QA checklist to confirm RTL chip row ordering.
+- Error/empty copy must be localized; Arabic strings should provide culturally appropriate call-to-actions (e.g., “حاول مرة أخرى”). Footer freshness text should use locale-aware numerals and relative time phrasing.
 
 ## Pluralization & ICU
 - Use ICU plurals for counts (`{count, plural, one {...} other {...}}`) respecting each locale's rules (Arabic has 6 plural forms).

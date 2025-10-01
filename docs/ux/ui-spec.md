@@ -64,6 +64,13 @@ Each screen references the mockups. Layout measurements assume 360dp width basel
 - **Badges**: When filters applied, show count badge on the filter chip (e.g., “Length • 2–20 min”). This mirrors the admin registry filter semantics.
 - **Accessibility**: Filter dropdowns open modal bottom sheets; focus returns to triggering chip after dismissal. Ensure chips support keyboard navigation with `role="tab"` semantics.
 
+#### Loading & Error States (Phase 6 planning)
+- **Skeletons**: Each tab displays 6 shimmer cards matching card layout (list vs. grid). Skeletons hide from accessibility tree (`android:importantForAccessibility="no"`).
+- **Empty**: If API returns zero results after filters apply, show `EmptyState` with localized message and CTA to clear filters.
+- **Error**: Inline error card with retry button per tab. Message references filter context (e.g., “Unable to load videos. Check your connection or adjust filters.”). Toasts used only for transient errors.
+- **Metrics banner**: Footer text shows page size (ex: “Showing 20 of 20 items”) and surfaces cache freshness (“Last refreshed 2m ago”).
+- **Offline**: Provide “Go offline” state that shows cached content when available, else offline empty state with instructions to reconnect.
+
 ### Channels Tab (`5_channes_list_screen.png`)
 - List items: avatar 56dp circle, left margin 24dp, 16dp spacing to text.
 - Metadata: subscriber count (Body), category tags (chips) below.
