@@ -6,6 +6,7 @@ import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.VideoTrack
 import com.albunyaan.tube.player.PlayerRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -48,9 +49,17 @@ class PlayerViewModelTest {
         }
     }
 
+    private val downloadRepository = object : com.albunyaan.tube.download.DownloadRepository {
+        override val downloads = MutableStateFlow<List<com.albunyaan.tube.download.DownloadEntry>>(emptyList())
+        override fun enqueue(request: com.albunyaan.tube.download.DownloadRequest) {}
+        override fun pause(requestId: String) {}
+        override fun resume(requestId: String) {}
+        override fun cancel(requestId: String) {}
+    }
+
     @Test
     fun `hydrateQueue picks first playable item and filters exclusions`() = scope.runTest {
-        val viewModel = PlayerViewModel(repository, testDispatcher)
+        val viewModel = PlayerViewModel(repository, downloadRepository, testDispatcher)
         advanceUntilIdle()
         val state = viewModel.state.value
 
@@ -62,7 +71,7 @@ class PlayerViewModelTest {
 
     @Test
     fun `markCurrentComplete advances to next item and emits event`() = scope.runTest {
-        val viewModel = PlayerViewModel(repository, testDispatcher)
+        val viewModel = PlayerViewModel(repository, downloadRepository, testDispatcher)
         advanceUntilIdle()
 
         val initialState = viewModel.state.value
@@ -84,7 +93,7 @@ class PlayerViewModelTest {
 
     @Test
     fun `playItem moves selection and re-queues previous current`() = scope.runTest {
-        val viewModel = PlayerViewModel(repository, testDispatcher)
+        val viewModel = PlayerViewModel(repository, downloadRepository, testDispatcher)
         advanceUntilIdle()
 
         val initialCurrent = requireNotNull(viewModel.state.value.currentItem)
@@ -101,7 +110,7 @@ class PlayerViewModelTest {
 
     @Test
     fun `setAudioOnly ignores duplicate state`() = scope.runTest {
-        val viewModel = PlayerViewModel(repository, testDispatcher)
+        val viewModel = PlayerViewModel(repository, downloadRepository, testDispatcher)
         advanceUntilIdle()
 
         viewModel.setAudioOnly(true)

@@ -13,5 +13,6 @@ data class DownloadEntry(
     val request: DownloadRequest,
     val status: DownloadStatus,
     val progress: Int = 0,
-    val message: String? = null
+    val message: String? = null,
+    val filePath: String? = null
 )

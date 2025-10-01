@@ -44,7 +44,7 @@ class DefaultDownloadRepository(
     override fun enqueue(request: DownloadRequest) {
         val workId = scheduler.schedule(request)
         workIds[request.id] = workId
-        updateEntry(request) { it.copy(status = DownloadStatus.QUEUED, progress = 0, message = null) }
+        updateEntry(request) { it.copy(status = DownloadStatus.QUEUED, progress = 0, message = null, filePath = null) }
         metrics.onDownloadStarted(request.id, request.videoId)
         observeWork(workId, request)
     }
@@ -53,7 +53,7 @@ class DefaultDownloadRepository(
         val workId = workIds[requestId] ?: return
         paused += requestId
         workManager.cancelWorkById(workId)
-        updateEntry(requestId) { it.copy(status = DownloadStatus.PAUSED) }
+        updateEntry(requestId) { it.copy(status = DownloadStatus.PAUSED, message = null) }
     }
 
     override fun resume(requestId: String) {
@@ -73,7 +73,7 @@ class DefaultDownloadRepository(
         if (entry != null) {
             storage.delete(entry.request.id, entry.request.audioOnly)
         }
-        updateEntry(requestId) { it.copy(status = DownloadStatus.CANCELLED, progress = 0) }
+        updateEntry(requestId) { it.copy(status = DownloadStatus.CANCELLED, progress = 0, filePath = null) }
     }
 
     private fun observeWork(workId: UUID, request: DownloadRequest) {
@@ -92,7 +92,7 @@ class DefaultDownloadRepository(
                             workIds.remove(request.id)
                             val filePath = info.outputData.getString(KEY_FILE_PATH)
                             updateEntry(request) {
-                                it.copy(status = DownloadStatus.COMPLETED, progress = 100)
+                                it.copy(status = DownloadStatus.COMPLETED, progress = 100, filePath = filePath)
                             }
                             if (filePath != null) {
                                 metrics.onDownloadCompleted(request.id, filePath)
@@ -101,7 +101,7 @@ class DefaultDownloadRepository(
                         WorkInfo.State.FAILED -> {
                             workIds.remove(request.id)
                             updateEntry(request) {
-                                it.copy(status = DownloadStatus.FAILED, message = null)
+                                it.copy(status = DownloadStatus.FAILED, message = null, filePath = null)
                             }
                             metrics.onDownloadFailed(request.id, IllegalStateException("Download failed"))
                         }
@@ -110,7 +110,7 @@ class DefaultDownloadRepository(
                             if (paused.contains(request.id)) {
                                 updateEntry(request) { it.copy(status = DownloadStatus.PAUSED) }
                             } else {
-                                updateEntry(request) { it.copy(status = DownloadStatus.CANCELLED) }
+                                updateEntry(request) { it.copy(status = DownloadStatus.CANCELLED, filePath = null) }
                                 metrics.onDownloadFailed(request.id, IllegalStateException("Cancelled"))
                             }
                         }

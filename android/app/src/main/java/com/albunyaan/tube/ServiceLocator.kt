@@ -43,6 +43,13 @@ object ServiceLocator {
     private lateinit var appContext: Context
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    @Volatile
+    private var overrideDownloadRepository: DownloadRepository? = null
+    @Volatile
+    private var overrideDownloadStorage: DownloadStorage? = null
+    @Volatile
+    private var overrideMetrics: ExtractorMetricsReporter? = null
+
     private val dataStore: DataStore<Preferences> by lazy {
         PreferenceDataStoreFactory.create(scope = scope) {
             File(appContext.filesDir, "filters.preferences_pb")
@@ -108,11 +115,23 @@ object ServiceLocator {
 
     fun providePlayerRepository(): PlayerRepository = playerRepository
 
-    fun provideDownloadRepository(): DownloadRepository = downloadRepository
+    fun provideDownloadRepository(): DownloadRepository = overrideDownloadRepository ?: downloadRepository
 
-    fun provideExtractorMetricsReporter(): ExtractorMetricsReporter = extractorMetrics
+    fun provideExtractorMetricsReporter(): ExtractorMetricsReporter = overrideMetrics ?: extractorMetrics
 
-    fun provideDownloadStorage(): DownloadStorage = downloadStorage
+    fun provideDownloadStorage(): DownloadStorage = overrideDownloadStorage ?: downloadStorage
+
+    fun setDownloadRepositoryForTesting(repository: DownloadRepository?) {
+        overrideDownloadRepository = repository
+    }
+
+    fun setDownloadStorageForTesting(storage: DownloadStorage?) {
+        overrideDownloadStorage = storage
+    }
+
+    fun setExtractorMetricsForTesting(metrics: ExtractorMetricsReporter?) {
+        overrideMetrics = metrics
+    }
 
     private const val DOWNLOAD_QUOTA_BYTES = 500L * 1024 * 1024 // 500 MB
 }

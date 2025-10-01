@@ -10,6 +10,8 @@ import com.albunyaan.tube.data.extractor.PlaybackSelection
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.VideoTrack
 import com.albunyaan.tube.player.PlayerRepository
+import com.albunyaan.tube.download.DownloadRepository
+import com.albunyaan.tube.download.DownloadRequest
 import com.google.android.exoplayer2.Player
 import com.google.android.exoplayer2.video.VideoSize
 import kotlinx.coroutines.CoroutineDispatcher
@@ -24,6 +26,7 @@ import kotlinx.coroutines.launch
 
 class PlayerViewModel(
     private val repository: PlayerRepository,
+    private val downloadRepository: DownloadRepository,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate
 ) : ViewModel() {
 
@@ -80,6 +83,17 @@ class PlayerViewModel(
         } ?: run {
             updateState { state -> state.copy(streamState = StreamState.Idle) }
         }
+    }
+
+    fun downloadCurrent() {
+        val item = _state.value.currentItem ?: return
+        val request = DownloadRequest(
+            id = item.streamId + "_" + System.currentTimeMillis(),
+            title = item.title,
+            videoId = item.streamId,
+            audioOnly = _state.value.audioOnly
+        )
+        downloadRepository.enqueue(request)
     }
 
     private fun hydrateQueue() {
@@ -159,12 +173,13 @@ class PlayerViewModel(
 
     class Factory(
         private val repository: PlayerRepository,
+        private val downloadRepository: DownloadRepository,
         private val dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate
     ) : ViewModelProvider.Factory {
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             if (modelClass.isAssignableFrom(PlayerViewModel::class.java)) {
                 @Suppress("UNCHECKED_CAST")
-                return PlayerViewModel(repository, dispatcher) as T
+                return PlayerViewModel(repository, downloadRepository, dispatcher) as T
             }
             throw IllegalArgumentException("Unknown ViewModel class")
         }

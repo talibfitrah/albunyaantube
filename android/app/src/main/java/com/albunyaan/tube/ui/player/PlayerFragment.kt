@@ -32,7 +32,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private var binding: FragmentPlayerBinding? = null
     private var player: ExoPlayer? = null
     private val viewModel: PlayerViewModel by viewModels {
-        PlayerViewModel.Factory(ServiceLocator.providePlayerRepository())
+        PlayerViewModel.Factory(
+            ServiceLocator.providePlayerRepository(),
+            ServiceLocator.provideDownloadRepository()
+        )
     }
     private val upNextAdapter = UpNextAdapter { item -> viewModel.playItem(item) }
     private var preparedStreamKey: Pair<String, Boolean>? = null
@@ -46,6 +49,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         }
         binding.completeButton.setOnClickListener {
             viewModel.markCurrentComplete()
+        }
+        binding.downloadButton.setOnClickListener {
+            viewModel.downloadCurrent()
         }
         setupUpNextList(binding)
         setupPlayer(binding)
@@ -96,6 +102,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     getString(R.string.player_current_item, it.title)
                 } ?: getString(R.string.player_no_current_item)
                 binding.completeButton.isEnabled = state.streamState is StreamState.Ready
+                binding.downloadButton.isEnabled = currentItem != null
                 upNextAdapter.submitList(state.upNext)
                 binding.upNextList.isVisible = state.upNext.isNotEmpty()
                 binding.upNextEmpty.isVisible = state.upNext.isEmpty()

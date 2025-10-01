@@ -33,6 +33,11 @@
         android:label="Videos" />
 
     <fragment
+        android:id="@+id/downloadsFragment"
+        android:name="com.albunyaan.tube.ui.download.DownloadsFragment"
+        android:label="Downloads" />
+
+    <fragment
         android:id="@+id/channelDetailFragment"
         android:name="com.albunyaan.tube.ui.detail.ChannelDetailFragment"
         android:label="Channel Detail">
