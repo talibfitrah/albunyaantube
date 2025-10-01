@@ -440,6 +440,14 @@ meta:
 ## Phase 8 — Player & Background Audio
 
 ### AND-PLAYER-01 — Core Playback & Audio-Only Toggle
+```yaml
+meta:
+  id: AND-PLAYER-01
+  status: done
+  owner: Android
+  depends: [AND-DETAILS-03]
+  lastReviewed: 2025-10-05
+```
 **Estimate**: 4h.
 
 **Goals**
@@ -465,6 +473,7 @@ meta:
 **Reflect**
 - Note open questions around DRM/licensing; add to risk register.
 - Capture metrics requirements (rebuffer ratio, playback errors) for Phase 10.
+- 2025-10-05: ExoPlayer scaffold with audio-only toggle and status messaging lands; playback awaits real media sources from backend.
 
 ### AND-PLAYER-02 — MediaSession, Notifications & PiP
 **Estimate**: 3.5h.

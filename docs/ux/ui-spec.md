@@ -106,6 +106,7 @@ Each screen references the mockups. Layout measurements assume 360dp width basel
 - Below stage: title (Body bold), speaker (Caption), control row (Bookmark, Share, Download, Audio) spaced 16dp.
 - Up Next list shows 3 items with thumbnails 96x54dp, inline play icon overlay.
 - Background audio toggle persists state via shared preferences.
+- Android scaffold (2025-10-05): Placeholder ExoPlayer screen with audio-only switch and status text; awaiting real stream metadata and control chrome.
 
 ## Admin Console UX (Phase 3+)
 - Navigation sidebar (left) with sections: Dashboard, Registry (Channels, Playlists, Videos), Moderation, Users, Audit.
