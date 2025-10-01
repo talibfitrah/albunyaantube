@@ -92,7 +92,6 @@ function handleSelect(tab: TabDefinition) {
 .tab-button:focus-visible {
   color: var(--color-icon-active);
   background: var(--color-surface-alt);
-  outline: none;
   box-shadow: var(--shadow-focus);
 }
 

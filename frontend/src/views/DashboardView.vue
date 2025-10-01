@@ -245,7 +245,6 @@ header p {
 .timeframe-button:hover,
 .timeframe-button:focus-visible {
   background: var(--color-surface-alt);
-  outline: none;
 }
 
 .timeframe-button.active {
@@ -303,7 +302,6 @@ header p {
 .retry:hover,
 .retry:focus-visible {
   background: var(--color-accent);
-  outline: none;
 }
 
 .cards {

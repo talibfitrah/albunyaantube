@@ -169,7 +169,6 @@ function clearQuery() {
   background: transparent;
   padding: 0.5rem 0.75rem;
   font-size: 0.95rem;
-  outline: none;
   min-width: 220px;
   color: var(--color-text-primary);
 }

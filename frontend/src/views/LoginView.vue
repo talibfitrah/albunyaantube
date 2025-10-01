@@ -153,8 +153,7 @@ input {
   transition: border 0.2s ease, box-shadow 0.2s ease;
 }
 
-input:focus {
-  outline: none;
+input:focus-visible {
   border-color: var(--color-brand);
   box-shadow: var(--shadow-focus);
 }
