@@ -5,7 +5,8 @@
     android:layout_height="wrap_content"
     android:paddingStart="16dp"
     android:paddingEnd="16dp"
-    android:overScrollMode="never">
+    android:overScrollMode="never"
+    android:layoutDirection="locale">
 
     <com.google.android.material.chip.ChipGroup
         android:id="@+id/filterChipGroup"

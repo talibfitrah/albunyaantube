@@ -1,19 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
     <item
-        android:id="@+id/menu_home"
+        android:id="@+id/homeFragment"
         android:icon="@drawable/ic_home"
         android:title="@string/nav_home"/>
     <item
-        android:id="@+id/menu_channels"
+        android:id="@+id/channelsFragment"
         android:icon="@drawable/ic_channels"
         android:title="@string/nav_channels"/>
     <item
-        android:id="@+id/menu_playlists"
+        android:id="@+id/playlistsFragment"
         android:icon="@drawable/ic_playlists"
         android:title="@string/nav_playlists"/>
     <item
-        android:id="@+id/menu_videos"
+        android:id="@+id/videosFragment"
         android:icon="@drawable/ic_videos"
         android:title="@string/nav_videos"/>
 </menu>
