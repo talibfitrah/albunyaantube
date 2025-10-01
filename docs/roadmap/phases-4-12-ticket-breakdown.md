@@ -578,12 +578,12 @@ meta:
 - Document repository integration points (PagingSource/RemoteMediator) and caching TTL.
 - Specify retry/backoff and user-visible messaging for failures.
 - Update backlog with telemetry for extractor failures and list hydration timings.
-- 2025-10-06: `MetadataHydrator` and `StubExtractorClient` attach NewPipeExtractor scaffolding to Retrofit content fetches, merging Albunyaan overrides with hydrated metadata while defaulting to fallback on extractor errors.
+- 2025-10-07: `NewPipeExtractorClient` replaces the stub, wiring OkHttp-backed NewPipeExtractor with in-memory caching + telemetry so list hydration reuses metadata and surfaces failures without blocking UI.
 
 **Reflect**
 - Record device performance findings and adjust cache policy if needed.
 - Update risk register if extractor updates require app-side compatibility work.
-- Documented hydration approach and tests so backend payloads can omit duplicated metadata once extractor wiring is live.
+- Documented hydration approach, cache eviction strategy, and tests so backend payloads can omit duplicated metadata once extractor wiring is live.
 
 ### AND-EXTRACT-02 — Extractor Stream Resolution for Playback
 ```yaml

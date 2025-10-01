@@ -6,9 +6,12 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import com.albunyaan.tube.analytics.ListMetricsReporter
 import com.albunyaan.tube.analytics.LogListMetricsReporter
-import com.albunyaan.tube.data.extractor.ExtractorClient
+import com.albunyaan.tube.analytics.ExtractorMetricsReporter
+import com.albunyaan.tube.analytics.LogExtractorMetricsReporter
 import com.albunyaan.tube.data.extractor.MetadataHydrator
-import com.albunyaan.tube.data.extractor.StubExtractorClient
+import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
+import com.albunyaan.tube.data.extractor.OkHttpDownloader
+import com.albunyaan.tube.data.extractor.cache.MetadataCache
 import com.albunyaan.tube.data.filters.FilterManager
 import com.albunyaan.tube.data.paging.ContentPagingRepository
 import com.albunyaan.tube.data.paging.DefaultContentPagingRepository
@@ -40,7 +43,12 @@ object ServiceLocator {
     }
 
     private val filterManager: FilterManager by lazy { FilterManager(dataStore, scope) }
-    private val extractorClient: ExtractorClient by lazy { StubExtractorClient() }
+    private val extractorMetrics: ExtractorMetricsReporter by lazy { LogExtractorMetricsReporter() }
+    private val extractorCache: MetadataCache by lazy { MetadataCache(ttlMillis = 15 * 60 * 1000L, maxEntriesPerBucket = 200) }
+    private val extractorDownloader: OkHttpDownloader by lazy { OkHttpDownloader(httpClient) }
+    private val extractorClient by lazy {
+        NewPipeExtractorClient(extractorDownloader, extractorCache, extractorMetrics)
+    }
     private val metadataHydrator: MetadataHydrator by lazy { MetadataHydrator(extractorClient) }
     private val retrofitContentService: ContentService by lazy { RetrofitContentService(contentApi, metadataHydrator) }
     private val fakeContentService: ContentService by lazy { FakeContentService() }
