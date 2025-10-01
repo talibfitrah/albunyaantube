@@ -36,4 +36,8 @@
     <string name="detail_excluded_banner">This item is currently unavailable due to policy restrictions.</string>
     <string name="player_status_audio_only">Playing audio-only stream.</string>
     <string name="player_status_video_playing">Playing video stream.</string>
+    <string name="player_notification_channel_name">Playback</string>
+    <string name="player_notification_channel_desc">Controls playback while the app is in the background.</string>
+    <string name="player_action_enter_pip">Picture-in-picture</string>
+    <string name="player_action_play_pause">Play/Pause</string>
 </resources>

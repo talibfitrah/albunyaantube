@@ -1,12 +1,18 @@
 package com.albunyaan.tube.ui.player
 
+import android.app.PictureInPictureParams
+import android.os.Build
 import android.os.Bundle
+import android.view.Menu
+import android.view.MenuInflater
+import android.view.MenuItem
 import android.view.View
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import com.albunyaan.tube.R
 import com.albunyaan.tube.databinding.FragmentPlayerBinding
+import com.albunyaan.tube.player.PlaybackService
 import com.google.android.exoplayer2.ExoPlayer
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -23,6 +29,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        setHasOptionsMenu(true)
         val binding = FragmentPlayerBinding.bind(view).also { binding = it }
         binding.audioOnlyToggle.setOnCheckedChangeListener { _, isChecked ->
             viewModel.setAudioOnly(isChecked)
@@ -33,6 +40,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
     override fun onStart() {
         super.onStart()
+        PlaybackService.start(requireContext())
         player?.playWhenReady = true
     }
 
@@ -65,6 +73,32 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 }
                 // Future: apply real track selection when backend streams available.
             }
+        }
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu, inflater: MenuInflater) {
+        inflater.inflate(R.menu.player_menu, menu)
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_enter_pip -> {
+                enterPictureInPicture()
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean) {
+        binding?.audioOnlyToggle?.isEnabled = !isInPictureInPictureMode
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode)
+    }
+
+    private fun enterPictureInPicture() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val params = PictureInPictureParams.Builder().build()
+            requireActivity().enterPictureInPictureMode(params)
         }
     }
 }

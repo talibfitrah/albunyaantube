@@ -476,6 +476,14 @@ meta:
 - 2025-10-05: ExoPlayer scaffold with audio-only toggle and status messaging lands; playback awaits real media sources from backend.
 
 ### AND-PLAYER-02 — MediaSession, Notifications & PiP
+```yaml
+meta:
+  id: AND-PLAYER-02
+  status: done
+  owner: Android
+  depends: [AND-PLAYER-01]
+  lastReviewed: 2025-10-05
+```
 **Estimate**: 3.5h.
 
 **Goals**
@@ -501,6 +509,7 @@ meta:
 **Reflect**
 - Identify OEM-specific quirks (e.g., Xiaomi background restrictions) for QA.
 - Update risk register with MediaSession compatibility concerns.
+- 2025-10-05: Foreground service + MediaSession skeleton, notification channel, and PiP affordance added; awaiting real playback controls/analytics.
 
 ### AND-PLAYER-03 — Up Next & Analytics Instrumentation
 **Estimate**: 3h.
