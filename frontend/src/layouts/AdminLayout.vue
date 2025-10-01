@@ -113,7 +113,7 @@ function handleSkip() {
   transition: top 0.2s ease;
 }
 
-.skip-link:focus {
+.skip-link:focus-visible {
   top: 1rem;
 }
 
@@ -152,9 +152,16 @@ nav {
 }
 
 .nav-item:hover,
-.nav-item.active {
+.nav-item.active,
+.nav-item:focus-visible {
   background: var(--color-brand-soft);
   color: var(--color-text-inverse);
+}
+
+.nav-item:focus-visible {
+  outline: 2px solid var(--color-success);
+  outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
 }
 
 .content {
@@ -200,8 +207,8 @@ nav {
   min-width: 8rem;
 }
 
-.locale-select:focus {
-  outline: 2px solid var(--color-brand);
+.locale-select:focus-visible {
+  outline: 2px solid var(--color-success);
   outline-offset: 2px;
 }
 

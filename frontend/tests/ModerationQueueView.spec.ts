@@ -153,4 +153,32 @@ describe('ModerationQueueView', () => {
     const refreshedRejectButton = await screen.findByRole('button', { name: /reject/i });
     await waitFor(() => expect(refreshedRejectButton).toHaveFocus());
   });
+
+  it('traps focus within the reject dialog when tabbing', async () => {
+    setupRender();
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+
+    const rejectButton = await screen.findByRole('button', { name: /reject/i });
+    await fireEvent.click(rejectButton);
+
+    const reasonField = await screen.findByLabelText(/reason/i);
+
+    await waitFor(() => expect(reasonField).toHaveFocus());
+
+    const submitButton = await screen.findByRole('button', { name: /submit/i });
+    const cancelButton = screen.getByRole('button', { name: /cancel/i });
+
+    await fireEvent.keyDown(reasonField, { key: 'Tab', shiftKey: true });
+    await waitFor(() => expect(submitButton).toHaveFocus());
+
+    await fireEvent.keyDown(submitButton, { key: 'Tab', shiftKey: true });
+    await waitFor(() => expect(cancelButton).toHaveFocus());
+
+    await fireEvent.keyDown(cancelButton, { key: 'Tab' });
+    await waitFor(() => expect(submitButton).toHaveFocus());
+
+    await fireEvent.keyDown(submitButton, { key: 'Tab' });
+    await waitFor(() => expect(reasonField).toHaveFocus());
+  });
 });

@@ -86,3 +86,9 @@ a {
 button {
   font: inherit;
 }
+
+:where(button, [role="button"], a[href], input, select, textarea):not([disabled]):focus-visible {
+  outline: 2px solid var(--color-success);
+  outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
+}

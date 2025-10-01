@@ -508,25 +508,39 @@ function handleModalKeydown(event: KeyboardEvent) {
   const focusable = getModalFocusableElements();
   if (focusable.length === 0) {
     event.preventDefault();
+    rejectDialogRef.value?.focus();
     return;
   }
 
   const first = focusable[0];
   const last = focusable[focusable.length - 1];
   const active = document.activeElement as HTMLElement | null;
+  const isActiveInside = active ? focusable.includes(active) : false;
 
-  if (event.shiftKey) {
-    if (!active || active === first) {
-      event.preventDefault();
-      last.focus();
-    }
+  if (!isActiveInside) {
+    event.preventDefault();
+    (event.shiftKey ? last : first).focus();
     return;
   }
 
-  if (!active || active === last) {
+  const currentIndex = focusable.indexOf(active);
+
+  if (event.shiftKey) {
     event.preventDefault();
-    first.focus();
+    if (currentIndex <= 0) {
+      last.focus();
+      return;
+    }
+    focusable[currentIndex - 1]?.focus();
+    return;
   }
+
+  event.preventDefault();
+  if (currentIndex === focusable.length - 1) {
+    first.focus();
+    return;
+  }
+  focusable[currentIndex + 1]?.focus();
 }
 </script>
 
@@ -597,6 +611,11 @@ function handleModalKeydown(event: KeyboardEvent) {
   background: var(--color-brand);
   color: var(--color-text-inverse);
   box-shadow: 0 10px 25px -18px var(--color-overlay);
+}
+
+.filter-option:focus-visible {
+  background: var(--color-brand-soft);
+  color: var(--color-text-primary);
 }
 
 .action-error {
@@ -776,6 +795,10 @@ td {
   background: var(--color-accent);
 }
 
+.approve:focus-visible {
+  background: var(--color-accent);
+}
+
 .reject {
   background: var(--color-danger-soft);
   color: var(--color-danger);
@@ -787,6 +810,11 @@ td {
 }
 
 .reject:not(:disabled):hover {
+  background: var(--color-danger);
+  color: var(--color-text-inverse);
+}
+
+.reject:focus-visible {
   background: var(--color-danger);
   color: var(--color-text-inverse);
 }
@@ -859,6 +887,10 @@ td {
   cursor: not-allowed;
 }
 
+.retry:focus-visible {
+  background: var(--color-accent);
+}
+
 .table-footer {
   display: flex;
   align-items: center;
@@ -889,6 +921,10 @@ td {
 }
 
 .pager:not(:disabled):hover {
+  background: var(--color-accent);
+}
+
+.pager:focus-visible {
   background: var(--color-accent);
 }
 
@@ -964,6 +1000,10 @@ td {
   cursor: not-allowed;
 }
 
+.modal-secondary:focus-visible {
+  background: var(--color-surface-alt);
+}
+
 .modal-primary {
   background: var(--color-brand);
   color: var(--color-text-inverse);
@@ -975,6 +1015,10 @@ td {
 }
 
 .modal-primary:not(:disabled):hover {
+  background: var(--color-accent);
+}
+
+.modal-primary:focus-visible {
   background: var(--color-accent);
 }
 
