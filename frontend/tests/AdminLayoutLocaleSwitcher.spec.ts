@@ -91,4 +91,37 @@ describe('AdminLayout locale switcher', () => {
       expect(window.localStorage.getItem(STORAGE_KEY)).toBe('ar');
     });
   });
+
+  it('moves focus to main content when using skip link', async () => {
+    const pinia = createPinia();
+    const i18n = createI18n({ legacy: false, locale: 'en', messages });
+    const router = buildRouter();
+    router.push({ name: 'dashboard' });
+    await router.isReady();
+
+    const preferencesStore = usePreferencesStore(pinia);
+    preferencesStore.initialize();
+    watch(
+      () => preferencesStore.locale,
+      (value) => {
+        i18n.global.locale.value = value;
+      },
+      { immediate: true }
+    );
+
+    render(AdminLayout, {
+      global: {
+        plugins: [pinia, i18n, router]
+      }
+    });
+
+    const skipLink = screen.getByRole('link', { name: /skip to main content/i });
+    const main = screen.getByRole('main');
+
+    await fireEvent.click(skipLink);
+
+    await waitFor(() => {
+      expect(main).toHaveFocus();
+    });
+  });
 });

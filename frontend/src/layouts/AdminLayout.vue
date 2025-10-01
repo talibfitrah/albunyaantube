@@ -1,4 +1,7 @@
 <template>
+  <a class="skip-link" href="#main-content" @click.prevent="handleSkip">
+    {{ t('layout.skipToContent') }}
+  </a>
   <div class="layout">
     <aside class="sidebar">
       <div class="brand">Albunyaan Tube</div>
@@ -40,7 +43,7 @@
           </button>
         </div>
       </header>
-      <main>
+      <main id="main-content" ref="mainRef" tabindex="-1">
         <RouterView />
       </main>
     </div>
@@ -48,7 +51,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router';
 import { storeToRefs } from 'pinia';
@@ -62,6 +65,7 @@ const router = useRouter();
 const authStore = useAuthStore();
 const preferencesStore = usePreferencesStore();
 const { locale } = storeToRefs(preferencesStore);
+const mainRef = ref<HTMLElement | null>(null);
 
 const localeOptions = computed(() =>
   preferencesStore.availableLocales.map((code) => ({
@@ -88,9 +92,31 @@ function onLocaleChange(event: Event) {
   const target = event.target as HTMLSelectElement;
   preferencesStore.setLocale(target.value as LocaleCode);
 }
+
+function handleSkip() {
+  if (mainRef.value) {
+    mainRef.value.focus();
+  }
+}
 </script>
 
 <style scoped>
+.skip-link {
+  position: absolute;
+  left: 1rem;
+  top: -3rem;
+  background: var(--color-brand);
+  color: var(--color-text-inverse);
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  z-index: 1000;
+  transition: top 0.2s ease;
+}
+
+.skip-link:focus {
+  top: 1rem;
+}
+
 .layout {
   display: grid;
   grid-template-columns: 240px 1fr;

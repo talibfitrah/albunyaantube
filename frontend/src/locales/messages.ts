@@ -24,6 +24,9 @@ export const messages = {
       playlists: 'Playlists',
       videos: 'Videos'
     },
+    layout: {
+      skipToContent: 'Skip to main content'
+    },
     dashboard: {
       heading: 'Salaam, welcome back',
       subtitle: 'Review the latest moderation activity and registry health.',
@@ -251,6 +254,9 @@ export const messages = {
       playlists: 'قوائم التشغيل',
       videos: 'الفيديوهات'
     },
+    layout: {
+      skipToContent: 'تخطي إلى المحتوى الرئيسي'
+    },
     dashboard: {
       heading: 'سلام عليكم، مرحباً بعودتك',
       subtitle: 'راجع أحدث نشاط الإشراف وصحة السجل.',
@@ -477,6 +483,9 @@ export const messages = {
       channels: 'Kanalen',
       playlists: 'Afspeellijsten',
       videos: 'Video\'s'
+    },
+    layout: {
+      skipToContent: 'Ga naar hoofdinhoud'
     },
     dashboard: {
       heading: 'Salaam, welkom terug',
