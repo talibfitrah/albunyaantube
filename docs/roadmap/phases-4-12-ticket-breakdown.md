@@ -259,10 +259,10 @@ meta:
 ```yaml
 meta:
   id: AND-LISTS-02
-  status: in-progress
+  status: done
   owner: Android
   depends: [AND-LISTS-01]
-  lastReviewed: 2025-10-04
+  lastReviewed: 2025-10-05
 ```
 **Estimate**: 3.5h.
 
@@ -289,6 +289,7 @@ meta:
 **Reflect**
 - Record potential need for saved filter presets (future enhancement).
 - Note backend dependency for fast filtered queries.
+- 2025-10-05: Android bottom sheet filter row implemented with badges + clear chip, awaiting backend wiring for dynamic category list.
 
 ### AND-LISTS-03 — Error & Loading States + Metrics
 ```yaml

@@ -10,4 +10,10 @@
     <color name="primaryContainer">@color/primary_variant</color>
     <color name="surfaceVariant">@color/surface_variant</color>
     <color name="onPrimary">#FFFFFFFF</color>
+
+    <!-- Filter chip palette (Phase 6) -->
+    <color name="filter_chip_default_bg">#FFEFF4F2</color>
+    <color name="filter_chip_default_text">#FF275E4B</color>
+    <color name="filter_chip_selected_bg">#FF35C491</color>
+    <color name="filter_chip_selected_text">#FF0A1F18</color>
 </resources>

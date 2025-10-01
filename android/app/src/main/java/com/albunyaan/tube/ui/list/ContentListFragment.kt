@@ -1,10 +1,12 @@
 package com.albunyaan.tube.ui.list
 
 import android.os.Bundle
+import android.content.res.ColorStateList
 import android.view.Menu
 import android.view.MenuInflater
 import android.view.MenuItem
 import android.view.View
+import android.widget.ArrayAdapter
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
@@ -20,8 +22,10 @@ import com.albunyaan.tube.data.filters.SortOption
 import com.albunyaan.tube.data.filters.VideoLength
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.databinding.FragmentHomeBinding
+import com.albunyaan.tube.databinding.DialogFilterListBinding
 import com.google.android.material.chip.Chip
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.bottomsheet.BottomSheetDialog
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -161,6 +165,8 @@ abstract class ContentListFragment : Fragment(R.layout.fragment_home) {
         clearChip = createFilterChip(getString(R.string.filter_clear)) { viewModel.clearFilters() }
             .also(chipGroup::addView)
         clearChip?.isVisible = false
+
+        updateFilterChips(currentFilterState)
     }
 
     private fun updateFilterChips(state: FilterState) {
@@ -169,22 +175,35 @@ abstract class ContentListFragment : Fragment(R.layout.fragment_home) {
             value = state.category ?: getString(R.string.filter_category_all),
             isDefault = state.category == null
         )
+        applyChipStyle(categoryChip, state.category == null)
         lengthChip?.text = formatChipText(
             base = getString(R.string.filter_length),
             value = videoLengthLabel(state.videoLength),
             isDefault = state.videoLength == VideoLength.ANY
         )
+        applyChipStyle(lengthChip, state.videoLength == VideoLength.ANY)
         dateChip?.text = formatChipText(
             base = getString(R.string.filter_date),
             value = publishedDateLabel(state.publishedDate),
             isDefault = state.publishedDate == PublishedDate.ANY
         )
+        applyChipStyle(dateChip, state.publishedDate == PublishedDate.ANY)
         sortChip?.text = formatChipText(
             base = getString(R.string.filter_sort),
             value = sortOptionLabel(state.sortOption),
             isDefault = state.sortOption == SortOption.DEFAULT
         )
+        applyChipStyle(sortChip, state.sortOption == SortOption.DEFAULT)
         clearChip?.isVisible = state.hasActiveFilters
+        clearChip?.let { chip ->
+            val context = chip.context
+            chip.chipBackgroundColor = ColorStateList.valueOf(
+                ContextCompat.getColor(context, R.color.filter_chip_default_bg)
+            )
+            chip.setTextColor(ContextCompat.getColor(context, R.color.filter_chip_default_text))
+            chip.chipIcon = null
+            chip.isChipIconVisible = false
+        }
     }
 
     private fun formatChipText(base: String, value: String, isDefault: Boolean): String {
@@ -197,6 +216,8 @@ abstract class ContentListFragment : Fragment(R.layout.fragment_home) {
             isClickable = true
             isCheckable = false
             setOnClickListener { onClick() }
+            minimumHeight = resources.getDimensionPixelSize(R.dimen.filter_chip_height)
+            isChipIconVisible = false
         }
     }
 
@@ -204,61 +225,91 @@ abstract class ContentListFragment : Fragment(R.layout.fragment_home) {
         val entries = resources.getStringArray(R.array.filter_category_entries)
         val values = resources.getStringArray(R.array.filter_category_values)
         val selectedIndex = values.indexOf(currentFilterState.category ?: "").takeIf { it >= 0 } ?: 0
-
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(R.string.filter_category)
-            .setSingleChoiceItems(entries, selectedIndex) { dialog, which ->
-                val value = values.getOrNull(which).orEmpty().ifBlank { null }
-                viewModel.setCategory(value)
-                dialog.dismiss()
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+        showSingleChoiceBottomSheet(
+            titleRes = R.string.filter_category,
+            entries = entries,
+            selectedIndex = selectedIndex
+        ) { which ->
+            val value = values.getOrNull(which).orEmpty().ifBlank { null }
+            viewModel.setCategory(value)
+        }
     }
 
     private fun showLengthDialog() {
         val options = VideoLength.values()
         val labels = options.map { videoLengthLabel(it) }.toTypedArray()
         val selectedIndex = options.indexOf(currentFilterState.videoLength)
-
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(R.string.filter_length)
-            .setSingleChoiceItems(labels, selectedIndex) { dialog, which ->
-                viewModel.setVideoLength(options[which])
-                dialog.dismiss()
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+        showSingleChoiceBottomSheet(
+            titleRes = R.string.filter_length,
+            entries = labels,
+            selectedIndex = selectedIndex
+        ) { which ->
+            viewModel.setVideoLength(options[which])
+        }
     }
 
     private fun showPublishedDateDialog() {
         val options = PublishedDate.values()
         val labels = options.map { publishedDateLabel(it) }.toTypedArray()
         val selectedIndex = options.indexOf(currentFilterState.publishedDate)
-
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(R.string.filter_date)
-            .setSingleChoiceItems(labels, selectedIndex) { dialog, which ->
-                viewModel.setPublishedDate(options[which])
-                dialog.dismiss()
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+        showSingleChoiceBottomSheet(
+            titleRes = R.string.filter_date,
+            entries = labels,
+            selectedIndex = selectedIndex
+        ) { which ->
+            viewModel.setPublishedDate(options[which])
+        }
     }
 
     private fun showSortDialog() {
         val options = SortOption.values()
         val labels = options.map { sortOptionLabel(it) }.toTypedArray()
         val selectedIndex = options.indexOf(currentFilterState.sortOption)
+        showSingleChoiceBottomSheet(
+            titleRes = R.string.filter_sort,
+            entries = labels,
+            selectedIndex = selectedIndex
+        ) { which ->
+            viewModel.setSortOption(options[which])
+        }
+    }
 
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(R.string.filter_sort)
-            .setSingleChoiceItems(labels, selectedIndex) { dialog, which ->
-                viewModel.setSortOption(options[which])
-                dialog.dismiss()
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+    private fun showSingleChoiceBottomSheet(
+        titleRes: Int,
+        entries: Array<String>,
+        selectedIndex: Int,
+        onSelect: (Int) -> Unit
+    ) {
+        val dialog = BottomSheetDialog(requireContext())
+        val sheetBinding = DialogFilterListBinding.inflate(layoutInflater)
+        sheetBinding.sheetTitle.setText(titleRes)
+        val adapter = ArrayAdapter(requireContext(), R.layout.item_filter_option, entries)
+        sheetBinding.optionList.adapter = adapter
+        if (selectedIndex in entries.indices) {
+            sheetBinding.optionList.setItemChecked(selectedIndex, true)
+            sheetBinding.optionList.setSelection(selectedIndex)
+        }
+        sheetBinding.optionList.setOnItemClickListener { _, _, position, _ ->
+            dialog.dismiss()
+            onSelect(position)
+        }
+        dialog.setContentView(sheetBinding.root)
+        dialog.show()
+    }
+
+    private fun applyChipStyle(chip: Chip?, isDefault: Boolean) {
+        val chipContext = chip?.context ?: return
+        val backgroundColor = if (isDefault) R.color.filter_chip_default_bg else R.color.filter_chip_selected_bg
+        val textColor = if (isDefault) R.color.filter_chip_default_text else R.color.filter_chip_selected_text
+        chip.chipBackgroundColor = ColorStateList.valueOf(ContextCompat.getColor(chipContext, backgroundColor))
+        chip.setTextColor(ContextCompat.getColor(chipContext, textColor))
+        if (isDefault) {
+            chip.chipIcon = null
+            chip.isChipIconVisible = false
+        } else {
+            chip.chipIcon = ContextCompat.getDrawable(chipContext, R.drawable.ic_chip_check)
+            chip.isChipIconVisible = true
+        }
     }
 
     private fun videoLengthLabel(option: VideoLength): String = when (option) {
