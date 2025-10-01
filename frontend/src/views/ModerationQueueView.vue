@@ -155,7 +155,6 @@
       :aria-labelledby="rejectDialogTitleId"
       :aria-describedby="rejectDialogDescriptionId"
       tabindex="-1"
-      @keydown="handleModalKeydown"
     >
       <h2 :id="rejectDialogTitleId">{{ t('moderation.actions.confirmReject') }}</h2>
       <p :id="rejectDialogDescriptionId" class="modal-description">
@@ -198,6 +197,7 @@ import {
 import type { ModerationProposal, ModerationProposalStatus } from '@/types/moderation';
 import { formatDateTime } from '@/utils/formatters';
 import { emitAuditEvent } from '@/services/audit';
+import { useFocusTrap } from '@/composables/useFocusTrap';
 
 const { t, locale } = useI18n();
 const currentLocale = computed(() => locale.value);
@@ -242,6 +242,15 @@ interface FocusRestoreTarget {
   fallbackId: string | null;
 }
 const deferredFocusTarget = ref<FocusRestoreTarget | null>(null);
+
+const { activate: activateRejectTrap, deactivate: deactivateRejectTrap } = useFocusTrap(rejectDialogRef, {
+  onEscape: () => {
+    if (!isRejectSubmitting.value) {
+      closeRejectDialog();
+    }
+  },
+  returnFocus: false
+});
 
 const paginationSummary = computed(() => {
   if (!pageInfo.value) {
@@ -385,12 +394,12 @@ function openRejectDialog(proposal: ModerationProposal, event?: Event) {
   rejectDialog.reason = '';
   pendingAction.value = null;
   nextTick(() => {
-    rejectDialogRef.value?.focus();
-    rejectTextareaRef.value?.focus();
+    activateRejectTrap({ initialFocus: rejectTextareaRef.value ?? null });
   });
 }
 
 function closeRejectDialog(options: { deferFocus?: boolean } = {}) {
+  deactivateRejectTrap();
   const target: FocusRestoreTarget = {
     element: lastFocusedElement.value,
     fallbackId: lastFocusedElement.value?.getAttribute('data-focus-return') ?? null
@@ -479,69 +488,6 @@ function restoreFocusTarget(target: FocusRestoreTarget | null) {
   }
 }
 
-function getModalFocusableElements() {
-  if (!rejectDialogRef.value) {
-    return [] as HTMLElement[];
-  }
-  const selector =
-    'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
-  return Array.from(rejectDialogRef.value.querySelectorAll<HTMLElement>(selector));
-}
-
-function handleModalKeydown(event: KeyboardEvent) {
-  if (!rejectDialog.visible) {
-    return;
-  }
-
-  if (event.key === 'Escape') {
-    event.preventDefault();
-    if (!isRejectSubmitting.value) {
-      closeRejectDialog();
-    }
-    return;
-  }
-
-  if (event.key !== 'Tab') {
-    return;
-  }
-
-  const focusable = getModalFocusableElements();
-  if (focusable.length === 0) {
-    event.preventDefault();
-    rejectDialogRef.value?.focus();
-    return;
-  }
-
-  const first = focusable[0];
-  const last = focusable[focusable.length - 1];
-  const active = document.activeElement as HTMLElement | null;
-  const isActiveInside = active ? focusable.includes(active) : false;
-
-  if (!isActiveInside) {
-    event.preventDefault();
-    (event.shiftKey ? last : first).focus();
-    return;
-  }
-
-  const currentIndex = focusable.indexOf(active);
-
-  if (event.shiftKey) {
-    event.preventDefault();
-    if (currentIndex <= 0) {
-      last.focus();
-      return;
-    }
-    focusable[currentIndex - 1]?.focus();
-    return;
-  }
-
-  event.preventDefault();
-  if (currentIndex === focusable.length - 1) {
-    first.focus();
-    return;
-  }
-  focusable[currentIndex + 1]?.focus();
-}
 </script>
 
 <style scoped>

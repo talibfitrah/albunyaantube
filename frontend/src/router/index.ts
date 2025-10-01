@@ -3,6 +3,7 @@ import LoginView from '@/views/LoginView.vue';
 import DashboardView from '@/views/DashboardView.vue';
 import RegistryLandingView from '@/views/RegistryLandingView.vue';
 import ModerationQueueView from '@/views/ModerationQueueView.vue';
+import ExclusionsWorkspaceView from '@/views/ExclusionsWorkspaceView.vue';
 import UsersPlaceholderView from '@/views/UsersPlaceholderView.vue';
 import AuditPlaceholderView from '@/views/AuditPlaceholderView.vue';
 import AdminLayout from '@/layouts/AdminLayout.vue';
@@ -19,6 +20,12 @@ const protectedChildRoutes = [
     path: 'registry',
     name: 'registry',
     component: RegistryLandingView,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: 'exclusions',
+    name: 'exclusions',
+    component: ExclusionsWorkspaceView,
     meta: { requiresAuth: true }
   },
   {

@@ -17,6 +17,7 @@ export const messages = {
       dashboard: 'Dashboard',
       registry: 'Registry',
       moderation: 'Moderation',
+      exclusions: 'Exclusions',
       users: 'Users',
       audit: 'Audit log',
       home: 'Home',
@@ -212,6 +213,64 @@ export const messages = {
       },
       notesPlaceholder: 'No notes provided.'
     },
+    exclusions: {
+      heading: 'Exclusions workspace',
+      description: 'Manage manual exclusions across channels, playlists, and videos.',
+      search: {
+        label: 'Search exclusions',
+        placeholder: 'Search channels, playlists, or videos'
+      },
+      filter: {
+        label: 'Filter by type',
+        all: 'All',
+        channels: 'Channels',
+        playlists: 'Playlists',
+        videos: 'Videos'
+      },
+      table: {
+        columns: {
+          selection: 'Select row',
+          entity: 'Entity',
+          type: 'Type',
+          parent: 'Parent',
+          reason: 'Reason',
+          updated: 'Updated',
+          status: 'Status'
+        },
+        noReason: 'No reason provided.',
+        parentUnknown: 'Parent pending sync',
+        empty: 'No exclusions match this filter.',
+        rowSelect: 'Select {name} for bulk action'
+      },
+      status: {
+        excluded: 'Excluded',
+        pending: 'Pending review',
+        included: 'Included'
+      },
+      actions: {
+        add: 'Add exclusion',
+        clearSelection: 'Clear selection',
+        bulkInclude: 'Move selected to include',
+        cancel: 'Cancel',
+        create: 'Save exclusion',
+        clearSearch: 'Clear search'
+      },
+      summary: {
+        selection: '{count} selected'
+      },
+      dialog: {
+        title: 'Add exclusion',
+        description: 'Define a resource to exclude across Albunyaan Tube.',
+        targetLabel: 'Resource identifier',
+        typeLabel: 'Resource type',
+        reasonLabel: 'Reason (optional)'
+      },
+      toasts: {
+        added: '{name} added to exclusions.',
+        statusChanged: '{name} marked as {state}.',
+        bulkIncluded: '{count} exclusions moved to include.'
+      }
+    },
     users: {
       heading: 'User management',
       description: 'Create and manage admin and moderator accounts. Controls will become available after authentication hardening.'
@@ -247,6 +306,7 @@ export const messages = {
       dashboard: 'لوحة التحكم',
       registry: 'السجل',
       moderation: 'الإشراف',
+      exclusions: 'الاستثناءات',
       users: 'المستخدمون',
       audit: 'سجل التدقيق',
       home: 'الرئيسية',
@@ -442,6 +502,64 @@ export const messages = {
       },
       notesPlaceholder: 'لا توجد ملاحظات.'
     },
+    exclusions: {
+      heading: 'مساحة الاستثناءات',
+      description: 'إدارة الاستثناءات اليدوية عبر القنوات وقوائم التشغيل والفيديوهات.',
+      search: {
+        label: 'ابحث في الاستثناءات',
+        placeholder: 'ابحث عن القنوات أو قوائم التشغيل أو الفيديوهات'
+      },
+      filter: {
+        label: 'التصفية حسب النوع',
+        all: 'الكل',
+        channels: 'القنوات',
+        playlists: 'قوائم التشغيل',
+        videos: 'الفيديوهات'
+      },
+      table: {
+        columns: {
+          selection: 'تحديد الصف',
+          entity: 'العنصر',
+          type: 'النوع',
+          parent: 'المصدر الرئيسي',
+          reason: 'السبب',
+          updated: 'آخر تحديث',
+          status: 'الحالة'
+        },
+        noReason: 'لا يوجد سبب مذكور.',
+        parentUnknown: 'المصدر الرئيسي قيد المزامنة',
+        empty: 'لا توجد استثناءات تطابق هذا التصفية.',
+        rowSelect: 'تحديد {name} لتطبيق الإجراءات المجمعة'
+      },
+      status: {
+        excluded: 'مستثنى',
+        pending: 'بانتظار المراجعة',
+        included: 'مضمَّن'
+      },
+      actions: {
+        add: 'إضافة استثناء',
+        clearSelection: 'مسح التحديد',
+        bulkInclude: 'إرجاع المحدد إلى التضمين',
+        cancel: 'إلغاء',
+        create: 'حفظ الاستثناء',
+        clearSearch: 'مسح البحث'
+      },
+      summary: {
+        selection: '{count} محدد'
+      },
+      dialog: {
+        title: 'إضافة استثناء',
+        description: 'حدد مورداً لاستثنائه عبر منصة Albunyaan Tube.',
+        targetLabel: 'معرّف المورد',
+        typeLabel: 'نوع المورد',
+        reasonLabel: 'السبب (اختياري)'
+      },
+      toasts: {
+        added: 'تمت إضافة {name} إلى الاستثناءات.',
+        statusChanged: 'تم تعيين {name} إلى حالة {state}.',
+        bulkIncluded: 'تمت إعادة {count} من الاستثناءات إلى التضمين.'
+      }
+    },
     users: {
       heading: 'إدارة المستخدمين',
       description: 'أنشئ حسابات المدراء والمشرفين وأدرها.'
@@ -477,6 +595,7 @@ export const messages = {
       dashboard: 'Dashboard',
       registry: 'Registerbeheer',
       moderation: 'Moderatie',
+      exclusions: 'Uitzonderingen',
       users: 'Gebruikers',
       audit: 'Auditlogboek',
       home: 'Home',
@@ -671,6 +790,64 @@ export const messages = {
         actionFailed: 'Het voorstel kan niet worden bijgewerkt. Probeer het opnieuw.'
       },
       notesPlaceholder: 'Geen notities toegevoegd.'
+    },
+    exclusions: {
+      heading: 'Workspace uitzonderingen',
+      description: 'Beheer handmatige uitzonderingen voor kanalen, afspeellijsten en video\'s.',
+      search: {
+        label: 'Zoek in uitzonderingen',
+        placeholder: 'Zoek naar kanalen, afspeellijsten of video\'s'
+      },
+      filter: {
+        label: 'Filter op type',
+        all: 'Alles',
+        channels: 'Kanalen',
+        playlists: 'Afspeellijsten',
+        videos: 'Video\'s'
+      },
+      table: {
+        columns: {
+          selection: 'Selecteer rij',
+          entity: 'Item',
+          type: 'Type',
+          parent: 'Bovenliggend',
+          reason: 'Reden',
+          updated: 'Bijgewerkt',
+          status: 'Status'
+        },
+        noReason: 'Geen reden opgegeven.',
+        parentUnknown: 'Bovenliggende bron wordt gesynchroniseerd',
+        empty: 'Geen uitzonderingen voor dit filter.',
+        rowSelect: '{name} selecteren voor bulkactie'
+      },
+      status: {
+        excluded: 'Uitgesloten',
+        pending: 'In behandeling',
+        included: 'Toegestaan'
+      },
+      actions: {
+        add: 'Uitzondering toevoegen',
+        clearSelection: 'Selectie wissen',
+        bulkInclude: 'Zet selectie terug naar toestaan',
+        cancel: 'Annuleren',
+        create: 'Uitzondering opslaan',
+        clearSearch: 'Zoekopdracht wissen'
+      },
+      summary: {
+        selection: '{count} geselecteerd'
+      },
+      dialog: {
+        title: 'Uitzondering toevoegen',
+        description: 'Definieer een bron die buiten Albunyaan Tube moet blijven.',
+        targetLabel: 'Resource-id',
+        typeLabel: 'Resourcetype',
+        reasonLabel: 'Reden (optioneel)'
+      },
+      toasts: {
+        added: '{name} toegevoegd aan uitzonderingen.',
+        statusChanged: '{name} gemarkeerd als {state}.',
+        bulkIncluded: '{count} uitzonderingen teruggezet naar toestaan.'
+      }
     },
     users: {
       heading: 'Gebruikersbeheer',

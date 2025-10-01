@@ -17,6 +17,7 @@ function buildRouter() {
     routes: [
       { path: '/', name: 'dashboard', component: { template: '<div />' } },
       { path: '/registry', name: 'registry', component: { template: '<div />' } },
+      { path: '/exclusions', name: 'exclusions', component: { template: '<div />' } },
       { path: '/moderation', name: 'moderation', component: { template: '<div />' } },
       { path: '/users', name: 'users', component: { template: '<div />' } },
       { path: '/audit', name: 'audit', component: { template: '<div />' } }
