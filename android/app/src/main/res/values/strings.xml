@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Albunyaan Tube</string>
+    <string name="filter_category">Category</string>
+    <string name="filter_length">Length</string>
+    <string name="filter_date">Date</string>
+    <string name="filter_sort">Sort</string>
+    <string name="filter_clear">Clear filters</string>
+</resources>

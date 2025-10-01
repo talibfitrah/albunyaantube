@@ -6,9 +6,12 @@ package com.albunyaan.tube.data.paging
  * - Expose refresh triggers when global filters (category, search query) change.
  * - Bridge backend cursor pagination with Paging 3 `RemoteMediator` to store cached pages in Room.
  */
+import androidx.paging.PagingData
+import kotlinx.coroutines.flow.Flow
+
 interface ContentPagingRepository {
-    fun homeStream(): Any // TODO: replace with Flow<PagingData<HomeItem>>
-    fun channelsStream(category: String?): Any
-    fun playlistsStream(category: String?): Any
-    fun videosStream(query: String?): Any
+    fun homeStream(): Flow<PagingData<Any>>
+    fun channelsStream(category: String?): Flow<PagingData<Any>>
+    fun playlistsStream(category: String?): Flow<PagingData<Any>>
+    fun videosStream(query: String?): Flow<PagingData<Any>>
 }

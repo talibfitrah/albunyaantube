@@ -12,4 +12,11 @@ Phase 5 begins the Android client by defining the app-level navigation graph and
 - `app/src/main/java/com/albunyaan/tube/ui/*Fragment.kt` — stub fragments representing tab destinations.
 - `app/src/androidTest/java/com/albunyaan/tube/navigation/NavigationGraphTest.kt` — instrumentation sketch that will verify tab state retention once the project is bootstrapped.
 
-At this stage no Gradle files are provided; the intent is to unblock design/architecture documentation and give engineering a concrete blueprint when the Android project is initialized.
+At this stage a minimal Gradle project structure is checked in. Run the following from the `android/` directory to generate a wrapper and assemble the skeleton app:
+
+```sh
+gradle wrapper
+./gradlew assembleDebug
+```
+
+The layouts and Kotlin classes are mostly placeholders, but the build compiles and exercises Paging/filter/list-state stubs so engineers can begin iterating immediately once API integrations start.

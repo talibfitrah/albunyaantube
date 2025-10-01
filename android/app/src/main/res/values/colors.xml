@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary_green">#275E4B</color>
+    <color name="primary_variant">#35C491</color>
+    <color name="surface_variant">#E3E9E7</color>
+    <color name="accent_red">#D32F2F</color>
+</resources>

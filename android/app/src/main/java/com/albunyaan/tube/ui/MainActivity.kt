@@ -1,12 +1,21 @@
 package com.albunyaan.tube.ui
 
+import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
+import androidx.navigation.NavController
+import androidx.navigation.fragment.NavHostFragment
+import com.albunyaan.tube.R
 
-/**
- * Placeholder main activity for the Android skeleton. The future implementation will:
- * - Inflate a layout containing a `NavHostFragment` bound to `app_nav_graph.xml`.
- * - Connect a `BottomNavigationView` to the NavController to swap between the
- *   Home, Channels, Playlists, and Videos destinations defined in the graph.
- * - Persist per-tab scroll state using `NavigationUI` state saving.
- */
-class MainActivity : AppCompatActivity()
+class MainActivity : AppCompatActivity() {
+
+    private val navController: NavController by lazy {
+        val host = supportFragmentManager.findFragmentById(R.id.nav_host_fragment) as NavHostFragment
+        host.navController
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+        // navController available for future toolbar setup if needed.
+    }
+}

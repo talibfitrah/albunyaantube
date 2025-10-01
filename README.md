@@ -24,6 +24,11 @@ Every document references related artifacts to ensure consistency:
 - Requirements → APIs → Acceptance criteria are linked through the traceability matrix in [`docs/acceptance/criteria.md`](docs/acceptance/criteria.md).
 - Security controls, data models, and internationalization strategies are cross-linked within architecture and API sections.
 
+## Android Skeleton Project
+- The `android/` directory now contains a minimal Gradle project with `:app` module, Navigation Component setup, Paging/filter/list-state skeletons, and localized resources.
+- Generate the wrapper (`gradle wrapper`) and run `./gradlew assembleDebug` from the `android/` directory to compile the placeholder app.
+- Kotlin classes (e.g., `MainShellFragment`, `FilterManager`, `ContentPagingRepository`) currently emit stubs but mirror the architecture described in Phase 5/6 documentation so engineers can start wiring real data sources quickly.
+
 ## Change Workflow
 1. Update relevant design artifact(s).
 2. Ensure cross-references remain valid.

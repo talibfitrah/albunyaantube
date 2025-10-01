@@ -1,5 +1,6 @@
 package com.albunyaan.tube.ui
 
 import androidx.fragment.app.Fragment
+import com.albunyaan.tube.R
 
-class PlaylistsFragment : Fragment()
+class PlaylistsFragment : Fragment(R.layout.fragment_playlists)

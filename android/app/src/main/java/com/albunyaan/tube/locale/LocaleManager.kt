@@ -1,6 +1,7 @@
 package com.albunyaan.tube.locale
 
 import android.content.Context
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
 
 /**
@@ -18,7 +19,9 @@ object LocaleManager {
         return LocaleListCompat.getAdjustedDefault()
     }
 
+    @Suppress("UNUSED_PARAMETER")
     fun applyStoredLocale(context: Context) {
         // TODO: Read DataStore preference and call AppCompatDelegate.setApplicationLocales
+        AppCompatDelegate.setApplicationLocales(detectDefaultLocale())
     }
 }
