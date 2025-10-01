@@ -223,9 +223,10 @@ export const messages = {
       filter: {
         label: 'Filter by type',
         all: 'All',
-        channels: 'Channels',
-        playlists: 'Playlists',
-        videos: 'Videos'
+        channels: 'Parent channels',
+        parentPlaylist: 'Parent playlists',
+        excludePlaylist: 'Excluded playlists',
+        excludeVideo: 'Excluded videos'
       },
       table: {
         columns: {
@@ -252,6 +253,9 @@ export const messages = {
         removeSelected: 'Remove selected',
         remove: 'Remove',
         removing: 'Removing…',
+        edit: 'Edit',
+        update: 'Update exclusion',
+        updating: 'Updating…',
         cancel: 'Cancel',
         create: 'Create exclusion',
         creating: 'Creating…',
@@ -275,11 +279,17 @@ export const messages = {
       toasts: {
         added: '{name} added to exclusions.',
         removed: 'Exclusion removed.',
-        bulkRemoved: '{count} exclusions removed.'
+        bulkRemoved: '{count} exclusions removed.',
+        updated: 'Exclusion updated.'
       },
       errors: {
         createFailed: 'Unable to create exclusion. Please try again.',
         removeFailed: 'Unable to remove exclusion. Please try again.'
+      },
+      pagination: {
+        previous: 'Previous',
+        next: 'Next',
+        showing: 'Showing {count} of {limit} exclusions'
       }
     },
     users: {
@@ -523,9 +533,10 @@ export const messages = {
       filter: {
         label: 'التصفية حسب النوع',
         all: 'الكل',
-        channels: 'القنوات',
-        playlists: 'قوائم التشغيل',
-        videos: 'الفيديوهات'
+        channels: 'قنوات المصدر الرئيسي',
+        parentPlaylist: 'قوائم تشغيل المصدر الرئيسي',
+        excludePlaylist: 'قوائم التشغيل المستبعدة',
+        excludeVideo: 'الفيديوهات المستبعدة'
       },
       table: {
         columns: {
@@ -552,6 +563,9 @@ export const messages = {
         removeSelected: 'إزالة التحديد',
         remove: 'إزالة',
         removing: 'جارٍ الإزالة…',
+        edit: 'تعديل',
+        update: 'تحديث الاستثناء',
+        updating: 'جارٍ التحديث…',
         cancel: 'إلغاء',
         create: 'إنشاء استثناء',
         creating: 'جارٍ الإنشاء…',
@@ -575,11 +589,17 @@ export const messages = {
       toasts: {
         added: 'تمت إضافة {name} إلى الاستثناءات.',
         removed: 'تمت إزالة الاستثناء.',
-        bulkRemoved: 'تمت إزالة {count} من الاستثناءات.'
+        bulkRemoved: 'تمت إزالة {count} من الاستثناءات.',
+        updated: 'تم تحديث الاستثناء.'
       },
       errors: {
         createFailed: 'تعذر إنشاء الاستثناء. حاول مرة أخرى.',
         removeFailed: 'تعذر إزالة الاستثناء. حاول مرة أخرى.'
+      },
+      pagination: {
+        previous: 'السابق',
+        next: 'التالي',
+        showing: 'إظهار {count} من أصل {limit} استثناءات'
       }
     },
     users: {
@@ -823,9 +843,10 @@ export const messages = {
       filter: {
         label: 'Filter op type',
         all: 'Alles',
-        channels: 'Kanalen',
-        playlists: 'Afspeellijsten',
-        videos: 'Video\'s'
+        channels: 'Bovenliggende kanalen',
+        parentPlaylist: 'Bovenliggende afspeellijsten',
+        excludePlaylist: 'Uitgesloten afspeellijsten',
+        excludeVideo: 'Uitgesloten video\'s'
       },
       table: {
         columns: {
@@ -852,6 +873,9 @@ export const messages = {
         removeSelected: 'Selectie verwijderen',
         remove: 'Verwijderen',
         removing: 'Bezig met verwijderen…',
+        edit: 'Bewerken',
+        update: 'Uitzondering bijwerken',
+        updating: 'Bezig met bijwerken…',
         cancel: 'Annuleren',
         create: 'Uitzondering maken',
         creating: 'Bezig met maken…',
@@ -875,11 +899,17 @@ export const messages = {
       toasts: {
         added: '{name} toegevoegd aan uitzonderingen.',
         removed: 'Uitzondering verwijderd.',
-        bulkRemoved: '{count} uitzonderingen verwijderd.'
+        bulkRemoved: '{count} uitzonderingen verwijderd.',
+        updated: 'Uitzondering bijgewerkt.'
       },
       errors: {
         createFailed: 'Uitzondering kan niet worden gemaakt. Probeer het opnieuw.',
         removeFailed: 'Uitzondering kan niet worden verwijderd. Probeer het opnieuw.'
+      },
+      pagination: {
+        previous: 'Vorige',
+        next: 'Volgende',
+        showing: '{count} van {limit} uitzonderingen'
       }
     },
     users: {

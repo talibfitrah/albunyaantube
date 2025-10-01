@@ -123,6 +123,10 @@
               </div>
             </td>
             <td>
+              <button type="button" class="link-action" @click="openEditDialog(entry)">
+                {{ t('exclusions.actions.edit') }}
+              </button>
+              <span aria-hidden="true">·</span>
               <button
                 type="button"
                 class="link-action"
@@ -135,6 +139,16 @@
           </tr>
         </tbody>
       </table>
+    </div>
+
+    <div v-if="!isLoading && !loadError && filteredItems.length" class="table-footer">
+      <button type="button" class="pager" @click="previous" :disabled="!hasPrevious || isLoading">
+        {{ t('exclusions.pagination.previous') }}
+      </button>
+      <div class="footer-status">{{ paginationSummary }}</div>
+      <button type="button" class="pager" @click="next" :disabled="!hasNext || isLoading">
+        {{ t('exclusions.pagination.next') }}
+      </button>
     </div>
 
     <p v-if="actionMessage" :id="actionMessageId" class="action-message" role="status" aria-live="polite">
@@ -156,12 +170,12 @@
       <p :id="addDialogDescriptionId" class="modal-description">
         {{ t('exclusions.dialog.description') }}
       </p>
-      <form @submit.prevent="handleAdd">
+      <form @submit.prevent="handleSubmit">
         <div class="form-grid">
           <label class="modal-label" :for="addDialogParentTypeId">
             {{ t('exclusions.dialog.parentTypeLabel') }}
           </label>
-          <select :id="addDialogParentTypeId" v-model="addDialog.parentType">
+          <select :id="addDialogParentTypeId" v-model="addDialog.parentType" :disabled="isEditMode()">
             <option value="CHANNEL">{{ t('exclusions.dialog.parentChannel') }}</option>
             <option value="PLAYLIST">{{ t('exclusions.dialog.parentPlaylist') }}</option>
           </select>
@@ -175,12 +189,13 @@
             type="text"
             required
             autocomplete="off"
+            :disabled="isEditMode()"
           />
 
           <label class="modal-label" :for="addDialogTypeId">
             {{ t('exclusions.dialog.typeLabel') }}
           </label>
-          <select :id="addDialogTypeId" v-model="addDialog.excludeType">
+          <select :id="addDialogTypeId" v-model="addDialog.excludeType" :disabled="isEditMode()">
             <option value="PLAYLIST">{{ t('navigation.playlists') }}</option>
             <option value="VIDEO">{{ t('navigation.videos') }}</option>
           </select>
@@ -195,6 +210,7 @@
             type="text"
             required
             autocomplete="off"
+            :disabled="isEditMode()"
           />
         </div>
 
@@ -210,7 +226,7 @@
             {{ t('exclusions.actions.cancel') }}
           </button>
           <button type="submit" class="modal-primary" :disabled="isSubmitting">
-            {{ isSubmitting ? t('exclusions.actions.creating') : t('exclusions.actions.create') }}
+            {{ submitButtonLabel() }}
           </button>
         </div>
       </form>
@@ -219,22 +235,29 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@/utils/formatters';
 import { useFocusTrap } from '@/composables/useFocusTrap';
-import { createExclusion, deleteExclusion, listExclusions } from '@/services/exclusions';
+import { useCursorPagination } from '@/composables/useCursorPagination';
+import {
+  createExclusion,
+  deleteExclusion,
+  fetchExclusionsPage,
+  updateExclusion
+} from '@/services/exclusions';
 import type { Exclusion, ExclusionParentType, ExclusionResourceType } from '@/types/exclusions';
+import { emitAuditEvent } from '@/services/audit';
+
+type TypeFilterValue = 'all' | 'parent:CHANNEL' | 'parent:PLAYLIST' | 'exclude:PLAYLIST' | 'exclude:VIDEO';
 
 const { t, locale } = useI18n();
 const currentLocale = computed(() => locale.value);
 
 const searchQuery = ref('');
-const typeFilter = ref<'all' | ExclusionParentType | ExclusionResourceType>('all');
+const activeSearch = ref('');
+const typeFilter = ref<TypeFilterValue>('all');
 const selectedIds = ref<string[]>([]);
-const entries = ref<Exclusion[]>([]);
-const isLoading = ref(false);
-const loadError = ref<string | null>(null);
 const actionMessage = ref<string | null>(null);
 const isSubmitting = ref(false);
 const formError = ref<string | null>(null);
@@ -253,9 +276,10 @@ const addDialogTypeId = 'exclusions-dialog-type';
 
 const typeOptions = computed(() => [
   { value: 'all' as const, label: t('exclusions.filter.all') },
-  { value: 'CHANNEL' as const, label: t('exclusions.filter.channels') },
-  { value: 'PLAYLIST' as const, label: t('exclusions.filter.playlists') },
-  { value: 'VIDEO' as const, label: t('exclusions.filter.videos') }
+  { value: 'parent:CHANNEL' as const, label: t('exclusions.filter.channels') },
+  { value: 'parent:PLAYLIST' as const, label: t('exclusions.filter.parentPlaylist') },
+  { value: 'exclude:PLAYLIST' as const, label: t('exclusions.filter.excludePlaylist') },
+  { value: 'exclude:VIDEO' as const, label: t('exclusions.filter.excludeVideo') }
 ]);
 
 const addDialog = reactive({
@@ -266,6 +290,9 @@ const addDialog = reactive({
   excludeId: '',
   reason: ''
 });
+
+const mode = ref<'create' | 'edit'>('create');
+const editingId = ref<string | null>(null);
 
 const addDialogRef = ref<HTMLDivElement | null>(null);
 const addDialogTargetRef = ref<HTMLInputElement | null>(null);
@@ -278,53 +305,87 @@ const { activate: activateAddTrap, deactivate: deactivateAddTrap } = useFocusTra
   }
 });
 
-const hasSelection = computed(() => selectedIds.value.length > 0);
-
-const filteredItems = computed(() => {
-  const normalizedQuery = searchQuery.value.trim().toLowerCase();
-  return entries.value.filter((entry) => {
-    const matchesFilter = matchFilter(entry);
-    if (!matchesFilter) {
-      return false;
-    }
-    if (!normalizedQuery) {
-      return true;
-    }
-    const haystack = [
-      entry.excludeId,
-      entry.parentId,
-      entry.reason,
-      entry.createdBy.email
-    ]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase();
-    return haystack.includes(normalizedQuery);
+const pagination = useCursorPagination<Exclusion>(async (cursor, limit) => {
+  const descriptor = parseFilter(typeFilter.value);
+  return fetchExclusionsPage({
+    cursor,
+    limit,
+    parentType: descriptor?.kind === 'parent' ? descriptor.value : undefined,
+    excludeType: descriptor?.kind === 'exclude' ? descriptor.value : undefined,
+    search: activeSearch.value || undefined
   });
 });
 
+const { items, isLoading, error, load, next, previous, hasNext, hasPrevious, pageInfo } = pagination;
+const entries = items;
+const loadError = computed(() => error.value);
+const hasSelection = computed(() => selectedIds.value.length > 0);
+const filteredItems = computed(() => entries.value);
 const isAllVisibleSelected = computed(() => {
-  if (!filteredItems.value.length) {
+  if (!entries.value.length) {
     return false;
   }
-  return filteredItems.value.every((entry) => selectedIds.value.includes(entry.id));
+  const visibleIds = entries.value.map((entry) => entry.id);
+  return visibleIds.every((id) => selectedIds.value.includes(id));
+});
+
+const paginationSummary = computed(() => {
+  if (!pageInfo.value) {
+    return '';
+  }
+  const formatter = new Intl.NumberFormat(currentLocale.value);
+  const count = formatter.format(entries.value.length);
+  const limit = formatter.format(pageInfo.value.limit ?? entries.value.length);
+  return t('exclusions.pagination.showing', { count, limit });
+});
+
+watch(entries, (items) => {
+  const visibleIds = new Set(items.map((entry) => entry.id));
+  selectedIds.value = selectedIds.value.filter((id) => visibleIds.has(id));
+});
+
+watch(typeFilter, () => {
+  scheduleReload();
+});
+
+watch(searchQuery, () => {
+  scheduleReload();
 });
 
 onMounted(async () => {
-  await reload();
+  await load(null, 'reset');
 });
 
-function matchFilter(entry: Exclusion): boolean {
-  if (typeFilter.value === 'all') {
-    return true;
+let reloadTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleReload() {
+  if (reloadTimeout) {
+    clearTimeout(reloadTimeout);
   }
-  if (typeFilter.value === 'CHANNEL') {
-    return entry.parentType === 'CHANNEL';
+  reloadTimeout = setTimeout(() => {
+    activeSearch.value = searchQuery.value.trim();
+    void load(null, 'reset');
+  }, 250);
+}
+
+onBeforeUnmount(() => {
+  if (reloadTimeout) {
+    clearTimeout(reloadTimeout);
   }
-  if (typeFilter.value === 'PLAYLIST') {
-    return entry.excludeType === 'PLAYLIST' || entry.parentType === 'PLAYLIST';
+});
+
+function parseFilter(value: TypeFilterValue):
+  | { kind: 'parent'; value: ExclusionParentType }
+  | { kind: 'exclude'; value: ExclusionResourceType }
+  | null {
+  if (value === 'all') {
+    return null;
   }
-  return entry.excludeType === 'VIDEO';
+  const [kind, raw] = value.split(':');
+  if (kind === 'parent') {
+    return { kind: 'parent', value: raw as ExclusionParentType };
+  }
+  return { kind: 'exclude', value: raw as ExclusionResourceType };
 }
 
 function onSearchChange(event: Event) {
@@ -336,7 +397,7 @@ function clearSearch() {
   searchQuery.value = '';
 }
 
-function setTypeFilter(value: 'all' | ExclusionParentType | ExclusionResourceType) {
+function setTypeFilter(value: TypeFilterValue) {
   typeFilter.value = value;
 }
 
@@ -346,8 +407,7 @@ function isSelected(id: string) {
 
 function toggleSelection(id: string, event: Event) {
   const target = event.target as HTMLInputElement;
-  const checked = target.checked;
-  if (checked) {
+  if (target.checked) {
     if (!selectedIds.value.includes(id)) {
       selectedIds.value = [...selectedIds.value, id];
     }
@@ -359,12 +419,11 @@ function toggleSelection(id: string, event: Event) {
 function toggleSelectAll(event: Event) {
   const target = event.target as HTMLInputElement;
   if (target.checked) {
-    const visibleIds = filteredItems.value.map((entry) => entry.id);
-    const unique = new Set([...selectedIds.value, ...visibleIds]);
-    selectedIds.value = Array.from(unique);
+    const ids = entries.value.map((entry) => entry.id);
+    selectedIds.value = Array.from(new Set([...selectedIds.value, ...ids]));
   } else {
-    const visibleSet = new Set(filteredItems.value.map((entry) => entry.id));
-    selectedIds.value = selectedIds.value.filter((id) => !visibleSet.has(id));
+    const visible = new Set(entries.value.map((entry) => entry.id));
+    selectedIds.value = selectedIds.value.filter((id) => !visible.has(id));
   }
 }
 
@@ -373,10 +432,9 @@ function clearSelection() {
 }
 
 function entitySummary(entry: Exclusion) {
-  if (entry.excludeType === 'PLAYLIST') {
-    return t('exclusions.table.playlistSummary', { id: entry.excludeId });
-  }
-  return t('exclusions.table.videoSummary', { id: entry.excludeId });
+  return entry.excludeType === 'PLAYLIST'
+    ? t('exclusions.table.playlistSummary', { id: entry.excludeId })
+    : t('exclusions.table.videoSummary', { id: entry.excludeId });
 }
 
 function resourceTypeLabel(type: ExclusionResourceType) {
@@ -395,23 +453,22 @@ function isRemoving(id: string) {
   return removingIds.value.includes(id);
 }
 
-async function reload() {
-  isLoading.value = true;
-  loadError.value = null;
-  try {
-    entries.value = await listExclusions();
-  } catch (err) {
-    loadError.value = err instanceof Error ? err.message : t('exclusions.table.error');
-  } finally {
-    isLoading.value = false;
-  }
+function openEditDialog(entry: Exclusion) {
+  mode.value = 'edit';
+  editingId.value = entry.id;
+  addDialog.parentType = entry.parentType;
+  addDialog.parentId = entry.parentId;
+  addDialog.excludeType = entry.excludeType;
+  addDialog.excludeId = entry.excludeId;
+  addDialog.reason = entry.reason;
+  openDialog(true);
 }
 
-function openAddDialog() {
-  addDialog.visible = true;
+function openDialog(skipFocus = false) {
   formError.value = null;
+  addDialog.visible = true;
   nextTick(() => {
-    activateAddTrap({ initialFocus: addDialogTargetRef.value ?? null });
+    activateAddTrap({ initialFocus: skipFocus ? undefined : addDialogTargetRef.value ?? null });
   });
 }
 
@@ -427,10 +484,12 @@ function closeAddDialog() {
   deactivateAddTrap();
   addDialog.visible = false;
   resetDialog();
+  mode.value = 'create';
+  editingId.value = null;
   isSubmitting.value = false;
 }
 
-async function handleAdd() {
+async function handleSubmit() {
   if (isSubmitting.value) {
     return;
   }
@@ -441,17 +500,43 @@ async function handleAdd() {
   isSubmitting.value = true;
   formError.value = null;
   try {
-    const payload = {
-      parentType: addDialog.parentType,
-      parentId: addDialog.parentId.trim(),
-      excludeType: addDialog.excludeType,
-      excludeId: addDialog.excludeId.trim(),
-      reason: addDialog.reason.trim()
-    };
-    const created = await createExclusion(payload);
-    entries.value = [created, ...entries.value];
-    actionMessage.value = t('exclusions.toasts.added', { name: created.excludeId });
-    closeAddDialog();
+    if (mode.value === 'create') {
+      const payload = {
+        parentType: addDialog.parentType,
+        parentId: addDialog.parentId.trim(),
+        excludeType: addDialog.excludeType,
+        excludeId: addDialog.excludeId.trim(),
+        reason: addDialog.reason.trim()
+      };
+      const created = await createExclusion(payload);
+      emitAuditEvent({
+        name: 'exclusions:create',
+        exclusionId: created.id,
+        timestamp: new Date().toISOString(),
+        metadata: {
+          parentType: created.parentType,
+          parentId: created.parentId,
+          excludeType: created.excludeType,
+          excludeId: created.excludeId
+        }
+      });
+      await load(null, 'reset');
+      actionMessage.value = t('exclusions.toasts.added', { name: created.excludeId });
+      closeAddDialog();
+    } else if (editingId.value) {
+      const updated = await updateExclusion(editingId.value, {
+        reason: addDialog.reason.trim()
+      });
+      emitAuditEvent({
+        name: 'exclusions:update',
+        exclusionId: updated.id,
+        timestamp: new Date().toISOString(),
+        metadata: { reason: updated.reason }
+      });
+      await reloadCurrentPage();
+      actionMessage.value = t('exclusions.toasts.updated');
+      closeAddDialog();
+    }
   } catch (err) {
     formError.value = err instanceof Error ? err.message : t('exclusions.errors.createFailed');
   } finally {
@@ -466,7 +551,12 @@ async function handleRemove(id: string) {
   removingIds.value = [...removingIds.value, id];
   try {
     await deleteExclusion(id);
-    entries.value = entries.value.filter((entry) => entry.id !== id);
+    emitAuditEvent({
+      name: 'exclusions:delete',
+      exclusionId: id,
+      timestamp: new Date().toISOString()
+    });
+    await reloadCurrentPage();
     selectedIds.value = selectedIds.value.filter((value) => value !== id);
     actionMessage.value = t('exclusions.toasts.removed');
   } catch (err) {
@@ -484,8 +574,12 @@ async function handleBulkRemove() {
   const ids = [...selectedIds.value];
   try {
     await Promise.all(ids.map((id) => deleteExclusion(id)));
-    const idSet = new Set(ids);
-    entries.value = entries.value.filter((entry) => !idSet.has(entry.id));
+    emitAuditEvent({
+      name: 'exclusions:delete-many',
+      timestamp: new Date().toISOString(),
+      metadata: { count: ids.length }
+    });
+    await reloadCurrentPage();
     selectedIds.value = [];
     actionMessage.value = t('exclusions.toasts.bulkRemoved', { count: ids.length });
   } catch (err) {
@@ -493,6 +587,31 @@ async function handleBulkRemove() {
   } finally {
     isBulkProcessing.value = false;
   }
+}
+
+async function reloadCurrentPage() {
+  const cursor = pageInfo.value?.cursor ?? null;
+  await load(cursor, 'replace');
+}
+
+function isEditMode() {
+  return mode.value === 'edit';
+}
+
+function submitButtonLabel() {
+  if (isSubmitting.value) {
+    return mode.value === 'create'
+      ? t('exclusions.actions.creating')
+      : t('exclusions.actions.updating');
+  }
+  return mode.value === 'create' ? t('exclusions.actions.create') : t('exclusions.actions.update');
+}
+
+function openAddDialog() {
+  mode.value = 'create';
+  editingId.value = null;
+  resetDialog();
+  openDialog();
 }
 </script>
 

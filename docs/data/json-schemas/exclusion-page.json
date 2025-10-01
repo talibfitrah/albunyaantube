@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ExclusionPage",
+  "type": "object",
+  "required": ["data", "pageInfo"],
+  "properties": {
+    "data": {
+      "type": "array",
+      "items": { "$ref": "exclusion-response.json" }
+    },
+    "pageInfo": { "$ref": "cursor-page-info.json" }
+  }
+}

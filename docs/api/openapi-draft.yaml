@@ -476,6 +476,31 @@ paths:
       responses:
         '200': { description: Rejected, content: { application/json: { schema: { $ref: '../data/json-schemas/moderation-proposal-response.json' } } } }
   /exclusions:
+    get:
+      summary: List exclusions
+      operationId: listExclusions
+      tags: [Admin]
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: parentType
+          in: query
+          required: false
+          schema: { type: string, enum: [CHANNEL, PLAYLIST] }
+        - name: excludeType
+          in: query
+          required: false
+          schema: { type: string, enum: [PLAYLIST, VIDEO] }
+        - name: search
+          in: query
+          required: false
+          schema: { type: string, maxLength: 120 }
+      responses:
+        '200':
+          description: Cursor paginated list of manual exclusions.
+          content:
+            application/json:
+              schema: { $ref: '../data/json-schemas/exclusion-page.json' }
     post:
       summary: Create exclusion
       operationId: createExclusion
@@ -489,6 +514,20 @@ paths:
       responses:
         '201': { description: Created, content: { application/json: { schema: { $ref: '../data/json-schemas/exclusion-response.json' } } } }
   /exclusions/{id}:
+    patch:
+      summary: Update exclusion
+      operationId: updateExclusion
+      tags: [Moderation]
+      parameters:
+        - $ref: '#/components/parameters/IdPathParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../data/json-schemas/exclusion-update-request.json'
+      responses:
+        '200': { description: Updated, content: { application/json: { schema: { $ref: '../data/json-schemas/exclusion-response.json' } } } }
     delete:
       summary: Delete exclusion
       operationId: deleteExclusion

@@ -1,3 +1,4 @@
+import type { CursorPage } from '@/types/pagination';
 import type { AdminUserSummary } from '@/types/moderation';
 
 export type ExclusionParentType = 'CHANNEL' | 'PLAYLIST';
@@ -21,3 +22,9 @@ export interface CreateExclusionPayload {
   excludeId: string;
   reason: string;
 }
+
+export interface UpdateExclusionPayload {
+  reason: string;
+}
+
+export type ExclusionPage = CursorPage<Exclusion>;
