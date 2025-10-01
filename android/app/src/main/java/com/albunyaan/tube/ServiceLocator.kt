@@ -6,6 +6,9 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import com.albunyaan.tube.analytics.ListMetricsReporter
 import com.albunyaan.tube.analytics.LogListMetricsReporter
+import com.albunyaan.tube.data.extractor.ExtractorClient
+import com.albunyaan.tube.data.extractor.MetadataHydrator
+import com.albunyaan.tube.data.extractor.StubExtractorClient
 import com.albunyaan.tube.data.filters.FilterManager
 import com.albunyaan.tube.data.paging.ContentPagingRepository
 import com.albunyaan.tube.data.paging.DefaultContentPagingRepository
@@ -37,7 +40,9 @@ object ServiceLocator {
     }
 
     private val filterManager: FilterManager by lazy { FilterManager(dataStore, scope) }
-    private val retrofitContentService: ContentService by lazy { RetrofitContentService(contentApi) }
+    private val extractorClient: ExtractorClient by lazy { StubExtractorClient() }
+    private val metadataHydrator: MetadataHydrator by lazy { MetadataHydrator(extractorClient) }
+    private val retrofitContentService: ContentService by lazy { RetrofitContentService(contentApi, metadataHydrator) }
     private val fakeContentService: ContentService by lazy { FakeContentService() }
     private val contentService: ContentService by lazy { FallbackContentService(retrofitContentService, fakeContentService) }
     private val pagingRepository: ContentPagingRepository by lazy { DefaultContentPagingRepository(contentService) }

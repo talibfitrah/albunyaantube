@@ -7,11 +7,14 @@ import com.albunyaan.tube.data.filters.VideoLength
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.model.CursorResponse
+import com.albunyaan.tube.data.extractor.MetadataHydrator
 import com.albunyaan.tube.data.source.api.ContentApi
 import com.albunyaan.tube.data.source.api.ContentDto
+import kotlinx.coroutines.CancellationException
 
 class RetrofitContentService(
-    private val api: ContentApi
+    private val api: ContentApi,
+    private val metadataHydrator: MetadataHydrator
 ) : ContentService {
 
     override suspend fun fetchContent(
@@ -29,8 +32,11 @@ class RetrofitContentService(
             date = filters.publishedDate.toQueryValue(),
             sort = filters.sortOption.toQueryValue()
         )
-        val items = response.data.mapNotNull { it.toModel() }
-        return CursorResponse(items, response.pageInfo.nextCursor)
+        val baseItems = response.data.mapNotNull { it.toModel() }
+        val hydratedItems = runCatching { metadataHydrator.hydrate(type, baseItems) }
+            .onFailure { if (it is CancellationException) throw it }
+            .getOrElse { baseItems }
+        return CursorResponse(hydratedItems, response.pageInfo.nextCursor)
     }
 
     private fun ContentDto.toModel(): ContentItem? {

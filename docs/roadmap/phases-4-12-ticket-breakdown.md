@@ -552,10 +552,10 @@ meta:
 ```yaml
 meta:
   id: AND-EXTRACT-01
-  status: planned
+  status: done
   owner: Android
   depends: [AND-LISTS-01]
-  lastReviewed: 2025-10-05
+  lastReviewed: 2025-10-06
 ```
 **Estimate**: 3h.
 
@@ -578,10 +578,12 @@ meta:
 - Document repository integration points (PagingSource/RemoteMediator) and caching TTL.
 - Specify retry/backoff and user-visible messaging for failures.
 - Update backlog with telemetry for extractor failures and list hydration timings.
+- 2025-10-06: `MetadataHydrator` and `StubExtractorClient` attach NewPipeExtractor scaffolding to Retrofit content fetches, merging Albunyaan overrides with hydrated metadata while defaulting to fallback on extractor errors.
 
 **Reflect**
 - Record device performance findings and adjust cache policy if needed.
 - Update risk register if extractor updates require app-side compatibility work.
+- Documented hydration approach and tests so backend payloads can omit duplicated metadata once extractor wiring is live.
 
 ### AND-EXTRACT-02 — Extractor Stream Resolution for Playback
 ```yaml

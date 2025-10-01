@@ -6,6 +6,7 @@ import androidx.paging.PagingDataAdapter
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import com.albunyaan.tube.data.model.ContentItem
+import java.text.NumberFormat
 import com.albunyaan.tube.databinding.ItemContentBinding
 
 class ContentAdapter : PagingDataAdapter<ContentItem, ContentAdapter.ContentViewHolder>(DIFF) {
@@ -33,18 +34,25 @@ class ContentAdapter : PagingDataAdapter<ContentItem, ContentAdapter.ContentView
             when (item) {
                 is ContentItem.Video -> {
                     binding.title.text = item.title
-                    binding.metadata.text = "${item.category} • ${item.durationMinutes} min"
-                    binding.description.text = "Uploaded ${item.uploadedDaysAgo} days ago"
+                    val viewSuffix = item.viewCount?.let { " • ${NumberFormat.getInstance().format(it)} views" } ?: ""
+                    binding.metadata.text = "${item.category} • ${item.durationMinutes} min$viewSuffix"
+                    val description = item.description.takeIf { it.isNotBlank() }
+                        ?: "Uploaded ${item.uploadedDaysAgo} days ago"
+                    binding.description.text = description
                 }
                 is ContentItem.Channel -> {
                     binding.title.text = item.name
-                    binding.metadata.text = "${item.category} • ${item.subscribers} subscribers"
-                    binding.description.text = "Curated channel from ${item.category}"
+                    binding.metadata.text = "${item.category} • ${NumberFormat.getInstance().format(item.subscribers)} subscribers"
+                    val description = item.description
+                        ?: "Curated channel from ${item.category}"
+                    binding.description.text = description
                 }
                 is ContentItem.Playlist -> {
                     binding.title.text = item.title
                     binding.metadata.text = "${item.category} • ${item.itemCount} items"
-                    binding.description.text = "Playlist for ${item.category}"
+                    val description = item.description
+                        ?: "Playlist for ${item.category}"
+                    binding.description.text = description
                 }
             }
             binding.root.setOnClickListener { clickListener?.invoke(item) }

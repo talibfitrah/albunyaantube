@@ -17,6 +17,7 @@ This document enumerates verifiable acceptance criteria linked to requirements, 
 | R2 | Frictionless consumption | AC-AND-001 | Home feed renders sections (Channels/Playlists/Videos) each limited to 3 latest per source. | `/home` | Android Paging tests |
 | R2 |  | AC-AND-002 | Player disables autoplay on completion; shows replay button. | N/A (client logic) | Android Instrumentation |
 | R2 |  | AC-AND-003 | Audio-only toggle switches ExoPlayer to audio stream without restarting playback. | `/videos/{id}` | Player Reliability |
+| R2 |  | AC-AND-001 | Metadata hydrator fills home/channel/playlist summaries via NewPipeExtractor when backend payload omits fields; Albunyaan overrides must take precedence. | `/home`, `/channels`, `/playlists`, `/videos` | MetadataHydratorTest + future instrumentation |
 | R3 | Operational governance | AC-ADM-001 | Admin user CRUD enforces RBAC (only ADMIN can create). | `/admin/users` | Backend Security tests |
 | R3 |  | AC-ADM-002 | Audit list paginates via cursor; next cursor null when end reached. | `/admin/audit` | Admin E2E |
 | R4 | Localization quality | AC-I18N-001 | API responses honor `Accept-Language` (ar, nl) with fallback to `en`. | all localized endpoints | Backend Integration |
