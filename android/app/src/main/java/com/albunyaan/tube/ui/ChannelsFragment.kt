@@ -15,7 +15,8 @@ class ChannelsFragment : ContentListFragment() {
         if (item is ContentItem.Channel) {
             val args = bundleOf(
                 ChannelDetailFragment.ARG_CHANNEL_ID to item.id,
-                ChannelDetailFragment.ARG_CHANNEL_NAME to item.name
+                ChannelDetailFragment.ARG_CHANNEL_NAME to item.name,
+                ChannelDetailFragment.ARG_EXCLUDED to false
             )
             findNavController().navigate(R.id.action_channelsFragment_to_channelDetailFragment, args)
         }

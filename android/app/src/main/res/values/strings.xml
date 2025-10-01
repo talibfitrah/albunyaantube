@@ -33,4 +33,5 @@
     <string name="playlist_detail_downloading">Download queued</string>
     <string name="playlist_detail_download_disabled">Download unavailable</string>
     <string name="playlist_detail_download_hint">Downloads respect policy AC-DL-001. Content becomes available offline once completed.</string>
+    <string name="detail_excluded_banner">This item is currently unavailable due to policy restrictions.</string>
 </resources>

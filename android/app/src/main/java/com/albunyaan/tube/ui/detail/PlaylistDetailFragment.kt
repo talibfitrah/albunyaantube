@@ -20,6 +20,7 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
     private val downloadPolicy: DownloadPolicy by lazy {
         DownloadPolicy.valueOf(requireArguments().getString(ARG_DOWNLOAD_POLICY) ?: DownloadPolicy.ENABLED.name)
     }
+    private val isExcluded: Boolean by lazy { requireArguments().getBoolean(ARG_EXCLUDED, false) }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -36,6 +37,8 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
             playlistDescription.text = getString(R.string.playlist_detail_description_placeholder)
             heroInitial.text = resolvedTitle.firstOrNull()?.uppercaseChar()?.toString() ?: "P"
             configureDownloadButton(downloadPolicy)
+            exclusionBanner.visibility = if (isExcluded) View.VISIBLE else View.GONE
+            downloadButton.isEnabled = downloadButton.isEnabled && !isExcluded
         }
     }
 
@@ -68,6 +71,7 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
         const val ARG_PLAYLIST_CATEGORY = "playlistCategory"
         const val ARG_PLAYLIST_COUNT = "playlistCount"
         const val ARG_DOWNLOAD_POLICY = "downloadPolicy"
+        const val ARG_EXCLUDED = "excluded"
     }
 }
 

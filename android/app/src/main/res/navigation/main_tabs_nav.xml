@@ -43,6 +43,12 @@
             android:name="channelName"
             app:argType="string"
             app:nullable="true" />
+        <argument
+            android:name="excluded"
+            app:argType="boolean"
+            android:defaultValue="false" />
+        <deepLink
+            app:uri="albunyaantube://channel/{channelId}" />
     </fragment>
 
     <fragment
@@ -67,5 +73,11 @@
             android:name="downloadPolicy"
             app:argType="string"
             android:defaultValue="ENABLED" />
+        <argument
+            android:name="excluded"
+            app:argType="boolean"
+            android:defaultValue="false" />
+        <deepLink
+            app:uri="albunyaantube://playlist/{playlistId}" />
     </fragment>
 </navigation>

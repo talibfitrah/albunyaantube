@@ -14,11 +14,13 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
 
     private val channelId: String by lazy { requireArguments().getString(ARG_CHANNEL_ID).orEmpty() }
     private val channelName: String by lazy { requireArguments().getString(ARG_CHANNEL_NAME).orEmpty() }
+    private val isExcluded: Boolean by lazy { requireArguments().getBoolean(ARG_EXCLUDED, false) }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding = FragmentChannelDetailBinding.bind(view).apply {
             channelTitle.text = channelName.ifBlank { channelId }
+            exclusionBanner.visibility = if (isExcluded) View.VISIBLE else View.GONE
             val tabs = ChannelTab.values()
             viewPager.adapter = ChannelDetailPagerAdapter(this@ChannelDetailFragment, channelId, channelName, tabs)
             TabLayoutMediator(tabLayout, viewPager) { tab, position ->
@@ -35,6 +37,7 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
     companion object {
         const val ARG_CHANNEL_ID = "channelId"
         const val ARG_CHANNEL_NAME = "channelName"
+        const val ARG_EXCLUDED = "excluded"
     }
 }
 

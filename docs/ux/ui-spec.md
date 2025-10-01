@@ -83,6 +83,7 @@ Each screen references the mockups. Layout measurements assume 360dp width basel
 - Tabs across top with 16dp padding; maintain horizontal scroll for overflow.
 - Content area uses grid or list based on tab (Videos grid, Live list, etc.).
 - Android skeleton (2025-10-05): ViewPager2 with tabs (Videos/Live/Shorts/Playlists/Posts) and placeholder copy until backend feeds arrive; titles persist when navigating back from nested screens.
+- Deep link banner: when policy marks a channel excluded, show a red banner beneath the title with copy “This item is currently unavailable due to policy restrictions.”
 
 ### Playlists List (`7_playlist_list_screen.png`)
 - Card height 132dp, image left 40%, text right with Body + Caption for counts.
@@ -93,6 +94,7 @@ Each screen references the mockups. Layout measurements assume 360dp width basel
 - Download playlist button anchored under hero; success color.
 - Video list inherits list card style with per-item download toggles.
 - Android skeleton (2025-10-05): Scrollable layout with hero placeholder initial, metadata, and download CTA reflecting policy states (enabled/queued/disabled) while awaiting backend feeds.
+- Exclusion messaging mirrors channel detail banner and disables the download CTA when true.
 
 ### Videos Tab (`9_all_videos_screen.png`)
 - Filters row pinned under header: Category, Length, Date, Popular dropdowns.

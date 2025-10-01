@@ -20,7 +20,8 @@ class PlaylistsFragment : ContentListFragment() {
                 PlaylistDetailFragment.ARG_PLAYLIST_TITLE to item.title,
                 PlaylistDetailFragment.ARG_PLAYLIST_CATEGORY to item.category,
                 PlaylistDetailFragment.ARG_PLAYLIST_COUNT to item.itemCount,
-                PlaylistDetailFragment.ARG_DOWNLOAD_POLICY to policy.name
+                PlaylistDetailFragment.ARG_DOWNLOAD_POLICY to policy.name,
+                PlaylistDetailFragment.ARG_EXCLUDED to false
             )
             findNavController().navigate(R.id.action_playlistsFragment_to_playlistDetailFragment, args)
         }

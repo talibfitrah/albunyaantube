@@ -402,6 +402,14 @@ meta:
 - 2025-10-05: Android scaffold includes playlist hero + download CTA with placeholder policy evaluation; awaiting backend wiring for real states.
 
 ### AND-DETAILS-03 — Deep Links & Exclusions Enforcement
+```yaml
+meta:
+  id: AND-DETAILS-03
+  status: done
+  owner: Android
+  depends: [AND-DETAILS-02]
+  lastReviewed: 2025-10-05
+```
 **Estimate**: 3h.
 
 **Goals**
@@ -427,6 +435,7 @@ meta:
 **Reflect**
 - Note policy workflows for updating exclusions and required notifications.
 - Update risk register if deep link collisions identified.
+- 2025-10-05: Android shell now resolves `albunyaantube://channel/{id}` and `/playlist/{id}` deep links, showing placeholder exclusion banners when policy flag present.
 
 ## Phase 8 — Player & Background Audio
 
