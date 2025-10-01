@@ -184,6 +184,14 @@ meta:
 - Capture risks around asset localization or animation performance.
 
 ### AND-SKEL-03 — Locale Switcher & RTL Foundation
+```yaml
+meta:
+  id: AND-SKEL-03
+  status: in-progress
+  owner: Android
+  depends: [AND-SKEL-02]
+  lastReviewed: 2025-10-04
+```
 **Estimate**: 2.5h.
 
 **Goals**

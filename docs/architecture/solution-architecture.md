@@ -32,6 +32,7 @@ These schemas inform JPA entities and API payloads.
 - **Playback Engine**: ExoPlayer integrated with MediaSession + Notification for background playback. Audio-only toggle selects audio stream variant from backend-provided manifest. PiP supported via Android 12 APIs. See Phase 8 plan in [`../testing/test-strategy.md`](../testing/test-strategy.md#player-reliability).
 - **Downloads**: Foreground service with WorkManager orchestrating downloads; store files in app-private storage with quotas (see [`../security/threat-model.md`](../security/threat-model.md#policy-controls)).
 - **Localization**: Locale switcher per [`../i18n/strategy.md`](../i18n/strategy.md#android-implementation); full RTL mirroring.
+- **Locale Switcher Skeleton**: `LocaleManager` (DataStore-backed) and locale settings fragment provide the in-app language chooser. Applying locales uses `AppCompatDelegate.setApplicationLocales` to avoid process restarts and ensures numeral shaping aligns with the chosen locale.
 
 ## Admin Frontend Architecture
 - Vue 3 + Vite + TypeScript, Pinia for state management, Vue Router for routing, vue-i18n for localization.

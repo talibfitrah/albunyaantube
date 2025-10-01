@@ -5,6 +5,8 @@ Phase 5 begins the Android client by defining the app-level navigation graph and
 ## Module Overview
 - `app/src/main/res/navigation/app_nav_graph.xml` — canonical graph with splash → onboarding → main shell destinations.
 - `app/src/main/res/menu/bottom_nav_menu.xml` — persistent bottom navigation items mapping to primary destinations.
+- `app/src/main/res/layout/fragment_onboarding.xml` & `strings_onboarding.xml` — onboarding carousel skeleton with CTA/help placeholders.
+- `app/src/main/res/layout/fragment_locale_settings.xml` & LocaleManager stubs — locale switcher strategy aligned with admin UI and i18n plan.
 - `app/src/main/java/com/albunyaan/tube/ui/MainActivity.kt` — single-activity shell with `NavHostFragment` placeholder and state hand-off comments.
 - `app/src/main/java/com/albunyaan/tube/ui/*Fragment.kt` — stub fragments representing tab destinations.
 - `app/src/androidTest/java/com/albunyaan/tube/navigation/NavigationGraphTest.kt` — instrumentation sketch that will verify tab state retention once the project is bootstrapped.

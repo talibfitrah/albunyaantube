@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="supported_locales">
+        <item>en</item>
+        <item>ar</item>
+        <item>nl</item>
+    </string-array>
+
+    <string-array name="supported_locale_labels">
+        <item>English</item>
+        <item>العربية</item>
+        <item>Nederlands</item>
+    </string-array>
+</resources>
