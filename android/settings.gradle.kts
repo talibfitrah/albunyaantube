@@ -17,3 +17,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "AlbunyaanTubeAndroid"
 include(":app")
+include(":macrobenchmarks")

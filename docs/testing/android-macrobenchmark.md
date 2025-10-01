@@ -31,7 +31,7 @@ This guide bootstraps the macrobenchmark workstream for endless scroll and downl
 Collect artefacts from `macrobenchmarks/build/outputs/benchmark`.
 
 ## Reporting
-- Upload JSON summaries to `perf/android-scroll.csv` (append timestamp, device, metric, pass/fail).
+- Upload JSON summaries to `perf/android-scroll.csv` (append timestamp, device, metric, pass/fail). Initial placeholder row committed 2025-10-08; replace `uncollected` once devices run.
 - Update Grafana `Perf:Android` dashboard via Cloud Storage ingestion job.
 - Raise ticket if frame time > budget or cold start exceeds 2.5 s.
 

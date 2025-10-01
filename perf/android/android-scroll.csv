@@ -1,0 +1,2 @@
+# timestamp,device,scenario,metric,value,threshold,status,notes
+2025-10-08T00:00:00Z,Pixel4a,ColdStart,StartupMs,uncollected,2500,PENDING,Awaiting macrobenchmark execution on device

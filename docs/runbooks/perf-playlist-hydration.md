@@ -24,7 +24,7 @@ This runbook captures the workflow for the Phase 10 hardening task that optimise
    EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
    SELECT ... -- query used by PlaylistRepository.list()
    ```
-   Save output to `perf/api/playlist-plan-baseline.json`.
+   Save output to `perf/api/playlist-plan-baseline.json` and log the run in `perf/api/playlist-findings.md`.
 3. **Stress with Gatling**
    ```bash
    ./gradlew :backend:gatlingRun-listingSweep -Dusers=200 -Dramp=60
