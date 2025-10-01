@@ -25,7 +25,7 @@ This strategy spans backend, admin frontend, and Android client. It complements 
 ## Admin Frontend Testing
 - **Unit**: Vitest for components; ensure tokens from [`../ux/design-tokens.json`](../ux/design-tokens.json) applied. Moderation queue spec covers approve/reject flows, audit hook emission, and reject modal focus traps.
 - **Filters**: Pinia store + component tests validate shared registry search filters, including video length/date/sort parameters and debounced text queries propagating across tabs.
-- **E2E**: Playwright hitting staging backend mock; scenarios include moderation approval, exclusions editing, audit pagination, and blended search/import flows (single-surface results, bulk include/exclude).
+- **E2E**: Playwright (see `frontend/tests/e2e`) intercepts API traffic to exercise moderation approval, exclusions editing (search → update → bulk delete → add), audit pagination, and blended search/import flows. Accessibility assertions run via `@axe-core/playwright`. Execute locally with `npm run build && npm run test:e2e` inside `frontend/`.
 - **i18n**: Snapshot tests verifying ar/nl translations, directionality (RTL snapshots).
 - **Accessibility**: axe-core integration ensures WCAG AA; coverage includes skip-to-content focus target, keyboard traversal for locale switcher/search/table controls, and dialog focus traps (moderation reject, exclusions CRUD). Document violations in the Phase 4 accessibility log and re-test after fixes land.
 

@@ -1,4 +1,10 @@
-export type AuditEventName = 'moderation:approve' | 'moderation:reject';
+export type AuditEventName =
+  | 'moderation:approve'
+  | 'moderation:reject'
+  | 'exclusions:create'
+  | 'exclusions:update'
+  | 'exclusions:delete'
+  | 'exclusions:delete-many';
 
 export interface AuditEventDetail {
   name: AuditEventName;
