@@ -4,6 +4,7 @@ plugins {
     id("java")
     id("org.springframework.boot") version "3.2.5"
     id("io.spring.dependency-management") version "1.1.4"
+    id("io.gatling.gradle") version "3.10.3"
 }
 
 group = "com.albunyaan"
@@ -44,6 +45,10 @@ dependencies {
     }
 }
 
+gatling {
+    logLevel = "INFO"
+}
+
 tasks.test {
     useJUnitPlatform()
     testLogging {
@@ -51,4 +56,3 @@ tasks.test {
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
     }
 }
-

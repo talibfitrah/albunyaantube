@@ -27,7 +27,9 @@ This runbook captures the workflow for the Phase 10 hardening task that optimise
    Save output to `perf/api/playlist-plan-baseline.json` and log the run in `perf/api/playlist-findings.md`.
 3. **Stress with Gatling**
    ```bash
-   ./gradlew :backend:gatlingRun-listingSweep -Dusers=200 -Dramp=60
+   ./gradlew :backend:gatlingRun \
+     -Dgatling.simulationClass=com.albunyaan.tube.perf.ListingSweepSimulation \
+     -Dusers=200 -Dramp=60 -Dlimit=50
    ```
    Record p95 latency, payload size, Redis hit ratio.
 4. **Check Redis refresh**
