@@ -54,7 +54,7 @@ case "$MODE" in
     echo "Unsupported mode: $MODE" >&2
     exit 1
     ;;
-endcase
+esac
 
 cd "$ANDROID_DIR"
 
