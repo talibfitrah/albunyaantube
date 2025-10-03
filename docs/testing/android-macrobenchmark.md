@@ -42,7 +42,7 @@ This guide bootstraps the macrobenchmark workstream for endless scroll and downl
    - `ColdStartBenchmark`: launches `MainActivity` using `MacrobenchmarkRule`.
    - `ColdStartBaselineProfile`: generates startup baseline profiles using `BaselineProfileRule`.
    - `HomeScrollBenchmark`: scrolls RecyclerView using `UiDevice` gestures while capturing
-     `FrameTimingMetric` for feed smoothness.
+     `FrameTimingMetric` (requires API 29+, otherwise skipped).
    - `DownloadFlowBenchmark`: triggers download CTA on seeded content via `UiAutomator`.
    Depend on both `androidx.benchmark:benchmark-macro-junit4` and
    `androidx.benchmark:benchmark-junit4` so the instrumentation runner is packaged with the

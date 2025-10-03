@@ -1,5 +1,6 @@
 package com.albunyaan.tube.macrobenchmarks
 
+import android.os.Build
 import androidx.benchmark.macro.FrameTimingMetric
 import androidx.benchmark.macro.StartupMode
 import androidx.benchmark.macro.junit4.MacrobenchmarkRule
@@ -8,6 +9,7 @@ import androidx.test.filters.LargeTest
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.Until
+import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -21,6 +23,8 @@ class HomeScrollBenchmark {
 
     @Test
     fun scrollFeed() {
+        assumeTrue("Requires API 29+ for Perfetto frame timing capture", Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+
         benchmarkRule.measureRepeated(
             packageName = TARGET_PACKAGE,
             metrics = listOf(FrameTimingMetric()),
