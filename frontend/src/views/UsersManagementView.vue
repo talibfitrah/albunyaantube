@@ -266,10 +266,11 @@ import { useI18n } from 'vue-i18n';
 import { useCursorPagination } from '@/composables/useCursorPagination';
 import { useFocusTrap } from '@/composables/useFocusTrap';
 import {
-  createAdminUser,
-  deleteAdminUser,
-  fetchAdminUsersPage,
-  updateAdminUser
+  createUser,
+  deleteUser,
+  fetchUsersPage,
+  updateUserRole,
+  updateUserStatus
 } from '@/services/adminUsers';
 import type { AdminRole, AdminUser, AdminUserStatus } from '@/types/admin';
 import { formatDateTime as baseFormatDateTime } from '@/utils/formatters';
@@ -288,7 +289,7 @@ const actionError = ref<string | null>(null);
 const busyUserId = ref<string | null>(null);
 
 const pagination = useCursorPagination<AdminUser>(async (cursor, limit) => {
-  return fetchAdminUsersPage({
+  return fetchUsersPage({
     cursor,
     limit,
     search: activeSearch.value || undefined,
@@ -456,7 +457,7 @@ async function handleCreate() {
   createState.error = null;
   createState.isSubmitting = true;
   try {
-    await createAdminUser({
+    await createUser({
       email: createState.email.trim(),
       roles: createState.roles
     });
@@ -510,10 +511,14 @@ async function handleEdit() {
   editState.error = null;
   editState.isSubmitting = true;
   try {
-    await updateAdminUser(editingUser.value.id, {
-      roles: editState.roles,
-      status: editState.status
-    });
+    // Update role if changed
+    if (editState.roles && editState.roles.length > 0) {
+      await updateUserRole(editingUser.value.id, editState.roles[0]);
+    }
+    // Update status if changed
+    if (editState.status) {
+      await updateUserStatus(editingUser.value.id, editState.status);
+    }
     actionMessage.value = t('users.toasts.updated', { email: editingUser.value.email });
     await reload();
     closeEditDialog();
@@ -531,7 +536,7 @@ async function handleDeactivate(user: AdminUser) {
   busyUserId.value = user.id;
   actionError.value = null;
   try {
-    await deleteAdminUser(user.id);
+    await deleteUser(user.id);
     actionMessage.value = t('users.toasts.deactivated', { email: user.email });
     await reload();
   } catch (err) {
@@ -548,10 +553,7 @@ async function handleActivate(user: AdminUser) {
   busyUserId.value = user.id;
   actionError.value = null;
   try {
-    await updateAdminUser(user.id, {
-      roles: user.roles,
-      status: 'ACTIVE'
-    });
+    await updateUserStatus(user.id, 'ACTIVE');
     actionMessage.value = t('users.toasts.activated', { email: user.email });
     await reload();
   } catch (err) {

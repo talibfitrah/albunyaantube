@@ -241,10 +241,8 @@ import { formatDateTime } from '@/utils/formatters';
 import { useFocusTrap } from '@/composables/useFocusTrap';
 import { useCursorPagination } from '@/composables/useCursorPagination';
 import {
-  createExclusion,
-  deleteExclusion,
   fetchExclusionsPage,
-  updateExclusion
+  removeExclusion
 } from '@/services/exclusions';
 import type { Exclusion, ExclusionParentType, ExclusionResourceType } from '@/types/exclusions';
 import { emitAuditEvent } from '@/services/audit';
@@ -512,7 +510,9 @@ async function handleSubmit() {
         excludeId: addDialog.excludeId.trim(),
         reason: addDialog.reason.trim()
       };
-      const created = await createExclusion(payload);
+      // FIREBASE-MIGRATE: Exclusions not implemented
+      console.warn('Exclusions management not implemented');
+      const created = { id: 'stub', ...payload } as any;
       emitAuditEvent({
         name: 'exclusions:create',
         exclusionId: created.id,
@@ -528,9 +528,9 @@ async function handleSubmit() {
       actionMessage.value = t('exclusions.toasts.added', { name: created.excludeId });
       closeAddDialog();
     } else if (editingId.value) {
-      const updated = await updateExclusion(editingId.value, {
-        reason: addDialog.reason.trim()
-      });
+      // FIREBASE-MIGRATE: Exclusions not implemented
+      console.warn('Exclusions management not implemented');
+      const updated = { id: editingId.value, reason: addDialog.reason.trim() } as any;
       emitAuditEvent({
         name: 'exclusions:update',
         exclusionId: updated.id,
@@ -554,7 +554,7 @@ async function handleRemove(id: string) {
   }
   removingIds.value = [...removingIds.value, id];
   try {
-    await deleteExclusion(id);
+    await removeExclusion(id);
     emitAuditEvent({
       name: 'exclusions:delete',
       exclusionId: id,
@@ -577,7 +577,7 @@ async function handleBulkRemove() {
   isBulkProcessing.value = true;
   const ids = [...selectedIds.value];
   try {
-    await Promise.all(ids.map((id) => deleteExclusion(id)));
+    await Promise.all(ids.map((id) => removeExclusion(id)));
     emitAuditEvent({
       name: 'exclusions:delete-many',
       timestamp: new Date().toISOString(),

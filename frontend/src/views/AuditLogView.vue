@@ -94,7 +94,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useCursorPagination } from '@/composables/useCursorPagination';
-import { fetchAuditPage } from '@/services/adminAudit';
+import { fetchAuditLogPage } from '@/services/adminAudit';
 import type { AuditEntry } from '@/types/admin';
 import { formatDateTime as baseFormatDateTime } from '@/utils/formatters';
 
@@ -106,7 +106,7 @@ const actionFilter = ref('');
 const errorMessage = ref<string | null>(null);
 
 const pagination = useCursorPagination<AuditEntry>(async (cursor, limit) => {
-  return fetchAuditPage({
+  return fetchAuditLogPage({
     cursor,
     limit,
     actorId: actorFilter.value.trim() || undefined,

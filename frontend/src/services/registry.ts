@@ -65,8 +65,9 @@ export async function fetchChannelsPage(params: ChannelListParams = {}): Promise
   return {
     data: channels,
     pageInfo: {
+      cursor: null,
       nextCursor: null,
-      hasNextPage: false
+      hasNext: false
     }
   };
 }
@@ -77,8 +78,9 @@ export async function fetchPlaylistsPage(params: PlaylistListParams = {}): Promi
   return {
     data: [],
     pageInfo: {
+      cursor: null,
       nextCursor: null,
-      hasNextPage: false
+      hasNext: false
     }
   };
 }
@@ -89,8 +91,9 @@ export async function fetchVideosPage(params: VideoListParams = {}): Promise<Cur
   return {
     data: [],
     pageInfo: {
+      cursor: null,
       nextCursor: null,
-      hasNextPage: false
+      hasNext: false
     }
   };
 }
@@ -100,6 +103,7 @@ export async function searchRegistry(params: RegistrySearchParams = {}): Promise
   // The backend has YouTube search (/api/admin/youtube/search/*) but not registry search
   // TODO: Implement registry search or use YouTube search
   return {
+    query: params.q || '',
     channels: [],
     playlists: [],
     videos: []

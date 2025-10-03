@@ -9,8 +9,9 @@ export async function fetchProposalsPage(params: any = {}): Promise<CursorPage<a
   return {
     data: [],
     pageInfo: {
+      cursor: null,
       nextCursor: null,
-      hasNextPage: false
+      hasNext: false
     }
   };
 }

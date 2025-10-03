@@ -13,8 +13,9 @@ export async function fetchAuditLogPage(params: any = {}): Promise<CursorPage<an
   return {
     data: logs,
     pageInfo: {
+      cursor: null,
       nextCursor: null,
-      hasNextPage: false
+      hasNext: false
     }
   };
 }

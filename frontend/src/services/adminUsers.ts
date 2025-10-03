@@ -11,8 +11,9 @@ export async function fetchUsersPage(params: any = {}): Promise<CursorPage<any>>
   return {
     data: users,
     pageInfo: {
+      cursor: null,
       nextCursor: null,
-      hasNextPage: false
+      hasNext: false
     }
   };
 }

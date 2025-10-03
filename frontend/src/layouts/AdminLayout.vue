@@ -119,43 +119,57 @@ function handleSkip() {
 
 .layout {
   display: grid;
-  grid-template-columns: 240px 1fr;
+  grid-template-columns: 260px 1fr;
   min-height: 100vh;
 }
 
 .sidebar {
   background: var(--color-surface-inverse);
   color: var(--color-text-inverse);
-  padding: 1.5rem 1rem;
+  padding: 2rem 1.25rem;
   display: flex;
   flex-direction: column;
-  gap: 2rem;
+  gap: 2.5rem;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .brand {
-  font-size: 1.25rem;
-  font-weight: 600;
+  font-size: 1.5rem;
+  font-weight: 700;
   color: var(--color-text-inverse);
+  letter-spacing: -0.02em;
+  padding: 0 0.5rem;
 }
 
 nav {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.25rem;
 }
 
 .nav-item {
-  padding: 0.75rem 1rem;
+  padding: 0.875rem 1.25rem;
   border-radius: 0.5rem;
   color: var(--color-text-inverse-muted);
-  transition: background 0.2s ease, color 0.2s ease;
+  transition: all 0.2s ease;
+  font-weight: 500;
+  font-size: 0.9375rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .nav-item:hover,
-.nav-item.active,
 .nav-item:focus-visible {
-  background: var(--color-brand-soft);
+  background: rgba(255, 255, 255, 0.08);
   color: var(--color-text-inverse);
+}
+
+.nav-item.active {
+  background: var(--color-brand);
+  color: var(--color-text-inverse);
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .nav-item:focus-visible {
@@ -174,8 +188,10 @@ nav {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1.25rem 1.5rem;
+  padding: 1rem 2rem;
   border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+  min-height: 64px;
 }
 
 .topbar-actions {
@@ -227,8 +243,9 @@ nav {
 }
 
 main {
-  padding: 1.5rem;
+  padding: 2rem;
   flex: 1;
   background: var(--color-bg);
+  overflow-y: auto;
 }
 </style>

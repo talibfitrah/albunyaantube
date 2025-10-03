@@ -100,32 +100,44 @@ async function handleSubmit() {
   display: grid;
   place-items: center;
   padding: 2rem 1rem;
-  background: radial-gradient(circle at 10% 20%, var(--gradient-auth-a) 0%, transparent 60%),
-    radial-gradient(circle at 90% 10%, var(--gradient-auth-b) 0%, transparent 55%),
-    var(--color-surface-inverse);
+  background: linear-gradient(135deg, #123d32 0%, #16835a 100%);
+  position: relative;
+}
+
+.auth-shell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 20% 30%, rgba(47, 161, 114, 0.2) 0%, transparent 60%),
+    radial-gradient(circle at 80% 70%, rgba(22, 131, 90, 0.15) 0%, transparent 50%);
+  pointer-events: none;
 }
 
 .panel {
-  width: min(420px, 100%);
+  width: min(440px, 100%);
   background: var(--color-surface);
-  padding: 2.5rem 2.25rem;
-  border-radius: 1.25rem;
-  box-shadow: var(--shadow-elevated);
+  padding: 3rem 2.5rem;
+  border-radius: 1rem;
+  box-shadow: 0 24px 64px -16px rgba(0, 0, 0, 0.3);
   display: flex;
   flex-direction: column;
   gap: 2rem;
+  position: relative;
+  z-index: 1;
 }
 
 header h1 {
   margin: 0;
-  font-size: 1.75rem;
+  font-size: 2rem;
   font-weight: 700;
   color: var(--color-text-primary);
+  letter-spacing: -0.02em;
 }
 
 header p {
-  margin: 0.5rem 0 0;
+  margin: 0.75rem 0 0;
   color: var(--color-text-secondary);
+  font-size: 0.9375rem;
 }
 
 form {
@@ -143,19 +155,26 @@ form {
 label {
   font-weight: 600;
   color: var(--color-text-primary);
+  font-size: 0.875rem;
 }
 
 input {
-  padding: 0.75rem 0.85rem;
-  border-radius: 0.75rem;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface-alt);
-  transition: border 0.2s ease, box-shadow 0.2s ease;
+  padding: 0.875rem 1rem;
+  border-radius: 0.5rem;
+  border: 1.5px solid var(--color-border);
+  background: var(--color-surface);
+  transition: all 0.2s ease;
+  font-size: 0.9375rem;
+}
+
+input:hover {
+  border-color: var(--color-brand);
 }
 
 input:focus-visible {
   border-color: var(--color-brand);
-  box-shadow: var(--shadow-focus);
+  box-shadow: 0 0 0 3px rgba(22, 131, 90, 0.1);
+  outline: none;
 }
 
 .error {
@@ -166,21 +185,30 @@ input:focus-visible {
 
 .submit {
   border: none;
-  border-radius: 0.75rem;
-  padding: 0.85rem 1rem;
-  background: linear-gradient(120deg, var(--color-brand), var(--color-accent));
+  border-radius: 0.5rem;
+  padding: 1rem;
+  background: var(--color-brand);
   color: var(--color-text-inverse);
   font-weight: 600;
+  font-size: 0.9375rem;
   cursor: pointer;
-  transition: filter 0.2s ease;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .submit:disabled {
-  cursor: progress;
-  opacity: 0.7;
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .submit:not(:disabled):hover {
-  filter: brightness(1.05);
+  background: var(--color-accent);
+  box-shadow: 0 4px 12px rgba(22, 131, 90, 0.25);
+  transform: translateY(-1px);
+}
+
+.submit:not(:disabled):active {
+  transform: translateY(0);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 </style>

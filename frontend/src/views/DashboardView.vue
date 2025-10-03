@@ -184,10 +184,6 @@ onMounted(() => {
 
 <style scoped>
 .panel {
-  background: var(--color-surface);
-  border-radius: 1rem;
-  padding: 2rem;
-  box-shadow: var(--shadow-elevated);
   display: flex;
   flex-direction: column;
   gap: 2rem;
@@ -195,14 +191,16 @@ onMounted(() => {
 
 header h1 {
   margin: 0;
-  font-size: 1.75rem;
-  font-weight: 600;
+  font-size: 2rem;
+  font-weight: 700;
   color: var(--color-text-primary);
+  letter-spacing: -0.02em;
 }
 
 header p {
-  margin: 0.5rem 0 0;
+  margin: 0.75rem 0 0;
   color: var(--color-text-secondary);
+  font-size: 0.9375rem;
 }
 
 .dashboard-toolbar {
@@ -306,34 +304,47 @@ header p {
 
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.5rem;
 }
 
 .card {
-  background: linear-gradient(135deg, var(--color-brand), var(--color-accent));
-  color: var(--color-text-inverse);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
   border-radius: 0.75rem;
-  padding: 1.5rem;
+  padding: 1.75rem;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.875rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  transition: all 0.2s ease;
+}
+
+.card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  transform: translateY(-2px);
+  border-color: var(--color-brand);
 }
 
 .card-title {
-  font-size: 0.95rem;
+  font-size: 0.8125rem;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.05em;
+  color: var(--color-text-secondary);
+  font-weight: 600;
 }
 
 .card-value {
-  font-size: 2rem;
+  font-size: 2.25rem;
   font-weight: 700;
+  color: var(--color-brand);
+  line-height: 1.2;
 }
 
 .card-caption {
-  font-size: 0.85rem;
-  opacity: 0.85;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
 }
 
 .card-meta {
@@ -342,8 +353,11 @@ header p {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  font-size: 0.9rem;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--color-border);
 }
 
 .card-warning {
@@ -358,8 +372,14 @@ header p {
 }
 
 .cards-skeleton .card {
-  background: var(--color-surface-alt);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   color: transparent;
+}
+
+.cards-skeleton .card:hover {
+  transform: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .card-skeleton {
@@ -370,7 +390,7 @@ header p {
 .skeleton-line {
   height: 1.25rem;
   border-radius: 0.5rem;
-  background: rgba(255, 255, 255, 0.4);
+  background: var(--color-surface-alt);
 }
 
 .skeleton-line.short {
@@ -386,9 +406,9 @@ header p {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.5) 50%, transparent 100%);
+  background: linear-gradient(90deg, transparent 0%, rgba(22, 131, 90, 0.08) 50%, transparent 100%);
   transform: translateX(-100%);
-  animation: shimmer 1.4s infinite;
+  animation: shimmer 1.5s infinite;
 }
 
 @keyframes shimmer {

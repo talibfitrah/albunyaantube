@@ -10,8 +10,9 @@ export async function fetchExclusionsPage(params: any = {}): Promise<CursorPage<
   return {
     data: [],
     pageInfo: {
+      cursor: null,
       nextCursor: null,
-      hasNextPage: false
+      hasNext: false
     }
   };
 }

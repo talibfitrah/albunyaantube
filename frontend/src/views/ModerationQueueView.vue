@@ -195,9 +195,9 @@ import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useCursorPagination } from '@/composables/useCursorPagination';
 import {
-  approveModerationProposal,
-  fetchModerationProposals,
-  rejectModerationProposal
+  approveProposal,
+  fetchProposalsPage,
+  rejectProposal
 } from '@/services/moderation';
 import type { ModerationProposal, ModerationProposalStatus } from '@/types/moderation';
 import { formatDateTime } from '@/utils/formatters';
@@ -221,7 +221,7 @@ const statusOptionValues = computed(() => statusOptions.value.map(option => opti
 
 const pagination = useCursorPagination<ModerationProposal>(async (cursor, limit) => {
   const status = statusFilter.value === 'ALL' ? undefined : statusFilter.value;
-  return fetchModerationProposals({ cursor, limit, status });
+  return fetchProposalsPage({ cursor, limit, status });
 });
 
 const { items, isLoading, error, load, next, previous, hasNext, hasPrevious, pageInfo } = pagination;
@@ -375,7 +375,7 @@ async function handleApprove(proposal: ModerationProposal) {
   actionLoadingId.value = proposal.id;
   pendingAction.value = 'approve';
   try {
-    await approveModerationProposal(proposal.id);
+    await approveProposal(proposal.id);
     emitAuditEvent({
       name: 'moderation:approve',
       proposalId: proposal.id,
@@ -427,7 +427,7 @@ async function confirmReject() {
   pendingAction.value = 'reject';
   try {
     const trimmedReason = rejectDialog.reason.trim();
-    await rejectModerationProposal(rejectDialog.proposal.id, trimmedReason);
+    await rejectProposal(rejectDialog.proposal.id, trimmedReason);
     emitAuditEvent({
       name: 'moderation:reject',
       proposalId: rejectDialog.proposal.id,
