@@ -10,12 +10,14 @@ android {
     defaultConfig {
         minSdk = 24
         targetSdk = 34
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "androidx.benchmark.junit4.AndroidBenchmarkRunner"
+        testInstrumentationRunnerArguments["androidx.benchmark.enabledRules"] = "BaselineProfile"
+        testInstrumentationRunnerArguments["androidx.benchmark.output.enable"] = "true"
     }
 
     buildTypes {
         create("benchmark") {
-            isDebuggable = false
+            isDebuggable = true                       // keep the run-as support
             matchingFallbacks += listOf("release")
             signingConfig = signingConfigs.getByName("debug")
         }
@@ -43,7 +45,7 @@ android {
 }
 
 dependencies {
-    implementation("androidx.benchmark:benchmark-macro-junit4:1.2.4")
+    implementation("androidx.benchmark:benchmark-macro-junit4:1.3.0")
     implementation("androidx.test.ext:junit:1.1.5")
     implementation("androidx.test:runner:1.5.2")
     implementation("androidx.test.uiautomator:uiautomator:2.3.0")

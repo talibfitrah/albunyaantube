@@ -13,8 +13,8 @@ This guide bootstraps the macrobenchmark workstream for endless scroll and downl
 - Benchmark module at `android/macrobenchmarks` (create via AGP template if absent).
 
 ## Setup
-1. Enable profileable builds in `app/build.gradle.kts` for `benchmark` build type.
-2. Create benchmark cases:
+1. Enable profileable builds in `app/build.gradle.kts` for the `benchmark` build type.
+2. Create benchmark cases under `android/macrobenchmarks/src/main/java` (the `com.android.test` plugin treats the `main` source set as the instrumentation payload):
    - `ColdStartBenchmark`: launches `MainActivity` using `MacrobenchmarkRule`.
    - `HomeScrollBenchmark`: scrolls RecyclerView using `UiDevice` gestures.
    - `DownloadFlowBenchmark`: triggers download CTA on seeded content via `UiAutomator`.
@@ -25,10 +25,18 @@ This guide bootstraps the macrobenchmark workstream for endless scroll and downl
 
 ## Execution
 ```bash
-./gradlew :macrobenchmarks:connectedCheck \
+./gradlew :macrobenchmarks:connectedBenchmarkAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=BaselineProfile
 ```
-Collect artefacts from `macrobenchmarks/build/outputs/benchmark`.
+
+The Gradle task copies `benchmarkData.json` into `android/macrobenchmarks/build/outputs/connected_android_test_additional_output/benchmark/connected/<device>/`. If you need to pull manually from the device, use:
+
+```bash
+adb shell run-as com.albunyaan.tube.macrobenchmarks cat files/benchmarkData.json \
+  > android/macrobenchmarks/build/outputs/benchmark-results/benchmarkData.json
+```
+
+(`files/benchmarkData.json` is created by `androidx.benchmark.junit4.AndroidBenchmarkRunner` when the `androidx.benchmark.output.enable=true` instrumentation argument is present.)
 
 ## Reporting
 - Upload JSON summaries to `perf/android-scroll.csv` (append timestamp, device, metric, pass/fail). Initial placeholder row committed 2025-10-08; replace `uncollected` once devices run.
