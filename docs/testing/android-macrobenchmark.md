@@ -55,7 +55,9 @@ This guide bootstraps the macrobenchmark workstream for endless scroll and downl
 ```
 
 This task wraps the plugin-provided `collectNonMinifiedBenchmarkBaselineProfile` target so you
-keep the familiar command. If you are on hardware that cannot drop shader cache, append
+keep the familiar command. The build script pins
+`androidx.benchmark.enabledRules=BaselineProfile` for the `nonMinifiedBenchmark` build type, so no
+extra flags are required. If you are on hardware that cannot drop shader cache, append
 `-Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.dropShaders.enable=false`.
 
 ## Execution

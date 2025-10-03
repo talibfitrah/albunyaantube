@@ -69,6 +69,12 @@ baselineProfile {
     useConnectedDevices = true
 }
 
+androidComponents {
+    onVariants(selector().withBuildType("nonMinifiedBenchmark")) { variant ->
+        variant.instrumentationRunnerArguments.put("androidx.benchmark.enabledRules", "BaselineProfile")
+    }
+}
+
 tasks.register("collectBaselineProfile") {
     group = "verification"
     description = "Collects Baseline Profiles on a connected device via the benchmark module."
