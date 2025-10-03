@@ -1,2 +1,2 @@
 # timestamp,device,scenario,metric,value,threshold,status,notes
-2025-10-08T00:00:00Z,Pixel4a,ColdStart,StartupMs,uncollected,2500,PENDING,Awaiting macrobenchmark execution on device
+2025-10-03T01:54:00Z,COR-L29,ColdStart,StartupMs,383.58,2500,PASS,"Macrobenchmark run on HONOR COR-L29 (API 28); shader cache drop disabled"
