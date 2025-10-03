@@ -41,6 +41,9 @@ import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
+import coil.ImageLoader
+import coil.disk.DiskCache
+import coil.memory.MemoryCache
 
 object ServiceLocator {
 
@@ -57,6 +60,10 @@ object ServiceLocator {
     private var overrideTelemetryClient: TelemetryClient? = null
     @Volatile
     private var overrideEulaManager: EulaManager? = null
+    @Volatile
+    private var overrideImageLoader: ImageLoader? = null
+    @Volatile
+    private var overrideImagesEnabled: Boolean? = null
 
     private val dataStore: DataStore<Preferences> by lazy {
         PreferenceDataStoreFactory.create(scope = scope) {
@@ -93,6 +100,24 @@ object ServiceLocator {
         DefaultDownloadRepository(workManager, downloadScheduler, downloadStorage, extractorMetrics, scope)
     }
     private val eulaManager: EulaManager by lazy { EulaManager(policyDataStore) }
+    private val imageLoader: ImageLoader by lazy {
+        ImageLoader.Builder(appContext)
+            .crossfade(true)
+            .memoryCache {
+                MemoryCache.Builder(appContext)
+                    .maxSizePercent(0.25)
+                    .build()
+            }
+            .diskCache {
+                DiskCache.Builder()
+                    .directory(File(appContext.cacheDir, "coil_image_cache"))
+                    .maxSizeBytes(60L * 1024 * 1024)
+                    .build()
+            }
+            .allowHardware(false)
+            .respectCacheHeaders(false)
+            .build()
+    }
 
     private val moshi: Moshi by lazy {
         Moshi.Builder()
@@ -143,6 +168,10 @@ object ServiceLocator {
 
     fun provideEulaManager(): EulaManager = overrideEulaManager ?: eulaManager
 
+    fun provideImageLoader(): ImageLoader = overrideImageLoader ?: imageLoader
+
+    fun isImageLoadingEnabled(): Boolean = overrideImagesEnabled ?: BuildConfig.ENABLE_THUMBNAIL_IMAGES
+
     fun setDownloadRepositoryForTesting(repository: DownloadRepository?) {
         overrideDownloadRepository = repository
     }
@@ -161,6 +190,14 @@ object ServiceLocator {
 
     fun setEulaManagerForTesting(manager: EulaManager?) {
         overrideEulaManager = manager
+    }
+
+    fun setImageLoaderForTesting(loader: ImageLoader?) {
+        overrideImageLoader = loader
+    }
+
+    fun setImagesEnabledForTesting(enabled: Boolean?) {
+        overrideImagesEnabled = enabled
     }
 
     private const val DOWNLOAD_QUOTA_BYTES = 500L * 1024 * 1024 // 500 MB

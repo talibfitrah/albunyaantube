@@ -2,20 +2,27 @@ package com.albunyaan.tube.ui.list
 
 import android.view.LayoutInflater
 import android.view.ViewGroup
+import androidx.core.view.isVisible
 import androidx.paging.PagingDataAdapter
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
+import coil.ImageLoader
+import coil.load
+import com.albunyaan.tube.R
 import com.albunyaan.tube.data.model.ContentItem
-import java.text.NumberFormat
 import com.albunyaan.tube.databinding.ItemContentBinding
+import java.text.NumberFormat
 
-class ContentAdapter : PagingDataAdapter<ContentItem, ContentAdapter.ContentViewHolder>(DIFF) {
+class ContentAdapter(
+    private val imageLoader: ImageLoader,
+    private val enableImages: Boolean = true
+) : PagingDataAdapter<ContentItem, ContentAdapter.ContentViewHolder>(DIFF) {
 
     private var onItemClick: ((ContentItem) -> Unit)? = null
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ContentViewHolder {
         val binding = ItemContentBinding.inflate(LayoutInflater.from(parent.context), parent, false)
-        return ContentViewHolder(binding, onItemClick)
+        return ContentViewHolder(binding, onItemClick, imageLoader, enableImages)
     }
 
     override fun onBindViewHolder(holder: ContentViewHolder, position: Int) {
@@ -28,7 +35,9 @@ class ContentAdapter : PagingDataAdapter<ContentItem, ContentAdapter.ContentView
 
     class ContentViewHolder(
         private val binding: ItemContentBinding,
-        private val clickListener: ((ContentItem) -> Unit)?
+        private val clickListener: ((ContentItem) -> Unit)?,
+        private val imageLoader: ImageLoader,
+        private val enableImages: Boolean
     ) : RecyclerView.ViewHolder(binding.root) {
         fun bind(item: ContentItem) {
             when (item) {
@@ -55,7 +64,32 @@ class ContentAdapter : PagingDataAdapter<ContentItem, ContentAdapter.ContentView
                     binding.description.text = description
                 }
             }
+            val thumbnailUrl = when (item) {
+                is ContentItem.Video -> item.thumbnailUrl
+                is ContentItem.Channel -> item.thumbnailUrl
+                is ContentItem.Playlist -> item.thumbnailUrl
+            }
+            bindThumbnail(thumbnailUrl)
             binding.root.setOnClickListener { clickListener?.invoke(item) }
+        }
+
+        private fun bindThumbnail(url: String?) {
+            if (!enableImages) {
+                binding.thumbnail.isVisible = true
+                binding.thumbnail.setImageResource(R.drawable.thumbnail_placeholder)
+                return
+            }
+            if (url.isNullOrBlank()) {
+                binding.thumbnail.isVisible = true
+                binding.thumbnail.setImageResource(R.drawable.thumbnail_placeholder)
+                return
+            }
+            binding.thumbnail.isVisible = true
+            binding.thumbnail.load(url, imageLoader) {
+                placeholder(R.drawable.thumbnail_placeholder)
+                error(R.drawable.thumbnail_placeholder)
+                crossfade(true)
+            }
         }
     }
 

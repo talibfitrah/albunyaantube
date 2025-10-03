@@ -20,6 +20,7 @@ android {
         manifestPlaceholders["profileable"] = "false"
 
         buildConfigField("String", "API_BASE_URL", "\"http://localhost:8080/\"")
+        buildConfigField("boolean", "ENABLE_THUMBNAIL_IMAGES", "true")
     }
 
     buildTypes {
@@ -30,6 +31,7 @@ android {
                 "proguard-rules.pro"
             )
             signingConfig = signingConfigs.getByName("debug")
+            buildConfigField("boolean", "ENABLE_THUMBNAIL_IMAGES", "true")
         }
 
         create("benchmark") {
@@ -37,6 +39,7 @@ android {
             signingConfig = signingConfigs.getByName("debug")
             matchingFallbacks += listOf("release")
             manifestPlaceholders["profileable"] = "true"
+            buildConfigField("boolean", "ENABLE_THUMBNAIL_IMAGES", "false")
         }
     }
 
@@ -85,6 +88,7 @@ dependencies {
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.8")
     implementation("androidx.work:work-runtime-ktx:2.9.0")
     implementation("androidx.profileinstaller:profileinstaller:1.3.1")
+    implementation("io.coil-kt:coil:2.6.0")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")

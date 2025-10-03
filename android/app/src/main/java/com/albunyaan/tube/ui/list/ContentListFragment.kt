@@ -1,5 +1,6 @@
 package com.albunyaan.tube.ui.list
 
+import android.content.Context
 import android.os.Bundle
 import android.content.res.ColorStateList
 import android.view.Menu
@@ -14,6 +15,8 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.paging.LoadState
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import androidx.recyclerview.widget.SimpleItemAnimator
 import com.albunyaan.tube.R
 import com.albunyaan.tube.ServiceLocator
 import com.albunyaan.tube.analytics.ErrorCategory
@@ -29,9 +32,14 @@ import com.albunyaan.tube.databinding.DialogFilterListBinding
 import com.google.android.material.chip.Chip
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import androidx.core.content.ContextCompat
+import coil.ImageLoader
+import coil.request.CachePolicy
+import coil.request.ImageRequest
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.io.IOException
+import java.util.LinkedHashSet
+import kotlin.math.max
 import retrofit2.HttpException
 
 abstract class ContentListFragment : Fragment(R.layout.fragment_home) {
@@ -39,7 +47,7 @@ abstract class ContentListFragment : Fragment(R.layout.fragment_home) {
     protected abstract val contentType: ContentType
 
     private var binding: FragmentHomeBinding? = null
-    private val adapter = ContentAdapter()
+    private lateinit var adapter: ContentAdapter
     private var currentFilterState: FilterState = FilterState()
     private var categoryChip: Chip? = null
     private var lengthChip: Chip? = null
@@ -48,12 +56,22 @@ abstract class ContentListFragment : Fragment(R.layout.fragment_home) {
     private var clearChip: Chip? = null
     private val metricsReporter: ListMetricsReporter = ServiceLocator.provideListMetricsReporter()
     private var lastMetricsSnapshot: MetricsSnapshot? = null
+    private lateinit var thumbnailPrefetcher: ThumbnailPrefetcher
     private val viewModel: ContentListViewModel by viewModels {
         ContentListViewModel.Factory(
             ServiceLocator.provideFilterManager(),
             ServiceLocator.provideContentRepository(),
             contentType
         )
+    }
+
+    override fun onAttach(context: Context) {
+        super.onAttach(context)
+        val imageLoader = ServiceLocator.provideImageLoader()
+        val enableImages = ServiceLocator.isImageLoadingEnabled()
+        adapter = ContentAdapter(imageLoader, enableImages)
+        val prefetchDistance = if (enableImages) PREFETCH_ITEM_COUNT else 0
+        thumbnailPrefetcher = ThumbnailPrefetcher(context.applicationContext, imageLoader, prefetchDistance, PREFETCH_TRACK_LIMIT)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -67,9 +85,14 @@ abstract class ContentListFragment : Fragment(R.layout.fragment_home) {
         setupFilterRow(binding)
         adapter.setOnItemClickListener(::onContentClicked)
         binding.recyclerView.apply {
-            layoutManager = LinearLayoutManager(requireContext())
+            layoutManager = LinearLayoutManager(requireContext()).apply {
+                initialPrefetchItemCount = PREFETCH_ITEM_COUNT
+            }
+            (itemAnimator as? SimpleItemAnimator)?.supportsChangeAnimations = false
+            setHasFixedSize(true)
             adapter = this@ContentListFragment.adapter
         }
+        thumbnailPrefetcher.attach(binding.recyclerView, adapter)
 
         binding.listState.retryButton.setOnClickListener {
             metricsReporter.onRetry(contentType)
@@ -118,6 +141,7 @@ abstract class ContentListFragment : Fragment(R.layout.fragment_home) {
         dateChip = null
         sortChip = null
         clearChip = null
+        binding?.recyclerView?.removeOnScrollListener(thumbnailPrefetcher)
         binding = null
         super.onDestroyView()
     }
@@ -433,4 +457,71 @@ abstract class ContentListFragment : Fragment(R.layout.fragment_home) {
         SortOption.MOST_POPULAR -> getString(R.string.filter_sort_popular)
         SortOption.NEWEST -> getString(R.string.filter_sort_newest)
     }
+
+    companion object {
+        private const val PREFETCH_ITEM_COUNT = 6
+        private const val PREFETCH_TRACK_LIMIT = 120
+    }
+}
+
+private class ThumbnailPrefetcher(
+    context: Context,
+    private val imageLoader: ImageLoader,
+    private val prefetchDistance: Int,
+    private val trackLimit: Int
+) : RecyclerView.OnScrollListener() {
+
+    private val appContext = context.applicationContext
+    private var adapter: ContentAdapter? = null
+    private val prefetchedUrls = LinkedHashSet<String>()
+
+    fun attach(recyclerView: RecyclerView, adapter: ContentAdapter) {
+        this.adapter = adapter
+        if (prefetchDistance <= 0) return
+        recyclerView.addOnScrollListener(this)
+        recyclerView.post { prefetchRange(0, prefetchDistance) }
+    }
+
+    override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+        val layoutManager = recyclerView.layoutManager as? LinearLayoutManager ?: return
+        val lastVisible = layoutManager.findLastVisibleItemPosition()
+        if (lastVisible == RecyclerView.NO_POSITION) return
+        prefetchRange(lastVisible + 1, lastVisible + prefetchDistance)
+    }
+
+    private fun prefetchRange(start: Int, endInclusive: Int) {
+        val adapter = adapter ?: return
+        if (prefetchDistance <= 0) return
+        if (start > endInclusive) return
+        if (adapter.itemCount == 0) return
+        val boundedStart = max(start, 0)
+        for (index in boundedStart..endInclusive) {
+            val item = adapter.peek(index) ?: continue
+            val url = item.thumbnailUrl() ?: continue
+            if (!prefetchedUrls.add(url)) continue
+            pruneIfNeeded()
+            val request = ImageRequest.Builder(appContext)
+                .data(url)
+                .memoryCachePolicy(CachePolicy.ENABLED)
+                .diskCachePolicy(CachePolicy.ENABLED)
+                .networkCachePolicy(CachePolicy.ENABLED)
+                .build()
+            imageLoader.enqueue(request)
+        }
+    }
+
+    private fun pruneIfNeeded() {
+        if (prefetchedUrls.size <= trackLimit) return
+        val iterator = prefetchedUrls.iterator()
+        while (prefetchedUrls.size > trackLimit && iterator.hasNext()) {
+            iterator.next()
+            iterator.remove()
+        }
+    }
+}
+
+private fun ContentItem.thumbnailUrl(): String? = when (this) {
+    is ContentItem.Video -> thumbnailUrl
+    is ContentItem.Channel -> thumbnailUrl
+    is ContentItem.Playlist -> thumbnailUrl
 }

@@ -744,6 +744,9 @@ meta:
 - 2025-10-08: PERF-API-01 runbook published; Gatling + EXPLAIN workflow documented in `docs/runbooks/perf-playlist-hydration.md`.
 - 2025-10-08: PERF-ANDROID-01 macrobenchmark guide added in `docs/testing/android-macrobenchmark.md` to capture baseline measurements.
 - 2025-10-10: Baseline profile + cold-start macrobenchmark automated via `scripts/run-perf-android.sh`; COR-L29 physical device cold-start recorded at ~404 ms. Scroll benchmark scaffolded (skips on API 28 until higher API hardware available).
+- 2025-10-12: Recycler list perf guardrails landed (`ContentListFragment` prefetch tuning + change animations disabled) to prep endless scroll jank cuts before next macrobenchmark run.
+- 2025-10-13: COR-L29 rerun after guardrails reports ~516 ms timeToInitialDisplay (baseline profile + scroll benchmarks continue to skip on API 28 hardware).
+- 2025-10-13: Coil-based thumbnail rendering + prefetch added; macrobenchmark on COR-L29 now falls back to manual trace-section timing (macro logs `manual_startup_runs_ms`/`manual_startup_summary_ms`) with the latest median registering ~768 ms.
 
 **Reflect**
 - Record performance debt requiring post-hardening follow-up.
