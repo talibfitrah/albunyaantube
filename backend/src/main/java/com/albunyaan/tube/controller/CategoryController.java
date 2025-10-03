@@ -3,6 +3,7 @@ package com.albunyaan.tube.controller;
 import com.albunyaan.tube.model.Category;
 import com.albunyaan.tube.repository.CategoryRepository;
 import com.albunyaan.tube.security.FirebaseUserDetails;
+import com.albunyaan.tube.service.AuditLogService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -24,9 +25,11 @@ import java.util.concurrent.ExecutionException;
 public class CategoryController {
 
     private final CategoryRepository categoryRepository;
+    private final AuditLogService auditLogService;
 
-    public CategoryController(CategoryRepository categoryRepository) {
+    public CategoryController(CategoryRepository categoryRepository, AuditLogService auditLogService) {
         this.categoryRepository = categoryRepository;
+        this.auditLogService = auditLogService;
     }
 
     /**
@@ -89,6 +92,7 @@ public class CategoryController {
         }
 
         Category saved = categoryRepository.save(category);
+        auditLogService.log("category_created", "category", saved.getId(), user);
         return ResponseEntity.status(HttpStatus.CREATED).body(saved);
     }
 
@@ -115,6 +119,7 @@ public class CategoryController {
         existing.setUpdatedBy(user.getUid());
 
         Category updated = categoryRepository.save(existing);
+        auditLogService.log("category_updated", "category", id, user);
         return ResponseEntity.ok(updated);
     }
 
@@ -123,8 +128,10 @@ public class CategoryController {
      */
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Void> deleteCategory(@PathVariable String id)
-            throws ExecutionException, InterruptedException {
+    public ResponseEntity<Void> deleteCategory(
+            @PathVariable String id,
+            @AuthenticationPrincipal FirebaseUserDetails user
+    ) throws ExecutionException, InterruptedException {
         if (!categoryRepository.existsById(id)) {
             return ResponseEntity.notFound().build();
         }
@@ -136,6 +143,7 @@ public class CategoryController {
         }
 
         categoryRepository.deleteById(id);
+        auditLogService.log("category_deleted", "category", id, user);
         return ResponseEntity.noContent().build();
     }
 }

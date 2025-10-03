@@ -85,4 +85,11 @@ public class ChannelRepository {
         ApiFuture<WriteResult> result = getCollection().document(id).delete();
         result.get();
     }
+
+    public List<Channel> findAll() throws ExecutionException, InterruptedException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .orderBy("createdAt", Query.Direction.DESCENDING)
+                .get();
+        return query.get().toObjects(Channel.class);
+    }
 }
