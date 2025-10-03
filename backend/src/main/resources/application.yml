@@ -4,23 +4,6 @@ spring:
   docker:
     compose:
       enabled: false
-  datasource:
-    url: jdbc:postgresql://localhost:5432/albunyaan
-    username: albunyaan
-    password: changeme
-    driver-class-name: org.postgresql.Driver
-  jpa:
-    hibernate:
-      ddl-auto: validate
-    properties:
-      hibernate:
-        format_sql: true
-        jdbc:
-          time_zone: UTC
-    open-in-view: false
-  flyway:
-    enabled: true
-    locations: classpath:db/migration
   data:
     redis:
       host: localhost
@@ -35,11 +18,19 @@ management:
       exposure:
         include: health,info
 app:
+  firebase:
+    # Path to Firebase service account JSON (set via environment variable in production)
+    service-account-path: ${FIREBASE_SERVICE_ACCOUNT_PATH:classpath:firebase-service-account.json}
+    project-id: ${FIREBASE_PROJECT_ID:albunyaan-tube}
+    # Firestore settings
+    firestore:
+      database-id: ${FIRESTORE_DATABASE_ID:(default)}
+  youtube:
+    # YouTube Data API key (set via environment variable)
+    api-key: ${YOUTUBE_API_KEY:}
+    # Application name for YouTube API requests
+    application-name: Albunyaan Tube Admin
   security:
-    jwt:
-      secret: s5fQPZOwtMVQXVPyiKSTdlEPq8GMMd2CgrDeCB6Nekk=
-      access-token-ttl-seconds: 900
-      refresh-token-ttl-seconds: 259200
     cors:
       allowed-origins:
         - http://localhost:5173
@@ -48,4 +39,3 @@ app:
       email: admin@albunyaan.tube
       password: ChangeMe!123
       display-name: Initial Admin
-      reset-password-on-startup: true

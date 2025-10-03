@@ -9,21 +9,61 @@ This document summarizes the end-to-end architecture for Albunyaan Tube. Detaile
 - **Sequence**: Interaction flows for moderation approvals in [`diagrams/moderation-sequence.md`](diagrams/moderation-sequence.md) and channel tab retrieval in [`diagrams/channel-tabs-sequence.md`](diagrams/channel-tabs-sequence.md).
 
 ## Backend Architecture
-- **Language/Framework**: Java 17, Spring Boot 3 with Web, Security, Validation, Data JPA modules.
-- **Persistence**: PostgreSQL 15 (primary data store) managed via Flyway migrations; Redis for caching, rate limiting, JWT blacklist. Channel/Playlist/Video tables store Albunyaan-controlled data only (YouTube IDs, category links, inclusion/exclusion state, optional localized overrides) and maintain excluded item ID lists instead of mirroring remote metadata blobs.
-- **Integration**: NewPipeExtractor ships with the Android client to resolve metadata and stream URLs at runtime for allow-listed IDs. The backend uses the YouTube Data API solely for admin search previews and never persists remote metadata.
+- **Language/Framework**: Java 17, Spring Boot 3 with Web, Security, Validation modules.
+- **Database**: Firebase Firestore (NoSQL document database) for all persistent data. Collections: users, categories, channels, playlists, videos, moderationProposals, activityLogs. Hierarchical category structure using `parentCategoryId` field for parent-child relationships.
+- **Authentication**: Firebase Authentication with custom claims for role-based access control (RBAC). Spring Security integration validates Firebase ID tokens via `FirebaseAuthFilter`. Roles: ADMIN and MODERATOR enforced through Spring Security method-level annotations.
+- **Integration**:
+  - NewPipeExtractor ships with the Android client to resolve metadata and stream URLs at runtime for allow-listed IDs.
+  - YouTube Data API v3 used in admin backend for content search, channel/playlist expansion, and preview metadata. No remote metadata is persisted in Firestore.
 - **API Style**: REST with JSON; localized responses based on `Accept-Language` with fallback to English. Metadata fields returned by read APIs combine Albunyaan overrides with runtime extractor payloads provided by clients when available.
 - **Caching Strategy**: Redis caches popular list queries keyed by locale + category + cursor. Time-to-live 5 minutes with cache stampede protection (locking). Downloadable assets served via signed URLs; consider CDN for thumbnails.
-- **Security Architecture**: JWT-based auth with rotation and blacklist (see [`../security/threat-model.md`](../security/threat-model.md#controls)). RBAC roles ADMIN and MODERATOR enforced through Spring Security method-level annotations. Rate limiting via Redis sliding window.
+- **Security Architecture**:
+  - Firebase tokens (JWT) verified on each request via Firebase Admin SDK
+  - Custom claims (`role: admin|moderator`) control access to endpoints
+  - RBAC enforced through Spring Security with `@PreAuthorize` annotations
+  - Rate limiting via Redis sliding window
+  - See [`../security/threat-model.md`](../security/threat-model.md#controls) for detailed controls
 - **Observability**: Structured logging (JSON), distributed tracing with OpenTelemetry, metrics exported to Prometheus. Error taxonomy defined in [`../testing/test-strategy.md`](../testing/test-strategy.md#error-taxonomy).
 
-## Domain Model
-Entities defined in [`../data/json-schemas`](../data/json-schemas):
-- User, Role (RBAC)
-- Category (i18n map, slug, optional subcategories array with localized names)
-- Channel, Playlist, Video (store YouTube IDs + Albunyaan overrides, with Channel tracking `excludedVideoIds`/`excludedPlaylistIds` and Playlist tracking `excludedVideoIds`)
-- ModerationItem, Exclusion, AuditLog
-These schemas inform JPA entities and API payloads.
+## Domain Model (Firestore Collections)
+Documents stored in Firestore collections:
+
+### users/{uid}
+- uid: Firebase UID (document ID)
+- email, displayName
+- role: "admin" | "moderator" (mirrored in Firebase custom claims)
+- status: "active" | "inactive"
+- createdAt, updatedAt, lastLoginAt
+
+### categories/{id}
+- name: string (default language)
+- localizedNames: {locale: name} map
+- parentCategoryId: string | null (hierarchical structure)
+- icon: URL to category icon
+- displayOrder: integer for sorting
+- createdAt, updatedAt, createdBy, updatedBy
+
+### channels/{id}
+- youtubeId: YouTube channel ID
+- categoryIds: array of category IDs
+- status: "pending" | "approved" | "rejected"
+- excludedItems: {videos[], liveStreams[], shorts[], playlists[], posts[]}
+- submittedBy, approvedBy, createdAt, updatedAt
+
+### playlists/{id}
+- youtubeId: YouTube playlist ID
+- categoryIds: array
+- status: "pending" | "approved" | "rejected"
+- excludedVideoIds: array of excluded video IDs
+- submittedBy, approvedBy, createdAt, updatedAt
+
+### videos/{id}
+- youtubeId: YouTube video ID
+- categoryIds: array
+- status: "pending" | "approved" | "rejected"
+- submittedBy, approvedBy, createdAt, updatedAt
+
+See [FIREBASE_SETUP.md](../../backend/FIREBASE_SETUP.md) for Firestore security rules and indexes.
 
 ## Android Architecture
 - **Layers**: Presentation (Jetpack ViewModel), Domain (use cases), Data (Repository → Retrofit/OkHttp for backend, Room for offline downloads metadata).

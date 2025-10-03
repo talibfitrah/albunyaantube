@@ -25,6 +25,10 @@ Thumbs.db
 **/*_secret.*
 **/*-secret.*
 
+# Firebase service account credentials
+**/firebase-service-account.json
+!**/firebase-service-account.json.template
+
 # -----------------------
 # Logs / reports
 # -----------------------
