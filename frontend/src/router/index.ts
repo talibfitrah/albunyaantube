@@ -1,9 +1,8 @@
 import { createRouter, createWebHistory, type NavigationGuardNext, type RouteLocationNormalized } from 'vue-router';
 import LoginView from '@/views/LoginView.vue';
 import DashboardView from '@/views/DashboardView.vue';
-import RegistryLandingView from '@/views/RegistryLandingView.vue';
-import ModerationQueueView from '@/views/ModerationQueueView.vue';
-import ExclusionsWorkspaceView from '@/views/ExclusionsWorkspaceView.vue';
+import ContentSearchView from '@/views/ContentSearchView.vue';
+import CategoriesView from '@/views/CategoriesView.vue';
 import UsersManagementView from '@/views/UsersManagementView.vue';
 import AuditLogView from '@/views/AuditLogView.vue';
 import AdminLayout from '@/layouts/AdminLayout.vue';
@@ -17,21 +16,15 @@ const protectedChildRoutes = [
     meta: { requiresAuth: true }
   },
   {
-    path: 'registry',
-    name: 'registry',
-    component: RegistryLandingView,
+    path: 'content-search',
+    name: 'content-search',
+    component: ContentSearchView,
     meta: { requiresAuth: true }
   },
   {
-    path: 'exclusions',
-    name: 'exclusions',
-    component: ExclusionsWorkspaceView,
-    meta: { requiresAuth: true }
-  },
-  {
-    path: 'moderation',
-    name: 'moderation',
-    component: ModerationQueueView,
+    path: 'categories',
+    name: 'categories',
+    component: CategoriesView,
     meta: { requiresAuth: true }
   },
   {

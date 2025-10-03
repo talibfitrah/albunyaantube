@@ -15,6 +15,8 @@ export const messages = {
     },
     navigation: {
       dashboard: 'Dashboard',
+      contentSearch: 'Content Search',
+      categories: 'Categories',
       registry: 'Registry',
       moderation: 'Moderation',
       exclusions: 'Exclusions',
@@ -59,6 +61,67 @@ export const messages = {
       },
       warnings: {
         stale: 'Metrics may be out of date. Refresh to update.'
+      }
+    },
+    contentSearch: {
+      heading: 'Content Search',
+      subtitle: 'Search and discover YouTube content to add to your registry',
+      searchPlaceholder: 'Search for channels, playlists, or videos...',
+      search: 'Search',
+      searching: 'Searching...',
+      retry: 'Retry',
+      add: 'Add to Registry',
+      noResults: 'No results found. Try a different search.',
+      resultsCount: '{count} results',
+      error: 'Failed to search content.',
+      types: {
+        channels: 'Channels',
+        playlists: 'Playlists',
+        videos: 'Videos'
+      },
+      filters: {
+        type: 'Content Type',
+        category: 'Category',
+        allCategories: 'All Categories',
+        length: 'Video Length',
+        anyLength: 'Any Length',
+        short: 'Short (< 4 min)',
+        medium: 'Medium (4-20 min)',
+        long: 'Long (> 20 min)',
+        sort: 'Sort By',
+        relevant: 'Relevance',
+        recent: 'Most Recent',
+        popular: 'Most Popular'
+      }
+    },
+    categories: {
+      heading: 'Categories',
+      subtitle: 'Manage hierarchical content categories',
+      addCategory: 'Add Category',
+      addFirst: 'Add First Category',
+      addSubcategory: 'Add Subcategory',
+      edit: 'Edit',
+      delete: 'Delete',
+      loading: 'Loading categories...',
+      retry: 'Retry',
+      empty: 'No categories yet. Add your first category to get started.',
+      error: 'Failed to load categories.',
+      deleteError: 'Failed to delete category.',
+      confirmDelete: 'Are you sure you want to delete this category? All subcategories will also be deleted.',
+      dialog: {
+        addTitle: 'Add Category',
+        editTitle: 'Edit Category',
+        name: 'Category Name',
+        namePlaceholder: 'Enter category name...',
+        nameRequired: 'Category name is required.',
+        parent: 'Parent Category',
+        icon: 'Icon (optional)',
+        iconPlaceholder: 'Enter emoji or icon...',
+        displayOrder: 'Display Order',
+        cancel: 'Cancel',
+        save: 'Save',
+        saving: 'Saving...',
+        error: 'Failed to save category.'
       }
     },
     registry: {

@@ -7,8 +7,8 @@ export interface NavRoute {
 
 export const navRoutes: NavRoute[] = [
   { labelKey: 'navigation.dashboard', route: { name: 'dashboard' } },
-  // { labelKey: 'navigation.contentSearch', route: { name: 'content-search' } }, // Sprint 2
-  // { labelKey: 'navigation.categories', route: { name: 'categories' } }, // Sprint 2
+  { labelKey: 'navigation.contentSearch', route: { name: 'content-search' } },
+  { labelKey: 'navigation.categories', route: { name: 'categories' } },
   { labelKey: 'navigation.users', route: { name: 'users' } },
   { labelKey: 'navigation.audit', route: { name: 'audit' } }
 ];
