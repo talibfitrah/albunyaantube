@@ -108,3 +108,16 @@ adb shell run-as com.albunyaan.tube.macrobenchmarks cat files/benchmarkData.json
 ## Ownership
 - Android Lead (primary)
 - QA Performance cohort for validation runs
+
+## Automation helper
+
+Use `scripts/run-perf-android.sh` from the repo root to install the release build, collect the
+baseline profile, and run the macrobenchmarks in a single pass:
+
+```bash
+scripts/run-perf-android.sh --mode device        # physical hardware
+scripts/run-perf-android.sh --mode emulator      # suppress emulator warnings automatically
+```
+
+The script wires the `BENCHMARK_SUPPRESS_ERRORS` environment variable so Gradle only suppresses
+emulator warnings when requested. Pass `--skip-baseline` if you only need the benchmark run.

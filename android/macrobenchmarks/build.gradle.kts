@@ -26,6 +26,10 @@ android {
             testInstrumentationRunnerArguments["androidx.benchmark.dropShaders.throwOnFailure"] = "false"
         }
         testInstrumentationRunnerArguments["androidx.benchmark.output.enable"] = "true"
+
+        System.getenv("BENCHMARK_SUPPRESS_ERRORS")
+            ?.takeIf { it.isNotBlank() }
+            ?.let { testInstrumentationRunnerArguments["androidx.benchmark.suppressErrors"] = it }
     }
 
     buildTypes {
@@ -74,6 +78,15 @@ androidComponents {
         variant.instrumentationRunnerArguments.put("androidx.benchmark.enabledRules", "BaselineProfile")
         variant.instrumentationRunnerArguments.put("androidx.benchmark.dropShaders.enable", "false")
         variant.instrumentationRunnerArguments.put("androidx.benchmark.dropShaders.throwOnFailure", "false")
+        System.getenv("BENCHMARK_SUPPRESS_ERRORS")
+            ?.takeIf { it.isNotBlank() }
+            ?.let { variant.instrumentationRunnerArguments.put("androidx.benchmark.suppressErrors", it) }
+    }
+
+    onVariants(selector().withBuildType("benchmark")) { variant ->
+        System.getenv("BENCHMARK_SUPPRESS_ERRORS")
+            ?.takeIf { it.isNotBlank() }
+            ?.let { variant.instrumentationRunnerArguments.put("androidx.benchmark.suppressErrors", it) }
     }
 }
 
