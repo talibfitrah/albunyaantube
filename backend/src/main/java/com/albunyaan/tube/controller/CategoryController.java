@@ -102,23 +102,20 @@ public class CategoryController {
             @RequestBody Category category,
             @AuthenticationPrincipal FirebaseUserDetails user
     ) throws ExecutionException, InterruptedException {
-        return categoryRepository.findById(id)
-                .map(existing -> {
-                    existing.setName(category.getName());
-                    existing.setParentCategoryId(category.getParentCategoryId());
-                    existing.setIcon(category.getIcon());
-                    existing.setDisplayOrder(category.getDisplayOrder());
-                    existing.setLocalizedNames(category.getLocalizedNames());
-                    existing.setUpdatedBy(user.getUid());
+        Category existing = categoryRepository.findById(id).orElse(null);
+        if (existing == null) {
+            return ResponseEntity.notFound().build();
+        }
 
-                    try {
-                        Category updated = categoryRepository.save(existing);
-                        return ResponseEntity.ok(updated);
-                    } catch (Exception e) {
-                        return ResponseEntity.<Category>status(HttpStatus.INTERNAL_SERVER_ERROR).build();
-                    }
-                })
-                .orElse(ResponseEntity.notFound().build());
+        existing.setName(category.getName());
+        existing.setParentCategoryId(category.getParentCategoryId());
+        existing.setIcon(category.getIcon());
+        existing.setDisplayOrder(category.getDisplayOrder());
+        existing.setLocalizedNames(category.getLocalizedNames());
+        existing.setUpdatedBy(user.getUid());
+
+        Category updated = categoryRepository.save(existing);
+        return ResponseEntity.ok(updated);
     }
 
     /**

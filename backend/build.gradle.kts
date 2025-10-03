@@ -15,6 +15,8 @@ defaultTasks("bootRun")
 
 repositories {
     mavenCentral()
+    // Required for Firebase and Google Cloud dependencies
+    google()
 }
 
 dependencies {
@@ -26,11 +28,8 @@ dependencies {
     implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
     implementation("org.springframework.boot:spring-boot-starter-data-redis")
 
-    // Firebase Admin SDK for Authentication and Firestore
+    // Firebase Admin SDK for Authentication and Firestore (includes Firestore dependency)
     implementation("com.google.firebase:firebase-admin:9.2.0")
-
-    // Google Cloud Firestore (included in firebase-admin but explicit for clarity)
-    implementation("com.google.cloud:google-cloud-firestore:3.15.8")
 
     // YouTube Data API client
     implementation("com.google.apis:google-api-services-youtube:v3-rev20240916-2.0.0")

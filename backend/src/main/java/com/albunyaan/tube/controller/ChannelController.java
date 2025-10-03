@@ -106,18 +106,15 @@ public class ChannelController {
             @PathVariable String id,
             @AuthenticationPrincipal FirebaseUserDetails user
     ) throws ExecutionException, InterruptedException {
-        return channelRepository.findById(id)
-                .map(channel -> {
-                    channel.setStatus("approved");
-                    channel.setApprovedBy(user.getUid());
-                    try {
-                        Channel updated = channelRepository.save(channel);
-                        return ResponseEntity.ok(updated);
-                    } catch (Exception e) {
-                        return ResponseEntity.<Channel>status(HttpStatus.INTERNAL_SERVER_ERROR).build();
-                    }
-                })
-                .orElse(ResponseEntity.notFound().build());
+        Channel channel = channelRepository.findById(id).orElse(null);
+        if (channel == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        channel.setStatus("approved");
+        channel.setApprovedBy(user.getUid());
+        Channel updated = channelRepository.save(channel);
+        return ResponseEntity.ok(updated);
     }
 
     /**
@@ -127,17 +124,14 @@ public class ChannelController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Channel> rejectChannel(@PathVariable String id)
             throws ExecutionException, InterruptedException {
-        return channelRepository.findById(id)
-                .map(channel -> {
-                    channel.setStatus("rejected");
-                    try {
-                        Channel updated = channelRepository.save(channel);
-                        return ResponseEntity.ok(updated);
-                    } catch (Exception e) {
-                        return ResponseEntity.<Channel>status(HttpStatus.INTERNAL_SERVER_ERROR).build();
-                    }
-                })
-                .orElse(ResponseEntity.notFound().build());
+        Channel channel = channelRepository.findById(id).orElse(null);
+        if (channel == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        channel.setStatus("rejected");
+        Channel updated = channelRepository.save(channel);
+        return ResponseEntity.ok(updated);
     }
 
     /**
@@ -149,17 +143,14 @@ public class ChannelController {
             @PathVariable String id,
             @RequestBody Channel.ExcludedItems excludedItems
     ) throws ExecutionException, InterruptedException {
-        return channelRepository.findById(id)
-                .map(channel -> {
-                    channel.setExcludedItems(excludedItems);
-                    try {
-                        Channel updated = channelRepository.save(channel);
-                        return ResponseEntity.ok(updated);
-                    } catch (Exception e) {
-                        return ResponseEntity.<Channel>status(HttpStatus.INTERNAL_SERVER_ERROR).build();
-                    }
-                })
-                .orElse(ResponseEntity.notFound().build());
+        Channel channel = channelRepository.findById(id).orElse(null);
+        if (channel == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        channel.setExcludedItems(excludedItems);
+        Channel updated = channelRepository.save(channel);
+        return ResponseEntity.ok(updated);
     }
 
     /**

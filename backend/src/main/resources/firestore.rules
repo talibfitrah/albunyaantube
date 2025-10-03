@@ -1,0 +1,64 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isModerator() {
+      return isAuthenticated() &&
+             (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'moderator' ||
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // Categories collection
+    match /categories/{categoryId} {
+      allow read: if true; // Public read for mobile app
+      allow write: if isAdmin();
+    }
+
+    // Content collections
+    match /channels/{channelId} {
+      allow read: if true;
+      allow create: if isModerator();
+      allow update, delete: if isAdmin();
+    }
+
+    match /playlists/{playlistId} {
+      allow read: if true;
+      allow create: if isModerator();
+      allow update, delete: if isAdmin();
+    }
+
+    match /videos/{videoId} {
+      allow read: if true;
+      allow create: if isModerator();
+      allow update, delete: if isAdmin();
+    }
+
+    // Moderation proposals
+    match /moderationProposals/{proposalId} {
+      allow read: if isModerator();
+      allow create: if isModerator();
+      allow update, delete: if isAdmin();
+    }
+
+    // Activity logs
+    match /activityLogs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false; // Only backend can write
+    }
+  }
+}

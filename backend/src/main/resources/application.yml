@@ -27,7 +27,7 @@ app:
       database-id: ${FIRESTORE_DATABASE_ID:(default)}
   youtube:
     # YouTube Data API key (set via environment variable)
-    api-key: ${YOUTUBE_API_KEY:}
+    api-key: AIzaSyC-X1y0YN5ZgUkmpijGycx1E4PjEmRfgTc
     # Application name for YouTube API requests
     application-name: Albunyaan Tube Admin
   security:
