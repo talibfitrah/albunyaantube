@@ -1,59 +1,28 @@
 import { authorizedJsonFetch } from '@/services/http';
-import type {
-  AdminUser,
-  AdminUserCreatePayload,
-  AdminUserUpdatePayload,
-  AdminUsersPage,
-  AdminRole,
-  AdminUserStatus
-} from '@/types/admin';
+import type { CursorPage } from '@/types/pagination';
 
-export interface AdminUserListParams {
-  cursor?: string | null;
-  limit?: number;
-  search?: string | null;
-  role?: AdminRole | null;
-  status?: AdminUserStatus | null;
-}
+// FIREBASE-MIGRATE: User management not implemented in Firebase backend yet
 
-function buildQuery(params: Record<string, string | number | null | undefined>): string {
-  const searchParams = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== null && value !== '') {
-      searchParams.set(key, String(value));
+export async function fetchUsersPage(params: any = {}): Promise<CursorPage<any>> {
+  // FIREBASE-MIGRATE: User management endpoints not implemented yet
+  // TODO: Implement user management in backend (Firebase Auth + Firestore sync)
+  return {
+    data: [],
+    pageInfo: {
+      nextCursor: null,
+      hasNextPage: false
     }
-  }
-  const query = searchParams.toString();
-  return query ? `?${query}` : '';
+  };
 }
 
-export async function fetchAdminUsersPage(params: AdminUserListParams = {}): Promise<AdminUsersPage> {
-  const query = buildQuery({
-    cursor: params.cursor ?? undefined,
-    limit: params.limit,
-    search: params.search ?? undefined,
-    role: params.role ?? undefined,
-    status: params.status ?? undefined
-  });
-  return authorizedJsonFetch<AdminUsersPage>(`/api/v1/admin/users${query}`);
+export async function createUser(payload: any): Promise<any> {
+  console.warn('User management not implemented in Firebase backend');
 }
 
-export async function createAdminUser(payload: AdminUserCreatePayload): Promise<AdminUser> {
-  return authorizedJsonFetch<AdminUser>('/api/v1/admin/users', {
-    method: 'POST',
-    body: JSON.stringify(payload)
-  });
+export async function updateUserRole(userId: string, role: string): Promise<void> {
+  console.warn('User management not implemented in Firebase backend');
 }
 
-export async function updateAdminUser(id: string, payload: AdminUserUpdatePayload): Promise<AdminUser> {
-  return authorizedJsonFetch<AdminUser>(`/api/v1/admin/users/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(payload)
-  });
-}
-
-export async function deleteAdminUser(id: string): Promise<void> {
-  await authorizedJsonFetch<void>(`/api/v1/admin/users/${id}`, {
-    method: 'DELETE'
-  });
+export async function deleteUser(userId: string): Promise<void> {
+  console.warn('User management not implemented in Firebase backend');
 }

@@ -1,30 +1,16 @@
 import { authorizedJsonFetch } from '@/services/http';
-import type { AuditPage } from '@/types/admin';
+import type { CursorPage } from '@/types/pagination';
 
-export interface AuditListParams {
-  cursor?: string | null;
-  limit?: number;
-  actorId?: string | null;
-  action?: string | null;
-}
+// FIREBASE-MIGRATE: Audit log not implemented in Firebase backend yet
 
-function buildQuery(params: Record<string, string | number | null | undefined>): string {
-  const searchParams = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== null && value !== '') {
-      searchParams.set(key, String(value));
+export async function fetchAuditLogPage(params: any = {}): Promise<CursorPage<any>> {
+  // FIREBASE-MIGRATE: Audit log not implemented yet
+  // TODO: Implement audit log in backend (Firestore collection with admin actions)
+  return {
+    data: [],
+    pageInfo: {
+      nextCursor: null,
+      hasNextPage: false
     }
-  }
-  const query = searchParams.toString();
-  return query ? `?${query}` : '';
-}
-
-export async function fetchAuditPage(params: AuditListParams = {}): Promise<AuditPage> {
-  const query = buildQuery({
-    cursor: params.cursor ?? undefined,
-    limit: params.limit,
-    actorId: params.actorId ?? undefined,
-    action: params.action ?? undefined
-  });
-  return authorizedJsonFetch<AuditPage>(`/api/v1/admin/audit${query}`);
+  };
 }

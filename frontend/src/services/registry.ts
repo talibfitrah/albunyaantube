@@ -37,7 +37,8 @@ export interface RegistrySearchParams {
   limit?: number;
 }
 
-const REGISTRY_BASE_PATH = '/api/v1/admins/registry';
+// FIREBASE-MIGRATE: Updated base path from /api/v1/admins/registry to /api/admin
+const CHANNELS_BASE_PATH = '/api/admin/channels';
 
 function buildQuery(params: Record<string, string | number | null | undefined>): string {
   const searchParams = new URLSearchParams();
@@ -51,58 +52,71 @@ function buildQuery(params: Record<string, string | number | null | undefined>):
 }
 
 export async function fetchChannelsPage(params: ChannelListParams = {}): Promise<CursorPage<ChannelSummary>> {
-  const query = buildQuery({
-    cursor: params.cursor ?? undefined,
-    limit: params.limit,
-    categoryId: params.categoryId ?? undefined
-  });
-  return authorizedJsonFetch<CursorPage<ChannelSummary>>(`${REGISTRY_BASE_PATH}/channels${query}`);
+  // FIREBASE-MIGRATE: Map to new endpoint
+  let endpoint = CHANNELS_BASE_PATH;
+  if (params.categoryId) {
+    endpoint = `${CHANNELS_BASE_PATH}/category/${params.categoryId}`;
+  }
+  
+  // Backend returns array, not paginated response
+  // TODO: Add pagination support in backend
+  const channels = await authorizedJsonFetch<any[]>(endpoint);
+  
+  return {
+    data: channels,
+    pageInfo: {
+      nextCursor: null,
+      hasNextPage: false
+    }
+  };
 }
 
 export async function fetchPlaylistsPage(params: PlaylistListParams = {}): Promise<CursorPage<PlaylistSummary>> {
-  const query = buildQuery({
-    cursor: params.cursor ?? undefined,
-    limit: params.limit,
-    categoryId: params.categoryId ?? undefined
-  });
-  return authorizedJsonFetch<CursorPage<PlaylistSummary>>(`${REGISTRY_BASE_PATH}/playlists${query}`);
+  // FIREBASE-MIGRATE: Playlists not implemented in backend yet
+  // TODO: Implement playlist listing in backend
+  return {
+    data: [],
+    pageInfo: {
+      nextCursor: null,
+      hasNextPage: false
+    }
+  };
 }
 
 export async function fetchVideosPage(params: VideoListParams = {}): Promise<CursorPage<VideoSummary>> {
-  const query = buildQuery({
-    cursor: params.cursor ?? undefined,
-    limit: params.limit,
-    categoryId: params.categoryId ?? undefined,
-    q: params.q ?? undefined,
-    length: params.length,
-    date: params.date,
-    sort: params.sort
-  });
-  return authorizedJsonFetch<CursorPage<VideoSummary>>(`${REGISTRY_BASE_PATH}/videos${query}`);
+  // FIREBASE-MIGRATE: Videos not implemented in backend yet
+  // TODO: Implement video listing in backend
+  return {
+    data: [],
+    pageInfo: {
+      nextCursor: null,
+      hasNextPage: false
+    }
+  };
 }
 
 export async function searchRegistry(params: RegistrySearchParams = {}): Promise<AdminSearchResponse> {
-  const query = buildQuery({
-    q: params.q ?? undefined,
-    categoryId: params.categoryId ?? undefined,
-    videoLength: params.videoLength ?? undefined,
-    videoDateRange: params.videoDateRange ?? undefined,
-    videoSort: params.videoSort ?? undefined,
-    limit: params.limit
-  });
-  return authorizedJsonFetch<AdminSearchResponse>(`${REGISTRY_BASE_PATH}/search${query}`);
+  // FIREBASE-MIGRATE: Registry search not implemented in backend yet
+  // The backend has YouTube search (/api/admin/youtube/search/*) but not registry search
+  // TODO: Implement registry search or use YouTube search
+  return {
+    channels: [],
+    playlists: [],
+    videos: []
+  };
 }
 
 export async function updateChannelExclusions(
   channelId: string,
   payload: { excludedPlaylistIds?: string[]; excludedVideoIds?: string[] }
 ): Promise<void> {
-  await authorizedJsonFetch<void>(`${REGISTRY_BASE_PATH}/channels/${channelId}/exclusions`, {
-    method: 'PATCH',
-    body: JSON.stringify({
-      excludedPlaylistIds: payload.excludedPlaylistIds ?? [],
-      excludedVideoIds: payload.excludedVideoIds ?? []
-    })
+  // FIREBASE-MIGRATE: Updated endpoint
+  await authorizedJsonFetch<void>(`${CHANNELS_BASE_PATH}/${channelId}/exclusions`, {
+    method: 'PUT',  // Backend uses PUT not PATCH
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
   });
 }
 
@@ -110,10 +124,7 @@ export async function updatePlaylistExclusions(
   playlistId: string,
   payload: { excludedVideoIds?: string[] }
 ): Promise<void> {
-  await authorizedJsonFetch<void>(`${REGISTRY_BASE_PATH}/playlists/${playlistId}/exclusions`, {
-    method: 'PATCH',
-    body: JSON.stringify({
-      excludedVideoIds: payload.excludedVideoIds ?? []
-    })
-  });
+  // FIREBASE-MIGRATE: Playlist exclusions not implemented in backend yet
+  // TODO: Implement playlist exclusions endpoint
+  console.warn('Playlist exclusions not implemented in Firebase backend');
 }
