@@ -72,6 +72,8 @@ baselineProfile {
 androidComponents {
     onVariants(selector().withBuildType("nonMinifiedBenchmark")) { variant ->
         variant.instrumentationRunnerArguments.put("androidx.benchmark.enabledRules", "BaselineProfile")
+        variant.instrumentationRunnerArguments.put("androidx.benchmark.dropShaders.enable", "false")
+        variant.instrumentationRunnerArguments.put("androidx.benchmark.dropShaders.throwOnFailure", "false")
     }
 }
 
