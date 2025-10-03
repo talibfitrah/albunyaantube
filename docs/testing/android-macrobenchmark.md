@@ -61,6 +61,16 @@ example `BaselineProfile` when regenerating profiles), pass
 `-Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=<value>`—the
 Gradle script will honour the override without duplicating arguments.)
 
+Huawei COR-L29 devices ignore the shader-cache broadcast, so we default to
+`androidx.benchmark.dropShaders.enable=false` and
+`androidx.benchmark.dropShaders.throwOnFailure=false`. If your hardware handles shader cache
+drops correctly, override the flags, for example:
+
+```bash
+./gradlew :macrobenchmarks:connectedBenchmarkAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.dropShaders.enable=true
+```
+
 The Gradle task copies `benchmarkData.json` into `android/macrobenchmarks/build/outputs/connected_android_test_additional_output/benchmark/connected/<device>/`. If you need to pull manually from the device, use:
 
 ```bash

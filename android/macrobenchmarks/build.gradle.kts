@@ -16,6 +16,14 @@ android {
         if (!project.hasProperty(enabledRulesPropertyKey)) {
             testInstrumentationRunnerArguments["androidx.benchmark.enabledRules"] = "Macrobenchmark"
         }
+        val dropShadersKey = "android.testInstrumentationRunnerArguments.androidx.benchmark.dropShaders.enable"
+        if (!project.hasProperty(dropShadersKey)) {
+            testInstrumentationRunnerArguments["androidx.benchmark.dropShaders.enable"] = "false"
+        }
+        val dropShadersOnFailureKey = "android.testInstrumentationRunnerArguments.androidx.benchmark.dropShaders.throwOnFailure"
+        if (!project.hasProperty(dropShadersOnFailureKey)) {
+            testInstrumentationRunnerArguments["androidx.benchmark.dropShaders.throwOnFailure"] = "false"
+        }
         testInstrumentationRunnerArguments["androidx.benchmark.output.enable"] = "true"
     }
 
