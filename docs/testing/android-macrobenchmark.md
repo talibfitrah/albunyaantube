@@ -13,7 +13,31 @@ This guide bootstraps the macrobenchmark workstream for endless scroll and downl
 - Benchmark module at `android/macrobenchmarks` (create via AGP template if absent).
 
 ## Setup
-1. Enable profileable builds in `app/build.gradle.kts` for the `benchmark` build type.
+1. Enable profileable builds in `app/build.gradle.kts` for the `benchmark` build type. The
+   app module uses a dedicated `benchmark` build that inherits `release`, signs with the
+   debug keystore, and flips a manifest placeholder:
+
+   ```kotlin
+   defaultConfig {
+       manifestPlaceholders["profileable"] = "false"
+   }
+
+   buildTypes {
+       getByName("release") {
+           signingConfig = signingConfigs.getByName("debug")
+       }
+
+       create("benchmark") {
+           initWith(getByName("release"))
+           signingConfig = signingConfigs.getByName("debug")
+           matchingFallbacks += listOf("release")
+           manifestPlaceholders["profileable"] = "true"
+       }
+   }
+   ```
+   Ensure the application manifest exposes the placeholder via a
+   `<profileable android:shell="${profileable}" tools:targetApi="29" />`
+   element inside the `<application>` block.
 2. Create benchmark cases under `android/macrobenchmarks/src/main/java` (the `com.android.test` plugin treats the `main` source set as the instrumentation payload):
    - `ColdStartBenchmark`: launches `MainActivity` using `MacrobenchmarkRule`.
    - `HomeScrollBenchmark`: scrolls RecyclerView using `UiDevice` gestures.
