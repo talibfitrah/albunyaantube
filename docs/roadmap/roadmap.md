@@ -4,16 +4,20 @@
 
 ## Status Snapshot
 - Delivered
-  - **Firebase Migration Complete (2025-10-03)**
+  - **Firebase Migration + Core Admin Features Complete (2025-10-03)**
     - ✅ Migrated from PostgreSQL/JPA to Firebase Firestore
     - ✅ Replaced custom JWT auth with Firebase Authentication
     - ✅ Restructured category model from embedded subcategories to hierarchical parentCategoryId
     - ✅ Integrated YouTube Data API v3 for admin search/preview
     - ✅ Frontend updated with Firebase SDK for authentication
+    - ✅ **NEW**: User management (create/update/delete admin/moderator users)
+    - ✅ **NEW**: Dashboard with metrics and analytics
+    - ✅ **NEW**: Audit log for compliance and action tracking
+    - ✅ **NEW**: 33 total API endpoints across 6 controllers
     - Backend: `backend/src/main/java/com/albunyaan/tube/{config,model,repository,security,service,controller}`
-    - Frontend: `frontend/src/config/firebase.ts`, `frontend/src/stores/auth.ts`
+    - Frontend: `frontend/src/{config,stores,services}`
     - Docs: `backend/FIREBASE_SETUP.md`, `FIREBASE_MIGRATION_SUMMARY.md`, `FIREBASE_MIGRATION_COMPLETE.md`
-    - Commits: `0f45261`, `54be1e0`, `8ed8451`, `5f966a4`, `54d1506`
+    - Commits: `0f45261`, `54be1e0`, `8ed8451`, `5f966a4`, `54d1506`, `1332382`, `86737fe`, `f0c53ad`
   - Dark-mode tokenization + component mappings in Admin UI
     - Code: `frontend/src/assets/main.css`, views/components now map to tokens
     - Tests: `frontend/tests/ThemeTokens.spec.ts`

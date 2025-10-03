@@ -54,19 +54,25 @@ All code has been successfully migrated from PostgreSQL/JPA to Firebase (Firesto
 ```
 backend/src/main/java/com/albunyaan/tube/
 ├── config/
+│   ├── AsyncConfig.java              # Enable async audit logging
 │   ├── FirebaseConfig.java           # Firebase initialization
 │   └── FirebaseProperties.java       # Config properties
 ├── controller/
-│   ├── CategoryController.java       # 6 endpoints
-│   ├── ChannelController.java        # 6 endpoints
+│   ├── AuditLogController.java       # 4 endpoints
+│   ├── CategoryController.java       # 7 endpoints (with audit logging)
+│   ├── ChannelController.java        # 7 endpoints
+│   ├── DashboardController.java      # 2 endpoints
+│   ├── UserController.java           # 8 endpoints
 │   └── YouTubeSearchController.java  # 9 endpoints
 ├── model/
+│   ├── AuditLog.java                 # Audit trail records
 │   ├── Category.java                 # Hierarchical with parentCategoryId
 │   ├── Channel.java                  # With excludedItems
 │   ├── Playlist.java
 │   ├── Video.java
 │   └── User.java                     # Firebase UID as doc ID
 ├── repository/
+│   ├── AuditLogRepository.java       # Audit log queries
 │   ├── CategoryRepository.java       # Firestore queries
 │   ├── ChannelRepository.java
 │   └── UserRepository.java
@@ -75,6 +81,7 @@ backend/src/main/java/com/albunyaan/tube/
 │   ├── FirebaseUserDetails.java
 │   └── SecurityConfig.java           # Spring Security config
 └── service/
+    ├── AuditLogService.java          # Async audit logging
     ├── AuthService.java              # User management
     └── YouTubeService.java           # YouTube Data API
 ```
@@ -206,25 +213,48 @@ npm run dev
 
 ---
 
-## 🎯 API Endpoints
+## 🎯 API Endpoints (33 Total)
 
-### Categories
+### Categories (7 endpoints)
 - `GET /api/admin/categories` - List all
 - `GET /api/admin/categories/top-level` - Top-level only
+- `GET /api/admin/categories/{id}` - Get by ID
 - `GET /api/admin/categories/{id}/subcategories` - Subcategories
 - `POST /api/admin/categories` - Create (admin)
 - `PUT /api/admin/categories/{id}` - Update (admin)
 - `DELETE /api/admin/categories/{id}` - Delete (admin)
 
-### Channels
-- `GET /api/admin/channels?status=pending` - List by status
+### Channels (7 endpoints)
+- `GET /api/admin/channels` - List all
+- `GET /api/admin/channels/{id}` - Get by ID
+- `GET /api/admin/channels/category/{categoryId}` - List by category
 - `POST /api/admin/channels` - Submit for approval
 - `PUT /api/admin/channels/{id}/approve` - Approve (admin)
 - `PUT /api/admin/channels/{id}/reject` - Reject (admin)
 - `PUT /api/admin/channels/{id}/exclusions` - Update exclusions
 - `DELETE /api/admin/channels/{id}` - Delete (admin)
 
-### YouTube Search
+### Users (8 endpoints)
+- `GET /api/admin/users` - List all users (admin)
+- `GET /api/admin/users/{uid}` - Get user by UID (admin)
+- `GET /api/admin/users/role/{role}` - List users by role (admin)
+- `POST /api/admin/users` - Create user (admin)
+- `PUT /api/admin/users/{uid}/role` - Update user role (admin)
+- `PUT /api/admin/users/{uid}/status` - Update user status (admin)
+- `DELETE /api/admin/users/{uid}` - Delete user (admin)
+- `POST /api/admin/users/{uid}/reset-password` - Send password reset (admin)
+
+### Dashboard (2 endpoints)
+- `GET /api/admin/dashboard?timeframe=...` - Get dashboard metrics
+- `GET /api/admin/dashboard/stats/by-category` - Category statistics
+
+### Audit Logs (4 endpoints)
+- `GET /api/admin/audit?limit=100` - List audit logs (admin)
+- `GET /api/admin/audit/actor/{actorUid}?limit=100` - By actor (admin)
+- `GET /api/admin/audit/entity-type/{entityType}?limit=100` - By entity (admin)
+- `GET /api/admin/audit/action/{action}?limit=100` - By action (admin)
+
+### YouTube Search (9 endpoints)
 - `GET /api/admin/youtube/search/channels?query=...`
 - `GET /api/admin/youtube/search/playlists?query=...`
 - `GET /api/admin/youtube/search/videos?query=...`
@@ -276,13 +306,15 @@ This restores:
 
 | Metric | Value |
 |--------|-------|
-| Files Created | 25 |
-| Files Deleted | 115 |
-| Net Lines Changed | +2,000 / -6,000 |
+| Files Created | 34 |
+| Files Deleted | 122 |
+| Net Lines Changed | +3,000 / -6,500 |
 | New Dependencies | 5 (Firebase, YouTube API) |
 | Removed Dependencies | 6 (JPA, PostgreSQL, Flyway, JWT libs) |
-| API Endpoints Added | 21 |
-| Commits | 4 |
+| API Endpoints Added | 33 |
+| Controllers | 6 |
+| Firestore Collections | 5 (categories, channels, users, audit_logs, + playlists/videos) |
+| Commits | 7+ |
 
 ---
 
@@ -295,10 +327,13 @@ This restores:
 4. Verify all API endpoints work
 
 ### Short-term
-5. Implement YouTube search UI in admin panel
-6. Add channel expansion view (videos, playlists tabs)
-7. Build category management UI with hierarchy
-8. Create channel approval workflow UI
+5. ✅ User management (create/edit/delete admin/moderator users)
+6. ✅ Dashboard with metrics and analytics
+7. ✅ Audit log for tracking admin actions
+8. Implement YouTube search UI in admin panel
+9. Add channel expansion view (videos, playlists tabs)
+10. Build category management UI with hierarchy
+11. Create channel approval workflow UI
 
 ### Long-term
 9. Data migration script for PostgreSQL → Firestore
