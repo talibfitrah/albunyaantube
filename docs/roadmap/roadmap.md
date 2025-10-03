@@ -1,9 +1,19 @@
 # Phased Roadmap
 
-> Execution metadata — Last reviewed: 2025-09-30
+> Execution metadata — Last reviewed: 2025-10-03
 
 ## Status Snapshot
 - Delivered
+  - **Firebase Migration Complete (2025-10-03)**
+    - ✅ Migrated from PostgreSQL/JPA to Firebase Firestore
+    - ✅ Replaced custom JWT auth with Firebase Authentication
+    - ✅ Restructured category model from embedded subcategories to hierarchical parentCategoryId
+    - ✅ Integrated YouTube Data API v3 for admin search/preview
+    - ✅ Frontend updated with Firebase SDK for authentication
+    - Backend: `backend/src/main/java/com/albunyaan/tube/{config,model,repository,security,service,controller}`
+    - Frontend: `frontend/src/config/firebase.ts`, `frontend/src/stores/auth.ts`
+    - Docs: `backend/FIREBASE_SETUP.md`, `FIREBASE_MIGRATION_SUMMARY.md`, `FIREBASE_MIGRATION_COMPLETE.md`
+    - Commits: `0f45261`, `54be1e0`, `8ed8451`, `5f966a4`, `54d1506`
   - Dark-mode tokenization + component mappings in Admin UI
     - Code: `frontend/src/assets/main.css`, views/components now map to tokens
     - Tests: `frontend/tests/ThemeTokens.spec.ts`
@@ -12,15 +22,6 @@
   - Canonical bottom tab config + reusable tab bar component (for shared parity and future Android mapping)
     - Code: `frontend/src/constants/tabs.ts`, `frontend/src/components/navigation/MainTabBar.vue`
     - Tests: `frontend/tests/MainTabBar.spec.ts`
-  - Optional Category.subcategories (DTO, schema, migration)
-    - Backend: entity + converter + service updates, DTOs, controller
-      (`backend/src/main/java/com/albunyaan/tube/category/*`,
-      `backend/src/main/java/com/albunyaan/tube/admin/dto/*`,
-      `backend/src/main/java/com/albunyaan/tube/admin/CategoryManagementController.java`)
-    - Migration: `backend/src/main/resources/db/migration/V9__add_category_subcategories.sql`
-    - Frontend Admin service now returns optional nested subcategories
-      (`frontend/src/services/categories.ts`)
-    - API/Schema docs: updated JSON Schemas under `docs/data/json-schemas/`
 
 - In progress / planned
   - Phase 1–2 backend hardening and Phase 3 Admin MVP items per files in this folder
@@ -61,17 +62,24 @@ This roadmap expresses Albunyaan Tube's design-first delivery strategy. Every ph
 - Record unresolved risks in `docs/risk-register.md`.
 - Summarize stakeholder feedback and acceptance status inside `docs/acceptance/criteria.md` references.
 
-## Phase 1 — Backend Foundations (Plan)
+## Phase 1 — Backend Foundations (Delivered)
 Execution Metadata
-- Status: Partially planned (some foundations already implemented in repo)
-- Last reviewed: 2025-09-30
-- Dependencies: Postgres + Flyway, Redis (design), JWT strategy
-- Owners: TBD (Backend)
+- Status: ✅ **COMPLETE** (Firebase-based architecture)
+- Last reviewed: 2025-10-03
+- Dependencies: Firebase (Firestore + Authentication), Redis, YouTube Data API v3
+- Owners: Backend Team
 
-Delivered in this repo
-- Flyway migrations baseline present (`backend/src/main/resources/db/migration/` V1–V9).
-- Locale map converter implemented (`backend/src/main/java/com/albunyaan/tube/common/LocaleMapConverter.java`).
-**Estimate**: 3 engineering weeks (backend + DevOps pairing).
+Delivered in this repo (Firebase Migration)
+- ✅ Firebase Firestore replaces PostgreSQL (schema-less, scalable)
+- ✅ Firebase Authentication with custom claims (role: admin|moderator)
+- ✅ Category model restructured: hierarchical parentCategoryId instead of embedded subcategories
+- ✅ YouTube Data API v3 integration for admin content search/preview
+- ✅ 21 new API endpoints: Categories (6), Channels (6), YouTube (9)
+- ✅ Removed 115 obsolete PostgreSQL/JPA files (-6,000 lines of code)
+- Code: `backend/src/main/java/com/albunyaan/tube/{config,model,repository,security,service,controller}`
+- Docs: `backend/FIREBASE_SETUP.md`, `FIREBASE_MIGRATION_SUMMARY.md`
+- Commits: `0f45261` (foundation), `54be1e0` (services/controllers), `8ed8451` (cleanup)
+**Actual effort**: 4 major commits over migration sprint.
 
 **Goals**
 - Finalize backend auth/RBAC, migration, and seeding plan aligned with Phase 0 contracts.
@@ -98,16 +106,22 @@ Delivered in this repo
 - Capture open questions (e.g., admin bootstrap secrets handling) and feed into Phase 2 prerequisites.
 - Adjust risk register likelihood/impact based on backend findings.
 
-## Phase 2 — Registry & Moderation (Plan)
+## Phase 2 — Registry & Moderation (In Progress)
 Execution Metadata
-- Status: Partially delivered
-- Last reviewed: 2025-09-30
-- Dependencies: Phase 1 auth + data foundations
-- Owners: TBD (Backend)
+- Status: Partially delivered (Firebase backend ready, UI pending)
+- Last reviewed: 2025-10-03
+- Dependencies: Phase 1 ✅ complete (Firebase auth + data foundations)
+- Owners: TBD (Backend + Frontend)
 
 Delivered in this repo
-- Category model extended with optional `subcategories` including DTOs + migration (see Status Snapshot).
-**Estimate**: 3 engineering weeks (backend focus with moderation stakeholder input).
+- ✅ Firebase Firestore collections: categories, channels, playlists, videos
+- ✅ Hierarchical category structure with parentCategoryId field
+- ✅ Channel/Playlist models with excludedItems/excludedVideoIds
+- ✅ Approval workflow (pending → approved → rejected status)
+- ✅ API endpoints for CRUD operations with RBAC enforcement
+- 🔲 Pending: Admin UI for channel submission, approval queue, exclusions editor
+- 🔲 Pending: Moderation proposals workflow implementation
+**Estimate**: 2 engineering weeks remaining (frontend focus).
 
 **Goals**
 - Lock data model for channels/playlists/videos including pagination policy and cache invalidation rules.
@@ -135,18 +149,24 @@ Delivered in this repo
 - Identify dependencies for Admin UI (Phase 3) and Android (Phase 6+) needing stable API fields.
 - Note outstanding legal/policy review items for exclusions in risk register.
 
-## Phase 3 — Admin UI MVP (Plan)
+## Phase 3 — Admin UI MVP (In Progress)
 Execution Metadata
-- Status: In progress
-- Last reviewed: 2025-09-30
-- Dependencies: Phase 2 registry contracts
+- Status: Auth migrated, UI features pending
+- Last reviewed: 2025-10-03
+- Dependencies: Phase 1 ✅ complete, Phase 2 backend ✅ complete
 - Owners: TBD (Frontend)
 
-Delivered in this repo (subset)
-- Tokenized dark theme applied across admin views; tests in `frontend/tests/ThemeTokens.spec.ts`.
-- Registry landing surface implemented with category filter and debounce; services align with `/admins/categories` (`frontend/src/views/RegistryLandingView.vue`, `frontend/src/services/categories.ts`).
-- Reusable canonical tab bar + icons (`frontend/src/components/navigation/MainTabBar.vue`).
-**Estimate**: 4 engineering weeks (frontend + localization pairing).
+Delivered in this repo
+- ✅ Firebase Auth integration in frontend (`frontend/src/config/firebase.ts`, `frontend/src/stores/auth.ts`)
+- ✅ Firebase ID token sent to backend in Authorization header
+- ✅ Tokenized dark theme applied across admin views
+- ✅ Registry landing surface with category filter
+- ✅ Reusable canonical tab bar + icons
+- 🔲 Pending: YouTube search/preview UI components
+- 🔲 Pending: Channel expansion drawer (videos, playlists, shorts tabs)
+- 🔲 Pending: Category management UI with hierarchical tree
+- 🔲 Pending: Approval queue interface for moderators
+**Estimate**: 3 engineering weeks remaining (UI components + wiring to Firebase backend).
 
 **Goals**
 - Specify admin IA, routing, shared state, and localization wiring for MVP scope.
