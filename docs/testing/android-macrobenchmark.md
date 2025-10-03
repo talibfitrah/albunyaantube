@@ -25,9 +25,12 @@ This guide bootstraps the macrobenchmark workstream for endless scroll and downl
 
 ## Execution
 ```bash
-./gradlew :macrobenchmarks:connectedBenchmarkAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=BaselineProfile
+./gradlew :macrobenchmarks:connectedBenchmarkAndroidTest
 ```
+
+(`BaselineProfile` rules are injected automatically; if you need to override them, pass
+`-Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=<value>`—the
+Gradle script will honour the override without duplicating arguments.)
 
 The Gradle task copies `benchmarkData.json` into `android/macrobenchmarks/build/outputs/connected_android_test_additional_output/benchmark/connected/<device>/`. If you need to pull manually from the device, use:
 

@@ -11,7 +11,11 @@ android {
         minSdk = 24
         targetSdk = 34
         testInstrumentationRunner = "androidx.benchmark.junit4.AndroidBenchmarkRunner"
-        testInstrumentationRunnerArguments["androidx.benchmark.enabledRules"] = "BaselineProfile"
+
+        val enabledRulesPropertyKey = "android.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules"
+        if (!project.hasProperty(enabledRulesPropertyKey)) {
+            testInstrumentationRunnerArguments["androidx.benchmark.enabledRules"] = "BaselineProfile"
+        }
         testInstrumentationRunnerArguments["androidx.benchmark.output.enable"] = "true"
     }
 
