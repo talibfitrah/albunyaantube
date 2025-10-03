@@ -55,7 +55,8 @@ This guide bootstraps the macrobenchmark workstream for endless scroll and downl
 ./gradlew :macrobenchmarks:connectedBenchmarkAndroidTest
 ```
 
-(`BaselineProfile` rules are injected automatically; if you need to override them, pass
+(`Macrobenchmark` rules are injected automatically; if you need to run a different rule (for
+example `BaselineProfile` when regenerating profiles), pass
 `-Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=<value>`—the
 Gradle script will honour the override without duplicating arguments.)
 

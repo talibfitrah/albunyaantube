@@ -14,7 +14,7 @@ android {
 
         val enabledRulesPropertyKey = "android.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules"
         if (!project.hasProperty(enabledRulesPropertyKey)) {
-            testInstrumentationRunnerArguments["androidx.benchmark.enabledRules"] = "BaselineProfile"
+            testInstrumentationRunnerArguments["androidx.benchmark.enabledRules"] = "Macrobenchmark"
         }
         testInstrumentationRunnerArguments["androidx.benchmark.output.enable"] = "true"
     }
