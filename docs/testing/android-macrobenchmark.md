@@ -44,12 +44,19 @@ This guide bootstraps the macrobenchmark workstream for endless scroll and downl
    - `DownloadFlowBenchmark`: triggers download CTA on seeded content via `UiAutomator`.
    Depend on both `androidx.benchmark:benchmark-macro-junit4` and
    `androidx.benchmark:benchmark-junit4` so the instrumentation runner is packaged with the
-   test APK. The target app must include `androidx.profileinstaller:profileinstaller:1.3.1`
+   test APK. Apply `androidx.baselineprofile` in `android/macrobenchmarks/build.gradle.kts` and set
+   `baselineProfile { useConnectedDevices = true }` so Gradle exposes
+   `:macrobenchmarks:collectBaselineProfile`. The target app must include
+   `androidx.profileinstaller:profileinstaller:1.3.1`
    (or newer) so shader cache drops succeed during macrobenchmark runs.
 3. Generate Baseline Profiles after each run:
-   ```bash
-   ./gradlew :macrobenchmarks:collectBaselineProfile
-   ```
+```bash
+./gradlew :macrobenchmarks:collectBaselineProfile
+```
+
+This task wraps the plugin-provided `collectNonMinifiedBenchmarkBaselineProfile` target so you
+keep the familiar command. If you are on hardware that cannot drop shader cache, append
+`-Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.dropShaders.enable=false`.
 
 ## Execution
 ```bash

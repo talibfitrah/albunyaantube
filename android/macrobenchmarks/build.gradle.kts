@@ -1,6 +1,7 @@
 plugins {
     id("com.android.test")
     id("org.jetbrains.kotlin.android")
+    id("androidx.baselineprofile")
 }
 
 android {
@@ -62,4 +63,14 @@ dependencies {
     implementation("androidx.test.ext:junit:1.1.5")
     implementation("androidx.test:runner:1.5.2")
     implementation("androidx.test.uiautomator:uiautomator:2.3.0")
+}
+
+baselineProfile {
+    useConnectedDevices = true
+}
+
+tasks.register("collectBaselineProfile") {
+    group = "verification"
+    description = "Collects Baseline Profiles on a connected device via the benchmark module."
+    dependsOn("collectNonMinifiedBenchmarkBaselineProfile")
 }
