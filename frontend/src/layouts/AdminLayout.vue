@@ -197,30 +197,37 @@ nav {
 .topbar-actions {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 1rem;
 }
 
 .locale-switcher {
   display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .locale-label {
-  font-size: 0.75rem;
+  font-size: 0.875rem;
   font-weight: 500;
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
 }
 
 .locale-select {
-  border: 1px solid var(--color-border);
-  background: var(--color-surface); 
+  border: 1.5px solid var(--color-border);
+  background: var(--color-surface);
   color: var(--color-text);
   border-radius: 0.5rem;
-  padding: 0.4rem 2rem 0.4rem 0.75rem;
+  padding: 0.5rem 2rem 0.5rem 0.75rem;
   font-size: 0.875rem;
   line-height: 1.25rem;
   min-width: 8rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.locale-select:hover {
+  border-color: var(--color-brand);
 }
 
 .locale-select:focus-visible {
@@ -232,14 +239,18 @@ nav {
   border: none;
   background: var(--color-danger);
   color: var(--color-text-inverse);
-  padding: 0.5rem 1rem;
+  padding: 0.5rem 1.25rem;
   border-radius: 0.5rem;
   cursor: pointer;
-  transition: background 0.2s ease;
+  font-weight: 600;
+  font-size: 0.875rem;
+  transition: all 0.2s ease;
+  white-space: nowrap;
 }
 
 .logout:hover {
   background: var(--color-danger-strong);
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.25);
 }
 
 main {
