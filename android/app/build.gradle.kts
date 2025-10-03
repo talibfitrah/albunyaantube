@@ -84,6 +84,7 @@ dependencies {
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.8")
     implementation("androidx.work:work-runtime-ktx:2.9.0")
+    implementation("androidx.profileinstaller:profileinstaller:1.3.1")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
