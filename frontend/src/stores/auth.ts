@@ -1,180 +1,164 @@
+/**
+ * FIREBASE-MIGRATE-07: Firebase Authentication Store
+ *
+ * Replaces custom JWT auth with Firebase Authentication.
+ * Manages user sign-in, ID tokens, and authentication state.
+ */
 import { defineStore } from 'pinia';
-import { computed, reactive, ref } from 'vue';
+import { computed, ref } from 'vue';
+import { auth } from '@/config/firebase';
+import {
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+  type User
+} from 'firebase/auth';
 
 interface LoginPayload {
   email: string;
   password: string;
 }
 
-interface TokenResponse {
-  tokenType: string;
-  accessToken: string;
-  accessTokenExpiresAt: string;
-  refreshToken: string;
-  refreshTokenExpiresAt: string;
-  roles: string[];
-}
-
-interface StoredSession {
-  accessToken: string;
-  refreshToken: string;
-  accessTokenExpiresAt: string;
-  refreshTokenExpiresAt: string;
-  email: string;
-  roles: string[];
-}
-
-const STORAGE_KEY = 'albunyaan-admin-session';
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080';
-
-function createEmptySession(): StoredSession {
-  return {
-    accessToken: '',
-    refreshToken: '',
-    accessTokenExpiresAt: '',
-    refreshTokenExpiresAt: '',
-    email: '',
-    roles: []
-  };
-}
-
 export const useAuthStore = defineStore('auth', () => {
-  const session = reactive<StoredSession>(createEmptySession());
+  const currentUser = ref<User | null>(null);
+  const idToken = ref<string | null>(null);
   const isLoading = ref(false);
   const error = ref<string | null>(null);
 
-  function initializeFromStorage() {
-    const cached = localStorage.getItem(STORAGE_KEY);
-    if (!cached) {
-      return;
-    }
-    try {
-      const parsed = JSON.parse(cached) as StoredSession;
-      Object.assign(session, parsed);
-    } catch (err) {
-      console.warn('Failed to parse cached session', err);
-      localStorage.removeItem(STORAGE_KEY);
-    }
+  // Computed properties
+  const isAuthenticated = computed(() => currentUser.value !== null);
+  const bearerToken = computed(() => (idToken.value ? `Bearer ${idToken.value}` : null));
+  const userEmail = computed(() => currentUser.value?.email || '');
+
+  /**
+   * Initialize auth state listener
+   * This runs automatically and keeps the store synced with Firebase Auth
+   */
+  function initializeAuthListener() {
+    onAuthStateChanged(auth, async (user) => {
+      currentUser.value = user;
+
+      if (user) {
+        // Get fresh ID token
+        try {
+          idToken.value = await user.getIdToken();
+        } catch (err) {
+          console.error('Failed to get ID token', err);
+          idToken.value = null;
+        }
+      } else {
+        idToken.value = null;
+      }
+    });
   }
 
-  function persistSession(next: StoredSession | null) {
-    if (!next) {
-      localStorage.removeItem(STORAGE_KEY);
-      Object.assign(session, createEmptySession());
-      return;
-    }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    Object.assign(session, next);
-  }
-
-  const isAuthenticated = computed(() => Boolean(session.accessToken && session.refreshToken));
-  const bearerToken = computed(() => (session.accessToken ? `Bearer ${session.accessToken}` : null));
-
+  /**
+   * Login with email and password using Firebase Auth
+   */
   async function login(payload: LoginPayload): Promise<boolean> {
     isLoading.value = true;
     error.value = null;
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
 
-      if (!response.ok) {
-        if (response.status === 401) {
+    try {
+      const userCredential = await signInWithEmailAndPassword(
+        auth,
+        payload.email,
+        payload.password
+      );
+
+      // Get ID token for API requests
+      idToken.value = await userCredential.user.getIdToken();
+      currentUser.value = userCredential.user;
+
+      return true;
+    } catch (err: any) {
+      console.error('Login failed', err);
+
+      // Map Firebase error codes to user-friendly messages
+      switch (err.code) {
+        case 'auth/invalid-email':
+          error.value = 'Invalid email address.';
+          break;
+        case 'auth/user-disabled':
+          error.value = 'This account has been disabled.';
+          break;
+        case 'auth/user-not-found':
+        case 'auth/wrong-password':
+        case 'auth/invalid-credential':
           error.value = 'Invalid email or password.';
-        } else {
+          break;
+        case 'auth/too-many-requests':
+          error.value = 'Too many failed attempts. Please try again later.';
+          break;
+        default:
           error.value = 'Unable to sign in. Please try again.';
-        }
-        return false;
       }
 
-      const data = (await response.json()) as TokenResponse;
-      const nextSession: StoredSession = {
-        accessToken: data.accessToken,
-        refreshToken: data.refreshToken,
-        accessTokenExpiresAt: data.accessTokenExpiresAt,
-        refreshTokenExpiresAt: data.refreshTokenExpiresAt,
-        email: payload.email,
-        roles: data.roles
-      };
-      persistSession(nextSession);
-      return true;
-    } catch (err) {
-      console.error('Login failed', err);
-      error.value = 'A network error prevented sign-in.';
       return false;
     } finally {
       isLoading.value = false;
     }
   }
 
-  async function refresh(): Promise<boolean> {
-    if (!session.refreshToken) {
+  /**
+   * Logout from Firebase Auth
+   */
+  async function logout(): Promise<void> {
+    try {
+      await signOut(auth);
+      currentUser.value = null;
+      idToken.value = null;
+    } catch (err) {
+      console.error('Logout failed', err);
+    }
+  }
+
+  /**
+   * Refresh ID token
+   * Firebase Auth handles token refresh automatically, but this can force it
+   */
+  async function refreshToken(): Promise<boolean> {
+    if (!currentUser.value) {
       return false;
     }
+
     try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/auth/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken: session.refreshToken })
-      });
-      if (!response.ok) {
-        clearSession();
-        return false;
-      }
-      const data = (await response.json()) as TokenResponse;
-      persistSession({
-        accessToken: data.accessToken,
-        refreshToken: data.refreshToken,
-        accessTokenExpiresAt: data.accessTokenExpiresAt,
-        refreshTokenExpiresAt: data.refreshTokenExpiresAt,
-        email: session.email,
-        roles: data.roles
-      });
+      idToken.value = await currentUser.value.getIdToken(true); // force refresh
       return true;
     } catch (err) {
-      console.error('Refresh failed', err);
-      clearSession();
+      console.error('Token refresh failed', err);
       return false;
     }
   }
 
-  async function logout(): Promise<void> {
-    if (!session.refreshToken) {
-      clearSession();
-      return;
+  /**
+   * Get current ID token (refreshes if needed)
+   */
+  async function getIdToken(): Promise<string | null> {
+    if (!currentUser.value) {
+      return null;
     }
 
     try {
-      await fetch(`${API_BASE_URL}/api/v1/auth/logout`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: session.accessToken ? `Bearer ${session.accessToken}` : ''
-        },
-        body: JSON.stringify({ refreshToken: session.refreshToken })
-      });
+      return await currentUser.value.getIdToken();
     } catch (err) {
-      console.warn('Logout request failed', err);
-    } finally {
-      clearSession();
+      console.error('Failed to get ID token', err);
+      return null;
     }
-  }
-
-  function clearSession() {
-    persistSession(null);
   }
 
   return {
-    session,
+    currentUser,
+    idToken,
     isLoading,
     error,
     isAuthenticated,
     bearerToken,
-    initializeFromStorage,
+    userEmail,
+    initializeAuthListener,
     login,
     logout,
-    refresh
+    refreshToken,
+    getIdToken
   };
 });

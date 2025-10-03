@@ -35,6 +35,6 @@ watch(
 app.use(router);
 
 const authStore = useAuthStore(pinia);
-authStore.initializeFromStorage();
+authStore.initializeAuthListener(); // Initialize Firebase auth listener
 
 app.mount('#app');

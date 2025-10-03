@@ -17,14 +17,14 @@ export async function authorizedJsonFetch<T>(path: string, init: RequestInit = {
     headers.set('Content-Type', 'application/json');
   }
 
-  if (authStore.session.accessToken) {
-    headers.set('Authorization', `Bearer ${authStore.session.accessToken}`);
+  if (authStore.idToken) {
+    headers.set('Authorization', `Bearer ${authStore.idToken}`);
   }
 
   const response = await fetch(url, { ...init, headers });
 
   if (response.status === 401 && allowRetry) {
-    const refreshed = await authStore.refresh();
+    const refreshed = await authStore.refreshToken();
     if (refreshed) {
       return authorizedJsonFetch<T>(path, init, false);
     }
