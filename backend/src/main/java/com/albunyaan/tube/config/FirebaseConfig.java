@@ -2,6 +2,7 @@ package com.albunyaan.tube.config;
 
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.cloud.firestore.Firestore;
+import com.google.cloud.firestore.FirestoreOptions;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.FirebaseOptions;
 import com.google.firebase.auth.FirebaseAuth;
@@ -79,9 +80,32 @@ public class FirebaseConfig {
 
     /**
      * Provides Firestore instance for database operations
+     * Uses direct FirestoreOptions to bypass database detection issues
      */
     @Bean
-    public Firestore firestore() {
-        return FirestoreClient.getFirestore();
+    public Firestore firestore() throws IOException {
+        logger.info("Connecting to Firestore database: {} in project: {}", databaseId, projectId);
+
+        // Build Firestore with explicit credentials and database path
+        GoogleCredentials credentials;
+        if (serviceAccountResource.exists()) {
+            try (InputStream serviceAccount = serviceAccountResource.getInputStream()) {
+                credentials = GoogleCredentials.fromStream(serviceAccount);
+            }
+        } else {
+            credentials = GoogleCredentials.getApplicationDefault();
+        }
+
+        // Build database path: projects/{project}/databases/{database}
+        String databasePath = String.format("projects/%s/databases/%s", projectId, databaseId);
+        logger.info("Using Firestore database path: {}", databasePath);
+
+        FirestoreOptions firestoreOptions = FirestoreOptions.newBuilder()
+                .setCredentials(credentials)
+                .setProjectId(projectId)
+                .setDatabaseId(databaseId)
+                .build();
+
+        return firestoreOptions.getService();
     }
 }
