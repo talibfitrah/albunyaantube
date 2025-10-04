@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Filter Chip Style (Design Spec: 20dp radius, primary outline) -->
+    <style name="Widget.Albunyaan.Chip.Filter" parent="Widget.Material3.Chip.Filter">
+        <item name="chipCornerRadius">@dimen/filter_chip_radius</item>
+        <item name="chipMinHeight">@dimen/filter_chip_height</item>
+        <item name="chipStrokeColor">@color/primary_green</item>
+        <item name="chipStrokeWidth">1dp</item>
+        <item name="chipBackgroundColor">@android:color/white</item>
+        <item name="android:textColor">@color/primary_green</item>
+        <item name="chipIconVisible">false</item>
+        <item name="checkedIconVisible">false</item>
+    </style>
+
+    <!-- Selected Filter Chip Style (Design Spec: Filled background) -->
+    <style name="Widget.Albunyaan.Chip.Filter.Selected">
+        <item name="chipBackgroundColor">@color/primary_green</item>
+        <item name="android:textColor">@android:color/white</item>
+    </style>
+</resources>

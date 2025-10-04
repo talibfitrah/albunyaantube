@@ -247,7 +247,17 @@ abstract class ContentListFragment : Fragment(R.layout.fragment_home) {
             isCheckable = false
             setOnClickListener { onClick() }
             minimumHeight = resources.getDimensionPixelSize(R.dimen.filter_chip_height)
+            chipCornerRadius = resources.getDimension(R.dimen.filter_chip_radius)
+            chipStrokeWidth = 2f
+            chipStrokeColor = android.content.res.ColorStateList.valueOf(
+                resources.getColor(R.color.primary_green, null)
+            )
+            chipBackgroundColor = android.content.res.ColorStateList.valueOf(
+                resources.getColor(android.R.color.white, null)
+            )
+            setTextColor(resources.getColor(R.color.primary_green, null))
             isChipIconVisible = false
+            checkedIcon = null
         }
     }
 

@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="320dp"
+    android:padding="@dimen/spacing_lg">
+
+    <!-- Icon Circle Background -->
+    <View
+        android:id="@+id/iconBackground"
+        android:layout_width="160dp"
+        android:layout_height="160dp"
+        android:background="@drawable/onboarding_icon_bg"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/onboardingTitle"
+        app:layout_constraintVertical_bias="0.3"/>
+
+    <!-- Icon -->
+    <ImageView
+        android:id="@+id/onboardingIcon"
+        android:layout_width="@dimen/icon_xlarge"
+        android:layout_height="@dimen/icon_xlarge"
+        android:importantForAccessibility="no"
+        android:tint="@color/primary_green"
+        app:layout_constraintTop_toTopOf="@id/iconBackground"
+        app:layout_constraintBottom_toBottomOf="@id/iconBackground"
+        app:layout_constraintStart_toStartOf="@id/iconBackground"
+        app:layout_constraintEnd_toEndOf="@id/iconBackground"
+        tools:src="@android:drawable/ic_menu_compass"/>
+
+    <!-- Title -->
+    <TextView
+        android:id="@+id/onboardingTitle"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/spacing_lg"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:textColor="@android:color/black"
+        android:gravity="center"
+        app:layout_constraintTop_toBottomOf="@id/iconBackground"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/onboardingDescription"
+        tools:text="Browse"/>
+
+    <!-- Description -->
+    <TextView
+        android:id="@+id/onboardingDescription"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/spacing_md"
+        android:textSize="16sp"
+        android:textColor="@android:color/darker_gray"
+        android:gravity="center"
+        app:layout_constraintTop_toBottomOf="@id/onboardingTitle"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        tools:text="Explore a diverse collection of Islamic videos, from lectures to documentaries, all in one place."/>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

@@ -16,65 +16,71 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"/>
 
+    <ImageButton
+        android:id="@+id/helpButton"
+        android:layout_width="@dimen/touch_target_min"
+        android:layout_height="@dimen/touch_target_min"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="@string/onboarding_help"
+        android:src="@android:drawable/ic_menu_help"
+        android:tint="@color/primary_green"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"/>
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/primaryCta"
+        android:layout_width="0dp"
+        android:layout_height="@dimen/touch_target_button"
+        android:text="@string/onboarding_continue"
+        android:textColor="@android:color/white"
+        app:cornerRadius="@dimen/corner_radius"
+        app:layout_constraintBottom_toTopOf="@id/indicatorRow"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        android:layout_marginBottom="@dimen/spacing_md"/>
+
     <LinearLayout
         android:id="@+id/indicatorRow"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center"
-        android:layout_marginTop="16dp"
-        app:layout_constraintTop_toBottomOf="@id/onboardingCarousel"
+        android:layout_marginBottom="@dimen/spacing_md"
+        app:layout_constraintBottom_toTopOf="@id/skipButton"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
         <!-- Dot indicators represented as 8dp circles -->
         <View
-            android:layout_width="8dp"
-            android:layout_height="8dp"
-            android:layout_margin="6dp"
-            android:background="@drawable/onboarding_indicator_inactive"/>
-
-        <View
-            android:layout_width="8dp"
-            android:layout_height="8dp"
-            android:layout_margin="6dp"
-            android:background="@drawable/onboarding_indicator_inactive"/>
-
-        <View
+            android:id="@+id/indicator1"
             android:layout_width="8dp"
             android:layout_height="8dp"
             android:layout_margin="6dp"
             android:background="@drawable/onboarding_indicator_active"/>
+
+        <View
+            android:id="@+id/indicator2"
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:layout_margin="6dp"
+            android:background="@drawable/onboarding_indicator_inactive"/>
+
+        <View
+            android:id="@+id/indicator3"
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:layout_margin="6dp"
+            android:background="@drawable/onboarding_indicator_inactive"/>
     </LinearLayout>
 
-    <Button
-        android:id="@+id/helpButton"
-        style="@style/Widget.MaterialComponents.Button.TextButton"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="?"
-        android:contentDescription="@string/onboarding_help"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"/>
-
-    <Button
-        android:id="@+id/primaryCta"
-        style="@style/Widget.MaterialComponents.Button"
-        android:layout_width="0dp"
-        android:layout_height="56dp"
-        android:text="@string/onboarding_continue"
-        app:layout_constraintTop_toBottomOf="@id/indicatorRow"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintBottom_toTopOf="@id/skipButton"
-        android:layout_marginTop="32dp"/>
-
-    <Button
+    <com.google.android.material.button.MaterialButton
         android:id="@+id/skipButton"
-        style="@style/Widget.MaterialComponents.Button.TextButton"
+        style="@style/Widget.Material3.Button.TextButton"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_marginBottom="@dimen/spacing_lg"
         android:text="@string/onboarding_skip"
+        android:textColor="@color/primary_green"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"/>
