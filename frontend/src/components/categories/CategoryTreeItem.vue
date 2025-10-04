@@ -113,13 +113,15 @@ function toggleExpanded() {
   transition: background 0.2s ease;
 }
 
-.category-row:hover {
-  background: var(--color-surface-alt);
+@media (hover: hover) {
+  .category-row:hover {
+    background: var(--color-surface-alt);
+  }
 }
 
 .expand-button {
-  width: 1.5rem;
-  height: 1.5rem;
+  width: 2rem;
+  height: 2rem;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -129,10 +131,13 @@ function toggleExpanded() {
   padding: 0;
   color: var(--color-text-secondary);
   transition: color 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.expand-button:hover {
-  color: var(--color-text-primary);
+@media (hover: hover) {
+  .expand-button:hover {
+    color: var(--color-text-primary);
+  }
 }
 
 .expand-icon {
@@ -146,7 +151,7 @@ function toggleExpanded() {
 }
 
 .expand-spacer {
-  width: 1.5rem;
+  width: 2rem;
 }
 
 .category-content {
@@ -172,18 +177,27 @@ function toggleExpanded() {
 
 .category-actions {
   display: flex;
-  gap: 0.25rem;
+  gap: 0.375rem;
   opacity: 0;
   transition: opacity 0.2s ease;
 }
 
-.category-row:hover .category-actions {
-  opacity: 1;
+@media (hover: hover) {
+  .category-row:hover .category-actions {
+    opacity: 1;
+  }
+}
+
+/* On touch devices, always show actions */
+@media (hover: none) {
+  .category-actions {
+    opacity: 1;
+  }
 }
 
 .action-btn {
-  width: 2rem;
-  height: 2rem;
+  width: 2.25rem;
+  height: 2.25rem;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -194,22 +208,78 @@ function toggleExpanded() {
   font-size: 1rem;
   color: var(--color-text-secondary);
   transition: all 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.action-btn:hover {
-  background: var(--color-brand-soft);
-  border-color: var(--color-brand);
-  color: var(--color-brand);
-}
+@media (hover: hover) {
+  .action-btn:hover {
+    background: var(--color-brand-soft);
+    border-color: var(--color-brand);
+    color: var(--color-brand);
+  }
 
-.action-btn.delete:hover {
-  background: var(--color-danger-soft);
-  border-color: var(--color-danger);
-  color: var(--color-danger);
+  .action-btn.delete:hover {
+    background: var(--color-danger-soft);
+    border-color: var(--color-danger);
+    color: var(--color-danger);
+  }
 }
 
 .subcategories {
   display: flex;
   flex-direction: column;
+}
+
+/* Mobile/Tablet Responsive */
+@media (max-width: 1023px) {
+  .category-row {
+    padding: 0.875rem 0.5rem;
+    gap: 0.5rem;
+  }
+
+  .expand-button {
+    width: 2.5rem;
+    height: 2.5rem;
+  }
+
+  .expand-spacer {
+    width: 2.5rem;
+  }
+
+  .expand-icon {
+    font-size: 0.875rem;
+  }
+
+  .category-icon {
+    font-size: 1.375rem;
+  }
+
+  .category-name {
+    font-size: 0.9375rem;
+  }
+
+  .action-btn {
+    width: 2.75rem;
+    height: 2.75rem;
+    font-size: 1.125rem;
+  }
+}
+
+@media (max-width: 767px) {
+  .category-row {
+    padding: 1rem 0.25rem;
+  }
+
+  .category-content {
+    gap: 0.5rem;
+  }
+
+  .category-name {
+    font-size: 0.875rem;
+  }
+
+  .subcategory-count {
+    font-size: 0.75rem;
+  }
 }
 </style>
