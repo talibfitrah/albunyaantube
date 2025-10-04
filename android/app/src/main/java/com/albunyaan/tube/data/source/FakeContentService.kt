@@ -113,4 +113,20 @@ class FakeContentService : ContentService {
             }
         }
     }
+
+    override suspend fun search(query: String, type: String?, limit: Int): List<ContentItem> {
+        val searchQuery = query.lowercase()
+        val allItems = videos + channels + playlists
+
+        return allItems.filter { item ->
+            when (item) {
+                is ContentItem.Video -> item.title.lowercase().contains(searchQuery) ||
+                                       item.category.lowercase().contains(searchQuery)
+                is ContentItem.Channel -> item.name.lowercase().contains(searchQuery) ||
+                                         item.category.lowercase().contains(searchQuery)
+                is ContentItem.Playlist -> item.title.lowercase().contains(searchQuery) ||
+                                          item.category.lowercase().contains(searchQuery)
+            }
+        }.take(limit)
+    }
 }

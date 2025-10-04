@@ -84,4 +84,9 @@ class RetrofitContentService(
         SortOption.MOST_POPULAR -> "POPULAR"
         SortOption.NEWEST -> "NEWEST"
     }
+
+    override suspend fun search(query: String, type: String?, limit: Int): List<ContentItem> {
+        val response = api.search(query, type, limit)
+        return response.results.mapNotNull { it.toModel() }
+    }
 }

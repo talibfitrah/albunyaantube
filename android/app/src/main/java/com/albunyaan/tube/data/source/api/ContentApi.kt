@@ -18,6 +18,13 @@ interface ContentApi {
 
     @GET("api/v1/categories")
     suspend fun fetchCategories(): List<CategoryDto>
+
+    @GET("api/v1/search")
+    suspend fun search(
+        @Query("q") query: String,
+        @Query("type") type: String?,
+        @Query("limit") limit: Int
+    ): SearchResponseDto
 }
 
 @JsonClass(generateAdapter = true)
@@ -51,4 +58,10 @@ data class CategoryDto(
     val name: String,
     val slug: String,
     val parentId: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class SearchResponseDto(
+    val results: List<ContentDto>,
+    val total: Int? = null
 )

@@ -48,7 +48,7 @@ class HomeFragmentNew : Fragment(R.layout.fragment_home_new) {
             }
 
             searchButton.setOnClickListener {
-                // TODO: Open search
+                findNavController().navigate(R.id.searchFragment)
             }
 
             menuButton.setOnClickListener { view ->

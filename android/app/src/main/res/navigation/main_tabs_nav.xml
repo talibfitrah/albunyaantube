@@ -121,4 +121,18 @@
         android:id="@+id/aboutFragment"
         android:name="com.albunyaan.tube.ui.settings.AboutFragment"
         android:label="About" />
+
+    <fragment
+        android:id="@+id/searchFragment"
+        android:name="com.albunyaan.tube.ui.SearchFragment"
+        android:label="Search" />
+
+    <!-- Global actions for navigation from anywhere -->
+    <action
+        android:id="@+id/action_global_channelDetailFragment"
+        app:destination="@id/channelDetailFragment" />
+
+    <action
+        android:id="@+id/action_global_playlistDetailFragment"
+        app:destination="@id/playlistDetailFragment" />
 </navigation>

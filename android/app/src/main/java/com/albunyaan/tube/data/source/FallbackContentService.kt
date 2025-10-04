@@ -1,6 +1,7 @@
 package com.albunyaan.tube.data.source
 
 import com.albunyaan.tube.data.filters.FilterState
+import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.model.CursorResponse
 
@@ -17,5 +18,11 @@ class FallbackContentService(
         primary.fetchContent(type, cursor, pageSize, filters)
     } catch (_: Throwable) {
         fallback.fetchContent(type, cursor, pageSize, filters)
+    }
+
+    override suspend fun search(query: String, type: String?, limit: Int): List<ContentItem> = try {
+        primary.search(query, type, limit)
+    } catch (_: Throwable) {
+        fallback.search(query, type, limit)
     }
 }

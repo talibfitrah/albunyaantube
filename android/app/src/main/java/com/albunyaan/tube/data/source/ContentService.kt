@@ -1,6 +1,7 @@
 package com.albunyaan.tube.data.source
 
 import com.albunyaan.tube.data.filters.FilterState
+import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.model.CursorResponse
 
@@ -11,4 +12,6 @@ interface ContentService {
         pageSize: Int,
         filters: FilterState
     ): CursorResponse
+
+    suspend fun search(query: String, type: String? = null, limit: Int = 20): List<ContentItem>
 }
