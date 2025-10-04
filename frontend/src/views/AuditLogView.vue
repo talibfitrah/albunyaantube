@@ -371,4 +371,108 @@ td {
   clip: rect(0, 0, 0, 0);
   border: 0;
 }
+
+/* Touch Optimizations */
+button,
+input,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+.pager,
+.retry {
+  min-height: 44px;
+}
+
+/* Mobile/Tablet Responsive */
+@media (max-width: 1023px) {
+  .audit-view {
+    gap: 1.5rem;
+  }
+
+  .audit-header {
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .audit-header h1 {
+    font-size: 1.75rem;
+  }
+
+  .audit-header p {
+    font-size: 0.875rem;
+  }
+
+  .filters {
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .filter {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .filter select {
+    width: auto;
+    min-width: 150px;
+    min-height: 44px;
+  }
+
+  .table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .audit-table {
+    min-width: 900px;
+  }
+
+  .table-footer {
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+
+  .pager {
+    flex: 1;
+    min-width: 120px;
+    min-height: 48px;
+  }
+
+  .footer-status {
+    width: 100%;
+    text-align: center;
+    order: -1;
+  }
+
+  .action-error {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .retry {
+    width: 100%;
+    min-height: 48px;
+  }
+}
+
+@media (max-width: 767px) {
+  .audit-header h1 {
+    font-size: 1.5rem;
+  }
+
+  .filters span {
+    font-size: 0.875rem;
+  }
+
+  .audit-table {
+    font-size: 0.875rem;
+  }
+
+  td {
+    padding: 0.625rem 1rem;
+  }
+}
 </style>
