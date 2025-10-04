@@ -1,141 +1,127 @@
 package com.albunyaan.tube.download
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
+import android.os.Build
+import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
+import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
-import androidx.work.Data
-import com.albunyaan.tube.ServiceLocator
-import com.albunyaan.tube.analytics.ExtractorMetricsReporter
-import com.albunyaan.tube.data.extractor.AudioTrack
-import com.albunyaan.tube.data.extractor.VideoTrack
-import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_AUDIO_ONLY
-import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_DOWNLOAD_ID
-import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_FILE_PATH
-import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_FILE_SIZE
-import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_COMPLETED_AT
-import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_MIME_TYPE
-import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_PROGRESS
-import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_TITLE
-import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_VIDEO_ID
-import com.albunyaan.tube.player.PlayerRepository
-import java.io.File
-import java.io.IOException
-import kotlin.math.max
+import com.albunyaan.tube.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
-import okhttp3.Request
+import java.io.File
+import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
 
 class DownloadWorker(
-    appContext: Context,
+    context: Context,
     params: WorkerParameters
-) : CoroutineWorker(appContext, params) {
+) : CoroutineWorker(context, params) {
 
-    private val notifications = DownloadNotifications(appContext)
-    private val storage = ServiceLocator.provideDownloadStorage()
-    private val repository: PlayerRepository by lazy { ServiceLocator.providePlayerRepository() }
-    private val metrics: ExtractorMetricsReporter by lazy { ServiceLocator.provideExtractorMetricsReporter() }
-    private val httpClient by lazy { OkHttpClient.Builder().build() }
+    private val notificationManager =
+        context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-    override suspend fun doWork(): Result {
-        val downloadId = inputData.getString(KEY_DOWNLOAD_ID) ?: return Result.failure()
-        val videoId = inputData.getString(KEY_VIDEO_ID) ?: return Result.failure()
-        val title = inputData.getString(KEY_TITLE) ?: videoId
-        val audioOnly = inputData.getBoolean(KEY_AUDIO_ONLY, true)
+    companion object {
+        const val KEY_VIDEO_ID = "video_id"
+        const val KEY_VIDEO_TITLE = "video_title"
+        const val KEY_VIDEO_URL = "video_url"
+        const val KEY_PROGRESS = "progress"
+        const val KEY_ERROR = "error"
 
-        setForegroundAsync(notifications.createForegroundInfo(downloadId, title, 0))
+        private const val CHANNEL_ID = "download_channel"
+        private const val NOTIFICATION_ID = 1001
+    }
 
-        return runCatching {
-            val mediaUrl = resolveTrack(videoId, audioOnly) ?: return@runCatching Result.failure()
-            val contentLength = fetchContentLength(mediaUrl)
-            if (contentLength != null) {
-                storage.ensureSpace(contentLength)
-            }
-            val tempFile = storage.createTempFile(downloadId)
-            try {
-                downloadToFile(mediaUrl, tempFile, downloadId, title, contentLength)
-                val finalFile = storage.commit(downloadId, audioOnly, tempFile)
-                val metadata = storage.metadataFor(downloadId, audioOnly)
-                metadata?.let { metrics.onDownloadSizeKnown(downloadId, it.sizeBytes) }
-                notifications.notifyCompletion(downloadId, title)
-                val output = Data.Builder()
-                    .putString(KEY_FILE_PATH, finalFile.absolutePath)
-                    .putInt(KEY_PROGRESS, 100)
-                metadata?.let {
-                    output.putLong(KEY_FILE_SIZE, it.sizeBytes)
-                    output.putLong(KEY_COMPLETED_AT, it.completedAtMillis)
-                    output.putString(KEY_MIME_TYPE, it.mimeType)
+    override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+        val videoId = inputData.getString(KEY_VIDEO_ID) ?: return@withContext Result.failure()
+        val videoTitle = inputData.getString(KEY_VIDEO_TITLE) ?: "Video"
+        val videoUrl = inputData.getString(KEY_VIDEO_URL) ?: return@withContext Result.failure()
+
+        try {
+            createNotificationChannel()
+            setForeground(createForegroundInfo(videoTitle, 0))
+            downloadVideo(videoId, videoTitle, videoUrl)
+            Result.success()
+        } catch (e: Exception) {
+            Result.failure(workDataOf(KEY_ERROR to e.message))
+        }
+    }
+
+    private suspend fun downloadVideo(videoId: String, videoTitle: String, videoUrl: String) {
+        val outputDir = File(applicationContext.getExternalFilesDir(null), "downloads")
+        if (!outputDir.exists()) outputDir.mkdirs()
+
+        val outputFile = File(outputDir, "$videoId.mp4")
+        val connection = URL(videoUrl).openConnection() as HttpURLConnection
+
+        try {
+            connection.connect()
+            val fileLength = connection.contentLength
+            val input = connection.inputStream
+            val output = FileOutputStream(outputFile)
+            val buffer = ByteArray(8192)
+            var total: Long = 0
+            var count: Int
+
+            while (input.read(buffer).also { count = it } != -1) {
+                if (isStopped) {
+                    output.close()
+                    input.close()
+                    outputFile.delete()
+                    return
                 }
-                Result.success(output.build())
-            } catch (t: Throwable) {
-                storage.discardTemp(tempFile)
-                metrics.onDownloadFailed(downloadId, t)
-                Result.retry()
-            }
-        }.getOrElse { throwable ->
-            metrics.onDownloadFailed(downloadId, throwable)
-            Result.retry()
-        }
-    }
-
-    private suspend fun resolveTrack(videoId: String, audioOnly: Boolean): String? {
-        val resolved = repository.resolveStreams(videoId) ?: return null
-        val audioTrack = resolved.audioTracks.maxByOrNull { it.bitrate ?: 0 }
-        val videoTrack = resolved.videoTracks.maxWithOrNull(compareBy<VideoTrack> { it.height ?: 0 }
-            .thenBy { it.bitrate ?: 0 })
-        return if (audioOnly) {
-            audioTrack?.url
-        } else {
-            videoTrack?.url ?: audioTrack?.url
-        }
-    }
-
-    private suspend fun fetchContentLength(url: String): Long? = withContext(Dispatchers.IO) {
-        val request = Request.Builder().url(url).head().build()
-        runCatching { httpClient.newCall(request).execute() }
-            .getOrNull()
-            ?.use { response ->
-                response.header("Content-Length")?.toLongOrNull()?.takeIf { it > 0 }
-            }
-    }
-
-    private suspend fun downloadToFile(
-        url: String,
-        target: File,
-        downloadId: String,
-        title: String,
-        contentLength: Long?
-    ) = withContext(Dispatchers.IO) {
-        val request = Request.Builder().url(url).build()
-        httpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw IOException("Unexpected code $response")
-            val body = response.body ?: throw IOException("Empty body")
-            val totalBytes = max(contentLength ?: -1, body.contentLength())
-            val input = body.byteStream()
-            target.outputStream().use { output ->
-                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                var read: Int
-                var downloaded = 0L
-                var lastProgress = 0
-                while (input.read(buffer).also { read = it } != -1) {
-                    if (isStopped) throw IOException("Download cancelled")
-                    output.write(buffer, 0, read)
-                    downloaded += read
-                    if (totalBytes > 0) {
-                        val progress = (downloaded * 100 / totalBytes).toInt().coerceIn(0, 100)
-                        if (progress != lastProgress) {
-                            lastProgress = progress
-                            setProgress(workDataOf(KEY_PROGRESS to progress))
-                            metrics.onDownloadProgress(downloadId, progress)
-                            setForegroundAsync(notifications.createForegroundInfo(downloadId, title, progress))
-                        }
-                    }
+                total += count
+                output.write(buffer, 0, count)
+                if (fileLength > 0) {
+                    val progress = (total * 100 / fileLength).toInt()
+                    setProgressAsync(workDataOf(KEY_PROGRESS to progress))
+                    setForeground(createForegroundInfo(videoTitle, progress))
                 }
-                setProgress(workDataOf(KEY_PROGRESS to 100))
-                metrics.onDownloadProgress(downloadId, 100)
             }
+            output.flush()
+            output.close()
+            input.close()
+            showCompletionNotification(videoTitle)
+        } finally {
+            connection.disconnect()
         }
     }
 
+    private fun createForegroundInfo(title: String, progress: Int): ForegroundInfo {
+        val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
+            .setContentTitle("Downloading")
+            .setContentText(title)
+            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setProgress(100, progress, progress == 0)
+            .setOngoing(true)
+            .build()
+        return ForegroundInfo(NOTIFICATION_ID, notification)
+    }
+
+    private fun showCompletionNotification(title: String) {
+        val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
+            .setContentTitle("Download complete")
+            .setContentText(title)
+            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setAutoCancel(true)
+            .build()
+        notificationManager.notify(NOTIFICATION_ID + 1, notification)
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "Downloads",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Video download notifications"
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+    }
 }
