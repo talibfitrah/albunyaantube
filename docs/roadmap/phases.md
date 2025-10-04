@@ -574,7 +574,7 @@ This document consolidates all project phases in chronological order with curren
 
 ### Sprint Breakdown (6 weeks)
 
-#### Sprint 1: Content Discovery & Browse (Week 1-2)
+#### Sprint 1: Content Discovery & Browse (Week 1-2) ✅ COMPLETE
 
 **ANDROID-001**: Home Screen with Content Feed (3 days, P0) - ✅ COMPLETE
 - [x] Home screen layout with RecyclerView (ContentListFragment exists)
@@ -596,17 +596,17 @@ This document consolidates all project phases in chronological order with curren
 - [x] Update content feed based on selected categories
 - [x] Persist filter selections across sessions
 
-**ANDROID-003**: Channel Detail Screen (2 days, P0)
-- [ ] Channel detail activity/fragment
-- [ ] Display channel metadata (title, description, thumbnail, subscribers)
-- [ ] Show channel playlists and videos
-- [ ] Handle deep links (albunyaantube://channel/{id})
+**ANDROID-003**: Channel Detail Screen (2 days, P0) - ✅ COMPLETE
+- [x] Channel detail activity/fragment
+- [x] Display channel metadata (title, description, thumbnail, subscribers)
+- [x] Show channel playlists and videos
+- [x] Handle deep links (albunyaantube://channel/{id})
 
-**ANDROID-004**: Playlist Detail Screen (2 days, P0)
-- [ ] Playlist detail activity/fragment
-- [ ] Display playlist metadata
-- [ ] Show playlist videos in order
-- [ ] Handle deep links (albunyaantube://playlist/{id})
+**ANDROID-004**: Playlist Detail Screen (2 days, P0) - ✅ COMPLETE
+- [x] Playlist detail activity/fragment
+- [x] Display playlist metadata
+- [x] Show playlist videos in order
+- [x] Handle deep links (albunyaantube://playlist/{id})
 
 #### Sprint 2: Video Playback (Week 3)
 
