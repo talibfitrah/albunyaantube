@@ -1,28 +1,41 @@
 package com.albunyaan.tube.ui
 
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import androidx.core.os.bundleOf
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.albunyaan.tube.R
+import com.albunyaan.tube.ServiceLocator
 import com.albunyaan.tube.data.model.ContentItem
+import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.databinding.FragmentSimpleListBinding
 import com.albunyaan.tube.ui.adapters.PlaylistAdapter
 import com.albunyaan.tube.ui.detail.PlaylistDetailFragment
+import kotlinx.coroutines.launch
 
 class PlaylistsFragmentNew : Fragment(R.layout.fragment_simple_list) {
 
     private var binding: FragmentSimpleListBinding? = null
     private lateinit var adapter: PlaylistAdapter
 
+    private val viewModel: ContentListViewModel by viewModels {
+        ContentListViewModel.Factory(
+            ServiceLocator.provideContentService(),
+            ContentType.PLAYLISTS
+        )
+    }
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding = FragmentSimpleListBinding.bind(view)
 
         setupRecyclerView()
-        loadPlaylists()
+        observeViewModel()
     }
 
     private fun setupRecyclerView() {
@@ -40,18 +53,28 @@ class PlaylistsFragmentNew : Fragment(R.layout.fragment_simple_list) {
         }
     }
 
-    private fun loadPlaylists() {
-        // TODO: Load from API - for now using mock data
-        val mockPlaylists = listOf(
-            ContentItem.Playlist("1", "Essentials of Faith", "Aqeedah", 24, null, null),
-            ContentItem.Playlist("2", "Life of the Prophet", "Seerah", 45, null, null),
-            ContentItem.Playlist("3", "Ramadan Reminders", "Reminders", 30, null, null),
-            ContentItem.Playlist("4", "Quran Tafsir Series", "Quran", 114, null, null),
-            ContentItem.Playlist("5", "Basics of Islam", "Dawah", 18, null, null),
-            ContentItem.Playlist("6", "Stories from the Quran", "Quran", 25, null, null),
-            ContentItem.Playlist("7", "Islamic History", "History", 60, null, null)
-        )
-        adapter.submitList(mockPlaylists)
+    private fun observeViewModel() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.content.collect { state ->
+                when (state) {
+                    is ContentListViewModel.ContentState.Loading -> {
+                        Log.d(TAG, "Loading playlists...")
+                    }
+                    is ContentListViewModel.ContentState.Success -> {
+                        val playlists = state.items.filterIsInstance<ContentItem.Playlist>()
+                        Log.d(TAG, "Playlists loaded: ${playlists.size} items")
+                        adapter.submitList(playlists)
+                    }
+                    is ContentListViewModel.ContentState.Error -> {
+                        Log.e(TAG, "Error loading playlists: ${state.message}")
+                    }
+                }
+            }
+        }
+    }
+
+    companion object {
+        private const val TAG = "PlaylistsFragmentNew"
     }
 
     override fun onDestroyView() {

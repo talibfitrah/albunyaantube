@@ -123,14 +123,24 @@ class HomeFragmentNew : Fragment(R.layout.fragment_home_new) {
                                 "${state.playlists.size} playlists, " +
                                 "${state.videos.size} videos")
 
-                        channelAdapter.submitList(state.channels)
-                        playlistAdapter.submitList(state.playlists)
-                        videoAdapter.submitList(state.videos)
+                        channelAdapter.submitList(state.channels) {
+                            Log.d(TAG, "Channels adapter updated")
+                            binding?.channelsRecyclerView?.requestLayout()
+                        }
+                        playlistAdapter.submitList(state.playlists) {
+                            Log.d(TAG, "Playlists adapter updated")
+                            binding?.playlistsRecyclerView?.requestLayout()
+                        }
+                        videoAdapter.submitList(state.videos) {
+                            Log.d(TAG, "Videos adapter updated")
+                            binding?.videosRecyclerView?.requestLayout()
+                        }
 
+                        // Always show RecyclerViews, let empty state be handled by adapters
                         binding?.apply {
-                            channelsRecyclerView.isVisible = state.channels.isNotEmpty()
-                            playlistsRecyclerView.isVisible = state.playlists.isNotEmpty()
-                            videosRecyclerView.isVisible = state.videos.isNotEmpty()
+                            channelsRecyclerView.isVisible = true
+                            playlistsRecyclerView.isVisible = true
+                            videosRecyclerView.isVisible = true
                         }
                     }
                     is HomeViewModel.HomeContentState.Error -> {

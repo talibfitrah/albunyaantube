@@ -1,28 +1,41 @@
 package com.albunyaan.tube.ui
 
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import androidx.core.os.bundleOf
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.albunyaan.tube.R
+import com.albunyaan.tube.ServiceLocator
 import com.albunyaan.tube.data.model.ContentItem
+import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.databinding.FragmentChannelsNewBinding
 import com.albunyaan.tube.ui.adapters.ChannelAdapter
 import com.albunyaan.tube.ui.detail.ChannelDetailFragment
+import kotlinx.coroutines.launch
 
 class ChannelsFragmentNew : Fragment(R.layout.fragment_channels_new) {
 
     private var binding: FragmentChannelsNewBinding? = null
     private lateinit var adapter: ChannelAdapter
 
+    private val viewModel: ContentListViewModel by viewModels {
+        ContentListViewModel.Factory(
+            ServiceLocator.provideContentService(),
+            ContentType.CHANNELS
+        )
+    }
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding = FragmentChannelsNewBinding.bind(view)
 
         setupRecyclerView()
-        loadChannels()
+        observeViewModel()
         setupCategoriesFab()
     }
 
@@ -48,19 +61,28 @@ class ChannelsFragmentNew : Fragment(R.layout.fragment_channels_new) {
         }
     }
 
-    private fun loadChannels() {
-        // TODO: Load from API - for now using mock data
-        val mockChannels = listOf(
-            ContentItem.Channel("1", "IslamQA", "Fiqh", 1200000, null, null, null, listOf("Fiqh", "Aqeedah", "Hadith")),
-            ContentItem.Channel("2", "Omar Suleiman", "Seerah", 850000, null, null, null, listOf("Seerah", "Quran", "Reminders", "History")),
-            ContentItem.Channel("3", "Mufti Menk", "Reminders", 600000, null, null, null, listOf("Reminders", "Fiqh", "Dawah")),
-            ContentItem.Channel("4", "Nouman Ali Khan", "Quran", 450000, null, null, null, listOf("Quran", "Tafsir", "Arabic")),
-            ContentItem.Channel("5", "Bilal Philips", "Dawah", 300000, null, null, null, listOf("Dawah", "Aqeedah", "Comparative Religion", "Islamic Studies", "Philosophy", "History", "Fiqh", "Hadith", "Quran", "Seerah")),
-            ContentItem.Channel("6", "Yusha Evans", "Dawah", 200000, null, null, null, listOf("Dawah", "Convert Stories")),
-            ContentItem.Channel("7", "Hamza Yusuf", "Sufism", 150000, null, null, null, listOf("Sufism", "Islamic Philosophy", "History", "Literature")),
-            ContentItem.Channel("8", "Zaid Shakir", "Seerah", 100000, null, null, null, listOf("Seerah", "Fiqh"))
-        )
-        adapter.submitList(mockChannels)
+    private fun observeViewModel() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.content.collect { state ->
+                when (state) {
+                    is ContentListViewModel.ContentState.Loading -> {
+                        Log.d(TAG, "Loading channels...")
+                    }
+                    is ContentListViewModel.ContentState.Success -> {
+                        val channels = state.items.filterIsInstance<ContentItem.Channel>()
+                        Log.d(TAG, "Channels loaded: ${channels.size} items")
+                        adapter.submitList(channels)
+                    }
+                    is ContentListViewModel.ContentState.Error -> {
+                        Log.e(TAG, "Error loading channels: ${state.message}")
+                    }
+                }
+            }
+        }
+    }
+
+    companion object {
+        private const val TAG = "ChannelsFragmentNew"
     }
 
     override fun onDestroyView() {
