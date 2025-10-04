@@ -126,4 +126,11 @@
 
     <!-- Splash Screen -->
     <string name="splash_tagline">Your trusted source for Islamic content</string>
+
+    <!-- Player Controls -->
+    <string name="player_quality_selector">Quality</string>
+    <string name="player_rewind">Rewind 10 seconds</string>
+    <string name="player_forward">Forward 10 seconds</string>
+    <string name="player_brightness">Brightness</string>
+    <string name="player_volume">Volume</string>
 </resources>

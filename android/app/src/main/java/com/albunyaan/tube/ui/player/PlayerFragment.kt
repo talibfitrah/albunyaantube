@@ -7,11 +7,14 @@ import android.os.Build
 import android.os.Bundle
 import android.text.format.DateUtils
 import android.text.format.Formatter
+import android.view.GestureDetector
 import android.view.Menu
 import android.view.MenuInflater
 import android.view.MenuItem
+import android.view.MotionEvent
 import android.view.View
 import android.widget.Toast
+import androidx.core.view.GestureDetectorCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
@@ -51,6 +54,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     }
     private val upNextAdapter = UpNextAdapter { item -> viewModel.playItem(item) }
     private var preparedStreamKey: Pair<String, Boolean>? = null
+    private lateinit var gestureDetector: GestureDetectorCompat
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -106,6 +110,17 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         val player = ExoPlayer.Builder(requireContext()).build().also { this.player = it }
         binding.playerView.player = player
         player.addListener(viewModel.playerListener)
+
+        // Setup gesture detector for brightness/volume/seek gestures
+        val window = requireActivity().window
+        val playerGesture = PlayerGestureDetector(requireContext(), player, window)
+        gestureDetector = GestureDetectorCompat(requireContext(), playerGesture)
+
+        // Attach gestures to player view
+        binding.playerView.setOnTouchListener { _, event ->
+            gestureDetector.onTouchEvent(event)
+            false // Allow ExoPlayer to handle other touches
+        }
     }
 
     private fun collectViewState(binding: FragmentPlayerBinding) {
