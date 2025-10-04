@@ -132,6 +132,24 @@ class PlayerViewModel(
         }
     }
 
+    /**
+     * Load and play a specific video by ID
+     */
+    fun loadVideo(videoId: String, title: String = "Video") {
+        val item = UpNextItem(
+            id = videoId,
+            title = title,
+            channelName = "Albunyaan",
+            durationSeconds = 0,
+            streamId = videoId
+        )
+        currentItem = item
+        queue.clear()
+        applyQueueState()
+        publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(item, PlaybackStartReason.USER_SELECTED))
+        resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
+    }
+
     private fun hydrateQueue() {
         val stubItems = stubUpNextItems()
         val (playable, excluded) = stubItems.partition { !it.isExcluded }

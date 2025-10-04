@@ -44,6 +44,16 @@
     <fragment
         android:id="@+id/playerFragment"
         android:name="com.albunyaan.tube.ui.player.PlayerFragment"
-        android:label="Player" />
+        android:label="Player">
+        <argument
+            android:name="videoId"
+            app:argType="string"
+            android:defaultValue="" />
+        <argument
+            android:name="playlistId"
+            app:argType="string"
+            app:nullable="true"
+            android:defaultValue="@null" />
+    </fragment>
 
 </navigation>

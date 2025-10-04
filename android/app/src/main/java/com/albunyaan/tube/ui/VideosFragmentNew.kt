@@ -26,13 +26,18 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
 
     private fun setupRecyclerView() {
         adapter = VideoGridAdapter { video ->
-            // TODO: Navigate to video detail
+            navigateToPlayer(video.id)
         }
 
         binding?.recyclerView?.apply {
             layoutManager = GridLayoutManager(requireContext(), 2)
             adapter = this@VideosFragmentNew.adapter
         }
+    }
+
+    private fun navigateToPlayer(videoId: String) {
+        val bundle = bundleOf("videoId" to videoId)
+        findNavController().navigate(R.id.action_mainShellFragment_to_playerFragment, bundle)
     }
 
     private fun loadVideos() {

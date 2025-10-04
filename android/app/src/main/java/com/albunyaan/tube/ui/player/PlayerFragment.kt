@@ -56,6 +56,13 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         super.onViewCreated(view, savedInstanceState)
         setHasOptionsMenu(true)
         val binding = FragmentPlayerBinding.bind(view).also { binding = it }
+
+        // Get video ID from arguments
+        val videoId = arguments?.getString("videoId")
+        if (!videoId.isNullOrEmpty()) {
+            viewModel.loadVideo(videoId)
+        }
+
         binding.audioOnlyToggle.setOnCheckedChangeListener { _, isChecked ->
             viewModel.setAudioOnly(isChecked)
         }

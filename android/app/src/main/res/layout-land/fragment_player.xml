@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Landscape layout for fullscreen player experience -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
+
+    <com.google.android.exoplayer2.ui.StyledPlayerView
+        android:id="@+id/playerView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:keepScreenOn="true"
+        app:controller_layout_id="@layout/exo_player_control_view"
+        app:show_buffering="when_playing"
+        app:use_controller="true"
+        app:resize_mode="fit" />
+
+    <!-- Hidden views for compatibility with existing binding -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="gone">
+
+        <TextView android:id="@+id/audioOnlyLabel" android:layout_width="0dp" android:layout_height="0dp"/>
+        <Switch android:id="@+id/audioOnlyToggle" android:layout_width="0dp" android:layout_height="0dp"/>
+        <TextView android:id="@+id/playerStatus" android:layout_width="0dp" android:layout_height="0dp"/>
+        <TextView android:id="@+id/currentlyPlaying" android:layout_width="0dp" android:layout_height="0dp"/>
+        <Button android:id="@+id/completeButton" android:layout_width="0dp" android:layout_height="0dp"/>
+        <Button android:id="@+id/downloadButton" android:layout_width="0dp" android:layout_height="0dp"/>
+        <TextView android:id="@+id/downloadStatus" android:layout_width="0dp" android:layout_height="0dp"/>
+        <TextView android:id="@+id/upNextHeader" android:layout_width="0dp" android:layout_height="0dp"/>
+        <TextView android:id="@+id/excludedMessage" android:layout_width="0dp" android:layout_height="0dp"/>
+        <androidx.recyclerview.widget.RecyclerView android:id="@+id/upNextList" android:layout_width="0dp" android:layout_height="0dp"/>
+        <TextView android:id="@+id/upNextEmpty" android:layout_width="0dp" android:layout_height="0dp"/>
+        <TextView android:id="@+id/analyticsHeader" android:layout_width="0dp" android:layout_height="0dp"/>
+        <TextView android:id="@+id/analyticsStatus" android:layout_width="0dp" android:layout_height="0dp"/>
+    </LinearLayout>
+
+</FrameLayout>
