@@ -8,6 +8,7 @@
             :src="channel.thumbnailUrl"
             :alt="channel.title"
             class="channel-avatar"
+            loading="lazy"
           />
           <div v-else class="channel-avatar-placeholder"></div>
           <div>
