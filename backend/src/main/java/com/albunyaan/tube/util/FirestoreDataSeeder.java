@@ -120,7 +120,7 @@ public class FirestoreDataSeeder implements CommandLineRunner {
         quranChannel.setSubscribers(100000L);
         quranChannel.setVideoCount(50);
         quranChannel.setCategoryIds(Arrays.asList(quranCategoryId));
-        quranChannel.setStatus("approved");
+        quranChannel.setStatus("APPROVED");
         quranChannel.setSubmittedBy("admin@albunyaan.tube");
         quranChannel.setApprovedBy("admin@albunyaan.tube");
         Channel savedQuranChannel = channelRepository.save(quranChannel);
@@ -135,7 +135,7 @@ public class FirestoreDataSeeder implements CommandLineRunner {
         hadithChannel.setSubscribers(75000L);
         hadithChannel.setVideoCount(30);
         hadithChannel.setCategoryIds(Arrays.asList(hadithCategoryId));
-        hadithChannel.setStatus("approved");
+        hadithChannel.setStatus("APPROVED");
         hadithChannel.setSubmittedBy("admin@albunyaan.tube");
         hadithChannel.setApprovedBy("admin@albunyaan.tube");
         Channel savedHadithChannel = channelRepository.save(hadithChannel);
@@ -154,7 +154,7 @@ public class FirestoreDataSeeder implements CommandLineRunner {
         quranPlaylist.setThumbnailUrl("https://via.placeholder.com/200x200?text=Playlist");
         quranPlaylist.setItemCount(30);
         quranPlaylist.setCategoryIds(Arrays.asList(quranCategoryId));
-        quranPlaylist.setStatus("approved");
+        quranPlaylist.setStatus("APPROVED");
         quranPlaylist.setSubmittedBy("admin@albunyaan.tube");
         quranPlaylist.setApprovedBy("admin@albunyaan.tube");
         Playlist savedQuranPlaylist = playlistRepository.save(quranPlaylist);
@@ -167,7 +167,7 @@ public class FirestoreDataSeeder implements CommandLineRunner {
         hadithPlaylist.setThumbnailUrl("https://via.placeholder.com/200x200?text=Hadith+Playlist");
         hadithPlaylist.setItemCount(20);
         hadithPlaylist.setCategoryIds(Arrays.asList(hadithCategoryId));
-        hadithPlaylist.setStatus("approved");
+        hadithPlaylist.setStatus("APPROVED");
         hadithPlaylist.setSubmittedBy("admin@albunyaan.tube");
         hadithPlaylist.setApprovedBy("admin@albunyaan.tube");
         Playlist savedHadithPlaylist = playlistRepository.save(hadithPlaylist);
@@ -188,7 +188,7 @@ public class FirestoreDataSeeder implements CommandLineRunner {
         quranVideo.setViewCount(50000L);
         quranVideo.setUploadedAt(Timestamp.now());
         quranVideo.setCategoryIds(Arrays.asList(quranCategoryId));
-        quranVideo.setStatus("approved");
+        quranVideo.setStatus("APPROVED");
         quranVideo.setSubmittedBy("admin@albunyaan.tube");
         quranVideo.setApprovedBy("admin@albunyaan.tube");
         Video savedQuranVideo = videoRepository.save(quranVideo);
@@ -203,7 +203,7 @@ public class FirestoreDataSeeder implements CommandLineRunner {
         hadithVideo.setViewCount(25000L);
         hadithVideo.setUploadedAt(Timestamp.now());
         hadithVideo.setCategoryIds(Arrays.asList(hadithCategoryId));
-        hadithVideo.setStatus("approved");
+        hadithVideo.setStatus("APPROVED");
         hadithVideo.setSubmittedBy("admin@albunyaan.tube");
         hadithVideo.setApprovedBy("admin@albunyaan.tube");
         Video savedHadithVideo = videoRepository.save(hadithVideo);
@@ -218,7 +218,7 @@ public class FirestoreDataSeeder implements CommandLineRunner {
         lectureVideo.setViewCount(35000L);
         lectureVideo.setUploadedAt(Timestamp.now());
         lectureVideo.setCategoryIds(Arrays.asList(lecturesCategoryId));
-        lectureVideo.setStatus("approved");
+        lectureVideo.setStatus("APPROVED");
         lectureVideo.setSubmittedBy("admin@albunyaan.tube");
         lectureVideo.setApprovedBy("admin@albunyaan.tube");
         Video savedLectureVideo = videoRepository.save(lectureVideo);

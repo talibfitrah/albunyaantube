@@ -200,7 +200,7 @@ public class Video {
     }
 
     public boolean isApproved() {
-        return "approved".equals(status);
+        return "APPROVED".equalsIgnoreCase(status);
     }
 
     /**
