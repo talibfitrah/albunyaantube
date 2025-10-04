@@ -238,9 +238,16 @@ header p {
   font-size: 0.875rem;
   cursor: pointer;
   transition: background 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+  min-height: 36px;
 }
 
-.timeframe-button:hover,
+@media (hover: hover) {
+  .timeframe-button:hover {
+    background: var(--color-surface-alt);
+  }
+}
+
 .timeframe-button:focus-visible {
   background: var(--color-surface-alt);
 }
@@ -295,9 +302,16 @@ header p {
   border-radius: 0.5rem;
   cursor: pointer;
   font-weight: 600;
+  -webkit-tap-highlight-color: transparent;
+  min-height: 44px;
 }
 
-.retry:hover,
+@media (hover: hover) {
+  .retry:hover {
+    background: var(--color-accent);
+  }
+}
+
 .retry:focus-visible {
   background: var(--color-accent);
 }
@@ -321,10 +335,12 @@ header p {
   transition: all 0.2s ease;
 }
 
-.card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-  transform: translateY(-2px);
-  border-color: var(--color-brand);
+@media (hover: hover) {
+  .card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    transform: translateY(-2px);
+    border-color: var(--color-brand);
+  }
 }
 
 .card-title {
@@ -417,9 +433,70 @@ header p {
   }
 }
 
-@media (max-width: 640px) {
+/* Mobile/Tablet Responsive */
+@media (max-width: 1023px) {
+  .panel {
+    gap: 1.5rem;
+  }
+
+  header h1 {
+    font-size: 1.75rem;
+  }
+
+  header p {
+    font-size: 0.875rem;
+  }
+
   .dashboard-toolbar {
-    align-items: flex-start;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1rem;
+  }
+
+  .timeframe {
+    gap: 0.75rem;
+  }
+
+  .timeframe-options {
+    gap: 0.625rem;
+  }
+
+  .timeframe-button {
+    flex: 1;
+    min-height: 44px;
+    padding: 0.625rem 1rem;
+    font-size: 0.9375rem;
+  }
+
+  .last-updated {
+    text-align: center;
+    padding: 0.5rem;
+    background: var(--color-surface-alt);
+    border-radius: 0.5rem;
+  }
+
+  .cards {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+
+  .card {
+    padding: 1.5rem;
+  }
+
+  .retry {
+    width: 100%;
+    align-self: stretch;
+  }
+}
+
+@media (max-width: 767px) {
+  header h1 {
+    font-size: 1.5rem;
+  }
+
+  .card-value {
+    font-size: 2rem;
   }
 }
 </style>
