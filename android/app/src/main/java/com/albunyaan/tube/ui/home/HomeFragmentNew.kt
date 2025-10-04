@@ -1,53 +1,91 @@
 package com.albunyaan.tube.ui.home
 
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.widget.PopupMenu
+import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.albunyaan.tube.R
+import com.albunyaan.tube.ServiceLocator
 import com.albunyaan.tube.databinding.FragmentHomeNewBinding
+import com.albunyaan.tube.ui.HomeViewModel
+import com.albunyaan.tube.ui.adapters.HomeChannelAdapter
+import com.albunyaan.tube.ui.adapters.HomePlaylistAdapter
+import com.albunyaan.tube.ui.adapters.HomeVideoAdapter
+import kotlinx.coroutines.launch
 
 class HomeFragmentNew : Fragment(R.layout.fragment_home_new) {
 
     private var binding: FragmentHomeNewBinding? = null
 
+    private val viewModel: HomeViewModel by viewModels {
+        HomeViewModel.Factory(ServiceLocator.provideContentService())
+    }
+
+    private lateinit var channelAdapter: HomeChannelAdapter
+    private lateinit var playlistAdapter: HomePlaylistAdapter
+    private lateinit var videoAdapter: HomeVideoAdapter
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding = FragmentHomeNewBinding.bind(view)
 
+        setupAdapters()
         setupUI()
-        loadContent()
+        observeViewModel()
+    }
+
+    private fun setupAdapters() {
+        channelAdapter = HomeChannelAdapter { channel ->
+            Log.d(TAG, "Channel clicked: ${channel.name}")
+            // TODO: Navigate to channel detail
+        }
+
+        playlistAdapter = HomePlaylistAdapter { playlist ->
+            Log.d(TAG, "Playlist clicked: ${playlist.title}")
+            // TODO: Navigate to playlist detail
+        }
+
+        videoAdapter = HomeVideoAdapter { video ->
+            Log.d(TAG, "Video clicked: ${video.title}")
+            // TODO: Navigate to video player
+        }
     }
 
     private fun setupUI() {
         binding?.apply {
-            // Setup horizontal RecyclerViews
-            channelsRecyclerView.layoutManager = LinearLayoutManager(
-                requireContext(),
-                LinearLayoutManager.HORIZONTAL,
-                false
-            )
+            // Setup horizontal RecyclerViews with adapters
+            channelsRecyclerView.apply {
+                adapter = channelAdapter
+                layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
+                setHasFixedSize(true)
+            }
 
-            playlistsRecyclerView.layoutManager = LinearLayoutManager(
-                requireContext(),
-                LinearLayoutManager.HORIZONTAL,
-                false
-            )
+            playlistsRecyclerView.apply {
+                adapter = playlistAdapter
+                layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
+                setHasFixedSize(true)
+            }
 
-            videosRecyclerView.layoutManager = LinearLayoutManager(
-                requireContext(),
-                LinearLayoutManager.HORIZONTAL,
-                false
-            )
+            videosRecyclerView.apply {
+                adapter = videoAdapter
+                layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
+                setHasFixedSize(true)
+            }
 
             // Setup click listeners
             categoryChip.setOnClickListener {
+                Log.d(TAG, "Category chip clicked")
                 // TODO: Show category picker dialog
             }
 
             searchButton.setOnClickListener {
+                Log.d(TAG, "Search clicked")
                 findNavController().navigate(R.id.searchFragment)
             }
 
@@ -56,22 +94,58 @@ class HomeFragmentNew : Fragment(R.layout.fragment_home_new) {
             }
 
             channelsSeeAll.setOnClickListener {
-                // TODO: Navigate to channels tab
+                Log.d(TAG, "Channels See All clicked")
+                navigateToTab(R.id.channelsFragment)
             }
 
             playlistsSeeAll.setOnClickListener {
-                // TODO: Navigate to playlists tab
+                Log.d(TAG, "Playlists See All clicked")
+                navigateToTab(R.id.playlistsFragment)
             }
 
             videosSeeAll.setOnClickListener {
-                // TODO: Navigate to videos tab
+                Log.d(TAG, "Videos See All clicked")
+                navigateToTab(R.id.videosFragment)
             }
         }
     }
 
-    private fun loadContent() {
-        // TODO: Load content from API
-        // For now, showing empty sections
+    private fun observeViewModel() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.homeContent.collect { state ->
+                when (state) {
+                    is HomeViewModel.HomeContentState.Loading -> {
+                        Log.d(TAG, "Loading home content...")
+                    }
+                    is HomeViewModel.HomeContentState.Success -> {
+                        Log.d(TAG, "Home content loaded: " +
+                                "${state.channels.size} channels, " +
+                                "${state.playlists.size} playlists, " +
+                                "${state.videos.size} videos")
+
+                        channelAdapter.submitList(state.channels)
+                        playlistAdapter.submitList(state.playlists)
+                        videoAdapter.submitList(state.videos)
+
+                        binding?.apply {
+                            channelsRecyclerView.isVisible = state.channels.isNotEmpty()
+                            playlistsRecyclerView.isVisible = state.playlists.isNotEmpty()
+                            videosRecyclerView.isVisible = state.videos.isNotEmpty()
+                        }
+                    }
+                    is HomeViewModel.HomeContentState.Error -> {
+                        Log.e(TAG, "Error loading home content: ${state.message}")
+                    }
+                }
+            }
+        }
+    }
+
+    private fun navigateToTab(destinationId: Int) {
+        val bottomNav = requireActivity().findViewById<com.google.android.material.bottomnavigation.BottomNavigationView>(
+            R.id.mainBottomNav
+        )
+        bottomNav?.selectedItemId = destinationId
     }
 
     private fun showMenu(view: View) {
@@ -98,5 +172,9 @@ class HomeFragmentNew : Fragment(R.layout.fragment_home_new) {
     override fun onDestroyView() {
         binding = null
         super.onDestroyView()
+    }
+
+    companion object {
+        private const val TAG = "HomeFragmentNew"
     }
 }
