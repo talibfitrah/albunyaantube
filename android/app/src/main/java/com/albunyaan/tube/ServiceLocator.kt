@@ -152,6 +152,8 @@ object ServiceLocator {
 
     fun provideFilterManager(): FilterManager = filterManager
 
+    fun provideContentService(): ContentService = contentService
+
     fun provideContentRepository(): ContentPagingRepository = pagingRepository
 
     fun provideListMetricsReporter(): ListMetricsReporter = listMetricsReporter
