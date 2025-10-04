@@ -28,6 +28,10 @@ watch(
   () => preferencesStore.locale,
   (next) => {
     i18n.global.locale.value = next;
+    // Set HTML dir attribute for RTL support
+    const isRTL = next === 'ar';
+    document.documentElement.dir = isRTL ? 'rtl' : 'ltr';
+    document.documentElement.lang = next;
   },
   { immediate: true }
 );

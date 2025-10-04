@@ -662,4 +662,39 @@ main {
     transform: scale(0.98);
   }
 }
+
+/* RTL Support */
+[dir="rtl"] .sidebar {
+  border-right: none;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+[dir="rtl"] .skip-link {
+  left: auto;
+  right: 1rem;
+}
+
+/* RTL Desktop Layout */
+@media (min-width: 1024px) {
+  [dir="rtl"] .layout {
+    grid-template-columns: 1fr 260px;
+  }
+
+  [dir="rtl"] .brand {
+    padding: 0 1.25rem 0 0.5rem;
+  }
+}
+
+/* RTL Mobile/Tablet Layout */
+@media (max-width: 1023px) {
+  [dir="rtl"] .sidebar {
+    left: auto;
+    right: 0;
+    transform: translateX(100%);
+  }
+
+  [dir="rtl"] .sidebar.open {
+    transform: translateX(0);
+  }
+}
 </style>
