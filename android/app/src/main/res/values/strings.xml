@@ -98,4 +98,18 @@
     <string name="download_notification_title">Downloading %1$s</string>
     <string name="download_notification_progress">%1$d%% complete</string>
     <string name="download_notification_complete">Download complete.</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">Home</string>
+    <string name="nav_channels">Channels</string>
+    <string name="nav_playlists">Playlists</string>
+    <string name="nav_videos">Videos</string>
+
+    <!-- Empty/Error States -->
+    <string name="clear_filters">Clear filters</string>
+    <string name="retry">Retry</string>
+    <string name="empty_state_no_content">No content found</string>
+    <string name="empty_state_adjust_filters">Try adjusting your filters or search terms</string>
+    <string name="error_state_title">Something went wrong</string>
+    <string name="error_state_check_connection">Unable to load content. Please check your connection and try again.</string>
 </resources>

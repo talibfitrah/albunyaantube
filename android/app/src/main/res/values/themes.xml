@@ -1,8 +1,48 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
     <style name="Theme.Albunyaan" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Design Spec Colors -->
         <item name="colorPrimary">@color/primary_green</item>
+        <item name="colorPrimaryVariant">@color/primary_variant</item>
         <item name="colorSecondary">@color/primary_variant</item>
+        <item name="colorSurface">@android:color/white</item>
+        <item name="colorOnPrimary">@color/onPrimary</item>
+
+        <!-- Status Bar -->
         <item name="android:statusBarColor" tools:targetApi="l">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar" tools:targetApi="m">true</item>
+
+        <!-- Shape Theme (20dp corner radius) -->
+        <item name="shapeAppearanceSmallComponent">@style/ShapeAppearance.Albunyaan.SmallComponent</item>
+        <item name="shapeAppearanceMediumComponent">@style/ShapeAppearance.Albunyaan.MediumComponent</item>
+        <item name="shapeAppearanceLargeComponent">@style/ShapeAppearance.Albunyaan.LargeComponent</item>
+
+        <!-- Bottom Navigation -->
+        <item name="bottomNavigationStyle">@style/Widget.Albunyaan.BottomNavigationView</item>
+    </style>
+
+    <!-- Shape Appearances (Design Spec: 20dp radius) -->
+    <style name="ShapeAppearance.Albunyaan.SmallComponent" parent="ShapeAppearance.Material3.SmallComponent">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">@dimen/corner_radius_small</item>
+    </style>
+
+    <style name="ShapeAppearance.Albunyaan.MediumComponent" parent="ShapeAppearance.Material3.MediumComponent">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">@dimen/corner_radius</item>
+    </style>
+
+    <style name="ShapeAppearance.Albunyaan.LargeComponent" parent="ShapeAppearance.Material3.LargeComponent">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">@dimen/corner_radius_large</item>
+    </style>
+
+    <!-- Bottom Navigation Style (Design Spec: 72dp) -->
+    <style name="Widget.Albunyaan.BottomNavigationView" parent="Widget.Material3.BottomNavigationView">
+        <item name="itemIconSize">@dimen/icon_small</item>
+        <item name="itemIconTint">@android:color/white</item>
+        <item name="itemTextColor">@android:color/white</item>
+        <item name="labelVisibilityMode">labeled</item>
+        <item name="android:minHeight">@dimen/bottom_nav_height</item>
     </style>
 </resources>

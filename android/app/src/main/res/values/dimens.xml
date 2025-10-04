@@ -1,4 +1,41 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Design Tokens (8dp baseline grid) -->
+    <dimen name="spacing_xs">4dp</dimen>
+    <dimen name="spacing_sm">8dp</dimen>
+    <dimen name="spacing_md">16dp</dimen>
+    <dimen name="spacing_lg">24dp</dimen>
+    <dimen name="spacing_xl">32dp</dimen>
+
+    <!-- Corner Radius (Design Spec: 20dp) -->
+    <dimen name="corner_radius">20dp</dimen>
+    <dimen name="corner_radius_small">12dp</dimen>
+    <dimen name="corner_radius_large">20dp</dimen>
+
+    <!-- Touch Targets (Design Spec: minimum 48dp) -->
+    <dimen name="touch_target_min">48dp</dimen>
+    <dimen name="touch_target_button">56dp</dimen>
+
+    <!-- Bottom Navigation (Design Spec: 72dp) -->
+    <dimen name="bottom_nav_height">72dp</dimen>
+    <dimen name="bottom_nav_active_indicator">12dp</dimen>
+
+    <!-- Filter Chips -->
     <dimen name="filter_chip_height">40dp</dimen>
+    <dimen name="filter_chip_radius">20dp</dimen>
+    <dimen name="filter_chip_spacing">12dp</dimen>
+
+    <!-- Icons -->
+    <dimen name="icon_small">24dp</dimen>
+    <dimen name="icon_medium">32dp</dimen>
+    <dimen name="icon_large">48dp</dimen>
+    <dimen name="icon_xlarge">96dp</dimen>
+
+    <!-- Avatar Sizes -->
+    <dimen name="avatar_small">32dp</dimen>
+    <dimen name="avatar_medium">56dp</dimen>
+    <dimen name="avatar_large">96dp</dimen>
+
+    <!-- Grid/List Spacing -->
+    <dimen name="grid_gutter">16dp</dimen>
 </resources>

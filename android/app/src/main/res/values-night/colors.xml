@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark Mode Colors (Design Spec) -->
+    <color name="primary_green">#35C491</color>
+    <color name="primary_variant">#35C491</color>
+    <color name="surface_variant">#1A2E27</color>
+    <color name="accent_red">#EF5350</color>
+
+    <!-- Material aliases -->
+    <color name="primary">@color/primary_green</color>
+    <color name="primaryContainer">@color/primary_variant</color>
+    <color name="surfaceVariant">@color/surface_variant</color>
+    <color name="onPrimary">#FFFFFFFF</color>
+
+    <!-- Filter chip palette (dark mode) -->
+    <color name="filter_chip_default_bg">#1A2E27</color>
+    <color name="filter_chip_default_text">#35C491</color>
+    <color name="filter_chip_selected_bg">#35C491</color>
+    <color name="filter_chip_selected_text">#0A1F18</color>
+</resources>
