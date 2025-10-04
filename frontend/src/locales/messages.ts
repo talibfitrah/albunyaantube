@@ -30,7 +30,9 @@ export const messages = {
       videos: 'Videos'
     },
     layout: {
-      skipToContent: 'Skip to main content'
+      skipToContent: 'Skip to main content',
+      openMenu: 'Open navigation menu',
+      closeMenu: 'Close navigation menu'
     },
     dashboard: {
       heading: 'Salaam, welcome back',
