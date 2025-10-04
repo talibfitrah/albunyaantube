@@ -1,19 +1,23 @@
 import { createRouter, createWebHistory, type NavigationGuardNext, type RouteLocationNormalized } from 'vue-router';
-import LoginView from '@/views/LoginView.vue';
-import DashboardView from '@/views/DashboardView.vue';
-import ContentSearchView from '@/views/ContentSearchView.vue';
-import CategoriesView from '@/views/CategoriesView.vue';
-import PendingApprovalsView from '@/views/PendingApprovalsView.vue';
-import ContentLibraryView from '@/views/ContentLibraryView.vue';
-import UsersManagementView from '@/views/UsersManagementView.vue';
-import AuditLogView from '@/views/AuditLogView.vue';
-import ActivityLogView from '@/views/ActivityLogView.vue';
-import ProfileSettingsView from '@/views/ProfileSettingsView.vue';
-import NotificationsSettingsView from '@/views/NotificationsSettingsView.vue';
-import YouTubeAPISettingsView from '@/views/YouTubeAPISettingsView.vue';
-import SystemSettingsView from '@/views/SystemSettingsView.vue';
-import AdminLayout from '@/layouts/AdminLayout.vue';
 import { useAuthStore } from '@/stores/auth';
+
+// Eager load critical routes (login, layout)
+import LoginView from '@/views/LoginView.vue';
+import AdminLayout from '@/layouts/AdminLayout.vue';
+
+// Lazy load all view components for code splitting
+const DashboardView = () => import('@/views/DashboardView.vue');
+const ContentSearchView = () => import('@/views/ContentSearchView.vue');
+const CategoriesView = () => import('@/views/CategoriesView.vue');
+const PendingApprovalsView = () => import('@/views/PendingApprovalsView.vue');
+const ContentLibraryView = () => import('@/views/ContentLibraryView.vue');
+const UsersManagementView = () => import('@/views/UsersManagementView.vue');
+const AuditLogView = () => import('@/views/AuditLogView.vue');
+const ActivityLogView = () => import('@/views/ActivityLogView.vue');
+const ProfileSettingsView = () => import('@/views/ProfileSettingsView.vue');
+const NotificationsSettingsView = () => import('@/views/NotificationsSettingsView.vue');
+const YouTubeAPISettingsView = () => import('@/views/YouTubeAPISettingsView.vue');
+const SystemSettingsView = () => import('@/views/SystemSettingsView.vue');
 
 const protectedChildRoutes = [
   {
