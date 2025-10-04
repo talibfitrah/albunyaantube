@@ -723,6 +723,17 @@ function formatQuotaResetTime(): string {
   left: 0.5rem;
 }
 
+/* RTL: Reverse button order (primary on left) */
+[dir="rtl"] .action-buttons {
+  flex-direction: row-reverse;
+}
+
+@media (max-width: 640px) {
+  [dir="rtl"] .action-buttons {
+    flex-direction: column-reverse;
+  }
+}
+
 [dir="rtl"] .api-key-input input {
   padding: 0.625rem 0.875rem 0.625rem 3rem;
 }

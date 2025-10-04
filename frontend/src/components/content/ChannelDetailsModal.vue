@@ -416,6 +416,11 @@ function formatDateTime(date?: Date): string {
   color: var(--color-text-primary);
 }
 
+/* RTL: Move close button to left */
+[dir='rtl'] .modal-header {
+  flex-direction: row-reverse;
+}
+
 .modal-tabs {
   display: flex;
   gap: 0.5rem;
@@ -601,7 +606,7 @@ function formatDateTime(date?: Date): string {
 
 .exclusions-table th {
   padding: 0.75rem 1rem;
-  text-align: left;
+  text-align: start;
   font-size: 0.8125rem;
   font-weight: 600;
   color: var(--color-text-secondary);
@@ -674,12 +679,12 @@ code.metadata-value {
 
 .timeline-item {
   position: relative;
-  padding-left: 2rem;
+  padding-inline-start: 2rem;
 }
 
 .timeline-marker {
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0.375rem;
   width: 0.75rem;
   height: 0.75rem;
@@ -690,12 +695,17 @@ code.metadata-value {
 .timeline-marker::before {
   content: '';
   position: absolute;
-  left: 50%;
+  inset-inline-start: 50%;
   top: 100%;
   width: 2px;
   height: 2rem;
   background: var(--color-border);
   transform: translateX(-50%);
+}
+
+/* RTL: Flip timeline marker transform */
+[dir='rtl'] .timeline-marker::before {
+  transform: translateX(50%);
 }
 
 .timeline-item:last-child .timeline-marker::before {
@@ -746,6 +756,11 @@ code.metadata-value {
   gap: 0.75rem;
   padding: 1.5rem 2rem;
   border-top: 1px solid var(--color-border);
+}
+
+/* RTL: Reverse button order (primary on left) */
+[dir='rtl'] .modal-footer {
+  flex-direction: row-reverse;
 }
 
 .btn-secondary,

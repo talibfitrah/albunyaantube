@@ -408,6 +408,11 @@ const hasChildren = computed(() => nodeProps.category.children && nodeProps.cate
   color: var(--color-text);
 }
 
+/* RTL: Move close button to left */
+[dir='rtl'] .modal-header {
+  flex-direction: row-reverse;
+}
+
 /* Search Bar */
 .modal-search {
   padding: 1rem 1.5rem;
@@ -502,6 +507,15 @@ const hasChildren = computed(() => nodeProps.category.children && nodeProps.cate
   transform: rotate(90deg);
 }
 
+/* RTL: Flip expand icon direction */
+[dir='rtl'] .expand-icon {
+  transform: scaleX(-1);
+}
+
+[dir='rtl'] .expand-icon.expanded {
+  transform: scaleX(-1) rotate(90deg);
+}
+
 .expand-placeholder {
   width: 1.5rem;
 }
@@ -526,9 +540,9 @@ const hasChildren = computed(() => nodeProps.category.children && nodeProps.cate
 }
 
 .node-children {
-  margin-left: 1.5rem;
-  border-left: 1px solid var(--color-border);
-  padding-left: 0.5rem;
+  margin-inline-start: 1.5rem;
+  border-inline-start: 1px solid var(--color-border);
+  padding-inline-start: 0.5rem;
 }
 
 /* Modal Footer */
@@ -564,6 +578,11 @@ const hasChildren = computed(() => nodeProps.category.children && nodeProps.cate
 .footer-actions {
   display: flex;
   gap: 0.75rem;
+}
+
+/* RTL: Reverse button order (primary on left) */
+[dir='rtl'] .footer-actions {
+  flex-direction: row-reverse;
 }
 
 .btn-primary,

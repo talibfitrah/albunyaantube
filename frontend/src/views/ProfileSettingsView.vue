@@ -465,14 +465,15 @@ async function handleSaveProfile() {
   }
 }
 
-/* RTL Support */
+/* RTL Support - Reverse button order (primary on left) */
 [dir="rtl"] .form-actions {
-  justify-content: flex-start;
+  flex-direction: row-reverse;
+  justify-content: flex-end;
 }
 
 @media (max-width: 640px) {
   [dir="rtl"] .form-actions {
-    justify-content: stretch;
+    flex-direction: column-reverse;
   }
 }
 </style>

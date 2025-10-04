@@ -1,6 +1,6 @@
 <template>
   <div class="category-item">
-    <div class="category-row" :style="{ paddingLeft: `${level * 1.5}rem` }">
+    <div class="category-row" :style="{ paddingInlineStart: `${level * 1.5}rem` }">
       <button
         v-if="hasChildren"
         type="button"
@@ -148,6 +148,15 @@ function toggleExpanded() {
 
 .expand-icon.expanded {
   transform: rotate(90deg);
+}
+
+/* RTL: Flip expand icon direction */
+[dir='rtl'] .expand-icon {
+  transform: scaleX(-1);
+}
+
+[dir='rtl'] .expand-icon.expanded {
+  transform: scaleX(-1) rotate(90deg);
 }
 
 .expand-spacer {
