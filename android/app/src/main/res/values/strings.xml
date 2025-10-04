@@ -123,4 +123,7 @@
     <string name="menu">Menu</string>
     <string name="settings">Settings</string>
     <string name="downloads">Downloads</string>
+
+    <!-- Splash Screen -->
+    <string name="splash_tagline">Your trusted source for Islamic content</string>
 </resources>

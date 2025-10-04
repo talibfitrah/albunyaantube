@@ -2,6 +2,19 @@
 <resources>
     <string name="onboarding_carousel_content">Onboarding slides</string>
     <string name="onboarding_help">Learn more about the onboarding content</string>
-    <string name="onboarding_continue">Continue</string>
+    <string name="onboarding_continue">Next</string>
+    <string name="onboarding_get_started">Get Started</string>
     <string name="onboarding_skip">Skip</string>
+
+    <!-- Page 1 -->
+    <string name="onboarding_page1_title">Browse</string>
+    <string name="onboarding_page1_desc">Explore a diverse collection of Islamic videos, from lectures to documentaries, all in one place.</string>
+
+    <!-- Page 2 -->
+    <string name="onboarding_page2_title">Listen in background</string>
+    <string name="onboarding_page2_desc">Continue listening to lectures and recitations even when the app is in the background.</string>
+
+    <!-- Page 3 -->
+    <string name="onboarding_page3_title">Download for offline</string>
+    <string name="onboarding_page3_desc">Save your favorite content to watch or listen offline, anytime, anywhere.</string>
 </resources>
