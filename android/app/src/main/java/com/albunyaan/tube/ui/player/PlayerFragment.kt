@@ -172,7 +172,20 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
     private fun enterPictureInPicture() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val params = PictureInPictureParams.Builder().build()
+            val player = this.player ?: return
+
+            // Calculate aspect ratio from video
+            val videoFormat = player.videoFormat
+            val aspectRatio = if (videoFormat != null && videoFormat.width > 0 && videoFormat.height > 0) {
+                android.util.Rational(videoFormat.width, videoFormat.height)
+            } else {
+                android.util.Rational(16, 9) // Default 16:9
+            }
+
+            val params = PictureInPictureParams.Builder()
+                .setAspectRatio(aspectRatio)
+                .build()
+
             requireActivity().enterPictureInPictureMode(params)
         }
     }
