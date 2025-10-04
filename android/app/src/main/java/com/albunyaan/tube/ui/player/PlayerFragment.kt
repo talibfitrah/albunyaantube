@@ -73,6 +73,34 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         binding.completeButton.setOnClickListener {
             viewModel.markCurrentComplete()
         }
+
+        // Setup description dropdown
+        binding.descriptionHeader?.setOnClickListener {
+            val isExpanded = binding.videoDescription?.isVisible == true
+            binding.videoDescription?.isVisible = !isExpanded
+            binding.descriptionArrow?.rotation = if (isExpanded) 0f else 180f
+        }
+
+        // Setup action buttons
+        binding.likeButton?.setOnClickListener {
+            Toast.makeText(requireContext(), "Like feature coming soon", Toast.LENGTH_SHORT).show()
+        }
+
+        binding.shareButton?.setOnClickListener {
+            val currentItem = viewModel.state.value.currentItem
+            if (currentItem != null) {
+                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, "Watch ${currentItem.title} on Albunyaan Tube")
+                }
+                startActivity(Intent.createChooser(shareIntent, "Share video"))
+            }
+        }
+
+        binding.audioButton?.setOnClickListener {
+            binding.audioOnlyToggle.isChecked = !binding.audioOnlyToggle.isChecked
+        }
+
         setupUpNextList(binding)
         setupPlayer(binding)
         collectViewState(binding)
@@ -129,6 +157,20 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 binding.audioOnlyToggle.isChecked = state.audioOnly
                 updatePlayerStatus(binding, state)
                 val currentItem = state.currentItem
+
+                // Update new UI elements
+                if (currentItem != null) {
+                    binding.videoTitle?.text = currentItem.title
+                    binding.authorName?.text = currentItem.channelName
+                    binding.videoStats?.text = "0 views • Just now" // TODO: Get real stats from metadata
+                    binding.videoDescription?.text = "Loading description..." // TODO: Fetch real description
+                } else {
+                    binding.videoTitle?.text = "No video playing"
+                    binding.authorName?.text = ""
+                    binding.videoStats?.text = ""
+                    binding.videoDescription?.text = "No description available"
+                }
+
                 binding.currentlyPlaying.text = currentItem?.let {
                     getString(R.string.player_current_item, it.title)
                 } ?: getString(R.string.player_no_current_item)
@@ -234,62 +276,35 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
     private fun updateDownloadControls(binding: FragmentPlayerBinding, state: PlayerState) {
         val button = binding.downloadButton
-        val statusView = binding.downloadStatus
         val currentItem = state.currentItem
         val downloadEntry = state.currentDownload
 
         if (currentItem == null) {
-            button.text = getString(R.string.player_download_current)
             button.isEnabled = false
             button.setOnClickListener(null)
-            statusView.isVisible = false
             return
         }
 
         if (!state.isEulaAccepted) {
-            button.text = getString(R.string.player_review_eula)
             button.isEnabled = true
             button.setOnClickListener { showEulaDialog() }
-            statusView.text = getString(R.string.player_download_requires_eula)
-            statusView.isVisible = true
             return
         }
 
         when (downloadEntry?.status) {
             DownloadStatus.COMPLETED -> {
-                button.text = getString(R.string.player_open_download)
                 button.isEnabled = true
                 button.setOnClickListener { openDownloadedFile(downloadEntry) }
-                val metadata = downloadEntry.metadata
-                if (metadata != null) {
-                    val size = Formatter.formatShortFileSize(requireContext(), metadata.sizeBytes)
-                    val relative = DateUtils.getRelativeTimeSpanString(
-                        metadata.completedAtMillis,
-                        System.currentTimeMillis(),
-                        DateUtils.MINUTE_IN_MILLIS
-                    )
-                    statusView.text = getString(R.string.player_download_ready, size, relative)
-                    statusView.isVisible = true
-                } else {
-                    statusView.isVisible = false
-                }
             }
             DownloadStatus.RUNNING -> {
-                button.text = getString(R.string.player_download_current)
                 button.isEnabled = false
                 button.setOnClickListener(null)
-                statusView.text = getString(R.string.player_download_in_progress, downloadEntry.progress)
-                statusView.isVisible = true
             }
             DownloadStatus.QUEUED -> {
-                button.text = getString(R.string.player_download_current)
                 button.isEnabled = false
                 button.setOnClickListener(null)
-                statusView.text = getString(R.string.download_status_queued)
-                statusView.isVisible = true
             }
             else -> {
-                button.text = getString(R.string.player_download_current)
                 button.isEnabled = true
                 button.setOnClickListener {
                     val started = viewModel.downloadCurrent()
@@ -297,22 +312,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         showEulaDialog()
                     }
                 }
-                if (downloadEntry != null) {
-                    val statusText = when (downloadEntry.status) {
-                        DownloadStatus.PAUSED -> getString(R.string.download_status_paused)
-                        DownloadStatus.FAILED -> getString(R.string.download_status_failed)
-                        DownloadStatus.CANCELLED -> getString(R.string.download_status_cancelled)
-                        else -> null
-                    }
-                    if (statusText != null) {
-                        statusView.text = statusText
-                        statusView.isVisible = true
-                    } else {
-                        statusView.isVisible = false
-                    }
-                } else {
-                    statusView.isVisible = false
-                }
+                // Status text no longer shown in new UI
             }
         }
     }

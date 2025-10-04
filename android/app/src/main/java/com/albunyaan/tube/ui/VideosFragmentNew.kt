@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.view.View
 import androidx.core.os.bundleOf
 import androidx.fragment.app.Fragment
+import androidx.navigation.findNavController
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.GridLayoutManager
 import com.albunyaan.tube.R
@@ -37,7 +38,9 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
 
     private fun navigateToPlayer(videoId: String) {
         val bundle = bundleOf("videoId" to videoId)
-        findNavController().navigate(R.id.action_mainShellFragment_to_playerFragment, bundle)
+        // Navigate using parent nav controller since player is in parent graph
+        val navController = requireActivity().findNavController(R.id.nav_host_fragment)
+        navController.navigate(R.id.action_mainShellFragment_to_playerFragment, bundle)
     }
 
     private fun loadVideos() {

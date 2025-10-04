@@ -37,7 +37,7 @@
         android:layout_marginHorizontal="8dp"
         android:text="@string/onboarding_continue"
         android:textColor="@android:color/white"
-        android:backgroundTint="@color/primary_variant"
+        android:backgroundTint="@color/primary_green"
         app:cornerRadius="28dp"
         app:layout_constraintBottom_toTopOf="@id/indicatorRow"
         app:layout_constraintStart_toStartOf="parent"
