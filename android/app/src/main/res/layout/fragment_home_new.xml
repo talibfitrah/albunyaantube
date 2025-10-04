@@ -65,6 +65,7 @@
             android:layout_marginBottom="@dimen/spacing_sm"
             android:text="@string/filter_category"
             android:textColor="@android:color/black"
+            android:contentDescription="@string/home_select_category"
             app:chipIcon="@android:drawable/ic_menu_sort_by_size"
             app:chipIconTint="@color/primary_green"
             app:chipIconVisible="true"
@@ -104,6 +105,7 @@
                     android:text="@string/see_all"
                     android:textColor="@color/primary_green"
                     android:textSize="14sp"
+                    android:contentDescription="@string/home_see_all_channels"
                     app:layout_constraintEnd_toEndOf="parent"
                     app:layout_constraintTop_toTopOf="parent"
                     app:layout_constraintBottom_toBottomOf="parent"/>
@@ -154,6 +156,7 @@
                     android:text="@string/see_all"
                     android:textColor="@color/primary_green"
                     android:textSize="14sp"
+                    android:contentDescription="@string/home_see_all_playlists"
                     app:layout_constraintEnd_toEndOf="parent"
                     app:layout_constraintTop_toTopOf="parent"
                     app:layout_constraintBottom_toBottomOf="parent"/>
@@ -205,6 +208,7 @@
                     android:text="@string/see_all"
                     android:textColor="@color/primary_green"
                     android:textSize="14sp"
+                    android:contentDescription="@string/home_see_all_videos"
                     app:layout_constraintEnd_toEndOf="parent"
                     app:layout_constraintTop_toTopOf="parent"
                     app:layout_constraintBottom_toBottomOf="parent"/>

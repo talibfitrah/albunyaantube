@@ -133,4 +133,15 @@
     <string name="player_forward">التقدم 10 ثوانٍ</string>
     <string name="player_brightness">السطوع</string>
     <string name="player_volume">مستوى الصوت</string>
+
+    <!-- Accessibility -->
+    <string name="player_video_player">مشغل الفيديو</string>
+    <string name="player_toggle_description">إظهار/إخفاء وصف الفيديو</string>
+    <string name="player_action_like">إعجاب بالفيديو</string>
+    <string name="player_action_share">مشاركة الفيديو</string>
+    <string name="player_action_download">تنزيل الفيديو</string>
+    <string name="home_select_category">اختيار تصنيف المحتوى</string>
+    <string name="home_see_all_channels">عرض كل القنوات</string>
+    <string name="home_see_all_playlists">عرض كل قوائم التشغيل</string>
+    <string name="home_see_all_videos">عرض كل الفيديوهات</string>
 </resources>

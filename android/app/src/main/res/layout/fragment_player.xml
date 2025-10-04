@@ -16,7 +16,8 @@
             android:id="@+id/playerView"
             android:layout_width="match_parent"
             android:layout_height="240dp"
-            android:keepScreenOn="true" />
+            android:keepScreenOn="true"
+            android:contentDescription="@string/player_video_player" />
 
     </com.google.android.material.appbar.AppBarLayout>
 
@@ -92,7 +93,8 @@
                         android:clickable="true"
                         android:focusable="true"
                         android:orientation="horizontal"
-                        android:padding="12dp">
+                        android:padding="12dp"
+                        android:contentDescription="@string/player_toggle_description">
 
                         <TextView
                             android:layout_width="0dp"
@@ -108,7 +110,8 @@
                             android:layout_width="24dp"
                             android:layout_height="24dp"
                             android:src="@drawable/ic_expand_more"
-                            app:tint="?attr/colorOnSurface" />
+                            app:tint="?attr/colorOnSurface"
+                            android:importantForAccessibility="no" />
 
                     </LinearLayout>
 
@@ -149,7 +152,8 @@
                     android:background="?attr/selectableItemBackground"
                     android:clickable="true"
                     android:focusable="true"
-                    android:padding="12dp">
+                    android:padding="12dp"
+                    android:contentDescription="@string/player_action_like">
 
                     <ImageView
                         android:layout_width="24dp"
@@ -178,7 +182,8 @@
                     android:background="?attr/selectableItemBackground"
                     android:clickable="true"
                     android:focusable="true"
-                    android:padding="12dp">
+                    android:padding="12dp"
+                    android:contentDescription="@string/player_action_share">
 
                     <ImageView
                         android:layout_width="24dp"
@@ -207,7 +212,8 @@
                     android:background="?attr/selectableItemBackground"
                     android:clickable="true"
                     android:focusable="true"
-                    android:padding="12dp">
+                    android:padding="12dp"
+                    android:contentDescription="@string/player_action_download">
 
                     <ImageView
                         android:layout_width="24dp"
@@ -236,7 +242,8 @@
                     android:background="?attr/selectableItemBackground"
                     android:clickable="true"
                     android:focusable="true"
-                    android:padding="12dp">
+                    android:padding="12dp"
+                    android:contentDescription="@string/player_audio_only_label">
 
                     <ImageView
                         android:layout_width="24dp"
