@@ -1430,10 +1430,13 @@ onMounted(() => {
 
   .header-actions {
     width: 100%;
+    flex-wrap: wrap;
   }
 
   .btn-filter-mobile {
     flex: 1;
+    min-width: 0;
+    white-space: nowrap;
   }
 
   .mobile-hidden {
@@ -1447,6 +1450,10 @@ onMounted(() => {
   .btn-secondary,
   .btn-bulk {
     flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .content-toolbar {

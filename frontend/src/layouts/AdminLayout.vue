@@ -538,6 +538,7 @@ main {
   flex: 1;
   background: var(--color-bg);
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 /* Desktop Layout (>= 1024px) */
@@ -677,7 +678,7 @@ main {
 /* RTL Desktop Layout */
 @media (min-width: 1024px) {
   [dir="rtl"] .layout {
-    grid-template-columns: 1fr 260px;
+    direction: rtl;
   }
 
   [dir="rtl"] .brand {

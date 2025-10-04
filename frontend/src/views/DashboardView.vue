@@ -463,9 +463,13 @@ header p {
 
   .timeframe-button {
     flex: 1;
+    min-width: 0;
     min-height: 44px;
-    padding: 0.625rem 1rem;
-    font-size: 0.9375rem;
+    padding: 0.625rem 0.75rem;
+    font-size: 0.875rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .last-updated {
