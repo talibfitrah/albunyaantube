@@ -4,16 +4,9 @@ spring:
   docker:
     compose:
       enabled: false
-  autoconfigure:
-    exclude:
-      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
-      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
-  data:
-    redis:
-      host: localhost
-      port: 6379
-      ssl:
-        enabled: false
+  # Redis autoconfigure exclusions removed - Redis dependency completely disabled
+  # Firestore is the only database (replaces PostgreSQL)
+  # Redis can be re-enabled in Phase 10 for caching if needed
 server:
   port: 8080
 management:

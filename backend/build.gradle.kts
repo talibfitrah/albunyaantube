@@ -26,9 +26,11 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-validation")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
-    implementation("org.springframework.boot:spring-boot-starter-data-redis")
 
-    // Firebase Admin SDK for Authentication and Firestore (includes Firestore dependency)
+    // Redis - OPTIONAL: Disabled for MVP, can enable later for caching (Phase 10)
+    // implementation("org.springframework.boot:spring-boot-starter-data-redis")
+
+    // Firebase Admin SDK for Authentication and Firestore (replaces PostgreSQL)
     implementation("com.google.firebase:firebase-admin:9.2.0")
 
     // YouTube Data API client
@@ -40,9 +42,11 @@ dependencies {
     runtimeOnly("org.springframework.boot:spring-boot-docker-compose")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
-    testImplementation("it.ozimov:embedded-redis:0.7.3") {
-        exclude(group = "org.slf4j", module = "slf4j-simple")
-    }
+
+    // Embedded Redis - only needed if Redis is enabled
+    // testImplementation("it.ozimov:embedded-redis:0.7.3") {
+    //     exclude(group = "org.slf4j", module = "slf4j-simple")
+    // }
 }
 
 gatling {
