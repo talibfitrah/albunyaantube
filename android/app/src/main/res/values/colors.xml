@@ -16,4 +16,8 @@
     <color name="filter_chip_default_text">#FF275E4B</color>
     <color name="filter_chip_selected_bg">#FF35C491</color>
     <color name="filter_chip_selected_text">#FF0A1F18</color>
+
+    <!-- Additional colors -->
+    <color name="background_gray">#F5F5F5</color>
+    <color name="icon_gray">#9E9E9E</color>
 </resources>

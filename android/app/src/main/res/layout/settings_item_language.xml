@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/languageItem"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:padding="@dimen/spacing_md"
+    android:background="?attr/selectableItemBackground"
+    android:clickable="true"
+    android:focusable="true">
+
+    <!-- Icon -->
+    <ImageView
+        android:id="@+id/languageIcon"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:padding="8dp"
+        android:src="@android:drawable/ic_dialog_info"
+        android:background="@drawable/onboarding_icon_bg"
+        android:contentDescription="@null"
+        app:tint="@color/primary_green"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"/>
+
+    <!-- Title -->
+    <TextView
+        android:id="@+id/languageTitle"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/spacing_md"
+        android:text="Language"
+        android:textSize="16sp"
+        android:textColor="@android:color/black"
+        app:layout_constraintStart_toEndOf="@id/languageIcon"
+        app:layout_constraintEnd_toStartOf="@id/languageChevron"
+        app:layout_constraintTop_toTopOf="parent"/>
+
+    <!-- Subtitle -->
+    <TextView
+        android:id="@+id/languageValue"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:text="English"
+        android:textSize="14sp"
+        android:textColor="@color/primary_green"
+        app:layout_constraintStart_toStartOf="@id/languageTitle"
+        app:layout_constraintEnd_toStartOf="@id/languageChevron"
+        app:layout_constraintTop_toBottomOf="@id/languageTitle"/>
+
+    <!-- Chevron -->
+    <ImageView
+        android:id="@+id/languageChevron"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:src="@android:drawable/ic_menu_more"
+        android:rotation="270"
+        android:contentDescription="@null"
+        app:tint="@color/icon_gray"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"/>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

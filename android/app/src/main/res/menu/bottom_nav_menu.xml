@@ -10,10 +10,10 @@
         android:title="@string/nav_channels"/>
     <item
         android:id="@+id/playlistsFragment"
-        android:icon="@drawable/ic_playlists"
+        android:icon="@drawable/ic_stat_playlist"
         android:title="@string/nav_playlists"/>
     <item
         android:id="@+id/videosFragment"
-        android:icon="@drawable/ic_videos"
+        android:icon="@drawable/ic_stat_movie"
         android:title="@string/nav_videos"/>
 </menu>

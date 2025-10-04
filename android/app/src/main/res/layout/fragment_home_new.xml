@@ -29,6 +29,18 @@
                 app:layout_constraintBottom_toBottomOf="parent"/>
 
             <ImageButton
+                android:id="@+id/menuButton"
+                android:layout_width="@dimen/touch_target_min"
+                android:layout_height="@dimen/touch_target_min"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_action_more"
+                android:contentDescription="@string/menu"
+                android:tint="@color/primary_green"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent"/>
+
+            <ImageButton
                 android:id="@+id/searchButton"
                 android:layout_width="@dimen/touch_target_min"
                 android:layout_height="@dimen/touch_target_min"
@@ -36,7 +48,7 @@
                 android:src="@android:drawable/ic_menu_search"
                 android:contentDescription="@string/search"
                 android:tint="@color/primary_green"
-                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintEnd_toStartOf="@id/menuButton"
                 app:layout_constraintTop_toTopOf="parent"
                 app:layout_constraintBottom_toBottomOf="parent"/>
 

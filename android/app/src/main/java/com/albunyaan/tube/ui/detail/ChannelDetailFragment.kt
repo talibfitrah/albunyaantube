@@ -3,6 +3,7 @@ package com.albunyaan.tube.ui.detail
 import android.os.Bundle
 import android.view.View
 import androidx.fragment.app.Fragment
+import androidx.navigation.fragment.findNavController
 import androidx.viewpager2.adapter.FragmentStateAdapter
 import com.albunyaan.tube.R
 import com.albunyaan.tube.databinding.FragmentChannelDetailBinding
@@ -19,7 +20,12 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding = FragmentChannelDetailBinding.bind(view).apply {
-            channelTitle.text = channelName.ifBlank { channelId }
+            // Set toolbar title and back button
+            toolbar.title = channelName.ifBlank { channelId }
+            toolbar.setNavigationOnClickListener {
+                findNavController().navigateUp()
+            }
+
             exclusionBanner.visibility = if (isExcluded) View.VISIBLE else View.GONE
             val tabs = ChannelTab.values()
             viewPager.adapter = ChannelDetailPagerAdapter(this@ChannelDetailFragment, channelId, channelName, tabs)

@@ -15,11 +15,12 @@ sealed class ContentItem {
     data class Channel(
         val id: String,
         val name: String,
-        val category: String,
+        val category: String, // Primary category for backward compatibility
         val subscribers: Int,
         val description: String? = null,
         val thumbnailUrl: String? = null,
-        val videoCount: Int? = null
+        val videoCount: Int? = null,
+        val categories: List<String>? = null // Multiple categories
     ) : ContentItem()
 
     data class Playlist(

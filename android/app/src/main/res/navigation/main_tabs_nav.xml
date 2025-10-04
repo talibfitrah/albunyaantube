@@ -86,4 +86,30 @@
         <deepLink
             app:uri="albunyaantube://playlist/{playlistId}" />
     </fragment>
+
+    <fragment
+        android:id="@+id/categoriesFragment"
+        android:name="com.albunyaan.tube.ui.categories.CategoriesFragment"
+        android:label="Categories">
+        <action
+            android:id="@+id/action_categoriesFragment_to_subcategoriesFragment"
+            app:destination="@id/subcategoriesFragment"/>
+    </fragment>
+
+    <fragment
+        android:id="@+id/subcategoriesFragment"
+        android:name="com.albunyaan.tube.ui.categories.SubcategoriesFragment"
+        android:label="Subcategories">
+        <argument
+            android:name="categoryId"
+            app:argType="string" />
+        <argument
+            android:name="categoryName"
+            app:argType="string" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/settingsFragment"
+        android:name="com.albunyaan.tube.ui.settings.SettingsFragment"
+        android:label="Settings" />
 </navigation>

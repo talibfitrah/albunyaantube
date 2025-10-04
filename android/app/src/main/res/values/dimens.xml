@@ -10,6 +10,7 @@
     <!-- Corner Radius (Design Spec: 20dp) -->
     <dimen name="corner_radius">20dp</dimen>
     <dimen name="corner_radius_small">12dp</dimen>
+    <dimen name="corner_radius_medium">16dp</dimen>
     <dimen name="corner_radius_large">20dp</dimen>
 
     <!-- Touch Targets (Design Spec: minimum 48dp) -->

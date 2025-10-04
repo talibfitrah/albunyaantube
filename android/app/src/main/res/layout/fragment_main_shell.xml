@@ -18,9 +18,11 @@
         android:layout_width="match_parent"
         android:layout_height="@dimen/bottom_nav_height"
         android:layout_gravity="bottom"
-        android:background="@color/primary_green"
-        app:itemIconTint="@android:color/white"
-        app:itemTextColor="@android:color/white"
+        android:background="@color/background_gray"
+        android:elevation="8dp"
+        app:itemIconTint="@color/bottom_nav_item_color"
+        app:itemTextColor="@color/bottom_nav_item_color"
+        app:itemRippleColor="@android:color/transparent"
         app:labelVisibilityMode="labeled"
         app:menu="@menu/bottom_nav_menu" />
 

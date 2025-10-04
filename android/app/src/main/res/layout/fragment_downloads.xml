@@ -1,24 +1,188 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="16dp">
+    android:background="@color/background_gray">
 
-    <TextView
-        android:id="@+id/downloadsEmpty"
+    <!-- Toolbar -->
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="@string/downloads_empty"
-        android:visibility="gone"
-        android:paddingBottom="16dp"
-        android:textAppearance="@style/TextAppearance.MaterialComponents.Body1" />
+        android:layout_height="?attr/actionBarSize"
+        android:background="@android:color/white"
+        android:elevation="2dp"
+        app:navigationIcon="?attr/homeAsUpIndicator"
+        app:title="Downloads &amp; Library"
+        app:titleTextAppearance="@style/TextAppearance.MaterialComponents.Headline6"
+        app:titleTextColor="@android:color/black"/>
 
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/downloadList"
+    <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:clipToPadding="false"/>
+        android:layout_height="match_parent">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="@dimen/spacing_md">
+
+            <!-- Downloads Section -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Downloads"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:textColor="@android:color/black"
+                android:layout_marginBottom="@dimen/spacing_sm"/>
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/spacing_md"
+                app:cardBackgroundColor="@android:color/white"
+                app:cardCornerRadius="@dimen/corner_radius_medium"
+                app:cardElevation="0dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="@dimen/spacing_md">
+
+                    <!-- Downloads list placeholder -->
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/downloadsRecyclerView"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:nestedScrollingEnabled="false"/>
+
+                    <!-- Empty state -->
+                    <LinearLayout
+                        android:id="@+id/emptyDownloads"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:padding="@dimen/spacing_xl"
+                        android:visibility="visible">
+
+                        <ImageView
+                            android:layout_width="64dp"
+                            android:layout_height="64dp"
+                            android:src="@android:drawable/stat_sys_download_done"
+                            android:alpha="0.3"
+                            android:contentDescription="@null"/>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/spacing_md"
+                            android:text="No downloads yet"
+                            android:textSize="16sp"
+                            android:textColor="@color/icon_gray"/>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/spacing_xs"
+                            android:text="Downloaded videos will appear here"
+                            android:textSize="14sp"
+                            android:textColor="@color/icon_gray"
+                            android:alpha="0.7"/>
+
+                    </LinearLayout>
+
+                    <!-- Storage info -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:layout_marginTop="@dimen/spacing_md"
+                        android:padding="@dimen/spacing_sm"
+                        android:background="@color/background_gray">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Storage Used"
+                            android:textSize="14sp"
+                            android:textColor="@android:color/black"
+                            android:textStyle="bold"/>
+
+                        <TextView
+                            android:id="@+id/storageText"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/spacing_xs"
+                            android:text="0 MB of 500 MB"
+                            android:textSize="14sp"
+                            android:textColor="@color/icon_gray"/>
+
+                        <ProgressBar
+                            android:id="@+id/storageProgress"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/spacing_xs"
+                            style="?android:attr/progressBarStyleHorizontal"
+                            android:progress="0"
+                            android:max="100"
+                            android:progressTint="@color/primary_green"/>
+
+                    </LinearLayout>
+
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Library Section -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Library"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:textColor="@android:color/black"
+                android:layout_marginBottom="@dimen/spacing_sm"/>
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardBackgroundColor="@android:color/white"
+                app:cardCornerRadius="@dimen/corner_radius_medium"
+                app:cardElevation="0dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <!-- Saved -->
+                    <include layout="@layout/library_item_saved"/>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:background="@color/background_gray"
+                        android:layout_marginStart="@dimen/spacing_lg"/>
+
+                    <!-- Recently Watched -->
+                    <include layout="@layout/library_item_recently_watched"/>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:background="@color/background_gray"
+                        android:layout_marginStart="@dimen/spacing_lg"/>
+
+                    <!-- History -->
+                    <include layout="@layout/library_item_history"/>
+
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+        </LinearLayout>
+    </ScrollView>
 
 </LinearLayout>

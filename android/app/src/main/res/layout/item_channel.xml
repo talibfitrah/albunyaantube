@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:padding="@dimen/spacing_md"
+    android:background="?attr/selectableItemBackground"
+    android:clickable="true"
+    android:focusable="true">
+
+    <!-- Channel Avatar (Circular) -->
+    <ImageView
+        android:id="@+id/channelAvatar"
+        android:layout_width="@dimen/avatar_medium"
+        android:layout_height="@dimen/avatar_medium"
+        android:scaleType="centerCrop"
+        android:background="@drawable/onboarding_icon_bg"
+        android:contentDescription="@null"
+        android:importantForAccessibility="no"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        tools:src="@drawable/thumbnail_placeholder"/>
+
+    <!-- Channel Name -->
+    <TextView
+        android:id="@+id/channelName"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/spacing_md"
+        android:layout_marginEnd="@dimen/spacing_sm"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:textColor="@android:color/black"
+        android:maxLines="2"
+        android:ellipsize="end"
+        app:layout_constraintStart_toEndOf="@id/channelAvatar"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="@id/channelAvatar"
+        tools:text="IslamQA"/>
+
+    <!-- Subscriber Count -->
+    <TextView
+        android:id="@+id/subscriberCount"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/spacing_xs"
+        android:textSize="14sp"
+        android:textColor="@color/primary_green"
+        android:maxLines="1"
+        android:ellipsize="end"
+        app:layout_constraintStart_toStartOf="@id/channelName"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/channelName"
+        tools:text="1.2M subscribers"/>
+
+    <!-- Category Chip (Below subscriber count) -->
+    <com.google.android.material.chip.ChipGroup
+        android:id="@+id/categoryChipsContainer"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/spacing_xs"
+        app:singleLine="true"
+        app:layout_constraintStart_toStartOf="@id/channelName"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/subscriberCount"/>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

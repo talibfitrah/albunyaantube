@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/themeItem"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:padding="@dimen/spacing_md"
+    android:background="?attr/selectableItemBackground">
+
+    <ImageView
+        android:id="@+id/themeIcon"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:padding="8dp"
+        android:src="@android:drawable/ic_dialog_info"
+        android:background="@drawable/onboarding_icon_bg"
+        android:contentDescription="@null"
+        app:tint="@color/primary_green"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"/>
+
+    <TextView
+        android:id="@+id/themeTitle"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/spacing_md"
+        android:text="Theme"
+        android:textSize="16sp"
+        android:textColor="@android:color/black"
+        app:layout_constraintStart_toEndOf="@id/themeIcon"
+        app:layout_constraintEnd_toStartOf="@id/themeChevron"
+        app:layout_constraintTop_toTopOf="parent"/>
+
+    <TextView
+        android:id="@+id/themeValue"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:text="Light"
+        android:textSize="14sp"
+        android:textColor="@color/primary_green"
+        app:layout_constraintStart_toStartOf="@id/themeTitle"
+        app:layout_constraintTop_toBottomOf="@id/themeTitle"/>
+
+    <ImageView
+        android:id="@+id/themeChevron"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:src="@android:drawable/ic_menu_more"
+        android:rotation="270"
+        android:contentDescription="@null"
+        app:tint="@color/icon_gray"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"/>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

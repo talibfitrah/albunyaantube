@@ -9,6 +9,7 @@ import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
+import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.albunyaan.tube.BuildConfig
@@ -33,16 +34,60 @@ class DownloadsFragment : Fragment(R.layout.fragment_downloads) {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         val binding = FragmentDownloadsBinding.bind(view).also { binding = it }
-        binding.downloadList.layoutManager = LinearLayoutManager(requireContext())
-        binding.downloadList.addItemDecoration(
-            DividerItemDecoration(requireContext(), DividerItemDecoration.VERTICAL)
-        )
-        binding.downloadList.adapter = adapter
+
+        setupToolbar()
+        setupDownloadsList()
+        setupLibraryItems()
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewModel.downloads.collectLatest { entries ->
                 adapter.submitList(entries)
-                binding.downloadsEmpty.visibility = if (entries.isEmpty()) View.VISIBLE else View.GONE
+                binding.emptyDownloads.visibility = if (entries.isEmpty()) View.VISIBLE else View.GONE
+                binding.downloadsRecyclerView.visibility = if (entries.isEmpty()) View.GONE else View.VISIBLE
+
+                // Update storage info (simplified for now)
+                val downloadCount = entries.size
+                binding.storageText.text = "$downloadCount downloads • 0 MB of 500 MB"
+                binding.storageProgress.progress = 0
+            }
+        }
+    }
+
+    private fun setupToolbar() {
+        binding?.toolbar?.setNavigationOnClickListener {
+            findNavController().navigateUp()
+        }
+    }
+
+    private fun setupDownloadsList() {
+        binding?.downloadsRecyclerView?.apply {
+            layoutManager = LinearLayoutManager(requireContext())
+            addItemDecoration(
+                DividerItemDecoration(requireContext(), DividerItemDecoration.VERTICAL)
+            )
+            adapter = this@DownloadsFragment.adapter
+        }
+    }
+
+    private fun setupLibraryItems() {
+        binding?.root?.let { view ->
+            val savedItem = view.findViewById<View>(R.id.savedItem)
+            val recentlyWatchedItem = view.findViewById<View>(R.id.recentlyWatchedItem)
+            val historyItem = view.findViewById<View>(R.id.historyItem)
+
+            savedItem?.setOnClickListener {
+                // TODO: Navigate to saved videos
+                Toast.makeText(requireContext(), "Saved videos", Toast.LENGTH_SHORT).show()
+            }
+
+            recentlyWatchedItem?.setOnClickListener {
+                // TODO: Navigate to recently watched
+                Toast.makeText(requireContext(), "Recently watched", Toast.LENGTH_SHORT).show()
+            }
+
+            historyItem?.setOnClickListener {
+                // TODO: Navigate to history
+                Toast.makeText(requireContext(), "History", Toast.LENGTH_SHORT).show()
             }
         }
     }
