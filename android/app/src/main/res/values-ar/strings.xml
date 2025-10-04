@@ -113,6 +113,19 @@
     <string name="error_state_title">حدث خطأ ما</string>
     <string name="error_state_check_connection">تعذر تحميل المحتوى. يرجى التحقق من الاتصال والمحاولة مجدداً.</string>
 
+    <!-- Error Messages -->
+    <string name="error_network">لا يوجد اتصال بالإنترنت. يرجى التحقق من إعدادات الشبكة.</string>
+    <string name="error_network_title">خطأ في الاتصال</string>
+    <string name="error_timeout">انتهت مهلة الطلب. يرجى المحاولة مجدداً.</string>
+    <string name="error_timeout_title">خطأ المهلة</string>
+    <string name="error_server">خطأ في الخادم. يرجى المحاولة لاحقاً.</string>
+    <string name="error_server_title">خطأ الخادم</string>
+    <string name="error_parse">فشل معالجة البيانات. يرجى المحاولة مجدداً.</string>
+    <string name="error_parse_title">خطأ في البيانات</string>
+    <string name="error_unknown">حدث خطأ غير متوقع.</string>
+    <string name="offline_mode">أنت غير متصل. يتم عرض المحتوى المحفوظ.</string>
+    <string name="offline_mode_limited">بعض الميزات غير متاحة دون اتصال.</string>
+
     <!-- Home Screen Sections -->
     <string name="section_channels">القنوات</string>
     <string name="section_playlists">قوائم التشغيل</string>

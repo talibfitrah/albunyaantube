@@ -113,6 +113,19 @@
     <string name="error_state_title">Something went wrong</string>
     <string name="error_state_check_connection">Unable to load content. Please check your connection and try again.</string>
 
+    <!-- Error Messages -->
+    <string name="error_network">No internet connection. Please check your network settings.</string>
+    <string name="error_network_title">Connection Error</string>
+    <string name="error_timeout">Request timed out. Please try again.</string>
+    <string name="error_timeout_title">Timeout Error</string>
+    <string name="error_server">Server error. Please try again later.</string>
+    <string name="error_server_title">Server Error</string>
+    <string name="error_parse">Failed to process data. Please try again.</string>
+    <string name="error_parse_title">Data Error</string>
+    <string name="error_unknown">An unexpected error occurred.</string>
+    <string name="offline_mode">You\'re offline. Showing cached content.</string>
+    <string name="offline_mode_limited">Some features are unavailable offline.</string>
+
     <!-- Home Screen Sections -->
     <string name="section_channels">Channels</string>
     <string name="section_playlists">Playlists</string>
