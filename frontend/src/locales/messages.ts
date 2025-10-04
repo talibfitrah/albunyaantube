@@ -25,6 +25,11 @@ export const messages = {
       users: 'Users',
       audit: 'Audit log',
       activity: 'Activity log',
+      settings: 'Settings',
+      settingsProfile: 'Profile',
+      settingsNotifications: 'Notifications',
+      settingsYouTubeAPI: 'YouTube API',
+      settingsSystem: 'System',
       home: 'Home',
       channels: 'Channels',
       playlists: 'Playlists',
@@ -704,6 +709,197 @@ export const messages = {
         previous: 'Previous',
         next: 'Next',
         showing: 'Showing {count} of {limit} events'
+      }
+    },
+    settings: {
+      profile: {
+        heading: 'Profile Settings',
+        description: 'Manage your account profile and security preferences.',
+        loading: 'Loading profile...',
+        successMessage: 'Profile updated successfully.',
+        sections: {
+          profileInfo: 'Profile Information',
+          changePassword: 'Change Password'
+        },
+        fields: {
+          email: 'Email Address',
+          displayName: 'Display Name',
+          currentPassword: 'Current Password',
+          newPassword: 'New Password',
+          confirmPassword: 'Confirm New Password'
+        },
+        hints: {
+          emailImmutable: 'Email address cannot be changed.',
+          passwordOptional: 'Leave password fields empty if you don\'t want to change your password.'
+        },
+        errors: {
+          loadFailed: 'Failed to load profile settings. Please try again.',
+          saveFailed: 'Failed to save profile settings. Please try again.',
+          displayNameRequired: 'Display name is required.',
+          displayNameTooShort: 'Display name must be at least 2 characters.',
+          currentPasswordRequired: 'Current password is required to change password.',
+          newPasswordRequired: 'New password is required.',
+          passwordTooShort: 'Password must be at least 8 characters.',
+          passwordMismatch: 'Passwords do not match.'
+        },
+        actions: {
+          save: 'Save Changes',
+          saving: 'Saving...',
+          cancel: 'Cancel'
+        }
+      },
+      notifications: {
+        heading: 'Notification Settings',
+        description: 'Configure how and when you receive notifications.',
+        loading: 'Loading preferences...',
+        successMessage: 'Notification preferences updated successfully.',
+        sections: {
+          email: 'Email Notifications',
+          inApp: 'In-App Notifications',
+          frequency: 'Notification Frequency'
+        },
+        preferences: {
+          newApprovals: 'New content pending approval',
+          approvalDecisions: 'Approval decisions on submitted content',
+          categoryChanges: 'Category structure changes',
+          userActivity: 'User management actions',
+          systemAlerts: 'Critical system alerts',
+          weeklyDigest: 'Weekly activity digest'
+        },
+        hints: {
+          newApprovals: 'Notify when new content is submitted for review',
+          approvalDecisions: 'Notify when content you submitted is approved or rejected',
+          categoryChanges: 'Notify when categories are added, modified, or removed',
+          userActivity: 'Notify when users are created, modified, or deactivated',
+          systemAlerts: 'Notify about critical system issues and errors',
+          weeklyDigest: 'Receive a weekly summary of platform activity',
+          frequency: 'Choose how frequently notifications are delivered',
+          realtime: 'Receive notifications immediately as events occur',
+          hourly: 'Receive a summary of notifications every hour',
+          daily: 'Receive a daily digest of all notifications'
+        },
+        frequency: {
+          realtime: 'Real-time',
+          hourly: 'Hourly digest',
+          daily: 'Daily digest'
+        },
+        errors: {
+          loadFailed: 'Failed to load notification settings. Please try again.',
+          saveFailed: 'Failed to save notification settings. Please try again.'
+        },
+        actions: {
+          enableAll: 'Enable all',
+          disableAll: 'Disable all',
+          save: 'Save Preferences',
+          saving: 'Saving...',
+          cancel: 'Cancel'
+        }
+      },
+      youtubeApi: {
+        heading: 'YouTube API Settings',
+        description: 'Manage your YouTube Data API configuration and quota usage.',
+        loading: 'Loading API settings...',
+        successMessage: 'API settings saved successfully.',
+        testSuccess: 'API key is valid and working correctly.',
+        testFailure: 'API key validation failed. Please check your key and try again.',
+        sections: {
+          apiKey: 'API Key Configuration',
+          quota: 'Quota Usage',
+          documentation: 'Documentation & Resources'
+        },
+        fields: {
+          apiKey: 'YouTube Data API Key'
+        },
+        hints: {
+          apiKey: 'Your YouTube Data API v3 key from Google Cloud Console',
+          getApiKey: 'Get your API key from Google Cloud Console',
+          quota: 'Monitor your daily API quota usage and limits'
+        },
+        quota: {
+          used: 'Used',
+          limit: 'Daily Limit',
+          remaining: 'Remaining'
+        },
+        quotaResetIn: 'Resets in {hours}h {minutes}m',
+        warnings: {
+          quotaWarning: 'You are approaching your daily quota limit. Consider upgrading or reducing API calls.',
+          quotaCritical: 'You are critically close to your daily quota limit. API calls may fail soon.'
+        },
+        docs: {
+          getApiKey: 'Get API Key from Google Cloud',
+          apiDocs: 'YouTube Data API Documentation',
+          quotaDocs: 'Understanding Quota Costs'
+        },
+        errors: {
+          loadFailed: 'Failed to load API settings. Please try again.',
+          saveFailed: 'Failed to save API settings. Please try again.',
+          testFailed: 'Failed to test API connection. Please try again.',
+          apiKeyRequired: 'API key is required.',
+          apiKeyInvalid: 'API key appears to be invalid. Please check the format.'
+        },
+        actions: {
+          show: 'Show API key',
+          hide: 'Hide API key',
+          test: 'Test Connection',
+          testing: 'Testing...',
+          save: 'Save API Key',
+          saving: 'Saving...'
+        }
+      },
+      system: {
+        heading: 'System Settings',
+        description: 'Configure system-wide settings and operational parameters.',
+        loading: 'Loading system settings...',
+        successMessage: 'System settings saved successfully.',
+        resetSuccess: 'Settings reset to defaults successfully.',
+        confirmReset: 'Are you sure you want to reset all settings to defaults? This action cannot be undone.',
+        sections: {
+          autoApproval: 'Auto-Approval Rules',
+          moderation: 'Content Moderation',
+          limits: 'Content Limits',
+          auditLog: 'Audit Logging'
+        },
+        toggles: {
+          autoApproveChannels: 'Auto-approve new channels',
+          autoApprovePlaylists: 'Auto-approve new playlists',
+          autoApproveVideos: 'Auto-approve new videos',
+          requireCategoryAssignment: 'Require category assignment',
+          enableContentModeration: 'Enable content moderation queue',
+          enableAuditLog: 'Enable audit logging'
+        },
+        fields: {
+          contentExpiryDays: 'Content expiry period (days)',
+          maxVideosPerChannel: 'Maximum videos per channel',
+          auditLogRetentionDays: 'Audit log retention (days)'
+        },
+        hints: {
+          autoApproval: 'Configure which content types are automatically approved without manual review',
+          autoApproveChannels: 'Automatically approve channels without manual review',
+          autoApprovePlaylists: 'Automatically approve playlists without manual review',
+          autoApproveVideos: 'Automatically approve individual videos without manual review',
+          moderation: 'Control content moderation workflow and requirements',
+          requireCategoryAssignment: 'Require all content to be assigned to a category before approval',
+          enableContentModeration: 'Route all new content through the moderation queue',
+          limits: 'Set system-wide limits on content volume and retention',
+          contentExpiryDays: 'Number of days before inactive content is automatically removed (1-3650)',
+          maxVideosPerChannel: 'Maximum number of videos allowed per channel (1-10000)',
+          auditLog: 'Configure audit logging for compliance and security',
+          enableAuditLog: 'Track all administrative actions in the audit log',
+          auditLogRetentionDays: 'Number of days to retain audit log entries (30-3650)'
+        },
+        errors: {
+          loadFailed: 'Failed to load system settings. Please try again.',
+          saveFailed: 'Failed to save system settings. Please try again.',
+          contentExpiryRange: 'Content expiry must be between 1 and 3650 days.',
+          maxVideosRange: 'Max videos per channel must be between 1 and 10000.',
+          auditRetentionRange: 'Audit retention must be between 30 and 3650 days.'
+        },
+        actions: {
+          resetToDefaults: 'Reset to Defaults',
+          save: 'Save Settings',
+          saving: 'Saving...',
+          cancel: 'Cancel'
+        }
       }
     },
     preferences: {

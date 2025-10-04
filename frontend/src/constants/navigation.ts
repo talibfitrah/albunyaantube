@@ -3,6 +3,7 @@ import type { RouteLocationRaw } from 'vue-router';
 export interface NavRoute {
   labelKey: string;
   route: RouteLocationRaw;
+  children?: NavRoute[];
 }
 
 export const navRoutes: NavRoute[] = [
@@ -13,5 +14,15 @@ export const navRoutes: NavRoute[] = [
   { labelKey: 'navigation.contentLibrary', route: { name: 'content-library' } },
   { labelKey: 'navigation.users', route: { name: 'users' } },
   { labelKey: 'navigation.audit', route: { name: 'audit' } },
-  { labelKey: 'navigation.activity', route: { name: 'activity' } }
+  { labelKey: 'navigation.activity', route: { name: 'activity' } },
+  {
+    labelKey: 'navigation.settings',
+    route: { name: 'settings-profile' },
+    children: [
+      { labelKey: 'navigation.settingsProfile', route: { name: 'settings-profile' } },
+      { labelKey: 'navigation.settingsNotifications', route: { name: 'settings-notifications' } },
+      { labelKey: 'navigation.settingsYouTubeAPI', route: { name: 'settings-youtube-api' } },
+      { labelKey: 'navigation.settingsSystem', route: { name: 'settings-system' } }
+    ]
+  }
 ];

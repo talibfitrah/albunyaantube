@@ -8,6 +8,10 @@ import ContentLibraryView from '@/views/ContentLibraryView.vue';
 import UsersManagementView from '@/views/UsersManagementView.vue';
 import AuditLogView from '@/views/AuditLogView.vue';
 import ActivityLogView from '@/views/ActivityLogView.vue';
+import ProfileSettingsView from '@/views/ProfileSettingsView.vue';
+import NotificationsSettingsView from '@/views/NotificationsSettingsView.vue';
+import YouTubeAPISettingsView from '@/views/YouTubeAPISettingsView.vue';
+import SystemSettingsView from '@/views/SystemSettingsView.vue';
 import AdminLayout from '@/layouts/AdminLayout.vue';
 import { useAuthStore } from '@/stores/auth';
 
@@ -58,6 +62,30 @@ const protectedChildRoutes = [
     path: 'activity',
     name: 'activity',
     component: ActivityLogView,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: 'settings/profile',
+    name: 'settings-profile',
+    component: ProfileSettingsView,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: 'settings/notifications',
+    name: 'settings-notifications',
+    component: NotificationsSettingsView,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: 'settings/youtube-api',
+    name: 'settings-youtube-api',
+    component: YouTubeAPISettingsView,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: 'settings/system',
+    name: 'settings-system',
+    component: SystemSettingsView,
     meta: { requiresAuth: true }
   }
 ];
