@@ -17,6 +17,7 @@ export const messages = {
       dashboard: 'Dashboard',
       contentSearch: 'Content Search',
       categories: 'Categories',
+      approvals: 'Pending Approvals',
       registry: 'Registry',
       moderation: 'Moderation',
       exclusions: 'Exclusions',
@@ -122,6 +123,43 @@ export const messages = {
         save: 'Save',
         saving: 'Saving...',
         error: 'Failed to save category.'
+      }
+    },
+    approvals: {
+      heading: 'Pending Approvals',
+      subtitle: 'Review and approve or reject content submissions',
+      all: 'All',
+      channels: 'Channels',
+      playlists: 'Playlists',
+      videos: 'Videos',
+      categories: 'Categories',
+      allCategories: 'All Categories',
+      sort: 'Sort By',
+      newest: 'Newest First',
+      oldest: 'Oldest First',
+      approve: 'Approve',
+      approving: 'Approving...',
+      reject: 'Reject',
+      rejecting: 'Rejecting...',
+      types: {
+        channel: 'Channel',
+        playlist: 'Playlist',
+        video: 'Video'
+      },
+      submittedBy: 'Submitted by',
+      unknown: 'Unknown',
+      loading: 'Loading approvals...',
+      retry: 'Retry',
+      empty: 'No pending approvals found.',
+      error: 'Failed to load approvals.',
+      rejectDialog: {
+        title: 'Reject Submission',
+        reasonLabel: 'Rejection Reason (optional)',
+        reasonPlaceholder: 'Provide feedback to help the submitter understand why this was rejected...',
+        cancel: 'Cancel',
+        submit: 'Reject Submission',
+        submitting: 'Rejecting...',
+        error: 'Failed to reject submission.'
       }
     },
     registry: {
@@ -508,6 +546,9 @@ export const messages = {
     },
     navigation: {
       dashboard: 'لوحة التحكم',
+      contentSearch: 'البحث عن المحتوى',
+      categories: 'الفئات',
+      approvals: 'الموافقات المعلقة',
       registry: 'السجل',
       moderation: 'الإشراف',
       exclusions: 'الاستثناءات',
@@ -552,6 +593,104 @@ export const messages = {
       },
       warnings: {
         stale: 'قد تكون المؤشرات قديمة. قم بالتحديث للحصول على أحدث القيم.'
+      }
+    },
+    contentSearch: {
+      heading: 'البحث عن المحتوى',
+      subtitle: 'ابحث واكتشف محتوى YouTube لإضافته إلى سجلك',
+      searchPlaceholder: 'ابحث عن القنوات أو قوائم التشغيل أو الفيديوهات...',
+      search: 'بحث',
+      searching: 'جارٍ البحث...',
+      retry: 'إعادة المحاولة',
+      add: 'إضافة إلى السجل',
+      noResults: 'لا توجد نتائج. جرب بحثًا مختلفًا.',
+      resultsCount: '{count} نتائج',
+      error: 'فشل البحث عن المحتوى.',
+      types: {
+        channels: 'القنوات',
+        playlists: 'قوائم التشغيل',
+        videos: 'الفيديوهات'
+      },
+      filters: {
+        type: 'نوع المحتوى',
+        category: 'الفئة',
+        allCategories: 'جميع الفئات',
+        length: 'مدة الفيديو',
+        anyLength: 'أي مدة',
+        short: 'قصير (< 4 دقائق)',
+        medium: 'متوسط (4-20 دقيقة)',
+        long: 'طويل (> 20 دقيقة)',
+        sort: 'ترتيب حسب',
+        relevant: 'الأكثر صلة',
+        recent: 'الأحدث',
+        popular: 'الأكثر شعبية'
+      }
+    },
+    categories: {
+      heading: 'الفئات',
+      subtitle: 'إدارة فئات المحتوى الهرمية',
+      addCategory: 'إضافة فئة',
+      addFirst: 'إضافة فئة أولى',
+      addSubcategory: 'إضافة فئة فرعية',
+      edit: 'تعديل',
+      delete: 'حذف',
+      loading: 'جارٍ تحميل الفئات...',
+      retry: 'إعادة المحاولة',
+      empty: 'لا توجد فئات بعد. أضف فئتك الأولى للبدء.',
+      error: 'فشل تحميل الفئات.',
+      deleteError: 'فشل حذف الفئة.',
+      confirmDelete: 'هل أنت متأكد من حذف هذه الفئة؟ سيتم أيضًا حذف جميع الفئات الفرعية.',
+      dialog: {
+        addTitle: 'إضافة فئة',
+        editTitle: 'تعديل فئة',
+        name: 'اسم الفئة',
+        namePlaceholder: 'أدخل اسم الفئة...',
+        nameRequired: 'اسم الفئة مطلوب.',
+        parent: 'الفئة الرئيسية',
+        icon: 'أيقونة (اختياري)',
+        iconPlaceholder: 'أدخل رمز تعبيري أو أيقونة...',
+        displayOrder: 'ترتيب العرض',
+        cancel: 'إلغاء',
+        save: 'حفظ',
+        saving: 'جارٍ الحفظ...',
+        error: 'فشل حفظ الفئة.'
+      }
+    },
+    approvals: {
+      heading: 'الموافقات المعلقة',
+      subtitle: 'مراجعة والموافقة أو رفض المحتوى المقدم',
+      all: 'الكل',
+      channels: 'القنوات',
+      playlists: 'قوائم التشغيل',
+      videos: 'الفيديوهات',
+      categories: 'الفئات',
+      allCategories: 'جميع الفئات',
+      sort: 'ترتيب حسب',
+      newest: 'الأحدث أولاً',
+      oldest: 'الأقدم أولاً',
+      approve: 'موافقة',
+      approving: 'جارٍ الموافقة...',
+      reject: 'رفض',
+      rejecting: 'جارٍ الرفض...',
+      types: {
+        channel: 'قناة',
+        playlist: 'قائمة تشغيل',
+        video: 'فيديو'
+      },
+      submittedBy: 'مقدم من',
+      unknown: 'غير معروف',
+      loading: 'جارٍ تحميل الموافقات...',
+      retry: 'إعادة المحاولة',
+      empty: 'لا توجد موافقات معلقة.',
+      error: 'فشل تحميل الموافقات.',
+      rejectDialog: {
+        title: 'رفض الطلب',
+        reasonLabel: 'سبب الرفض (اختياري)',
+        reasonPlaceholder: 'قدم تعليقات لمساعدة المرسل على فهم سبب الرفض...',
+        cancel: 'إلغاء',
+        submit: 'رفض الطلب',
+        submitting: 'جارٍ الرفض...',
+        error: 'فشل رفض الطلب.'
       }
     },
     registry: {
@@ -938,6 +1077,9 @@ export const messages = {
     },
     navigation: {
       dashboard: 'Dashboard',
+      contentSearch: 'Zoeken naar inhoud',
+      categories: 'Categorieën',
+      approvals: 'Goedkeuringen in behandeling',
       registry: 'Registerbeheer',
       moderation: 'Moderatie',
       exclusions: 'Uitzonderingen',
@@ -982,6 +1124,104 @@ export const messages = {
       },
       warnings: {
         stale: 'Statistieken kunnen verouderd zijn. Vernieuw om bij te werken.'
+      }
+    },
+    contentSearch: {
+      heading: 'Zoeken naar inhoud',
+      subtitle: 'Zoek en ontdek YouTube-inhoud om toe te voegen aan je register',
+      searchPlaceholder: 'Zoek naar kanalen, afspeellijsten of video\'s...',
+      search: 'Zoeken',
+      searching: 'Zoeken...',
+      retry: 'Opnieuw proberen',
+      add: 'Toevoegen aan register',
+      noResults: 'Geen resultaten gevonden. Probeer een andere zoekopdracht.',
+      resultsCount: '{count} resultaten',
+      error: 'Zoeken naar inhoud is mislukt.',
+      types: {
+        channels: 'Kanalen',
+        playlists: 'Afspeellijsten',
+        videos: 'Video\'s'
+      },
+      filters: {
+        type: 'Type inhoud',
+        category: 'Categorie',
+        allCategories: 'Alle categorieën',
+        length: 'Videolengte',
+        anyLength: 'Elke lengte',
+        short: 'Kort (< 4 min)',
+        medium: 'Middel (4-20 min)',
+        long: 'Lang (> 20 min)',
+        sort: 'Sorteren op',
+        relevant: 'Relevantie',
+        recent: 'Meest recent',
+        popular: 'Meest populair'
+      }
+    },
+    categories: {
+      heading: 'Categorieën',
+      subtitle: 'Beheer hiërarchische inhoudcategorieën',
+      addCategory: 'Categorie toevoegen',
+      addFirst: 'Eerste categorie toevoegen',
+      addSubcategory: 'Subcategorie toevoegen',
+      edit: 'Bewerken',
+      delete: 'Verwijderen',
+      loading: 'Categorieën laden...',
+      retry: 'Opnieuw proberen',
+      empty: 'Nog geen categorieën. Voeg je eerste categorie toe om te beginnen.',
+      error: 'Categorieën kunnen niet worden geladen.',
+      deleteError: 'Categorie kan niet worden verwijderd.',
+      confirmDelete: 'Weet je zeker dat je deze categorie wilt verwijderen? Alle subcategorieën worden ook verwijderd.',
+      dialog: {
+        addTitle: 'Categorie toevoegen',
+        editTitle: 'Categorie bewerken',
+        name: 'Categorienaam',
+        namePlaceholder: 'Voer categorienaam in...',
+        nameRequired: 'Categorienaam is verplicht.',
+        parent: 'Bovenliggende categorie',
+        icon: 'Icoon (optioneel)',
+        iconPlaceholder: 'Voer emoji of icoon in...',
+        displayOrder: 'Weergavevolgorde',
+        cancel: 'Annuleren',
+        save: 'Opslaan',
+        saving: 'Opslaan...',
+        error: 'Categorie opslaan is mislukt.'
+      }
+    },
+    approvals: {
+      heading: 'Goedkeuringen in behandeling',
+      subtitle: 'Beoordeel en keur ingediende inhoud goed of af',
+      all: 'Alles',
+      channels: 'Kanalen',
+      playlists: 'Afspeellijsten',
+      videos: 'Video\'s',
+      categories: 'Categorieën',
+      allCategories: 'Alle categorieën',
+      sort: 'Sorteren op',
+      newest: 'Nieuwste eerst',
+      oldest: 'Oudste eerst',
+      approve: 'Goedkeuren',
+      approving: 'Goedkeuren...',
+      reject: 'Afwijzen',
+      rejecting: 'Afwijzen...',
+      types: {
+        channel: 'Kanaal',
+        playlist: 'Afspeellijst',
+        video: 'Video'
+      },
+      submittedBy: 'Ingediend door',
+      unknown: 'Onbekend',
+      loading: 'Goedkeuringen laden...',
+      retry: 'Opnieuw proberen',
+      empty: 'Geen goedkeuringen in behandeling.',
+      error: 'Goedkeuringen kunnen niet worden geladen.',
+      rejectDialog: {
+        title: 'Indiening afwijzen',
+        reasonLabel: 'Reden voor afwijzing (optioneel)',
+        reasonPlaceholder: 'Geef feedback om de indiener te helpen begrijpen waarom dit is afgewezen...',
+        cancel: 'Annuleren',
+        submit: 'Indiening afwijzen',
+        submitting: 'Afwijzen...',
+        error: 'Indiening afwijzen is mislukt.'
       }
     },
     registry: {

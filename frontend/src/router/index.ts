@@ -3,6 +3,7 @@ import LoginView from '@/views/LoginView.vue';
 import DashboardView from '@/views/DashboardView.vue';
 import ContentSearchView from '@/views/ContentSearchView.vue';
 import CategoriesView from '@/views/CategoriesView.vue';
+import PendingApprovalsView from '@/views/PendingApprovalsView.vue';
 import UsersManagementView from '@/views/UsersManagementView.vue';
 import AuditLogView from '@/views/AuditLogView.vue';
 import AdminLayout from '@/layouts/AdminLayout.vue';
@@ -25,6 +26,12 @@ const protectedChildRoutes = [
     path: 'categories',
     name: 'categories',
     component: CategoriesView,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: 'approvals',
+    name: 'approvals',
+    component: PendingApprovalsView,
     meta: { requiresAuth: true }
   },
   {
