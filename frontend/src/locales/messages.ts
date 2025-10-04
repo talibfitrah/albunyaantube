@@ -174,8 +174,11 @@ export const messages = {
       empty: 'No content found. Try adjusting your filters.',
       error: 'Failed to load content.',
       clearSelection: 'Clear Selection',
+      clear: 'Clear',
       bulkActions: 'Bulk Actions',
       viewDetails: 'View Details',
+      view: 'View',
+      categories: 'Categories',
       assignCategories: 'Assign Categories',
       delete: 'Delete',
       confirmDelete: 'Are you sure you want to delete "{title}"?',
@@ -199,6 +202,7 @@ export const messages = {
         actions: 'Actions'
       },
       filters: {
+        title: 'Filters',
         contentType: 'Content Type',
         status: 'Status',
         allStatuses: 'All Statuses',
@@ -209,7 +213,8 @@ export const messages = {
         today: 'Today',
         thisWeek: 'This Week',
         thisMonth: 'This Month',
-        resetAll: 'Reset All Filters'
+        resetAll: 'Reset All Filters',
+        apply: 'Apply Filters'
       },
       sort: {
         newestFirst: 'Newest First',
