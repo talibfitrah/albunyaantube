@@ -1,5 +1,6 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.dto.CategoryDto;
 import com.albunyaan.tube.dto.ContentItemDto;
 import com.albunyaan.tube.dto.CursorPageDto;
 import com.albunyaan.tube.model.Channel;
@@ -17,6 +18,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 
 /**
@@ -58,7 +60,7 @@ public class PublicContentService {
     public CursorPageDto<ContentItemDto> getContent(
             String type, String cursor, int limit,
             String category, String length, String date, String sort
-    ) {
+    ) throws ExecutionException, InterruptedException {
         List<ContentItemDto> items = new ArrayList<>();
 
         switch (type.toUpperCase()) {
@@ -84,7 +86,7 @@ public class PublicContentService {
         return new CursorPageDto<>(items, nextCursor);
     }
 
-    private List<ContentItemDto> getMixedContent(int limit, String category) {
+    private List<ContentItemDto> getMixedContent(int limit, String category) throws ExecutionException, InterruptedException {
         List<ContentItemDto> mixed = new ArrayList<>();
 
         // Get mix of channels, playlists, and videos (roughly 1:2:3 ratio)
@@ -99,7 +101,7 @@ public class PublicContentService {
         return mixed;
     }
 
-    private List<ContentItemDto> getChannels(int limit, String category) {
+    private List<ContentItemDto> getChannels(int limit, String category) throws ExecutionException, InterruptedException {
         List<Channel> channels;
 
         if (category != null && !category.isBlank()) {
@@ -115,7 +117,7 @@ public class PublicContentService {
                 .collect(Collectors.toList());
     }
 
-    private List<ContentItemDto> getPlaylists(int limit, String category) {
+    private List<ContentItemDto> getPlaylists(int limit, String category) throws ExecutionException, InterruptedException {
         List<Playlist> playlists;
 
         if (category != null && !category.isBlank()) {
@@ -132,7 +134,7 @@ public class PublicContentService {
     }
 
     private List<ContentItemDto> getVideos(int limit, String category,
-                                           String length, String date, String sort) {
+                                           String length, String date, String sort) throws ExecutionException, InterruptedException {
         List<Video> videos;
 
         if (category != null && !category.isBlank()) {
@@ -150,7 +152,7 @@ public class PublicContentService {
                 .collect(Collectors.toList());
     }
 
-    public List<CategoryDto> getCategories() {
+    public List<CategoryDto> getCategories() throws ExecutionException, InterruptedException {
         return categoryRepository.findAll().stream()
                 .map(this::toCategoryDto)
                 .collect(Collectors.toList());
@@ -165,17 +167,17 @@ public class PublicContentService {
         );
     }
 
-    public Object getChannelDetails(String channelId) {
+    public Object getChannelDetails(String channelId) throws ExecutionException, InterruptedException {
         return channelRepository.findByYoutubeId(channelId)
                 .orElseThrow(() -> new RuntimeException("Channel not found"));
     }
 
-    public Object getPlaylistDetails(String playlistId) {
+    public Object getPlaylistDetails(String playlistId) throws ExecutionException, InterruptedException {
         return playlistRepository.findByYoutubeId(playlistId)
                 .orElseThrow(() -> new RuntimeException("Playlist not found"));
     }
 
-    public List<ContentItemDto> search(String query, String type, int limit) {
+    public List<ContentItemDto> search(String query, String type, int limit) throws ExecutionException, InterruptedException {
         List<ContentItemDto> results = new ArrayList<>();
 
         if (type == null || type.equalsIgnoreCase("CHANNELS")) {
@@ -191,7 +193,7 @@ public class PublicContentService {
         return results.stream().limit(limit).collect(Collectors.toList());
     }
 
-    private List<ContentItemDto> searchChannels(String query, int limit) {
+    private List<ContentItemDto> searchChannels(String query, int limit) throws ExecutionException, InterruptedException {
         return channelRepository.searchByName(query).stream()
                 .filter(this::isApproved)
                 .limit(limit)
@@ -199,7 +201,7 @@ public class PublicContentService {
                 .collect(Collectors.toList());
     }
 
-    private List<ContentItemDto> searchPlaylists(String query, int limit) {
+    private List<ContentItemDto> searchPlaylists(String query, int limit) throws ExecutionException, InterruptedException {
         return playlistRepository.searchByTitle(query).stream()
                 .filter(this::isApproved)
                 .limit(limit)
@@ -207,7 +209,7 @@ public class PublicContentService {
                 .collect(Collectors.toList());
     }
 
-    private List<ContentItemDto> searchVideos(String query, int limit) {
+    private List<ContentItemDto> searchVideos(String query, int limit) throws ExecutionException, InterruptedException {
         return videoRepository.searchByTitle(query).stream()
                 .filter(this::isApproved)
                 .limit(limit)
@@ -246,9 +248,11 @@ public class PublicContentService {
 
     private boolean matchesDateFilter(Video video, String date) {
         if (date == null || date.isBlank()) return true;
+        if (video.getUploadedAt() == null) return true;
 
         LocalDateTime now = LocalDateTime.now();
-        LocalDateTime uploadedAt = video.getUploadedAt();
+        LocalDateTime uploadedAt = video.getUploadedAt().toDate().toInstant()
+                .atZone(java.time.ZoneId.systemDefault()).toLocalDateTime();
 
         switch (date.toUpperCase()) {
             case "LAST_24_HOURS":
@@ -286,14 +290,20 @@ public class PublicContentService {
     }
 
     private ContentItemDto toDto(Video video) {
-        int durationMinutes = video.getDurationSeconds() / 60;
-        LocalDateTime uploadedAt = video.getUploadedAt();
+        int durationMinutes = video.getDurationSeconds() != null ? video.getDurationSeconds() / 60 : 0;
+        LocalDateTime uploadedAt = video.getUploadedAt() != null ?
+            video.getUploadedAt().toDate().toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime() :
+            LocalDateTime.now();
         int uploadedDaysAgo = (int) ChronoUnit.DAYS.between(uploadedAt, LocalDateTime.now());
+
+        // Category name will be null for now - will be populated by client-side lookup
+        // To avoid Firestore query in stream operations
+        String categoryName = null;
 
         return ContentItemDto.video(
                 video.getYoutubeId(),
                 video.getTitle(),
-                video.getCategory() != null ? video.getCategory().getName() : null,
+                categoryName,
                 durationMinutes,
                 uploadedDaysAgo,
                 video.getDescription(),

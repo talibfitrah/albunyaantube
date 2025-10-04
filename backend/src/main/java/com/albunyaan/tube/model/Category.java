@@ -27,6 +27,11 @@ public class Category {
     private String name;
 
     /**
+     * URL-friendly slug for category
+     */
+    private String slug;
+
+    /**
      * Parent category ID for hierarchical structure.
      * null for top-level categories.
      */
@@ -148,6 +153,22 @@ public class Category {
 
     public void setUpdatedBy(String updatedBy) {
         this.updatedBy = updatedBy;
+    }
+
+    public String getSlug() {
+        return slug;
+    }
+
+    public void setSlug(String slug) {
+        this.slug = slug;
+    }
+
+    public String getParentId() {
+        return parentCategoryId;
+    }
+
+    public void setParentId(String parentId) {
+        this.parentCategoryId = parentId;
     }
 
     /**

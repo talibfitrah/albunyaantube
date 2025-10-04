@@ -24,7 +24,7 @@ public class ContentItemDto {
     private Long viewCount;
 
     // Channel-specific
-    private Integer subscribers;
+    private Long subscribers;
     private Integer videoCount;
 
     // Playlist-specific
@@ -35,7 +35,7 @@ public class ContentItemDto {
 
     // Builder pattern
     public static ContentItemDto channel(String id, String name, String category,
-                                         Integer subscribers, String description,
+                                         Long subscribers, String description,
                                          String thumbnailUrl, Integer videoCount) {
         ContentItemDto dto = new ContentItemDto();
         dto.id = id;
@@ -160,11 +160,11 @@ public class ContentItemDto {
         this.viewCount = viewCount;
     }
 
-    public Integer getSubscribers() {
+    public Long getSubscribers() {
         return subscribers;
     }
 
-    public void setSubscribers(Integer subscribers) {
+    public void setSubscribers(Long subscribers) {
         this.subscribers = subscribers;
     }
 

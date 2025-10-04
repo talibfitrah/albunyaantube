@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 
 /**
  * Public API controller for Android app content browsing.
@@ -45,7 +46,7 @@ public class PublicContentController {
             @RequestParam(required = false) String length,
             @RequestParam(required = false) String date,
             @RequestParam(required = false) String sort
-    ) {
+    ) throws ExecutionException, InterruptedException {
         // Validate and cap limit
         int validLimit = Math.min(Math.max(limit, 1), 50);
 
@@ -62,7 +63,7 @@ public class PublicContentController {
      * @return List of all active categories
      */
     @GetMapping("/categories")
-    public ResponseEntity<List<CategoryDto>> getCategories() {
+    public ResponseEntity<List<CategoryDto>> getCategories() throws ExecutionException, InterruptedException {
         return ResponseEntity.ok(contentService.getCategories());
     }
 
@@ -73,7 +74,7 @@ public class PublicContentController {
      * @return Channel details with playlists
      */
     @GetMapping("/channels/{channelId}")
-    public ResponseEntity<?> getChannelDetails(@PathVariable String channelId) {
+    public ResponseEntity<?> getChannelDetails(@PathVariable String channelId) throws ExecutionException, InterruptedException {
         return ResponseEntity.ok(contentService.getChannelDetails(channelId));
     }
 
@@ -84,7 +85,7 @@ public class PublicContentController {
      * @return Playlist details with videos
      */
     @GetMapping("/playlists/{playlistId}")
-    public ResponseEntity<?> getPlaylistDetails(@PathVariable String playlistId) {
+    public ResponseEntity<?> getPlaylistDetails(@PathVariable String playlistId) throws ExecutionException, InterruptedException {
         return ResponseEntity.ok(contentService.getPlaylistDetails(playlistId));
     }
 
@@ -101,7 +102,7 @@ public class PublicContentController {
             @RequestParam String q,
             @RequestParam(required = false) String type,
             @RequestParam(required = false, defaultValue = "20") int limit
-    ) {
+    ) throws ExecutionException, InterruptedException {
         int validLimit = Math.min(Math.max(limit, 1), 50);
         return ResponseEntity.ok(contentService.search(q, type, validLimit));
     }

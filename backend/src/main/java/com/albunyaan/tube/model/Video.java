@@ -24,6 +24,18 @@ public class Video {
     private String youtubeId;
 
     /**
+     * YouTube metadata (cached from YouTube API)
+     */
+    private String title;
+    private String description;
+    private String thumbnailUrl;
+    private Integer durationSeconds;
+    private Long viewCount;
+    private Timestamp uploadedAt;
+    private String channelId;
+    private String channelTitle;
+
+    /**
      * Assigned category IDs
      */
     private List<String> categoryIds;
@@ -119,11 +131,84 @@ public class Video {
         this.approvedBy = approvedBy;
     }
 
+    public String getTitle() {
+        return title;
+    }
+
+    public void setTitle(String title) {
+        this.title = title;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public String getThumbnailUrl() {
+        return thumbnailUrl;
+    }
+
+    public void setThumbnailUrl(String thumbnailUrl) {
+        this.thumbnailUrl = thumbnailUrl;
+    }
+
+    public Integer getDurationSeconds() {
+        return durationSeconds;
+    }
+
+    public void setDurationSeconds(Integer durationSeconds) {
+        this.durationSeconds = durationSeconds;
+    }
+
+    public Long getViewCount() {
+        return viewCount;
+    }
+
+    public void setViewCount(Long viewCount) {
+        this.viewCount = viewCount;
+    }
+
+    public Timestamp getUploadedAt() {
+        return uploadedAt;
+    }
+
+    public void setUploadedAt(Timestamp uploadedAt) {
+        this.uploadedAt = uploadedAt;
+    }
+
+    public String getChannelId() {
+        return channelId;
+    }
+
+    public void setChannelId(String channelId) {
+        this.channelId = channelId;
+    }
+
+    public String getChannelTitle() {
+        return channelTitle;
+    }
+
+    public void setChannelTitle(String channelTitle) {
+        this.channelTitle = channelTitle;
+    }
+
     public void touch() {
         this.updatedAt = Timestamp.now();
     }
 
     public boolean isApproved() {
         return "approved".equals(status);
+    }
+
+    /**
+     * Get the first category from categoryIds list
+     * Helper method for PublicContentService
+     */
+    public Category getCategory() {
+        // This returns null for now - will need to be populated by service layer
+        return null;
     }
 }

@@ -92,4 +92,36 @@ public class ChannelRepository {
                 .get();
         return query.get().toObjects(Channel.class);
     }
+
+    public List<Channel> findByCategoryOrderBySubscribersDesc(String category) throws ExecutionException, InterruptedException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereArrayContains("categoryIds", category)
+                .whereEqualTo("status", "approved")
+                .orderBy("subscribers", Query.Direction.DESCENDING)
+                .get();
+
+        return query.get().toObjects(Channel.class);
+    }
+
+    public List<Channel> findAllByOrderBySubscribersDesc() throws ExecutionException, InterruptedException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereEqualTo("status", "approved")
+                .orderBy("subscribers", Query.Direction.DESCENDING)
+                .get();
+
+        return query.get().toObjects(Channel.class);
+    }
+
+    public List<Channel> searchByName(String query) throws ExecutionException, InterruptedException {
+        // Firestore doesn't support full-text search, so we'll use prefix matching
+        // For production, consider using Algolia or Elasticsearch
+        ApiFuture<QuerySnapshot> querySnapshot = getCollection()
+                .whereEqualTo("status", "approved")
+                .orderBy("name")
+                .startAt(query)
+                .endAt(query + "\uf8ff")
+                .get();
+
+        return querySnapshot.get().toObjects(Channel.class);
+    }
 }

@@ -25,6 +25,15 @@ public class Channel {
     private String youtubeId;
 
     /**
+     * Cached YouTube metadata
+     */
+    private String name;
+    private String description;
+    private String thumbnailUrl;
+    private Long subscribers;
+    private Integer videoCount;
+
+    /**
      * Assigned category IDs (can be multiple)
      */
     private List<String> categoryIds;
@@ -196,5 +205,54 @@ public class Channel {
 
     public boolean isPending() {
         return "pending".equals(status);
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public String getThumbnailUrl() {
+        return thumbnailUrl;
+    }
+
+    public void setThumbnailUrl(String thumbnailUrl) {
+        this.thumbnailUrl = thumbnailUrl;
+    }
+
+    public Long getSubscribers() {
+        return subscribers;
+    }
+
+    public void setSubscribers(Long subscribers) {
+        this.subscribers = subscribers;
+    }
+
+    public Integer getVideoCount() {
+        return videoCount;
+    }
+
+    public void setVideoCount(Integer videoCount) {
+        this.videoCount = videoCount;
+    }
+
+    /**
+     * Get the first category from categoryIds list
+     * Helper method for PublicContentService
+     */
+    public Category getCategory() {
+        // This returns null for now - will need to be populated by service layer
+        return null;
     }
 }
