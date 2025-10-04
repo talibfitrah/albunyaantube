@@ -111,5 +111,14 @@
     <fragment
         android:id="@+id/settingsFragment"
         android:name="com.albunyaan.tube.ui.settings.SettingsFragment"
-        android:label="Settings" />
+        android:label="Settings">
+        <action
+            android:id="@+id/action_settingsFragment_to_aboutFragment"
+            app:destination="@id/aboutFragment"/>
+    </fragment>
+
+    <fragment
+        android:id="@+id/aboutFragment"
+        android:name="com.albunyaan.tube.ui.settings.AboutFragment"
+        android:label="About" />
 </navigation>

@@ -7,6 +7,7 @@ import androidx.navigation.fragment.NavHostFragment
 import com.albunyaan.tube.R
 import com.albunyaan.tube.ServiceLocator
 import com.albunyaan.tube.databinding.ActivityMainBinding
+import com.albunyaan.tube.locale.LocaleManager
 
 class MainActivity : AppCompatActivity() {
 
@@ -18,6 +19,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Apply stored locale before super.onCreate to ensure proper locale is applied
+        LocaleManager.applyStoredLocale(this)
+
         super.onCreate(savedInstanceState)
         ServiceLocator.init(this)
         binding = ActivityMainBinding.inflate(layoutInflater)
