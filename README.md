@@ -16,7 +16,7 @@ Welcome to the design workspace for Albunyaan Tube, an ad-free, admin-curated ha
 - **Frontend prototypes & state**: see [`frontend/src/views`](frontend/src/views) for registry, moderation, and dashboard implementations aligning with Phase 3 specs.
 - **Locale bundles**: translation sources for English, Arabic, and Dutch live in [`frontend/src/locales/messages.ts`](frontend/src/locales/messages.ts).
 - **Registry search filters**: shared Pinia store and component located in [`frontend/src/stores/registryFilters.ts`](frontend/src/stores/registryFilters.ts) and [`frontend/src/components/registry/RegistryFilters.vue`](frontend/src/components/registry/RegistryFilters.vue).
-- **Dashboard metrics plan**: refer to [`frontend/docs/dashboard-metrics-plan.md`](frontend/docs/dashboard-metrics-plan.md) and contract details in [`docs/api/openapi-draft.yaml`](docs/api/openapi-draft.yaml#L220).
+- **Dashboard metrics plan**: refer to [`docs/frontend/dashboard-metrics-plan.md`](docs/frontend/dashboard-metrics-plan.md) and contract details in [`docs/api/openapi-draft.yaml`](docs/api/openapi-draft.yaml#L220).
 - **Onboarding & QA**: pair this README with the [`Admin Onboarding`](docs/runbooks/admin-onboarding.md) and [`Admin Workspace Login`](docs/runbooks/admin-login.md) guides to validate locale smoke tests, dashboard warnings, and registry filters.
 
 ## Traceability
@@ -24,10 +24,24 @@ Every document references related artifacts to ensure consistency:
 - Requirements → APIs → Acceptance criteria are linked through the traceability matrix in [`docs/acceptance/criteria.md`](docs/acceptance/criteria.md).
 - Security controls, data models, and internationalization strategies are cross-linked within architecture and API sections.
 
-## Android Skeleton Project
-- The `android/` directory now contains a minimal Gradle project with `:app` module, Navigation Component setup, Paging/filter/list-state skeletons, and localized resources.
-- Generate the wrapper (`gradle wrapper`) and run `./gradlew assembleDebug` from the `android/` directory to compile the placeholder app.
-- Kotlin classes (e.g., `MainShellFragment`, `FilterManager`, `ContentPagingRepository`) currently emit stubs but mirror the architecture described in Phase 5/6 documentation so engineers can start wiring real data sources quickly.
+## Project Components
+
+### Android App
+- The `android/` directory contains the mobile app with Material Design 3, RTL support, and offline-first architecture.
+- **Documentation**: See [`docs/android/`](docs/android/) for setup, release checklist, and Play Store guidelines.
+- **Current Status**: Phase 5 complete - Production ready with signed AAB and RTL polish.
+- Run: `./gradlew assembleDebug` from the `android/` directory to build.
+
+### Backend API
+- The `backend/` directory contains Spring Boot REST API with Firebase integration.
+- **Documentation**: See [`docs/backend/`](docs/backend/) for Firebase setup and [`docs/status/backend-integration.md`](docs/status/backend-integration.md) for current status.
+- **Current Status**: ✅ Integrated with Standard Firestore, seeded with sample data, public APIs enabled.
+- Run: `./gradlew bootRun` from the `backend/` directory to start on http://localhost:8080.
+
+### Admin Frontend
+- The `frontend/` directory contains Vue 3 admin dashboard for content moderation.
+- **Documentation**: See [`docs/frontend/`](docs/frontend/) for setup and metrics plan.
+- **Current Status**: Phase 3 complete - Registry, moderation, and dashboard implemented.
 
 ## Change Workflow
 1. Update relevant design artifact(s).
