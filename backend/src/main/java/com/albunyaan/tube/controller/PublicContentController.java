@@ -1,10 +1,13 @@
 package com.albunyaan.tube.controller;
 
+import com.albunyaan.tube.dto.CategoryDto;
 import com.albunyaan.tube.dto.ContentItemDto;
 import com.albunyaan.tube.dto.CursorPageDto;
 import com.albunyaan.tube.service.PublicContentService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 /**
  * Public API controller for Android app content browsing.
@@ -59,7 +62,7 @@ public class PublicContentController {
      * @return List of all active categories
      */
     @GetMapping("/categories")
-    public ResponseEntity<?> getCategories() {
+    public ResponseEntity<List<CategoryDto>> getCategories() {
         return ResponseEntity.ok(contentService.getCategories());
     }
 

@@ -589,12 +589,12 @@ This document consolidates all project phases in chronological order with curren
 - `backend/src/main/java/com/albunyaan/tube/dto/ContentItemDto.java`
 - `backend/src/main/java/com/albunyaan/tube/dto/CursorPageDto.java`
 
-**ANDROID-002**: Category Filter UI (2 days, P0)
-- [ ] Category filter bottom sheet/drawer
-- [ ] Fetch categories from `/api/v1/categories`
-- [ ] Filter selection UI
-- [ ] Update content feed based on selected categories
-- [ ] Persist filter selections across sessions
+**ANDROID-002**: Category Filter UI (2 days, P0) - ✅ COMPLETE
+- [x] Category filter bottom sheet/drawer
+- [x] Fetch categories from `/api/v1/categories`
+- [x] Filter selection UI
+- [x] Update content feed based on selected categories
+- [x] Persist filter selections across sessions
 
 **ANDROID-003**: Channel Detail Screen (2 days, P0)
 - [ ] Channel detail activity/fragment

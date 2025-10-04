@@ -150,8 +150,19 @@ public class PublicContentService {
                 .collect(Collectors.toList());
     }
 
-    public List<Category> getCategories() {
-        return categoryRepository.findAll();
+    public List<CategoryDto> getCategories() {
+        return categoryRepository.findAll().stream()
+                .map(this::toCategoryDto)
+                .collect(Collectors.toList());
+    }
+
+    private CategoryDto toCategoryDto(Category category) {
+        return new CategoryDto(
+                category.getId(),
+                category.getName(),
+                category.getSlug() != null ? category.getSlug() : category.getName().toLowerCase().replace(" ", "-"),
+                category.getParentId()
+        );
     }
 
     public Object getChannelDetails(String channelId) {

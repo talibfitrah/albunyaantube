@@ -15,6 +15,9 @@ interface ContentApi {
         @Query("date") date: String?,
         @Query("sort") sort: String?
     ): CursorPageDto
+
+    @GET("api/v1/categories")
+    suspend fun fetchCategories(): List<CategoryDto>
 }
 
 @JsonClass(generateAdapter = true)
@@ -40,4 +43,12 @@ data class ContentDto(
     val subscribers: Int? = null,
     val itemCount: Int? = null,
     val type: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class CategoryDto(
+    val id: String,
+    val name: String,
+    val slug: String,
+    val parentId: String? = null
 )
