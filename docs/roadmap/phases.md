@@ -1,7 +1,7 @@
 # Albunyaan Tube - Project Phases
 
 > **Last Updated**: 2025-10-04
-> **Status**: Phase 1 ✅ Complete | Phase 3 ✅ Complete | Phase 4 🚧 In Progress
+> **Status**: Phase 1 ✅ | Phase 3 ✅ | Phase 4 ✅ | Phase 5 🚧 (Sprint 1 in progress)
 
 ---
 
@@ -448,11 +448,12 @@ This document consolidates all project phases in chronological order with curren
 
 ---
 
-## Phase 4 — Admin UI Polish & Features 🚧 IN PROGRESS
+## Phase 4 — Admin UI Polish & Features ✅ COMPLETE
 
 **Duration**: 2 weeks
-**Status**: 🚧 **IN PROGRESS**
+**Status**: ✅ **COMPLETE**
 **Started**: 2025-10-04
+**Completed**: 2025-10-04
 **Dependencies**: Phase 3 ✅
 
 ### Goals
@@ -483,7 +484,7 @@ This document consolidates all project phases in chronological order with curren
   - ✅ Created comprehensive RTL audit document
   - ✅ Added navigation icons for Activity log and Settings
 
-#### Sprint 2: Performance & Advanced Features (Week 2) 🚧 IN PROGRESS
+#### Sprint 2: Performance & Advanced Features (Week 2) ✅ COMPLETE
 
 **Tickets**:
 - [x] **POL-003**: Performance Optimization (2 days, P1) - ✅ COMPLETE
@@ -495,23 +496,35 @@ This document consolidates all project phases in chronological order with curren
   - ⏩ Virtual scrolling deferred (not critical for current data volumes)
   - ⏩ Memoization deferred (no performance bottlenecks identified)
 
-- [ ] **POL-004**: Exclusions Editor Workspace (3 days, P2)
-  - Full CRUD interface for channel exclusions
-  - Playlist/video exclusion management
-  - Bulk exclusion operations
-  - Exclusion preview
+- [x] **POL-004**: Exclusions Editor Workspace (3 days, P2) - ✅ COMPLETE
+  - ✅ Full CRUD interface for channel exclusions (view already implemented)
+  - ✅ Playlist/video exclusion management
+  - ✅ Bulk exclusion operations (select all, bulk remove)
+  - ✅ Exclusion preview with filters
+  - ✅ Added /exclusions route to router
+  - ✅ Integrated into navigation with 🚫 icon
+  - ✅ Focus trap in add/edit modal
+  - ✅ Cursor-based pagination
 
-- [ ] **POL-005**: Bulk Import/Export (2 days, P2)
-  - CSV import for channels/categories
-  - CSV export for all content
-  - Import validation and error handling
-  - Export with filters
+- [x] **POL-005**: Bulk Import/Export (2 days, P2) - ✅ COMPLETE
+  - ✅ CSV import for channels/categories
+  - ✅ CSV export for all content (channels, playlists, videos, categories)
+  - ✅ Import validation and error handling (row-by-row validation with results table)
+  - ✅ Export with filters (content type selection)
+  - ✅ CSV template downloads for both channels and categories
+  - ✅ File size display and upload progress
+  - ✅ Added /bulk-import-export route with 📥 icon
+  - ✅ Full i18n support (en/ar/nl)
 
-- [ ] **POL-006**: Advanced Search (2 days, P3)
-  - Global search across all entities
-  - Search suggestions
-  - Recent searches
-  - Advanced filters
+- [x] **POL-006**: Advanced Search (2 days, P3) - ✅ COMPLETE
+  - ✅ Global search across all entities (channels, playlists, videos, categories, users)
+  - ✅ Search suggestions based on query input
+  - ✅ Recent searches stored in localStorage (last 5 searches)
+  - ✅ Advanced filters (filter by entity type)
+  - ✅ Keyboard navigation (↑↓ to navigate, Enter to select, Esc to close)
+  - ✅ Keyboard shortcut support (Ctrl/Cmd + K to open)
+  - ✅ Focus trap and accessibility (ARIA labels, roles)
+  - ✅ Created GlobalSearchModal component ready for integration
 
 ### Optional Features (Time Permitting)
 - [ ] Dark mode toggle
@@ -521,26 +534,184 @@ This document consolidates all project phases in chronological order with curren
 
 ---
 
-## Phase 5 — Android MVP 📋 PLANNED
+## Phase 5 — Android MVP 🚧 IN PROGRESS
 
 **Duration**: 6 weeks
-**Status**: 📋 **PLANNED**
-**Dependencies**: Phase 2 ✅, Backend API ✅
+**Status**: 🚧 **IN PROGRESS**
+**Started**: 2025-10-04
+**Dependencies**: Phase 1 (Backend) ✅, Phase 4 (Admin UI) ✅
 
 ### Goals
-- Launch minimum viable Android app
-- Implement core content browsing features
-- Support offline viewing
-- App store submission
+- Launch minimum viable Android app with content browsing
+- Category filtering and video playback
+- Basic offline downloads and search
+- Multi-language support (en/ar/nl)
+- Settings and app store submission
 
-### Features
-- Content browsing (channels, playlists, videos)
-- Category filtering
-- Video playback
-- Offline downloads
-- Bookmarks/favorites
-- Search functionality
-- Settings (language, downloads location, etc.)
+### Current Implementation Status (Foundation Already Built)
+
+**Data Layer** (56 Kotlin files):
+- ✅ ContentItem, CursorResponse models
+- ✅ NewPipe extractor integration for YouTube metadata
+- ✅ Cursor-based pagination (CursorPagingSource, ContentPagingRepository)
+- ✅ Content filtering (FilterManager, FilterState)
+- ✅ Retrofit API client (ContentApi, RetrofitContentService)
+- ✅ Metadata caching system
+
+**UI Layer** (21 UI components, 23 layouts):
+- ✅ MainActivity with navigation
+- ✅ ContentListFragment with RecyclerView
+- ✅ Player infrastructure (PlaybackService)
+- ✅ Picture-in-picture support
+- ✅ Deep linking (albunyaantube://channel, albunyaantube://playlist)
+- ✅ File provider for downloads
+
+**Infrastructure**:
+- ✅ Gradle build configuration
+- ✅ Service locator pattern for DI
+- ✅ Locale management (multi-language support)
+- ✅ Macrobenchmarks setup (cold start, home scroll)
+
+### Sprint Breakdown (6 weeks)
+
+#### Sprint 1: Content Discovery & Browse (Week 1-2)
+
+**ANDROID-001**: Home Screen with Content Feed (3 days, P0) - ✅ COMPLETE
+- [x] Home screen layout with RecyclerView (ContentListFragment exists)
+- [x] Backend `/api/v1/content` endpoint (PublicContentController created)
+- [x] Display channels, playlists, videos in unified feed (HOME type)
+- [x] Pull-to-refresh, loading/error states (already in ContentListFragment)
+- [x] Thumbnail loading with Coil and prefetching
+
+**Backend Files Created**:
+- `backend/src/main/java/com/albunyaan/tube/controller/PublicContentController.java`
+- `backend/src/main/java/com/albunyaan/tube/service/PublicContentService.java`
+- `backend/src/main/java/com/albunyaan/tube/dto/ContentItemDto.java`
+- `backend/src/main/java/com/albunyaan/tube/dto/CursorPageDto.java`
+
+**ANDROID-002**: Category Filter UI (2 days, P0)
+- [ ] Category filter bottom sheet/drawer
+- [ ] Fetch categories from `/api/v1/categories`
+- [ ] Filter selection UI
+- [ ] Update content feed based on selected categories
+- [ ] Persist filter selections across sessions
+
+**ANDROID-003**: Channel Detail Screen (2 days, P0)
+- [ ] Channel detail activity/fragment
+- [ ] Display channel metadata (title, description, thumbnail, subscribers)
+- [ ] Show channel playlists and videos
+- [ ] Handle deep links (albunyaantube://channel/{id})
+
+**ANDROID-004**: Playlist Detail Screen (2 days, P0)
+- [ ] Playlist detail activity/fragment
+- [ ] Display playlist metadata
+- [ ] Show playlist videos in order
+- [ ] Handle deep links (albunyaantube://playlist/{id})
+
+#### Sprint 2: Video Playback (Week 3)
+
+**ANDROID-005**: ExoPlayer Integration (3 days, P0)
+- [ ] Integrate ExoPlayer for video playback
+- [ ] Create fullscreen player activity
+- [ ] Handle NewPipe stream URL extraction
+- [ ] Support multiple quality options
+- [ ] Implement play/pause, seek controls
+- [ ] Add playback progress tracking
+
+**ANDROID-006**: Player UI & Controls (2 days, P0)
+- [ ] Design player controls overlay
+- [ ] Add brightness/volume gestures
+- [ ] Implement double-tap to seek
+- [ ] Add quality selector UI
+- [ ] Show loading spinner and buffering states
+
+**ANDROID-007**: Background & PiP Playback (2 days, P1)
+- [ ] Enable background audio playback (PlaybackService exists)
+- [ ] Complete picture-in-picture implementation
+- [ ] Media notification with controls
+- [ ] Handle audio focus changes
+
+#### Sprint 3: Search & Offline (Week 4)
+
+**ANDROID-008**: Search Implementation (2 days, P0)
+- [ ] Create search UI (SearchView/Toolbar)
+- [ ] Connect to backend `/api/v1/search` endpoint
+- [ ] Display search results (channels, playlists, videos)
+- [ ] Add search history/suggestions
+- [ ] Handle empty states
+
+**ANDROID-009**: Download Manager (3 days, P1)
+- [ ] Implement download service with WorkManager
+- [ ] Create download queue UI
+- [ ] Show download progress notifications
+- [ ] Support pause/resume/cancel downloads
+- [ ] Handle storage permissions
+
+**ANDROID-010**: Offline Playback (2 days, P1)
+- [ ] Detect and play downloaded videos
+- [ ] Show "Downloaded" badge on content items
+- [ ] Implement offline-first playback logic
+- [ ] Manage storage space (auto-delete old downloads)
+
+#### Sprint 4: Settings & Polish (Week 5)
+
+**ANDROID-011**: Settings Screen (2 days, P0)
+- [ ] Create settings activity with PreferenceScreen
+- [ ] Language selection (en/ar/nl) - LocaleManager exists
+- [ ] Download location preference
+- [ ] Video quality preference (default quality)
+- [ ] Clear cache option
+- [ ] About screen (version, licenses)
+
+**ANDROID-012**: RTL Support (2 days, P0)
+- [ ] Ensure RTL layout for Arabic (supportsRtl in manifest)
+- [ ] Test all screens in RTL mode
+- [ ] Fix any RTL layout issues
+- [ ] Verify Arabic translations
+
+**ANDROID-013**: Accessibility (1 day, P1)
+- [ ] Add content descriptions to all interactive elements
+- [ ] Test with TalkBack
+- [ ] Ensure sufficient touch target sizes (48dp)
+- [ ] Add live regions for dynamic content
+
+**ANDROID-014**: Error Handling & Offline UX (2 days, P0)
+- [ ] Implement network connectivity detection
+- [ ] Show offline banner when disconnected
+- [ ] Graceful error messages for API failures
+- [ ] Retry mechanisms for failed requests
+
+#### Sprint 5: Testing & Optimization (Week 6)
+
+**ANDROID-015**: Unit & Integration Tests (2 days, P1)
+- [ ] Write unit tests for repositories, ViewModels
+- [ ] Create integration tests for API clients
+- [ ] Test pagination logic and filter manager
+- [ ] Achieve >70% code coverage
+
+**ANDROID-016**: UI Tests (2 days, P1)
+- [ ] Write Espresso tests for main flows
+- [ ] Test content browsing, search, playback start
+- [ ] Test download flow
+
+**ANDROID-017**: Performance Optimization (2 days, P1)
+- [ ] Optimize RecyclerView with DiffUtil
+- [ ] Implement image loading optimizations
+- [ ] Reduce APK size (ProGuard/R8)
+- [ ] Run macrobenchmarks and address issues
+
+**ANDROID-018**: App Store Preparation (1 day, P0)
+- [ ] Create app icon (adaptive icon)
+- [ ] Write Play Store description
+- [ ] Take screenshots for all screen sizes
+- [ ] Create feature graphic
+- [ ] Set up signed release build
+
+### Technical Stack
+**Language**: Kotlin | **UI**: XML layouts + RecyclerView | **Architecture**: MVVM + Repository
+**DI**: Service Locator | **Networking**: Retrofit + OkHttp | **Video**: ExoPlayer + NewPipe
+**Image Loading**: Coil | **Database**: Room | **Async**: Coroutines + Flow
+**Pagination**: Paging 3 | **Downloads**: WorkManager | **Testing**: JUnit, Espresso, Mockk
 
 ---
 

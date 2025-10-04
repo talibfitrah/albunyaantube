@@ -22,6 +22,7 @@ export const messages = {
       registry: 'Registry',
       moderation: 'Moderation',
       exclusions: 'Exclusions',
+      bulkImportExport: 'Import/Export',
       users: 'Users',
       audit: 'Audit log',
       activity: 'Activity log',
@@ -947,6 +948,60 @@ export const messages = {
         ar: 'العربية',
         nl: 'Nederlands'
       }
+    },
+    bulkImportExport: {
+      heading: 'Bulk Import/Export',
+      subtitle: 'Import or export content and categories in bulk using CSV files',
+      export: {
+        title: 'Export Data',
+        description: 'Download your data as CSV files for backup or analysis',
+        selectType: 'Select data type',
+        types: {
+          content: 'All Content',
+          categories: 'Categories'
+        },
+        contentFilters: 'Content filters',
+        includeChannels: 'Include Channels',
+        includePlaylists: 'Include Playlists',
+        includeVideos: 'Include Videos',
+        downloadCSV: 'Download CSV',
+        exporting: 'Exporting...',
+        success: 'Export completed successfully!',
+        error: 'Failed to export data. Please try again.'
+      },
+      import: {
+        title: 'Import Data',
+        description: 'Upload CSV files to add content or categories in bulk',
+        selectType: 'Select import type',
+        types: {
+          channels: 'Channels',
+          categories: 'Categories'
+        },
+        chooseFile: 'Choose CSV file',
+        fileSize: 'File size',
+        uploadCSV: 'Upload and Process',
+        importing: 'Importing...',
+        results: 'Import Results',
+        totalProcessed: 'Total rows processed',
+        successful: 'Successful',
+        failed: 'Failed',
+        row: 'Row',
+        status: 'Status',
+        message: 'Message',
+        statusSuccess: 'Success',
+        statusError: 'Error',
+        rowSuccess: 'Imported successfully',
+        rowError: 'Failed to import',
+        importComplete: '{count} items imported successfully',
+        error: 'Failed to import file. Please check the format.',
+        errorEmptyFile: 'CSV file is empty or invalid'
+      },
+      templates: {
+        title: 'CSV Templates',
+        description: 'Download template files to see the required format for imports',
+        channels: 'Download Channels Template',
+        categories: 'Download Categories Template'
+      }
     }
   },
   ar: {
@@ -972,6 +1027,7 @@ export const messages = {
       registry: 'السجل',
       moderation: 'الإشراف',
       exclusions: 'الاستثناءات',
+      bulkImportExport: 'استيراد/تصدير',
       users: 'المستخدمون',
       audit: 'سجل التدقيق',
       activity: 'سجل النشاط',
@@ -1533,6 +1589,60 @@ export const messages = {
         ar: 'العربية',
         nl: 'الهولندية'
       }
+    },
+    bulkImportExport: {
+      heading: 'الاستيراد/التصدير المجمّع',
+      subtitle: 'استورد أو صدّر المحتوى والفئات بشكل مجمّع باستخدام ملفات CSV',
+      export: {
+        title: 'تصدير البيانات',
+        description: 'قم بتنزيل بياناتك كملفات CSV للنسخ الاحتياطي أو التحليل',
+        selectType: 'اختر نوع البيانات',
+        types: {
+          content: 'جميع المحتوى',
+          categories: 'الفئات'
+        },
+        contentFilters: 'مرشحات المحتوى',
+        includeChannels: 'تضمين القنوات',
+        includePlaylists: 'تضمين قوائم التشغيل',
+        includeVideos: 'تضمين الفيديوهات',
+        downloadCSV: 'تنزيل CSV',
+        exporting: 'جارٍ التصدير...',
+        success: 'تم التصدير بنجاح!',
+        error: 'فشل تصدير البيانات. يرجى المحاولة مرة أخرى.'
+      },
+      import: {
+        title: 'استيراد البيانات',
+        description: 'قم برفع ملفات CSV لإضافة محتوى أو فئات بشكل مجمّع',
+        selectType: 'اختر نوع الاستيراد',
+        types: {
+          channels: 'القنوات',
+          categories: 'الفئات'
+        },
+        chooseFile: 'اختر ملف CSV',
+        fileSize: 'حجم الملف',
+        uploadCSV: 'رفع ومعالجة',
+        importing: 'جارٍ الاستيراد...',
+        results: 'نتائج الاستيراد',
+        totalProcessed: 'إجمالي الصفوف المعالجة',
+        successful: 'ناجح',
+        failed: 'فشل',
+        row: 'الصف',
+        status: 'الحالة',
+        message: 'الرسالة',
+        statusSuccess: 'نجاح',
+        statusError: 'خطأ',
+        rowSuccess: 'تم الاستيراد بنجاح',
+        rowError: 'فشل الاستيراد',
+        importComplete: 'تم استيراد {count} عنصر بنجاح',
+        error: 'فشل استيراد الملف. يرجى التحقق من التنسيق.',
+        errorEmptyFile: 'ملف CSV فارغ أو غير صالح'
+      },
+      templates: {
+        title: 'قوالب CSV',
+        description: 'قم بتنزيل ملفات القوالب لمعرفة التنسيق المطلوب للاستيراد',
+        channels: 'تنزيل قالب القنوات',
+        categories: 'تنزيل قالب الفئات'
+      }
     }
   },
   nl: {
@@ -1558,6 +1668,7 @@ export const messages = {
       registry: 'Registerbeheer',
       moderation: 'Moderatie',
       exclusions: 'Uitzonderingen',
+      bulkImportExport: 'Importeren/Exporteren',
       users: 'Gebruikers',
       audit: 'Auditlogboek',
       activity: 'Activiteitenlogboek',
@@ -2118,6 +2229,60 @@ export const messages = {
         en: 'Engels',
         ar: 'Arabisch',
         nl: 'Nederlands'
+      }
+    },
+    bulkImportExport: {
+      heading: 'Bulk Import/Export',
+      subtitle: 'Importeer of exporteer inhoud en categorieën in bulk met CSV-bestanden',
+      export: {
+        title: 'Gegevens exporteren',
+        description: 'Download uw gegevens als CSV-bestanden voor back-up of analyse',
+        selectType: 'Selecteer gegevenstype',
+        types: {
+          content: 'Alle inhoud',
+          categories: 'Categorieën'
+        },
+        contentFilters: 'Inhoudsfilters',
+        includeChannels: 'Kanalen opnemen',
+        includePlaylists: 'Afspeellijsten opnemen',
+        includeVideos: "Video's opnemen",
+        downloadCSV: 'Download CSV',
+        exporting: 'Exporteren...',
+        success: 'Export succesvol voltooid!',
+        error: 'Gegevens exporteren mislukt. Probeer het opnieuw.'
+      },
+      import: {
+        title: 'Gegevens importeren',
+        description: 'Upload CSV-bestanden om inhoud of categorieën in bulk toe te voegen',
+        selectType: 'Selecteer importtype',
+        types: {
+          channels: 'Kanalen',
+          categories: 'Categorieën'
+        },
+        chooseFile: 'Kies CSV-bestand',
+        fileSize: 'Bestandsgrootte',
+        uploadCSV: 'Uploaden en verwerken',
+        importing: 'Importeren...',
+        results: 'Importresultaten',
+        totalProcessed: 'Totaal verwerkte rijen',
+        successful: 'Gelukt',
+        failed: 'Mislukt',
+        row: 'Rij',
+        status: 'Status',
+        message: 'Bericht',
+        statusSuccess: 'Succes',
+        statusError: 'Fout',
+        rowSuccess: 'Succesvol geïmporteerd',
+        rowError: 'Importeren mislukt',
+        importComplete: '{count} items succesvol geïmporteerd',
+        error: 'Bestand importeren mislukt. Controleer het formaat.',
+        errorEmptyFile: 'CSV-bestand is leeg of ongeldig'
+      },
+      templates: {
+        title: 'CSV-sjablonen',
+        description: 'Download sjabloonbestanden om het vereiste formaat voor imports te zien',
+        channels: 'Download kanalensjabloon',
+        categories: 'Download categorieënsjabloon'
       }
     }
   }

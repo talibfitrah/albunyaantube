@@ -11,6 +11,8 @@ const ContentSearchView = () => import('@/views/ContentSearchView.vue');
 const CategoriesView = () => import('@/views/CategoriesView.vue');
 const PendingApprovalsView = () => import('@/views/PendingApprovalsView.vue');
 const ContentLibraryView = () => import('@/views/ContentLibraryView.vue');
+const ExclusionsWorkspaceView = () => import('@/views/ExclusionsWorkspaceView.vue');
+const BulkImportExportView = () => import('@/views/BulkImportExportView.vue');
 const UsersManagementView = () => import('@/views/UsersManagementView.vue');
 const AuditLogView = () => import('@/views/AuditLogView.vue');
 const ActivityLogView = () => import('@/views/ActivityLogView.vue');
@@ -48,6 +50,18 @@ const protectedChildRoutes = [
     path: 'content-library',
     name: 'content-library',
     component: ContentLibraryView,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: 'exclusions',
+    name: 'exclusions',
+    component: ExclusionsWorkspaceView,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: 'bulk-import-export',
+    name: 'bulk-import-export',
+    component: BulkImportExportView,
     meta: { requiresAuth: true }
   },
   {
