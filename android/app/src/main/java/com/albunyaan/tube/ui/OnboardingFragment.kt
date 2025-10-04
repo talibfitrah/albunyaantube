@@ -1,6 +1,7 @@
 package com.albunyaan.tube.ui
 
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
@@ -13,9 +14,6 @@ import com.albunyaan.tube.onboarding.onboardingPages
 class OnboardingFragment : Fragment(R.layout.fragment_onboarding) {
 
     private var binding: FragmentOnboardingBinding? = null
-    private val indicators by lazy {
-        binding?.let { listOf(it.indicator1, it.indicator2, it.indicator3) } ?: emptyList()
-    }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -48,13 +46,18 @@ class OnboardingFragment : Fragment(R.layout.fragment_onboarding) {
     }
 
     private fun updateIndicators(position: Int) {
-        indicators.forEachIndexed { index, indicator ->
-            val background = if (index == position) {
-                R.drawable.onboarding_indicator_active
-            } else {
-                R.drawable.onboarding_indicator_inactive
+        binding?.let { b ->
+            val indicators = listOf(b.indicator1, b.indicator2, b.indicator3)
+            Log.d("OnboardingFragment", "updateIndicators called with position: $position, indicators count: ${indicators.size}")
+            indicators.forEachIndexed { index, indicator ->
+                val background = if (index == position) {
+                    R.drawable.onboarding_indicator_active
+                } else {
+                    R.drawable.onboarding_indicator_inactive
+                }
+                Log.d("OnboardingFragment", "Setting indicator $index to ${if (index == position) "active" else "inactive"}")
+                indicator.setBackgroundResource(background)
             }
-            indicator.setBackgroundResource(background)
         }
     }
 
