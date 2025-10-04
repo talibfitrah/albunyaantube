@@ -7,6 +7,7 @@ import PendingApprovalsView from '@/views/PendingApprovalsView.vue';
 import ContentLibraryView from '@/views/ContentLibraryView.vue';
 import UsersManagementView from '@/views/UsersManagementView.vue';
 import AuditLogView from '@/views/AuditLogView.vue';
+import ActivityLogView from '@/views/ActivityLogView.vue';
 import AdminLayout from '@/layouts/AdminLayout.vue';
 import { useAuthStore } from '@/stores/auth';
 
@@ -51,6 +52,12 @@ const protectedChildRoutes = [
     path: 'audit',
     name: 'audit',
     component: AuditLogView,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: 'activity',
+    name: 'activity',
+    component: ActivityLogView,
     meta: { requiresAuth: true }
   }
 ];

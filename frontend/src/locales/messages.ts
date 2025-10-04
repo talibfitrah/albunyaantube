@@ -24,6 +24,7 @@ export const messages = {
       exclusions: 'Exclusions',
       users: 'Users',
       audit: 'Audit log',
+      activity: 'Activity log',
       home: 'Home',
       channels: 'Channels',
       playlists: 'Playlists',
@@ -640,6 +641,71 @@ export const messages = {
         showing: 'Showing {count} of {limit} events'
       }
     },
+    activity: {
+      heading: 'Activity Log',
+      description: 'Track all administrative actions and system events.',
+      viewMode: {
+        table: 'Table',
+        timeline: 'Timeline'
+      },
+      export: 'Export CSV',
+      filters: {
+        actor: 'Filter by User',
+        actorPlaceholder: 'Enter email address',
+        action: 'Action Type',
+        allActions: 'All Actions',
+        entity: 'Entity Type',
+        allEntities: 'All Entities',
+        dateRange: 'Time Period',
+        today: 'Today',
+        lastWeek: 'Last 7 Days',
+        lastMonth: 'Last 30 Days',
+        allTime: 'All Time',
+        clear: 'Clear Filters'
+      },
+      actions: {
+        create: 'Create',
+        update: 'Update',
+        delete: 'Delete',
+        approve: 'Approve',
+        reject: 'Reject',
+        login: 'Login',
+        logout: 'Logout'
+      },
+      entities: {
+        channel: 'Channel',
+        playlist: 'Playlist',
+        video: 'Video',
+        category: 'Category',
+        user: 'User'
+      },
+      columns: {
+        timestamp: 'Time',
+        actor: 'Actor',
+        action: 'Action',
+        entity: 'Entity',
+        details: 'Details'
+      },
+      showDetails: 'Show Details',
+      empty: 'No activity found for the selected filters.',
+      loading: 'Loading activity...',
+      retry: 'Retry',
+      dateLabels: {
+        today: 'Today',
+        yesterday: 'Yesterday'
+      },
+      roles: {
+        none: 'No roles'
+      },
+      metadata: {
+        unavailable: 'Not available'
+      },
+      pagination: {
+        previous: 'Previous',
+        next: 'Next',
+        showing: 'Showing {count} of {limit} events'
+      }
+    },
     preferences: {
       localeLabel: 'Interface language',
       locales: {
@@ -674,6 +740,7 @@ export const messages = {
       exclusions: 'الاستثناءات',
       users: 'المستخدمون',
       audit: 'سجل التدقيق',
+      activity: 'سجل النشاط',
       home: 'الرئيسية',
       channels: 'القنوات',
       playlists: 'قوائم التشغيل',
@@ -1172,6 +1239,59 @@ export const messages = {
         showing: 'عرض {count} من {limit} أحداث'
       }
     },
+    activity: {
+      heading: 'سجل النشاط',
+      description: 'تتبع جميع الإجراءات الإدارية وأحداث النظام.',
+      viewMode: {
+        table: 'جدول',
+        timeline: 'خط زمني'
+      },
+      export: 'تصدير CSV',
+      filters: {
+        actor: 'تصفية حسب المستخدم',
+        actorPlaceholder: 'أدخل عنوان البريد الإلكتروني',
+        action: 'نوع الإجراء',
+        allActions: 'جميع الإجراءات',
+        entity: 'نوع الكيان',
+        allEntities: 'جميع الكيانات',
+        dateRange: 'الفترة الزمنية',
+        today: 'اليوم',
+        lastWeek: 'آخر 7 أيام',
+        lastMonth: 'آخر 30 يوم',
+        allTime: 'كل الأوقات',
+        clear: 'مسح الفلاتر'
+      },
+      actions: {
+        create: 'إنشاء',
+        update: 'تحديث',
+        delete: 'حذف',
+        approve: 'موافقة',
+        reject: 'رفض',
+        login: 'تسجيل الدخول',
+        logout: 'تسجيل الخروج'
+      },
+      entities: {
+        video: 'فيديو',
+        playlist: 'قائمة تشغيل',
+        channel: 'قناة',
+        category: 'فئة',
+        user: 'مستخدم',
+        settings: 'الإعدادات'
+      },
+      table: {
+        timestamp: 'التاريخ والوقت',
+        actor: 'الممثل',
+        action: 'الإجراء',
+        entity: 'الكيان',
+        details: 'التفاصيل'
+      },
+      noResults: 'لم يتم العثور على إدخالات نشاط. جرب تعديل الفلاتر.',
+      loadingMore: 'تحميل المزيد من الإدخالات...',
+      loadMore: 'تحميل المزيد',
+      reachedEnd: 'لقد وصلت إلى نهاية سجل النشاط.',
+      error: 'فشل تحميل سجل النشاط. يرجى المحاولة مرة أخرى.',
+      retry: 'إعادة المحاولة'
+    },
     preferences: {
       localeLabel: 'لغة الواجهة',
       locales: {
@@ -1206,6 +1326,7 @@ export const messages = {
       exclusions: 'Uitzonderingen',
       users: 'Gebruikers',
       audit: 'Auditlogboek',
+      activity: 'Activiteitenlogboek',
       home: 'Home',
       channels: 'Kanalen',
       playlists: 'Afspeellijsten',
@@ -1703,6 +1824,59 @@ export const messages = {
         next: 'Volgende',
         showing: '{count} van {limit} gebeurtenissen'
       }
+    },
+    activity: {
+      heading: 'Activiteitenlogboek',
+      description: 'Volg alle beheeracties en systeemgebeurtenissen.',
+      viewMode: {
+        table: 'Tabel',
+        timeline: 'Tijdlijn'
+      },
+      export: 'Exporteer CSV',
+      filters: {
+        actor: 'Filter op gebruiker',
+        actorPlaceholder: 'Voer e-mailadres in',
+        action: 'Actietype',
+        allActions: 'Alle acties',
+        entity: 'Entiteitstype',
+        allEntities: 'Alle entiteiten',
+        dateRange: 'Tijdsperiode',
+        today: 'Vandaag',
+        lastWeek: 'Laatste 7 dagen',
+        lastMonth: 'Laatste 30 dagen',
+        allTime: 'Alle tijd',
+        clear: 'Wis filters'
+      },
+      actions: {
+        create: 'Aanmaken',
+        update: 'Bijwerken',
+        delete: 'Verwijderen',
+        approve: 'Goedkeuren',
+        reject: 'Afwijzen',
+        login: 'Inloggen',
+        logout: 'Afmelden'
+      },
+      entities: {
+        video: 'Video',
+        playlist: 'Afspeellijst',
+        channel: 'Kanaal',
+        category: 'Categorie',
+        user: 'Gebruiker',
+        settings: 'Instellingen'
+      },
+      table: {
+        timestamp: 'Tijdstip',
+        actor: 'Actor',
+        action: 'Actie',
+        entity: 'Entiteit',
+        details: 'Details'
+      },
+      noResults: 'Geen activiteitsvermeldingen gevonden. Probeer filters aan te passen.',
+      loadingMore: 'Meer vermeldingen laden...',
+      loadMore: 'Meer laden',
+      reachedEnd: 'Je hebt het einde van het activiteitenlogboek bereikt.',
+      error: 'Activiteitenlogboek laden mislukt. Probeer het opnieuw.',
+      retry: 'Opnieuw proberen'
     },
     preferences: {
       localeLabel: 'Interfacetaal',
