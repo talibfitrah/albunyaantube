@@ -10,6 +10,7 @@ export const navRoutes: NavRoute[] = [
   { labelKey: 'navigation.contentSearch', route: { name: 'content-search' } },
   { labelKey: 'navigation.categories', route: { name: 'categories' } },
   { labelKey: 'navigation.approvals', route: { name: 'approvals' } },
+  { labelKey: 'navigation.contentLibrary', route: { name: 'content-library' } },
   { labelKey: 'navigation.users', route: { name: 'users' } },
   { labelKey: 'navigation.audit', route: { name: 'audit' } }
 ];

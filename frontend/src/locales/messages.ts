@@ -18,6 +18,7 @@ export const messages = {
       contentSearch: 'Content Search',
       categories: 'Categories',
       approvals: 'Pending Approvals',
+      contentLibrary: 'Content Library',
       registry: 'Registry',
       moderation: 'Moderation',
       exclusions: 'Exclusions',
@@ -160,6 +161,117 @@ export const messages = {
         submit: 'Reject Submission',
         submitting: 'Rejecting...',
         error: 'Failed to reject submission.'
+      }
+    },
+    contentLibrary: {
+      heading: 'Content Library',
+      subtitle: 'Manage all approved content across channels, playlists, and videos',
+      searchPlaceholder: 'Search by title, ID, or description...',
+      loading: 'Loading content...',
+      retry: 'Retry',
+      empty: 'No content found. Try adjusting your filters.',
+      error: 'Failed to load content.',
+      clearSelection: 'Clear Selection',
+      bulkActions: 'Bulk Actions',
+      viewDetails: 'View Details',
+      assignCategories: 'Assign Categories',
+      delete: 'Delete',
+      confirmDelete: 'Are you sure you want to delete "{title}"?',
+      confirmBulkDelete: 'Are you sure you want to delete {count} items?',
+      types: {
+        channel: 'Channel',
+        playlist: 'Playlist',
+        video: 'Video'
+      },
+      statuses: {
+        approved: 'Approved',
+        pending: 'Pending',
+        rejected: 'Rejected'
+      },
+      columns: {
+        title: 'Title',
+        type: 'Type',
+        categories: 'Categories',
+        status: 'Status',
+        dateAdded: 'Date Added',
+        actions: 'Actions'
+      },
+      filters: {
+        contentType: 'Content Type',
+        status: 'Status',
+        allStatuses: 'All Statuses',
+        categories: 'Categories',
+        searchCategories: 'Search categories...',
+        dateAdded: 'Date Added',
+        anyDate: 'Any Date',
+        today: 'Today',
+        thisWeek: 'This Week',
+        thisMonth: 'This Month',
+        resetAll: 'Reset All Filters'
+      },
+      sort: {
+        newestFirst: 'Newest First',
+        oldestFirst: 'Oldest First',
+        nameAZ: 'Name (A-Z)',
+        nameZA: 'Name (Z-A)'
+      },
+      bulkMenu: {
+        title: 'Bulk Actions',
+        approve: 'Approve Selected',
+        markPending: 'Mark as Pending',
+        assignCategories: 'Assign Categories',
+        delete: 'Delete Selected',
+        cancel: 'Cancel'
+      }
+    },
+    channelDetails: {
+      close: 'Close',
+      delete: 'Delete Channel',
+      confirmDelete: 'Are you sure you want to delete "{title}"? This action cannot be undone.',
+      tabs: {
+        overview: 'Overview',
+        categories: 'Categories',
+        exclusions: 'Exclusions',
+        metadata: 'Metadata',
+        history: 'History'
+      },
+      overview: {
+        basicInfo: 'Basic Information',
+        status: 'Status',
+        dateAdded: 'Date Added',
+        addedBy: 'Added By',
+        unknown: 'Unknown',
+        description: 'Description',
+        noDescription: 'No description available.',
+        youtubeLink: 'YouTube Link'
+      },
+      categories: {
+        assigned: 'Assigned Categories',
+        manage: 'Manage Categories',
+        noCategories: 'No categories assigned yet.',
+        assignFirst: 'Assign Categories',
+        remove: 'Remove'
+      },
+      exclusions: {
+        title: 'Excluded Content',
+        add: 'Add Exclusion',
+        noExclusions: 'No exclusions for this channel.',
+        type: 'Type',
+        title: 'Title',
+        reason: 'Reason',
+        actions: 'Actions',
+        remove: 'Remove'
+      },
+      metadata: {
+        title: 'Technical Metadata',
+        id: 'Internal ID',
+        youtubeId: 'YouTube ID',
+        createdAt: 'Created At',
+        updatedAt: 'Updated At'
+      },
+      history: {
+        title: 'Activity History',
+        noHistory: 'No activity history available.'
       }
     },
     registry: {
@@ -549,6 +661,7 @@ export const messages = {
       contentSearch: 'البحث عن المحتوى',
       categories: 'الفئات',
       approvals: 'الموافقات المعلقة',
+      contentLibrary: 'مكتبة المحتوى',
       registry: 'السجل',
       moderation: 'الإشراف',
       exclusions: 'الاستثناءات',
@@ -1080,6 +1193,7 @@ export const messages = {
       contentSearch: 'Zoeken naar inhoud',
       categories: 'Categorieën',
       approvals: 'Goedkeuringen in behandeling',
+      contentLibrary: 'Inhoudsbibliotheek',
       registry: 'Registerbeheer',
       moderation: 'Moderatie',
       exclusions: 'Uitzonderingen',
