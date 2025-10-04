@@ -451,11 +451,148 @@ Same structure as Categories, with dynamic title
 
 ---
 
+#### Splash Screen ✅
+**Fragment**: `ui/SplashFragment.kt`
+**Layout**: `res/layout/fragment_splash.xml`
+
+**Structure**:
+```
+├── Centered Content
+│   ├── App Icon (120dp)
+│   │   └── House icon in primary_green
+│   ├── App Name ("Albunyaan")
+│   │   └── 24sp, bold
+│   └── Loading Indicator
+│       └── Circular progress (primary_green)
+```
+
+**Behavior**:
+- Checks if user has seen onboarding
+- Auto-navigates to Onboarding (first launch) or Home (subsequent launches)
+- 2-second minimum display time
+
+**Design Tokens**:
+- Icon color: `primary_green` (#35C491)
+- Background: White
+- Progress tint: `primary_green`
+
+---
+
+#### Onboarding Screen ✅
+**Fragment**: `ui/OnboardingFragment.kt`
+**Layout**: `res/layout/fragment_onboarding.xml`
+
+**Structure**:
+```
+├── ViewPager2 (swipeable)
+│   └── 3 Pages
+│       ├── Page 1: Welcome
+│       │   ├── Icon: House (64dp, white on green circle)
+│       │   ├── Title: "Welcome to Albunyaan"
+│       │   └── Description: "Your trusted source..."
+│       ├── Page 2: Explore Content
+│       │   ├── Icon: Compass
+│       │   └── Description about browsing
+│       └── Page 3: Audio Learning
+│           ├── Icon: Headphones
+│           └── Description about audio-only mode
+├── Continue Button
+│   └── Full-width, primary_green, 28dp radius
+├── Page Indicators (3 dots)
+│   ├── Active: primary_green, 8dp circle
+│   └── Inactive: #CCCCCC, 8dp circle
+└── Skip Button (text only, gray)
+```
+
+**Behavior**:
+- Swipe or tap "Continue" to advance
+- Page indicators update on swipe ✅ FIXED
+- "Continue" → "Get Started" on last page
+- Skip button always visible
+- Saves preference to SharedPreferences
+
+**Icons**:
+- Background: 64dp circle, `#F0F0F0` background
+- Icon color: `primary_green`
+
+**Key Fix**: Indicator dots now properly update when swiping between pages (lazy initialization issue resolved)
+
+---
+
+#### Player Screen ✅
+**Fragment**: `ui/player/PlayerFragment.kt`
+**Layout**: `res/layout/fragment_player.xml`
+
+**Structure** (Scrollable):
+```
+├── AppBarLayout
+│   └── ExoPlayer View (240dp height)
+│       └── Custom controls (exo_player_control_view.xml)
+│           ├── Gradient overlays (top/bottom)
+│           ├── Large play/pause button
+│           ├── Progress bar
+│           └── Quality/PiP/Fullscreen buttons
+├── NestedScrollView
+│   ├── Video Title (18sp, bold, black)
+│   ├── Author Name (14sp, primary_green)
+│   ├── Stats (12sp, gray)
+│   │   └── "X views • Date"
+│   ├── Description Card (expandable)
+│   │   ├── Header ("Description" + arrow)
+│   │   └── Content (collapsible)
+│   ├── Action Buttons Row
+│   │   ├── Like (icon + label)
+│   │   ├── Share (icon + label)
+│   │   ├── Download (icon + label)
+│   │   └── Audio (icon + label)
+│   ├── Divider
+│   └── Up Next Section
+│       ├── "Up Next" header
+│       └── RecyclerView (queue)
+```
+
+**Player Features**:
+- ✅ ExoPlayer integration with NewPipe extractor
+- ✅ Custom gesture controls:
+  - Left side swipe: Brightness control
+  - Right side swipe: Volume control
+  - Double-tap left/right: Seek ±10s
+- ✅ Picture-in-Picture with dynamic aspect ratio
+- ✅ Landscape fullscreen support
+- ✅ Quality selection dialog
+- ✅ Background playback service ready
+
+**UI Interactions**:
+- Description dropdown: Tap to expand/collapse with arrow rotation
+- Like button: Shows "coming soon" toast
+- Share button: Opens Android share sheet
+- Download button: Triggers download (with EULA check)
+- Audio button: Toggles audio-only mode
+
+**Navigation**:
+- Accessed from video clicks in Home/Channels/Playlists/Videos
+- Arguments: `videoId`, `playlistId` (optional)
+- Back button: Returns to previous screen
+
+**Landscape Layout**: `res/layout-land/fragment_player.xml`
+- Fullscreen player
+- Hides bottom navigation
+- Optimized for video viewing
+
+---
+
 ### 4.4 Navigation Graph (Implemented)
 
-**File**: `res/navigation/main_tabs_nav.xml`
+**Main Graph**: `res/navigation/app_nav_graph.xml`
+**Nested Graph**: `res/navigation/main_tabs_nav.xml`
 
-**Destinations**:
+**App-Level Destinations**:
+1. `splashFragment` → SplashFragment (start destination)
+2. `onboardingFragment` → OnboardingFragment
+3. `mainShellFragment` → MainShellFragment (contains nested nav)
+4. `playerFragment` → PlayerFragment (args: videoId, playlistId?)
+
+**Tab-Level Destinations** (inside MainShellFragment):
 1. `homeFragment` → HomeFragmentNew
 2. `channelsFragment` → ChannelsFragmentNew
 3. `playlistsFragment` → PlaylistsFragmentNew
@@ -467,12 +604,26 @@ Same structure as Categories, with dynamic title
 9. `subcategoriesFragment` → SubcategoriesFragment (args: categoryId, categoryName)
 10. `settingsFragment` → SettingsFragment
 
-**Navigation Actions**:
-- Channels → Channel Detail
-- Channels → Categories → Subcategories
-- Playlists → Playlist Detail
-- Home Menu → Settings
-- Home Menu → Downloads
+**Navigation Flow**:
+```
+Splash → Onboarding (first launch) → Main Shell
+      ↘ Main Shell (returning users)
+
+Main Shell (Tabs):
+├── Home → Settings/Downloads
+├── Channels → Channel Detail
+├── Channels → Categories → Subcategories
+├── Playlists → Playlist Detail
+└── Videos
+
+Any Video Click → Player (parent-level navigation)
+```
+
+**Key Navigation Features**:
+- Back button from Downloads/Settings → Home tab (not exit app) ✅
+- Video clicks use parent nav controller to access player
+- Splash auto-skipped if onboarding completed
+- Deep links supported for channels and playlists
 
 ---
 
@@ -719,20 +870,48 @@ val chip = Chip(context).apply {
 - Performance optimized
 
 ### Android App ✅
-**Completed**:
-- ✅ Bottom navigation (icon-only selection)
-- ✅ 9 screens fully implemented
-- ✅ All adapters created
-- ✅ Complete navigation graph
-- ✅ Material Design 3 components
-- ✅ Consistent design system
+**Completed Screens** (13 total):
+- ✅ Splash Screen with auto-navigation
+- ✅ Onboarding (3 swipeable pages with working indicators)
+- ✅ Home Screen with sections and menu
+- ✅ Channels Screen with categories FAB
+- ✅ Playlists Screen
+- ✅ Videos Screen (grid layout)
+- ✅ Channel Detail Screen with tabs
+- ✅ Playlist Detail Screen
+- ✅ Categories Screen
+- ✅ Subcategories Screen
+- ✅ Settings Screen with all preferences
+- ✅ Downloads & Library Screen
+- ✅ **Player Screen with modern UI** (NEW)
 
-**Pending** (Phase 5 next sprint):
-- [ ] Splash screen
-- [ ] Onboarding swipe functionality
-- [ ] Connect adapters to API
-- [ ] Video playback
-- [ ] Download functionality
+**Completed Features**:
+- ✅ Bottom navigation (icon-only green selection)
+- ✅ Nested navigation with proper back button handling
+- ✅ ExoPlayer integration with NewPipe extractor
+- ✅ Custom player controls with gesture support
+- ✅ Picture-in-Picture with dynamic aspect ratio
+- ✅ Expandable video description
+- ✅ Share functionality
+- ✅ Audio-only mode toggle
+- ✅ Landscape fullscreen player
+- ✅ All adapters created and wired
+- ✅ Material Design 3 components throughout
+- ✅ Consistent `primary_green` (#35C491) design system
+
+**Bug Fixes (Latest)**:
+- ✅ Fixed video click navigation crash
+- ✅ Fixed back button to navigate to Home tab (not exit app)
+- ✅ Fixed green colors in splash and onboarding
+- ✅ Fixed onboarding indicator dots updating on swipe
+- ✅ Fixed question marks in onboarding icons
+
+**Pending**:
+- [ ] Connect to real backend API
+- [ ] Implement video downloads
+- [ ] Background playback MediaSession
+- [ ] Fetch real video metadata (views, date, description)
+- [ ] Quality selection implementation
 
 ---
 
