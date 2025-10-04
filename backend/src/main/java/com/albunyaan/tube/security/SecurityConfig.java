@@ -46,6 +46,7 @@ public class SecurityConfig {
                         // Public endpoints
                         .requestMatchers("/actuator/**").permitAll()
                         .requestMatchers("/api/public/**").permitAll()
+                        .requestMatchers("/api/v1/**").permitAll() // Public mobile app APIs
                         .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
 
                         // Admin-only endpoints
