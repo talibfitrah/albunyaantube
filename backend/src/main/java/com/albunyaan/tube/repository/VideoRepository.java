@@ -75,7 +75,7 @@ public class VideoRepository {
     public List<Video> findByCategoryId(String categoryId) throws ExecutionException, InterruptedException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereArrayContains("categoryIds", categoryId)
-                .whereEqualTo("status", "approved")
+                .whereEqualTo("status", "APPROVED")
                 .get();
 
         return query.get().toObjects(Video.class);
@@ -84,7 +84,7 @@ public class VideoRepository {
     public List<Video> findByCategoryOrderByUploadedAtDesc(String category) throws ExecutionException, InterruptedException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereArrayContains("categoryIds", category)
-                .whereEqualTo("status", "approved")
+                .whereEqualTo("status", "APPROVED")
                 .orderBy("uploadedAt", Query.Direction.DESCENDING)
                 .get();
 
@@ -93,7 +93,7 @@ public class VideoRepository {
 
     public List<Video> findAllByOrderByUploadedAtDesc() throws ExecutionException, InterruptedException {
         ApiFuture<QuerySnapshot> query = getCollection()
-                .whereEqualTo("status", "approved")
+                .whereEqualTo("status", "APPROVED")
                 .orderBy("uploadedAt", Query.Direction.DESCENDING)
                 .get();
 
@@ -104,7 +104,7 @@ public class VideoRepository {
         // Firestore doesn't support full-text search, so we'll use prefix matching
         // For production, consider using Algolia or Elasticsearch
         ApiFuture<QuerySnapshot> querySnapshot = getCollection()
-                .whereEqualTo("status", "approved")
+                .whereEqualTo("status", "APPROVED")
                 .orderBy("title")
                 .startAt(query)
                 .endAt(query + "\uf8ff")

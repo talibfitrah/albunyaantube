@@ -75,7 +75,7 @@ public class PlaylistRepository {
     public List<Playlist> findByCategoryId(String categoryId) throws ExecutionException, InterruptedException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereArrayContains("categoryIds", categoryId)
-                .whereEqualTo("status", "approved")
+                .whereEqualTo("status", "APPROVED")
                 .get();
 
         return query.get().toObjects(Playlist.class);
@@ -84,7 +84,7 @@ public class PlaylistRepository {
     public List<Playlist> findByCategoryOrderByItemCountDesc(String category) throws ExecutionException, InterruptedException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereArrayContains("categoryIds", category)
-                .whereEqualTo("status", "approved")
+                .whereEqualTo("status", "APPROVED")
                 .orderBy("itemCount", Query.Direction.DESCENDING)
                 .get();
 
@@ -93,7 +93,7 @@ public class PlaylistRepository {
 
     public List<Playlist> findAllByOrderByItemCountDesc() throws ExecutionException, InterruptedException {
         ApiFuture<QuerySnapshot> query = getCollection()
-                .whereEqualTo("status", "approved")
+                .whereEqualTo("status", "APPROVED")
                 .orderBy("itemCount", Query.Direction.DESCENDING)
                 .get();
 
@@ -104,7 +104,7 @@ public class PlaylistRepository {
         // Firestore doesn't support full-text search, so we'll use prefix matching
         // For production, consider using Algolia or Elasticsearch
         ApiFuture<QuerySnapshot> querySnapshot = getCollection()
-                .whereEqualTo("status", "approved")
+                .whereEqualTo("status", "APPROVED")
                 .orderBy("title")
                 .startAt(query)
                 .endAt(query + "\uf8ff")

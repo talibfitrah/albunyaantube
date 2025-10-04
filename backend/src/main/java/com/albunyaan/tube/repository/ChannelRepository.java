@@ -75,7 +75,7 @@ public class ChannelRepository {
     public List<Channel> findByCategoryId(String categoryId) throws ExecutionException, InterruptedException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereArrayContains("categoryIds", categoryId)
-                .whereEqualTo("status", "approved")
+                .whereEqualTo("status", "APPROVED")
                 .get();
 
         return query.get().toObjects(Channel.class);
@@ -96,7 +96,7 @@ public class ChannelRepository {
     public List<Channel> findByCategoryOrderBySubscribersDesc(String category) throws ExecutionException, InterruptedException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereArrayContains("categoryIds", category)
-                .whereEqualTo("status", "approved")
+                .whereEqualTo("status", "APPROVED")
                 .orderBy("subscribers", Query.Direction.DESCENDING)
                 .get();
 
@@ -105,7 +105,7 @@ public class ChannelRepository {
 
     public List<Channel> findAllByOrderBySubscribersDesc() throws ExecutionException, InterruptedException {
         ApiFuture<QuerySnapshot> query = getCollection()
-                .whereEqualTo("status", "approved")
+                .whereEqualTo("status", "APPROVED")
                 .orderBy("subscribers", Query.Direction.DESCENDING)
                 .get();
 
@@ -116,7 +116,7 @@ public class ChannelRepository {
         // Firestore doesn't support full-text search, so we'll use prefix matching
         // For production, consider using Algolia or Elasticsearch
         ApiFuture<QuerySnapshot> querySnapshot = getCollection()
-                .whereEqualTo("status", "approved")
+                .whereEqualTo("status", "APPROVED")
                 .orderBy("name")
                 .startAt(query)
                 .endAt(query + "\uf8ff")
