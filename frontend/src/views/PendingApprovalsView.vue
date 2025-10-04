@@ -418,11 +418,15 @@ onMounted(() => {
   cursor: pointer;
   transition: all 0.2s ease;
   color: var(--color-text-primary);
+  -webkit-tap-highlight-color: transparent;
+  min-height: 38px;
 }
 
-.filter-tab:hover {
-  border-color: var(--color-brand);
-  background: var(--color-brand-soft);
+@media (hover: hover) {
+  .filter-tab:hover {
+    border-color: var(--color-brand);
+    background: var(--color-brand-soft);
+  }
 }
 
 .filter-tab.active {
@@ -456,8 +460,15 @@ onMounted(() => {
   transition: all 0.2s ease;
 }
 
-.filter-item select:hover {
-  border-color: var(--color-brand);
+.filter-item select {
+  -webkit-tap-highlight-color: transparent;
+  min-height: 44px;
+}
+
+@media (hover: hover) {
+  .filter-item select:hover {
+    border-color: var(--color-brand);
+  }
 }
 
 .loading {
@@ -499,6 +510,8 @@ onMounted(() => {
   border-radius: 0.5rem;
   font-weight: 600;
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  min-height: 44px;
 }
 
 .empty-state {
@@ -524,9 +537,11 @@ onMounted(() => {
   transition: all 0.2s ease;
 }
 
-.approval-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-  border-color: var(--color-brand);
+@media (hover: hover) {
+  .approval-card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    border-color: var(--color-brand);
+  }
 }
 
 .card-header {
@@ -676,6 +691,8 @@ onMounted(() => {
   cursor: pointer;
   transition: all 0.2s ease;
   white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  min-height: 44px;
 }
 
 .action-btn:disabled {
@@ -688,10 +705,12 @@ onMounted(() => {
   color: var(--color-text-inverse);
 }
 
-.action-btn.approve:not(:disabled):hover {
-  background: var(--color-success);
-  filter: brightness(1.1);
-  box-shadow: 0 2px 8px rgba(21, 128, 61, 0.25);
+@media (hover: hover) {
+  .action-btn.approve:not(:disabled):hover {
+    background: var(--color-success);
+    filter: brightness(1.1);
+    box-shadow: 0 2px 8px rgba(21, 128, 61, 0.25);
+  }
 }
 
 .action-btn.reject {
@@ -700,8 +719,10 @@ onMounted(() => {
   border: 1.5px solid var(--color-danger);
 }
 
-.action-btn.reject:not(:disabled):hover {
-  background: var(--color-danger-soft);
+@media (hover: hover) {
+  .action-btn.reject:not(:disabled):hover {
+    background: var(--color-danger-soft);
+  }
 }
 
 /* Modal styles */
@@ -740,8 +761,8 @@ onMounted(() => {
 }
 
 .close-button {
-  width: 2rem;
-  height: 2rem;
+  width: 2.75rem;
+  height: 2.75rem;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -752,11 +773,14 @@ onMounted(() => {
   cursor: pointer;
   border-radius: 0.25rem;
   transition: all 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.close-button:hover {
-  background: var(--color-surface-alt);
-  color: var(--color-text-primary);
+@media (hover: hover) {
+  .close-button:hover {
+    background: var(--color-surface-alt);
+    color: var(--color-text-primary);
+  }
 }
 
 .modal-body {
@@ -795,8 +819,14 @@ onMounted(() => {
   resize: vertical;
 }
 
-.form-group textarea:hover {
-  border-color: var(--color-brand);
+.form-group textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (hover: hover) {
+  .form-group textarea:hover {
+    border-color: var(--color-brand);
+  }
 }
 
 .form-group textarea:focus {
@@ -828,6 +858,8 @@ onMounted(() => {
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+  min-height: 44px;
 }
 
 .button.secondary {
@@ -836,9 +868,11 @@ onMounted(() => {
   border: 1.5px solid var(--color-border);
 }
 
-.button.secondary:hover {
-  background: var(--color-surface);
-  border-color: var(--color-brand);
+@media (hover: hover) {
+  .button.secondary:hover {
+    background: var(--color-surface);
+    border-color: var(--color-brand);
+  }
 }
 
 .button.danger {
@@ -846,9 +880,11 @@ onMounted(() => {
   color: var(--color-text-inverse);
 }
 
-.button.danger:hover:not(:disabled) {
-  background: var(--color-danger-strong);
-  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.25);
+@media (hover: hover) {
+  .button.danger:hover:not(:disabled) {
+    background: var(--color-danger-strong);
+    box-shadow: 0 2px 8px rgba(220, 38, 38, 0.25);
+  }
 }
 
 .button.danger:disabled {
@@ -856,9 +892,63 @@ onMounted(() => {
   cursor: not-allowed;
 }
 
-@media (max-width: 768px) {
+/* Mobile/Tablet Responsive */
+@media (max-width: 1023px) {
+  .approvals-view {
+    gap: 1.5rem;
+  }
+
+  .approvals-header {
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .approvals-header h1 {
+    font-size: 1.75rem;
+  }
+
+  .approvals-header p {
+    font-size: 0.875rem;
+  }
+
+  .header-stats {
+    align-self: stretch;
+  }
+
+  .stat-badge {
+    flex-direction: row;
+    justify-content: space-between;
+    padding: 1rem 1.25rem;
+  }
+
+  .stat-value {
+    font-size: 1.75rem;
+  }
+
+  .filters {
+    padding: 1.25rem;
+    gap: 1rem;
+  }
+
+  .filter-tabs {
+    gap: 0.625rem;
+  }
+
+  .filter-tab {
+    flex: 1;
+    min-height: 44px;
+    padding: 0.75rem 1rem;
+  }
+
+  .filter-row {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
   .card-body {
     grid-template-columns: 1fr;
+    gap: 1.25rem;
+    padding: 1.25rem;
   }
 
   .thumbnail {
@@ -866,14 +956,61 @@ onMounted(() => {
     height: 200px;
   }
 
+  .card-header {
+    padding: 1rem 1.25rem;
+  }
+
   .card-footer {
     flex-direction: column;
     align-items: stretch;
     gap: 1rem;
+    padding: 1rem 1.25rem;
+  }
+
+  .submitted-by {
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--color-border);
   }
 
   .actions {
+    flex-direction: column-reverse;
+    gap: 0.625rem;
+  }
+
+  .action-btn {
+    width: 100%;
+    padding: 0.875rem 1.5rem;
+    font-size: 0.9375rem;
+    min-height: 48px;
+  }
+
+  .modal {
+    max-width: calc(100vw - 2rem);
+  }
+
+  .modal-footer {
+    flex-direction: column-reverse;
+    gap: 0.625rem;
+  }
+
+  .button {
+    width: 100%;
+    min-height: 48px;
+  }
+}
+
+@media (max-width: 767px) {
+  .approvals-header h1 {
+    font-size: 1.5rem;
+  }
+
+  .content-title {
+    font-size: 1.125rem;
+  }
+
+  .metadata {
     flex-direction: column;
+    gap: 0.75rem;
   }
 }
 </style>
