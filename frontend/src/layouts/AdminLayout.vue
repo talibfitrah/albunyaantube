@@ -195,7 +195,9 @@ function getNavIcon(labelKey: string): string {
     'navigation.approvals': '✅',
     'navigation.contentLibrary': '📚',
     'navigation.users': '👥',
-    'navigation.audit': '📋'
+    'navigation.audit': '📋',
+    'navigation.activity': '📝',
+    'navigation.settings': '⚙️'
   };
   return iconMap[labelKey] || '•';
 }
