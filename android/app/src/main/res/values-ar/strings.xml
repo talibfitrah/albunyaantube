@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">البنيان تيوب</string>
+    <string name="filter_category">التصنيف</string>
+    <string name="filter_category_all">جميع التصنيفات</string>
+    <string name="filter_length">المدة</string>
+    <string name="filter_length_any">أي مدة</string>
+    <string name="filter_length_short">أقل من 4 دقائق</string>
+    <string name="filter_length_medium">4-20 دقيقة</string>
+    <string name="filter_length_long">أكثر من 20 دقيقة</string>
+    <string name="filter_date">التاريخ</string>
+    <string name="filter_date_any">أي وقت</string>
+    <string name="filter_date_last_24_hours">آخر 24 ساعة</string>
+    <string name="filter_date_last_7_days">آخر 7 أيام</string>
+    <string name="filter_date_last_30_days">آخر 30 يوماً</string>
+    <string name="filter_sort">الترتيب</string>
+    <string name="filter_sort_default">الترتيب الافتراضي</string>
+    <string name="filter_sort_popular">الأكثر شعبية</string>
+    <string name="filter_sort_newest">الأحدث أولاً</string>
+    <string name="filter_clear">مسح الفلاتر</string>
+    <string name="filter_chip_value">%1$s • %2$s</string>
+    <string name="channel_tab_videos">الفيديوهات</string>
+    <string name="channel_tab_live">البث المباشر</string>
+    <string name="channel_tab_shorts">المقاطع القصيرة</string>
+    <string name="channel_tab_playlists">قوائم التشغيل</string>
+    <string name="channel_tab_posts">المنشورات</string>
+    <string name="channel_detail_placeholder">تبويب %1$s لـ %2$s قريباً.</string>
+    <string name="playlist_detail_title_placeholder">%1$s</string>
+    <string name="playlist_detail_category">التصنيف: %1$s</string>
+    <string name="playlist_detail_item_count">%1$d فيديو</string>
+    <string name="playlist_detail_description_placeholder">نظرة عامة على قائمة التشغيل قريباً.</string>
+    <string name="playlist_detail_download">تنزيل قائمة التشغيل</string>
+    <string name="playlist_detail_downloading">تم إضافة التنزيل للقائمة</string>
+    <string name="playlist_detail_download_disabled">التنزيل غير متاح</string>
+    <string name="playlist_detail_download_hint">التنزيلات تحترم سياسة AC-DL-001. سيصبح المحتوى متاحاً دون اتصال بعد الاكتمال.</string>
+    <string name="detail_excluded_banner">هذا العنصر غير متاح حالياً بسبب قيود السياسة.</string>
+    <string name="player_audio_only_label">صوت فقط</string>
+    <string name="player_status_audio_only">تشغيل الصوت فقط.</string>
+    <string name="player_status_video_playing">تشغيل الفيديو.</string>
+    <string name="player_status_initializing">تهيئة المشغل…</string>
+    <string name="player_status_resolving">حل البث…</string>
+    <string name="player_stream_error">التشغيل غير متاح. يرجى المحاولة لاحقاً.</string>
+    <string name="player_stream_unavailable">هذا الفيديو غير متاح للتشغيل.</string>
+    <string name="player_notification_channel_name">التشغيل</string>
+    <string name="player_notification_channel_desc">يتحكم بالتشغيل عندما يكون التطبيق في الخلفية.</string>
+    <string name="player_action_enter_pip">صورة داخل صورة</string>
+    <string name="player_action_play_pause">تشغيل/إيقاف</string>
+    <string name="player_no_current_item">لا يوجد فيديو قيد التشغيل حالياً.</string>
+    <string name="player_mark_current_complete">وضع علامة اكتمال</string>
+    <string name="player_up_next_header">التالي</string>
+    <string name="player_up_next_meta">%1$s • %2$s</string>
+    <string name="player_up_next_empty">قائمة الانتظار فارغة.</string>
+    <string name="player_excluded_placeholder">لا يوجد استثناءات.</string>
+    <string name="player_excluded_message">تم تخطي %1$d عنصر بسبب قيود السياسة.</string>
+    <string name="player_analytics_header">آخر حدث تحليلي</string>
+    <string name="player_analytics_none">لم يتم تسجيل أحداث بعد.</string>
+    <string name="player_event_queue_hydrated">تحميل القائمة (%1$d إجمالي، %2$d مفلتر)</string>
+    <string name="player_event_play_started">بدء التشغيل: %1$s (%2$s)</string>
+    <string name="player_event_play_completed">اكتمل التشغيل: %1$s</string>
+    <string name="player_event_audio_only_on">تم تفعيل الصوت فقط</string>
+    <string name="player_event_audio_only_off">تم إيقاف الصوت فقط</string>
+    <string name="player_event_stream_resolved">تم حل البث (%1$s)</string>
+    <string name="player_event_stream_resolved_unknown">جودة غير معروفة</string>
+    <string name="player_event_stream_failed">فشل حل البث</string>
+    <string name="player_start_reason_auto">تقدم تلقائي</string>
+    <string name="player_start_reason_user_selected">اختيار يدوي</string>
+    <string name="player_start_reason_resume">استئناف التشغيل</string>
+    <string name="player_duration_minutes_seconds">%1$d:%2$02d</string>
+    <string name="player_current_item">قيد التشغيل: %1$s</string>
+    <string name="player_download_current">تنزيل للعمل دون اتصال</string>
+    <string name="player_open_download">فتح دون اتصال</string>
+    <string name="player_download_in_progress">جارٍ التنزيل (%1$d%%)</string>
+    <string name="player_download_ready">تم التنزيل %1$s • %2$s</string>
+    <string name="player_download_status_placeholder">حالة التنزيل</string>
+    <string name="player_review_eula">مراجعة اتفاقية الاستخدام</string>
+    <string name="player_download_requires_eula">اقبل اتفاقية التنزيلات دون اتصال للمتابعة.</string>
+    <string name="eula_dialog_title">اتفاقية التنزيلات دون اتصال</string>
+    <string name="eula_dialog_body">الوصول دون اتصال متاح للدراسة الشخصية فقط. بقبولك، توافق على عدم إعادة توزيع التنزيلات، واحترام طلبات إزالة المحتوى، وحذف الملفات عند إلغاء الوصول.</string>
+    <string name="eula_dialog_accept">أوافق</string>
+    <string name="eula_dialog_decline">ليس الآن</string>
+    <string name="nav_downloads">التنزيلات</string>
+    <string name="downloads_empty">لا توجد تنزيلات بعد. ابدأ بحفظ المحتوى للتشغيل دون اتصال.</string>
+    <string name="download_action_pause">إيقاف مؤقت</string>
+    <string name="download_action_resume">استئناف</string>
+    <string name="download_action_cancel">إلغاء</string>
+    <string name="download_action_open">فتح</string>
+    <string name="download_status_queued">في الانتظار</string>
+    <string name="download_status_running">جارٍ التنزيل</string>
+    <string name="download_status_paused">متوقف مؤقتاً</string>
+    <string name="download_status_completed">مكتمل</string>
+    <string name="download_status_failed">فشل</string>
+    <string name="download_status_cancelled">ملغى</string>
+    <string name="download_item_content_description">تنزيل %1$s. الحالة %2$s. %3$d%% مكتمل.</string>
+    <string name="download_details_format">%1$s • %2$s</string>
+    <string name="download_toast_no_viewer">غير قادر على فتح هذا الملف على جهازك.</string>
+    <string name="download_notification_channel_name">التنزيلات</string>
+    <string name="download_notification_channel_desc">يعرض تقدم التنزيلات دون اتصال.</string>
+    <string name="download_notification_title">جارٍ تنزيل %1$s</string>
+    <string name="download_notification_progress">%1$d%% مكتمل</string>
+    <string name="download_notification_complete">اكتمل التنزيل.</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">الرئيسية</string>
+    <string name="nav_channels">القنوات</string>
+    <string name="nav_playlists">قوائم التشغيل</string>
+    <string name="nav_videos">الفيديوهات</string>
+
+    <!-- Empty/Error States -->
+    <string name="clear_filters">مسح الفلاتر</string>
+    <string name="retry">إعادة المحاولة</string>
+    <string name="empty_state_no_content">لا يوجد محتوى</string>
+    <string name="empty_state_adjust_filters">جرب تعديل الفلاتر أو مصطلحات البحث</string>
+    <string name="error_state_title">حدث خطأ ما</string>
+    <string name="error_state_check_connection">تعذر تحميل المحتوى. يرجى التحقق من الاتصال والمحاولة مجدداً.</string>
+
+    <!-- Home Screen Sections -->
+    <string name="section_channels">القنوات</string>
+    <string name="section_playlists">قوائم التشغيل</string>
+    <string name="section_videos">الفيديوهات</string>
+    <string name="see_all">عرض الكل</string>
+    <string name="search">بحث</string>
+    <string name="categories">التصنيفات</string>
+    <string name="menu">القائمة</string>
+    <string name="settings">الإعدادات</string>
+    <string name="downloads">التنزيلات</string>
+
+    <!-- Splash Screen -->
+    <string name="splash_tagline">مصدرك الموثوق للمحتوى الإسلامي</string>
+
+    <!-- Player Controls -->
+    <string name="player_quality_selector">الجودة</string>
+    <string name="player_rewind">الرجوع 10 ثوانٍ</string>
+    <string name="player_forward">التقدم 10 ثوانٍ</string>
+    <string name="player_brightness">السطوع</string>
+    <string name="player_volume">مستوى الصوت</string>
+</resources>
