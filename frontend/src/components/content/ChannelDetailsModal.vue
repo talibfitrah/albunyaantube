@@ -1,6 +1,6 @@
 <template>
   <div v-if="isOpen" class="modal-overlay" @click="handleOverlayClick">
-    <div class="modal-content" @click.stop>
+    <div ref="modalRef" class="modal-content" role="dialog" aria-modal="true" :aria-label="channel?.title" @click.stop>
       <div class="modal-header">
         <div class="header-info">
           <img
@@ -214,8 +214,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useFocusTrap } from '@/composables/useFocusTrap';
 
 const { t } = useI18n();
 
@@ -271,6 +272,23 @@ const tabs = [
   { id: 'metadata' },
   { id: 'history' }
 ];
+
+// Focus trap for modal
+const modalRef = ref<HTMLElement | null>(null);
+const { activate, deactivate } = useFocusTrap(modalRef, {
+  onEscape: close,
+  escapeDeactivates: true,
+  returnFocus: true
+});
+
+// Activate/deactivate focus trap when modal opens/closes
+watch(() => props.isOpen, (isOpen) => {
+  if (isOpen) {
+    activate();
+  } else {
+    deactivate();
+  }
+});
 
 function close() {
   emit('close');
