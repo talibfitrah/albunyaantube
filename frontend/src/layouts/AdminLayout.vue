@@ -445,10 +445,14 @@ onUnmounted(() => {
   border: 1px solid rgba(255, 255, 255, 0.2);
   color: var(--color-text-inverse);
   border-radius: 0.5rem;
-  padding: 0.75rem;
+  padding: 0.75rem 2.5rem 0.75rem 0.75rem;
   font-size: 1rem;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+}
+
+[dir="rtl"] .locale-switcher-mobile .locale-select {
+  padding: 0.75rem 0.75rem 0.75rem 2.5rem;
 }
 
 .locale-switcher-mobile .locale-select option {
@@ -503,12 +507,16 @@ onUnmounted(() => {
   background: var(--color-surface);
   color: var(--color-text);
   border-radius: 0.5rem;
-  padding: 0.5rem 2rem 0.5rem 0.75rem;
+  padding: 0.5rem 2.5rem 0.5rem 0.75rem;
   font-size: 0.875rem;
   line-height: 1.25rem;
   min-width: 8rem;
   cursor: pointer;
   transition: all 0.2s ease;
+}
+
+[dir="rtl"] .locale-select {
+  padding: 0.5rem 0.75rem 0.5rem 2.5rem;
 }
 
 .locale-select:hover {
