@@ -30,7 +30,9 @@ android {
 
         manifestPlaceholders["profileable"] = "false"
 
-        buildConfigField("String", "API_BASE_URL", "\"http://localhost:8080/\"")
+        // For physical device testing, use your computer's local IP
+        // For emulator testing, use "http://10.0.2.2:8080/"
+        buildConfigField("String", "API_BASE_URL", "\"http://192.168.1.167:8080/\"")
         buildConfigField("boolean", "ENABLE_THUMBNAIL_IMAGES", "true")
     }
 
