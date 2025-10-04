@@ -78,6 +78,7 @@
       <header class="topbar">
         <div class="breadcrumbs">{{ currentSectionLabel }}</div>
         <div class="topbar-actions">
+          <NotificationsPanel />
           <label class="locale-switcher">
             <span class="locale-label">{{ t('preferences.localeLabel') }}</span>
             <select
@@ -112,6 +113,7 @@ import { computed, ref, onMounted, onUnmounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router';
 import { storeToRefs } from 'pinia';
+import NotificationsPanel from '@/components/NotificationsPanel.vue';
 import { useAuthStore } from '@/stores/auth';
 import { navRoutes } from '@/constants/navigation';
 import { usePreferencesStore, type LocaleCode } from '@/stores/preferences';

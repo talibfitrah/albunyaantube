@@ -902,6 +902,44 @@ export const messages = {
         }
       }
     },
+    notifications: {
+      heading: 'Notifications',
+      togglePanel: 'Toggle notifications panel',
+      empty: 'No notifications',
+      filters: {
+        all: 'All',
+        unread: 'Unread'
+      },
+      types: {
+        newApproval: 'New Approval Request',
+        categoryChange: 'Category Updated',
+        userActivity: 'User Activity',
+        systemAlert: 'System Alert'
+      },
+      time: {
+        justNow: 'Just now',
+        minutesAgo: '{minutes}m ago',
+        hoursAgo: '{hours}h ago',
+        daysAgo: '{days}d ago'
+      },
+      actions: {
+        markAllRead: 'Mark all as read',
+        close: 'Close',
+        viewAll: 'View all activity'
+      }
+    },
+    categoryModal: {
+      headingSingle: 'Assign Category',
+      headingMulti: 'Assign Categories',
+      searchPlaceholder: 'Search categories...',
+      loading: 'Loading categories...',
+      noResults: 'No categories found.',
+      selectedCount: '{count} selected',
+      clearSelection: 'Clear selection',
+      close: 'Close',
+      cancel: 'Cancel',
+      assign: 'Assign'
+    },
     preferences: {
       localeLabel: 'Interface language',
       locales: {
