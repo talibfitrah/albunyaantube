@@ -112,4 +112,11 @@
     <string name="empty_state_adjust_filters">Try adjusting your filters or search terms</string>
     <string name="error_state_title">Something went wrong</string>
     <string name="error_state_check_connection">Unable to load content. Please check your connection and try again.</string>
+
+    <!-- Home Screen Sections -->
+    <string name="section_channels">Channels</string>
+    <string name="section_playlists">Playlists</string>
+    <string name="section_videos">Videos</string>
+    <string name="see_all">See all</string>
+    <string name="search">Search</string>
 </resources>
