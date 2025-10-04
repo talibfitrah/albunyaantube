@@ -707,6 +707,25 @@ This document consolidates all project phases in chronological order with curren
 - [ ] Create feature graphic
 - [ ] Set up signed release build
 
+**ANDROID-019**: UI Design Alignment (3 days, P0) - CRITICAL
+- [ ] Implement Bottom Navigation (72dp height, 4 tabs: Home, Channels, Playlists, Videos)
+- [ ] Apply design tokens:
+  - Primary colors: #275E4B (light mode), #35C491 (dark mode)
+  - 8dp baseline grid, 20dp corner radius
+  - Minimum touch target: 48dp
+- [ ] Update Home Screen to match mockup:
+  - Category filter chips (horizontally scrollable)
+  - Trending/Popular/New sections
+  - Grid layout (2 columns on mobile, 3+ on tablet)
+- [ ] Update Channels/Playlists/Videos screens to match design specs
+- [ ] Add skeleton loading states with shimmer effect
+- [ ] Implement empty states with illustrations and retry button
+- [ ] Implement error states per design specification
+- [ ] Verify all screens against `docs/ui_designs/*.png` mockups
+- [ ] Ensure RTL support for all new layouts
+
+**Note**: ANDROID-019 must be completed before remaining sprints (ANDROID-005 onwards) to ensure UI consistency.
+
 ### Technical Stack
 **Language**: Kotlin | **UI**: XML layouts + RecyclerView | **Architecture**: MVVM + Repository
 **DI**: Service Locator | **Networking**: Retrofit + OkHttp | **Video**: ExoPlayer + NewPipe
