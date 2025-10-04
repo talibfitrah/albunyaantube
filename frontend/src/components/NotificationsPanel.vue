@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useFocusTrap } from '@/composables/useFocusTrap';
 
 const { t } = useI18n();
 
@@ -137,6 +138,23 @@ function handleClickOutside(event: MouseEvent) {
 onMounted(() => {
   document.addEventListener('click', handleClickOutside);
 });
+
+// Focus trap for panel
+const panelRef = ref<HTMLElement | null>(null);
+const { activate, deactivate } = useFocusTrap(panelRef, {
+  onEscape: closePanel,
+  escapeDeactivates: true,
+  returnFocus: true
+});
+
+// Activate/deactivate focus trap when panel opens/closes
+watch(isOpen, (open) => {
+  if (open) {
+    activate();
+  } else {
+    deactivate();
+  }
+});
 </script>
 
 <template>
@@ -147,14 +165,22 @@ onMounted(() => {
       class="notifications-button"
       :aria-label="t('notifications.togglePanel')"
       :aria-expanded="isOpen"
+      :aria-controls="isOpen ? 'notifications-panel' : undefined"
     >
-      <span class="bell-icon">🔔</span>
-      <span v-if="unreadCount > 0" class="unread-badge">{{ unreadCount > 9 ? '9+' : unreadCount }}</span>
+      <span class="bell-icon" aria-hidden="true">🔔</span>
+      <span v-if="unreadCount > 0" class="unread-badge" aria-label="`${unreadCount} unread notifications`">{{ unreadCount > 9 ? '9+' : unreadCount }}</span>
     </button>
 
     <!-- Notifications Panel -->
     <transition name="panel-fade">
-      <div v-if="isOpen" class="notifications-panel">
+      <div
+        v-if="isOpen"
+        id="notifications-panel"
+        ref="panelRef"
+        class="notifications-panel"
+        role="region"
+        :aria-label="t('notifications.heading')"
+      >
         <!-- Panel Header -->
         <div class="panel-header">
           <h3>{{ t('notifications.heading') }}</h3>

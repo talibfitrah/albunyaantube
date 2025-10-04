@@ -31,22 +31,28 @@
     ></div>
 
     <!-- Sidebar Navigation -->
-    <aside class="sidebar" :class="{ open: isSidebarOpen }">
+    <aside class="sidebar" :class="{ open: isSidebarOpen }" role="complementary" aria-label="Main navigation">
       <div class="sidebar-header">
         <div class="brand">Albunyaan Tube</div>
-        <button type="button" class="close-sidebar" @click="closeSidebar">×</button>
+        <button
+          type="button"
+          class="close-sidebar"
+          @click="closeSidebar"
+          :aria-label="t('layout.closeMenu')"
+        >×</button>
       </div>
 
-      <nav class="sidebar-nav">
+      <nav class="sidebar-nav" role="navigation" aria-label="Primary navigation">
         <RouterLink
           v-for="item in navRoutes"
           :key="item.labelKey"
           :to="item.route"
           class="nav-item"
           :class="{ active: isActive(item.route) }"
+          :aria-current="isActive(item.route) ? 'page' : undefined"
           @click="handleNavClick"
         >
-          <span class="nav-icon">{{ getNavIcon(item.labelKey) }}</span>
+          <span class="nav-icon" aria-hidden="true">{{ getNavIcon(item.labelKey) }}</span>
           <span class="nav-label">{{ t(item.labelKey) }}</span>
         </RouterLink>
       </nav>

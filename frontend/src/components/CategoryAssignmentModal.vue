@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useFocusTrap } from '@/composables/useFocusTrap';
 
 const { t } = useI18n();
 
@@ -188,13 +189,30 @@ function handleClose() {
 function clearSelection() {
   selectedIds.value.clear();
 }
+
+// Focus trap
+const modalRef = ref<HTMLElement | null>(null);
+const { activate, deactivate } = useFocusTrap(modalRef, {
+  onEscape: handleClose,
+  escapeDeactivates: true,
+  returnFocus: true
+});
+
+// Activate/deactivate focus trap when modal opens/closes
+watch(() => props.isOpen, (isOpen) => {
+  if (isOpen) {
+    activate();
+  } else {
+    deactivate();
+  }
+});
 </script>
 
 <template>
   <teleport to="body">
     <transition name="modal">
       <div v-if="isOpen" class="modal-overlay" @click.self="handleClose">
-        <div class="modal-container">
+        <div ref="modalRef" class="modal-container" role="dialog" aria-modal="true" :aria-label="multiSelect ? t('categoryModal.headingMulti') : t('categoryModal.headingSingle')">
           <!-- Modal Header -->
           <div class="modal-header">
             <h2>{{ multiSelect ? t('categoryModal.headingMulti') : t('categoryModal.headingSingle') }}</h2>
