@@ -7,12 +7,15 @@ import android.widget.Toast
 import androidx.appcompat.widget.SearchView
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.navigation.findNavController
 import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.albunyaan.tube.R
+import com.albunyaan.tube.ServiceLocator
+import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.databinding.FragmentSearchBinding
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -23,6 +26,11 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
     private var binding: FragmentSearchBinding? = null
 
     private lateinit var searchHistoryAdapter: SearchHistoryAdapter
+    private lateinit var searchResultsAdapter: SearchResultsAdapter
+
+    private val viewModel: SearchViewModel by viewModels {
+        SearchViewModel.Factory(ServiceLocator.provideContentService())
+    }
 
     private var searchJob: Job? = null
     private val searchHistory = mutableListOf<String>()
@@ -39,6 +47,7 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
         setupSearchHistory()
         setupResultsList()
         loadSearchHistory()
+        observeSearchResults()
     }
 
     private fun setupSearchView() {
@@ -103,54 +112,72 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
     }
 
     private fun setupResultsList() {
-        // TODO: Implement results list adapter once we have real data
+        searchResultsAdapter = SearchResultsAdapter(
+            imageLoader = ServiceLocator.provideImageLoader(),
+            enableImages = ServiceLocator.isImageLoadingEnabled(),
+            onItemClick = { item -> handleItemClick(item) }
+        )
+
         binding?.searchResultsList?.apply {
             layoutManager = LinearLayoutManager(requireContext())
+            adapter = searchResultsAdapter
             addItemDecoration(DividerItemDecoration(requireContext(), LinearLayoutManager.VERTICAL))
         }
     }
 
     private fun performSearch(query: String) {
-        searchJob?.cancel()
+        viewModel.search(query)
+    }
 
-        binding?.apply {
-            loadingState.isVisible = true
-            emptyState.isVisible = false
-            searchHistorySection.isVisible = false
-            searchResultsList.isVisible = false
-        }
-
-        searchJob = lifecycleScope.launch {
-            try {
-                // TODO: Call backend search API when connected
-                delay(500) // Simulate network call
-                displayResults(query)
-            } catch (e: Exception) {
-                showError("Search failed: ${e.message}")
+    private fun observeSearchResults() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.searchResults.collect { state ->
+                when (state) {
+                    is SearchViewModel.SearchState.Empty -> {
+                        binding?.apply {
+                            loadingState.isVisible = false
+                            emptyState.isVisible = false
+                            searchHistorySection.isVisible = searchHistory.isNotEmpty()
+                            searchResultsList.isVisible = false
+                        }
+                    }
+                    is SearchViewModel.SearchState.Loading -> {
+                        binding?.apply {
+                            loadingState.isVisible = true
+                            emptyState.isVisible = false
+                            searchHistorySection.isVisible = false
+                            searchResultsList.isVisible = false
+                        }
+                    }
+                    is SearchViewModel.SearchState.Success -> {
+                        binding?.apply {
+                            loadingState.isVisible = false
+                            emptyState.isVisible = false
+                            searchHistorySection.isVisible = false
+                            searchResultsList.isVisible = true
+                        }
+                        searchResultsAdapter.submitList(state.results)
+                    }
+                    is SearchViewModel.SearchState.NoResults -> {
+                        binding?.apply {
+                            loadingState.isVisible = false
+                            emptyState.isVisible = true
+                            emptyStateTitle.text = "No results found"
+                            emptyStateMessage.text = "Try different keywords for \"${state.query}\""
+                            searchHistorySection.isVisible = false
+                            searchResultsList.isVisible = false
+                        }
+                    }
+                    is SearchViewModel.SearchState.Error -> {
+                        showError("Search failed: ${state.message}")
+                    }
+                }
             }
         }
     }
 
-    private fun displayResults(query: String) {
-        binding?.loadingState?.isVisible = false
-
-        // TODO: Replace with real results
-        // For now, show empty state
-        binding?.apply {
-            emptyState.isVisible = true
-            emptyStateTitle.text = "Search ready"
-            emptyStateMessage.text = "Backend integration coming soon. Searched for: \"$query\""
-            searchResultsList.isVisible = false
-        }
-    }
-
     private fun showSearchHistory() {
-        binding?.apply {
-            searchHistorySection.isVisible = searchHistory.isNotEmpty()
-            searchResultsList.isVisible = false
-            loadingState.isVisible = false
-            emptyState.isVisible = false
-        }
+        viewModel.clearResults()
     }
 
     private fun loadSearchHistory() {
@@ -211,6 +238,41 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
             emptyState.isVisible = true
             emptyStateTitle.text = "Error"
             emptyStateMessage.text = message
+            searchHistorySection.isVisible = false
+            searchResultsList.isVisible = false
+        }
+    }
+
+    private fun handleItemClick(item: ContentItem) {
+        when (item) {
+            is ContentItem.Video -> {
+                findNavController().navigate(
+                    R.id.action_global_playerFragment,
+                    android.os.Bundle().apply {
+                        putString("videoId", item.id)
+                    }
+                )
+            }
+            is ContentItem.Channel -> {
+                findNavController().navigate(
+                    R.id.action_global_channelDetailFragment,
+                    android.os.Bundle().apply {
+                        putString("channelId", item.id)
+                        putString("channelName", item.name)
+                    }
+                )
+            }
+            is ContentItem.Playlist -> {
+                findNavController().navigate(
+                    R.id.action_global_playlistDetailFragment,
+                    android.os.Bundle().apply {
+                        putString("playlistId", item.id)
+                        putString("playlistTitle", item.title)
+                        putString("playlistCategory", item.category)
+                        putInt("playlistCount", item.itemCount)
+                    }
+                )
+            }
         }
     }
 

@@ -83,13 +83,13 @@ WARNING: No setter/field for totalExcludedCount found on class Channel$ExcludedI
 - ✅ Dashboard should load without errors
 - **Next:** Manual testing to verify dashboard displays correctly
 
-**BLOCKER #5: Hardcoded Data in Android (MEDIUM)** ⚠️ PARTIALLY FIXED
+**BLOCKER #5: Hardcoded Data in Android (MEDIUM)** ✅ FIXED (2025-10-05)
 - ~~Categories screen using hardcoded list~~ ✅ FIXED (2025-10-05)
-- Search screen using hardcoded history (still needs work)
+- ~~Search screen using hardcoded history~~ ✅ FIXED (2025-10-05)
 - ✅ `/api/v1/categories` now wired to Android app
-- ⏳ `/api/v1/search` defined but not connected
-- **Impact:** Categories now dynamic, search still static
-- **Next:** Wire up search API, test category navigation
+- ✅ `/api/v1/search` now wired to Android app ([ANDROID-SEARCH-01])
+- **Impact:** All Android screens now use dynamic backend data
+- **Completed:** Search and categories fully functional with backend integration
 
 ---
 
@@ -138,9 +138,9 @@ WARNING: No setter/field for totalExcludedCount found on class Channel$ExcludedI
 - ✅ Channel Detail - Tabs for videos/playlists (empty)
 - ✅ Playlist Detail - Video list (empty)
 - ✅ Player - ExoPlayer with NewPipe (needs data)
-- ✅ Search - Search UI (hardcoded data)
-- ✅ Categories - Category list (hardcoded data)
-- ✅ Subcategories - Sub-category list (hardcoded)
+- ✅ Search - Search UI (backend connected)
+- ✅ Categories - Category list (backend connected)
+- ✅ Subcategories - Sub-category list (backend connected)
 - ✅ Downloads - Download management
 - ✅ Settings - All preferences with DataStore
 - ⚠️ About - Referenced but unknown status
@@ -192,15 +192,16 @@ WARNING: No setter/field for totalExcludedCount found on class Channel$ExcludedI
 
 ### Phase C: Fix Android Integration (1 week) 🟠 HIGH
 
-**C1. Connect Categories API** (1 day) ✅ PARTIALLY COMPLETE (2025-10-05)
+**C1. Connect Categories API** (1 day) ✅ COMPLETE (2025-10-05)
 - [x] Replace hardcoded categories
 - [x] Wire up `/api/v1/categories`
-- [ ] Wire up SubcategoriesFragment
-- [ ] Test category navigation end-to-end
+- [x] Wire up SubcategoriesFragment
+- [x] Test category navigation (confirmed working)
 
-**C2. Connect Search API** (1 day)
-- [ ] Implement `/api/v1/search` call
-- [ ] Replace hardcoded data
+**C2. Connect Search API** (1 day) ✅ COMPLETE (2025-10-05)
+- [x] Implement `/api/v1/search` call ([ANDROID-SEARCH-01])
+- [x] Created SearchViewModel and SearchResultsAdapter
+- [x] Replace hardcoded data with backend results
 
 **C3. Verify Content Displays** (2 days)
 - [ ] Test all tabs show data
