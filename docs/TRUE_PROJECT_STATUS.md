@@ -346,11 +346,15 @@ Channel.ExcludedItems: Missing 'totalExcludedCount' field
 
 ### PHASE C: Fix Android Integration (1 week)
 
-#### C1. Connect Categories API (1 day) ✅ COMPLETE (2025-10-05)
+#### C1. Connect Categories API (1 day) ✅ COMPLETE with Known Limitation (2025-10-05)
 - [x] Replace hardcoded categories with `/api/v1/categories` call
 - [x] Wire up CategoriesFragment to backend
 - [x] Wire up SubcategoriesFragment to backend
-- [ ] Test category navigation end-to-end (needs manual verification)
+- [x] Add temporary feedback (toast) when selecting category
+- [x] Test category navigation (confirmed working - shows categories/subcategories from backend)
+- [ ] **Known Limitation:** Category selection doesn't filter content yet (no destination in nav graph)
+  - Temporary solution: Shows toast with category name and navigates back
+  - Full solution requires: ContentListFragment with category argument OR shared filter state
 
 #### C2. Connect Search API (1 day)
 - [ ] Implement search API call in SearchFragment
@@ -365,6 +369,13 @@ Channel.ExcludedItems: Missing 'totalExcludedCount' field
 - [ ] Verify Channel Detail loads
 - [ ] Verify Playlist Detail loads
 - [ ] Test navigation end-to-end
+
+#### C4. Implement Category Filtering (Future Enhancement)
+- [ ] Design solution: ContentListFragment with category param OR shared filter ViewModel
+- [ ] Update navigation graph to support category → filtered content flow
+- [ ] Implement category pre-selection in Videos/Channels/Playlists tabs
+- [ ] Test end-to-end: Categories → Subcategory → Filtered list
+- **Status:** Deferred - Current workaround (toast + navigate back) sufficient for MVP
 
 ### PHASE D: Complete Approval Workflow (1 week)
 
