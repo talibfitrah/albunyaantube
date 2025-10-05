@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical">
@@ -16,26 +17,107 @@
         app:title="Channel Name"
         app:titleTextColor="@android:color/black"/>
 
+    <!-- Loading State -->
+    <ProgressBar
+        android:id="@+id/progressBar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:layout_marginTop="100dp"
+        android:visibility="gone"
+        tools:visibility="visible"/>
+
+    <!-- Error State -->
     <TextView
-        android:id="@+id/exclusionBanner"
+        android:id="@+id/errorText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:padding="12dp"
-        android:background="@color/accent_red"
-        android:textColor="@android:color/white"
-        android:text="@string/detail_excluded_banner"
-        android:visibility="gone"/>
+        android:layout_margin="16dp"
+        android:gravity="center"
+        android:padding="16dp"
+        android:textColor="@color/accent_red"
+        android:visibility="gone"
+        tools:text="Error loading channel"
+        tools:visibility="visible"/>
 
-    <com.google.android.material.tabs.TabLayout
-        android:id="@+id/tabLayout"
+    <!-- Content Container -->
+    <LinearLayout
+        android:id="@+id/contentContainer"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        app:tabMode="scrollable"/>
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:visibility="gone"
+        tools:visibility="visible">
 
-    <androidx.viewpager2.widget.ViewPager2
-        android:id="@+id/viewPager"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"/>
+        <!-- Exclusion Banner -->
+        <TextView
+            android:id="@+id/exclusionBanner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="12dp"
+            android:background="@color/accent_red"
+            android:textColor="@android:color/white"
+            android:text="@string/detail_excluded_banner"
+            android:visibility="gone"/>
+
+        <!-- Channel Info Header -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp"
+            android:background="?attr/colorSurface">
+
+            <TextView
+                android:id="@+id/channelNameText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:textColor="@android:color/black"
+                tools:text="Channel Name"/>
+
+            <TextView
+                android:id="@+id/subscriberCountText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textSize="14sp"
+                android:textColor="@android:color/darker_gray"
+                tools:text="100K subscribers"/>
+
+            <TextView
+                android:id="@+id/channelDescriptionText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:textSize="14sp"
+                android:maxLines="3"
+                android:ellipsize="end"
+                android:textColor="@android:color/black"
+                android:visibility="gone"
+                tools:text="Channel description goes here..."
+                tools:visibility="visible"/>
+
+        </LinearLayout>
+
+        <!-- Tabs -->
+        <com.google.android.material.tabs.TabLayout
+            android:id="@+id/tabLayout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:tabMode="scrollable"
+            app:tabTextColor="@android:color/darker_gray"
+            app:tabSelectedTextColor="@color/primary_green"
+            app:tabIndicatorColor="@color/primary_green"/>
+
+        <!-- Tab Content (ViewPager) -->
+        <androidx.viewpager2.widget.ViewPager2
+            android:id="@+id/viewPager"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"/>
+
+    </LinearLayout>
 
 </LinearLayout>
