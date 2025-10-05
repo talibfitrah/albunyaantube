@@ -1,0 +1,34 @@
+# Build outputs
+build/
+target/
+*.jar
+*.war
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# Gradle
+.gradle/
+gradle-wrapper.jar
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+README.md
+docs/
+
+# Test files
+src/test/
+
+# Environment
+.env
+.env.local
+*.pem
+*.key
+service-account.json
