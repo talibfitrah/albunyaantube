@@ -11,7 +11,7 @@
 #### 🔵 Android Engineer: Downloads Feature
 Branch: `feature/android-downloads`
 - ✅ ANDROID-DL-01: Downloads queue UI (Committed: 2025-10-05)
-- ⏸️ ANDROID-DL-02: Download service & notifications (Not Started)
+- ✅ ANDROID-DL-02: Download service & notifications (Committed: 2025-10-05)
 - ⏸️ ANDROID-DL-03: Storage management (Not Started)
 
 ---
