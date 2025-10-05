@@ -2,6 +2,32 @@
 
 > Last Updated: 2025-10-05
 
+## Active Parallel Work (2025-10-05)
+
+### 🟢 Frontend Engineer: Admin UI
+Branch: `feature/frontend-admin-ui`
+- ✅ FRONTEND-ADMIN-01: YouTube search and preview UI (2025-10-05 15:12)
+  - Mock YouTube service created
+  - Channel preview drawer with videos/playlists tabs
+  - Include/exclude functionality ready
+  - Uses mock data until backend endpoints available
+- ⏸️ FRONTEND-ADMIN-02: Category management UI (Not Started)
+- ⏸️ FRONTEND-ADMIN-03: Approval queue interface (Not Started)
+
+### 🔴 Backend Engineer: Phase 2 & Downloads API
+Branch: `feature/backend-registry-downloads`
+- ⏸️ BACKEND-REG-01: Registry & category endpoints (Not Started)
+- ⏸️ BACKEND-DL-01: Downloads API (Not Started)
+- ⏸️ BACKEND-DL-02: /next-up endpoint (Not Started)
+
+### 🔵 Android Engineer: Downloads
+Branch: `feature/android-downloads`
+- ✅ ANDROID-DL-01: Downloads queue UI (2025-10-05)
+- ✅ ANDROID-DL-02: Download service & notifications (2025-10-05)
+- ✅ ANDROID-DL-03: Storage management (2025-10-05)
+
+---
+
 ## Current Phase: Phase 9 - Downloads & Offline 🚧
 
 **Phase 9: Downloads & Offline** - In Progress
