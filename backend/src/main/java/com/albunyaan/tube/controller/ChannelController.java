@@ -1,8 +1,11 @@
 package com.albunyaan.tube.controller;
 
+import com.albunyaan.tube.config.CacheConfig;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.security.FirebaseUserDetails;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -48,8 +51,10 @@ public class ChannelController {
 
     /**
      * Get channels by category
+     * BACKEND-PERF-01: Cached for 15 minutes
      */
     @GetMapping("/category/{categoryId}")
+    @Cacheable(value = CacheConfig.CACHE_CHANNELS, key = "'category-' + #categoryId")
     public ResponseEntity<List<Channel>> getChannelsByCategory(@PathVariable String categoryId)
             throws ExecutionException, InterruptedException {
         List<Channel> channels = channelRepository.findByCategoryId(categoryId);
@@ -58,9 +63,11 @@ public class ChannelController {
 
     /**
      * Get channel by ID
+     * BACKEND-PERF-01: Cached for 15 minutes
      */
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    @Cacheable(value = CacheConfig.CACHE_CHANNELS, key = "#id")
     public ResponseEntity<Channel> getChannelById(@PathVariable String id)
             throws ExecutionException, InterruptedException {
         return channelRepository.findById(id)
@@ -70,9 +77,11 @@ public class ChannelController {
 
     /**
      * Submit channel for approval (moderator or admin)
+     * BACKEND-PERF-01: Evict channel cache on create
      */
     @PostMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    @CacheEvict(value = CacheConfig.CACHE_CHANNELS, allEntries = true)
     public ResponseEntity<Channel> createChannel(
             @RequestBody Channel channel,
             @AuthenticationPrincipal FirebaseUserDetails user
@@ -99,9 +108,11 @@ public class ChannelController {
 
     /**
      * Approve channel (admin only)
+     * BACKEND-PERF-01: Evict channel cache on approve
      */
     @PutMapping("/{id}/approve")
     @PreAuthorize("hasRole('ADMIN')")
+    @CacheEvict(value = CacheConfig.CACHE_CHANNELS, allEntries = true)
     public ResponseEntity<Channel> approveChannel(
             @PathVariable String id,
             @AuthenticationPrincipal FirebaseUserDetails user
@@ -119,9 +130,11 @@ public class ChannelController {
 
     /**
      * Reject channel (admin only)
+     * BACKEND-PERF-01: Evict channel cache on reject
      */
     @PutMapping("/{id}/reject")
     @PreAuthorize("hasRole('ADMIN')")
+    @CacheEvict(value = CacheConfig.CACHE_CHANNELS, allEntries = true)
     public ResponseEntity<Channel> rejectChannel(@PathVariable String id)
             throws ExecutionException, InterruptedException {
         Channel channel = channelRepository.findById(id).orElse(null);
