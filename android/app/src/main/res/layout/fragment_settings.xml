@@ -139,6 +139,33 @@
                     <!-- WiFi Only Downloads -->
                     <include layout="@layout/settings_item_wifi_only"/>
 
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:background="@color/background_gray"
+                        android:layout_marginStart="@dimen/spacing_lg"/>
+
+                    <!-- Storage Location -->
+                    <include layout="@layout/settings_item_storage_location"/>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:background="@color/background_gray"
+                        android:layout_marginStart="@dimen/spacing_lg"/>
+
+                    <!-- Storage Quota -->
+                    <include layout="@layout/settings_item_storage_quota"/>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:background="@color/background_gray"
+                        android:layout_marginStart="@dimen/spacing_lg"/>
+
+                    <!-- Clear Downloads -->
+                    <include layout="@layout/settings_item_clear_downloads"/>
+
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 

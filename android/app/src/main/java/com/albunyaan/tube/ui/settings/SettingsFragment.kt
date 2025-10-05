@@ -1,7 +1,11 @@
 package com.albunyaan.tube.ui.settings
 
 import android.os.Bundle
+import android.text.format.Formatter
 import android.view.View
+import android.widget.ProgressBar
+import android.widget.TextView
+import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
@@ -12,6 +16,7 @@ import com.albunyaan.tube.preferences.SettingsPreferences
 import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import java.io.File
 
 class SettingsFragment : Fragment(R.layout.fragment_settings) {
 
@@ -26,6 +31,7 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
         setupToolbar()
         loadPreferences()
         setupListeners()
+        setupStorageManagement()
     }
 
     private fun setupToolbar() {
@@ -148,6 +154,121 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
         }
     }
 
+    /**
+     * ANDROID-DL-03: Storage Management
+     */
+    private fun setupStorageManagement() {
+        binding?.root?.let { view ->
+            val storageLocationItem = view.findViewById<View>(R.id.storageLocationItem)
+            val clearDownloadsItem = view.findViewById<View>(R.id.clearDownloadsItem)
+
+            storageLocationItem?.setOnClickListener {
+                showStorageLocationDialog()
+            }
+
+            clearDownloadsItem?.setOnClickListener {
+                showClearDownloadsConfirmation()
+            }
+
+            updateStorageQuota()
+        }
+    }
+
+    private fun updateStorageQuota() {
+        binding?.root?.let { view ->
+            val storageQuotaValue = view.findViewById<TextView>(R.id.storageQuotaValue)
+            val storageQuotaProgress = view.findViewById<ProgressBar>(R.id.storageQuotaProgress)
+
+            viewLifecycleOwner.lifecycleScope.launch {
+                val downloadDir = File(requireContext().filesDir, "downloads")
+                val usedBytes = calculateDirectorySize(downloadDir)
+                val quotaBytes = 500_000_000L // 500 MB default quota
+
+                val usedStr = Formatter.formatShortFileSize(requireContext(), usedBytes)
+                val quotaStr = Formatter.formatShortFileSize(requireContext(), quotaBytes)
+                val progress = ((usedBytes.toDouble() / quotaBytes) * 100).toInt()
+
+                storageQuotaValue?.text = "$usedStr of $quotaStr"
+                storageQuotaProgress?.progress = progress
+            }
+        }
+    }
+
+    private fun calculateDirectorySize(directory: File): Long {
+        if (!directory.exists()) return 0
+        var size = 0L
+        directory.listFiles()?.forEach { file ->
+            size += if (file.isDirectory) {
+                calculateDirectorySize(file)
+            } else {
+                file.length()
+            }
+        }
+        return size
+    }
+
+    private fun showStorageLocationDialog() {
+        val options = arrayOf("Internal Storage", "External SD Card (if available)")
+        val currentSelection = 0 // Internal storage is default
+
+        AlertDialog.Builder(requireContext())
+            .setTitle("Download Location")
+            .setSingleChoiceItems(options, currentSelection) { dialog, which ->
+                when (which) {
+                    0 -> {
+                        binding?.root?.let { view ->
+                            Snackbar.make(view, "Using internal storage", Snackbar.LENGTH_SHORT).show()
+                        }
+                    }
+                    1 -> {
+                        binding?.root?.let { view ->
+                            Snackbar.make(view, "External storage not yet implemented", Snackbar.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+                dialog.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showClearDownloadsConfirmation() {
+        AlertDialog.Builder(requireContext())
+            .setTitle("Clear All Downloads?")
+            .setMessage("This will delete all downloaded videos and audio files. This action cannot be undone.")
+            .setPositiveButton("Clear All") { _, _ ->
+                clearAllDownloads()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun clearAllDownloads() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val downloadDir = File(requireContext().filesDir, "downloads")
+            val deletedCount = deleteDirectoryContents(downloadDir)
+
+            binding?.root?.let { view ->
+                Snackbar.make(view, "Cleared $deletedCount files", Snackbar.LENGTH_SHORT).show()
+            }
+
+            updateStorageQuota()
+        }
+    }
+
+    private fun deleteDirectoryContents(directory: File): Int {
+        if (!directory.exists()) return 0
+        var count = 0
+        directory.listFiles()?.forEach { file ->
+            if (file.isDirectory) {
+                count += deleteDirectoryContents(file)
+                file.delete()
+            } else {
+                if (file.delete()) count++
+            }
+        }
+        return count
+    }
 
     override fun onDestroyView() {
         binding = null
