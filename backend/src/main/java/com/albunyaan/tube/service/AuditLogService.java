@@ -69,4 +69,40 @@ public class AuditLogService {
             logger.error("Failed to create system audit log: {} on {}", action, entityType, e);
         }
     }
+
+    /**
+     * Log approval action (BACKEND-APPR-01)
+     */
+    @Async
+    public void logApproval(String entityType, String entityId, String actorUid, String actorDisplayName, String notes) {
+        try {
+            AuditLog auditLog = new AuditLog(entityType + "_approved", entityType, entityId, actorUid);
+            auditLog.setActorDisplayName(actorDisplayName);
+            if (notes != null) {
+                auditLog.addDetail("reviewNotes", notes);
+            }
+            auditLogRepository.save(auditLog);
+            logger.debug("Approval audit log created: {} {} by {}", entityType, entityId, actorUid);
+        } catch (ExecutionException | InterruptedException e) {
+            logger.error("Failed to create approval audit log: {} {} by {}", entityType, entityId, actorUid, e);
+        }
+    }
+
+    /**
+     * Log rejection action (BACKEND-APPR-01)
+     */
+    @Async
+    public void logRejection(String entityType, String entityId, String actorUid, String actorDisplayName, Map<String, Object> details) {
+        try {
+            AuditLog auditLog = new AuditLog(entityType + "_rejected", entityType, entityId, actorUid);
+            auditLog.setActorDisplayName(actorDisplayName);
+            if (details != null) {
+                auditLog.setDetails(details);
+            }
+            auditLogRepository.save(auditLog);
+            logger.debug("Rejection audit log created: {} {} by {}", entityType, entityId, actorUid);
+        } catch (ExecutionException | InterruptedException e) {
+            logger.error("Failed to create rejection audit log: {} {} by {}", entityType, entityId, actorUid, e);
+        }
+    }
 }

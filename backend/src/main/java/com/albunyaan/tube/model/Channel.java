@@ -56,6 +56,11 @@ public class Channel {
     private String submittedBy; // Firebase UID of moderator/admin
     private String approvedBy;  // Firebase UID of admin (if approved)
 
+    /**
+     * Approval metadata (BACKEND-APPR-01)
+     */
+    private ApprovalMetadata approvalMetadata;
+
     public Channel() {
         this.categoryIds = new ArrayList<>();
         this.excludedItems = new ExcludedItems();
@@ -245,6 +250,14 @@ public class Channel {
 
     public void setVideoCount(Integer videoCount) {
         this.videoCount = videoCount;
+    }
+
+    public ApprovalMetadata getApprovalMetadata() {
+        return approvalMetadata;
+    }
+
+    public void setApprovalMetadata(ApprovalMetadata approvalMetadata) {
+        this.approvalMetadata = approvalMetadata;
     }
 
     /**

@@ -54,6 +54,11 @@ public class Playlist {
     private String submittedBy;
     private String approvedBy;
 
+    /**
+     * Approval metadata (BACKEND-APPR-01)
+     */
+    private ApprovalMetadata approvalMetadata;
+
     public Playlist() {
         this.categoryIds = new ArrayList<>();
         this.excludedVideoIds = new ArrayList<>();
@@ -179,6 +184,14 @@ public class Playlist {
 
     public void setItemCount(Integer itemCount) {
         this.itemCount = itemCount;
+    }
+
+    public ApprovalMetadata getApprovalMetadata() {
+        return approvalMetadata;
+    }
+
+    public void setApprovalMetadata(ApprovalMetadata approvalMetadata) {
+        this.approvalMetadata = approvalMetadata;
     }
 
     /**
