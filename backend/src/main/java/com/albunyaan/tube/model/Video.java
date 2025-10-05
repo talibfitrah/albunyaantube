@@ -2,6 +2,7 @@ package com.albunyaan.tube.model;
 
 import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.annotation.DocumentId;
+import com.google.cloud.firestore.annotation.Exclude;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -199,6 +200,11 @@ public class Video {
         this.updatedAt = Timestamp.now();
     }
 
+    /**
+     * Convenience method to check if video is approved.
+     * Excluded from Firestore serialization to avoid conflict with status field
+     */
+    @Exclude
     public boolean isApproved() {
         return "APPROVED".equalsIgnoreCase(status);
     }
@@ -206,7 +212,9 @@ public class Video {
     /**
      * Get the first category from categoryIds list
      * Helper method for PublicContentService
+     * Excluded from Firestore serialization to avoid conflict with categoryIds field
      */
+    @Exclude
     public Category getCategory() {
         // This returns null for now - will need to be populated by service layer
         return null;
