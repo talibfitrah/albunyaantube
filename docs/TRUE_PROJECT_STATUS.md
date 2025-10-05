@@ -146,6 +146,9 @@ Channel.ExcludedItems: Missing 'totalExcludedCount' field
 ### BLOCKER #1: Content Data Validation
 **Impact:** MEDIUM - Baseline dataset seeded but unverified in product surfaces
 **Status:** ✅ FirestoreDataSeeder populated 19 categories, 25 channels (20 approved), 19 playlists, 76 videos
+**Recent Fixes:**
+- Seeder now removes legacy seed documents created by earlier runs (`createdBy` = `system`/`seed-script`) before inserting the curated dataset
+- Updated seeds deliver emoji icons and distinctive names (no more "Quran" duplicates)
 **Next Steps:**
 - Verify admin dashboard widgets and library views render new data
 - Verify Android home/tabs load seeded content (no more empty states)
@@ -158,6 +161,7 @@ Channel.ExcludedItems: Missing 'totalExcludedCount' field
 **Fix Applied:**
 - ✅ Added missing fields to backend models (`Category.topLevel`, `Channel.pending`, `Channel.approved`, `Channel.category`, `ExcludedItems.totalExcludedCount`)
 - ✅ Added unit tests covering new sync logic
+- ✅ Marked `Video` model with `@IgnoreExtraProperties` to ignore legacy `category` / `approved` fields seeded in historical data
 - ⏳ Awaiting deployment + Firestore log review to close out warning checkboxes
 
 ### BLOCKER #3: Dashboard Metrics Structure Mismatch

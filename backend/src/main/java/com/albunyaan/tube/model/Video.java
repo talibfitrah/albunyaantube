@@ -2,6 +2,7 @@ package com.albunyaan.tube.model;
 
 import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.annotation.DocumentId;
+import com.google.cloud.firestore.annotation.IgnoreExtraProperties;
 import com.google.cloud.firestore.annotation.Exclude;
 
 import java.util.ArrayList;
@@ -14,6 +15,7 @@ import java.util.List;
  *
  * Collection: videos
  */
+@IgnoreExtraProperties
 public class Video {
 
     @DocumentId

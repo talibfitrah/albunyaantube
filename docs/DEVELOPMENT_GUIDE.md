@@ -180,13 +180,14 @@ The `seed` Spring profile populates Firestore with a realistic baseline dataset 
    ```
    Use a service account with Firestore read/write access. The bundled `backend/src/main/resources/firebase-service-account.json` works for local testing.
 
-2. **Run the seeder**
+   2. **Run the seeder**
    ```bash
    cd backend
    GOOGLE_APPLICATION_CREDENTIALS="$PWD/src/main/resources/firebase-service-account.json" \
      ./gradlew bootRun --args='--spring.profiles.active=seed'
    ```
    The task is idempotent: existing docs with the same IDs are updated, new ones are created. Stop the process (`Ctrl+C`) once the log prints `✅ Firestore data seeding completed successfully!`.
+   Legacy seed documents created by older scripts (`createdBy` = `system`/`seed-script`) are deleted automatically so duplicate categories disappear after each run.
 
 3. **Verify**
    - Admin dashboard: Cards/lists should display the seeded channels/playlists/videos.

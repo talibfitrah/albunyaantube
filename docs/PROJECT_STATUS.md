@@ -53,6 +53,7 @@
 
 **BLOCKER #1: Content Data Validation (MEDIUM)**
 - Baseline dataset seeded via FirestoreDataSeeder: 19 categories, 25 channels (20 approved), 19 playlists, 76 videos
+- Seeder now removes legacy seed documents (`createdBy` = system/seed-script) before inserting curated data, eliminating duplicate category rows
 - Admin + Android still need verification and filtering updates to surface new data
 - **Impact:** Experience still appears empty until frontends consume seeded data
 - **Next:** Validate dashboards/Android views, automate seeding for staging, plan cleanup strategy
@@ -310,7 +311,7 @@ WARNING: No setter/field for totalExcludedCount found on class Channel$ExcludedI
 ## 🎯 Next Immediate Steps
 
 1. **Read [TRUE_PROJECT_STATUS.md](TRUE_PROJECT_STATUS.md)** - Comprehensive analysis
-2. **Deploy Firestore model fixes** - Confirm warnings cleared
+2. **Deploy Firestore model fixes** - Confirm warnings cleared (`Video` model now ignores legacy fields)
 3. **Validate seeded dataset** - Ensure admin + Android surface new content
 4. **Fix dashboard metrics** - Admin dashboard works
 5. **Test Android shows data** - Verify end-to-end
@@ -319,7 +320,7 @@ WARNING: No setter/field for totalExcludedCount found on class Channel$ExcludedI
 
 ## 💡 Conclusion
 
-**Current State:** Excellent UI/UX work with a seeded baseline dataset; backend integration gaps still block production readiness
+**Current State:** Excellent UI/UX work with a seeded baseline dataset; backend integration gaps and legacy Firestore docs still require cleanup/verification before production readiness
 
 **Honest Completion:** ~40% (UI built, not working end-to-end)
 

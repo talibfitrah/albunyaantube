@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 
@@ -330,6 +331,8 @@ public class FirestoreDataSeeder implements CommandLineRunner {
     public void run(String... args) throws Exception {
         log.info("🌱 Starting Firestore data seeding...");
         try {
+            cleanupLegacySeedData();
+
             Map<String, Category> categories = seedCategories();
             Map<String, Channel> channels = seedChannels(categories);
             seedPlaylists(categories, channels);
@@ -368,6 +371,35 @@ public class FirestoreDataSeeder implements CommandLineRunner {
 
         log.info("✅ Seeded {} categories", categories.size());
         return categories;
+    }
+
+    private void cleanupLegacySeedData() throws ExecutionException, InterruptedException {
+        removeLegacyCategories();
+    }
+
+    private void removeLegacyCategories() throws ExecutionException, InterruptedException {
+        List<Category> existingCategories = categoryRepository.findAll();
+        Set<String> targetIds = CATEGORY_SEEDS.stream()
+                .map(CategorySeed::id)
+                .collect(Collectors.toSet());
+        int removed = 0;
+
+        for (Category category : existingCategories) {
+            if (targetIds.contains(category.getId())) {
+                continue;
+            }
+
+            String createdBy = category.getCreatedBy();
+            if (createdBy == null || SEED_USER.equals(createdBy) || "system".equalsIgnoreCase(createdBy)) {
+                log.info("🧹 Removing legacy seed category: {} ({})", category.getName(), category.getId());
+                categoryRepository.deleteById(category.getId());
+                removed++;
+            }
+        }
+
+        if (removed > 0) {
+            log.info("🧼 Removed {} legacy categories created by previous seed runs", removed);
+        }
     }
 
     private Map<String, Channel> seedChannels(Map<String, Category> categories)
