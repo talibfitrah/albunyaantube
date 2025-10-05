@@ -160,4 +160,5 @@
     
     <!-- Channel Detail -->
     <string name="channel_subscribers_format">%s subscribers</string>
+    <string name="playlist_videos_title">Videos in this playlist</string>
 </resources>
