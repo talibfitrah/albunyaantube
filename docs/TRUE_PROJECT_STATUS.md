@@ -184,20 +184,21 @@ Channel.ExcludedItems: Missing 'totalExcludedCount' field
 - Create backend endpoints for settings persistence
 - Create Firestore collection for system settings
 
-### BLOCKER #5: Hardcoded Data in Android
+### BLOCKER #5: Hardcoded Data in Android ⚠️ PARTIALLY FIXED
 **Impact:** MEDIUM - Categories/Search not dynamic
-**Affected:** ~~Categories screen~~ ✅ FIXED, Search screen
+**Affected:** ~~Categories screen~~ ✅ FIXED, ~~Subcategories screen~~ ✅ FIXED, Search screen
 **Root Cause:** Backend API defined but not connected in app
 **Fix Applied (2025-10-05):**
 - ✅ Wired up `/api/v1/categories` endpoint to Android
 - ✅ Added `fetchCategories()` to ContentService interface
+- ✅ Added `fetchSubcategories(parentId)` to ContentService interface
 - ✅ Implemented in RetrofitContentService, FakeContentService, FallbackContentService
 - ✅ Updated CategoriesFragment to fetch from backend (removed hardcoded data)
+- ✅ Updated SubcategoriesFragment to fetch from backend (removed hardcoded data)
 - ✅ Verified logs show successful backend connection
 **Still Required:**
 - ⏳ Wire up `/api/v1/search` endpoint
-- ⏳ Manual testing to verify categories display correctly
-- ⏳ Wire SubcategoriesFragment to backend
+- ⏳ Manual testing to verify category navigation works end-to-end
 
 ---
 
@@ -345,11 +346,11 @@ Channel.ExcludedItems: Missing 'totalExcludedCount' field
 
 ### PHASE C: Fix Android Integration (1 week)
 
-#### C1. Connect Categories API (1 day) ✅ PARTIALLY COMPLETE (2025-10-05)
+#### C1. Connect Categories API (1 day) ✅ COMPLETE (2025-10-05)
 - [x] Replace hardcoded categories with `/api/v1/categories` call
 - [x] Wire up CategoriesFragment to backend
-- [ ] Wire up SubcategoriesFragment to backend
-- [ ] Test category navigation end-to-end
+- [x] Wire up SubcategoriesFragment to backend
+- [ ] Test category navigation end-to-end (needs manual verification)
 
 #### C2. Connect Search API (1 day)
 - [ ] Implement search API call in SearchFragment
