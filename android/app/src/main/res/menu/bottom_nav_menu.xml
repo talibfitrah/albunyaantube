@@ -16,4 +16,8 @@
         android:id="@+id/videosFragment"
         android:icon="@drawable/ic_stat_movie"
         android:title="@string/nav_videos"/>
+    <item
+        android:id="@+id/downloadsFragment"
+        android:icon="@android:drawable/stat_sys_download"
+        android:title="Downloads"/>
 </menu>
