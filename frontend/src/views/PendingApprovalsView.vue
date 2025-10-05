@@ -189,7 +189,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { getAllCategories } from '@/services/mockCategoryService';
-import { getPendingApprovals, approveItem, rejectItem } from '@/services/mockApprovalsService';
+import { getPendingApprovals, approveItem, rejectItem as rejectItemApi } from '@/services/mockApprovalsService';
 
 const { t } = useI18n();
 
@@ -287,7 +287,7 @@ async function handleReject() {
   rejectError.value = null;
 
   try {
-    await rejectItem(rejectItem.value!.id, rejectReason.value);
+    await rejectItemApi(rejectItem.value!.id, rejectReason.value);
     closeRejectDialog();
     await loadApprovals();
   } catch (err) {
