@@ -182,12 +182,18 @@ Channel.ExcludedItems: Missing 'totalExcludedCount' field
 
 ### BLOCKER #5: Hardcoded Data in Android
 **Impact:** MEDIUM - Categories/Search not dynamic
-**Affected:** Categories screen, Search screen
+**Affected:** ~~Categories screen~~ ✅ FIXED, Search screen
 **Root Cause:** Backend API defined but not connected in app
-**Fix Required:**
-- Wire up `/api/v1/categories` endpoint
-- Wire up `/api/v1/search` endpoint
-- Replace hardcoded data with API calls
+**Fix Applied (2025-10-05):**
+- ✅ Wired up `/api/v1/categories` endpoint to Android
+- ✅ Added `fetchCategories()` to ContentService interface
+- ✅ Implemented in RetrofitContentService, FakeContentService, FallbackContentService
+- ✅ Updated CategoriesFragment to fetch from backend (removed hardcoded data)
+- ✅ Verified logs show successful backend connection
+**Still Required:**
+- ⏳ Wire up `/api/v1/search` endpoint
+- ⏳ Manual testing to verify categories display correctly
+- ⏳ Wire SubcategoriesFragment to backend
 
 ---
 
@@ -238,7 +244,7 @@ Channel.ExcludedItems: Missing 'totalExcludedCount' field
    - Backend: ✅ Full CRUD API
    - Frontend: ✅ Hierarchical tree UI
    - Firestore: ⚠️ Model mismatch warnings
-   - Android: ❌ Using hardcoded data
+   - Android: ✅ Now fetching from backend (as of 2025-10-05)
 
 7. **Approval Workflow**
    - Backend: ✅ Endpoints built
@@ -335,11 +341,11 @@ Channel.ExcludedItems: Missing 'totalExcludedCount' field
 
 ### PHASE C: Fix Android Integration (1 week)
 
-#### C1. Connect Categories API (1 day)
-- [ ] Replace hardcoded categories with `/api/v1/categories` call
-- [ ] Wire up CategoriesFragment to backend
+#### C1. Connect Categories API (1 day) ✅ PARTIALLY COMPLETE (2025-10-05)
+- [x] Replace hardcoded categories with `/api/v1/categories` call
+- [x] Wire up CategoriesFragment to backend
 - [ ] Wire up SubcategoriesFragment to backend
-- [ ] Test category navigation
+- [ ] Test category navigation end-to-end
 
 #### C2. Connect Search API (1 day)
 - [ ] Implement search API call in SearchFragment

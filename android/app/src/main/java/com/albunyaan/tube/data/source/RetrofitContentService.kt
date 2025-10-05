@@ -89,4 +89,19 @@ class RetrofitContentService(
         val response = api.search(query, type, limit)
         return response.results.mapNotNull { it.toModel() }
     }
+
+    override suspend fun fetchCategories(): List<com.albunyaan.tube.ui.categories.Category> {
+        val response = api.fetchCategories()
+        // Filter to only top-level categories (those without parentId)
+        val topLevelCategories = response.filter { it.parentId == null }
+        return topLevelCategories.map { categoryDto ->
+            // Check if this category has any subcategories
+            val hasSubcategories = response.any { it.parentId == categoryDto.id }
+            com.albunyaan.tube.ui.categories.Category(
+                id = categoryDto.id,
+                name = categoryDto.name,
+                hasSubcategories = hasSubcategories
+            )
+        }
+    }
 }

@@ -41,6 +41,19 @@ class FallbackContentService(
         }
     }
 
+    override suspend fun fetchCategories(): List<com.albunyaan.tube.ui.categories.Category> = try {
+        Log.d(TAG, "Trying primary backend for categories")
+        primary.fetchCategories().also {
+            Log.d(TAG, "✅ Primary categories SUCCESS: returned ${it.size} categories")
+        }
+    } catch (e: Throwable) {
+        Log.e(TAG, "❌ Primary categories FAILED: ${e.message}", e)
+        Log.d(TAG, "Falling back to fake categories")
+        fallback.fetchCategories().also {
+            Log.d(TAG, "Fallback categories returned ${it.size} categories")
+        }
+    }
+
     companion object {
         private const val TAG = "FallbackContentService"
     }

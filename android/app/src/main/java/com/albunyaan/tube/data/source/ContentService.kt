@@ -4,6 +4,7 @@ import com.albunyaan.tube.data.filters.FilterState
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.model.CursorResponse
+import com.albunyaan.tube.ui.categories.Category
 
 interface ContentService {
     suspend fun fetchContent(
@@ -14,4 +15,6 @@ interface ContentService {
     ): CursorResponse
 
     suspend fun search(query: String, type: String? = null, limit: Int = 20): List<ContentItem>
+
+    suspend fun fetchCategories(): List<Category>
 }

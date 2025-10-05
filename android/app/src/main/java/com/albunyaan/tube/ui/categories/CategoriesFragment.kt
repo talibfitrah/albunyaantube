@@ -3,16 +3,21 @@ package com.albunyaan.tube.ui.categories
 import android.os.Bundle
 import android.view.View
 import androidx.core.os.bundleOf
+import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.albunyaan.tube.R
+import com.albunyaan.tube.ServiceLocator
 import com.albunyaan.tube.databinding.FragmentCategoriesBinding
+import kotlinx.coroutines.launch
 
 class CategoriesFragment : Fragment(R.layout.fragment_categories) {
 
     private var binding: FragmentCategoriesBinding? = null
     private lateinit var adapter: CategoryAdapter
+    private val contentService by lazy { ServiceLocator.provideContentService() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -62,20 +67,18 @@ class CategoriesFragment : Fragment(R.layout.fragment_categories) {
     }
 
     private fun loadCategories() {
-        // Main categories based on the design mockup
-        val categories = listOf(
-            Category("1", "Quran", hasSubcategories = true),
-            Category("2", "Hadith", hasSubcategories = false),
-            Category("3", "Islamic History", hasSubcategories = true),
-            Category("4", "Fiqh", hasSubcategories = false),
-            Category("5", "Aqeedah", hasSubcategories = true),
-            Category("6", "Seerah", hasSubcategories = false),
-            Category("7", "Tafsir", hasSubcategories = true),
-            Category("8", "Islamic Manners", hasSubcategories = false),
-            Category("9", "Islamic Stories", hasSubcategories = false),
-            Category("10", "Islamic Lectures", hasSubcategories = true)
-        )
-        adapter.submitList(categories)
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                android.util.Log.d(TAG, "Fetching categories from backend...")
+                val categories = contentService.fetchCategories()
+                android.util.Log.d(TAG, "Loaded ${categories.size} categories from backend")
+                adapter.submitList(categories)
+            } catch (e: Exception) {
+                android.util.Log.e(TAG, "Failed to load categories", e)
+                // Show error state or fallback to empty list
+                adapter.submitList(emptyList())
+            }
+        }
     }
 
     override fun onDestroyView() {

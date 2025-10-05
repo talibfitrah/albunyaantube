@@ -82,12 +82,13 @@ WARNING: No setter/field for totalExcludedCount found on class Channel$ExcludedI
 - **Impact:** Dashboard broken with undefined errors
 - **Fix:** Wrap backend response in expected structure
 
-**BLOCKER #5: Hardcoded Data in Android (MEDIUM)**
-- Categories screen using hardcoded list
-- Search screen using hardcoded history
-- `/api/v1/categories` and `/api/v1/search` defined but not connected
-- **Impact:** Static content, not dynamic
-- **Fix:** Wire up backend APIs
+**BLOCKER #5: Hardcoded Data in Android (MEDIUM)** ⚠️ PARTIALLY FIXED
+- ~~Categories screen using hardcoded list~~ ✅ FIXED (2025-10-05)
+- Search screen using hardcoded history (still needs work)
+- ✅ `/api/v1/categories` now wired to Android app
+- ⏳ `/api/v1/search` defined but not connected
+- **Impact:** Categories now dynamic, search still static
+- **Next:** Wire up search API, test category navigation
 
 ---
 
@@ -190,9 +191,11 @@ WARNING: No setter/field for totalExcludedCount found on class Channel$ExcludedI
 
 ### Phase C: Fix Android Integration (1 week) 🟠 HIGH
 
-**C1. Connect Categories API** (1 day)
-- [ ] Replace hardcoded categories
-- [ ] Wire up `/api/v1/categories`
+**C1. Connect Categories API** (1 day) ✅ PARTIALLY COMPLETE (2025-10-05)
+- [x] Replace hardcoded categories
+- [x] Wire up `/api/v1/categories`
+- [ ] Wire up SubcategoriesFragment
+- [ ] Test category navigation end-to-end
 
 **C2. Connect Search API** (1 day)
 - [ ] Implement `/api/v1/search` call

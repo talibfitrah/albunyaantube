@@ -129,4 +129,14 @@ class FakeContentService : ContentService {
             }
         }.take(limit)
     }
+
+    override suspend fun fetchCategories(): List<com.albunyaan.tube.ui.categories.Category> {
+        return categories.map { category ->
+            com.albunyaan.tube.ui.categories.Category(
+                id = category.lowercase(),
+                name = category,
+                hasSubcategories = false
+            )
+        }
+    }
 }
