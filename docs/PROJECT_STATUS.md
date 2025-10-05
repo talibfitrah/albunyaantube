@@ -2,11 +2,53 @@
 
 > Last Updated: 2025-10-05
 
-## Current Phase: Phase 6 Complete ✅
+## Current Phase: Phase 7 In Progress 🚧
 
-**Phase 6: Backend Integration + Core UX** - Delivered Oct 4-5, 2025
+**Phase 7: Channel & Playlist Details** - Started Oct 5, 2025
 
-### Completed Tickets (Oct 4-5, 2025)
+### Completed Tickets (Oct 5, 2025)
+
+#### ANDROID-026: Implement Click Handlers for Navigation ✅
+- Added navigation from HomeFragment to ChannelDetailFragment
+- Added navigation from HomeFragment to PlaylistDetailFragment
+- Added navigation from HomeFragment to PlayerFragment
+- Used global navigation actions for consistent routing
+- Proper parameter passing via bundleOf()
+- Removed TODO comments in all click handlers
+
+**Implementation Details**:
+- `navigateToChannelDetail(channelId, channelName)` - Passes channel ID and name
+- `navigateToPlaylistDetail(playlistId, title, category, itemCount)` - Passes playlist details
+- `navigateToPlayer(videoId)` - Launches video player
+- All navigation uses global actions from main_tabs_nav.xml
+- Error handling with try/catch and logging
+
+**File Modified**: [HomeFragmentNew.kt:49-108](android/app/src/main/java/com/albunyaan/tube/ui/home/HomeFragmentNew.kt#L49-L108)
+
+### Next Steps (Phase 7 Remaining)
+
+1. **AND-DETAILS-01**: Build Channel Detail Screen
+   - Implement data loading in ChannelDetailFragment
+   - Create tabbed interface (Videos/Live/Shorts/Playlists/Posts)
+   - Connect to `/channels/{id}` backend endpoint
+   - Display channel info, subscribers, description
+
+2. **AND-DETAILS-02**: Build Playlist Detail Screen
+   - Implement data loading in PlaylistDetailFragment
+   - Display playlist info and video list
+   - Connect to `/playlists/{id}` backend endpoint
+   - Add download CTA
+
+3. **ANDROID-027**: Add pull-to-refresh functionality
+4. **ANDROID-028**: Implement search across all tabs
+
+---
+
+## Phase 6: Backend Integration + Core UX ✅ COMPLETE
+
+**Delivered**: Oct 4-5, 2025
+
+### Completed Tickets
 
 #### ANDROID-020: Home Screen Data Display ✅
 - Created HomeViewModel to fetch HOME endpoint data
@@ -69,7 +111,7 @@
 - **Emulator**: Pixel_7_API_33 (Android 13)
 - **Network Config**: http://10.0.2.2:8080/api/v1/
 - **Architecture**: MVVM + StateFlow + Retrofit
-- **Navigation**: Bottom navbar with 5 tabs + player
+- **Navigation**: Bottom navbar with 5 tabs + player + detail screens
 
 ### Architecture Summary
 
@@ -122,31 +164,6 @@ FallbackContentService
 - DataStore for preferences
 - RTL support
 
-## Next: Phase 7 - Channel & Playlist Details
-
-### Planned Tickets
-
-**ANDROID-026**: Implement click handlers for navigation
-- Add click listeners to channel/playlist/video items
-- Navigate to detail screens with proper arguments
-
-**AND-DETAILS-01**: Build Channel Detail Screen
-- Tabbed interface (Videos/Live/Shorts/Playlists/Posts)
-- Display channel info, subscribers, description
-- Connect to `/channels/{id}` endpoint
-
-**AND-DETAILS-02**: Build Playlist Detail Screen
-- Display playlist info, item count, videos
-- Connect to `/playlists/{id}` endpoint
-- Add download CTA preparation
-
-**ANDROID-027**: Add pull-to-refresh
-- SwipeRefreshLayout on all list screens
-
-**ANDROID-028**: Implement search
-- Search bar on main tabs
-- Connect to backend search endpoints
-
 ## Technical Debt & Known Issues
 
 ### High Priority
@@ -166,10 +183,9 @@ FallbackContentService
 
 ## Metrics
 
-### Code Changes (Phase 6)
-- **Files Modified**: 54 files
-- **Lines Added**: ~1,200 lines
-- **Lines Removed**: ~300 lines
+### Code Changes (Phase 6-7)
+- **Phase 6**: 6 tickets, 54 files modified, ~1,200 lines added
+- **Phase 7 (so far)**: 1 ticket, 1 file modified, 48 lines added
 - **Duration**: 2 days (Oct 4-5, 2025)
 
 ### Backend Data
@@ -181,7 +197,7 @@ FallbackContentService
 
 ### Build Performance
 - **Backend Build**: ~15s
-- **Android Build**: ~23s (full), ~9s (incremental)
+- **Android Build**: ~19s (full), ~9s (incremental)
 - **APK Size**: 6.2 MB
 
 ## References
@@ -190,3 +206,4 @@ FallbackContentService
 - **Architecture**: [docs/architecture/solution-architecture.md](architecture/solution-architecture.md)
 - **Testing**: [docs/testing/test-strategy.md](testing/test-strategy.md)
 - **Backlog**: [docs/backlog/product-backlog.csv](backlog/product-backlog.csv)
+- **Platform Guides**: [docs/PLATFORM_GUIDES.md](PLATFORM_GUIDES.md)
