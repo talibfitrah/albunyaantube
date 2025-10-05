@@ -170,6 +170,33 @@ cd backend
 - `POST /api/downloads/token/{videoId}` - Generate download token
 - `GET /api/downloads/manifest/{videoId}` - Get download manifest
 
+#### Seeding Firestore (Sample Data)
+
+The `seed` Spring profile populates Firestore with a realistic baseline dataset that mirrors production expectations (19 categories, 25 channels — 20 approved, 5 pending — 19 playlists, and 76 videos).
+
+1. **Provide credentials**
+   ```bash
+   export GOOGLE_APPLICATION_CREDENTIALS="/absolute/path/to/service-account.json"
+   ```
+   Use a service account with Firestore read/write access. The bundled `backend/src/main/resources/firebase-service-account.json` works for local testing.
+
+2. **Run the seeder**
+   ```bash
+   cd backend
+   GOOGLE_APPLICATION_CREDENTIALS="$PWD/src/main/resources/firebase-service-account.json" \
+     ./gradlew bootRun --args='--spring.profiles.active=seed'
+   ```
+   The task is idempotent: existing docs with the same IDs are updated, new ones are created. Stop the process (`Ctrl+C`) once the log prints `✅ Firestore data seeding completed successfully!`.
+
+3. **Verify**
+   - Admin dashboard: Cards/lists should display the seeded channels/playlists/videos.
+   - Android app: Home/tabs should render the new data once backend integration is complete.
+
+4. **Cleanup (optional)**
+   - For a fresh slate, delete the `categories`, `channels`, `playlists`, and `videos` collections in the Firebase console or via a scripted Firestore delete operation before rerunning the seeder.
+
+> ⚠️ The seeder writes to whichever project your credentials target. Double-check the service account before running against shared/staging environments.
+
 ---
 
 ### Frontend
