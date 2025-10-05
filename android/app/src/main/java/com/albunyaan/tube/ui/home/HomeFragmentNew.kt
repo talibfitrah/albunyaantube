@@ -81,7 +81,15 @@ class HomeFragmentNew : Fragment(R.layout.fragment_home_new) {
             // Setup click listeners
             categoryChip.setOnClickListener {
                 Log.d(TAG, "Category chip clicked")
-                // TODO: Show category picker dialog
+                try {
+                    val navController = findNavController()
+                    Log.d(TAG, "NavController: $navController")
+                    Log.d(TAG, "Current destination: ${navController.currentDestination?.label}")
+                    navController.navigate(R.id.categoriesFragment)
+                    Log.d(TAG, "Navigation to categories successful")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to navigate to categories", e)
+                }
             }
 
             searchButton.setOnClickListener {

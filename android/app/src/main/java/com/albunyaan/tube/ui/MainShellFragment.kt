@@ -17,7 +17,53 @@ class MainShellFragment : Fragment(R.layout.fragment_main_shell) {
         binding = FragmentMainShellBinding.bind(view)
         val navHost = childFragmentManager.findFragmentById(R.id.main_shell_nav_host) as? NavHostFragment
         val navController = navHost?.navController ?: return
+
+        // Use setupWithNavController for automatic navigation
         binding?.mainBottomNav?.setupWithNavController(navController)
+
+        // Override to handle back stack properly
+        binding?.mainBottomNav?.setOnItemSelectedListener { item ->
+            android.util.Log.d("MainShellFragment", "Tab selected: ${item.itemId}, current: ${navController.currentDestination?.id}")
+
+            when {
+                // If clicking the same tab, do nothing (let reselected handle it)
+                navController.currentDestination?.id == item.itemId -> {
+                    android.util.Log.d("MainShellFragment", "Same tab clicked")
+                    true
+                }
+                // Try to pop back stack to the destination
+                else -> {
+                    val popped = navController.popBackStack(item.itemId, false)
+                    android.util.Log.d("MainShellFragment", "Pop to ${item.itemId}: $popped")
+                    if (!popped) {
+                        // If not in back stack, navigate normally
+                        try {
+                            android.util.Log.d("MainShellFragment", "Navigating to ${item.itemId}")
+                            navController.navigate(item.itemId)
+                        } catch (e: Exception) {
+                            android.util.Log.e("MainShellFragment", "Navigation failed", e)
+                        }
+                    }
+                    true
+                }
+            }
+        }
+
+        // Re-click same tab to scroll to top OR navigate back if on a sub-screen
+        binding?.mainBottomNav?.setOnItemReselectedListener { item ->
+            android.util.Log.d("MainShellFragment", "Tab reselected: ${item.itemId}, current dest: ${navController.currentDestination?.id}")
+
+            // If current destination is different from the tab, navigate back to the tab
+            if (navController.currentDestination?.id != item.itemId) {
+                android.util.Log.d("MainShellFragment", "Navigating back to tab from sub-screen")
+                navController.popBackStack(item.itemId, false)
+            } else {
+                // Same screen, scroll to top
+                android.util.Log.d("MainShellFragment", "Scrolling to top")
+                val currentFragment = navHost.childFragmentManager.primaryNavigationFragment
+                currentFragment?.view?.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.recyclerView)?.smoothScrollToPosition(0)
+            }
+        }
     }
 
     override fun onDestroyView() {

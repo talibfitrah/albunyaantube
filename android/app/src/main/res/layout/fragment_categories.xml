@@ -13,6 +13,7 @@
         android:layout_height="?attr/actionBarSize"
         android:background="@android:color/white"
         android:elevation="2dp"
+        app:navigationIcon="?attr/homeAsUpIndicator"
         app:title="Categories"
         app:titleTextAppearance="@style/TextAppearance.MaterialComponents.Headline6"
         app:titleTextColor="@android:color/black"/>

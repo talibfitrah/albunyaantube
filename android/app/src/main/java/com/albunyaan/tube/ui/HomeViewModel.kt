@@ -41,14 +41,7 @@ class HomeViewModel(
                 val allPlaylists = response.items.filterIsInstance<ContentItem.Playlist>()
                 val allVideos = response.items.filterIsInstance<ContentItem.Video>()
 
-                android.util.Log.d("HomeViewModel", "Before filtering: ${allChannels.size} channels, ${allPlaylists.size} playlists, ${allVideos.size} videos")
-
-                allChannels.forEach { channel ->
-                    android.util.Log.d("HomeViewModel", "Channel: id=${channel.id}, name=${channel.name}, category=${channel.category}")
-                }
-                allPlaylists.forEach { playlist ->
-                    android.util.Log.d("HomeViewModel", "Playlist: id=${playlist.id}, title=${playlist.title}, category=${playlist.category}")
-                }
+                android.util.Log.d("HomeViewModel", "Filtered: ${allChannels.size} channels, ${allPlaylists.size} playlists, ${allVideos.size} videos")
 
                 val channels = allChannels.take(3)
                 val playlists = allPlaylists.take(3)

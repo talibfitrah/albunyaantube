@@ -16,6 +16,7 @@ import com.albunyaan.tube.download.DownloadRepository
 import com.albunyaan.tube.download.DownloadScheduler
 import com.albunyaan.tube.download.DownloadStorage
 import com.albunyaan.tube.data.extractor.MetadataHydrator
+import com.albunyaan.tube.data.extractor.NoOpMetadataHydrator
 import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
 import com.albunyaan.tube.data.extractor.OkHttpDownloader
 import com.albunyaan.tube.data.extractor.cache.MetadataCache
@@ -87,7 +88,8 @@ object ServiceLocator {
     private val extractorClient by lazy {
         NewPipeExtractorClient(extractorDownloader, extractorCache, extractorMetrics)
     }
-    private val metadataHydrator: MetadataHydrator by lazy { MetadataHydrator(extractorClient) }
+    // Use NoOpMetadataHydrator since backend provides complete data (fast loading)
+    private val metadataHydrator: MetadataHydrator by lazy { NoOpMetadataHydrator() }
     private val retrofitContentService: ContentService by lazy { RetrofitContentService(contentApi, metadataHydrator) }
     private val fakeContentService: ContentService by lazy { FakeContentService() }
     private val contentService: ContentService by lazy { FallbackContentService(retrofitContentService, fakeContentService) }

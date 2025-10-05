@@ -41,6 +41,7 @@ class CategoryAdapter(
             }
 
             binding.root.setOnClickListener {
+                android.util.Log.d("CategoryAdapter", "Category clicked: ${category.name}")
                 onCategoryClick(category)
             }
         }

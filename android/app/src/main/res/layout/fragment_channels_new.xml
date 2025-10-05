@@ -9,15 +9,18 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:clipToPadding="false"
-        android:padding="@dimen/spacing_md"/>
+        android:overScrollMode="never"
+        android:padding="@dimen/spacing_md"
+        android:paddingBottom="@dimen/bottom_nav_height"/>
 
-    <!-- Categories FAB -->
+    <!-- Categories FAB - positioned above bottom nav -->
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/categoriesFab"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|end"
-        android:layout_margin="@dimen/spacing_lg"
+        android:layout_marginEnd="@dimen/spacing_lg"
+        android:layout_marginBottom="80dp"
         android:contentDescription="@string/categories"
         android:src="@android:drawable/ic_menu_sort_by_size"
         app:backgroundTint="@color/primary_green"

@@ -6,11 +6,11 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlinx.coroutines.CancellationException
 
-class MetadataHydrator(
+open class MetadataHydrator(
     private val extractorClient: ExtractorClient
 ) {
 
-    suspend fun hydrate(type: ContentType, items: List<ContentItem>): List<ContentItem> {
+    open suspend fun hydrate(type: ContentType, items: List<ContentItem>): List<ContentItem> {
         if (items.isEmpty()) return items
         return when (type) {
             ContentType.HOME -> hydrateMixed(items)
