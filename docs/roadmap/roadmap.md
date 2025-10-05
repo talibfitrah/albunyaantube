@@ -1,6 +1,6 @@
 # Phased Roadmap
 
-> Execution metadata — Last reviewed: 2025-10-03
+> Execution metadata — Last reviewed: 2025-10-05
 
 ## Status Snapshot
 - Delivered
@@ -26,9 +26,22 @@
   - Canonical bottom tab config + reusable tab bar component (for shared parity and future Android mapping)
     - Code: `frontend/src/constants/tabs.ts`, `frontend/src/components/navigation/MainTabBar.vue`
     - Tests: `frontend/tests/MainTabBar.spec.ts`
+  - **Android Phase 6: Backend Integration + Core UX Complete (2025-10-05)**
+    - ✅ Complete backend integration for all main tabs (Home, Videos, Playlists, Channels, Categories)
+    - ✅ HomeFragment with mixed content feed from Firestore
+    - ✅ All tabs connected to Spring Boot API via Retrofit
+    - ✅ ViewModel pattern with StateFlow for reactive UI
+    - ✅ FallbackContentService with graceful degradation
+    - ✅ Fixed scroll issues and navigation bar visibility
+    - ✅ Player navigation integrated with bottom navbar
+    - ✅ Error handling and loading states across all screens
+    - Android: `android/app/src/main/java/com/albunyaan/tube/ui/{home,player,videos,playlists,channels,categories}`
+    - Docs: `docs/status/PHASE-6-BACKEND-INTEGRATION-COMPLETE.md`, `ANDROID-020` through `ANDROID-025`
+    - Commits: `48a619b`, `f1f2222`, `afe2681`, `e3b09fc`, `5d0976e`, `39527a3`
 
 - In progress / planned
-  - Phase 1–2 backend hardening and Phase 3 Admin MVP items per files in this folder
+  - Phase 3: Admin MVP items (locale switcher, registry filters, search workspace)
+  - Phase 7: Android Channel & Playlist Detail screens
 
 ## How To Use This Roadmap (multi-agent)
 - Each phase below begins with “Execution Metadata” listing Status, Last Reviewed, Dependencies, and Owners (TBD where unassigned).
@@ -266,10 +279,29 @@ Execution Metadata
 - Capture open questions on asset delivery (thumbnails, fonts) and offline storage constraints.
 - Update backlog with follow-on tasks for dynamic content once API stabilizes.
 
-## Phase 6 — Lists & Home Rules (Plan)
-**Estimate**: 3 engineering weeks (Android + backend pairing on paging rules).
+## Phase 6 — Lists & Home Rules (Delivered)
+Execution Metadata
+- Status: ✅ **COMPLETE** (Backend integration + Core UX delivered)
+- Last reviewed: 2025-10-05
+- Dependencies: Phase 1 ✅ complete (Firebase), Phase 5 ✅ complete (Android Skeleton)
+- Owners: Android Team
 
-**Goals**
+Delivered in this repo
+- ✅ Complete backend integration for all main tabs (Home, Videos, Playlists, Channels, Categories)
+- ✅ HomeFragment with mixed content feed (channels, playlists, videos)
+- ✅ All tabs connected to Spring Boot API via Retrofit
+- ✅ ViewModel pattern with StateFlow for reactive UI updates
+- ✅ FallbackContentService with graceful degradation to fake data
+- ✅ Fixed scroll issues and navigation bar visibility
+- ✅ Player navigation integrated with bottom navbar
+- ✅ Error handling and loading states across all screens
+- ✅ Network configuration for emulator (10.0.2.2:8080)
+- Code: `android/app/src/main/java/com/albunyaan/tube/ui/{home,player,videos,playlists,channels,categories}`
+- Docs: `docs/status/PHASE-6-BACKEND-INTEGRATION-COMPLETE.md`, `ANDROID-020` through `ANDROID-025`
+- Commits: `48a619b` (ANDROID-020), `f1f2222` (ANDROID-021), `afe2681` (ANDROID-022), `e3b09fc` (ANDROID-023), `5d0976e` (ANDROID-024), `39527a3` (ANDROID-025)
+**Actual effort**: 6 tickets over 2 days (Oct 4-5, 2025).
+
+**Original Goals**
 - Specify Paging 3 integration, 3-latest per channel/playlist algorithm, error handling + retry UX.
 - Document filtering controls (Category, Length, Date, Popular) and data contract expectations.
 - Define test cases + metrics for home feed and list performance budgets.

@@ -354,8 +354,65 @@ c0be262 - BACKEND-011: Fix repository status queries for uppercase APPROVED
 
 **Documentation**: `docs/status/ANDROID-021-BACKEND-INTEGRATION-VERIFIED.md`
 
+### ANDROID-022: Fix Backend Connection ✅
+**Commit**: `afe2681`
+**Date**: October 5, 2025
+
+- Added INTERNET permission to AndroidManifest.xml
+- Added network_security_config.xml to allow cleartext HTTP for emulator
+- Enhanced logging in RetrofitContentService and FallbackContentService
+- Configured proper network security for development and production
+
+**Documentation**: Network configuration detailed in ANDROID-025 doc
+
+### ANDROID-023: Complete Backend Integration for All Tabs ✅
+**Commit**: `e3b09fc`
+**Date**: October 5, 2025
+
+- Integrated backend data loading for all main tabs:
+  - Videos tab connected to `/api/v1/content?type=VIDEOS`
+  - Playlists tab connected to `/api/v1/content?type=PLAYLISTS`
+  - Channels tab connected to `/api/v1/content?type=CHANNELS`
+  - Categories tab connected to `/api/v1/categories`
+- All tabs using proper ViewModel pattern with StateFlow
+- Error handling and loading states implemented across all screens
+
+### ANDROID-024: Fix UI Issues and Improve Navigation ✅
+**Commit**: `5d0976e`
+**Date**: October 5, 2025
+
+- Fixed subcategories navigation
+- Improved error handling UI
+- Enhanced loading states display
+- Refined RecyclerView adapters for better performance
+- Foundation work for ANDROID-025 navigation improvements
+
+### ANDROID-025: Fix Scroll Issues and Navbar Visibility ✅
+**Commit**: `39527a3`
+**Date**: October 5, 2025
+
+- Fixed home screen scroll jump by disabling nested scrolling
+- Removed over-scroll effects from all scrollable views
+- Fixed content visibility on Categories, Subcategories, and Player screens
+- Moved PlayerFragment to main_tabs_nav to show bottom navbar
+- Created global action for player navigation
+- Enhanced MainShellFragment navigation listener
+- All screens now properly show content above bottom navbar
+
+**Documentation**: `docs/status/ANDROID-025-SCROLL-AND-NAV-FIXES.md`
+
 ## Status: PRODUCTION READY ✅
 
-The backend infrastructure is fully deployed and functional. The Android app home screen is fully implemented with backend data loading. The complete integration from Firestore through Spring Boot to Android UI has been verified through comprehensive code review and API testing.
+The backend infrastructure is fully deployed and functional. The Android app home screen and all main tabs are fully implemented with backend data loading. All navigation and scrolling issues have been resolved. The complete integration from Firestore through Spring Boot to Android UI has been verified through comprehensive code review and API testing.
 
-**Phase 6 (Priority 1): Backend Integration** - **COMPLETE**
+**Phase 6 (Priority 1): Backend Integration & Core UX** - **COMPLETE**
+
+## Next Phase
+
+Ready to move to **Phase 7: Channel & Playlist Details**
+
+Key next steps:
+1. **ANDROID-026**: Implement click handlers for channels/playlists navigation
+2. **ANDROID-027**: Add pull-to-refresh functionality
+3. **ANDROID-028**: Implement search across all tabs
+4. **Phase 7**: Build detailed channel and playlist screens with tabbed content
