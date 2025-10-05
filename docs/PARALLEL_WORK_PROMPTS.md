@@ -1,119 +1,217 @@
-# Parallel Work Prompts - Albunyaan Tube
+# Parallel Work Prompts - Albunyaan Tube (Sprint 2)
 
 **Date**: 2025-10-05
+**Sprint**: Sprint 2 - Performance, Integration, & Polish
 **Status**: Ready for parallel execution
-**Git Branch Strategy**: Each engineer creates feature branch from `main`
+**Git Branch Strategy**: Each engineer creates new feature branch from `main`
 
 ---
 
-## 🔴 PROMPT 1: Backend Engineer - Phase 2 & Downloads API
+## 📊 Current Project Status
+
+### ✅ Completed in Sprint 1 (MERGED TO MAIN)
+- ✅ **Phase 8**: Player & Background Audio (Android)
+- ✅ **Phase 9**: Downloads & Offline (Backend + Android)
+- ✅ **Phase 2**: Registry & Category Management API (Backend)
+- ✅ **Phase 3**: Admin UI MVP with mock data (Frontend)
+- ✅ **Infrastructure**: CI/CD pipelines, Docker, Developer scripts
+
+### 🎯 Sprint 2 Focus
+- **Backend**: Approval workflow API, Performance optimization, Testing infrastructure
+- **Frontend**: Connect mock services to real backend, Performance optimization
+- **Android**: Performance optimization, Accessibility improvements, Testing
+
+---
+
+## 🔴 PROMPT 1: Backend Engineer - Approval Workflow & Performance
 
 ### **Your Mission**
-Complete Phase 2 (Registry & Moderation) backend endpoints and Phase 9 (Downloads) backend infrastructure.
+Complete Phase 2 approval workflow API and implement Phase 10 performance improvements.
 
-### **Branch**: `feature/backend-registry-downloads`
+### **Branch**: `feature/backend-approval-performance`
 
 ### **Your Boundaries** ✋
 - **YOU OWN**: `backend/` directory ONLY
 - **DO NOT TOUCH**: `android/`, `frontend/` directories
-- **DO NOT MODIFY**: Any Android ViewModels, Fragments, or UI code
-- **SHARED FILES TO AVOID**: `docs/PROJECT_STATUS.md` (update only YOUR section), `docs/roadmap/roadmap.md` (read-only)
+- **DO NOT MODIFY**: Any Android ViewModels, Fragments, or Frontend components
+- **SHARED FILES TO AVOID**: `docs/PROJECT_STATUS.md` (update only YOUR section)
 
-### **Dependencies You Need**
-- Phase 1 backend ✅ (already complete - Firebase Firestore, Auth)
-- Phase 8 player ✅ (already complete - provides download requirements)
+### **Context: What's Already Done**
+✅ Registry & Category endpoints (BACKEND-REG-01)
+✅ Downloads API (BACKEND-DL-01, BACKEND-DL-02)
+✅ Firebase Firestore + Authentication
+✅ YouTube Data API integration
 
 ### **Tasks Breakdown**
 
-#### **BACKEND-REG-01: Registry & Category Management API** (Week 1)
-**Ticket Code**: `BACKEND-REG-01`
+#### **BACKEND-APPR-01: Approval Workflow API** (Week 1 - 3 days)
+**Ticket Code**: `BACKEND-APPR-01`
 
-1. **Category CRUD Endpoints**
-   - `GET /api/admin/categories` - List all categories with hierarchy
-   - `POST /api/admin/categories` - Create new category
-   - `PUT /api/admin/categories/{id}` - Update category
-   - `DELETE /api/admin/categories/{id}` - Delete category
-   - Support hierarchical parentCategoryId structure
+**User Story**: As a moderator, I need to approve/reject channels and playlists submitted via the admin UI, so that only curated content appears in the Android app.
 
-2. **Registry Endpoints**
-   - `GET /api/admin/registry/channels` - List all channels in registry
-   - `GET /api/admin/registry/playlists` - List all playlists in registry
-   - `POST /api/admin/registry/channels` - Add channel to registry
-   - `POST /api/admin/registry/playlists` - Add playlist to registry
-   - Include/exclude toggle state in responses
+**Implementation**:
+1. **Approval Endpoints**
+   - `GET /api/admin/approvals/pending` - List pending approvals with filters
+     ```json
+     Query params: ?type=CHANNEL|PLAYLIST&category=Quran&limit=20&cursor=abc
+     Response: {
+       "items": [{
+         "id": "approval_123",
+         "type": "CHANNEL",
+         "entityId": "channel_xyz",
+         "title": "Nouman Ali Khan",
+         "category": "Tafsir",
+         "submittedAt": "2025-10-05T12:00:00Z",
+         "submittedBy": "admin@example.com",
+         "metadata": { "subscriberCount": "1.2M", "videoCount": 450 }
+       }],
+       "nextCursor": "def",
+       "total": 42
+     }
+     ```
 
-3. **Testing**
-   - Unit tests for all endpoints
-   - Integration tests with Firebase
-   - Postman/curl examples in docs
+   - `POST /api/admin/approvals/{id}/approve` - Approve item
+     ```json
+     Body: {
+       "reviewNotes": "High quality Quran recitation",
+       "categoryOverride": "Quran" // optional
+     }
+     Response: { "status": "APPROVED", "approvedAt": "...", "approvedBy": "..." }
+     ```
+
+   - `POST /api/admin/approvals/{id}/reject` - Reject item
+     ```json
+     Body: {
+       "reason": "NOT_ISLAMIC|LOW_QUALITY|DUPLICATE|OTHER",
+       "reviewNotes": "Content not aligned with platform guidelines"
+     }
+     Response: { "status": "REJECTED", "rejectedAt": "...", "rejectedBy": "..." }
+     ```
+
+2. **Status Transition Logic**
+   - Update channel/playlist `status` field: `PENDING → APPROVED | REJECTED`
+   - Store approval metadata (reviewer, timestamp, notes)
+   - Create audit log entry for compliance
+
+3. **Firestore Queries**
+   - Composite index on `status` + `type` + `submittedAt`
+   - Pagination using cursor-based approach
+   - Filter by category using `categoryId`
+
+**Files to Create/Modify**:
+```
+backend/src/main/java/com/albunyaan/tube/
+  ├── controller/ApprovalController.java (new)
+  ├── service/ApprovalService.java (new)
+  ├── model/ApprovalRequest.java (new)
+  ├── model/ApprovalMetadata.java (new)
+  └── repository/ApprovalRepository.java (new)
+
+backend/src/test/java/com/albunyaan/tube/
+  └── controller/ApprovalControllerTest.java (new)
+```
+
+**Acceptance Criteria**:
+- [ ] Pending approvals endpoint returns paginated results
+- [ ] Approve endpoint updates status to APPROVED
+- [ ] Reject endpoint updates status to REJECTED
+- [ ] Audit log captures all approval actions
+- [ ] Filters work for type, category, date range
+- [ ] Unit tests cover all endpoints (>80% coverage)
+- [ ] Integration tests verify Firestore updates
 
 **Commit Format**:
 ```
-BACKEND-REG-01: Implement category and registry management endpoints
+BACKEND-APPR-01: Implement approval workflow API
 
-- Added CategoryController with CRUD operations
-- Added RegistryController for channel/playlist management
-- Hierarchical category support with parentCategoryId
-- Include/exclude state tracking
+- Approval endpoints for pending/approve/reject operations
+- Status transition logic (PENDING → APPROVED/REJECTED)
+- Audit logging for compliance
+- Composite Firestore indexes for efficient queries
+- Pagination with cursor-based approach
+- Filter by type, category, date range
 - Unit and integration tests
 
-Files Modified:
-- backend/src/main/java/com/albunyaan/tube/controller/CategoryController.java
-- backend/src/main/java/com/albunyaan/tube/controller/RegistryController.java
-- backend/src/main/java/com/albunyaan/tube/service/CategoryService.java
-- backend/src/test/java/com/albunyaan/tube/controller/CategoryControllerTest.java
+Files Created:
+- ApprovalController.java: REST endpoints
+- ApprovalService.java: Business logic
+- ApprovalRequest/ApprovalMetadata models
+- ApprovalControllerTest.java: Test coverage
+
+Related: FRONTEND-ADMIN-03 (approval queue UI)
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
 Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**After Commit**:
-1. Push to remote: `git push origin feature/backend-registry-downloads`
-2. Update `docs/PROJECT_STATUS.md` section:
-   ```markdown
-   ### Backend Engineer Progress
-   - ✅ BACKEND-REG-01: Category and registry endpoints (Committed: 2025-10-05)
-   ```
-
 ---
 
-#### **BACKEND-DL-01: Downloads Backend Infrastructure** (Week 2)
-**Ticket Code**: `BACKEND-DL-01`
+#### **BACKEND-PERF-01: Performance Optimization** (Week 2 - 2 days)
+**Ticket Code**: `BACKEND-PERF-01`
 
-1. **Download Policy Endpoint**
-   - `GET /api/downloads/policy/{videoId}` - Check if video allows downloads
-   - Return: `{ "allowed": boolean, "reason": string, "requiresEula": boolean }`
+**User Story**: As a user, I need fast API responses (<200ms p95), so that the app feels responsive.
 
-2. **Download Token Generation**
-   - `POST /api/downloads/token/{videoId}` - Generate signed download token
-   - Include expiration timestamp
-   - Validate EULA acceptance
+**Implementation**:
+1. **Redis Caching Layer**
+   - Cache category tree (TTL: 1 hour)
+   - Cache approved channels/playlists (TTL: 15 minutes)
+   - Cache video metadata (TTL: 5 minutes)
+   - Implement cache invalidation on updates
 
-3. **Download Manifest Endpoint**
-   - `GET /api/downloads/manifest/{videoId}?token=xyz` - Get download streams
-   - Return video/audio track URLs with expiration
-   - Include quality options
+2. **Query Optimization**
+   - Add composite Firestore indexes for common queries
+   - Implement field masking (only fetch needed fields)
+   - Use batch reads where appropriate
 
-4. **Download Analytics**
-   - `POST /api/analytics/download-started` - Track download start
-   - `POST /api/analytics/download-completed` - Track completion
-   - Store in Firestore for metrics
+3. **API Response Compression**
+   - Enable Gzip compression in Spring Boot
+   - Optimize JSON serialization (exclude nulls)
+
+4. **Metrics & Monitoring**
+   - Add Micrometer metrics for all endpoints
+   - Track: response time, cache hit rate, error rate
+   - Expose metrics at `/actuator/prometheus`
+
+**Files to Modify**:
+```
+backend/src/main/java/com/albunyaan/tube/
+  ├── config/CacheConfig.java (new)
+  ├── service/CategoryService.java (add caching)
+  ├── service/ContentService.java (add caching)
+  └── config/WebConfig.java (add compression)
+
+backend/src/main/resources/
+  └── application.yml (Redis config, compression)
+```
+
+**Acceptance Criteria**:
+- [ ] Category endpoint p95 < 50ms (with cache)
+- [ ] Content list endpoint p95 < 200ms
+- [ ] Cache hit rate > 80% for category tree
+- [ ] Gzip reduces response size by >60%
+- [ ] Prometheus metrics exposed and accurate
 
 **Commit Format**:
 ```
-BACKEND-DL-01: Implement downloads backend API
+BACKEND-PERF-01: Add caching and performance optimization
 
-- Download policy check endpoint
-- Signed token generation for secure downloads
-- Manifest endpoint with stream URLs
-- Download analytics tracking
-- EULA validation integration
+- Redis caching for categories, channels, playlists
+- Composite Firestore indexes for common queries
+- Gzip compression for API responses
+- Micrometer metrics for monitoring
+- Cache invalidation on updates
 
-Files Created:
-- backend/src/main/java/com/albunyaan/tube/controller/DownloadController.java
-- backend/src/main/java/com/albunyaan/tube/service/DownloadService.java
-- backend/src/main/java/com/albunyaan/tube/service/DownloadTokenService.java
+Performance Improvements:
+- Category endpoint: 150ms → 20ms (p95)
+- Content list: 350ms → 180ms (p95)
+- Response size: -65% with Gzip
+
+Files Modified:
+- CacheConfig.java: Redis setup
+- CategoryService/ContentService: Caching logic
+- WebConfig.java: Compression enabled
+- application.yml: Redis + metrics config
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
@@ -122,63 +220,75 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
 ---
 
-#### **BACKEND-DL-02: /next-up Endpoint** (Week 3)
-**Ticket Code**: `BACKEND-DL-02`
+#### **BACKEND-TEST-01: Integration Test Suite** (Week 2 - 2 days)
+**Ticket Code**: `BACKEND-TEST-01`
 
-1. **Up Next Queue Endpoint**
-   - `GET /api/player/next-up/{videoId}?userId={userId}` - Get recommended next videos
-   - Return list of video items for player queue
-   - Basic recommendation logic (same category, same channel)
+**User Story**: As a developer, I need comprehensive integration tests, so that regressions are caught before production.
 
-2. **Response Format**
-   ```json
-   {
-     "items": [
-       {
-         "id": "video_id",
-         "title": "Video Title",
-         "channelName": "Channel Name",
-         "durationSeconds": 360,
-         "thumbnailUrl": "https://...",
-         "category": "Tafsir"
-       }
-     ],
-     "nextCursor": "cursor_token"
-   }
-   ```
+**Implementation**:
+1. **Firestore Emulator Tests**
+   - Test all repository methods with real Firestore emulator
+   - Verify composite indexes work correctly
+   - Test concurrent writes and transactions
 
-**Commit & Push after each ticket**
+2. **API Integration Tests**
+   - Test complete request/response flows
+   - Verify authentication and authorization
+   - Test error handling (400, 401, 403, 404, 500)
+
+3. **Test Utilities**
+   - Test data builders for common entities
+   - Firestore emulator setup/teardown helpers
+   - Mock Firebase Admin SDK for CI
+
+**Files to Create**:
+```
+backend/src/test/java/com/albunyaan/tube/
+  ├── integration/
+  │   ├── CategoryIntegrationTest.java
+  │   ├── ApprovalIntegrationTest.java
+  │   └── DownloadIntegrationTest.java
+  ├── util/
+  │   ├── TestDataBuilder.java
+  │   └── FirestoreTestHelper.java
+  └── resources/
+      └── application-test.yml
+```
+
+**Acceptance Criteria**:
+- [ ] All repository methods have integration tests
+- [ ] All API endpoints have integration tests
+- [ ] Tests run against Firestore emulator
+- [ ] Test coverage > 80% for service layer
+- [ ] CI pipeline runs tests successfully
+
+**Commit & Push**
 
 ---
 
 ### **Success Criteria**
 - All endpoints documented in `docs/api/openapi-draft.yaml`
-- Unit test coverage > 80%
-- Integration tests pass
-- Postman collection in `backend/docs/postman/`
+- Unit + integration test coverage > 80%
+- Performance targets met (p95 < 200ms)
+- Redis caching working correctly
 - Each ticket committed separately with proper format
 - Update `docs/PROJECT_STATUS.md` after each ticket
 
 ### **Communication Protocol**
-**Before starting**: Announce in team chat:
-> "🔴 Backend Engineer: Starting BACKEND-REG-01 on branch `feature/backend-registry-downloads`. Will touch `backend/` only. ETA: 2 days."
+**Before starting**:
+> "🔴 Backend Engineer: Starting BACKEND-APPR-01 on branch `feature/backend-approval-performance`. Will touch `backend/` only. ETA: 3 days."
 
-**After each commit**: Announce:
-> "🔴 Backend: ✅ BACKEND-REG-01 complete and pushed. Registry endpoints live."
-
-**Daily Standups**: Report:
-- What I completed yesterday (ticket code)
-- What I'm working on today (ticket code)
-- Any blockers
+**After each commit**:
+> "🔴 Backend: ✅ BACKEND-APPR-01 complete and pushed. Approval API ready for frontend integration."
 
 ---
 
-## 🟢 PROMPT 2: Frontend Engineer - Phase 3 Admin UI
+## 🟢 PROMPT 2: Frontend Engineer - Backend Integration & Performance
 
 ### **Your Mission**
-Complete Phase 3 Admin UI MVP - YouTube search/preview, category management, and approval queue.
+Replace mock services with real backend APIs and implement performance optimizations.
 
-### **Branch**: `feature/frontend-admin-ui`
+### **Branch**: `feature/frontend-backend-integration`
 
 ### **Your Boundaries** ✋
 - **YOU OWN**: `frontend/` directory ONLY
@@ -186,145 +296,208 @@ Complete Phase 3 Admin UI MVP - YouTube search/preview, category management, and
 - **DO NOT MODIFY**: Backend controllers, services, or Android code
 - **SHARED FILES TO AVOID**: `docs/PROJECT_STATUS.md` (update only YOUR section)
 
-### **Dependencies You Need**
-- Phase 1 backend ✅ (Firebase Auth, Firestore)
-- Phase 2 backend endpoints ⏳ (Backend Engineer is building - use mock data until ready)
+### **Context: What's Already Done**
+✅ Admin UI with mock services (YouTube search, categories, approvals)
+✅ Firebase Auth integration
+✅ Tokenized dark theme
+✅ Backend APIs ready: registry, categories, approvals (being built in parallel)
 
 ### **Tasks Breakdown**
 
-#### **FRONTEND-ADMIN-01: YouTube Search & Preview UI** (Week 1)
-**Ticket Code**: `FRONTEND-ADMIN-01`
+#### **FRONTEND-INT-01: Replace Mock Services with Real Backend** (Week 1 - 4 days)
+**Ticket Code**: `FRONTEND-INT-01`
 
-1. **Search Interface**
-   - Search input with YouTube icon
-   - Loading state during search
-   - Results grid showing channels/playlists
-   - Thumbnail, title, subscriber count display
+**User Story**: As an admin, I need the UI to use real backend data, so that I can actually manage content.
 
-2. **Preview Drawer**
-   - Click video/channel to open drawer
-   - Show videos/playlists/shorts tabs
-   - Include/exclude toggle buttons
-   - Category selector dropdown
+**Implementation**:
+1. **Replace Mock YouTube Service**
+   - Delete `mockYouTubeService.ts`
+   - Create `youtubeService.ts` calling `/api/admin/youtube/search`
+   - Handle pagination, loading states, errors
+   - Add retry logic for failed requests
 
-3. **Mock Backend Integration**
-   - Create `frontend/src/services/mockYouTubeService.ts`
-   - Mock YouTube search responses
-   - Replace with real backend when `BACKEND-REG-01` is complete
+2. **Replace Mock Category Service**
+   - Delete `mockCategoryService.ts`
+   - Create `categoryService.ts` calling:
+     - `GET /api/admin/categories` - List all
+     - `POST /api/admin/categories` - Create
+     - `PUT /api/admin/categories/{id}` - Update
+     - `DELETE /api/admin/categories/{id}` - Delete
+   - Handle hierarchical category tree updates
+   - Optimistic UI updates with rollback on error
 
-**Files to Create/Modify**:
+3. **Replace Mock Approval Service**
+   - Delete `mockApprovalsService.ts`
+   - Create `approvalService.ts` calling:
+     - `GET /api/admin/approvals/pending`
+     - `POST /api/admin/approvals/{id}/approve`
+     - `POST /api/admin/approvals/{id}/reject`
+   - Real-time updates using polling (every 30s)
+   - Toast notifications for approve/reject actions
+
+4. **Error Handling**
+   - Global error interceptor for 401/403
+   - User-friendly error messages
+   - Retry mechanism for network failures
+   - Loading skeletons during API calls
+
+**Files to Modify/Create**:
 ```
-frontend/src/components/admin/
-  ├── YouTubeSearch.vue (or .tsx)
-  ├── SearchResults.vue
-  ├── ChannelDrawer.vue
-  └── PlaylistDrawer.vue
-
 frontend/src/services/
-  └── mockYouTubeService.ts (temporary)
+  ├── youtubeService.ts (replace mock)
+  ├── categoryService.ts (replace mock)
+  ├── approvalService.ts (replace mock)
+  └── api/
+      ├── client.ts (Axios instance with interceptors)
+      └── errorHandler.ts (Error handling utilities)
 
 frontend/src/stores/
-  └── youtubeSearch.ts
+  ├── youtubeSearch.ts (update to use real service)
+  ├── categories.ts (update to use real service)
+  └── approvals.ts (update to use real service)
+
+frontend/src/components/admin/
+  ├── YouTubeSearch.vue (remove mock data references)
+  ├── CategoriesView.vue (handle real errors)
+  └── PendingApprovalsView.vue (add polling)
 ```
+
+**Acceptance Criteria**:
+- [ ] All mock services removed
+- [ ] All API calls use real backend endpoints
+- [ ] Error handling works (401, 403, 404, 500)
+- [ ] Loading states display correctly
+- [ ] Optimistic UI updates with rollback
+- [ ] Retry logic handles network failures
+- [ ] Toast notifications show success/error
 
 **Commit Format**:
 ```
-FRONTEND-ADMIN-01: YouTube search and preview UI
+FRONTEND-INT-01: Replace mock services with real backend APIs
 
-- YouTube search interface with real-time results
-- Channel/playlist preview drawer with tabs
-- Include/exclude toggle functionality
-- Category selector dropdown
-- Mock service for development (replace when backend ready)
+- YouTubeService: Real YouTube search via backend
+- CategoryService: Full CRUD operations
+- ApprovalService: Approve/reject workflow
+- Global error handling with interceptors
+- Optimistic UI updates with rollback
+- Loading states and error boundaries
+- Retry logic for failed requests
 
-Components:
-- YouTubeSearch.vue: Main search interface
-- ChannelDrawer.vue: Channel preview with video list
-- Mock data service for testing
+Files Removed:
+- mockYouTubeService.ts
+- mockCategoryService.ts
+- mockApprovalsService.ts
+
+Files Created:
+- youtubeService.ts, categoryService.ts, approvalService.ts
+- api/client.ts: Axios instance with auth
+- api/errorHandler.ts: Error utilities
+
+Files Modified:
+- All admin views updated to use real services
+- Stores updated with real API calls
+
+Depends on: BACKEND-APPR-01, BACKEND-REG-01
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
 Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**After Commit**:
-```bash
-git push origin feature/frontend-admin-ui
-```
-
-Update docs:
-```markdown
-### Frontend Engineer Progress
-- ✅ FRONTEND-ADMIN-01: YouTube search UI (Committed: 2025-10-05)
-- Uses mock data until backend endpoints ready
-```
-
 ---
 
-#### **FRONTEND-ADMIN-02: Category Management UI** (Week 2)
-**Ticket Code**: `FRONTEND-ADMIN-02`
+#### **FRONTEND-PERF-01: Performance Optimization** (Week 2 - 2 days)
+**Ticket Code**: `FRONTEND-PERF-01`
 
-1. **Category Tree View**
-   - Hierarchical category display
-   - Expand/collapse nodes
-   - Drag-and-drop to reorganize (bonus)
+**User Story**: As an admin, I need fast page loads (<2s), so that I can work efficiently.
 
-2. **Category CRUD**
-   - Add category dialog
-   - Edit category inline
-   - Delete with confirmation
-   - Parent category selector
+**Implementation**:
+1. **Code Splitting**
+   - Lazy load admin routes
+   - Dynamic imports for heavy components
+   - Separate chunks for admin vs public views
 
-3. **Integration**
-   - Connect to `GET /api/admin/categories` (when available)
-   - Use mock data initially: `frontend/src/services/mockCategoryService.ts`
+2. **Asset Optimization**
+   - Image lazy loading
+   - Use WebP format for images
+   - SVG icon sprites
+
+3. **API Optimizations**
+   - Request deduplication
+   - Response caching (SWR pattern)
+   - Debounce search inputs (300ms)
+   - Pagination for large lists
+
+4. **Bundle Size**
+   - Tree shaking unused dependencies
+   - Analyze bundle with Vite analyzer
+   - Target: <500KB initial bundle
+
+**Acceptance Criteria**:
+- [ ] Initial page load < 2s (3G network)
+- [ ] Admin route lazy loaded
+- [ ] Bundle size < 500KB
+- [ ] Images use lazy loading
+- [ ] Search debounced properly
 
 **Commit & Push**
 
 ---
 
-#### **FRONTEND-ADMIN-03: Approval Queue Interface** (Week 3)
-**Ticket Code**: `FRONTEND-ADMIN-03`
+#### **FRONTEND-TEST-01: Component Testing** (Week 2 - 2 days)
+**Ticket Code**: `FRONTEND-TEST-01`
 
-1. **Queue Table**
-   - Pending approvals list
-   - Filter by category/type
-   - Sort by date submitted
+**User Story**: As a developer, I need component tests, so that UI changes don't break functionality.
 
-2. **Approval Actions**
-   - Approve button (green)
-   - Reject button (red)
-   - View details modal
+**Implementation**:
+1. **Vitest Setup**
+   - Configure Vitest with Vue Test Utils
+   - Mock API services
+   - Mock Firebase Auth
+
+2. **Component Tests**
+   - YouTubeSearch component
+   - CategoryTree component
+   - ApprovalQueue component
+   - Test user interactions (click, input, submit)
+
+3. **Integration Tests**
+   - Full workflow tests (search → preview → approve)
+   - Error state rendering
+   - Loading state rendering
+
+**Acceptance Criteria**:
+- [ ] All admin components have tests
+- [ ] Test coverage > 70%
+- [ ] Tests run in CI pipeline
 
 **Commit & Push**
 
 ---
 
 ### **Success Criteria**
-- All components use TypeScript/Vue3 or React (match existing)
-- Storybook stories for each component
-- Unit tests with Vitest/Jest
-- Responsive design (mobile + desktop)
-- Dark mode support using existing tokens
-- i18n ready (en/ar/nl)
+- All mock services replaced with real backend
+- Performance targets met (< 2s load time)
+- Test coverage > 70%
+- Error handling comprehensive
 - Each ticket committed separately
 - Update `docs/PROJECT_STATUS.md` after each ticket
 
 ### **Communication Protocol**
 **Before starting**:
-> "🟢 Frontend Engineer: Starting FRONTEND-ADMIN-01 on branch `feature/frontend-admin-ui`. Will touch `frontend/` only. Using mock backend data. ETA: 3 days."
+> "🟢 Frontend Engineer: Starting FRONTEND-INT-01 on branch `feature/frontend-backend-integration`. Replacing mocks with real APIs. ETA: 4 days."
 
 **After each commit**:
-> "🟢 Frontend: ✅ FRONTEND-ADMIN-01 complete. YouTube search UI ready with mocks."
+> "🟢 Frontend: ✅ FRONTEND-INT-01 complete. All mock services replaced. Ready for QA."
 
 ---
 
-## 🔵 PROMPT 3: Android Engineer - Phase 9 Downloads
+## 🔵 PROMPT 3: Android Engineer - Performance & Accessibility
 
 ### **Your Mission**
-Implement Phase 9 Downloads & Offline functionality in the Android app.
+Implement performance optimizations and accessibility improvements for production readiness.
 
-### **Branch**: `feature/android-downloads`
+### **Branch**: `feature/android-performance-a11y`
 
 ### **Your Boundaries** ✋
 - **YOU OWN**: `android/app/src/` directory ONLY
@@ -332,160 +505,213 @@ Implement Phase 9 Downloads & Offline functionality in the Android app.
 - **DO NOT MODIFY**: Backend endpoints or Frontend components
 - **SHARED FILES TO AVOID**: Any files outside `android/`
 
-### **Dependencies You Need**
-- Phase 8 player ✅ (already complete - PlayerViewModel, DownloadRepository exist)
-- Phase 9 backend API ⏳ (Backend Engineer is building - use mock until ready)
+### **Context: What's Already Done**
+✅ Phase 8: Player & Background Audio
+✅ Phase 9: Downloads & Offline
+✅ Phase 6: Backend Integration
+✅ Phase 7: Channel & Playlist Details
 
 ### **Tasks Breakdown**
 
-#### **ANDROID-DL-01: Download Queue UI** (Week 1)
-**Ticket Code**: `ANDROID-DL-01`
+#### **ANDROID-PERF-01: Performance Optimization** (Week 1 - 3 days)
+**Ticket Code**: `ANDROID-PERF-01`
 
-1. **Downloads Fragment**
-   - Create `DownloadsFragment.kt`
-   - RecyclerView with download list
-   - Download status (queued, downloading, paused, completed, failed)
-   - Progress bar for active downloads
-   - Pause/Resume/Cancel buttons
+**User Story**: As a user, I need smooth scrolling (60fps) and fast app startup (<2s), so that the app feels professional.
 
-2. **Download Adapter**
-   - `DownloadListAdapter.kt`
-   - Show video thumbnail, title, size, progress
-   - Click to play (if completed)
-   - Long-press for options menu
+**Implementation**:
+1. **RecyclerView Optimization**
+   - Implement DiffUtil for all adapters
+   - Use ViewHolder pattern correctly (already done, verify)
+   - Implement pagination with Paging 3 library
+   - Prefetch images with Coil
 
-3. **Navigation**
-   - Add downloads tab to bottom navigation
-   - Icon: download icon
-   - Global navigation action
+2. **App Startup Optimization**
+   - Lazy initialization of heavy objects
+   - Move Firebase init to background thread
+   - Profile startup with Macrobenchmark
+   - Target: Cold start < 2s, Warm start < 1s
 
-**Files to Create**:
+3. **Memory Optimization**
+   - Fix memory leaks (LeakCanary)
+   - Optimize image loading (downsampling)
+   - Clear old download data (LRU cache)
+   - Reduce overdraw (Layout Inspector)
+
+4. **Network Optimization**
+   - Image caching with Coil disk cache
+   - API response caching (OkHttp)
+   - Retry with exponential backoff
+   - Prefetch next page data
+
+**Files to Modify/Create**:
 ```
-android/app/src/main/java/com/albunyaan/tube/ui/downloads/
-  ├── DownloadsFragment.kt
-  ├── DownloadsViewModel.kt
-  └── DownloadListAdapter.kt
+android/app/src/main/java/com/albunyaan/tube/
+  ├── ui/home/HomeAdapter.kt (add DiffUtil)
+  ├── ui/videos/VideoListAdapter.kt (add DiffUtil)
+  ├── ui/playlists/PlaylistAdapter.kt (add DiffUtil)
+  ├── AlBunyaanApplication.kt (lazy init)
+  ├── data/paging/
+  │   ├── VideoPagingSource.kt (new)
+  │   └── PlaylistPagingSource.kt (new)
+  └── di/NetworkModule.kt (caching config)
 
-android/app/src/main/res/layout/
-  ├── fragment_downloads.xml
-  └── item_download.xml
-
-android/app/src/main/res/navigation/
-  └── main_tabs_nav.xml (add downloads destination)
+android/app/build.gradle (add Paging 3)
 ```
+
+**Acceptance Criteria**:
+- [ ] Cold app startup < 2s (measured with Macrobenchmark)
+- [ ] RecyclerView scroll at 60fps (no jank)
+- [ ] Pagination loads smoothly
+- [ ] No memory leaks (LeakCanary clean)
+- [ ] Images cached properly (Coil disk cache)
+- [ ] API responses cached (OkHttp)
 
 **Commit Format**:
 ```
-ANDROID-DL-01: Implement downloads queue UI
+ANDROID-PERF-01: Performance optimization for production readiness
 
-- Created DownloadsFragment with RecyclerView
-- DownloadListAdapter for download items
-- Progress bar and status display
-- Pause/Resume/Cancel actions
-- Added downloads tab to bottom navigation
+- RecyclerView: DiffUtil for efficient updates
+- Paging 3: Infinite scroll for videos/playlists
+- Startup: Lazy initialization, background Firebase init
+- Memory: Fixed leaks, optimized image loading
+- Network: Coil disk cache, OkHttp caching, retry logic
 
-Files Created:
-- DownloadsFragment.kt: Main downloads screen
-- DownloadsViewModel.kt: State management
-- DownloadListAdapter.kt: RecyclerView adapter
-- fragment_downloads.xml: Layout
-- item_download.xml: List item layout
+Performance Improvements:
+- Cold startup: 3.2s → 1.8s
+- Warm startup: 1.5s → 0.9s
+- RecyclerView scroll: 60fps (was 45fps)
+- Memory usage: -30% reduction
 
 Files Modified:
-- main_tabs_nav.xml: Added downloads destination
-- bottom_nav_menu.xml: Added downloads tab
+- All RecyclerView adapters: DiffUtil added
+- AlBunyaanApplication: Lazy initialization
+- VideoPagingSource/PlaylistPagingSource: Paging 3
+- NetworkModule: Caching configuration
+
+Measured with: Macrobenchmark, Profiler, LeakCanary
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
 Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**After Commit**:
-```bash
-./gradlew assembleDebug  # Ensure build succeeds
-git add -A
-git commit (use format above)
-git push origin feature/android-downloads
-```
-
-Update docs:
-```markdown
-### Android Engineer Progress
-- ✅ ANDROID-DL-01: Downloads queue UI (Committed: 2025-10-05)
-- Ready to integrate with backend API when available
-```
-
 ---
 
-#### **ANDROID-DL-02: Download Service & Notifications** (Week 2)
-**Ticket Code**: `ANDROID-DL-02`
+#### **ANDROID-A11Y-01: Accessibility Improvements** (Week 2 - 2 days)
+**Ticket Code**: `ANDROID-A11Y-01`
 
-1. **Download Worker**
-   - Create `DownloadWorker.kt` (WorkManager)
-   - Download video/audio streams
-   - Save to app storage
-   - Handle interruptions
+**User Story**: As a visually impaired user, I need TalkBack support and proper accessibility labels, so that I can use the app independently.
 
-2. **Download Notification**
-   - Foreground notification during download
-   - Progress notification
-   - Completion notification
-   - Tap to open downloads screen
+**Implementation**:
+1. **Content Descriptions**
+   - Add contentDescription to all ImageViews
+   - Add contentDescription to all IconButtons
+   - Use meaningful descriptions (not "image" or "button")
 
-3. **Mock Backend**
-   - `MockDownloadService.kt` for testing
-   - Simulates download from URL
-   - Replace when backend endpoints ready
+2. **TalkBack Optimization**
+   - Logical focus order for all screens
+   - Group related elements (ViewCompat.setScreenReaderFocusable)
+   - Announce dynamic content changes (LiveRegion)
+   - Test all screens with TalkBack enabled
 
-**Files to Create**:
+3. **Touch Target Sizes**
+   - Ensure all clickable elements ≥ 48dp
+   - Add padding where needed
+   - Fix small download buttons
+
+4. **Contrast & Colors**
+   - Verify all text meets WCAG AA (4.5:1 ratio)
+   - Add focus indicators for keyboard navigation
+   - Support high contrast mode
+
+**Files to Modify**:
 ```
-android/app/src/main/java/com/albunyaan/tube/download/
-  ├── DownloadWorker.kt
-  ├── DownloadNotificationManager.kt
-  └── MockDownloadService.kt (temporary)
+android/app/src/main/res/
+  ├── layout/*.xml (add contentDescription)
+  ├── values/strings.xml (accessibility labels)
+  └── values/dimens.xml (touch target sizes)
+
+android/app/src/main/java/com/albunyaan/tube/
+  └── ui/**/*.kt (announceForAccessibility)
 ```
+
+**Acceptance Criteria**:
+- [ ] All images have contentDescription
+- [ ] All interactive elements ≥ 48dp
+- [ ] TalkBack navigation is logical
+- [ ] Dynamic content changes announced
+- [ ] Contrast ratio ≥ 4.5:1 for all text
+- [ ] Focus indicators visible
 
 **Commit & Push**
 
 ---
 
-#### **ANDROID-DL-03: Storage Management** (Week 3)
-**Ticket Code**: `ANDROID-DL-03`
+#### **ANDROID-TEST-01: Instrumentation Tests** (Week 2 - 2 days)
+**Ticket Code**: `ANDROID-TEST-01`
 
-1. **Storage Settings**
-   - Settings screen for download preferences
-   - Storage location selector
-   - Storage quota display
-   - Clear downloads option
+**User Story**: As a developer, I need UI tests, so that critical user flows are regression-tested.
 
-2. **Downloaded Videos Screen**
-   - Filter by completed downloads
-   - Play offline videos
-   - Delete downloaded videos
+**Implementation**:
+1. **Espresso Setup**
+   - Configure Espresso with Hilt
+   - Mock backend with MockWebServer
+   - Test data builders
+
+2. **Critical Flow Tests**
+   - Home screen loads content
+   - Video playback starts
+   - Download queue works
+   - Settings update persists
+   - Navigation flows work
+
+3. **Accessibility Tests**
+   - TalkBack tests with Accessibility Test Framework
+   - Touch target size tests
+   - Contrast tests
+
+**Files to Create**:
+```
+android/app/src/androidTest/java/com/albunyaan/tube/
+  ├── ui/
+  │   ├── HomeScreenTest.kt
+  │   ├── PlayerTest.kt
+  │   ├── DownloadsTest.kt
+  │   └── NavigationTest.kt
+  ├── util/
+  │   ├── MockWebServerRule.kt
+  │   └── TestDataBuilder.kt
+  └── accessibility/
+      └── AccessibilityTest.kt
+```
+
+**Acceptance Criteria**:
+- [ ] Critical flows have Espresso tests
+- [ ] Tests run in CI pipeline
+- [ ] Accessibility tests pass
+- [ ] Tests use mock backend data
 
 **Commit & Push**
 
 ---
 
 ### **Success Criteria**
-- All downloads work offline
-- Notifications follow Android best practices
-- Storage managed efficiently
-- Unit tests for ViewModels
-- Instrumentation tests for UI
+- Performance targets met (startup < 2s, 60fps scroll)
+- All accessibility requirements met (TalkBack, contrast)
+- Critical flows have UI tests
 - Build succeeds after each commit
 - Update `docs/PROJECT_STATUS.md` after each ticket
 
 ### **Communication Protocol**
 **Before starting**:
-> "🔵 Android Engineer: Starting ANDROID-DL-01 on branch `feature/android-downloads`. Will touch `android/` only. Using mock backend. ETA: 2 days."
+> "🔵 Android Engineer: Starting ANDROID-PERF-01 on branch `feature/android-performance-a11y`. Will touch `android/` only. ETA: 3 days."
 
 **After each commit**:
-> "🔵 Android: ✅ ANDROID-DL-01 complete. Downloads UI ready. Build passing."
+> "🔵 Android: ✅ ANDROID-PERF-01 complete. App startup 1.8s, 60fps scroll. Build passing."
 
 ---
 
-## 📋 Merge Protocol (End of Sprint)
+## 📋 Merge Protocol (End of Sprint 2)
 
 ### **Day Before Merge**
 Each engineer:
@@ -497,9 +723,9 @@ Each engineer:
 
 ### **Merge Day**
 **Order** (to minimize conflicts):
-1. 🔴 Backend merges first (most isolated)
-2. 🟢 Frontend merges second (depends on backend)
-3. 🔵 Android merges last (may depend on backend)
+1. 🔴 Backend merges first (APIs needed by frontend)
+2. 🟢 Frontend merges second (depends on backend APIs)
+3. 🔵 Android merges last (independent optimizations)
 
 **Each Merge**:
 ```bash
@@ -514,8 +740,8 @@ Post in chat:
 
 ### **Post-Merge**
 1. Delete feature branch: `git branch -d feature/your-branch`
-2. Update `docs/PROJECT_STATUS.md` with final status
-3. Team standup to review what shipped
+2. Update `docs/PROJECT_STATUS.md` with "Sprint 2 Complete"
+3. Team standup to review metrics (performance gains, test coverage)
 
 ---
 
@@ -538,37 +764,37 @@ Post in chat:
 
 **docs/PROJECT_STATUS.md Structure**:
 ```markdown
-## Active Parallel Work (2025-10-05)
+## Active Parallel Work - Sprint 2 (2025-10-05)
 
-### 🔴 Backend Engineer: Phase 2 & Downloads API
-Branch: `feature/backend-registry-downloads`
-- ✅ BACKEND-REG-01: Registry endpoints (2025-10-05)
-- ⏳ BACKEND-DL-01: Downloads API (In Progress)
-- ⏸️ BACKEND-DL-02: /next-up endpoint (Not Started)
+### 🔴 Backend Engineer: Approval Workflow & Performance
+Branch: `feature/backend-approval-performance`
+- ✅ BACKEND-APPR-01: Approval workflow API (2025-10-06)
+- ⏳ BACKEND-PERF-01: Performance optimization (In Progress)
+- ⏸️ BACKEND-TEST-01: Integration tests (Not Started)
 
-### 🟢 Frontend Engineer: Admin UI
-Branch: `feature/frontend-admin-ui`
-- ✅ FRONTEND-ADMIN-01: YouTube search UI (2025-10-05)
-- ⏳ FRONTEND-ADMIN-02: Category management (In Progress)
-- ⏸️ FRONTEND-ADMIN-03: Approval queue (Not Started)
+### 🟢 Frontend Engineer: Backend Integration & Performance
+Branch: `feature/frontend-backend-integration`
+- ✅ FRONTEND-INT-01: Replace mock services (2025-10-07)
+- ⏳ FRONTEND-PERF-01: Performance optimization (In Progress)
+- ⏸️ FRONTEND-TEST-01: Component testing (Not Started)
 
-### 🔵 Android Engineer: Downloads
-Branch: `feature/android-downloads`
-- ✅ ANDROID-DL-01: Downloads UI (2025-10-05)
-- ⏳ ANDROID-DL-02: Download service (In Progress)
-- ⏸️ ANDROID-DL-03: Storage management (Not Started)
+### 🔵 Android Engineer: Performance & Accessibility
+Branch: `feature/android-performance-a11y`
+- ✅ ANDROID-PERF-01: Performance optimization (2025-10-06)
+- ⏳ ANDROID-A11Y-01: Accessibility improvements (In Progress)
+- ⏸️ ANDROID-TEST-01: Instrumentation tests (Not Started)
 ```
 
 **Update this section after EVERY commit!**
 
 ---
 
-## ✅ Summary
+## ✅ Sprint 2 Summary
 
 **3 Engineers working in parallel:**
-- 🔴 **Backend**: Builds APIs in `backend/`
-- 🟢 **Frontend**: Builds admin UI in `frontend/`
-- 🔵 **Android**: Builds downloads in `android/`
+- 🔴 **Backend**: Approval API + Performance + Tests
+- 🟢 **Frontend**: Real backend integration + Performance + Tests
+- 🔵 **Android**: Performance + Accessibility + Tests
 
 **No conflicts because:**
 - Each owns separate directory
@@ -577,13 +803,15 @@ Branch: `feature/android-downloads`
 - Communicate in team chat
 - Update docs after each ticket
 
-**Timeline**: 3 weeks, 9 tickets total (3 per engineer)
+**Timeline**: 2 weeks, 9 tickets total (3 per engineer)
 
 **End Result**:
-- Registry & moderation backend complete
-- Admin UI MVP ready
-- Android downloads fully functional
-- All merged to main with zero conflicts
+- Approval workflow complete (backend + frontend connected)
+- All mock services replaced with real APIs
+- Performance optimized across all platforms
+- Accessibility requirements met
+- Comprehensive test coverage
+- Production-ready codebase
 
 ---
 
