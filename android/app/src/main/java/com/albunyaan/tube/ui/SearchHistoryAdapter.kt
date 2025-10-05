@@ -2,14 +2,28 @@ package com.albunyaan.tube.ui
 
 import android.view.LayoutInflater
 import android.view.ViewGroup
+import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.albunyaan.tube.databinding.ItemSearchHistoryBinding
 
 class SearchHistoryAdapter(
-    private val items: List<String>,
     private val onItemClick: (String) -> Unit,
     private val onDeleteClick: (String) -> Unit
-) : RecyclerView.Adapter<SearchHistoryAdapter.ViewHolder>() {
+) : ListAdapter<String, SearchHistoryAdapter.ViewHolder>(DIFF_CALLBACK) {
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
+        val binding = ItemSearchHistoryBinding.inflate(
+            LayoutInflater.from(parent.context),
+            parent,
+            false
+        )
+        return ViewHolder(binding, onItemClick, onDeleteClick)
+    }
+
+    override fun onBindViewHolder(holder: ViewHolder, position: Int) {
+        holder.bind(getItem(position))
+    }
 
     class ViewHolder(
         private val binding: ItemSearchHistoryBinding,
@@ -30,18 +44,13 @@ class SearchHistoryAdapter(
         }
     }
 
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
-        val binding = ItemSearchHistoryBinding.inflate(
-            LayoutInflater.from(parent.context),
-            parent,
-            false
-        )
-        return ViewHolder(binding, onItemClick, onDeleteClick)
-    }
+    companion object {
+        private val DIFF_CALLBACK = object : DiffUtil.ItemCallback<String>() {
+            override fun areItemsTheSame(oldItem: String, newItem: String): Boolean =
+                oldItem == newItem
 
-    override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-        holder.bind(items[position])
+            override fun areContentsTheSame(oldItem: String, newItem: String): Boolean =
+                oldItem == newItem
+        }
     }
-
-    override fun getItemCount() = items.size
 }

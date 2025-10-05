@@ -127,13 +127,29 @@ object ServiceLocator {
             .build()
     }
 
+
     private val httpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .addInterceptor(HttpLoggingInterceptor().apply {
                 level = HttpLoggingInterceptor.Level.BASIC
             })
+            .cache(
+                okhttp3.Cache(
+                    directory = File(appContext.cacheDir, "http_cache"),
+                    maxSize = 30L * 1024 * 1024 // 30 MB
+                )
+            )
+            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
             .build()
     }
+
+
+
+
+
+
 
     private val retrofit: Retrofit by lazy {
         Retrofit.Builder()
