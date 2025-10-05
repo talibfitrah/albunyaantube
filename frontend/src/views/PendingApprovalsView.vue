@@ -35,7 +35,7 @@
           <label>{{ t('approvals.filters.category') }}</label>
           <select v-model="categoryFilter" @change="handleFilterChange">
             <option value="">{{ t('approvals.filters.allCategories') }}</option>
-            <option v-for="cat in categories" :key="cat.id" :value="cat.id">
+            <option v-for="cat in flatCategories" :key="cat.id" :value="cat.id">
               {{ cat.label }}
             </option>
           </select>
@@ -199,6 +199,37 @@ const sortFilter = ref('oldest');
 
 const approvals = ref<any[]>([]);
 const categories = ref<any[]>([]);
+const flatCategories = computed(() => {
+  const flattened: { id: string; label: string }[] = [];
+
+  const traverse = (nodes: any[], depth = 0) => {
+    nodes.forEach(node => {
+      const prefix = depth > 0 ? `${'— '.repeat(depth)}` : '';
+      flattened.push({ id: node.id, label: `${prefix}${node.label}` });
+      if (node.subcategories?.length) {
+        traverse(node.subcategories, depth + 1);
+      }
+    });
+  };
+
+  traverse(categories.value);
+  return flattened;
+});
+const categoryNameMap = computed(() => {
+  const map = new Map<string, string>();
+
+  const traverse = (nodes: any[]) => {
+    nodes.forEach(node => {
+      map.set(node.id, node.label);
+      if (node.subcategories?.length) {
+        traverse(node.subcategories);
+      }
+    });
+  };
+
+  traverse(categories.value);
+  return map;
+});
 const isLoading = ref(false);
 const error = ref<string | null>(null);
 const processingId = ref<string | null>(null);
@@ -298,19 +329,7 @@ async function handleReject() {
 }
 
 function getCategoryName(categoryId: string): string {
-  function findCategory(cats: any[], id: string): any {
-    for (const cat of cats) {
-      if (cat.id === id) return cat;
-      if (cat.subcategories) {
-        const found = findCategory(cat.subcategories, id);
-        if (found) return found;
-      }
-    }
-    return null;
-  }
-
-  const cat = findCategory(categories.value, categoryId);
-  return cat ? cat.label : categoryId;
+  return categoryNameMap.value.get(categoryId) ?? categoryId;
 }
 
 function formatDate(dateStr: string): string {
