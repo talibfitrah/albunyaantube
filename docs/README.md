@@ -1,133 +1,209 @@
 # Albunyaan Tube Documentation
 
-## Quick Links
+> Comprehensive documentation for the Albunyaan Tube video platform
 
-### Getting Started
-- [Main README](../README.md) - Project overview and setup
-- [Roadmap](roadmap/roadmap.md) - Development phases and timeline
-- [Vision](vision/vision.md) - Product vision and goals
+**Last Updated**: 2025-10-05
+**Current Phase**: Phase 6 Complete ✅
 
-## Architecture & Design
+---
 
-### Architecture
-- [Solution Architecture](architecture/solution-architecture.md) - System design and components
-- [Architecture Diagrams](architecture/diagrams/) - Visual architecture documentation
-  - [Context Diagram](architecture/diagrams/context.md)
-  - [Container Diagram](architecture/diagrams/container.md)
-  - [Backend Components](architecture/diagrams/backend-components.md)
-  - [Moderation Sequence](architecture/diagrams/moderation-sequence.md)
-  - [Channel Tabs Sequence](architecture/diagrams/channel-tabs-sequence.md)
+## Quick Start
 
-### UX & Design
-- [Design Guidelines](ux/design.md) - UI/UX design principles
-- [Mockups](ux/mockups/) - Design mockups and wireframes
+- **Project Status**: [PROJECT_STATUS.md](PROJECT_STATUS.md) - Current phase, completed tickets, next steps
+- **Platform Guides**: [PLATFORM_GUIDES.md](PLATFORM_GUIDES.md) - Backend, Frontend, Android setup & troubleshooting
+- **Roadmap**: [roadmap/roadmap.md](roadmap/roadmap.md) - Phased delivery plan with status tracking
 
-## Development
+---
 
-### Backend
-- [Firebase Setup](backend/FIREBASE_SETUP.md) - Firebase project configuration
-- [Backend Integration Status](status/backend-integration.md) - Current backend status
+## Core Documentation (Keep)
 
-### Frontend (Admin Dashboard)
-- [Frontend README](frontend/README.md) - Admin dashboard setup
-- [Dashboard Metrics Plan](frontend/dashboard-metrics-plan.md) - Metrics implementation
+### 1. Vision & Strategy
+- **[vision/vision.md](vision/vision.md)** - Product vision, mission, success metrics, constraints
+- **[roadmap/roadmap.md](roadmap/roadmap.md)** - Phased delivery plan (Phases 0-12)
+- **[PROJECT_STATUS.md](PROJECT_STATUS.md)** - Current status, completed work, next steps
 
-### Android
-- [Android README](android/README.md) - Android app setup and development
-- [Release Checklist](android/RELEASE_CHECKLIST.md) - Pre-release validation
-- [Release Signing](android/RELEASE_SIGNING.md) - App signing configuration
-- [Play Store](android/play-store/) - Play Store assets and guidelines
-  - [Description](android/play-store/description.md)
-  - [Release Notes](android/play-store/release-notes.md)
-  - [Screenshots Guide](android/play-store/SCREENSHOTS_GUIDE.md)
+### 2. Architecture & Design
+- **[architecture/solution-architecture.md](architecture/solution-architecture.md)** - System architecture, tech stack, design patterns
+- **[architecture/diagrams/](architecture/diagrams/)** - C4 diagrams (Context, Container, Component)
+  - `context.md` - System context
+  - `container.md` - Container diagram
+  - `backend-components.md` - Backend component details
+  - `moderation-sequence.md` - Moderation workflow
+  - `channel-tabs-sequence.md` - Channel tab interactions
 
-## Testing & Quality
+### 3. UX & Design
+- **[ux/design.md](ux/design.md)** - Design system, UI specifications
+- **[ux/mockups/](ux/mockups/)** - Figma mockups and screenshots
+- **[i18n/strategy.md](i18n/strategy.md)** - Internationalization strategy (en/ar/nl), RTL support
 
-### Testing
-- [Test Strategy](testing/test-strategy.md) - Overall testing approach
-- [Android Macrobenchmark](testing/android-macrobenchmark.md) - Performance testing
-- [Playlist Findings](testing/playlist-findings.md) - API performance findings
+### 4. Development Guides
+- **[PLATFORM_GUIDES.md](PLATFORM_GUIDES.md)** - All platform setup, operations, troubleshooting
+  - Backend: Firebase, Spring Boot, API endpoints
+  - Frontend: Vue 3, Firebase Auth, Admin UI
+  - Android: Kotlin, MVVM, Navigation, Performance
+  - Operations: Runbooks, workflows, debugging
 
-### Accessibility
-- [WCAG AA Audit](accessibility/wcag-aa-audit.md) - Accessibility compliance
-- [RTL Polish Audit](accessibility/rtl-polish-audit.md) - RTL layout review
+### 5. Requirements & Planning
+- **[acceptance/criteria.md](acceptance/criteria.md)** - Acceptance criteria with traceability
+- **[backlog/product-backlog.csv](backlog/product-backlog.csv)** - Story backlog with estimates
+- **[backlog/ac-traceability.csv](backlog/ac-traceability.csv)** - AC to story mapping
 
-### Security
-- [Threat Model](security/threat-model.md) - Security analysis and mitigations
+### 6. Testing & Quality
+- **[testing/test-strategy.md](testing/test-strategy.md)** - Comprehensive test strategy
+- **[testing/android-macrobenchmark.md](testing/android-macrobenchmark.md)** - Android performance benchmarking
+- **[testing/playlist-findings.md](testing/playlist-findings.md)** - Performance profiling notes
 
-## Status & Progress
+### 7. Security & Risk
+- **[security/threat-model.md](security/threat-model.md)** - Security threats, mitigations
+- **[risk-register.md](risk-register.md)** - Project risks with likelihood/impact
 
-### Current Status
-- [Backend Integration](status/backend-integration.md) - Latest backend status (✅ Complete)
-- [Production Ready](status/PRODUCTION_READY.md) - Production release summary
-- [RTL Fixes](status/RTL_FIXES.md) - RTL layout fixes
-- [Architecture Alignment](status/ARCHITECTURE_ALIGNMENT.md) - Architecture cleanup
+### 8. AI Assistance
+- **[prompt/complete_system_prompt.md](prompt/complete_system_prompt.md)** - AI agent system prompt for development
 
-### Firebase Migration (Historical)
-- [Firebase Migration Summary](status/FIREBASE_MIGRATION_SUMMARY.md)
-- [Firebase Migration Complete](status/FIREBASE_MIGRATION_COMPLETE.md)
-- [Firebase Integration Status](status/FIREBASE_INTEGRATION_STATUS.md)
-- [Enterprise Firestore Limitation](ENTERPRISE_FIRESTORE_LIMITATION.md)
-
-## Operations
-
-### Platform
-- [Docker Compose](platform/docker-compose.md) - Local development setup
-
-### Runbooks
-- [Admin Login](runbooks/admin-login.md) - Admin authentication guide
-- [Admin Onboarding](runbooks/admin-onboarding.md) - Admin onboarding process
-- [Agent Ticket Prompt](runbooks/agent-ticket-prompt.md) - Development workflow
-- [Backend Search Alignment](runbooks/backend-search-alignment.md) - Search implementation
-- [Exclusions Endpoint Checklist](runbooks/exclusions-endpoint-checklist.md) - API checklist
-- [Moderator Search Walkthrough](runbooks/moderator-search-walkthrough.md) - Moderation workflow
-- [Playlist Hydration Performance](runbooks/perf-playlist-hydration.md) - Performance tuning
-- [Roadmap Sync](runbooks/roadmap-sync.md) - Roadmap management
-
-## Planning
-
-### Requirements
-- [Acceptance Criteria](acceptance/criteria.md) - Feature acceptance criteria
-- [Risk Register](risk-register.md) - Project risks and mitigations
-
-### Internationalization
-- [i18n Strategy](i18n/strategy.md) - Internationalization approach
-
-### Prompts & Templates
-- [Complete System Prompt](prompt/complete_system_prompt.md) - AI assistant context
+---
 
 ## Documentation Structure
 
 ```
 docs/
-├── README.md (this file)
-├── acceptance/          # Acceptance criteria
-├── accessibility/       # Accessibility audits
-├── android/            # Android app documentation
-├── architecture/       # System architecture
-├── backend/            # Backend documentation
-├── frontend/           # Frontend documentation
-├── i18n/              # Internationalization
-├── platform/          # Infrastructure & deployment
-├── prompt/            # AI prompts and templates
-├── roadmap/           # Project roadmap
-├── runbooks/          # Operational guides
-├── security/          # Security documentation
-├── status/            # Status updates (historical)
-├── testing/           # Testing documentation
-├── ux/                # UX/UI design
-└── vision/            # Product vision
+├── README.md                    # This file - documentation index
+├── PROJECT_STATUS.md            # Current status & completed work
+├── PLATFORM_GUIDES.md           # All platform setup & operations
+│
+├── roadmap/
+│   └── roadmap.md               # Phased delivery plan (Phases 0-12)
+│
+├── architecture/
+│   ├── solution-architecture.md # System architecture
+│   └── diagrams/                # C4 diagrams
+│
+├── ux/
+│   ├── design.md                # Design system & UI specs
+│   └── mockups/                 # Screenshots & Figma exports
+│
+├── i18n/
+│   └── strategy.md              # Internationalization strategy
+│
+├── prompt/
+│   └── complete_system_prompt.md # AI agent system prompt
+│
+├── vision/
+│   └── vision.md                # Product vision & metrics
+│
+├── acceptance/
+│   └── criteria.md              # Acceptance criteria
+│
+├── backlog/
+│   ├── product-backlog.csv      # Story backlog
+│   └── ac-traceability.csv      # AC traceability
+│
+├── testing/
+│   ├── test-strategy.md         # Test strategy
+│   ├── android-macrobenchmark.md # Android performance
+│   └── playlist-findings.md     # Performance notes
+│
+├── security/
+│   └── threat-model.md          # Security threats
+│
+├── risk-register.md             # Risk register
+│
+└── api/                         # (Future: OpenAPI specs)
 ```
 
-## Contributing
+---
 
-When adding new documentation:
-1. Place it in the appropriate category folder
-2. Update this index
-3. Use clear, descriptive filenames
-4. Include a brief summary at the top of each document
-5. Link to related documents
+## Recent Changes (Oct 2025)
 
-## Archive Policy
+### Documentation Cleanup (Oct 5, 2025)
+- **Consolidated** 12 status files into single `PROJECT_STATUS.md`
+- **Merged** backend, frontend, android guides into `PLATFORM_GUIDES.md`
+- **Removed** 8 redundant folders: status/, runbooks/, backend/, frontend/, android/, platform/, accessibility/, agents/
+- **Result**: 5 core folders, ~20 essential files (down from 14+ folders, 50+ files)
 
-Historical status documents are kept in `status/` for reference. Active documentation is updated in place.
+### Phase 6 Complete (Oct 4-5, 2025)
+- ✅ Backend integration for all tabs (ANDROID-020 through ANDROID-025)
+- ✅ Fixed scroll and navigation issues
+- ✅ All tabs connected to Spring Boot API via Retrofit
+- 📍 **Ready for Phase 7**: Channel & Playlist Details
+
+---
+
+## Finding Information
+
+| What You Need | Where to Look |
+|---------------|---------------|
+| **Current project status** | [PROJECT_STATUS.md](PROJECT_STATUS.md) |
+| **Setup backend/frontend/android** | [PLATFORM_GUIDES.md](PLATFORM_GUIDES.md) |
+| **Troubleshooting** | [PLATFORM_GUIDES.md](PLATFORM_GUIDES.md) - Troubleshooting section |
+| **What's next** | [PROJECT_STATUS.md](PROJECT_STATUS.md) - Next Phase section |
+| **Overall roadmap** | [roadmap/roadmap.md](roadmap/roadmap.md) |
+| **Architecture decisions** | [architecture/solution-architecture.md](architecture/solution-architecture.md) |
+| **Design system** | [ux/design.md](ux/design.md) |
+| **API contracts** | [api/](api/) (Future: OpenAPI specs) |
+| **Acceptance criteria** | [acceptance/criteria.md](acceptance/criteria.md) |
+| **Story backlog** | [backlog/product-backlog.csv](backlog/product-backlog.csv) |
+| **Test strategy** | [testing/test-strategy.md](testing/test-strategy.md) |
+| **Security** | [security/threat-model.md](security/threat-model.md) |
+| **AI development prompt** | [prompt/complete_system_prompt.md](prompt/complete_system_prompt.md) |
+
+---
+
+## Contributing to Documentation
+
+### When to Update
+
+1. **After completing a ticket/sprint**: Update `PROJECT_STATUS.md` with progress
+2. **After architectural changes**: Update `architecture/solution-architecture.md`
+3. **After adding features**: Update `PLATFORM_GUIDES.md` if setup/ops changed
+4. **Before starting a phase**: Review `roadmap/roadmap.md` and update estimates
+5. **After discovering risks**: Update `risk-register.md`
+
+### Commit Message Format
+
+```
+DOCS: Brief description of doc changes
+
+Detailed explanation:
+- What was updated
+- Why it was needed
+- Related tickets (e.g., ANDROID-025)
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
+
+### Guidelines
+
+- ✅ Keep docs **concise and actionable**
+- ✅ Use **relative links** for navigation
+- ✅ Include **code examples** where helpful
+- ✅ Add **commit references** for traceability
+- ✅ Update **PROJECT_STATUS.md** after every sprint/ticket
+- ❌ Don't create new folders without reviewing structure
+- ❌ Don't duplicate information across files
+- ❌ Don't leave outdated status files
+
+---
+
+## Maintenance
+
+### Quarterly Review
+- Review and archive outdated sections in `PROJECT_STATUS.md`
+- Update phase estimates in `roadmap/roadmap.md`
+- Refresh `PLATFORM_GUIDES.md` with new troubleshooting items
+- Check all links still work
+
+### Before Each Phase
+- Review acceptance criteria in `acceptance/criteria.md`
+- Update backlog in `backlog/product-backlog.csv`
+- Ensure `PROJECT_STATUS.md` reflects actual state
+
+---
+
+## Questions?
+
+- **Product/Vision**: See [vision/vision.md](vision/vision.md)
+- **Technical Setup**: See [PLATFORM_GUIDES.md](PLATFORM_GUIDES.md)
+- **Current Status**: See [PROJECT_STATUS.md](PROJECT_STATUS.md)
+- **Roadmap**: See [roadmap/roadmap.md](roadmap/roadmap.md)
