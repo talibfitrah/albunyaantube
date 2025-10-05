@@ -38,7 +38,17 @@ class SubcategoriesFragment : Fragment(R.layout.fragment_subcategories) {
 
     private fun setupRecyclerView() {
         adapter = CategoryAdapter { subcategory ->
-            // TODO: Navigate to filtered content
+            android.util.Log.d(TAG, "Subcategory clicked: ${subcategory.name}")
+            // For now, show a toast indicating the category was selected
+            // TODO: Navigate to filtered content list (Videos tab with category filter)
+            android.widget.Toast.makeText(
+                requireContext(),
+                "Category: ${subcategory.name}\n(Filtering not yet implemented)",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+
+            // Navigate back to categories
+            findNavController().navigateUp()
         }
 
         binding?.subcategoriesRecyclerView?.apply {

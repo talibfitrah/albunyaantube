@@ -56,7 +56,16 @@ class CategoriesFragment : Fragment(R.layout.fragment_categories) {
                 }
             } else {
                 android.util.Log.d("CategoriesFragment", "Category has no subcategories")
-                // TODO: Navigate to filtered content for this category
+                // Show feedback that category was selected
+                // TODO: Navigate to filtered content list (Videos tab with category filter)
+                android.widget.Toast.makeText(
+                    requireContext(),
+                    "Category: ${category.name}\n(Filtering not yet implemented)",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+
+                // Navigate back
+                findNavController().navigateUp()
             }
         }
 
