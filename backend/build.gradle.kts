@@ -27,8 +27,9 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
 
-    // Redis - OPTIONAL: Disabled for MVP, can enable later for caching (Phase 10)
-    // implementation("org.springframework.boot:spring-boot-starter-data-redis")
+    // Redis - BACKEND-PERF-01: Enable for caching (Phase 10)
+    implementation("org.springframework.boot:spring-boot-starter-data-redis")
+    implementation("io.lettuce:lettuce-core")
 
     // Firebase Admin SDK for Authentication and Firestore (replaces PostgreSQL)
     implementation("com.google.firebase:firebase-admin:9.2.0")
@@ -43,10 +44,8 @@ dependencies {
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
 
-    // Embedded Redis - only needed if Redis is enabled
-    // testImplementation("it.ozimov:embedded-redis:0.7.3") {
-    //     exclude(group = "org.slf4j", module = "slf4j-simple")
-    // }
+    // Embedded Redis - BACKEND-PERF-01: Enable for testing
+    testImplementation("com.github.kstyrc:embedded-redis:0.6")
 }
 
 gatling {

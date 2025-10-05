@@ -1,9 +1,11 @@
 package com.albunyaan.tube.controller;
 
+import com.albunyaan.tube.config.CacheConfig;
 import com.albunyaan.tube.dto.CategoryDto;
 import com.albunyaan.tube.dto.ContentItemDto;
 import com.albunyaan.tube.dto.CursorPageDto;
 import com.albunyaan.tube.service.PublicContentService;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -59,10 +61,12 @@ public class PublicContentController {
 
     /**
      * Get categories for filtering.
+     * BACKEND-PERF-01: Cached for 1 hour
      *
      * @return List of all active categories
      */
     @GetMapping("/categories")
+    @Cacheable(value = CacheConfig.CACHE_CATEGORY_TREE, key = "'public-categories'")
     public ResponseEntity<List<CategoryDto>> getCategories() throws ExecutionException, InterruptedException {
         return ResponseEntity.ok(contentService.getCategories());
     }

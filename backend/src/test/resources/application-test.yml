@@ -1,0 +1,43 @@
+spring:
+  application:
+    name: albunyaan-tube-test
+  cache:
+    type: none  # Disable caching in tests
+  data:
+    redis:
+      host: localhost
+      port: 6370  # Different port for test Redis
+
+server:
+  port: 0  # Random port for tests
+
+# Test-specific Firebase configuration
+app:
+  firebase:
+    # Use emulator for tests
+    service-account-path: classpath:firebase-service-account-test.json
+    project-id: test-project
+    firestore:
+      database-id: (default)
+      emulator:
+        enabled: true
+        host: localhost
+        port: 8090
+  youtube:
+    # Mock API key for tests
+    api-key: test-api-key
+    application-name: Albunyaan Tube Test
+  security:
+    cors:
+      allowed-origins:
+        - http://localhost:5173
+    initial-admin:
+      email: test-admin@albunyaan.tube
+      password: TestPassword123!
+      display-name: Test Admin
+
+# Logging for tests
+logging:
+  level:
+    com.albunyaan.tube: DEBUG
+    com.google.cloud.firestore: WARN

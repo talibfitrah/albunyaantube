@@ -1,9 +1,12 @@
 package com.albunyaan.tube.controller;
 
+import com.albunyaan.tube.config.CacheConfig;
 import com.albunyaan.tube.model.Category;
 import com.albunyaan.tube.repository.CategoryRepository;
 import com.albunyaan.tube.security.FirebaseUserDetails;
 import com.albunyaan.tube.service.AuditLogService;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -34,8 +37,10 @@ public class CategoryController {
 
     /**
      * Get all categories (hierarchical)
+     * BACKEND-PERF-01: Cached for 1 hour
      */
     @GetMapping
+    @Cacheable(value = CacheConfig.CACHE_CATEGORY_TREE, key = "'all'")
     public ResponseEntity<List<Category>> getAllCategories() throws ExecutionException, InterruptedException {
         List<Category> categories = categoryRepository.findAll();
         return ResponseEntity.ok(categories);
@@ -43,8 +48,10 @@ public class CategoryController {
 
     /**
      * Get top-level categories
+     * BACKEND-PERF-01: Cached for 1 hour
      */
     @GetMapping("/top-level")
+    @Cacheable(value = CacheConfig.CACHE_CATEGORY_TREE, key = "'top-level'")
     public ResponseEntity<List<Category>> getTopLevelCategories() throws ExecutionException, InterruptedException {
         List<Category> categories = categoryRepository.findTopLevel();
         return ResponseEntity.ok(categories);
@@ -52,8 +59,10 @@ public class CategoryController {
 
     /**
      * Get subcategories of a parent
+     * BACKEND-PERF-01: Cached for 1 hour
      */
     @GetMapping("/{parentId}/subcategories")
+    @Cacheable(value = CacheConfig.CACHE_CATEGORIES, key = "#parentId + '-subcategories'")
     public ResponseEntity<List<Category>> getSubcategories(@PathVariable String parentId)
             throws ExecutionException, InterruptedException {
         List<Category> subcategories = categoryRepository.findByParentId(parentId);
@@ -62,8 +71,10 @@ public class CategoryController {
 
     /**
      * Get category by ID
+     * BACKEND-PERF-01: Cached for 1 hour
      */
     @GetMapping("/{id}")
+    @Cacheable(value = CacheConfig.CACHE_CATEGORIES, key = "#id")
     public ResponseEntity<Category> getCategoryById(@PathVariable String id)
             throws ExecutionException, InterruptedException {
         return categoryRepository.findById(id)
@@ -73,9 +84,11 @@ public class CategoryController {
 
     /**
      * Create new category (admin only)
+     * BACKEND-PERF-01: Evict all category caches on create
      */
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
+    @CacheEvict(value = {CacheConfig.CACHE_CATEGORIES, CacheConfig.CACHE_CATEGORY_TREE}, allEntries = true)
     public ResponseEntity<Category> createCategory(
             @RequestBody Category category,
             @AuthenticationPrincipal FirebaseUserDetails user
@@ -98,9 +111,11 @@ public class CategoryController {
 
     /**
      * Update category (admin only)
+     * BACKEND-PERF-01: Evict all category caches on update
      */
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
+    @CacheEvict(value = {CacheConfig.CACHE_CATEGORIES, CacheConfig.CACHE_CATEGORY_TREE}, allEntries = true)
     public ResponseEntity<Category> updateCategory(
             @PathVariable String id,
             @RequestBody Category category,
@@ -125,9 +140,11 @@ public class CategoryController {
 
     /**
      * Delete category (admin only)
+     * BACKEND-PERF-01: Evict all category caches on delete
      */
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
+    @CacheEvict(value = {CacheConfig.CACHE_CATEGORIES, CacheConfig.CACHE_CATEGORY_TREE}, allEntries = true)
     public ResponseEntity<Void> deleteCategory(
             @PathVariable String id,
             @AuthenticationPrincipal FirebaseUserDetails user
