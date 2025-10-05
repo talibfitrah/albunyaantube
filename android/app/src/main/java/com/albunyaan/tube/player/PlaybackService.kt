@@ -12,6 +12,7 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.media.app.NotificationCompat as MediaNotificationCompat
 import androidx.media.session.MediaButtonReceiver
+import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import com.albunyaan.tube.R
@@ -101,6 +102,24 @@ class PlaybackService : Service() {
             }
             manager.createNotificationChannel(channel)
         }
+    }
+
+    /**
+     * Update MediaSession metadata with current video info
+     */
+    fun updateMetadata(title: String, artist: String, duration: Long = 0) {
+        val metadata = MediaMetadataCompat.Builder()
+            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
+            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist)
+            .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration)
+            .build()
+
+        mediaSession.setMetadata(metadata)
+
+        // Update notification with new metadata
+        val notification = buildNotification(title)
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(NOTIFICATION_ID, notification)
     }
 
     companion object {

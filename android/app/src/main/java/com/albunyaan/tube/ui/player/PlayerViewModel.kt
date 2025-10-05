@@ -12,6 +12,10 @@ import com.albunyaan.tube.data.extractor.VideoTrack
 import com.albunyaan.tube.download.DownloadEntry
 import com.albunyaan.tube.download.DownloadRepository
 import com.albunyaan.tube.download.DownloadRequest
+import com.albunyaan.tube.data.filters.FilterState
+import com.albunyaan.tube.data.model.ContentItem
+import com.albunyaan.tube.data.model.ContentType
+import com.albunyaan.tube.data.source.ContentService
 import com.albunyaan.tube.player.PlayerRepository
 import com.albunyaan.tube.policy.EulaManager
 import com.google.android.exoplayer2.Player
@@ -30,6 +34,7 @@ class PlayerViewModel(
     private val repository: PlayerRepository,
     private val downloadRepository: DownloadRepository,
     private val eulaManager: EulaManager,
+    private val contentService: ContentService,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate
 ) : ViewModel() {
 
@@ -133,21 +138,106 @@ class PlayerViewModel(
     }
 
     /**
+     * Get available quality options for current stream
+     */
+    fun getAvailableQualities(): List<QualityOption> {
+        val streamState = _state.value.streamState
+        if (streamState !is StreamState.Ready) return emptyList()
+
+        val videoTracks = streamState.selection.resolved.videoTracks
+        return videoTracks.mapNotNull { track ->
+            track.qualityLabel?.let { label ->
+                QualityOption(label, track)
+            }
+        }.sortedByDescending { it.track.height ?: 0 }
+    }
+
+    /**
+     * Select a specific video quality
+     */
+    fun selectQuality(track: VideoTrack) {
+        val streamState = _state.value.streamState
+        if (streamState !is StreamState.Ready) return
+
+        val audio = streamState.selection.audio
+        val newSelection = PlaybackSelection(
+            streamId = streamState.streamId,
+            video = track,
+            audio = audio,
+            resolved = streamState.selection.resolved
+        )
+
+        updateState { it.copy(streamState = StreamState.Ready(streamState.streamId, newSelection)) }
+        publishAnalytics(PlaybackAnalyticsEvent.QualityChanged(track.qualityLabel ?: "Unknown"))
+    }
+
+    /**
      * Load and play a specific video by ID
      */
     fun loadVideo(videoId: String, title: String = "Video") {
-        val item = UpNextItem(
-            id = videoId,
-            title = title,
-            channelName = "Albunyaan",
-            durationSeconds = 0,
-            streamId = videoId
-        )
-        currentItem = item
-        queue.clear()
-        applyQueueState()
-        publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(item, PlaybackStartReason.USER_SELECTED))
-        resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
+        viewModelScope.launch(dispatcher) {
+            updateState { it.copy(streamState = StreamState.Loading) }
+
+            try {
+                // Fetch video metadata from backend
+                val response = contentService.fetchContent(
+                    type = ContentType.VIDEOS,
+                    cursor = null,
+                    pageSize = 100,
+                    filters = FilterState()
+                )
+
+                val video = response.items
+                    .filterIsInstance<ContentItem.Video>()
+                    .firstOrNull { it.id == videoId }
+
+                if (video != null) {
+                    val item = UpNextItem(
+                        id = video.id,
+                        title = video.title,
+                        channelName = "Albunyaan", // TODO: Add channel name to Video model
+                        durationSeconds = video.durationMinutes * 60,
+                        streamId = video.id,
+                        thumbnailUrl = video.thumbnailUrl,
+                        description = video.description,
+                        viewCount = video.viewCount
+                    )
+                    currentItem = item
+                    queue.clear()
+                    applyQueueState()
+                    publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(item, PlaybackStartReason.USER_SELECTED))
+                    resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
+                } else {
+                    // Fallback to basic item if video not found
+                    val item = UpNextItem(
+                        id = videoId,
+                        title = title,
+                        channelName = "Albunyaan",
+                        durationSeconds = 0,
+                        streamId = videoId
+                    )
+                    currentItem = item
+                    queue.clear()
+                    applyQueueState()
+                    publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(item, PlaybackStartReason.USER_SELECTED))
+                    resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
+                }
+            } catch (e: Exception) {
+                // Fallback to basic item on error
+                val item = UpNextItem(
+                    id = videoId,
+                    title = title,
+                    channelName = "Albunyaan",
+                    durationSeconds = 0,
+                    streamId = videoId
+                )
+                currentItem = item
+                queue.clear()
+                applyQueueState()
+                publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(item, PlaybackStartReason.USER_SELECTED))
+                resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
+            }
+        }
     }
 
     private fun hydrateQueue() {
@@ -237,12 +327,13 @@ class PlayerViewModel(
         private val repository: PlayerRepository,
         private val downloadRepository: DownloadRepository,
         private val eulaManager: EulaManager,
+        private val contentService: ContentService,
         private val dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate
     ) : ViewModelProvider.Factory {
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             if (modelClass.isAssignableFrom(PlayerViewModel::class.java)) {
                 @Suppress("UNCHECKED_CAST")
-                return PlayerViewModel(repository, downloadRepository, eulaManager, dispatcher) as T
+                return PlayerViewModel(repository, downloadRepository, eulaManager, contentService, dispatcher) as T
             }
             throw IllegalArgumentException("Unknown ViewModel class")
         }
@@ -268,7 +359,10 @@ data class UpNextItem(
     val durationSeconds: Int,
     val isExcluded: Boolean = false,
     val exclusionReason: String? = null,
-    val streamId: String
+    val streamId: String,
+    val thumbnailUrl: String? = null,
+    val description: String? = null,
+    val viewCount: Long? = null
 )
 
 sealed class StreamState {
@@ -277,6 +371,11 @@ sealed class StreamState {
     data class Ready(val streamId: String, val selection: PlaybackSelection) : StreamState()
     data class Error(@StringRes val messageRes: Int) : StreamState()
 }
+
+data class QualityOption(
+    val label: String,
+    val track: VideoTrack
+)
 
 sealed class PlaybackAnalyticsEvent {
     data class QueueHydrated(
@@ -297,6 +396,8 @@ sealed class PlaybackAnalyticsEvent {
     data class StreamResolved(val streamId: String, val qualityLabel: String?) : PlaybackAnalyticsEvent()
 
     data class StreamFailed(val streamId: String) : PlaybackAnalyticsEvent()
+
+    data class QualityChanged(val qualityLabel: String) : PlaybackAnalyticsEvent()
 }
 
 enum class PlaybackStartReason(@StringRes val labelRes: Int) {

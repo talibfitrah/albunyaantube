@@ -43,6 +43,7 @@
     <string name="player_stream_unavailable">This video is not available for playback.</string>
     <string name="player_notification_channel_name">Playback</string>
     <string name="player_notification_channel_desc">Controls playback while the app is in the background.</string>
+    <string name="player_action_quality">Quality</string>
     <string name="player_action_enter_pip">Picture-in-picture</string>
     <string name="player_action_play_pause">Play/Pause</string>
     <string name="player_no_current_item">No video is currently playing.</string>

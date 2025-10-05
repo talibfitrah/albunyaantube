@@ -2,11 +2,37 @@
 
 > Last Updated: 2025-10-05
 
-## Current Phase: Phase 7 In Progress 🚧
+## Current Phase: Phase 8 In Progress 🚧
 
-**Phase 7: Channel & Playlist Details** - Started Oct 5, 2025
+**Phase 8: Player & Background Audio** - Started Oct 5, 2025
 
 ### Completed Tickets (Oct 5, 2025)
+
+#### AND-PLAYER-01: Backend Integration & Quality Selector ✅
+- Integrated PlayerViewModel with ContentService for real video metadata
+- Added video metadata loading (title, description, view count, duration)
+- Enhanced MediaSession with proper metadata for notifications
+- Implemented quality selector dialog for video stream quality
+- Added analytics event for quality changes
+- View count formatting (1K, 1M format)
+- Proper error handling with fallback to basic playback
+
+**Implementation Details**:
+- PlayerViewModel now fetches ContentItem.Video from backend
+- UpNextItem extended with thumbnailUrl, description, viewCount
+- Quality selector shows all available video tracks sorted by height
+- MediaSession updateMetadata() method for notification updates
+- QualityChanged analytics event added to PlaybackAnalyticsEvent
+- Material AlertDialog for quality selection UI
+
+**Files Modified**:
+- [PlayerViewModel.kt](android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerViewModel.kt)
+- [PlayerFragment.kt](android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerFragment.kt)
+- [PlaybackService.kt](android/app/src/main/java/com/albunyaan/tube/player/PlaybackService.kt)
+- [player_menu.xml](android/app/src/main/res/menu/player_menu.xml)
+- [strings.xml](android/app/src/main/res/values/strings.xml)
+
+---
 
 #### ANDROID-026: Implement Click Handlers for Navigation ✅
 - Added navigation from HomeFragment to ChannelDetailFragment

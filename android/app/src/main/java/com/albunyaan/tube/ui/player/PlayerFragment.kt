@@ -49,7 +49,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         PlayerViewModel.Factory(
             ServiceLocator.providePlayerRepository(),
             ServiceLocator.provideDownloadRepository(),
-            ServiceLocator.provideEulaManager()
+            ServiceLocator.provideEulaManager(),
+            ServiceLocator.provideContentService()
         )
     }
     private val upNextAdapter = UpNextAdapter { item -> viewModel.playItem(item) }
@@ -158,12 +159,25 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 updatePlayerStatus(binding, state)
                 val currentItem = state.currentItem
 
-                // Update new UI elements
+                // Update new UI elements with real metadata
                 if (currentItem != null) {
                     binding.videoTitle?.text = currentItem.title
                     binding.authorName?.text = currentItem.channelName
-                    binding.videoStats?.text = "0 views • Just now" // TODO: Get real stats from metadata
-                    binding.videoDescription?.text = "Loading description..." // TODO: Fetch real description
+
+                    // Format view count and time
+                    val viewText = currentItem.viewCount?.let { count ->
+                        val formatted = if (count >= 1_000_000) {
+                            String.format("%.1fM", count / 1_000_000.0)
+                        } else if (count >= 1_000) {
+                            String.format("%.1fK", count / 1_000.0)
+                        } else {
+                            count.toString()
+                        }
+                        "$formatted views"
+                    } ?: "No views yet"
+
+                    binding.videoStats?.text = viewText
+                    binding.videoDescription?.text = currentItem.description ?: "No description available"
                 } else {
                     binding.videoTitle?.text = "No video playing"
                     binding.authorName?.text = ""
@@ -199,12 +213,40 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
+            R.id.action_quality -> {
+                showQualitySelector()
+                true
+            }
             R.id.action_enter_pip -> {
                 enterPictureInPicture()
                 true
             }
             else -> super.onOptionsItemSelected(item)
         }
+    }
+
+    private fun showQualitySelector() {
+        val qualities = viewModel.getAvailableQualities()
+        if (qualities.isEmpty()) {
+            Toast.makeText(requireContext(), "No quality options available", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val labels = qualities.map { it.label }.toTypedArray()
+        val currentQuality = viewModel.state.value.streamState
+            .let { it as? StreamState.Ready }
+            ?.selection?.video?.qualityLabel
+
+        val currentIndex = qualities.indexOfFirst { it.label == currentQuality }
+
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Select Quality")
+            .setSingleChoiceItems(labels, currentIndex) { dialog, which ->
+                viewModel.selectQuality(qualities[which].track)
+                dialog.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean) {
@@ -259,6 +301,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 event.qualityLabel ?: getString(R.string.player_event_stream_resolved_unknown)
             )
             is PlaybackAnalyticsEvent.StreamFailed -> getString(R.string.player_event_stream_failed)
+            is PlaybackAnalyticsEvent.QualityChanged -> "Quality changed to ${event.qualityLabel}"
         }
     }
 
