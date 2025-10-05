@@ -96,6 +96,7 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
         // Skip filter for public endpoints
         String path = request.getRequestURI();
         return path.startsWith("/api/public/") ||
+               path.startsWith("/api/v1/") ||  // Mobile app public APIs
                path.startsWith("/actuator/") ||
                path.equals("/api/auth/login");
     }
