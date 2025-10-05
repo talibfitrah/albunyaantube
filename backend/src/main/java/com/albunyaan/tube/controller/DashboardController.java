@@ -42,8 +42,8 @@ public class DashboardController {
      */
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
-    public ResponseEntity<DashboardMetrics> getDashboardMetrics(
-            @RequestParam(required = false) String timeframe
+    public ResponseEntity<DashboardMetricsResponse> getDashboardMetrics(
+            @RequestParam(required = false, defaultValue = "LAST_7_DAYS") String timeframe
     ) throws ExecutionException, InterruptedException {
 
         // Count totals
@@ -54,42 +54,66 @@ public class DashboardController {
         // Count by status
         List<Channel> allChannels = channelRepository.findAll();
         long pendingChannels = allChannels.stream()
-                .filter(ch -> "pending".equals(ch.getStatus()))
+                .filter(ch -> "PENDING".equalsIgnoreCase(ch.getStatus()))
                 .count();
         long approvedChannels = allChannels.stream()
-                .filter(ch -> "approved".equals(ch.getStatus()))
-                .count();
-        long rejectedChannels = allChannels.stream()
-                .filter(ch -> "rejected".equals(ch.getStatus()))
+                .filter(ch -> "APPROVED".equalsIgnoreCase(ch.getStatus()))
                 .count();
 
-        // Recent activity (last 10 approved channels)
-        List<RecentActivity> recentActivity = allChannels.stream()
-                .filter(ch -> "approved".equals(ch.getStatus()))
-                .sorted((a, b) -> {
-                    if (a.getUpdatedAt() == null) return 1;
-                    if (b.getUpdatedAt() == null) return -1;
-                    return b.getUpdatedAt().compareTo(a.getUpdatedAt());
+        // Count moderators (users with MODERATOR or ADMIN role)
+        long totalModerators = userRepository.findAll().stream()
+                .filter(user -> {
+                    String role = user.getRole();
+                    return "ADMIN".equalsIgnoreCase(role) || "MODERATOR".equalsIgnoreCase(role);
                 })
-                .limit(10)
-                .map(ch -> new RecentActivity(
-                        "channel_approved",
-                        ch.getYoutubeId(), // Using YouTube ID as identifier
-                        ch.getApprovedBy(),
-                        ch.getUpdatedAt() != null ? ch.getUpdatedAt().toString() : null
-                ))
-                .collect(Collectors.toList());
+                .count();
 
-        DashboardMetrics metrics = new DashboardMetrics();
-        metrics.totalCategories = totalCategories;
-        metrics.totalChannels = totalChannels;
-        metrics.totalUsers = totalUsers;
-        metrics.pendingApprovals = pendingChannels;
-        metrics.approvedChannels = approvedChannels;
-        metrics.rejectedChannels = rejectedChannels;
-        metrics.recentActivity = recentActivity;
+        // Create metrics in the expected frontend format
+        DashboardMetricsData data = new DashboardMetricsData();
 
-        return ResponseEntity.ok(metrics);
+        // Pending moderation metric (comparison metric)
+        data.pendingModeration = new ComparisonMetric(
+                (int) pendingChannels,
+                0, // TODO: Calculate previous period value
+                determineTrend(pendingChannels, 0)
+        );
+
+        // Categories metric
+        data.categories = new CategoryMetric(
+                (int) totalCategories,
+                0, // TODO: Calculate new this period
+                (int) totalCategories // TODO: Calculate previous total
+        );
+
+        // Moderators metric (comparison metric)
+        data.moderators = new ComparisonMetric(
+                (int) totalModerators,
+                (int) totalModerators, // TODO: Calculate previous period value
+                "FLAT"
+        );
+
+        // Create metadata
+        DashboardMetricsMeta meta = new DashboardMetricsMeta();
+        meta.generatedAt = java.time.Instant.now().toString();
+        meta.timeRange = new TimeRange(
+                java.time.Instant.now().minus(7, java.time.temporal.ChronoUnit.DAYS).toString(),
+                java.time.Instant.now().toString(),
+                timeframe
+        );
+        meta.cacheTtlSeconds = 300; // 5 minutes
+
+        // Create response
+        DashboardMetricsResponse response = new DashboardMetricsResponse();
+        response.data = data;
+        response.meta = meta;
+
+        return ResponseEntity.ok(response);
+    }
+
+    private String determineTrend(long current, long previous) {
+        if (current > previous) return "UP";
+        if (current < previous) return "DOWN";
+        return "FLAT";
     }
 
     /**
@@ -126,27 +150,62 @@ public class DashboardController {
 
     // DTOs
 
-    public static class DashboardMetrics {
-        public long totalCategories;
-        public long totalChannels;
-        public long totalUsers;
-        public long pendingApprovals;
-        public long approvedChannels;
-        public long rejectedChannels;
-        public List<RecentActivity> recentActivity;
+    public static class DashboardMetricsResponse {
+        public DashboardMetricsData data;
+        public DashboardMetricsMeta meta;
     }
 
-    public static class RecentActivity {
-        public String type;
-        public String title;
-        public String actorUid;
-        public String timestamp;
+    public static class DashboardMetricsData {
+        public ComparisonMetric pendingModeration;
+        public CategoryMetric categories;
+        public ComparisonMetric moderators;
 
-        public RecentActivity(String type, String title, String actorUid, String timestamp) {
-            this.type = type;
-            this.title = title;
-            this.actorUid = actorUid;
-            this.timestamp = timestamp;
+        public DashboardMetricsData() {
+        }
+    }
+
+    public static class ComparisonMetric {
+        public int current;
+        public int previous;
+        public String trend;
+        public Boolean thresholdBreached;
+
+        public ComparisonMetric(int current, int previous, String trend) {
+            this.current = current;
+            this.previous = previous;
+            this.trend = trend;
+            this.thresholdBreached = false;
+        }
+    }
+
+    public static class CategoryMetric {
+        public int total;
+        public int newThisPeriod;
+        public int previousTotal;
+
+        public CategoryMetric(int total, int newThisPeriod, int previousTotal) {
+            this.total = total;
+            this.newThisPeriod = newThisPeriod;
+            this.previousTotal = previousTotal;
+        }
+    }
+
+    public static class DashboardMetricsMeta {
+        public String generatedAt;
+        public TimeRange timeRange;
+        public int cacheTtlSeconds;
+        public java.util.List<String> warnings;
+    }
+
+    public static class TimeRange {
+        public String start;
+        public String end;
+        public String label;
+
+        public TimeRange(String start, String end, String label) {
+            this.start = start;
+            this.end = end;
+            this.label = label;
         }
     }
 
