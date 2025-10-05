@@ -4,7 +4,15 @@
 
 ## Current Phase: Phase 9 - Downloads & Offline 🚧
 
-**Phase 9: Downloads & Offline** - Ready to start
+**Phase 9: Downloads & Offline** - In Progress
+
+### Active Parallel Work (2025-10-05)
+
+#### 🔵 Android Engineer: Downloads Feature
+Branch: `feature/android-downloads`
+- ✅ ANDROID-DL-01: Downloads queue UI (Committed: 2025-10-05)
+- ⏸️ ANDROID-DL-02: Download service & notifications (Not Started)
+- ⏸️ ANDROID-DL-03: Storage management (Not Started)
 
 ---
 
