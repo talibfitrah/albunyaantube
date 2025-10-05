@@ -4,7 +4,15 @@
 
 ## Current Phase: Phase 9 - Downloads & Offline 🚧
 
-**Phase 9: Downloads & Offline** - Ready to start
+**Phase 9: Downloads & Offline** - In Progress
+
+### Active Parallel Work (2025-10-05)
+
+#### 🔴 Backend Engineer: Phase 2 & Downloads API
+Branch: `feature/backend-registry-downloads`
+- ✅ BACKEND-REG-01: Registry & Category endpoints (Committed: 2025-10-05 16:45)
+- ⏸️ BACKEND-DL-01: Downloads API (Not Started)
+- ⏸️ BACKEND-DL-02: /next-up endpoint (Not Started)
 
 ---
 
