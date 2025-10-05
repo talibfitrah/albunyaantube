@@ -101,6 +101,7 @@ public class DashboardController {
                 timeframe
         );
         meta.cacheTtlSeconds = 300; // 5 minutes
+        meta.warnings = new java.util.ArrayList<>(); // Initialize empty warnings list
 
         // Create response
         DashboardMetricsResponse response = new DashboardMetricsResponse();
