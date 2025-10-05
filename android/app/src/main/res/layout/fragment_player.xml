@@ -22,8 +22,12 @@
     </com.google.android.material.appbar.AppBarLayout>
 
     <androidx.core.widget.NestedScrollView
+        android:id="@+id/playerScrollView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:clipToPadding="false"
+        android:overScrollMode="never"
+        android:paddingBottom="@dimen/bottom_nav_height"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
         <LinearLayout

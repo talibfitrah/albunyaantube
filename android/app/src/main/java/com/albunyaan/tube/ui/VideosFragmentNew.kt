@@ -51,9 +51,8 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
 
     private fun navigateToPlayer(videoId: String) {
         val bundle = bundleOf("videoId" to videoId)
-        // Navigate using parent nav controller since player is in parent graph
-        val navController = requireActivity().findNavController(R.id.nav_host_fragment)
-        navController.navigate(R.id.action_mainShellFragment_to_playerFragment, bundle)
+        // Navigate using global action since player is now in main_tabs_nav
+        findNavController().navigate(R.id.action_global_playerFragment, bundle)
     }
 
     private fun observeViewModel() {

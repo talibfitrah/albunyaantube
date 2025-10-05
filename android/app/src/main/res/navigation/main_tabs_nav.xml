@@ -135,6 +135,21 @@
         android:name="com.albunyaan.tube.ui.SearchFragment"
         android:label="Search" />
 
+    <fragment
+        android:id="@+id/playerFragment"
+        android:name="com.albunyaan.tube.ui.player.PlayerFragment"
+        android:label="Player">
+        <argument
+            android:name="videoId"
+            app:argType="string"
+            android:defaultValue="" />
+        <argument
+            android:name="playlistId"
+            app:argType="string"
+            app:nullable="true"
+            android:defaultValue="@null" />
+    </fragment>
+
     <!-- Global actions for navigation from anywhere -->
     <action
         android:id="@+id/action_global_channelDetailFragment"
@@ -143,4 +158,8 @@
     <action
         android:id="@+id/action_global_playlistDetailFragment"
         app:destination="@id/playlistDetailFragment" />
+
+    <action
+        android:id="@+id/action_global_playerFragment"
+        app:destination="@id/playerFragment" />
 </navigation>

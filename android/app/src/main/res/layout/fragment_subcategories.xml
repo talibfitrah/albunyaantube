@@ -23,7 +23,11 @@
         android:id="@+id/subcategoriesRecyclerView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:padding="@dimen/spacing_md"
-        android:clipToPadding="false"/>
+        android:paddingTop="@dimen/spacing_md"
+        android:paddingStart="@dimen/spacing_md"
+        android:paddingEnd="@dimen/spacing_md"
+        android:paddingBottom="@dimen/bottom_nav_height"
+        android:clipToPadding="false"
+        android:overScrollMode="never"/>
 
 </LinearLayout>

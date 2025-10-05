@@ -51,7 +51,7 @@ class MainShellFragment : Fragment(R.layout.fragment_main_shell) {
 
         // Re-click same tab to scroll to top OR navigate back if on a sub-screen
         binding?.mainBottomNav?.setOnItemReselectedListener { item ->
-            android.util.Log.d("MainShellFragment", "Tab reselected: ${item.itemId}, current dest: ${navController.currentDestination?.id}")
+            android.util.Log.d("MainShellFragment", "⚠️ Tab reselected: ${item.itemId}, current dest: ${navController.currentDestination?.id}")
 
             // If current destination is different from the tab, navigate back to the tab
             if (navController.currentDestination?.id != item.itemId) {
@@ -59,9 +59,15 @@ class MainShellFragment : Fragment(R.layout.fragment_main_shell) {
                 navController.popBackStack(item.itemId, false)
             } else {
                 // Same screen, scroll to top
-                android.util.Log.d("MainShellFragment", "Scrolling to top")
+                android.util.Log.e("MainShellFragment", "🔝 SCROLLING TO TOP - Tab reselected while on same screen")
                 val currentFragment = navHost.childFragmentManager.primaryNavigationFragment
-                currentFragment?.view?.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.recyclerView)?.smoothScrollToPosition(0)
+                val recyclerView = currentFragment?.view?.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.recyclerView)
+                if (recyclerView != null) {
+                    android.util.Log.e("MainShellFragment", "Found RecyclerView, scrolling to position 0")
+                    recyclerView.smoothScrollToPosition(0)
+                } else {
+                    android.util.Log.e("MainShellFragment", "RecyclerView not found!")
+                }
             }
         }
     }

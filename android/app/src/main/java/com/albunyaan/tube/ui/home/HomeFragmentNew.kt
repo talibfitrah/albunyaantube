@@ -35,6 +35,12 @@ class HomeFragmentNew : Fragment(R.layout.fragment_home_new) {
         super.onViewCreated(view, savedInstanceState)
         binding = FragmentHomeNewBinding.bind(view)
 
+        // Disable overscroll on the root scroll view to prevent bounce/jump
+        binding?.homeScrollView?.apply {
+            overScrollMode = View.OVER_SCROLL_NEVER
+            isNestedScrollingEnabled = false
+        }
+
         setupAdapters()
         setupUI()
         observeViewModel()

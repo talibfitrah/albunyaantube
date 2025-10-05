@@ -35,25 +35,6 @@
     <fragment
         android:id="@+id/mainShellFragment"
         android:name="com.albunyaan.tube.ui.MainShellFragment"
-        android:label="Albunyaan Tube">
-        <action
-            android:id="@+id/action_mainShellFragment_to_playerFragment"
-            app:destination="@id/playerFragment"/>
-    </fragment>
-
-    <fragment
-        android:id="@+id/playerFragment"
-        android:name="com.albunyaan.tube.ui.player.PlayerFragment"
-        android:label="Player">
-        <argument
-            android:name="videoId"
-            app:argType="string"
-            android:defaultValue="" />
-        <argument
-            android:name="playlistId"
-            app:argType="string"
-            app:nullable="true"
-            android:defaultValue="@null" />
-    </fragment>
+        android:label="Albunyaan Tube" />
 
 </navigation>
