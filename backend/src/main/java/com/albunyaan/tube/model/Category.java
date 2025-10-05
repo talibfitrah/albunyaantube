@@ -2,6 +2,7 @@ package com.albunyaan.tube.model;
 
 import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.annotation.DocumentId;
+import com.google.cloud.firestore.annotation.Exclude;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -190,7 +191,9 @@ public class Category {
 
     /**
      * Check if this is a top-level category (no parent)
+     * Excluded from Firestore serialization to avoid conflict with getTopLevel()
      */
+    @Exclude
     public boolean isTopLevel() {
         return Boolean.TRUE.equals(getTopLevel());
     }

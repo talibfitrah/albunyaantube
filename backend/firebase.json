@@ -2,5 +2,14 @@
   "firestore": {
     "rules": "firestore.rules",
     "indexes": "src/main/resources/firestore.indexes.json"
+  },
+  "emulators": {
+    "firestore": {
+      "port": 8090,
+      "host": "localhost"
+    },
+    "ui": {
+      "enabled": false
+    }
   }
 }

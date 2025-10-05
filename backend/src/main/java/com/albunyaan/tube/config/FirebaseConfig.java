@@ -1,5 +1,6 @@
 package com.albunyaan.tube.config;
 
+import com.google.auth.oauth2.AccessToken;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.FirestoreOptions;
@@ -17,6 +18,7 @@ import org.springframework.core.io.Resource;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Date;
 
 /**
  * FIREBASE-MIGRATE-01: Firebase Configuration
@@ -41,13 +43,27 @@ public class FirebaseConfig {
     @Value("${app.firebase.firestore.database-id:(default)}")
     private String databaseId;
 
+    @Value("${app.firebase.firestore.emulator.enabled:false}")
+    private boolean emulatorEnabled;
+
+    @Value("${app.firebase.firestore.emulator.host:localhost}")
+    private String emulatorHost;
+
+    @Value("${app.firebase.firestore.emulator.port:8090}")
+    private int emulatorPort;
+
     @PostConstruct
     public void initialize() {
         try {
             if (FirebaseApp.getApps().isEmpty()) {
                 GoogleCredentials credentials;
 
-                if (serviceAccountResource.exists()) {
+                // For emulator, use mock credentials
+                if (emulatorEnabled) {
+                    logger.info("Firebase emulator mode enabled - using mock credentials");
+                    // Create mock credentials with a fake access token for emulator
+                    credentials = GoogleCredentials.create(new AccessToken("emulator-token", new Date(System.currentTimeMillis() + 3600000)));
+                } else if (serviceAccountResource.exists()) {
                     try (InputStream serviceAccount = serviceAccountResource.getInputStream()) {
                         credentials = GoogleCredentials.fromStream(serviceAccount);
                     }
@@ -86,26 +102,37 @@ public class FirebaseConfig {
     public Firestore firestore() throws IOException {
         logger.info("Connecting to Firestore database: {} in project: {}", databaseId, projectId);
 
-        // Build Firestore with explicit credentials and database path
-        GoogleCredentials credentials;
-        if (serviceAccountResource.exists()) {
-            try (InputStream serviceAccount = serviceAccountResource.getInputStream()) {
-                credentials = GoogleCredentials.fromStream(serviceAccount);
-            }
+        FirestoreOptions.Builder optionsBuilder = FirestoreOptions.newBuilder()
+                .setProjectId(projectId)
+                .setDatabaseId(databaseId);
+
+        // Configure for emulator or real Firestore
+        if (emulatorEnabled) {
+            String emulatorEndpoint = emulatorHost + ":" + emulatorPort;
+            logger.info("Using Firestore emulator at: {}", emulatorEndpoint);
+            optionsBuilder.setHost(emulatorEndpoint);
+            // Use mock credentials for emulator
+            GoogleCredentials mockCredentials = GoogleCredentials.create(
+                new AccessToken("emulator-token", new Date(System.currentTimeMillis() + 3600000))
+            );
+            optionsBuilder.setCredentials(mockCredentials);
         } else {
-            credentials = GoogleCredentials.getApplicationDefault();
+            // Build Firestore with explicit credentials for production
+            GoogleCredentials credentials;
+            if (serviceAccountResource.exists()) {
+                try (InputStream serviceAccount = serviceAccountResource.getInputStream()) {
+                    credentials = GoogleCredentials.fromStream(serviceAccount);
+                }
+            } else {
+                credentials = GoogleCredentials.getApplicationDefault();
+            }
+            optionsBuilder.setCredentials(credentials);
+
+            // Build database path: projects/{project}/databases/{database}
+            String databasePath = String.format("projects/%s/databases/%s", projectId, databaseId);
+            logger.info("Using Firestore database path: {}", databasePath);
         }
 
-        // Build database path: projects/{project}/databases/{database}
-        String databasePath = String.format("projects/%s/databases/%s", projectId, databaseId);
-        logger.info("Using Firestore database path: {}", databasePath);
-
-        FirestoreOptions firestoreOptions = FirestoreOptions.newBuilder()
-                .setCredentials(credentials)
-                .setProjectId(projectId)
-                .setDatabaseId(databaseId)
-                .build();
-
-        return firestoreOptions.getService();
+        return optionsBuilder.build().getService();
     }
 }

@@ -2,6 +2,7 @@ package com.albunyaan.tube.model;
 
 import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.annotation.DocumentId;
+import com.google.cloud.firestore.annotation.Exclude;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -286,10 +287,20 @@ public class Channel {
         this.updatedAt = Timestamp.now();
     }
 
+    /**
+     * Convenience method to check if channel is approved.
+     * Excluded from Firestore serialization to avoid conflict with getApproved()
+     */
+    @Exclude
     public boolean isApproved() {
         return status != null && status.equalsIgnoreCase("APPROVED");
     }
 
+    /**
+     * Convenience method to check if channel is pending approval.
+     * Excluded from Firestore serialization
+     */
+    @Exclude
     public boolean isPending() {
         return status != null && status.equalsIgnoreCase("PENDING");
     }
