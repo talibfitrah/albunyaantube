@@ -2,39 +2,64 @@
 
 > Last Updated: 2025-10-05
 
-## Active Parallel Work (2025-10-05)
+## ✅ Merged to Main (2025-10-05)
 
-### 🟢 Frontend Engineer: Admin UI ✅ COMPLETE
-Branch: `feature/frontend-admin-ui`
-- ✅ FRONTEND-ADMIN-01: YouTube search and preview UI (2025-10-05 15:12)
+### 🟢 Frontend Engineer: Admin UI - MERGED ✅
+**Merged**: 2025-10-05 15:45
+- ✅ FRONTEND-ADMIN-01: YouTube search and preview UI
   - Mock YouTube service created
   - Channel preview drawer with videos/playlists tabs
   - Include/exclude functionality ready
-  - Uses mock data until backend endpoints available
-- ✅ FRONTEND-ADMIN-02: Category management UI (2025-10-05 15:25)
+- ✅ FRONTEND-ADMIN-02: Category management UI
   - Mock category service with CRUD operations
   - Hierarchical tree view with add/edit/delete
   - Parent/child category support
-  - Icon and display order management
-  - Uses mock data until backend endpoints available
-- ✅ FRONTEND-ADMIN-03: Approval queue interface (2025-10-05 15:40)
+- ✅ FRONTEND-ADMIN-03: Approval queue interface
   - Mock approvals service with filter/sort
   - Approve and reject actions with modals
-  - Filter by type and category
-  - Sort by date (oldest/newest)
-  - Uses mock data until backend endpoints available
 
-### 🔴 Backend Engineer: Phase 2 & Downloads API
-Branch: `feature/backend-registry-downloads`
-- ⏸️ BACKEND-REG-01: Registry & category endpoints (Not Started)
-- ⏸️ BACKEND-DL-01: Downloads API (Not Started)
-- ⏸️ BACKEND-DL-02: /next-up endpoint (Not Started)
+**Files Added**:
+- `frontend/src/components/admin/ChannelPreviewDrawer.vue`
+- `frontend/src/services/mockYouTubeService.ts`
+- `frontend/src/services/mockCategoryService.ts`
+- `frontend/src/services/mockApprovalsService.ts`
 
-### 🔵 Android Engineer: Downloads
-Branch: `feature/android-downloads`
-- ✅ ANDROID-DL-01: Downloads queue UI (2025-10-05)
-- ✅ ANDROID-DL-02: Download service & notifications (2025-10-05)
-- ✅ ANDROID-DL-03: Storage management (2025-10-05)
+**Files Modified**:
+- `frontend/src/views/ContentSearchView.vue`
+- `frontend/src/views/CategoriesView.vue`
+- `frontend/src/views/PendingApprovalsView.vue`
+
+### 🔴 Backend Engineer: Downloads API - MERGED ✅
+**Merged**: 2025-10-05 (via frontend merge)
+- ✅ BACKEND-DL-01: Downloads API endpoints
+  - Download controller with token generation
+  - Download service with event tracking
+  - Manifest and policy DTOs
+
+**Files Added**:
+- `backend/src/main/java/com/albunyaan/tube/controller/DownloadController.java`
+- `backend/src/main/java/com/albunyaan/tube/service/DownloadService.java`
+- `backend/src/main/java/com/albunyaan/tube/service/DownloadTokenService.java`
+- `backend/src/main/java/com/albunyaan/tube/dto/DownloadManifestDto.java`
+- `backend/src/main/java/com/albunyaan/tube/dto/DownloadPolicyDto.java`
+- `backend/src/main/java/com/albunyaan/tube/dto/DownloadTokenDto.java`
+- `backend/src/main/java/com/albunyaan/tube/model/DownloadEvent.java`
+
+### 🔵 Android Engineer: Storage Management - MERGED ✅
+**Merged**: 2025-10-05 (via frontend merge)
+- ✅ ANDROID-DL-03: Storage management settings
+  - Storage location selector
+  - Storage quota display
+  - Clear downloads functionality
+
+**Files Added**:
+- `android/app/src/main/res/layout/settings_item_storage_location.xml`
+- `android/app/src/main/res/layout/settings_item_storage_quota.xml`
+- `android/app/src/main/res/layout/settings_item_clear_downloads.xml`
+
+**Files Modified**:
+- `android/app/src/main/java/com/albunyaan/tube/ui/settings/SettingsFragment.kt`
+- `android/app/src/main/res/layout/fragment_settings.xml`
 
 ---
 
