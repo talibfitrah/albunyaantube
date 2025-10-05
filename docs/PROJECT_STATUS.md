@@ -76,11 +76,12 @@ WARNING: No setter/field for totalExcludedCount found on class Channel$ExcludedI
 - **Impact:** 6 admin views non-functional
 - **Fix:** Build backend endpoints for each feature
 
-**BLOCKER #4: Dashboard Metrics Structure Mismatch (MEDIUM)**
-- Frontend expects: `{data: {...}, meta: {generatedAt}}`
-- Backend returns: `{totalCategories, totalChannels, ...}`
-- **Impact:** Dashboard broken with undefined errors
-- **Fix:** Wrap backend response in expected structure
+**BLOCKER #4: Dashboard Metrics Structure Mismatch (MEDIUM)** ✅ FIXED
+- ~~Frontend expects: `{data: {...}, meta: {generatedAt}}`~~
+- ~~Backend returns: `{totalCategories, totalChannels, ...}`~~
+- ✅ Backend now returns proper `{data, meta}` structure (commit 87d4536)
+- ✅ Dashboard should load without errors
+- **Next:** Manual testing to verify dashboard displays correctly
 
 **BLOCKER #5: Hardcoded Data in Android (MEDIUM)** ⚠️ PARTIALLY FIXED
 - ~~Categories screen using hardcoded list~~ ✅ FIXED (2025-10-05)
