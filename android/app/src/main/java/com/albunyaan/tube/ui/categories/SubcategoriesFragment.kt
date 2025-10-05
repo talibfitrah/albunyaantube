@@ -3,15 +3,19 @@ package com.albunyaan.tube.ui.categories
 import android.os.Bundle
 import android.view.View
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.albunyaan.tube.R
+import com.albunyaan.tube.ServiceLocator
 import com.albunyaan.tube.databinding.FragmentSubcategoriesBinding
+import kotlinx.coroutines.launch
 
 class SubcategoriesFragment : Fragment(R.layout.fragment_subcategories) {
 
     private var binding: FragmentSubcategoriesBinding? = null
     private lateinit var adapter: CategoryAdapter
+    private val contentService by lazy { ServiceLocator.provideContentService() }
 
     private val categoryId: String by lazy { requireArguments().getString(ARG_CATEGORY_ID).orEmpty() }
     private val categoryName: String by lazy { requireArguments().getString(ARG_CATEGORY_NAME).orEmpty() }
@@ -44,31 +48,18 @@ class SubcategoriesFragment : Fragment(R.layout.fragment_subcategories) {
     }
 
     private fun loadSubcategories() {
-        // Mock subcategories based on category
-        val subcategories = when (categoryId) {
-            "1" -> listOf( // Quran
-                Category("1_1", "Quran Recitation", false),
-                Category("1_2", "Islamic Lectures", false),
-                Category("1_3", "Nasheeds", false),
-                Category("1_4", "Documentaries", false),
-                Category("1_5", "Kids Content", false),
-                Category("1_6", "Cooking", false),
-                Category("1_7", "Travel", false),
-                Category("1_8", "Lifestyle", false)
-            )
-            "10" -> listOf( // Islamic Lectures
-                Category("10_1", "Quran Recitation", false),
-                Category("10_2", "Islamic Lectures", false),
-                Category("10_3", "Nasheeds", false),
-                Category("10_4", "Documentaries", false),
-                Category("10_5", "Kids Content", false),
-                Category("10_6", "Cooking", false),
-                Category("10_7", "Travel", false),
-                Category("10_8", "Lifestyle", false)
-            )
-            else -> emptyList()
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                android.util.Log.d(TAG, "Fetching subcategories for parentId=$categoryId...")
+                val subcategories = contentService.fetchSubcategories(categoryId)
+                android.util.Log.d(TAG, "Loaded ${subcategories.size} subcategories from backend")
+                adapter.submitList(subcategories)
+            } catch (e: Exception) {
+                android.util.Log.e(TAG, "Failed to load subcategories", e)
+                // Show error state or fallback to empty list
+                adapter.submitList(emptyList())
+            }
         }
-        adapter.submitList(subcategories)
     }
 
     override fun onDestroyView() {
@@ -77,6 +68,7 @@ class SubcategoriesFragment : Fragment(R.layout.fragment_subcategories) {
     }
 
     companion object {
+        private const val TAG = "SubcategoriesFragment"
         const val ARG_CATEGORY_ID = "categoryId"
         const val ARG_CATEGORY_NAME = "categoryName"
     }

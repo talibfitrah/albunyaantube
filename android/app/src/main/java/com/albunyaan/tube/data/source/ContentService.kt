@@ -17,4 +17,6 @@ interface ContentService {
     suspend fun search(query: String, type: String? = null, limit: Int = 20): List<ContentItem>
 
     suspend fun fetchCategories(): List<Category>
+
+    suspend fun fetchSubcategories(parentId: String): List<Category>
 }

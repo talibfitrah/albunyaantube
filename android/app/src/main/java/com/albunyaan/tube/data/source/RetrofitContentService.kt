@@ -104,4 +104,18 @@ class RetrofitContentService(
             )
         }
     }
+
+    override suspend fun fetchSubcategories(parentId: String): List<com.albunyaan.tube.ui.categories.Category> {
+        val response = api.fetchCategories()
+        // Filter to only categories with matching parentId
+        return response
+            .filter { it.parentId == parentId }
+            .map { categoryDto ->
+                com.albunyaan.tube.ui.categories.Category(
+                    id = categoryDto.id,
+                    name = categoryDto.name,
+                    hasSubcategories = false // Subcategories don't have further children in current design
+                )
+            }
+    }
 }

@@ -139,4 +139,9 @@ class FakeContentService : ContentService {
             )
         }
     }
+
+    override suspend fun fetchSubcategories(parentId: String): List<com.albunyaan.tube.ui.categories.Category> {
+        // Fake service doesn't have hierarchical categories, return empty list
+        return emptyList()
+    }
 }
