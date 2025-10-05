@@ -8,11 +8,11 @@
 
 ### Active Parallel Work (2025-10-05)
 
-#### 🔴 Backend Engineer: Phase 2 & Downloads API
-Branch: `feature/backend-registry-downloads`
-- ✅ BACKEND-REG-01: Registry & Category endpoints (Committed: 2025-10-05 16:45)
-- ⏸️ BACKEND-DL-01: Downloads API (Not Started)
-- ⏸️ BACKEND-DL-02: /next-up endpoint (Not Started)
+#### 🔵 Android Engineer: Downloads Feature
+Branch: `feature/android-downloads`
+- ✅ ANDROID-DL-01: Downloads queue UI (Committed: 2025-10-05)
+- ⏸️ ANDROID-DL-02: Download service & notifications (Not Started)
+- ⏸️ ANDROID-DL-03: Storage management (Not Started)
 
 ---
 
