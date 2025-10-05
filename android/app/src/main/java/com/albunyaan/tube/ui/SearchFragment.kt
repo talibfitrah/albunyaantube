@@ -83,7 +83,6 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
 
     private fun setupSearchHistory() {
         searchHistoryAdapter = SearchHistoryAdapter(
-            items = searchHistory,
             onItemClick = { query ->
                 binding?.searchView?.setQuery(query, true)
             },
@@ -163,7 +162,7 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
             searchHistory.addAll(historyString.split("|").filter { it.isNotBlank() })
         }
 
-        searchHistoryAdapter.notifyDataSetChanged()
+        searchHistoryAdapter.submitList(searchHistory.toList())
         showSearchHistory()
     }
 
@@ -183,7 +182,7 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
         val prefs = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().putString(KEY_SEARCH_HISTORY, searchHistory.joinToString("|")).apply()
 
-        searchHistoryAdapter.notifyDataSetChanged()
+        searchHistoryAdapter.submitList(searchHistory.toList())
     }
 
     private fun removeFromHistory(query: String) {
@@ -192,7 +191,7 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
         val prefs = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().putString(KEY_SEARCH_HISTORY, searchHistory.joinToString("|")).apply()
 
-        searchHistoryAdapter.notifyDataSetChanged()
+        searchHistoryAdapter.submitList(searchHistory.toList())
         showSearchHistory()
     }
 
@@ -202,7 +201,7 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
         val prefs = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().remove(KEY_SEARCH_HISTORY).apply()
 
-        searchHistoryAdapter.notifyDataSetChanged()
+        searchHistoryAdapter.submitList(searchHistory.toList())
         showSearchHistory()
     }
 

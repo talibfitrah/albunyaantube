@@ -80,7 +80,7 @@ class DownloadsFragmentTest {
         fakeRepository.emit(listOf(entry))
         InstrumentationRegistry.getInstrumentation().waitForIdleSync()
 
-        onView(withId(R.id.downloadList))
+        onView(withId(R.id.downloadsRecyclerView))
             .perform(
                 RecyclerViewActions.actionOnItemAtPosition<RecyclerView.ViewHolder>(
                     0,
@@ -93,7 +93,7 @@ class DownloadsFragmentTest {
         fakeRepository.emit(listOf(entry.copy(status = DownloadStatus.PAUSED)))
         InstrumentationRegistry.getInstrumentation().waitForIdleSync()
 
-        onView(withId(R.id.downloadList))
+        onView(withId(R.id.downloadsRecyclerView))
             .perform(
                 RecyclerViewActions.actionOnItemAtPosition<RecyclerView.ViewHolder>(
                     0,
@@ -103,7 +103,7 @@ class DownloadsFragmentTest {
         InstrumentationRegistry.getInstrumentation().waitForIdleSync()
         assert(fakeRepository.actions.contains("resume:download-1"))
 
-        onView(withId(R.id.downloadList))
+        onView(withId(R.id.downloadsRecyclerView))
             .perform(
                 RecyclerViewActions.actionOnItemAtPosition<RecyclerView.ViewHolder>(
                     0,
@@ -132,7 +132,7 @@ class DownloadsFragmentTest {
             entry.progress
         )
 
-        onView(withId(R.id.downloadList))
+        onView(withId(R.id.downloadsRecyclerView))
             .check(matches(hasDescendant(withContentDescription(expected))))
     }
 
@@ -162,7 +162,7 @@ class DownloadsFragmentTest {
         ).toString()
         val expected = context.getString(R.string.download_details_format, size, relative)
 
-        onView(withId(R.id.downloadList))
+        onView(withId(R.id.downloadsRecyclerView))
             .check(matches(hasDescendant(withText(expected))))
     }
 

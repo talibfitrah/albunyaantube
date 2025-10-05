@@ -2,33 +2,16 @@ package com.albunyaan.tube.ui
 
 import android.view.LayoutInflater
 import android.view.ViewGroup
+import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import com.albunyaan.tube.R
 import com.albunyaan.tube.databinding.ItemSearchHistoryBinding
 
 class SearchHistoryAdapter(
-    private val items: List<String>,
     private val onItemClick: (String) -> Unit,
     private val onDeleteClick: (String) -> Unit
-) : RecyclerView.Adapter<SearchHistoryAdapter.ViewHolder>() {
-
-    class ViewHolder(
-        private val binding: ItemSearchHistoryBinding,
-        private val onItemClick: (String) -> Unit,
-        private val onDeleteClick: (String) -> Unit
-    ) : RecyclerView.ViewHolder(binding.root) {
-
-        fun bind(query: String) {
-            binding.searchText.text = query
-
-            binding.root.setOnClickListener {
-                onItemClick(query)
-            }
-
-            binding.deleteButton.setOnClickListener {
-                onDeleteClick(query)
-            }
-        }
-    }
+) : ListAdapter<String, SearchHistoryAdapter.ViewHolder>(DIFF_CALLBACK) {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
         val binding = ItemSearchHistoryBinding.inflate(
@@ -40,8 +23,41 @@ class SearchHistoryAdapter(
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-        holder.bind(items[position])
+        holder.bind(getItem(position))
     }
 
-    override fun getItemCount() = items.size
+    class ViewHolder(
+        private val binding: ItemSearchHistoryBinding,
+        private val onItemClick: (String) -> Unit,
+        private val onDeleteClick: (String) -> Unit
+    ) : RecyclerView.ViewHolder(binding.root) {
+
+        fun bind(query: String) {
+            binding.searchText.text = query
+
+            // Accessibility: Set content description for the entire item
+            binding.root.contentDescription = binding.root.context.getString(
+                R.string.a11y_search_history,
+                query
+            )
+
+            binding.root.setOnClickListener {
+                onItemClick(query)
+            }
+
+            binding.deleteButton.setOnClickListener {
+                onDeleteClick(query)
+            }
+        }
+    }
+
+    companion object {
+        private val DIFF_CALLBACK = object : DiffUtil.ItemCallback<String>() {
+            override fun areItemsTheSame(oldItem: String, newItem: String): Boolean =
+                oldItem == newItem
+
+            override fun areContentsTheSame(oldItem: String, newItem: String): Boolean =
+                oldItem == newItem
+        }
+    }
 }
