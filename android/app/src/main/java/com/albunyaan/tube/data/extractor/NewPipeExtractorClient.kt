@@ -315,7 +315,8 @@ class NewPipeExtractorClient(
         if (videoTracks.isEmpty() && audioTracks.isEmpty()) return null
 
         val durationSeconds = duration.takeIf { it > 0 }?.toInt()
-        return ResolvedStreams(streamId, videoTracks, audioTracks, durationSeconds)
+        // TODO: Extract subtitle tracks from StreamInfo when NewPipe adds support
+        return ResolvedStreams(streamId, videoTracks, audioTracks, emptyList(), durationSeconds)
     }
 
     private fun Long.toIntSafely(): Int? = when {

@@ -8,6 +8,7 @@ import com.albunyaan.tube.R
 import com.albunyaan.tube.data.extractor.AudioTrack
 import com.albunyaan.tube.data.extractor.PlaybackSelection
 import com.albunyaan.tube.data.extractor.ResolvedStreams
+import com.albunyaan.tube.data.extractor.SubtitleTrack
 import com.albunyaan.tube.data.extractor.VideoTrack
 import com.albunyaan.tube.download.DownloadEntry
 import com.albunyaan.tube.download.DownloadRepository
@@ -169,6 +170,35 @@ class PlayerViewModel(
 
         updateState { it.copy(streamState = StreamState.Ready(streamState.streamId, newSelection)) }
         publishAnalytics(PlaybackAnalyticsEvent.QualityChanged(track.qualityLabel ?: "Unknown"))
+    }
+
+    /**
+     * Get available subtitle/caption tracks
+     */
+    fun getAvailableSubtitles(): List<SubtitleTrack> {
+        val streamState = _state.value.streamState
+        if (streamState !is StreamState.Ready) return emptyList()
+
+        return streamState.selection.resolved.subtitleTracks
+    }
+
+    /**
+     * Get currently selected subtitle track
+     */
+    fun getSelectedSubtitle(): SubtitleTrack? {
+        return _state.value.selectedSubtitle
+    }
+
+    /**
+     * Select a subtitle track (or null to disable subtitles)
+     */
+    fun selectSubtitle(track: SubtitleTrack?) {
+        updateState { it.copy(selectedSubtitle = track) }
+        track?.let {
+            publishAnalytics(PlaybackAnalyticsEvent.SubtitleChanged(it.languageName))
+        } ?: run {
+            publishAnalytics(PlaybackAnalyticsEvent.SubtitleChanged("Off"))
+        }
     }
 
     /**
@@ -349,6 +379,7 @@ data class PlayerState(
     val currentDownload: DownloadEntry? = null,
     val isEulaAccepted: Boolean = false,
     val streamState: StreamState = StreamState.Idle,
+    val selectedSubtitle: SubtitleTrack? = null,
     val lastAnalyticsEvent: PlaybackAnalyticsEvent? = null
 )
 
@@ -398,6 +429,8 @@ sealed class PlaybackAnalyticsEvent {
     data class StreamFailed(val streamId: String) : PlaybackAnalyticsEvent()
 
     data class QualityChanged(val qualityLabel: String) : PlaybackAnalyticsEvent()
+
+    data class SubtitleChanged(val languageName: String) : PlaybackAnalyticsEvent()
 }
 
 enum class PlaybackStartReason(@StringRes val labelRes: Int) {

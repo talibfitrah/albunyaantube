@@ -13,7 +13,8 @@
 - Added video metadata loading (title, description, view count, duration)
 - Enhanced MediaSession with proper metadata for notifications
 - Implemented quality selector dialog for video stream quality
-- Added analytics event for quality changes
+- Implemented caption/subtitle selector with "Off" option
+- Added analytics events for quality and subtitle changes
 - View count formatting (1K, 1M format)
 - Proper error handling with fallback to basic playback
 
@@ -21,14 +22,19 @@
 - PlayerViewModel now fetches ContentItem.Video from backend
 - UpNextItem extended with thumbnailUrl, description, viewCount
 - Quality selector shows all available video tracks sorted by height
+- Caption selector shows subtitle tracks with auto-generated indicator
+- SubtitleTrack model added to StreamModels with language support
+- PlayerState tracks selectedSubtitle for caption management
 - MediaSession updateMetadata() method for notification updates
-- QualityChanged analytics event added to PlaybackAnalyticsEvent
-- Material AlertDialog for quality selection UI
+- QualityChanged and SubtitleChanged analytics events
+- Material AlertDialog for quality and caption selection UI
 
 **Files Modified**:
 - [PlayerViewModel.kt](android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerViewModel.kt)
 - [PlayerFragment.kt](android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerFragment.kt)
 - [PlaybackService.kt](android/app/src/main/java/com/albunyaan/tube/player/PlaybackService.kt)
+- [StreamModels.kt](android/app/src/main/java/com/albunyaan/tube/data/extractor/StreamModels.kt)
+- [NewPipeExtractorClient.kt](android/app/src/main/java/com/albunyaan/tube/data/extractor/NewPipeExtractorClient.kt)
 - [player_menu.xml](android/app/src/main/res/menu/player_menu.xml)
 - [strings.xml](android/app/src/main/res/values/strings.xml)
 
