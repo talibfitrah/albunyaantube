@@ -39,9 +39,20 @@ public class Channel {
     private List<String> categoryIds;
 
     /**
-     * Approval status: "pending" | "approved" | "rejected"
+     * Denormalized category snapshot persisted in Firestore for quick reads.
+     */
+    private Category category;
+
+    /**
+     * Approval status: "PENDING" | "APPROVED" | "REJECTED"
      */
     private String status;
+
+    /**
+     * Backwards-compatible boolean flags stored in Firestore.
+     */
+    private Boolean pending;
+    private Boolean approved;
 
     /**
      * Excluded content from this channel
@@ -64,7 +75,9 @@ public class Channel {
     public Channel() {
         this.categoryIds = new ArrayList<>();
         this.excludedItems = new ExcludedItems();
-        this.status = "pending";
+        this.status = "PENDING";
+        this.pending = Boolean.TRUE;
+        this.approved = Boolean.FALSE;
         this.createdAt = Timestamp.now();
         this.updatedAt = Timestamp.now();
     }
@@ -80,13 +93,15 @@ public class Channel {
         private List<String> shorts = new ArrayList<>();
         private List<String> playlists = new ArrayList<>();
         private List<String> posts = new ArrayList<>();
+        private Integer totalExcludedCount;
 
         public List<String> getVideos() {
             return videos;
         }
 
         public void setVideos(List<String> videos) {
-            this.videos = videos;
+            this.videos = videos != null ? new ArrayList<>(videos) : new ArrayList<>();
+            recalculateTotal();
         }
 
         public List<String> getLiveStreams() {
@@ -94,7 +109,8 @@ public class Channel {
         }
 
         public void setLiveStreams(List<String> liveStreams) {
-            this.liveStreams = liveStreams;
+            this.liveStreams = liveStreams != null ? new ArrayList<>(liveStreams) : new ArrayList<>();
+            recalculateTotal();
         }
 
         public List<String> getShorts() {
@@ -102,7 +118,8 @@ public class Channel {
         }
 
         public void setShorts(List<String> shorts) {
-            this.shorts = shorts;
+            this.shorts = shorts != null ? new ArrayList<>(shorts) : new ArrayList<>();
+            recalculateTotal();
         }
 
         public List<String> getPlaylists() {
@@ -110,7 +127,8 @@ public class Channel {
         }
 
         public void setPlaylists(List<String> playlists) {
-            this.playlists = playlists;
+            this.playlists = playlists != null ? new ArrayList<>(playlists) : new ArrayList<>();
+            recalculateTotal();
         }
 
         public List<String> getPosts() {
@@ -118,11 +136,27 @@ public class Channel {
         }
 
         public void setPosts(List<String> posts) {
-            this.posts = posts;
+            this.posts = posts != null ? new ArrayList<>(posts) : new ArrayList<>();
+            recalculateTotal();
         }
 
         public int getTotalExcludedCount() {
+            if (totalExcludedCount != null) {
+                return totalExcludedCount;
+            }
+            return calculateTotalExcludedCount();
+        }
+
+        public void setTotalExcludedCount(Integer totalExcludedCount) {
+            this.totalExcludedCount = totalExcludedCount;
+        }
+
+        private int calculateTotalExcludedCount() {
             return videos.size() + liveStreams.size() + shorts.size() + playlists.size() + posts.size();
+        }
+
+        private void recalculateTotal() {
+            this.totalExcludedCount = calculateTotalExcludedCount();
         }
     }
 
@@ -149,7 +183,15 @@ public class Channel {
     }
 
     public void setCategoryIds(List<String> categoryIds) {
-        this.categoryIds = categoryIds;
+        this.categoryIds = categoryIds != null ? new ArrayList<>(categoryIds) : new ArrayList<>();
+    }
+
+    public Category getCategory() {
+        return category;
+    }
+
+    public void setCategory(Category category) {
+        this.category = category;
     }
 
     public String getStatus() {
@@ -157,7 +199,46 @@ public class Channel {
     }
 
     public void setStatus(String status) {
-        this.status = status;
+        if (status == null) {
+            this.status = null;
+            this.pending = null;
+            this.approved = null;
+            return;
+        }
+
+        this.status = status.toUpperCase();
+        this.pending = "PENDING".equals(this.status);
+        this.approved = "APPROVED".equals(this.status);
+    }
+
+    public Boolean getPending() {
+        if (pending != null) {
+            return pending;
+        }
+        return status != null && "PENDING".equalsIgnoreCase(status);
+    }
+
+    public void setPending(Boolean pending) {
+        this.pending = pending;
+        if (Boolean.TRUE.equals(pending)) {
+            this.status = "PENDING";
+            this.approved = Boolean.FALSE;
+        }
+    }
+
+    public Boolean getApproved() {
+        if (approved != null) {
+            return approved;
+        }
+        return status != null && "APPROVED".equalsIgnoreCase(status);
+    }
+
+    public void setApproved(Boolean approved) {
+        this.approved = approved;
+        if (Boolean.TRUE.equals(approved)) {
+            this.status = "APPROVED";
+            this.pending = Boolean.FALSE;
+        }
     }
 
     public ExcludedItems getExcludedItems() {
@@ -165,7 +246,8 @@ public class Channel {
     }
 
     public void setExcludedItems(ExcludedItems excludedItems) {
-        this.excludedItems = excludedItems;
+        this.excludedItems = excludedItems != null ? excludedItems : new ExcludedItems();
+        this.excludedItems.recalculateTotal();
     }
 
     public Timestamp getCreatedAt() {
@@ -205,11 +287,11 @@ public class Channel {
     }
 
     public boolean isApproved() {
-        return "approved".equals(status);
+        return status != null && status.equalsIgnoreCase("APPROVED");
     }
 
     public boolean isPending() {
-        return "pending".equals(status);
+        return status != null && status.equalsIgnoreCase("PENDING");
     }
 
     public String getName() {
@@ -264,8 +346,4 @@ public class Channel {
      * Get the first category from categoryIds list
      * Helper method for PublicContentService
      */
-    public Category getCategory() {
-        // This returns null for now - will need to be populated by service layer
-        return null;
-    }
 }

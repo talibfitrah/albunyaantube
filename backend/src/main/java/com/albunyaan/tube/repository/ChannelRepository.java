@@ -33,6 +33,9 @@ public class ChannelRepository {
 
     public Channel save(Channel channel) throws ExecutionException, InterruptedException {
         channel.touch();
+        // Ensure derived fields stay in sync with status/exclusions
+        channel.setStatus(channel.getStatus());
+        channel.setExcludedItems(channel.getExcludedItems());
 
         if (channel.getId() == null) {
             DocumentReference docRef = getCollection().document();

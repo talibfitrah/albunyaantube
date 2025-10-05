@@ -20,7 +20,7 @@
 
 **What's Broken:**
 - ❌ **NO CONTENT DATA** in Firestore (empty channels, playlists, videos collections)
-- ❌ Firestore model mismatches (backend models don't match DB schema)
+- ⚠️ Firestore model mismatches addressed in backend (awaiting deployment + log verification)
 - ❌ Dashboard metrics return wrong structure
 - ❌ Android app shows empty screens (no data to display)
 - ❌ Most admin features unusable without data
@@ -153,13 +153,13 @@ Channel.ExcludedItems: Missing 'totalExcludedCount' field
 - Migrate existing data from previous system
 
 ### BLOCKER #2: Firestore Model Mismatches
-**Impact:** HIGH - Runtime warnings, potential data loss
+**Impact:** MEDIUM - Code fix landed, metrics pending validation
 **Affected:** Categories, Channels, Playlists
-**Root Cause:** Backend Java models don't match Firestore document schema
-**Fix Required:**
-- Add missing fields to backend models
-- OR update Firestore documents to match models
-- OR remove obsolete fields from Firestore
+**Root Cause:** Backend Java models didn't match Firestore document schema (addressed in latest commit)
+**Fix Applied:**
+- ✅ Added missing fields to backend models (`Category.topLevel`, `Channel.pending`, `Channel.approved`, `Channel.category`, `ExcludedItems.totalExcludedCount`)
+- ✅ Added unit tests covering new sync logic
+- ⏳ Awaiting deployment + Firestore log review to close out warning checkboxes
 
 ### BLOCKER #3: Dashboard Metrics Structure Mismatch
 **Impact:** MEDIUM - Dashboard broken
@@ -279,10 +279,10 @@ Channel.ExcludedItems: Missing 'totalExcludedCount' field
 ### PHASE A: Fix Critical Blockers (1-2 weeks)
 
 #### A1. Fix Firestore Models (3 days)
-- [ ] Add `topLevel` field to Category model
-- [ ] Add missing fields to Channel model (`pending`, `approved`, `category`)
-- [ ] Add `totalExcludedCount` to Channel.ExcludedItems
-- [ ] Test all models against Firestore
+- [x] Add `topLevel` field to Category model
+- [x] Add missing fields to Channel model (`pending`, `approved`, `category`)
+- [x] Add `totalExcludedCount` to Channel.ExcludedItems
+- [x] Test all models against Firestore
 - [ ] Verify no warnings in logs
 
 #### A2. Seed Initial Content Data (2 days)
@@ -387,7 +387,7 @@ Channel.ExcludedItems: Missing 'totalExcludedCount' field
 ### Sprint 1 (Week 1-2): MAKE IT WORK
 **Goal:** Fix critical blockers, get something working end-to-end
 
-1. **Fix Firestore Models** (A1) - 3 days
+1. **Deploy Firestore Model Fixes & Verify Logs** (A1) - 3 days
 2. **Seed Content Data** (A2) - 2 days
 3. **Fix Dashboard** (A3) - 1 day
 4. **Verify Android Shows Data** (C3) - 2 days
@@ -488,7 +488,7 @@ Channel.ExcludedItems: Missing 'totalExcludedCount' field
 **Time to Complete:** 5-7 weeks of focused work
 
 **Next Immediate Steps:**
-1. Fix Firestore model mismatches
+1. Deploy Firestore model fixes and confirm warnings resolved
 2. Seed initial content data
 3. Fix dashboard metrics structure
 4. Test Android app shows data

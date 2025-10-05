@@ -9,7 +9,7 @@
 
 **REALITY CHECK:** The project has comprehensive UI work on both platforms, but **lacks end-to-end functionality** due to:
 1. ❌ **No content data** in Firestore (empty channels/playlists/videos collections)
-2. ❌ **Firestore model mismatches** causing runtime warnings
+2. ⚠️ **Firestore model mismatches** patched in backend (awaiting deployment + log review)
 3. ❌ **Missing backend endpoints** for several admin features
 4. ❌ **Android app shows empty screens** (APIs connected but no data)
 
@@ -58,15 +58,15 @@
 - **Impact:** Entire app unusable
 - **Fix:** Need data seeding script OR manual content addition via YouTube search
 
-**BLOCKER #2: Firestore Model Mismatches (HIGH)**
+**BLOCKER #2: Firestore Model Mismatches (MEDIUM)**
 ```
-WARNING: No setter/field for topLevel found on class Category
-WARNING: No setter/field for pending found on class Channel
-WARNING: No setter/field for approved found on class Channel
-WARNING: No setter/field for totalExcludedCount found on class Channel$ExcludedItems
+WARNING: No setter/field for topLevel found on class Category      ✅ addressed
+WARNING: No setter/field for pending found on class Channel        ✅ addressed
+WARNING: No setter/field for approved found on class Channel       ✅ addressed
+WARNING: No setter/field for totalExcludedCount found on class Channel$ExcludedItems ✅ addressed
 ```
-- **Impact:** Runtime warnings, potential data loss
-- **Fix:** Add missing fields to Java models OR update Firestore schema
+- **Impact:** Runtime warnings until deploy; fix merged, needs verification
+- **Next:** Deploy backend + review Firestore logs to confirm warnings cleared
 
 **BLOCKER #3: Missing Backend Endpoints (MEDIUM)**
 - Content Library - no backend (client-side only)
@@ -150,9 +150,9 @@ WARNING: No setter/field for totalExcludedCount found on class Channel$ExcludedI
 ### Phase A: Fix Critical Blockers (1-2 weeks) 🔴 CRITICAL
 
 **A1. Fix Firestore Models** (3 days)
-- [ ] Add `topLevel` field to Category model
-- [ ] Add `pending`, `approved`, `category` fields to Channel model
-- [ ] Add `totalExcludedCount` to Channel.ExcludedItems
+- [x] Add `topLevel` field to Category model
+- [x] Add `pending`, `approved`, `category` fields to Channel model
+- [x] Add `totalExcludedCount` to Channel.ExcludedItems
 - [ ] Test all models, verify no warnings
 
 **A2. Seed Content Data** (2 days)
@@ -230,7 +230,7 @@ WARNING: No setter/field for totalExcludedCount found on class Channel$ExcludedI
 ## 🚀 Recommended Action Plan
 
 ### Week 1-2: MAKE IT WORK
-1. Fix Firestore models → No warnings
+1. Deploy Firestore model fixes → Confirm logs clean
 2. Seed content data → Android shows data
 3. Fix dashboard → Admin loads
 4. **Exit:** Something works end-to-end
@@ -311,7 +311,7 @@ WARNING: No setter/field for totalExcludedCount found on class Channel$ExcludedI
 ## 🎯 Next Immediate Steps
 
 1. **Read [TRUE_PROJECT_STATUS.md](TRUE_PROJECT_STATUS.md)** - Comprehensive analysis
-2. **Fix Firestore model mismatches** - Stop runtime warnings
+2. **Deploy Firestore model fixes** - Confirm warnings cleared
 3. **Seed initial content data** - Make app usable
 4. **Fix dashboard metrics** - Admin dashboard works
 5. **Test Android shows data** - Verify end-to-end

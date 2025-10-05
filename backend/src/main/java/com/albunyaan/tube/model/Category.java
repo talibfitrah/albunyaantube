@@ -38,6 +38,12 @@ public class Category {
     private String parentCategoryId;
 
     /**
+     * Explicit flag persisted in Firestore for quickly filtering
+     * top-level categories. This mirrors parentCategoryId == null.
+     */
+    private Boolean topLevel;
+
+    /**
      * Optional icon/image URL for category display
      */
     private String icon;
@@ -65,12 +71,14 @@ public class Category {
         this.localizedNames = new HashMap<>();
         this.createdAt = Timestamp.now();
         this.updatedAt = Timestamp.now();
+        this.topLevel = Boolean.TRUE;
     }
 
     public Category(String name, String parentCategoryId) {
         this();
         this.name = name;
         this.parentCategoryId = parentCategoryId;
+        this.topLevel = parentCategoryId == null;
     }
 
     // Getters and Setters
@@ -97,6 +105,15 @@ public class Category {
 
     public void setParentCategoryId(String parentCategoryId) {
         this.parentCategoryId = parentCategoryId;
+        this.topLevel = parentCategoryId == null;
+    }
+
+    public Boolean getTopLevel() {
+        return topLevel != null ? topLevel : parentCategoryId == null;
+    }
+
+    public void setTopLevel(Boolean topLevel) {
+        this.topLevel = topLevel;
     }
 
     public String getIcon() {
@@ -168,14 +185,14 @@ public class Category {
     }
 
     public void setParentId(String parentId) {
-        this.parentCategoryId = parentId;
+        setParentCategoryId(parentId);
     }
 
     /**
      * Check if this is a top-level category (no parent)
      */
     public boolean isTopLevel() {
-        return parentCategoryId == null;
+        return Boolean.TRUE.equals(getTopLevel());
     }
 
     /**

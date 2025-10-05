@@ -38,6 +38,7 @@ public class CategoryRepository {
      */
     public Category save(Category category) throws ExecutionException, InterruptedException {
         category.touch();
+        category.setTopLevel(category.getParentCategoryId() == null);
 
         if (category.getId() == null) {
             // Create new document with auto-generated ID
