@@ -5,6 +5,7 @@ import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import com.albunyaan.tube.R
 import com.albunyaan.tube.databinding.ItemSearchHistoryBinding
 
 class SearchHistoryAdapter(
@@ -33,6 +34,12 @@ class SearchHistoryAdapter(
 
         fun bind(query: String) {
             binding.searchText.text = query
+
+            // Accessibility: Set content description for the entire item
+            binding.root.contentDescription = binding.root.context.getString(
+                R.string.a11y_search_history,
+                query
+            )
 
             binding.root.setOnClickListener {
                 onItemClick(query)
