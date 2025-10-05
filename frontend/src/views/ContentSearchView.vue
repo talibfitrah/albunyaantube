@@ -111,6 +111,14 @@
         </div>
       </div>
     </div>
+
+    <ChannelPreviewDrawer
+      :is-open="isDrawerOpen"
+      :channel-id="selectedChannelId"
+      @close="closeDrawer"
+      @include="handleIncludeChannel"
+      @exclude="handleExcludeChannel"
+    />
   </div>
 </template>
 
@@ -118,6 +126,8 @@
 import { ref, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { fetchAllCategories } from '@/services/categories';
+import { searchYouTube, toggleIncludeState } from '@/services/mockYouTubeService';
+import ChannelPreviewDrawer from '@/components/admin/ChannelPreviewDrawer.vue';
 
 const { t } = useI18n();
 
@@ -132,6 +142,8 @@ const error = ref<string | null>(null);
 const hasSearched = ref(false);
 const results = ref<any[]>([]);
 const categories = ref<any[]>([]);
+const isDrawerOpen = ref(false);
+const selectedChannelId = ref<string | null>(null);
 
 const contentTypes = [
   { value: 'channels', labelKey: 'contentSearch.types.channels' },
@@ -159,10 +171,39 @@ async function handleSearch() {
   hasSearched.value = true;
 
   try {
-    // TODO: Implement actual YouTube search API call
-    // For now, return empty results
-    await new Promise(resolve => setTimeout(resolve, 500));
-    results.value = [];
+    const response = await searchYouTube(searchQuery.value, contentType.value);
+
+    if (contentType.value === 'channels') {
+      results.value = response.channels.map((ch: any) => ({
+        id: ch.id,
+        title: ch.name,
+        description: `${ch.subscriberCount.toLocaleString()} subscribers`,
+        channelTitle: ch.name,
+        thumbnailUrl: ch.avatarUrl,
+        publishedAt: null,
+        rawData: ch
+      }));
+    } else if (contentType.value === 'playlists') {
+      results.value = response.playlists.map((pl: any) => ({
+        id: pl.id,
+        title: pl.title,
+        description: `${pl.itemCount} videos`,
+        channelTitle: pl.owner.name,
+        thumbnailUrl: pl.thumbnailUrl,
+        publishedAt: null,
+        rawData: pl
+      }));
+    } else {
+      results.value = response.videos.map((v: any) => ({
+        id: v.id,
+        title: v.title,
+        description: `${Math.floor(v.durationSeconds / 60)} minutes`,
+        channelTitle: v.channel.name,
+        thumbnailUrl: v.thumbnailUrl,
+        publishedAt: v.publishedAt,
+        rawData: v
+      }));
+    }
   } catch (err) {
     error.value = err instanceof Error ? err.message : t('contentSearch.error');
   } finally {
@@ -171,8 +212,35 @@ async function handleSearch() {
 }
 
 function handleAdd(item: any) {
-  // TODO: Implement add to registry
-  console.log('Add item:', item);
+  if (contentType.value === 'channels') {
+    selectedChannelId.value = item.id;
+    isDrawerOpen.value = true;
+  } else {
+    console.log('Add item:', item);
+  }
+}
+
+function closeDrawer() {
+  isDrawerOpen.value = false;
+  selectedChannelId.value = null;
+}
+
+async function handleIncludeChannel(channelId: string) {
+  try {
+    await toggleIncludeState(channelId, 'channel', 'INCLUDED');
+    console.log(`Channel ${channelId} included`);
+  } catch (err) {
+    console.error('Failed to include channel', err);
+  }
+}
+
+async function handleExcludeChannel(channelId: string) {
+  try {
+    await toggleIncludeState(channelId, 'channel', 'EXCLUDED');
+    console.log(`Channel ${channelId} excluded`);
+  } catch (err) {
+    console.error('Failed to exclude channel', err);
+  }
 }
 
 function formatDate(dateStr: string): string {

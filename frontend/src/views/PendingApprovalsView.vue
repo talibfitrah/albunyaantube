@@ -188,7 +188,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { fetchAllCategories } from '@/services/categories';
+import { getAllCategories } from '@/services/mockCategoryService';
+import { getPendingApprovals, approveItem, rejectItem as rejectItemApi } from '@/services/mockApprovalsService';
 
 const { t } = useI18n();
 
@@ -219,7 +220,7 @@ const totalPending = computed(() => approvals.value.length);
 
 async function loadCategories() {
   try {
-    const cats = await fetchAllCategories();
+    const cats = await getAllCategories();
     categories.value = cats;
   } catch (err) {
     console.error('Failed to load categories', err);
@@ -231,10 +232,12 @@ async function loadApprovals() {
   error.value = null;
 
   try {
-    // TODO: Implement actual API call to fetch pending approvals
-    // For now, return empty array
-    await new Promise(resolve => setTimeout(resolve, 500));
-    approvals.value = [];
+    const items = await getPendingApprovals({
+      type: contentType.value,
+      category: categoryFilter.value || undefined,
+      sort: sortFilter.value as 'oldest' | 'newest'
+    });
+    approvals.value = items;
   } catch (err) {
     error.value = err instanceof Error ? err.message : t('approvals.error');
   } finally {
@@ -251,8 +254,7 @@ async function handleApprove(item: any) {
 
   processingId.value = item.id;
   try {
-    // TODO: Implement actual approve API call
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await approveItem(item.id);
     await loadApprovals();
   } catch (err) {
     error.value = err instanceof Error ? err.message : t('approvals.approveError');
@@ -285,8 +287,7 @@ async function handleReject() {
   rejectError.value = null;
 
   try {
-    // TODO: Implement actual reject API call
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await rejectItemApi(rejectItem.value!.id, rejectReason.value);
     closeRejectDialog();
     await loadApprovals();
   } catch (err) {

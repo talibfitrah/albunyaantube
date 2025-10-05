@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:padding="@dimen/spacing_md">
+
+    <ImageView
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:src="@android:drawable/ic_menu_info_details"
+        android:contentDescription="@null"
+        android:tint="@color/icon_gray"/>
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:layout_marginStart="@dimen/spacing_md">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Storage Used"
+            android:textSize="16sp"
+            android:textColor="@android:color/black"/>
+
+        <TextView
+            android:id="@+id/storageQuotaValue"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="0 MB of 500 MB"
+            android:textSize="14sp"
+            android:textColor="@color/icon_gray"
+            android:layout_marginTop="@dimen/spacing_xs"/>
+
+        <ProgressBar
+            android:id="@+id/storageQuotaProgress"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_xs"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:progress="0"
+            android:max="100"
+            android:progressTint="@color/primary_green"/>
+
+    </LinearLayout>
+
+</LinearLayout>
