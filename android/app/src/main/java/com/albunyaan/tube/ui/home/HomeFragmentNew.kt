@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.widget.PopupMenu
+import androidx.core.os.bundleOf
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
@@ -49,17 +50,61 @@ class HomeFragmentNew : Fragment(R.layout.fragment_home_new) {
     private fun setupAdapters() {
         channelAdapter = HomeChannelAdapter { channel ->
             Log.d(TAG, "Channel clicked: ${channel.name}")
-            // TODO: Navigate to channel detail
+            navigateToChannelDetail(channel.id, channel.name)
         }
 
         playlistAdapter = HomePlaylistAdapter { playlist ->
             Log.d(TAG, "Playlist clicked: ${playlist.title}")
-            // TODO: Navigate to playlist detail
+            navigateToPlaylistDetail(playlist.id, playlist.title, playlist.category, playlist.itemCount)
         }
 
         videoAdapter = HomeVideoAdapter { video ->
             Log.d(TAG, "Video clicked: ${video.title}")
-            // TODO: Navigate to video player
+            navigateToPlayer(video.id)
+        }
+    }
+
+    private fun navigateToChannelDetail(channelId: String, channelName: String?) {
+        try {
+            findNavController().navigate(
+                R.id.action_global_channelDetailFragment,
+                bundleOf(
+                    "channelId" to channelId,
+                    "channelName" to channelName
+                )
+            )
+            Log.d(TAG, "Navigated to channel detail: $channelId")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to navigate to channel detail", e)
+        }
+    }
+
+    private fun navigateToPlaylistDetail(playlistId: String, title: String?, category: String?, itemCount: Int) {
+        try {
+            findNavController().navigate(
+                R.id.action_global_playlistDetailFragment,
+                bundleOf(
+                    "playlistId" to playlistId,
+                    "playlistTitle" to title,
+                    "playlistCategory" to category,
+                    "playlistCount" to itemCount
+                )
+            )
+            Log.d(TAG, "Navigated to playlist detail: $playlistId")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to navigate to playlist detail", e)
+        }
+    }
+
+    private fun navigateToPlayer(videoId: String) {
+        try {
+            findNavController().navigate(
+                R.id.action_global_playerFragment,
+                bundleOf("videoId" to videoId)
+            )
+            Log.d(TAG, "Navigated to player: $videoId")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to navigate to player", e)
         }
     }
 
