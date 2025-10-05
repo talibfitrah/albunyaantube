@@ -110,7 +110,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { fetchAllCategories } from '@/services/categories';
+import { getAllCategories, createCategory, updateCategory, deleteCategory } from '@/services/mockCategoryService';
 import CategoryTreeItem from '@/components/categories/CategoryTreeItem.vue';
 
 const { t } = useI18n();
@@ -136,7 +136,7 @@ async function loadCategories() {
   error.value = null;
 
   try {
-    const cats = await fetchAllCategories();
+    const cats = await getAllCategories();
     categories.value = cats;
   } catch (err) {
     error.value = err instanceof Error ? err.message : t('categories.error');
@@ -184,8 +184,20 @@ async function handleSubmit() {
   dialogError.value = null;
 
   try {
-    // TODO: Implement actual create/update API calls
-    await new Promise(resolve => setTimeout(resolve, 500));
+    if (dialogMode.value === 'add') {
+      await createCategory({
+        name: dialogData.value.name,
+        parentId: dialogData.value.parentId,
+        icon: dialogData.value.icon,
+        displayOrder: dialogData.value.displayOrder
+      });
+    } else {
+      await updateCategory(dialogData.value.id, {
+        name: dialogData.value.name,
+        icon: dialogData.value.icon,
+        displayOrder: dialogData.value.displayOrder
+      });
+    }
 
     closeDialog();
     await loadCategories();
@@ -202,8 +214,7 @@ async function handleDelete(categoryId: string) {
   }
 
   try {
-    // TODO: Implement actual delete API call
-    await new Promise(resolve => setTimeout(resolve, 300));
+    await deleteCategory(categoryId);
     await loadCategories();
   } catch (err) {
     error.value = err instanceof Error ? err.message : t('categories.deleteError');
