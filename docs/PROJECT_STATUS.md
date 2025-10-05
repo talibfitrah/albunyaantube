@@ -73,13 +73,15 @@
 Branch: `feature/backend-registry-downloads`
 - ✅ BACKEND-REG-01: Registry & Category endpoints (Committed: 2025-10-05 16:45)
 - ✅ BACKEND-DL-01: Downloads API (Committed: 2025-10-05 17:30)
-- ⏸️ BACKEND-DL-02: /next-up endpoint (Not Started)
+- ✅ BACKEND-DL-02: /next-up endpoint (Committed: 2025-10-05)
 
 #### 🔵 Android Engineer: Downloads Feature
 Branch: `feature/android-downloads`
 - ✅ ANDROID-DL-01: Downloads queue UI (Committed: 2025-10-05)
-- ⏸️ ANDROID-DL-02: Download service & notifications (Not Started)
-- ⏸️ ANDROID-DL-03: Storage management (Not Started)
+- ✅ ANDROID-DL-02: Download service & notifications (Committed: 2025-10-05)
+- ✅ ANDROID-DL-03: Storage management (Committed: 2025-10-05)
+
+**Status**: All 3 tickets complete! Merged to main.
 
 #### 💼 Main Branch: Infrastructure & DevOps (2025-10-05)
 **Focus**: CI/CD, Docker, Developer Experience (zero conflicts with feature work)
