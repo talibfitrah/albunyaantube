@@ -20,6 +20,42 @@ Branch: `feature/android-downloads`
 - ⏸️ ANDROID-DL-02: Download service & notifications (Not Started)
 - ⏸️ ANDROID-DL-03: Storage management (Not Started)
 
+#### 💼 Main Branch: Infrastructure & DevOps (2025-10-05)
+**Focus**: CI/CD, Docker, Developer Experience (zero conflicts with feature work)
+
+##### Week 1: CI/CD & Infrastructure ✅
+- ✅ **INFRA-01**: Android CI pipeline (2025-10-05 15:13)
+  - Automated build, test, lint on every push/PR
+  - APK artifact upload with 7-day retention
+  - Test result publishing
+  - Commit: `f3b3f4a`
+
+- ✅ **INFRA-02**: Frontend CI pipeline (2025-10-05 15:13)
+  - npm ci, ESLint, type-check, test with coverage
+  - Build artifacts upload
+  - Coverage reporting
+  - Commit: `f3b3f4a`
+
+- ✅ **INFRA-03**: Docker Compose setup (2025-10-05 15:20)
+  - Backend service with hot-reload
+  - Firebase Emulator Suite integration
+  - Health checks and persistent data
+  - Comprehensive documentation
+  - Commit: `c7a4435`
+
+- ✅ **DX-01**: Developer setup scripts (2025-10-05 15:26)
+  - setup-dev.sh: Automated first-time setup (5-10 min)
+  - validate-env.sh: Environment health checks
+  - Colored terminal output, clear error messages
+  - Commit: `cef6c6b`
+
+##### Next Tasks (Week 2)
+- ⏸️ **TEST-01**: Android instrumented test setup
+- ⏸️ **TEST-02**: Backend integration test utilities
+- ⏸️ **DOCS-01**: OpenAPI/Swagger documentation
+
+📖 **Full infrastructure roadmap**: [docs/MAIN_BRANCH_WORK.md](MAIN_BRANCH_WORK.md)
+
 ---
 
 ## Phase 8: Player & Background Audio ✅ COMPLETE
