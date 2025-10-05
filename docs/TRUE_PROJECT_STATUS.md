@@ -98,22 +98,22 @@
 
 | Controller | Endpoints | Status | Critical Issues |
 |------------|-----------|--------|-----------------|
-| PublicContentController | 5 | ✅ Built | ❌ Returns empty (no data in Firestore) |
+| PublicContentController | 5 | ✅ Built | ⚠️ Validate responses with newly seeded dataset |
 | CategoryController | 7 | ✅ Built | ⚠️ Model mismatch warnings (`topLevel` field) |
-| ChannelController | 8 | ✅ Built | ❌ No channels in Firestore |
-| RegistryController | 14 | ✅ Built | ❌ No registry data |
+| ChannelController | 8 | ✅ Built | ⚠️ Needs admin wiring to manage seeded records |
+| RegistryController | 14 | ✅ Built | ⚠️ Seeded data available, UI still read-only |
 | YouTubeSearchController | 9 | ✅ Built | ✅ Works (requires auth) |
 | UserController | 8 | ✅ Built | ✅ Fully functional |
 | AuditLogController | 4 | ✅ Built | ✅ Fully functional |
 | DashboardController | 2 | ✅ Built | ⚠️ Response structure doesn't match frontend |
-| ApprovalController | 3 | ✅ Built | ❌ No data to approve |
-| PlayerController | 1 | ✅ Built | ❌ Needs video data |
-| DownloadController | 6 | ✅ Built | ⚠️ Untested (needs video data) |
+| ApprovalController | 3 | ✅ Built | ⚠️ Pending workflow validation with seeded items |
+| PlayerController | 1 | ✅ Built | ⚠️ Playback should work with seeded videos (needs QA) |
+| DownloadController | 6 | ✅ Built | ⚠️ Untested (seeded videos now available) |
 
 **Summary:**
 - **Total Endpoints:** 67
 - **Fully Working:** 12 (User, Audit, YouTube Search)
-- **Built But Empty:** 45 (Content, Registry, Approval endpoints)
+- **Built w/ seeded data – needs verification:** 45 (Content, Registry, Approval endpoints)
 - **Model Mismatches:** 10+ (Categories, Channels, Playlists)
 
 ---
