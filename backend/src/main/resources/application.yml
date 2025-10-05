@@ -4,21 +4,22 @@ spring:
   docker:
     compose:
       enabled: false
-  # BACKEND-PERF-01: Redis cache configuration
+  # BACKEND-PERF-01: Redis cache configuration (disabled for local dev without Redis)
   cache:
-    type: redis
-    redis:
-      time-to-live: 3600000 # 1 hour default TTL in milliseconds
-  data:
-    redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
-      lettuce:
-        pool:
-          max-active: 10
-          max-idle: 5
-          min-idle: 1
+    type: none
+#    type: redis
+#    redis:
+#      time-to-live: 3600000 # 1 hour default TTL in milliseconds
+#  data:
+#    redis:
+#      host: ${REDIS_HOST:localhost}
+#      port: ${REDIS_PORT:6379}
+#      password: ${REDIS_PASSWORD:}
+#      lettuce:
+#        pool:
+#          max-active: 10
+#          max-idle: 5
+#          min-idle: 1
   # Gzip compression for responses
   compression:
     enabled: true

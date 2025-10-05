@@ -88,7 +88,7 @@ export function useDashboardMetrics(initialTimeframe: DashboardTimeframe = 'LAST
     ];
   });
 
-  const lastUpdated = computed(() => response.value?.meta.generatedAt ?? null);
+  const lastUpdated = computed(() => response.value?.meta?.generatedAt ?? null);
 
   return {
     cards,
