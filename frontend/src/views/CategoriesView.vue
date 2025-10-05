@@ -110,7 +110,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { getAllCategories, createCategory, updateCategory, deleteCategory } from '@/services/mockCategoryService';
+import { getAllCategories, createCategory, updateCategory, deleteCategory } from '@/services/categoryService';
 import CategoryTreeItem from '@/components/categories/CategoryTreeItem.vue';
 
 const { t } = useI18n();

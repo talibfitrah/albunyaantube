@@ -126,7 +126,7 @@
 import { ref, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { fetchAllCategories } from '@/services/categories';
-import { searchYouTube, toggleIncludeState } from '@/services/mockYouTubeService';
+import { searchYouTube, toggleIncludeState } from '@/services/youtubeService';
 import ChannelPreviewDrawer from '@/components/admin/ChannelPreviewDrawer.vue';
 
 const { t } = useI18n();
@@ -236,7 +236,7 @@ async function handleIncludeChannel(channelId: string) {
 
 async function handleExcludeChannel(channelId: string) {
   try {
-    await toggleIncludeState(channelId, 'channel', 'EXCLUDED');
+    await toggleIncludeState(channelId, 'channel', 'NOT_INCLUDED');
     console.log(`Channel ${channelId} excluded`);
   } catch (err) {
     console.error('Failed to exclude channel', err);

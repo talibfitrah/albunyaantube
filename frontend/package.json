@@ -29,6 +29,7 @@
     "@vitejs/plugin-vue": "^5.0.4",
     "@vue/test-utils": "^2.4.5",
     "jsdom": "^22.1.0",
+    "terser": "^5.44.0",
     "typescript": "^5.4.2",
     "vite": "^5.2.0",
     "vitest": "^1.4.0",

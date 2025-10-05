@@ -271,7 +271,7 @@ export const messages = {
         add: 'Add Exclusion',
         noExclusions: 'No exclusions for this channel.',
         type: 'Type',
-        title: 'Title',
+        itemTitle: 'Title',
         reason: 'Reason',
         actions: 'Actions',
         remove: 'Remove'

@@ -67,7 +67,7 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue';
-import { getChannelDetails } from '@/services/mockYouTubeService';
+import { getChannelDetails } from '@/services/youtubeService';
 import type { AdminSearchChannelResult, AdminSearchVideoResult, AdminSearchPlaylistResult } from '@/types/registry';
 
 const props = defineProps<{
