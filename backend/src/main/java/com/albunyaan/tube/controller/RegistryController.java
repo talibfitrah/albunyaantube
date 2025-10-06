@@ -91,13 +91,17 @@ public class RegistryController {
 
         channel.setSubmittedBy(user.getUid());
 
-        // Auto-approve if submitted by admin
-        if (user.isAdmin()) {
-            channel.setStatus("APPROVED");
-            channel.setApprovedBy(user.getUid());
-        } else {
-            channel.setStatus("PENDING");
+        // Respect the status if explicitly set, otherwise auto-approve for admins
+        if (channel.getStatus() == null || channel.getStatus().isEmpty()) {
+            if (user.isAdmin()) {
+                channel.setStatus("APPROVED");
+                channel.setApprovedBy(user.getUid());
+            } else {
+                channel.setStatus("PENDING");
+            }
         }
+        // If status is explicitly set to PENDING, keep it pending even for admins
+        // This supports the approval workflow where admins add items for review
 
         Channel saved = channelRepository.save(channel);
         auditLogService.log("channel_added_to_registry", "channel", saved.getId(), user);
@@ -231,13 +235,17 @@ public class RegistryController {
 
         playlist.setSubmittedBy(user.getUid());
 
-        // Auto-approve if submitted by admin
-        if (user.isAdmin()) {
-            playlist.setStatus("APPROVED");
-            playlist.setApprovedBy(user.getUid());
-        } else {
-            playlist.setStatus("PENDING");
+        // Respect the status if explicitly set, otherwise auto-approve for admins
+        if (playlist.getStatus() == null || playlist.getStatus().isEmpty()) {
+            if (user.isAdmin()) {
+                playlist.setStatus("APPROVED");
+                playlist.setApprovedBy(user.getUid());
+            } else {
+                playlist.setStatus("PENDING");
+            }
         }
+        // If status is explicitly set to PENDING, keep it pending even for admins
+        // This supports the approval workflow where admins add items for review
 
         Playlist saved = playlistRepository.save(playlist);
         auditLogService.log("playlist_added_to_registry", "playlist", saved.getId(), user);
