@@ -1,9 +1,7 @@
 /**
  * Approval Service
- * Real backend API integration for content approval workflow
- *
- * NOTE: This currently uses /api/admin/registry endpoints with status=PENDING
- * Once BACKEND-APPR-01 is complete, update to use /api/admin/approvals endpoints
+ * Backend API integration for content approval workflow
+ * Uses /api/admin/approvals endpoints (BACKEND-APPR-01)
  */
 
 import apiClient from './api/client';
@@ -24,57 +22,40 @@ export interface PendingApproval {
 }
 
 /**
- * Get pending approvals (channels and playlists with PENDING status)
+ * Get pending approvals using the proper approval endpoint
  */
 export async function getPendingApprovals(filters?: {
   type?: 'all' | 'channels' | 'playlists' | 'videos';
   category?: string;
   sort?: 'oldest' | 'newest';
 }): Promise<PendingApproval[]> {
-  const approvals: PendingApproval[] = [];
+  // Map frontend filter type to backend type param
+  let typeParam: string | undefined;
+  if (filters?.type === 'channels') typeParam = 'CHANNEL';
+  else if (filters?.type === 'playlists') typeParam = 'PLAYLIST';
+  else if (filters?.type === 'videos') typeParam = 'VIDEO';
 
-  // Fetch pending channels if needed
-  if (!filters?.type || filters.type === 'all' || filters.type === 'channels') {
-    const channelsResponse = await apiClient.get('/api/admin/registry/channels/status/PENDING');
-    const channels = channelsResponse.data;
+  const params: any = {};
+  if (typeParam) params.type = typeParam;
+  if (filters?.category) params.category = filters.category;
+  params.limit = 100; // Get all for now
 
-    approvals.push(...channels.map((channel: any) => ({
-      id: channel.id,
-      type: 'channel' as const,
-      title: channel.name || '',
-      description: channel.description || '',
-      thumbnailUrl: channel.thumbnailUrl || '',
-      subscriberCount: channel.subscribers || 0,
-      videoCount: channel.videoCount || 0,
-      categories: channel.categoryIds || [],
-      submittedAt: channel.createdAt || new Date().toISOString(),
-      submittedBy: channel.submittedBy || ''
-    })));
-  }
+  const response = await apiClient.get('/api/admin/approvals/pending', { params });
+  const data = response.data.data || response.data; // Handle both CursorPageDto and direct array
 
-  // Fetch pending playlists if needed
-  if (!filters?.type || filters.type === 'all' || filters.type === 'playlists') {
-    const playlistsResponse = await apiClient.get('/api/admin/registry/playlists/status/PENDING');
-    const playlists = playlistsResponse.data;
-
-    approvals.push(...playlists.map((playlist: any) => ({
-      id: playlist.id,
-      type: 'playlist' as const,
-      title: playlist.title || '',
-      description: playlist.description || '',
-      thumbnailUrl: playlist.thumbnailUrl || '',
-      channelTitle: playlist.channelName || '',
-      videoCount: playlist.itemCount || 0,
-      categories: playlist.categoryIds || [],
-      submittedAt: playlist.createdAt || new Date().toISOString(),
-      submittedBy: playlist.submittedBy || ''
-    })));
-  }
-
-  // Apply category filter
-  if (filters?.category) {
-    return approvals.filter(item => item.categories.includes(filters.category!));
-  }
+  const approvals: PendingApproval[] = data.map((item: any) => ({
+    id: item.id,
+    type: item.type?.toLowerCase() || 'channel',
+    title: item.title || item.name || '',
+    description: item.description || '',
+    thumbnailUrl: item.thumbnailUrl || '',
+    channelTitle: item.channelTitle || item.channelName || '',
+    subscriberCount: item.subscriberCount || item.subscribers || 0,
+    videoCount: item.videoCount || item.itemCount || 0,
+    categories: item.categoryIds || item.categories || [],
+    submittedAt: item.submittedAt || item.createdAt || new Date().toISOString(),
+    submittedBy: item.submittedBy || ''
+  }));
 
   // Apply sorting
   if (filters?.sort === 'newest') {
@@ -87,30 +68,36 @@ export async function getPendingApprovals(filters?: {
 }
 
 /**
- * Approve an item (channel or playlist)
- * TODO: Replace with /api/admin/approvals/{id}/approve when BACKEND-APPR-01 is ready
+ * Approve an item using the proper approval endpoint
  */
-export async function approveItem(itemId: string, itemType: 'channel' | 'playlist' | 'video'): Promise<void> {
-  const endpoint = itemType === 'channel'
-    ? `/api/admin/registry/channels/${itemId}/toggle`
-    : `/api/admin/registry/playlists/${itemId}/toggle`;
+export async function approveItem(
+  itemId: string,
+  itemType: 'channel' | 'playlist' | 'video',
+  categoryOverride?: string,
+  reviewNotes?: string
+): Promise<void> {
+  const payload: any = {};
+  if (reviewNotes) payload.reviewNotes = reviewNotes;
+  if (categoryOverride) payload.categoryOverride = categoryOverride;
 
-  await apiClient.patch(endpoint);
+  await apiClient.post(`/api/admin/approvals/${itemId}/approve`, payload);
   toast.success(`${itemType.charAt(0).toUpperCase() + itemType.slice(1)} approved successfully`);
 }
 
 /**
- * Reject an item (channel or playlist)
- * TODO: Replace with /api/admin/approvals/{id}/reject when BACKEND-APPR-01 is ready
+ * Reject an item using the proper approval endpoint
  */
-export async function rejectItem(itemId: string, itemType: 'channel' | 'playlist' | 'video', reason: string): Promise<void> {
-  // For now, we'll use delete endpoint as rejection
-  // Once BACKEND-APPR-01 is ready, use: POST /api/admin/approvals/{id}/reject
-  const endpoint = itemType === 'channel'
-    ? `/api/admin/registry/channels/${itemId}`
-    : `/api/admin/registry/playlists/${itemId}`;
+export async function rejectItem(
+  itemId: string,
+  itemType: 'channel' | 'playlist' | 'video',
+  reason: string,
+  reviewNotes?: string
+): Promise<void> {
+  const payload: any = {
+    reason: reason || 'OTHER'
+  };
+  if (reviewNotes) payload.reviewNotes = reviewNotes;
 
-  await apiClient.delete(endpoint);
+  await apiClient.post(`/api/admin/approvals/${itemId}/reject`, payload);
   toast.success(`${itemType.charAt(0).toUpperCase() + itemType.slice(1)} rejected`);
-  console.log(`Rejection reason: ${reason}`);
 }

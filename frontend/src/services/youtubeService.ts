@@ -52,6 +52,43 @@ export async function getChannelDetails(channelId: string) {
 }
 
 /**
+ * Add a channel or playlist to pending approval queue
+ */
+export async function addToPendingApprovals(
+  item: AdminSearchChannelResult | AdminSearchPlaylistResult,
+  itemType: 'channel' | 'playlist'
+): Promise<void> {
+  if (itemType === 'channel') {
+    const channel = item as AdminSearchChannelResult;
+    const payload = {
+      youtubeId: channel.ytId || channel.id,
+      name: channel.name,
+      description: '',
+      thumbnailUrl: channel.avatarUrl,
+      subscribers: channel.subscriberCount,
+      videoCount: 0,
+      categoryIds: [],
+      status: 'PENDING'
+    };
+    await apiClient.post('/api/admin/registry/channels', payload);
+  } else {
+    const playlist = item as AdminSearchPlaylistResult;
+    const payload = {
+      youtubeId: playlist.ytId || playlist.id,
+      title: playlist.title,
+      description: '',
+      thumbnailUrl: playlist.thumbnailUrl,
+      itemCount: playlist.itemCount,
+      channelId: playlist.parentChannelId,
+      categoryIds: [],
+      status: 'PENDING'
+    };
+    await apiClient.post('/api/admin/registry/playlists', payload);
+  }
+}
+
+/**
+ * @deprecated Use addToPendingApprovals instead
  * Toggle include/exclude state for a channel or playlist
  */
 export async function toggleIncludeState(

@@ -112,22 +112,15 @@
       </div>
     </div>
 
-    <ChannelPreviewDrawer
-      :is-open="isDrawerOpen"
-      :channel-id="selectedChannelId"
-      @close="closeDrawer"
-      @include="handleIncludeChannel"
-      @exclude="handleExcludeChannel"
-    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { toast } from '@/utils/toast';
 import { fetchAllCategories } from '@/services/categories';
-import { searchYouTube, toggleIncludeState } from '@/services/youtubeService';
-import ChannelPreviewDrawer from '@/components/admin/ChannelPreviewDrawer.vue';
+import { searchYouTube, addToPendingApprovals } from '@/services/youtubeService';
 
 const { t } = useI18n();
 
@@ -142,8 +135,6 @@ const error = ref<string | null>(null);
 const hasSearched = ref(false);
 const results = ref<any[]>([]);
 const categories = ref<any[]>([]);
-const isDrawerOpen = ref(false);
-const selectedChannelId = ref<string | null>(null);
 
 const contentTypes = [
   { value: 'channels', labelKey: 'contentSearch.types.channels' },
@@ -211,35 +202,23 @@ async function handleSearch() {
   }
 }
 
-function handleAdd(item: any) {
-  if (contentType.value === 'channels') {
-    selectedChannelId.value = item.id;
-    isDrawerOpen.value = true;
-  } else {
-    console.log('Add item:', item);
-  }
-}
-
-function closeDrawer() {
-  isDrawerOpen.value = false;
-  selectedChannelId.value = null;
-}
-
-async function handleIncludeChannel(channelId: string) {
+async function handleAdd(item: any) {
   try {
-    await toggleIncludeState(channelId, 'channel', 'INCLUDED');
-    console.log(`Channel ${channelId} included`);
-  } catch (err) {
-    console.error('Failed to include channel', err);
-  }
-}
+    if (contentType.value === 'videos') {
+      toast.info('Video approval coming soon');
+      return;
+    }
 
-async function handleExcludeChannel(channelId: string) {
-  try {
-    await toggleIncludeState(channelId, 'channel', 'NOT_INCLUDED');
-    console.log(`Channel ${channelId} excluded`);
-  } catch (err) {
-    console.error('Failed to exclude channel', err);
+    await addToPendingApprovals(item.rawData, contentType.value as 'channel' | 'playlist');
+    const itemType = contentType.value === 'channels' ? 'Channel' : 'Playlist';
+    toast.success(`${itemType} added to approval queue`);
+  } catch (err: any) {
+    console.error('Failed to add item for approval', err);
+    if (err.response?.status === 409) {
+      toast.error('This item already exists in the registry');
+    } else {
+      toast.error('Failed to add item for approval');
+    }
   }
 }
 
