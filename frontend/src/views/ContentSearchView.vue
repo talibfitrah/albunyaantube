@@ -21,7 +21,7 @@
       </div>
     </div>
 
-    <!-- Filters -->
+    <!-- Content Type Filter -->
     <div class="filters">
       <div class="filter-group">
         <label>{{ t('contentSearch.filters.type') }}</label>
@@ -81,34 +81,33 @@
       <button type="button" @click="handleSearch">{{ t('contentSearch.retry') }}</button>
     </div>
 
-    <div v-else-if="hasSearched && results.length === 0" class="empty-state">
+    <div v-else-if="hasSearched && !hasResults" class="empty-state">
       <p>{{ t('contentSearch.noResults') }}</p>
     </div>
 
-    <div v-else-if="results.length > 0" class="results">
+    <div v-else-if="hasResults" class="results">
       <div class="results-header">
-        <p>{{ t('contentSearch.resultsCount', { count: results.length }) }}</p>
+        <p>{{ getResultsCountText() }}</p>
       </div>
-      <div class="results-grid">
-        <div v-for="item in results" :key="item.id" class="result-card">
-          <div class="result-thumbnail">
-            <img v-if="item.thumbnailUrl" :src="item.thumbnailUrl" :alt="item.title" />
-            <div v-else class="thumbnail-placeholder"></div>
-          </div>
-          <div class="result-content">
-            <h3 class="result-title">{{ item.title }}</h3>
-            <p class="result-description">{{ item.description }}</p>
-            <div class="result-meta">
-              <span class="meta-item">{{ item.channelTitle }}</span>
-              <span v-if="item.publishedAt" class="meta-item">{{ formatDate(item.publishedAt) }}</span>
-            </div>
-          </div>
-          <div class="result-actions">
-            <button type="button" class="action-button primary" @click="handleAdd(item)">
-              {{ t('contentSearch.add') }}
-            </button>
-          </div>
-        </div>
+      <div class="results-list">
+        <ChannelCard
+          v-for="channel in filteredChannels"
+          :key="'channel-' + channel.id"
+          :channel="channel"
+          @add="handleAddChannel"
+        />
+        <PlaylistCard
+          v-for="playlist in filteredPlaylists"
+          :key="'playlist-' + playlist.id"
+          :playlist="playlist"
+          @add="handleAddPlaylist"
+        />
+        <VideoCard
+          v-for="video in filteredVideos"
+          :key="'video-' + video.id"
+          :video="video"
+          @add="handleAddVideo"
+        />
       </div>
     </div>
 
@@ -116,16 +115,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { toast } from '@/utils/toast';
 import { fetchAllCategories } from '@/services/categories';
 import { searchYouTube, addToPendingApprovals } from '@/services/youtubeService';
+import ChannelCard from '@/components/search/ChannelCard.vue';
+import PlaylistCard from '@/components/search/PlaylistCard.vue';
+import VideoCard from '@/components/search/VideoCard.vue';
+import type { AdminSearchChannelResult, AdminSearchPlaylistResult, AdminSearchVideoResult } from '@/types/registry';
 
 const { t } = useI18n();
 
 const searchQuery = ref('');
-const contentType = ref<'channels' | 'playlists' | 'videos'>('channels');
+const contentType = ref<'all' | 'channels' | 'playlists' | 'videos'>('all');
 const categoryFilter = ref('');
 const lengthFilter = ref('');
 const sortFilter = ref('RELEVANT');
@@ -133,14 +136,34 @@ const sortFilter = ref('RELEVANT');
 const isLoading = ref(false);
 const error = ref<string | null>(null);
 const hasSearched = ref(false);
-const results = ref<any[]>([]);
+const channels = ref<AdminSearchChannelResult[]>([]);
+const playlists = ref<AdminSearchPlaylistResult[]>([]);
+const videos = ref<AdminSearchVideoResult[]>([]);
 const categories = ref<any[]>([]);
 
-const contentTypes = [
+const contentTypes: Array<{ value: 'all' | 'channels' | 'playlists' | 'videos'; labelKey: string }> = [
+  { value: 'all', labelKey: 'contentSearch.types.all' },
   { value: 'channels', labelKey: 'contentSearch.types.channels' },
   { value: 'playlists', labelKey: 'contentSearch.types.playlists' },
   { value: 'videos', labelKey: 'contentSearch.types.videos' }
 ];
+
+// Computed filtered results based on selected content type
+const filteredChannels = computed(() => {
+  return contentType.value === 'all' || contentType.value === 'channels' ? channels.value : [];
+});
+
+const filteredPlaylists = computed(() => {
+  return contentType.value === 'all' || contentType.value === 'playlists' ? playlists.value : [];
+});
+
+const filteredVideos = computed(() => {
+  return contentType.value === 'all' || contentType.value === 'videos' ? videos.value : [];
+});
+
+const hasResults = computed(() => {
+  return filteredChannels.value.length > 0 || filteredPlaylists.value.length > 0 || filteredVideos.value.length > 0;
+});
 
 // Load categories
 async function loadCategories() {
@@ -164,37 +187,10 @@ async function handleSearch() {
   try {
     const response = await searchYouTube(searchQuery.value, contentType.value);
 
-    if (contentType.value === 'channels') {
-      results.value = response.channels.map((ch: any) => ({
-        id: ch.id,
-        title: ch.name,
-        description: `${ch.subscriberCount.toLocaleString()} subscribers`,
-        channelTitle: ch.name,
-        thumbnailUrl: ch.avatarUrl,
-        publishedAt: null,
-        rawData: ch
-      }));
-    } else if (contentType.value === 'playlists') {
-      results.value = response.playlists.map((pl: any) => ({
-        id: pl.id,
-        title: pl.title,
-        description: `${pl.itemCount} videos`,
-        channelTitle: pl.owner?.name || pl.channelTitle || 'Unknown Channel',
-        thumbnailUrl: pl.thumbnailUrl,
-        publishedAt: null,
-        rawData: pl
-      }));
-    } else {
-      results.value = response.videos.map((v: any) => ({
-        id: v.id,
-        title: v.title,
-        description: `${Math.floor(v.durationSeconds / 60)} minutes`,
-        channelTitle: v.channel?.name || v.channelTitle || 'Unknown Channel',
-        thumbnailUrl: v.thumbnailUrl,
-        publishedAt: v.publishedAt,
-        rawData: v
-      }));
-    }
+    // Store all results separately
+    channels.value = response.channels;
+    playlists.value = response.playlists;
+    videos.value = response.videos;
   } catch (err) {
     error.value = err instanceof Error ? err.message : t('contentSearch.error');
   } finally {
@@ -202,32 +198,51 @@ async function handleSearch() {
   }
 }
 
-async function handleAdd(item: any) {
+function getResultsCountText(): string {
+  const totalCount = filteredChannels.value.length + filteredPlaylists.value.length + filteredVideos.value.length;
+
+  if (contentType.value === 'all') {
+    const parts = [];
+    if (filteredChannels.value.length > 0) parts.push(`${filteredChannels.value.length} channel${filteredChannels.value.length !== 1 ? 's' : ''}`);
+    if (filteredPlaylists.value.length > 0) parts.push(`${filteredPlaylists.value.length} playlist${filteredPlaylists.value.length !== 1 ? 's' : ''}`);
+    if (filteredVideos.value.length > 0) parts.push(`${filteredVideos.value.length} video${filteredVideos.value.length !== 1 ? 's' : ''}`);
+
+    return parts.length > 0 ? `Found ${parts.join(', ')}` : 'No results';
+  }
+
+  return t('contentSearch.resultsCount', { count: totalCount });
+}
+
+async function handleAddChannel(channel: AdminSearchChannelResult) {
   try {
-    if (contentType.value === 'videos') {
-      toast.info('Video approval coming soon');
-      return;
-    }
-
-    // Convert contentType from plural to singular for API
-    const itemType = contentType.value === 'channels' ? 'channel' : 'playlist';
-    await addToPendingApprovals(item.rawData, itemType);
-
-    const displayType = contentType.value === 'channels' ? 'Channel' : 'Playlist';
-    toast.success(`${displayType} added to approval queue`);
+    await addToPendingApprovals(channel, 'channel');
+    toast.success('Channel added to approval queue');
   } catch (err: any) {
-    console.error('Failed to add item for approval', err);
+    console.error('Failed to add channel for approval', err);
     if (err.response?.status === 409) {
-      toast.error('This item already exists in the registry');
+      toast.error('This channel already exists in the registry');
     } else {
-      toast.error('Failed to add item for approval');
+      toast.error('Failed to add channel for approval');
     }
   }
 }
 
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr);
-  return date.toLocaleDateString();
+async function handleAddPlaylist(playlist: AdminSearchPlaylistResult) {
+  try {
+    await addToPendingApprovals(playlist, 'playlist');
+    toast.success('Playlist added to approval queue');
+  } catch (err: any) {
+    console.error('Failed to add playlist for approval', err);
+    if (err.response?.status === 409) {
+      toast.error('This playlist already exists in the registry');
+    } else {
+      toast.error('Failed to add playlist for approval');
+    }
+  }
+}
+
+async function handleAddVideo(video: AdminSearchVideoResult) {
+  toast.info('Video approval coming soon');
 }
 
 // Load categories on mount
@@ -446,115 +461,9 @@ loadCategories();
   font-size: 0.875rem;
 }
 
-.results-grid {
+.results-list {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-}
-
-.result-card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 0.75rem;
-  padding: 1.25rem;
-  display: grid;
-  grid-template-columns: 200px 1fr auto;
-  gap: 1.25rem;
-  align-items: start;
-  transition: all 0.2s ease;
-}
-
-.result-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-  border-color: var(--color-brand);
-}
-
-.result-thumbnail {
-  width: 200px;
-  height: 112px;
-  border-radius: 0.5rem;
-  overflow: hidden;
-  background: var(--color-surface-alt);
-}
-
-.result-thumbnail img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.thumbnail-placeholder {
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(135deg, var(--color-surface-alt), var(--color-border));
-}
-
-.result-content {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.result-title {
-  margin: 0;
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: var(--color-text-primary);
-  line-height: 1.4;
-}
-
-.result-description {
-  margin: 0;
-  font-size: 0.875rem;
-  color: var(--color-text-secondary);
-  line-height: 1.6;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.result-meta {
-  display: flex;
-  gap: 1rem;
-  font-size: 0.8125rem;
-  color: var(--color-text-secondary);
-}
-
-.result-actions {
-  display: flex;
-  align-items: center;
-}
-
-.action-button {
-  padding: 0.625rem 1.25rem;
-  border: none;
-  border-radius: 0.5rem;
-  font-weight: 600;
-  font-size: 0.875rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  white-space: nowrap;
-}
-
-.action-button.primary {
-  background: var(--color-brand);
-  color: var(--color-text-inverse);
-}
-
-.action-button.primary:hover {
-  background: var(--color-accent);
-  box-shadow: 0 2px 8px rgba(22, 131, 90, 0.25);
-}
-
-@media (max-width: 768px) {
-  .result-card {
-    grid-template-columns: 1fr;
-  }
-
-  .result-thumbnail {
-    width: 100%;
-    height: 200px;
-  }
 }
 </style>
