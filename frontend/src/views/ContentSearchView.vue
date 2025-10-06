@@ -188,7 +188,7 @@ async function handleSearch() {
         id: pl.id,
         title: pl.title,
         description: `${pl.itemCount} videos`,
-        channelTitle: pl.owner.name,
+        channelTitle: pl.owner?.name || pl.channelTitle || 'Unknown Channel',
         thumbnailUrl: pl.thumbnailUrl,
         publishedAt: null,
         rawData: pl
@@ -198,7 +198,7 @@ async function handleSearch() {
         id: v.id,
         title: v.title,
         description: `${Math.floor(v.durationSeconds / 60)} minutes`,
-        channelTitle: v.channel.name,
+        channelTitle: v.channel?.name || v.channelTitle || 'Unknown Channel',
         thumbnailUrl: v.thumbnailUrl,
         publishedAt: v.publishedAt,
         rawData: v
