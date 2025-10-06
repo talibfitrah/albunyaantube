@@ -44,6 +44,7 @@ public class YouTubeService {
 
     /**
      * Search for channels by query
+     * Returns SearchResults with statistics enriched in snippet
      */
     public List<SearchResult> searchChannels(String query) throws IOException {
         return search(query, "channel");
@@ -65,6 +66,7 @@ public class YouTubeService {
 
     /**
      * Generic search method
+     * For videos and channels, we need to make additional API calls to get statistics
      */
     private List<SearchResult> search(String query, String type) throws IOException {
         if (apiKey == null || apiKey.isEmpty()) {
@@ -78,10 +80,21 @@ public class YouTubeService {
             search.setQ(query);
             search.setType(List.of(type));
             search.setMaxResults(MAX_RESULTS);
-            search.setFields("items(id,snippet(title,description,thumbnails,channelId,channelTitle))");
+            search.setFields("items(id,snippet(title,description,thumbnails,channelId,channelTitle,publishedAt))");
 
             SearchListResponse response = search.execute();
-            return response.getItems() != null ? response.getItems() : Collections.emptyList();
+            List<SearchResult> results = response.getItems() != null ? response.getItems() : Collections.emptyList();
+
+            // Enrich results with statistics based on type
+            if ("channel".equals(type)) {
+                enrichChannelResults(results);
+            } else if ("playlist".equals(type)) {
+                enrichPlaylistResults(results);
+            } else if ("video".equals(type)) {
+                enrichVideoResults(results);
+            }
+
+            return results;
 
         } catch (IOException e) {
             logger.error("YouTube search failed for query '{}': {}", query, e.getMessage());
@@ -182,5 +195,106 @@ public class YouTubeService {
         List<Video> videos = response.getItems();
 
         return videos != null && !videos.isEmpty() ? videos.get(0) : null;
+    }
+
+    /**
+     * Enrich channel search results with statistics
+     * We add statistics data to the snippet description field for transport
+     */
+    private void enrichChannelResults(List<SearchResult> results) throws IOException {
+        if (results == null || results.isEmpty()) {
+            return;
+        }
+
+        List<String> channelIds = results.stream()
+                .map(result -> result.getId().getChannelId())
+                .toList();
+
+        YouTube.Channels.List request = youtube.channels().list(List.of("statistics"));
+        request.setKey(apiKey);
+        request.setId(channelIds);
+
+        ChannelListResponse response = request.execute();
+        List<Channel> channels = response.getItems();
+
+        if (channels != null) {
+            for (SearchResult result : results) {
+                String channelId = result.getId().getChannelId();
+                channels.stream()
+                        .filter(ch -> ch.getId().equals(channelId))
+                        .findFirst()
+                        .ifPresent(ch -> {
+                            // Store statistics in a custom field on the snippet
+                            result.getSnippet().set("statistics", ch.getStatistics());
+                        });
+            }
+        }
+    }
+
+    /**
+     * Enrich playlist search results with content details
+     */
+    private void enrichPlaylistResults(List<SearchResult> results) throws IOException {
+        if (results == null || results.isEmpty()) {
+            return;
+        }
+
+        List<String> playlistIds = results.stream()
+                .map(result -> result.getId().getPlaylistId())
+                .toList();
+
+        YouTube.Playlists.List request = youtube.playlists().list(List.of("contentDetails"));
+        request.setKey(apiKey);
+        request.setId(playlistIds);
+
+        PlaylistListResponse response = request.execute();
+        List<Playlist> playlists = response.getItems();
+
+        if (playlists != null) {
+            for (SearchResult result : results) {
+                String playlistId = result.getId().getPlaylistId();
+                playlists.stream()
+                        .filter(pl -> pl.getId().equals(playlistId))
+                        .findFirst()
+                        .ifPresent(pl -> {
+                            // Store content details in a custom field on the snippet
+                            result.getSnippet().set("contentDetails", pl.getContentDetails());
+                        });
+            }
+        }
+    }
+
+    /**
+     * Enrich video search results with statistics and content details
+     */
+    private void enrichVideoResults(List<SearchResult> results) throws IOException {
+        if (results == null || results.isEmpty()) {
+            return;
+        }
+
+        List<String> videoIds = results.stream()
+                .map(result -> result.getId().getVideoId())
+                .toList();
+
+        YouTube.Videos.List request = youtube.videos().list(List.of("statistics", "contentDetails"));
+        request.setKey(apiKey);
+        request.setId(videoIds);
+
+        VideoListResponse response = request.execute();
+        List<Video> videos = response.getItems();
+
+        if (videos != null) {
+            for (SearchResult result : results) {
+                String videoId = result.getId().getVideoId();
+                videos.stream()
+                        .filter(v -> v.getId().equals(videoId))
+                        .findFirst()
+                        .ifPresent(v -> {
+                            // Store statistics and content details in custom fields on the snippet
+                            result.getSnippet().set("statistics", v.getStatistics());
+                            result.getSnippet().set("contentDetails", v.getContentDetails());
+                        });
+            }
+        }
     }
 }

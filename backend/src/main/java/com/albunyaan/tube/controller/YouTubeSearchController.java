@@ -27,6 +27,23 @@ public class YouTubeSearchController {
     }
 
     /**
+     * Search for all content types (channels, playlists, videos)
+     */
+    @GetMapping("/search/all")
+    public ResponseEntity<SearchAllResponse> searchAll(@RequestParam String query) {
+        try {
+            List<SearchResult> channels = youtubeService.searchChannels(query);
+            List<SearchResult> playlists = youtubeService.searchPlaylists(query);
+            List<SearchResult> videos = youtubeService.searchVideos(query);
+
+            SearchAllResponse response = new SearchAllResponse(channels, playlists, videos);
+            return ResponseEntity.ok(response);
+        } catch (IOException e) {
+            return ResponseEntity.status(500).build();
+        }
+    }
+
+    /**
      * Search for channels
      */
     @GetMapping("/search/channels")
@@ -36,6 +53,33 @@ public class YouTubeSearchController {
             return ResponseEntity.ok(results);
         } catch (IOException e) {
             return ResponseEntity.status(500).build();
+        }
+    }
+
+    /**
+     * Response wrapper for search all endpoint
+     */
+    public static class SearchAllResponse {
+        private final List<SearchResult> channels;
+        private final List<SearchResult> playlists;
+        private final List<SearchResult> videos;
+
+        public SearchAllResponse(List<SearchResult> channels, List<SearchResult> playlists, List<SearchResult> videos) {
+            this.channels = channels;
+            this.playlists = playlists;
+            this.videos = videos;
+        }
+
+        public List<SearchResult> getChannels() {
+            return channels;
+        }
+
+        public List<SearchResult> getPlaylists() {
+            return playlists;
+        }
+
+        public List<SearchResult> getVideos() {
+            return videos;
         }
     }
 
