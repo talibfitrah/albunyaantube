@@ -17,16 +17,24 @@ interface YouTubeSearchResponse {
  */
 export async function searchYouTube(
   query: string,
-  type: 'channels' | 'playlists' | 'videos' = 'channels'
+  type: 'all' | 'channels' | 'playlists' | 'videos' = 'all'
 ): Promise<YouTubeSearchResponse> {
   const endpoint = `/api/admin/youtube/search/${type}`;
   const response = await apiClient.get(endpoint, {
     params: { query }
   });
 
-  // Transform Google API response to our format
-  const results = response.data;
+  // Handle 'all' response with all three types
+  if (type === 'all') {
+    return {
+      channels: transformChannelResults(response.data.channels || []),
+      playlists: transformPlaylistResults(response.data.playlists || []),
+      videos: transformVideoResults(response.data.videos || [])
+    };
+  }
 
+  // Handle single-type responses
+  const results = response.data;
   return {
     channels: type === 'channels' ? transformChannelResults(results) : [],
     playlists: type === 'playlists' ? transformPlaylistResults(results) : [],
@@ -111,7 +119,7 @@ function transformChannelResult(channel: any): AdminSearchChannelResult {
     id: channelId,
     ytId: channelId,
     name: channel.snippet?.title || '',
-    avatarUrl: channel.snippet?.thumbnails?.default?.url || '',
+    avatarUrl: channel.snippet?.thumbnails?.medium?.url || channel.snippet?.thumbnails?.default?.url || '',
     subscriberCount: parseInt(channel.statistics?.subscriberCount || '0'),
     categories: [],
     includeState: 'NOT_INCLUDED',
@@ -136,9 +144,16 @@ function transformPlaylistResults(playlists: any[]): AdminSearchPlaylistResult[]
       id: playlistId,
       ytId: playlistId,
       title: playlist.snippet?.title || '',
-      thumbnailUrl: playlist.snippet?.thumbnails?.default?.url || '',
+      thumbnailUrl: playlist.snippet?.thumbnails?.medium?.url || playlist.snippet?.thumbnails?.default?.url || '',
       itemCount: parseInt(playlist.contentDetails?.itemCount || '0'),
-      owner: null as any,
+      owner: {
+        id: playlist.snippet?.channelId || '',
+        ytId: playlist.snippet?.channelId || '',
+        name: playlist.snippet?.channelTitle || '',
+        avatarUrl: '',
+        subscriberCount: 0,
+        categories: []
+      },
       categories: [],
       downloadable: true,
       includeState: 'NOT_INCLUDED',
@@ -152,20 +167,45 @@ function transformPlaylistResults(playlists: any[]): AdminSearchPlaylistResult[]
 
 // Transform Google API SearchResult to AdminSearchVideoResult
 function transformVideoResults(videos: any[]): AdminSearchVideoResult[] {
-  return videos.map(video => ({
-    id: video.id.videoId || video.id,
-    ytId: video.id.videoId || video.id,
-    title: video.snippet?.title || '',
-    thumbnailUrl: video.snippet?.thumbnails?.default?.url || '',
-    durationSeconds: 0, // TODO: Parse duration from contentDetails
-    publishedAt: video.snippet?.publishedAt || '',
-    viewCount: 0, // Available in video details API
-    channel: null as any,
-    categories: [],
-    bookmarked: null,
-    downloaded: null,
-    includeState: 'NOT_INCLUDED',
-    parentChannelId: video.snippet?.channelId || '',
-    parentPlaylistIds: []
-  }));
+  return videos.map(video => {
+    const videoId = typeof video.id === 'object' ? video.id.videoId : video.id;
+
+    return {
+      id: videoId,
+      ytId: videoId,
+      title: video.snippet?.title || '',
+      thumbnailUrl: video.snippet?.thumbnails?.medium?.url || video.snippet?.thumbnails?.default?.url || '',
+      durationSeconds: parseDuration(video.contentDetails?.duration || ''),
+      publishedAt: video.snippet?.publishedAt || '',
+      viewCount: parseInt(video.statistics?.viewCount || '0'),
+      channel: {
+        id: video.snippet?.channelId || '',
+        ytId: video.snippet?.channelId || '',
+        name: video.snippet?.channelTitle || '',
+        avatarUrl: '',
+        subscriberCount: 0,
+        categories: []
+      },
+      categories: [],
+      bookmarked: null,
+      downloaded: null,
+      includeState: 'NOT_INCLUDED',
+      parentChannelId: video.snippet?.channelId || '',
+      parentPlaylistIds: []
+    };
+  });
+}
+
+// Parse ISO 8601 duration to seconds (e.g., "PT1H2M30S" -> 3750)
+function parseDuration(duration: string): number {
+  if (!duration) return 0;
+
+  const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!match) return 0;
+
+  const hours = parseInt(match[1] || '0');
+  const minutes = parseInt(match[2] || '0');
+  const seconds = parseInt(match[3] || '0');
+
+  return hours * 3600 + minutes * 60 + seconds;
 }
