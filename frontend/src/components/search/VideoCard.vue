@@ -24,12 +24,32 @@
           </svg>
           {{ formatViewCount(video.viewCount) }} views
         </span>
+        <span v-if="video.publishedAt" class="meta-item">
+          <svg class="meta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+          {{ formatRelativeTime(video.publishedAt) }}
+        </span>
       </div>
       <span class="content-type-badge video-badge">Video</span>
     </div>
     <div class="card-actions">
-      <button type="button" class="action-button secondary" @click="$emit('add', video)" disabled>
-        Coming Soon
+      <button
+        v-if="alreadyAdded"
+        type="button"
+        class="action-button secondary"
+        disabled
+      >
+        Already Added
+      </button>
+      <button
+        v-else
+        type="button"
+        class="action-button primary"
+        @click="$emit('add', video)"
+      >
+        Add for Approval
       </button>
     </div>
   </div>
@@ -40,6 +60,7 @@ import type { AdminSearchVideoResult } from '@/types/registry';
 
 defineProps<{
   video: AdminSearchVideoResult;
+  alreadyAdded?: boolean;
 }>();
 
 defineEmits<{
@@ -58,12 +79,44 @@ function formatDuration(seconds: number): string {
 }
 
 function formatViewCount(count: number): string {
-  if (count >= 1_000_000) {
+  if (count >= 1_000_000_000) {
+    return `${(count / 1_000_000_000).toFixed(1)}B`;
+  } else if (count >= 1_000_000) {
     return `${(count / 1_000_000).toFixed(1)}M`;
   } else if (count >= 1_000) {
     return `${(count / 1_000).toFixed(1)}K`;
   }
   return count.toString();
+}
+
+function formatRelativeTime(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+  if (diffInSeconds < 60) return 'just now';
+  if (diffInSeconds < 3600) {
+    const mins = Math.floor(diffInSeconds / 60);
+    return `${mins} minute${mins !== 1 ? 's' : ''} ago`;
+  }
+  if (diffInSeconds < 86400) {
+    const hours = Math.floor(diffInSeconds / 3600);
+    return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
+  }
+  if (diffInSeconds < 604800) {
+    const days = Math.floor(diffInSeconds / 86400);
+    return `${days} day${days !== 1 ? 's' : ''} ago`;
+  }
+  if (diffInSeconds < 2592000) {
+    const weeks = Math.floor(diffInSeconds / 604800);
+    return `${weeks} week${weeks !== 1 ? 's' : ''} ago`;
+  }
+  if (diffInSeconds < 31536000) {
+    const months = Math.floor(diffInSeconds / 2592000);
+    return `${months} month${months !== 1 ? 's' : ''} ago`;
+  }
+  const years = Math.floor(diffInSeconds / 31536000);
+  return `${years} year${years !== 1 ? 's' : ''} ago`;
 }
 </script>
 

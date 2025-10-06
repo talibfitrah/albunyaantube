@@ -20,7 +20,20 @@
       <span class="content-type-badge channel-badge">Channel</span>
     </div>
     <div class="card-actions">
-      <button type="button" class="action-button primary" @click="$emit('add', channel)">
+      <button
+        v-if="alreadyAdded"
+        type="button"
+        class="action-button secondary"
+        disabled
+      >
+        Already Added
+      </button>
+      <button
+        v-else
+        type="button"
+        class="action-button primary"
+        @click="$emit('add', channel)"
+      >
         Add for Approval
       </button>
     </div>
@@ -32,6 +45,7 @@ import type { AdminSearchChannelResult } from '@/types/registry';
 
 defineProps<{
   channel: AdminSearchChannelResult;
+  alreadyAdded?: boolean;
 }>();
 
 defineEmits<{
@@ -39,7 +53,9 @@ defineEmits<{
 }>();
 
 function formatSubscriberCount(count: number): string {
-  if (count >= 1_000_000) {
+  if (count >= 1_000_000_000) {
+    return `${(count / 1_000_000_000).toFixed(1)}B`;
+  } else if (count >= 1_000_000) {
     return `${(count / 1_000_000).toFixed(1)}M`;
   } else if (count >= 1_000) {
     return `${(count / 1_000).toFixed(1)}K`;
@@ -167,6 +183,13 @@ function formatSubscriberCount(count: number): string {
 .action-button.primary:hover {
   background: var(--color-accent);
   box-shadow: 0 2px 8px rgba(22, 131, 90, 0.25);
+}
+
+.action-button.secondary {
+  background: var(--color-surface-alt);
+  color: var(--color-text-secondary);
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 @media (max-width: 768px) {

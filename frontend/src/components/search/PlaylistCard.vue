@@ -18,7 +18,7 @@
             <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
             <polyline points="22 4 12 14.01 9 11.01"></polyline>
           </svg>
-          {{ playlist.itemCount }} videos
+          {{ formatVideoCount(playlist.itemCount) }} videos
         </span>
         <span v-if="playlist.owner?.name" class="meta-item">
           <svg class="meta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -31,7 +31,20 @@
       <span class="content-type-badge playlist-badge">Playlist</span>
     </div>
     <div class="card-actions">
-      <button type="button" class="action-button primary" @click="$emit('add', playlist)">
+      <button
+        v-if="alreadyAdded"
+        type="button"
+        class="action-button secondary"
+        disabled
+      >
+        Already Added
+      </button>
+      <button
+        v-else
+        type="button"
+        class="action-button primary"
+        @click="$emit('add', playlist)"
+      >
         Add for Approval
       </button>
     </div>
@@ -43,11 +56,23 @@ import type { AdminSearchPlaylistResult } from '@/types/registry';
 
 defineProps<{
   playlist: AdminSearchPlaylistResult;
+  alreadyAdded?: boolean;
 }>();
 
 defineEmits<{
   add: [playlist: AdminSearchPlaylistResult];
 }>();
+
+function formatVideoCount(count: number): string {
+  if (count >= 1_000_000_000) {
+    return `${(count / 1_000_000_000).toFixed(1)}B`;
+  } else if (count >= 1_000_000) {
+    return `${(count / 1_000_000).toFixed(1)}M`;
+  } else if (count >= 1_000) {
+    return `${(count / 1_000).toFixed(1)}K`;
+  }
+  return count.toString();
+}
 </script>
 
 <style scoped>
@@ -206,6 +231,13 @@ defineEmits<{
 .action-button.primary:hover {
   background: var(--color-accent);
   box-shadow: 0 2px 8px rgba(22, 131, 90, 0.25);
+}
+
+.action-button.secondary {
+  background: var(--color-surface-alt);
+  color: var(--color-text-secondary);
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 @media (max-width: 768px) {
