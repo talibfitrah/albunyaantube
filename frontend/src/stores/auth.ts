@@ -72,7 +72,8 @@ export const useAuthStore = defineStore('auth', () => {
 
       return true;
     } catch (err: any) {
-      console.error('Login failed', err);
+      // Log only the error code for debugging, not the full error object
+      console.warn('Login failed:', err.code || 'Unknown error');
 
       // Map Firebase error codes to user-friendly messages
       switch (err.code) {
