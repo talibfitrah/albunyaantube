@@ -23,7 +23,7 @@
             :key="type.value"
             type="button"
             :class="['filter-tab', { active: contentType === type.value }]"
-            @click="contentType = type.value"
+            @click="contentType = type.value; handleFilterChange()"
           >
             {{ t(type.labelKey) }}
           </button>
