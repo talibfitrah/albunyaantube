@@ -86,11 +86,12 @@ export async function getChannelDetails(channelId: string) {
 }
 
 /**
- * Add a channel or playlist to pending approval queue
+ * Add a channel, playlist, or video to pending approval queue
  */
 export async function addToPendingApprovals(
-  item: AdminSearchChannelResult | AdminSearchPlaylistResult,
-  itemType: 'channel' | 'playlist'
+  item: AdminSearchChannelResult | AdminSearchPlaylistResult | AdminSearchVideoResult,
+  itemType: 'channel' | 'playlist' | 'video',
+  categoryIds: string[] = []
 ): Promise<void> {
   if (itemType === 'channel') {
     const channel = item as AdminSearchChannelResult;
@@ -101,11 +102,11 @@ export async function addToPendingApprovals(
       thumbnailUrl: channel.avatarUrl,
       subscribers: channel.subscriberCount,
       videoCount: 0,
-      categoryIds: [],
+      categoryIds,
       status: 'PENDING'
     };
     await apiClient.post('/api/admin/registry/channels', payload);
-  } else {
+  } else if (itemType === 'playlist') {
     const playlist = item as AdminSearchPlaylistResult;
     const payload = {
       youtubeId: playlist.ytId || playlist.id,
@@ -113,10 +114,23 @@ export async function addToPendingApprovals(
       description: '',
       thumbnailUrl: playlist.thumbnailUrl,
       itemCount: playlist.itemCount,
-      categoryIds: [],
+      categoryIds,
       status: 'PENDING'
     };
     await apiClient.post('/api/admin/registry/playlists', payload);
+  } else if (itemType === 'video') {
+    const video = item as AdminSearchVideoResult;
+    const payload = {
+      youtubeId: video.ytId || video.id,
+      title: video.title,
+      description: '',
+      thumbnailUrl: video.thumbnailUrl,
+      durationSeconds: video.durationSeconds,
+      viewCount: video.viewCount,
+      categoryIds,
+      status: 'PENDING'
+    };
+    await apiClient.post('/api/admin/registry/videos', payload);
   }
 }
 

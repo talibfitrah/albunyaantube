@@ -2,14 +2,14 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useFocusTrap } from '@/composables/useFocusTrap';
+import { getAllCategories } from '@/services/categoryService';
+import type { Category as CategoryType } from '@/services/categoryService';
+import CategoryTreeNode from './CategoryTreeNode.vue';
 
 const { t } = useI18n();
 
-interface Category {
-  id: string;
-  name: string;
-  slug: string;
-  parentId: string | null;
+// Use the Category type from categoryService but ensure it has children array
+interface Category extends CategoryType {
   children?: Category[];
 }
 
@@ -60,50 +60,19 @@ onMounted(() => {
 async function loadCategories() {
   isLoading.value = true;
   try {
-    // Mock data - replace with actual API call
-    await new Promise(resolve => setTimeout(resolve, 300));
-    categories.value = [
-      {
-        id: '1',
-        name: 'Islamic Studies',
-        slug: 'islamic-studies',
-        parentId: null,
-        children: [
-          {
-            id: '1-1',
-            name: 'Quran',
-            slug: 'quran',
-            parentId: '1',
-            children: [
-              { id: '1-1-1', name: 'Recitation', slug: 'recitation', parentId: '1-1' },
-              { id: '1-1-2', name: 'Tafsir', slug: 'tafsir', parentId: '1-1' }
-            ]
-          },
-          {
-            id: '1-2',
-            name: 'Hadith',
-            slug: 'hadith',
-            parentId: '1'
-          }
-        ]
-      },
-      {
-        id: '2',
-        name: 'Islamic History',
-        slug: 'islamic-history',
-        parentId: null,
-        children: [
-          { id: '2-1', name: 'Early Islam', slug: 'early-islam', parentId: '2' },
-          { id: '2-2', name: 'Ottoman Empire', slug: 'ottoman-empire', parentId: '2' }
-        ]
-      },
-      {
-        id: '3',
-        name: 'Fiqh & Jurisprudence',
-        slug: 'fiqh',
-        parentId: null
-      }
-    ];
+    // Fetch categories from backend API
+    const fetchedCategories = await getAllCategories();
+
+    // The API already returns hierarchical structure with subcategories
+    // Map subcategories to children for consistency with component
+    categories.value = fetchedCategories.map(cat => ({
+      ...cat,
+      name: cat.name || cat.label || 'Unnamed Category',
+      children: cat.subcategories || []
+    })) as Category[];
+  } catch (err) {
+    console.error('Failed to load categories', err);
+    categories.value = [];
   } finally {
     isLoading.value = false;
   }
@@ -289,67 +258,6 @@ watch(() => props.isOpen, (isOpen) => {
   </teleport>
 </template>
 
-<!-- CategoryTreeNode Component (inline) -->
-<script setup lang="ts" generic="T">
-interface CategoryTreeNodeProps {
-  category: Category;
-  expandedNodes: Set<string>;
-  selectedIds: Set<string>;
-  multiSelect: boolean;
-}
-
-interface CategoryTreeNodeEmits {
-  (e: 'toggle-expand', categoryId: string): void;
-  (e: 'toggle-select', categoryId: string): void;
-}
-
-const nodeProps = defineProps<CategoryTreeNodeProps>();
-const nodeEmit = defineEmits<CategoryTreeNodeEmits>();
-
-const isExpanded = computed(() => nodeProps.expandedNodes.has(nodeProps.category.id));
-const isSelected = computed(() => nodeProps.selectedIds.has(nodeProps.category.id));
-const hasChildren = computed(() => nodeProps.category.children && nodeProps.category.children.length > 0);
-</script>
-
-<template>
-  <div class="tree-node">
-    <div class="node-content" :class="{ selected: isSelected }">
-      <button
-        v-if="hasChildren"
-        @click="nodeEmit('toggle-expand', category.id)"
-        class="expand-btn"
-        :aria-label="isExpanded ? 'Collapse' : 'Expand'"
-      >
-        <span class="expand-icon" :class="{ expanded: isExpanded }">▶</span>
-      </button>
-      <div v-else class="expand-placeholder"></div>
-
-      <label class="node-label" @click="nodeEmit('toggle-select', category.id)">
-        <input
-          type="checkbox"
-          :checked="isSelected"
-          @click.stop="nodeEmit('toggle-select', category.id)"
-          class="node-checkbox"
-        />
-        <span class="node-text">{{ category.name }}</span>
-      </label>
-    </div>
-
-    <div v-if="hasChildren && isExpanded" class="node-children">
-      <CategoryTreeNode
-        v-for="child in category.children"
-        :key="child.id"
-        :category="child"
-        :expanded-nodes="expandedNodes"
-        :selected-ids="selectedIds"
-        :multi-select="multiSelect"
-        @toggle-expand="nodeEmit('toggle-expand', $event)"
-        @toggle-select="nodeEmit('toggle-select', $event)"
-      />
-    </div>
-  </div>
-</template>
-
 <style scoped>
 /* Modal Overlay */
 .modal-overlay {
@@ -467,82 +375,6 @@ const hasChildren = computed(() => nodeProps.category.children && nodeProps.cate
 /* Category Tree */
 .category-tree {
   padding: 0 1.5rem;
-}
-
-.tree-node {
-  margin: 0.25rem 0;
-}
-
-.node-content {
-  display: flex;
-  align-items: center;
-  padding: 0.5rem;
-  border-radius: 4px;
-  transition: background-color 0.2s;
-}
-
-.node-content:hover {
-  background: var(--color-surface-variant);
-}
-
-.node-content.selected {
-  background: rgba(var(--color-primary-rgb), 0.1);
-}
-
-.expand-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0.25rem;
-  color: var(--color-text-secondary);
-  transition: transform 0.2s;
-}
-
-.expand-icon {
-  display: inline-block;
-  transition: transform 0.2s;
-}
-
-.expand-icon.expanded {
-  transform: rotate(90deg);
-}
-
-/* RTL: Flip expand icon direction */
-[dir='rtl'] .expand-icon {
-  transform: scaleX(-1);
-}
-
-[dir='rtl'] .expand-icon.expanded {
-  transform: scaleX(-1) rotate(90deg);
-}
-
-.expand-placeholder {
-  width: 1.5rem;
-}
-
-.node-label {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex: 1;
-  cursor: pointer;
-}
-
-.node-checkbox {
-  width: 1rem;
-  height: 1rem;
-  cursor: pointer;
-}
-
-.node-text {
-  font-size: 0.9375rem;
-  color: var(--color-text);
-}
-
-.node-children {
-  margin-inline-start: 1.5rem;
-  border-inline-start: 1px solid var(--color-border);
-  padding-inline-start: 0.5rem;
 }
 
 /* Modal Footer */

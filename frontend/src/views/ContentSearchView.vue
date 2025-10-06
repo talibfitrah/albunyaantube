@@ -104,6 +104,14 @@
       </div>
     </div>
 
+    <!-- Category Assignment Modal -->
+    <CategoryAssignmentModal
+      :is-open="isCategoryModalOpen"
+      :multi-select="true"
+      @close="handleCategoryModalClose"
+      @assign="handleCategoryAssignment"
+    />
+
   </div>
 </template>
 
@@ -117,6 +125,7 @@ import apiClient from '@/services/api/client';
 import ChannelCard from '@/components/search/ChannelCard.vue';
 import PlaylistCard from '@/components/search/PlaylistCard.vue';
 import VideoCard from '@/components/search/VideoCard.vue';
+import CategoryAssignmentModal from '@/components/CategoryAssignmentModal.vue';
 import type { AdminSearchChannelResult, AdminSearchPlaylistResult, AdminSearchVideoResult } from '@/types/registry';
 
 const { t } = useI18n();
@@ -138,6 +147,13 @@ const existingVideoIds = ref<Set<string>>(new Set());
 const hasMoreResults = ref(true);
 const currentPage = ref(0);
 const nextPageToken = ref<string | null>(null);
+
+// Category modal state
+const isCategoryModalOpen = ref(false);
+const pendingContent = ref<{
+  data: AdminSearchChannelResult | AdminSearchPlaylistResult | AdminSearchVideoResult;
+  type: 'channel' | 'playlist' | 'video';
+} | null>(null);
 
 const contentTypes: Array<{ value: 'all' | 'channels' | 'playlists' | 'videos'; labelKey: string }> = [
   { value: 'all', labelKey: 'contentSearch.types.all' },
@@ -286,35 +302,60 @@ function getResultsCountText(): string {
 }
 
 async function handleAddChannel(channel: AdminSearchChannelResult) {
-  try {
-    await addToPendingApprovals(channel, 'channel');
-    toast.success('Channel added to approval queue');
-  } catch (err: any) {
-    console.error('Failed to add channel for approval', err);
-    if (err.response?.status === 409) {
-      toast.error('This channel already exists in the registry');
-    } else {
-      toast.error('Failed to add channel for approval');
-    }
-  }
+  // Open category modal instead of directly submitting
+  pendingContent.value = { data: channel, type: 'channel' };
+  isCategoryModalOpen.value = true;
 }
 
 async function handleAddPlaylist(playlist: AdminSearchPlaylistResult) {
-  try {
-    await addToPendingApprovals(playlist, 'playlist');
-    toast.success('Playlist added to approval queue');
-  } catch (err: any) {
-    console.error('Failed to add playlist for approval', err);
-    if (err.response?.status === 409) {
-      toast.error('This playlist already exists in the registry');
-    } else {
-      toast.error('Failed to add playlist for approval');
-    }
-  }
+  // Open category modal instead of directly submitting
+  pendingContent.value = { data: playlist, type: 'playlist' };
+  isCategoryModalOpen.value = true;
 }
 
 async function handleAddVideo(video: AdminSearchVideoResult) {
-  toast.info('Video approval coming soon');
+  // Open category modal instead of directly submitting
+  pendingContent.value = { data: video, type: 'video' };
+  isCategoryModalOpen.value = true;
+}
+
+async function handleCategoryAssignment(categoryIds: string[]) {
+  if (!pendingContent.value) return;
+
+  try {
+    // Submit with selected categories
+    await addToPendingApprovals(
+      pendingContent.value.data,
+      pendingContent.value.type,
+      categoryIds
+    );
+
+    const typeLabel = pendingContent.value.type.charAt(0).toUpperCase() + pendingContent.value.type.slice(1);
+    toast.success(`${typeLabel} added to approval queue with ${categoryIds.length} ${categoryIds.length === 1 ? 'category' : 'categories'}`);
+
+    // Mark as already added
+    if (pendingContent.value.type === 'channel') {
+      existingChannelIds.value.add((pendingContent.value.data as AdminSearchChannelResult).ytId);
+    } else if (pendingContent.value.type === 'playlist') {
+      existingPlaylistIds.value.add((pendingContent.value.data as AdminSearchPlaylistResult).ytId);
+    } else if (pendingContent.value.type === 'video') {
+      existingVideoIds.value.add((pendingContent.value.data as AdminSearchVideoResult).ytId);
+    }
+  } catch (err: any) {
+    console.error('Failed to add content for approval', err);
+    if (err.response?.status === 409) {
+      toast.error('This content already exists in the registry');
+    } else {
+      toast.error('Failed to add content for approval');
+    }
+  } finally {
+    pendingContent.value = null;
+  }
+}
+
+function handleCategoryModalClose() {
+  isCategoryModalOpen.value = false;
+  pendingContent.value = null;
 }
 
 // Infinite scroll handler
