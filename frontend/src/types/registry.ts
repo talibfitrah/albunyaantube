@@ -50,6 +50,7 @@ export interface AdminSearchChannelResult {
   name: string | null;
   avatarUrl: string | null;
   subscriberCount: number;
+  publishedAt?: string; // Channel created date
   categories: CategoryTag[];
   includeState: IncludeState;
   excludedItemCounts: ExcludedItemCounts;
@@ -64,6 +65,7 @@ export interface AdminSearchPlaylistResult {
   title: string | null;
   thumbnailUrl: string | null;
   itemCount: number;
+  publishedAt?: string; // Playlist published date
   owner: ChannelSummary;
   categories: CategoryTag[];
   downloadable: boolean;

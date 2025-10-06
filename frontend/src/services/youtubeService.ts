@@ -121,6 +121,7 @@ function transformChannelResult(channel: YouTubeEnrichedSearchResult | any): Adm
     name: channel.title || channel.snippet?.title || '',
     avatarUrl: channel.thumbnailUrl || channel.snippet?.thumbnails?.medium?.url || channel.snippet?.thumbnails?.default?.url || '',
     subscriberCount: channel.subscriberCount || parseInt(channel.statistics?.subscriberCount || '0'),
+    publishedAt: channel.publishedAt || channel.snippet?.publishedAt,
     categories: [],
     includeState: 'NOT_INCLUDED',
     excludedItemCounts: { videos: 0, playlists: 0 },
@@ -148,6 +149,7 @@ function transformPlaylistResults(playlists: any[]): AdminSearchPlaylistResult[]
       title: playlist.title || playlist.snippet?.title || '',
       thumbnailUrl: playlist.thumbnailUrl || playlist.snippet?.thumbnails?.medium?.url || playlist.snippet?.thumbnails?.default?.url || '',
       itemCount: playlist.itemCount || parseInt(playlist.contentDetails?.itemCount || '0'),
+      publishedAt: playlist.publishedAt || playlist.snippet?.publishedAt,
       owner: {
         id: channelId,
         ytId: channelId,

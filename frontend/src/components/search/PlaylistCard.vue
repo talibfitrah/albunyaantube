@@ -27,6 +27,15 @@
           </svg>
           {{ playlist.owner.name }}
         </span>
+        <span v-if="playlist.publishedAt" class="meta-item meta-date">
+          <svg class="meta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="16" y1="2" x2="16" y2="6"></line>
+            <line x1="8" y1="2" x2="8" y2="6"></line>
+            <line x1="3" y1="10" x2="21" y2="10"></line>
+          </svg>
+          Published {{ formatRelativeTime(playlist.publishedAt) }}
+        </span>
       </div>
       <span class="content-type-badge playlist-badge">Playlist</span>
     </div>
@@ -72,6 +81,32 @@ function formatVideoCount(count: number): string {
     return `${(count / 1_000).toFixed(1)}K`;
   }
   return count.toString();
+}
+
+function formatRelativeTime(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+  if (diffInSeconds < 60) return 'just now';
+
+  const mins = Math.floor(diffInSeconds / 60);
+  if (mins < 60) return `${mins} minute${mins !== 1 ? 's' : ''} ago`;
+
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
+
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days} day${days !== 1 ? 's' : ''} ago`;
+
+  const weeks = Math.floor(days / 7);
+  if (weeks < 4) return `${weeks} week${weeks !== 1 ? 's' : ''} ago`;
+
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months} month${months !== 1 ? 's' : ''} ago`;
+
+  const years = Math.floor(days / 365);
+  return `${years} year${years !== 1 ? 's' : ''} ago`;
 }
 </script>
 
@@ -188,6 +223,11 @@ function formatVideoCount(count: number): string {
   width: 1rem;
   height: 1rem;
   opacity: 0.7;
+}
+
+.meta-date {
+  color: var(--color-text-tertiary);
+  font-size: 0.8125rem;
 }
 
 .content-type-badge {
