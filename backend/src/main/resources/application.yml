@@ -4,9 +4,17 @@ spring:
   docker:
     compose:
       enabled: false
-  # BACKEND-PERF-01: Redis cache configuration (disabled for local dev without Redis)
+  # BACKEND-PERF-01: Cache configuration
+  # Using Caffeine (in-memory) for dev, can switch to Redis for prod
   cache:
-    type: none
+    type: caffeine
+    caffeine:
+      spec: maximumSize=1000,expireAfterWrite=3600s
+    cache-names:
+      - youtubeChannelSearch
+      - youtubePlaylistSearch
+      - youtubeVideoSearch
+#    # Uncomment below for Redis in production
 #    type: redis
 #    redis:
 #      time-to-live: 3600000 # 1 hour default TTL in milliseconds

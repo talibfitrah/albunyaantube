@@ -103,7 +103,11 @@ export const messages = {
         sort: 'Sort By',
         relevant: 'Relevance',
         recent: 'Most Recent',
-        popular: 'Most Popular'
+        popular: 'Most Popular',
+        mostRelevant: 'Most Relevant',
+        mostRecent: 'Most Recent',
+        mostPopular: 'Most Popular',
+        topRated: 'Top Rated'
       }
     },
     categories: {
