@@ -1,5 +1,6 @@
 package com.albunyaan.tube.security;
 
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -59,6 +60,16 @@ public class SecurityConfig {
 
                         // All other requests require authentication
                         .anyRequest().authenticated()
+                )
+                .exceptionHandling(ex -> ex
+                        .accessDeniedHandler((request, response, accessDeniedException) -> {
+                            System.err.println("❌ ACCESS DENIED to " + request.getRequestURI());
+                            System.err.println("   User: " + request.getUserPrincipal());
+                            System.err.println("   Exception: " + accessDeniedException.getMessage());
+                            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                            response.getWriter().write("{\"error\": \"Access denied\"}");
+                            response.setContentType("application/json");
+                        })
                 )
                 .addFilterBefore(firebaseAuthFilter, UsernamePasswordAuthenticationFilter.class);
 

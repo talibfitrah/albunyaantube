@@ -48,10 +48,15 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
             HttpServletResponse response,
             FilterChain filterChain
     ) throws ServletException, IOException {
+        String requestURI = request.getRequestURI();
         String authHeader = request.getHeader(AUTHORIZATION_HEADER);
+
+        logger.info("→ Request: {} {}", request.getMethod(), requestURI);
+        logger.info("  Auth header present: {}", authHeader != null);
 
         if (authHeader != null && authHeader.startsWith(BEARER_PREFIX)) {
             String token = authHeader.substring(BEARER_PREFIX.length());
+            logger.info("  Token length: {}", token.length());
 
             try {
                 FirebaseToken decodedToken = firebaseAuth.verifyIdToken(token);
@@ -77,7 +82,7 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContextHolder.getContext().setAuthentication(authentication);
 
-                logger.debug("Successfully authenticated user: {} with role: {}", email, role);
+                logger.info("✓ Authenticated user: {} with role: {} (authority: ROLE_{})", email, role, role.toUpperCase());
 
             } catch (FirebaseAuthException e) {
                 logger.error("Firebase token verification failed: {}", e.getMessage());

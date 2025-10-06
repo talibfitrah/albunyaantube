@@ -1,19 +1,19 @@
 package com.albunyaan.tube.config;
 
-import org.springframework.boot.autoconfigure.cache.RedisCacheManagerBuilderCustomizer;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.EnableCaching;
+import org.springframework.cache.caffeine.CaffeineCacheManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.data.redis.cache.RedisCacheConfiguration;
-import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
-import org.springframework.data.redis.serializer.RedisSerializationContext;
 
-import java.time.Duration;
+import java.util.concurrent.TimeUnit;
 
 /**
- * BACKEND-PERF-01: Redis Cache Configuration
+ * BACKEND-PERF-01: Caffeine Cache Configuration
  *
- * Configures caching strategy with different TTLs for different data types.
+ * Configures in-memory caching strategy with different TTLs for different data types.
+ * Uses Caffeine for high-performance caching.
  */
 @Configuration
 @EnableCaching
@@ -32,62 +32,26 @@ public class CacheConfig {
     public static final String CACHE_YOUTUBE_VIDEO_SEARCH = "youtubeVideoSearch";
 
     /**
-     * Customize RedisCacheManager with specific TTLs per cache
+     * Configure Caffeine CacheManager with default settings
      */
     @Bean
-    public RedisCacheManagerBuilderCustomizer redisCacheManagerBuilderCustomizer() {
-        return (builder) -> builder
-                .withCacheConfiguration(CACHE_CATEGORY_TREE,
-                        RedisCacheConfiguration.defaultCacheConfig()
-                                .entryTtl(Duration.ofHours(1))
-                                .serializeValuesWith(RedisSerializationContext.SerializationPair
-                                        .fromSerializer(new GenericJackson2JsonRedisSerializer())))
-                .withCacheConfiguration(CACHE_CATEGORIES,
-                        RedisCacheConfiguration.defaultCacheConfig()
-                                .entryTtl(Duration.ofHours(1))
-                                .serializeValuesWith(RedisSerializationContext.SerializationPair
-                                        .fromSerializer(new GenericJackson2JsonRedisSerializer())))
-                .withCacheConfiguration(CACHE_CHANNELS,
-                        RedisCacheConfiguration.defaultCacheConfig()
-                                .entryTtl(Duration.ofMinutes(15))
-                                .serializeValuesWith(RedisSerializationContext.SerializationPair
-                                        .fromSerializer(new GenericJackson2JsonRedisSerializer())))
-                .withCacheConfiguration(CACHE_PLAYLISTS,
-                        RedisCacheConfiguration.defaultCacheConfig()
-                                .entryTtl(Duration.ofMinutes(15))
-                                .serializeValuesWith(RedisSerializationContext.SerializationPair
-                                        .fromSerializer(new GenericJackson2JsonRedisSerializer())))
-                .withCacheConfiguration(CACHE_VIDEOS,
-                        RedisCacheConfiguration.defaultCacheConfig()
-                                .entryTtl(Duration.ofMinutes(5))
-                                .serializeValuesWith(RedisSerializationContext.SerializationPair
-                                        .fromSerializer(new GenericJackson2JsonRedisSerializer())))
-                .withCacheConfiguration(CACHE_YOUTUBE_CHANNEL_SEARCH,
-                        RedisCacheConfiguration.defaultCacheConfig()
-                                .entryTtl(Duration.ofHours(1)) // Cache YouTube search results for 1 hour
-                                .serializeValuesWith(RedisSerializationContext.SerializationPair
-                                        .fromSerializer(new GenericJackson2JsonRedisSerializer())))
-                .withCacheConfiguration(CACHE_YOUTUBE_PLAYLIST_SEARCH,
-                        RedisCacheConfiguration.defaultCacheConfig()
-                                .entryTtl(Duration.ofHours(1))
-                                .serializeValuesWith(RedisSerializationContext.SerializationPair
-                                        .fromSerializer(new GenericJackson2JsonRedisSerializer())))
-                .withCacheConfiguration(CACHE_YOUTUBE_VIDEO_SEARCH,
-                        RedisCacheConfiguration.defaultCacheConfig()
-                                .entryTtl(Duration.ofMinutes(30)) // Videos change more frequently
-                                .serializeValuesWith(RedisSerializationContext.SerializationPair
-                                        .fromSerializer(new GenericJackson2JsonRedisSerializer())));
-    }
+    public CacheManager cacheManager() {
+        CaffeineCacheManager cacheManager = new CaffeineCacheManager(
+                CACHE_CATEGORY_TREE,
+                CACHE_CATEGORIES,
+                CACHE_CHANNELS,
+                CACHE_PLAYLISTS,
+                CACHE_VIDEOS,
+                CACHE_YOUTUBE_CHANNEL_SEARCH,
+                CACHE_YOUTUBE_PLAYLIST_SEARCH,
+                CACHE_YOUTUBE_VIDEO_SEARCH
+        );
 
-    /**
-     * Default Redis cache configuration
-     */
-    @Bean
-    public RedisCacheConfiguration cacheConfiguration() {
-        return RedisCacheConfiguration.defaultCacheConfig()
-                .entryTtl(Duration.ofMinutes(15))
-                .disableCachingNullValues()
-                .serializeValuesWith(RedisSerializationContext.SerializationPair
-                        .fromSerializer(new GenericJackson2JsonRedisSerializer()));
+        cacheManager.setCaffeine(Caffeine.newBuilder()
+                .expireAfterWrite(1, TimeUnit.HOURS)
+                .maximumSize(1000)
+                .recordStats());
+
+        return cacheManager;
     }
 }

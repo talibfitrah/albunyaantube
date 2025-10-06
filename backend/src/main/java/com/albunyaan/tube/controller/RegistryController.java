@@ -2,8 +2,10 @@ package com.albunyaan.tube.controller;
 
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
+import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
+import com.albunyaan.tube.repository.VideoRepository;
 import com.albunyaan.tube.security.FirebaseUserDetails;
 import com.albunyaan.tube.service.AuditLogService;
 import org.springframework.http.HttpStatus;
@@ -27,15 +29,18 @@ public class RegistryController {
 
     private final ChannelRepository channelRepository;
     private final PlaylistRepository playlistRepository;
+    private final VideoRepository videoRepository;
     private final AuditLogService auditLogService;
 
     public RegistryController(
             ChannelRepository channelRepository,
             PlaylistRepository playlistRepository,
+            VideoRepository videoRepository,
             AuditLogService auditLogService
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
+        this.videoRepository = videoRepository;
         this.auditLogService = auditLogService;
     }
 
@@ -323,6 +328,151 @@ public class RegistryController {
 
         playlistRepository.deleteById(id);
         auditLogService.log("playlist_deleted_from_registry", "playlist", id, user);
+        return ResponseEntity.noContent().build();
+    }
+
+    // ==================== VIDEO ENDPOINTS ====================
+
+    /**
+     * Get all videos in registry
+     */
+    @GetMapping("/videos")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    public ResponseEntity<List<Video>> getAllVideos() throws ExecutionException, InterruptedException {
+        List<Video> videos = videoRepository.findAll();
+        return ResponseEntity.ok(videos);
+    }
+
+    /**
+     * Get videos by status
+     */
+    @GetMapping("/videos/status/{status}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    public ResponseEntity<List<Video>> getVideosByStatus(@PathVariable String status)
+            throws ExecutionException, InterruptedException {
+        List<Video> videos = videoRepository.findByStatus(status.toUpperCase());
+        return ResponseEntity.ok(videos);
+    }
+
+    /**
+     * Get video by ID
+     */
+    @GetMapping("/videos/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    public ResponseEntity<Video> getVideoById(@PathVariable String id)
+            throws ExecutionException, InterruptedException {
+        return videoRepository.findById(id)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Add video to registry
+     */
+    @PostMapping("/videos")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    public ResponseEntity<Video> addVideo(
+            @RequestBody Video video,
+            @AuthenticationPrincipal FirebaseUserDetails user
+    ) throws ExecutionException, InterruptedException {
+        // Check if video already exists by youtubeId
+        if (video.getYoutubeId() != null) {
+            var existing = videoRepository.findByYoutubeId(video.getYoutubeId());
+            if (existing.isPresent()) {
+                return ResponseEntity.status(HttpStatus.CONFLICT).build();
+            }
+        }
+
+        video.setSubmittedBy(user.getUid());
+
+        // Respect the status if explicitly set, otherwise auto-approve for admins
+        if (video.getStatus() == null || video.getStatus().isEmpty()) {
+            if (user.isAdmin()) {
+                video.setStatus("APPROVED");
+                video.setApprovedBy(user.getUid());
+            } else {
+                video.setStatus("PENDING");
+            }
+        }
+        // If status is explicitly set to PENDING, keep it pending even for admins
+        // This supports the approval workflow where admins add items for review
+
+        Video saved = videoRepository.save(video);
+        auditLogService.log("video_added_to_registry", "video", saved.getId(), user);
+        return ResponseEntity.status(HttpStatus.CREATED).body(saved);
+    }
+
+    /**
+     * Update video in registry
+     */
+    @PutMapping("/videos/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    public ResponseEntity<Video> updateVideo(
+            @PathVariable String id,
+            @RequestBody Video video,
+            @AuthenticationPrincipal FirebaseUserDetails user
+    ) throws ExecutionException, InterruptedException {
+        Video existing = videoRepository.findById(id).orElse(null);
+        if (existing == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        // Update fields
+        existing.setTitle(video.getTitle());
+        existing.setDescription(video.getDescription());
+        existing.setCategoryIds(video.getCategoryIds());
+        existing.setStatus(video.getStatus());
+        existing.setThumbnailUrl(video.getThumbnailUrl());
+        existing.setDurationSeconds(video.getDurationSeconds());
+        existing.setViewCount(video.getViewCount());
+
+        Video updated = videoRepository.save(existing);
+        auditLogService.log("video_updated_in_registry", "video", id, user);
+        return ResponseEntity.ok(updated);
+    }
+
+    /**
+     * Toggle video include/exclude state
+     */
+    @PatchMapping("/videos/{id}/toggle")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Video> toggleVideoStatus(
+            @PathVariable String id,
+            @AuthenticationPrincipal FirebaseUserDetails user
+    ) throws ExecutionException, InterruptedException {
+        Video video = videoRepository.findById(id).orElse(null);
+        if (video == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        // Toggle between APPROVED and PENDING
+        if ("APPROVED".equals(video.getStatus())) {
+            video.setStatus("PENDING");
+        } else {
+            video.setStatus("APPROVED");
+            video.setApprovedBy(user.getUid());
+        }
+
+        Video updated = videoRepository.save(video);
+        auditLogService.log("video_status_toggled", "video", id, user);
+        return ResponseEntity.ok(updated);
+    }
+
+    /**
+     * Delete video from registry
+     */
+    @DeleteMapping("/videos/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> deleteVideo(
+            @PathVariable String id,
+            @AuthenticationPrincipal FirebaseUserDetails user
+    ) throws ExecutionException, InterruptedException {
+        if (!videoRepository.findById(id).isPresent()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        videoRepository.deleteById(id);
+        auditLogService.log("video_deleted_from_registry", "video", id, user);
         return ResponseEntity.noContent().build();
     }
 }

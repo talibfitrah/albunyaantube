@@ -322,25 +322,32 @@ async function handleAddVideo(video: AdminSearchVideoResult) {
 async function handleCategoryAssignment(categoryIds: string[]) {
   if (!pendingContent.value) return;
 
+  // Store reference before clearing
+  const content = pendingContent.value;
+
   try {
     // Submit with selected categories
     await addToPendingApprovals(
-      pendingContent.value.data,
-      pendingContent.value.type,
+      content.data,
+      content.type,
       categoryIds
     );
 
-    const typeLabel = pendingContent.value.type.charAt(0).toUpperCase() + pendingContent.value.type.slice(1);
+    const typeLabel = content.type.charAt(0).toUpperCase() + content.type.slice(1);
     toast.success(`${typeLabel} added to approval queue with ${categoryIds.length} ${categoryIds.length === 1 ? 'category' : 'categories'}`);
 
     // Mark as already added
-    if (pendingContent.value.type === 'channel') {
-      existingChannelIds.value.add((pendingContent.value.data as AdminSearchChannelResult).ytId);
-    } else if (pendingContent.value.type === 'playlist') {
-      existingPlaylistIds.value.add((pendingContent.value.data as AdminSearchPlaylistResult).ytId);
-    } else if (pendingContent.value.type === 'video') {
-      existingVideoIds.value.add((pendingContent.value.data as AdminSearchVideoResult).ytId);
+    if (content.type === 'channel') {
+      existingChannelIds.value.add((content.data as AdminSearchChannelResult).ytId);
+    } else if (content.type === 'playlist') {
+      existingPlaylistIds.value.add((content.data as AdminSearchPlaylistResult).ytId);
+    } else if (content.type === 'video') {
+      existingVideoIds.value.add((content.data as AdminSearchVideoResult).ytId);
     }
+
+    // Close modal on success
+    isCategoryModalOpen.value = false;
+    pendingContent.value = null;
   } catch (err: any) {
     console.error('Failed to add content for approval', err);
     if (err.response?.status === 409) {
@@ -348,8 +355,6 @@ async function handleCategoryAssignment(categoryIds: string[]) {
     } else {
       toast.error('Failed to add content for approval');
     }
-  } finally {
-    pendingContent.value = null;
   }
 }
 

@@ -145,7 +145,7 @@ function toggleSelect(categoryId: string) {
 
 function handleAssign() {
   emit('assign', Array.from(selectedIds.value));
-  handleClose();
+  // Don't close immediately - let parent handle closing after assignment succeeds
 }
 
 function handleClose() {
@@ -279,10 +279,12 @@ watch(() => props.isOpen, (isOpen) => {
   border-radius: 8px;
   width: 100%;
   max-width: 600px;
-  max-height: 80vh;
+  max-height: 85vh;
+  min-height: 400px;
   display: flex;
   flex-direction: column;
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
 }
 
 /* Modal Header */
@@ -384,6 +386,8 @@ watch(() => props.isOpen, (isOpen) => {
   justify-content: space-between;
   padding: 1rem 1.5rem;
   border-top: 1px solid var(--color-border);
+  flex-shrink: 0;
+  background: var(--color-surface, white);
 }
 
 .selection-info {
@@ -430,17 +434,18 @@ watch(() => props.isOpen, (isOpen) => {
 }
 
 .btn-primary {
-  background: var(--color-primary);
-  color: white;
+  background: var(--color-primary, #16a34a);
+  color: white !important;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: var(--color-primary-hover);
+  background: var(--color-primary-hover, #15803d);
 }
 
 .btn-primary:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
+  background: var(--color-primary, #16a34a);
 }
 
 .btn-secondary {
