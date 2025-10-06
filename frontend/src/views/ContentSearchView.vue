@@ -99,6 +99,11 @@
         <div class="spinner-small"></div>
         <p>Loading more results...</p>
       </div>
+
+      <!-- End of results message -->
+      <div v-else-if="hasSearched && !hasMoreResults && hasResults" class="end-of-results">
+        <p>End of results</p>
+      </div>
     </div>
 
   </div>
@@ -134,6 +139,7 @@ const existingPlaylistIds = ref<Set<string>>(new Set());
 const existingVideoIds = ref<Set<string>>(new Set());
 const hasMoreResults = ref(true);
 const currentPage = ref(0);
+const nextPageToken = ref<string | null>(null);
 
 const contentTypes: Array<{ value: 'all' | 'channels' | 'playlists' | 'videos'; labelKey: string }> = [
   { value: 'all', labelKey: 'contentSearch.types.all' },
@@ -219,6 +225,7 @@ async function handleSearch() {
   hasSearched.value = true;
   currentPage.value = 0;
   hasMoreResults.value = true;
+  nextPageToken.value = null;
 
   try {
     const response = await searchYouTube(searchQuery.value, contentType.value);
@@ -231,11 +238,13 @@ async function handleSearch() {
     // Check which items already exist in registry
     await checkExistingItems();
 
-    // Check if we got fewer results than expected (no more results)
+    // YouTube API typically returns 20 results per page, but we'll check if there are fewer
     const totalResults = response.channels.length + response.playlists.length + response.videos.length;
-    if (totalResults < 20) {
+    if (totalResults === 0) {
       hasMoreResults.value = false;
     }
+    // Note: YouTube search API doesn't provide pageToken in the response we're getting
+    // We'll keep hasMoreResults true to allow user to try loading more
   } catch (err) {
     error.value = err instanceof Error ? err.message : t('contentSearch.error');
   } finally {
@@ -328,17 +337,19 @@ async function loadMoreResults() {
   }
 
   isLoadingMore.value = true;
-  currentPage.value++;
 
   try {
-    // In a real implementation, you'd pass page/offset to the API
-    // For now, we'll simulate that there are no more results after first search
-    // since YouTube API returns max 20 results per search
+    // YouTube API returns max 20 results per search query without pagination support in current implementation
+    // Future enhancement: Add pageToken support to backend for true pagination
+
+    // Simulate checking for more results
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // For now, disable further loading after initial results
+    // This prevents the "All results loaded" popup while maintaining smooth UX
     hasMoreResults.value = false;
-    toast.info('All results loaded');
   } catch (err) {
     console.error('Failed to load more results', err);
-    currentPage.value--; // Rollback page on error
   } finally {
     isLoadingMore.value = false;
   }
@@ -590,5 +601,18 @@ onUnmounted(() => {
   border-top-color: var(--color-brand);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
+}
+
+.end-of-results {
+  text-align: center;
+  padding: 2rem;
+  color: var(--color-text-tertiary);
+  font-size: 0.875rem;
+  border-top: 1px solid var(--color-border);
+  margin-top: 1rem;
+}
+
+.end-of-results p {
+  margin: 0;
 }
 </style>
