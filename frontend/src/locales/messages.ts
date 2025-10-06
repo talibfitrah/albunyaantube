@@ -76,16 +76,17 @@ export const messages = {
     },
     contentSearch: {
       heading: 'Content Search',
-      subtitle: 'Search and discover YouTube content to add to your registry',
+      subtitle: 'Search and discover YouTube content to add for approval',
       searchPlaceholder: 'Search for channels, playlists, or videos...',
       search: 'Search',
       searching: 'Searching...',
       retry: 'Retry',
-      add: 'Add to Registry',
+      add: 'Add for Approval',
       noResults: 'No results found. Try a different search.',
       resultsCount: '{count} results',
       error: 'Failed to search content.',
       types: {
+        all: 'All',
         channels: 'Channels',
         playlists: 'Playlists',
         videos: 'Videos'
@@ -1086,16 +1087,17 @@ export const messages = {
     },
     contentSearch: {
       heading: 'البحث عن المحتوى',
-      subtitle: 'ابحث واكتشف محتوى YouTube لإضافته إلى سجلك',
+      subtitle: 'ابحث واكتشف محتوى YouTube لإضافته للموافقة',
       searchPlaceholder: 'ابحث عن القنوات أو قوائم التشغيل أو الفيديوهات...',
       search: 'بحث',
       searching: 'جارٍ البحث...',
       retry: 'إعادة المحاولة',
-      add: 'إضافة إلى السجل',
+      add: 'إضافة للموافقة',
       noResults: 'لا توجد نتائج. جرب بحثًا مختلفًا.',
       resultsCount: '{count} نتائج',
       error: 'فشل البحث عن المحتوى.',
       types: {
+        all: 'الكل',
         channels: 'القنوات',
         playlists: 'قوائم التشغيل',
         videos: 'الفيديوهات'
@@ -1739,16 +1741,17 @@ export const messages = {
     },
     contentSearch: {
       heading: 'Zoeken naar inhoud',
-      subtitle: 'Zoek en ontdek YouTube-inhoud om toe te voegen aan je register',
+      subtitle: 'Zoek en ontdek YouTube-inhoud om toe te voegen voor goedkeuring',
       searchPlaceholder: 'Zoek naar kanalen, afspeellijsten of video\'s...',
       search: 'Zoeken',
       searching: 'Zoeken...',
       retry: 'Opnieuw proberen',
-      add: 'Toevoegen aan register',
+      add: 'Toevoegen voor goedkeuring',
       noResults: 'Geen resultaten gevonden. Probeer een andere zoekopdracht.',
       resultsCount: '{count} resultaten',
       error: 'Zoeken naar inhoud is mislukt.',
       types: {
+        all: 'Alle',
         channels: 'Kanalen',
         playlists: 'Afspeellijsten',
         videos: 'Video\'s'
