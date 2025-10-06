@@ -1,0 +1,225 @@
+<template>
+  <div class="search-result-card playlist-card">
+    <div class="card-thumbnail playlist-thumbnail">
+      <div class="playlist-stack">
+        <div class="stack-layer stack-3"></div>
+        <div class="stack-layer stack-2"></div>
+        <div class="stack-layer stack-1">
+          <img v-if="playlist.thumbnailUrl" :src="playlist.thumbnailUrl" :alt="playlist.title" />
+          <div v-else class="thumbnail-placeholder"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-content">
+      <h3 class="card-title">{{ playlist.title }}</h3>
+      <div class="card-meta">
+        <span class="meta-item">
+          <svg class="meta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+          </svg>
+          {{ playlist.itemCount }} videos
+        </span>
+        <span v-if="playlist.owner?.name" class="meta-item">
+          <svg class="meta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+            <circle cx="12" cy="7" r="4"></circle>
+          </svg>
+          {{ playlist.owner.name }}
+        </span>
+      </div>
+      <span class="content-type-badge playlist-badge">Playlist</span>
+    </div>
+    <div class="card-actions">
+      <button type="button" class="action-button primary" @click="$emit('add', playlist)">
+        Add for Approval
+      </button>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import type { AdminSearchPlaylistResult } from '@/types/registry';
+
+defineProps<{
+  playlist: AdminSearchPlaylistResult;
+}>();
+
+defineEmits<{
+  add: [playlist: AdminSearchPlaylistResult];
+}>();
+</script>
+
+<style scoped>
+.search-result-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 1.25rem;
+  align-items: center;
+  transition: all 0.2s ease;
+}
+
+.search-result-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: var(--color-brand);
+  transform: translateY(-2px);
+}
+
+.card-thumbnail {
+  border-radius: 0.5rem;
+  overflow: visible;
+}
+
+.playlist-thumbnail {
+  width: 140px;
+  height: 90px;
+}
+
+.playlist-stack {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.stack-layer {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 0.5rem;
+  background: var(--color-surface-alt);
+  border: 2px solid var(--color-border);
+}
+
+.stack-3 {
+  top: -6px;
+  left: 6px;
+  transform: scale(0.92);
+  opacity: 0.4;
+  z-index: 1;
+}
+
+.stack-2 {
+  top: -3px;
+  left: 3px;
+  transform: scale(0.96);
+  opacity: 0.7;
+  z-index: 2;
+}
+
+.stack-1 {
+  top: 0;
+  left: 0;
+  z-index: 3;
+  overflow: hidden;
+}
+
+.stack-1 img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.thumbnail-placeholder {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, var(--color-surface-alt), var(--color-border));
+}
+
+.card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  position: relative;
+}
+
+.card-title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  line-height: 1.4;
+}
+
+.card-meta {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  flex-wrap: wrap;
+}
+
+.meta-item {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.meta-icon {
+  width: 1rem;
+  height: 1rem;
+  opacity: 0.7;
+}
+
+.content-type-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 0.25rem 0.625rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.playlist-badge {
+  background: rgba(147, 51, 234, 0.1);
+  color: rgb(147, 51, 234);
+}
+
+.card-actions {
+  display: flex;
+  align-items: center;
+}
+
+.action-button {
+  padding: 0.625rem 1.25rem;
+  border: none;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.action-button.primary {
+  background: var(--color-brand);
+  color: var(--color-text-inverse);
+}
+
+.action-button.primary:hover {
+  background: var(--color-accent);
+  box-shadow: 0 2px 8px rgba(22, 131, 90, 0.25);
+}
+
+@media (max-width: 768px) {
+  .search-result-card {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .card-actions {
+    justify-content: stretch;
+  }
+
+  .action-button {
+    width: 100%;
+  }
+}
+</style>
