@@ -64,6 +64,7 @@ export interface AdminSearchPlaylistResult {
   ytId: string;
   title: string | null;
   thumbnailUrl: string | null;
+  videoThumbnails?: string[]; // First 4 video thumbnails for grid display
   itemCount: number;
   publishedAt?: string; // Playlist published date
   owner: ChannelSummary;
@@ -115,6 +116,7 @@ export interface YouTubeEnrichedSearchResult {
   videoCount?: number;
   // Playlist-specific
   itemCount?: number;
+  videoThumbnails?: string[]; // First 4 video thumbnails for playlists
   // Video-specific
   viewCount?: number;
   duration?: string;

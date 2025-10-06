@@ -148,6 +148,7 @@ function transformPlaylistResults(playlists: any[]): AdminSearchPlaylistResult[]
       ytId: playlistId,
       title: playlist.title || playlist.snippet?.title || '',
       thumbnailUrl: playlist.thumbnailUrl || playlist.snippet?.thumbnails?.medium?.url || playlist.snippet?.thumbnails?.default?.url || '',
+      videoThumbnails: playlist.videoThumbnails || [],
       itemCount: playlist.itemCount || parseInt(playlist.contentDetails?.itemCount || '0'),
       publishedAt: playlist.publishedAt || playlist.snippet?.publishedAt,
       owner: {

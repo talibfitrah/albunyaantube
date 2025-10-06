@@ -5,7 +5,10 @@
       <div v-else class="thumbnail-placeholder"></div>
     </div>
     <div class="card-content">
-      <h3 class="card-title">{{ channel.name }}</h3>
+      <div class="card-header-row">
+        <h3 class="card-title">{{ channel.name }}</h3>
+        <span class="content-type-badge channel-badge">CHANNEL</span>
+      </div>
       <div class="card-meta">
         <span class="meta-item">
           <svg class="meta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -26,7 +29,6 @@
           Created {{ formatRelativeTime(channel.publishedAt) }}
         </span>
       </div>
-      <span class="content-type-badge channel-badge">Channel</span>
     </div>
     <div class="card-actions">
       <button
@@ -146,7 +148,14 @@ function formatRelativeTime(dateStr: string): string {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  position: relative;
+  flex: 1;
+}
+
+.card-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
 .card-title {
@@ -155,6 +164,7 @@ function formatRelativeTime(dateStr: string): string {
   font-weight: 600;
   color: var(--color-text-primary);
   line-height: 1.4;
+  flex: 1;
 }
 
 .card-meta {
@@ -183,15 +193,14 @@ function formatRelativeTime(dateStr: string): string {
 }
 
 .content-type-badge {
-  position: absolute;
-  top: 0;
-  right: 0;
   padding: 0.25rem 0.625rem;
   border-radius: 999px;
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .channel-badge {

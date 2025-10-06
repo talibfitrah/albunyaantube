@@ -22,6 +22,7 @@ public class EnrichedSearchResult {
 
     // Playlist-specific
     private Long itemCount;
+    private java.util.List<String> videoThumbnails; // First 4 video thumbnails for playlists
 
     // Video-specific
     private Long viewCount;
@@ -167,5 +168,13 @@ public class EnrichedSearchResult {
 
     public void setDuration(String duration) {
         this.duration = duration;
+    }
+
+    public java.util.List<String> getVideoThumbnails() {
+        return videoThumbnails;
+    }
+
+    public void setVideoThumbnails(java.util.List<String> videoThumbnails) {
+        this.videoThumbnails = videoThumbnails;
     }
 }

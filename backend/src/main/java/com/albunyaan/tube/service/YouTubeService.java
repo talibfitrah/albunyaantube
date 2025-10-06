@@ -8,6 +8,7 @@ import com.google.api.services.youtube.model.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -16,6 +17,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 /**
@@ -29,6 +33,8 @@ public class YouTubeService {
 
     private static final Logger logger = LoggerFactory.getLogger(YouTubeService.class);
     private static final long MAX_RESULTS = 20L;
+    private static final int BATCH_SIZE = 50; // YouTube API allows up to 50 IDs per batch request
+    private static final ExecutorService executorService = Executors.newFixedThreadPool(3); // Thread pool for parallel requests
 
     private final YouTube youtube;
     private final String apiKey;
@@ -46,22 +52,25 @@ public class YouTubeService {
     }
 
     /**
-     * Search for channels by query with full statistics
+     * Search for channels by query with full statistics (with caching)
      */
+    @Cacheable(value = "youtubeChannelSearch", key = "#query", unless = "#result == null || #result.isEmpty()")
     public List<EnrichedSearchResult> searchChannelsEnriched(String query) throws IOException {
         return searchEnriched(query, "channel");
     }
 
     /**
-     * Search for playlists by query with full details
+     * Search for playlists by query with full details (with caching)
      */
+    @Cacheable(value = "youtubePlaylistSearch", key = "#query", unless = "#result == null || #result.isEmpty()")
     public List<EnrichedSearchResult> searchPlaylistsEnriched(String query) throws IOException {
         return searchEnriched(query, "playlist");
     }
 
     /**
-     * Search for videos by query with full statistics
+     * Search for videos by query with full statistics (with caching)
      */
+    @Cacheable(value = "youtubeVideoSearch", key = "#query", unless = "#result == null || #result.isEmpty()")
     public List<EnrichedSearchResult> searchVideosEnriched(String query) throws IOException {
         return searchEnriched(query, "video");
     }
@@ -242,7 +251,7 @@ public class YouTubeService {
     }
 
     /**
-     * Enrich channel data with statistics
+     * Enrich channel data with statistics using batch processing
      */
     private void enrichChannelData(List<EnrichedSearchResult> results) throws IOException {
         if (results == null || results.isEmpty()) {
@@ -251,33 +260,47 @@ public class YouTubeService {
 
         List<String> channelIds = results.stream()
                 .map(EnrichedSearchResult::getId)
+                .filter(id -> id != null && !id.isEmpty())
                 .collect(Collectors.toList());
 
-        YouTube.Channels.List request = youtube.channels().list(List.of("statistics"));
-        request.setKey(apiKey);
-        request.setId(channelIds);
+        if (channelIds.isEmpty()) {
+            return;
+        }
 
-        ChannelListResponse response = request.execute();
-        List<Channel> channels = response.getItems();
+        // Process in batches for better performance
+        Map<String, Channel> channelMap = Collections.synchronizedMap(new java.util.HashMap<>());
+        List<List<String>> batches = partitionList(channelIds, BATCH_SIZE);
 
-        if (channels != null) {
-            Map<String, Channel> channelMap = channels.stream()
-                    .collect(Collectors.toMap(Channel::getId, ch -> ch));
+        for (List<String> batch : batches) {
+            YouTube.Channels.List request = youtube.channels().list(List.of("statistics"));
+            request.setKey(apiKey);
+            request.setId(batch);
+            request.setFields("items(id,statistics(subscriberCount,videoCount))"); // Request only needed fields
 
-            for (EnrichedSearchResult result : results) {
-                Channel channel = channelMap.get(result.getId());
-                if (channel != null && channel.getStatistics() != null) {
-                    result.setSubscriberCount(channel.getStatistics().getSubscriberCount() != null ?
-                            channel.getStatistics().getSubscriberCount().longValue() : 0L);
-                    result.setVideoCount(channel.getStatistics().getVideoCount() != null ?
-                            channel.getStatistics().getVideoCount().longValue() : 0L);
-                }
+            ChannelListResponse response = request.execute();
+            List<Channel> channels = response.getItems();
+
+            if (channels != null) {
+                channels.stream()
+                    .filter(ch -> ch.getId() != null)
+                    .forEach(ch -> channelMap.put(ch.getId(), ch));
             }
         }
+
+        // Enrich results with fetched data
+        results.parallelStream().forEach(result -> {
+            Channel channel = channelMap.get(result.getId());
+            if (channel != null && channel.getStatistics() != null) {
+                result.setSubscriberCount(channel.getStatistics().getSubscriberCount() != null ?
+                        channel.getStatistics().getSubscriberCount().longValue() : 0L);
+                result.setVideoCount(channel.getStatistics().getVideoCount() != null ?
+                        channel.getStatistics().getVideoCount().longValue() : 0L);
+            }
+        });
     }
 
     /**
-     * Enrich playlist data with content details
+     * Enrich playlist data with content details and video thumbnails using batch processing
      */
     private void enrichPlaylistData(List<EnrichedSearchResult> results) throws IOException {
         if (results == null || results.isEmpty()) {
@@ -286,31 +309,87 @@ public class YouTubeService {
 
         List<String> playlistIds = results.stream()
                 .map(EnrichedSearchResult::getId)
+                .filter(id -> id != null && !id.isEmpty())
                 .collect(Collectors.toList());
 
-        YouTube.Playlists.List request = youtube.playlists().list(List.of("contentDetails"));
-        request.setKey(apiKey);
-        request.setId(playlistIds);
+        if (playlistIds.isEmpty()) {
+            return;
+        }
 
-        PlaylistListResponse response = request.execute();
-        List<Playlist> playlists = response.getItems();
+        // Process in batches for better performance
+        Map<String, Playlist> playlistMap = Collections.synchronizedMap(new java.util.HashMap<>());
+        List<List<String>> batches = partitionList(playlistIds, BATCH_SIZE);
 
-        if (playlists != null) {
-            Map<String, Playlist> playlistMap = playlists.stream()
-                    .collect(Collectors.toMap(Playlist::getId, pl -> pl));
+        for (List<String> batch : batches) {
+            YouTube.Playlists.List request = youtube.playlists().list(List.of("contentDetails"));
+            request.setKey(apiKey);
+            request.setId(batch);
+            request.setFields("items(id,contentDetails/itemCount)"); // Request only needed fields
 
-            for (EnrichedSearchResult result : results) {
-                Playlist playlist = playlistMap.get(result.getId());
-                if (playlist != null && playlist.getContentDetails() != null) {
-                    result.setItemCount(playlist.getContentDetails().getItemCount() != null ?
-                            playlist.getContentDetails().getItemCount().longValue() : 0L);
-                }
+            PlaylistListResponse response = request.execute();
+            List<Playlist> playlists = response.getItems();
+
+            if (playlists != null) {
+                playlists.stream()
+                    .filter(pl -> pl.getId() != null)
+                    .forEach(pl -> playlistMap.put(pl.getId(), pl));
             }
         }
+
+        // Enrich results with fetched data and video thumbnails
+        results.parallelStream().forEach(result -> {
+            Playlist playlist = playlistMap.get(result.getId());
+            if (playlist != null && playlist.getContentDetails() != null) {
+                result.setItemCount(playlist.getContentDetails().getItemCount() != null ?
+                        playlist.getContentDetails().getItemCount().longValue() : 0L);
+            }
+
+            // Fetch first 4 video thumbnails for playlist
+            try {
+                List<String> thumbnails = fetchPlaylistVideoThumbnails(result.getId(), 4);
+                result.setVideoThumbnails(thumbnails);
+            } catch (IOException e) {
+                logger.warn("Failed to fetch video thumbnails for playlist {}: {}", result.getId(), e.getMessage());
+                result.setVideoThumbnails(Collections.emptyList());
+            }
+        });
     }
 
     /**
-     * Enrich video data with statistics and content details
+     * Fetch first N video thumbnails from a playlist
+     */
+    private List<String> fetchPlaylistVideoThumbnails(String playlistId, int count) throws IOException {
+        YouTube.PlaylistItems.List request = youtube.playlistItems().list(List.of("snippet"));
+        request.setKey(apiKey);
+        request.setPlaylistId(playlistId);
+        request.setMaxResults((long) count);
+        request.setFields("items(snippet/thumbnails)");
+
+        PlaylistItemListResponse response = request.execute();
+        List<PlaylistItem> items = response.getItems();
+
+        if (items == null || items.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        return items.stream()
+                .filter(item -> item.getSnippet() != null && item.getSnippet().getThumbnails() != null)
+                .map(item -> {
+                    ThumbnailDetails thumbnails = item.getSnippet().getThumbnails();
+                    if (thumbnails.getMedium() != null) {
+                        return thumbnails.getMedium().getUrl();
+                    } else if (thumbnails.getDefault() != null) {
+                        return thumbnails.getDefault().getUrl();
+                    }
+                    return null;
+                })
+                .filter(url -> url != null)
+                .limit(count)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Enrich video data with statistics and content details using batch processing
      */
     private void enrichVideoData(List<EnrichedSearchResult> results) throws IOException {
         if (results == null || results.isEmpty()) {
@@ -319,32 +398,46 @@ public class YouTubeService {
 
         List<String> videoIds = results.stream()
                 .map(EnrichedSearchResult::getId)
+                .filter(id -> id != null && !id.isEmpty())
                 .collect(Collectors.toList());
 
-        YouTube.Videos.List request = youtube.videos().list(List.of("statistics", "contentDetails"));
-        request.setKey(apiKey);
-        request.setId(videoIds);
+        if (videoIds.isEmpty()) {
+            return;
+        }
 
-        VideoListResponse response = request.execute();
-        List<Video> videos = response.getItems();
+        // Process in batches for better performance
+        Map<String, Video> videoMap = Collections.synchronizedMap(new java.util.HashMap<>());
+        List<List<String>> batches = partitionList(videoIds, BATCH_SIZE);
 
-        if (videos != null) {
-            Map<String, Video> videoMap = videos.stream()
-                    .collect(Collectors.toMap(Video::getId, v -> v));
+        for (List<String> batch : batches) {
+            YouTube.Videos.List request = youtube.videos().list(List.of("statistics", "contentDetails"));
+            request.setKey(apiKey);
+            request.setId(batch);
+            request.setFields("items(id,statistics/viewCount,contentDetails/duration)"); // Request only needed fields
 
-            for (EnrichedSearchResult result : results) {
-                Video video = videoMap.get(result.getId());
-                if (video != null) {
-                    if (video.getStatistics() != null) {
-                        result.setViewCount(video.getStatistics().getViewCount() != null ?
-                                video.getStatistics().getViewCount().longValue() : 0L);
-                    }
-                    if (video.getContentDetails() != null) {
-                        result.setDuration(video.getContentDetails().getDuration());
-                    }
-                }
+            VideoListResponse response = request.execute();
+            List<Video> videos = response.getItems();
+
+            if (videos != null) {
+                videos.stream()
+                    .filter(v -> v.getId() != null)
+                    .forEach(v -> videoMap.put(v.getId(), v));
             }
         }
+
+        // Enrich results with fetched data
+        results.parallelStream().forEach(result -> {
+            Video video = videoMap.get(result.getId());
+            if (video != null) {
+                if (video.getStatistics() != null) {
+                    result.setViewCount(video.getStatistics().getViewCount() != null ?
+                            video.getStatistics().getViewCount().longValue() : 0L);
+                }
+                if (video.getContentDetails() != null) {
+                    result.setDuration(video.getContentDetails().getDuration());
+                }
+            }
+        });
     }
 
     /**
@@ -366,5 +459,16 @@ public class YouTubeService {
      */
     private void enrichVideoResults(List<SearchResult> results) throws IOException {
         // Keep for backward compatibility
+    }
+
+    /**
+     * Utility method to partition a list into batches
+     */
+    private <T> List<List<T>> partitionList(List<T> list, int batchSize) {
+        List<List<T>> partitions = new ArrayList<>();
+        for (int i = 0; i < list.size(); i += batchSize) {
+            partitions.add(list.subList(i, Math.min(i + batchSize, list.size())));
+        }
+        return partitions;
     }
 }

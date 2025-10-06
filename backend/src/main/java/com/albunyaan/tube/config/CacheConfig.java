@@ -27,6 +27,9 @@ public class CacheConfig {
     public static final String CACHE_PLAYLISTS = "playlists";
     public static final String CACHE_VIDEOS = "videos";
     public static final String CACHE_CATEGORY_TREE = "category-tree";
+    public static final String CACHE_YOUTUBE_CHANNEL_SEARCH = "youtubeChannelSearch";
+    public static final String CACHE_YOUTUBE_PLAYLIST_SEARCH = "youtubePlaylistSearch";
+    public static final String CACHE_YOUTUBE_VIDEO_SEARCH = "youtubeVideoSearch";
 
     /**
      * Customize RedisCacheManager with specific TTLs per cache
@@ -57,6 +60,21 @@ public class CacheConfig {
                 .withCacheConfiguration(CACHE_VIDEOS,
                         RedisCacheConfiguration.defaultCacheConfig()
                                 .entryTtl(Duration.ofMinutes(5))
+                                .serializeValuesWith(RedisSerializationContext.SerializationPair
+                                        .fromSerializer(new GenericJackson2JsonRedisSerializer())))
+                .withCacheConfiguration(CACHE_YOUTUBE_CHANNEL_SEARCH,
+                        RedisCacheConfiguration.defaultCacheConfig()
+                                .entryTtl(Duration.ofHours(1)) // Cache YouTube search results for 1 hour
+                                .serializeValuesWith(RedisSerializationContext.SerializationPair
+                                        .fromSerializer(new GenericJackson2JsonRedisSerializer())))
+                .withCacheConfiguration(CACHE_YOUTUBE_PLAYLIST_SEARCH,
+                        RedisCacheConfiguration.defaultCacheConfig()
+                                .entryTtl(Duration.ofHours(1))
+                                .serializeValuesWith(RedisSerializationContext.SerializationPair
+                                        .fromSerializer(new GenericJackson2JsonRedisSerializer())))
+                .withCacheConfiguration(CACHE_YOUTUBE_VIDEO_SEARCH,
+                        RedisCacheConfiguration.defaultCacheConfig()
+                                .entryTtl(Duration.ofMinutes(30)) // Videos change more frequently
                                 .serializeValuesWith(RedisSerializationContext.SerializationPair
                                         .fromSerializer(new GenericJackson2JsonRedisSerializer())));
     }

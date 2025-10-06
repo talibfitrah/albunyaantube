@@ -40,31 +40,12 @@
 
       <div class="filter-row">
         <div class="filter-item">
-          <label>{{ t('contentSearch.filters.category') }}</label>
-          <select v-model="categoryFilter" class="filter-select">
-            <option value="">{{ t('contentSearch.filters.allCategories') }}</option>
-            <option v-for="cat in categories" :key="cat.id" :value="cat.id">
-              {{ cat.label }}
-            </option>
-          </select>
-        </div>
-
-        <div v-if="contentType === 'videos'" class="filter-item">
-          <label>{{ t('contentSearch.filters.length') }}</label>
-          <select v-model="lengthFilter" class="filter-select">
-            <option value="">{{ t('contentSearch.filters.anyLength') }}</option>
-            <option value="SHORT">{{ t('contentSearch.filters.short') }}</option>
-            <option value="MEDIUM">{{ t('contentSearch.filters.medium') }}</option>
-            <option value="LONG">{{ t('contentSearch.filters.long') }}</option>
-          </select>
-        </div>
-
-        <div class="filter-item">
           <label>{{ t('contentSearch.filters.sort') }}</label>
           <select v-model="sortFilter" class="filter-select">
-            <option value="RELEVANT">{{ t('contentSearch.filters.relevant') }}</option>
-            <option value="RECENT">{{ t('contentSearch.filters.recent') }}</option>
-            <option value="POPULAR">{{ t('contentSearch.filters.popular') }}</option>
+            <option value="RELEVANCE">{{ t('contentSearch.filters.mostRelevant') }}</option>
+            <option value="DATE">{{ t('contentSearch.filters.mostRecent') }}</option>
+            <option value="VIEW_COUNT">{{ t('contentSearch.filters.mostPopular') }}</option>
+            <option value="RATING">{{ t('contentSearch.filters.topRated') }}</option>
           </select>
         </div>
       </div>
@@ -139,9 +120,7 @@ const { t } = useI18n();
 
 const searchQuery = ref('');
 const contentType = ref<'all' | 'channels' | 'playlists' | 'videos'>('all');
-const categoryFilter = ref('');
-const lengthFilter = ref('');
-const sortFilter = ref('RELEVANT');
+const sortFilter = ref('RELEVANCE');
 
 const isLoading = ref(false);
 const isLoadingMore = ref(false);
@@ -150,7 +129,6 @@ const hasSearched = ref(false);
 const channels = ref<AdminSearchChannelResult[]>([]);
 const playlists = ref<AdminSearchPlaylistResult[]>([]);
 const videos = ref<AdminSearchVideoResult[]>([]);
-const categories = ref<any[]>([]);
 const existingChannelIds = ref<Set<string>>(new Set());
 const existingPlaylistIds = ref<Set<string>>(new Set());
 const existingVideoIds = ref<Set<string>>(new Set());
@@ -194,13 +172,40 @@ function isVideoAlreadyAdded(videoId: string): boolean {
   return existingVideoIds.value.has(videoId);
 }
 
-// Load categories
-async function loadCategories() {
-  try {
-    const cats = await fetchAllCategories();
-    categories.value = cats;
-  } catch (err) {
-    console.error('Failed to load categories', err);
+// Apply sort filter to results
+function applySortFilter(results: any[], type: 'channels' | 'playlists' | 'videos') {
+  if (!results || results.length === 0) return results;
+
+  const sorted = [...results];
+
+  switch (sortFilter.value) {
+    case 'DATE':
+      return sorted.sort((a, b) => {
+        const dateA = new Date(a.publishedAt || 0).getTime();
+        const dateB = new Date(b.publishedAt || 0).getTime();
+        return dateB - dateA; // Most recent first
+      });
+    case 'VIEW_COUNT':
+      if (type === 'channels') {
+        return sorted.sort((a, b) => (b.subscriberCount || 0) - (a.subscriberCount || 0));
+      } else if (type === 'videos') {
+        return sorted.sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0));
+      } else if (type === 'playlists') {
+        return sorted.sort((a, b) => (b.itemCount || 0) - (a.itemCount || 0));
+      }
+      return sorted;
+    case 'RATING':
+      // For rating, we can use subscriber count for channels, view count for videos
+      if (type === 'channels') {
+        return sorted.sort((a, b) => (b.subscriberCount || 0) - (a.subscriberCount || 0));
+      } else if (type === 'videos') {
+        return sorted.sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0));
+      }
+      return sorted;
+    case 'RELEVANCE':
+    default:
+      // YouTube API returns results sorted by relevance by default
+      return results;
   }
 }
 
@@ -218,10 +223,10 @@ async function handleSearch() {
   try {
     const response = await searchYouTube(searchQuery.value, contentType.value);
 
-    // Store all results separately
-    channels.value = response.channels;
-    playlists.value = response.playlists;
-    videos.value = response.videos;
+    // Store all results separately with sorting applied
+    channels.value = applySortFilter(response.channels, 'channels');
+    playlists.value = applySortFilter(response.playlists, 'playlists');
+    videos.value = applySortFilter(response.videos, 'videos');
 
     // Check which items already exist in registry
     await checkExistingItems();
@@ -340,7 +345,6 @@ async function loadMoreResults() {
 }
 
 onMounted(() => {
-  loadCategories();
   window.addEventListener('scroll', handleScroll);
   isScrollListenerActive = true;
 });

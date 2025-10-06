@@ -1,7 +1,17 @@
 <template>
   <div class="search-result-card playlist-card">
     <div class="card-thumbnail playlist-thumbnail">
-      <div class="playlist-stack">
+      <div v-if="hasVideoThumbnails" class="playlist-grid">
+        <img
+          v-for="(thumb, index) in displayThumbnails"
+          :key="index"
+          :src="thumb"
+          :alt="`Video ${index + 1}`"
+          class="grid-thumbnail"
+        />
+        <div v-for="index in emptySlots" :key="`empty-${index}`" class="grid-thumbnail-placeholder"></div>
+      </div>
+      <div v-else class="playlist-stack">
         <div class="stack-layer stack-3"></div>
         <div class="stack-layer stack-2"></div>
         <div class="stack-layer stack-1">
@@ -11,7 +21,10 @@
       </div>
     </div>
     <div class="card-content">
-      <h3 class="card-title">{{ playlist.title }}</h3>
+      <div class="card-header-row">
+        <h3 class="card-title">{{ playlist.title }}</h3>
+        <span class="content-type-badge playlist-badge">PLAYLIST</span>
+      </div>
       <div class="card-meta">
         <span class="meta-item">
           <svg class="meta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -37,7 +50,6 @@
           Published {{ formatRelativeTime(playlist.publishedAt) }}
         </span>
       </div>
-      <span class="content-type-badge playlist-badge">Playlist</span>
     </div>
     <div class="card-actions">
       <button
@@ -61,9 +73,10 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
 import type { AdminSearchPlaylistResult } from '@/types/registry';
 
-defineProps<{
+const props = defineProps<{
   playlist: AdminSearchPlaylistResult;
   alreadyAdded?: boolean;
 }>();
@@ -71,6 +84,20 @@ defineProps<{
 defineEmits<{
   add: [playlist: AdminSearchPlaylistResult];
 }>();
+
+const hasVideoThumbnails = computed(() => {
+  return props.playlist.videoThumbnails && props.playlist.videoThumbnails.length > 0;
+});
+
+const displayThumbnails = computed(() => {
+  if (!props.playlist.videoThumbnails) return [];
+  return props.playlist.videoThumbnails.slice(0, 4);
+});
+
+const emptySlots = computed(() => {
+  const thumbnailCount = displayThumbnails.value.length;
+  return thumbnailCount < 4 ? 4 - thumbnailCount : 0;
+});
 
 function formatVideoCount(count: number): string {
   if (count >= 1_000_000_000) {
@@ -135,8 +162,33 @@ function formatRelativeTime(dateStr: string): string {
 }
 
 .playlist-thumbnail {
-  width: 140px;
+  width: 160px;
   height: 90px;
+}
+
+.playlist-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 2px;
+  width: 100%;
+  height: 100%;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: var(--color-border);
+}
+
+.grid-thumbnail {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: var(--color-surface-alt);
+}
+
+.grid-thumbnail-placeholder {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, var(--color-surface-alt), var(--color-border));
 }
 
 .playlist-stack {
@@ -193,7 +245,14 @@ function formatRelativeTime(dateStr: string): string {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  position: relative;
+  flex: 1;
+}
+
+.card-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
 .card-title {
@@ -202,6 +261,7 @@ function formatRelativeTime(dateStr: string): string {
   font-weight: 600;
   color: var(--color-text-primary);
   line-height: 1.4;
+  flex: 1;
 }
 
 .card-meta {
@@ -231,15 +291,14 @@ function formatRelativeTime(dateStr: string): string {
 }
 
 .content-type-badge {
-  position: absolute;
-  top: 0;
-  right: 0;
   padding: 0.25rem 0.625rem;
   border-radius: 999px;
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .playlist-badge {
