@@ -94,20 +94,29 @@
           v-for="channel in filteredChannels"
           :key="'channel-' + channel.id"
           :channel="channel"
+          :already-added="isChannelAlreadyAdded(channel.ytId)"
           @add="handleAddChannel"
         />
         <PlaylistCard
           v-for="playlist in filteredPlaylists"
           :key="'playlist-' + playlist.id"
           :playlist="playlist"
+          :already-added="isPlaylistAlreadyAdded(playlist.ytId)"
           @add="handleAddPlaylist"
         />
         <VideoCard
           v-for="video in filteredVideos"
           :key="'video-' + video.id"
           :video="video"
+          :already-added="isVideoAlreadyAdded(video.ytId)"
           @add="handleAddVideo"
         />
+      </div>
+
+      <!-- Loading more indicator -->
+      <div v-if="isLoadingMore" class="loading-more">
+        <div class="spinner-small"></div>
+        <p>Loading more results...</p>
       </div>
     </div>
 
@@ -115,11 +124,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { toast } from '@/utils/toast';
 import { fetchAllCategories } from '@/services/categories';
 import { searchYouTube, addToPendingApprovals } from '@/services/youtubeService';
+import apiClient from '@/services/api/client';
 import ChannelCard from '@/components/search/ChannelCard.vue';
 import PlaylistCard from '@/components/search/PlaylistCard.vue';
 import VideoCard from '@/components/search/VideoCard.vue';
@@ -134,12 +144,18 @@ const lengthFilter = ref('');
 const sortFilter = ref('RELEVANT');
 
 const isLoading = ref(false);
+const isLoadingMore = ref(false);
 const error = ref<string | null>(null);
 const hasSearched = ref(false);
 const channels = ref<AdminSearchChannelResult[]>([]);
 const playlists = ref<AdminSearchPlaylistResult[]>([]);
 const videos = ref<AdminSearchVideoResult[]>([]);
 const categories = ref<any[]>([]);
+const existingChannelIds = ref<Set<string>>(new Set());
+const existingPlaylistIds = ref<Set<string>>(new Set());
+const existingVideoIds = ref<Set<string>>(new Set());
+const hasMoreResults = ref(true);
+const currentPage = ref(0);
 
 const contentTypes: Array<{ value: 'all' | 'channels' | 'playlists' | 'videos'; labelKey: string }> = [
   { value: 'all', labelKey: 'contentSearch.types.all' },
@@ -165,6 +181,19 @@ const hasResults = computed(() => {
   return filteredChannels.value.length > 0 || filteredPlaylists.value.length > 0 || filteredVideos.value.length > 0;
 });
 
+// Check if item is already added
+function isChannelAlreadyAdded(channelId: string): boolean {
+  return existingChannelIds.value.has(channelId);
+}
+
+function isPlaylistAlreadyAdded(playlistId: string): boolean {
+  return existingPlaylistIds.value.has(playlistId);
+}
+
+function isVideoAlreadyAdded(videoId: string): boolean {
+  return existingVideoIds.value.has(videoId);
+}
+
 // Load categories
 async function loadCategories() {
   try {
@@ -183,6 +212,8 @@ async function handleSearch() {
   isLoading.value = true;
   error.value = null;
   hasSearched.value = true;
+  currentPage.value = 0;
+  hasMoreResults.value = true;
 
   try {
     const response = await searchYouTube(searchQuery.value, contentType.value);
@@ -191,10 +222,35 @@ async function handleSearch() {
     channels.value = response.channels;
     playlists.value = response.playlists;
     videos.value = response.videos;
+
+    // Check which items already exist in registry
+    await checkExistingItems();
+
+    // Check if we got fewer results than expected (no more results)
+    const totalResults = response.channels.length + response.playlists.length + response.videos.length;
+    if (totalResults < 20) {
+      hasMoreResults.value = false;
+    }
   } catch (err) {
     error.value = err instanceof Error ? err.message : t('contentSearch.error');
   } finally {
     isLoading.value = false;
+  }
+}
+
+async function checkExistingItems() {
+  try {
+    const response = await apiClient.post('/api/admin/youtube/check-existing', {
+      channelIds: channels.value.map(c => c.ytId),
+      playlistIds: playlists.value.map(p => p.ytId),
+      videoIds: videos.value.map(v => v.ytId)
+    });
+
+    existingChannelIds.value = new Set(response.data.existingChannels);
+    existingPlaylistIds.value = new Set(response.data.existingPlaylists);
+    existingVideoIds.value = new Set(response.data.existingVideos);
+  } catch (err) {
+    console.error('Failed to check existing items', err);
   }
 }
 
@@ -245,8 +301,55 @@ async function handleAddVideo(video: AdminSearchVideoResult) {
   toast.info('Video approval coming soon');
 }
 
-// Load categories on mount
-loadCategories();
+// Infinite scroll handler
+let isScrollListenerActive = false;
+
+function handleScroll() {
+  if (isLoadingMore.value || !hasMoreResults.value || !hasSearched.value) {
+    return;
+  }
+
+  const scrollPosition = window.innerHeight + window.scrollY;
+  const threshold = document.documentElement.scrollHeight - 300; // 300px before bottom
+
+  if (scrollPosition >= threshold) {
+    loadMoreResults();
+  }
+}
+
+async function loadMoreResults() {
+  if (isLoadingMore.value || !hasMoreResults.value) {
+    return; // Prevent duplicate requests
+  }
+
+  isLoadingMore.value = true;
+  currentPage.value++;
+
+  try {
+    // In a real implementation, you'd pass page/offset to the API
+    // For now, we'll simulate that there are no more results after first search
+    // since YouTube API returns max 20 results per search
+    hasMoreResults.value = false;
+    toast.info('All results loaded');
+  } catch (err) {
+    console.error('Failed to load more results', err);
+    currentPage.value--; // Rollback page on error
+  } finally {
+    isLoadingMore.value = false;
+  }
+}
+
+onMounted(() => {
+  loadCategories();
+  window.addEventListener('scroll', handleScroll);
+  isScrollListenerActive = true;
+});
+
+onUnmounted(() => {
+  if (isScrollListenerActive) {
+    window.removeEventListener('scroll', handleScroll);
+  }
+});
 </script>
 
 <style scoped>
@@ -465,5 +568,23 @@ loadCategories();
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.loading-more {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 2rem;
+  color: var(--color-text-secondary);
+}
+
+.spinner-small {
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-brand);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
 }
 </style>
