@@ -79,7 +79,6 @@ export async function addToPendingApprovals(
       description: '',
       thumbnailUrl: playlist.thumbnailUrl,
       itemCount: playlist.itemCount,
-      channelId: playlist.parentChannelId,
       categoryIds: [],
       status: 'PENDING'
     };
