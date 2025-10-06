@@ -1,5 +1,6 @@
 package com.albunyaan.tube.controller;
 
+import com.albunyaan.tube.dto.EnrichedSearchResult;
 import com.albunyaan.tube.service.YouTubeService;
 import com.google.api.services.youtube.model.*;
 import org.springframework.http.ResponseEntity;
@@ -38,16 +39,16 @@ public class YouTubeSearchController {
     }
 
     /**
-     * Search for all content types (channels, playlists, videos)
+     * Search for all content types (channels, playlists, videos) with enriched metadata
      */
     @GetMapping("/search/all")
-    public ResponseEntity<SearchAllResponse> searchAll(@RequestParam String query) {
+    public ResponseEntity<EnrichedSearchAllResponse> searchAll(@RequestParam String query) {
         try {
-            List<SearchResult> channels = youtubeService.searchChannels(query);
-            List<SearchResult> playlists = youtubeService.searchPlaylists(query);
-            List<SearchResult> videos = youtubeService.searchVideos(query);
+            List<EnrichedSearchResult> channels = youtubeService.searchChannelsEnriched(query);
+            List<EnrichedSearchResult> playlists = youtubeService.searchPlaylistsEnriched(query);
+            List<EnrichedSearchResult> videos = youtubeService.searchVideosEnriched(query);
 
-            SearchAllResponse response = new SearchAllResponse(channels, playlists, videos);
+            EnrichedSearchAllResponse response = new EnrichedSearchAllResponse(channels, playlists, videos);
             return ResponseEntity.ok(response);
         } catch (IOException e) {
             return ResponseEntity.status(500).build();
@@ -55,12 +56,12 @@ public class YouTubeSearchController {
     }
 
     /**
-     * Search for channels
+     * Search for channels with enriched metadata
      */
     @GetMapping("/search/channels")
-    public ResponseEntity<List<SearchResult>> searchChannels(@RequestParam String query) {
+    public ResponseEntity<List<EnrichedSearchResult>> searchChannels(@RequestParam String query) {
         try {
-            List<SearchResult> results = youtubeService.searchChannels(query);
+            List<EnrichedSearchResult> results = youtubeService.searchChannelsEnriched(query);
             return ResponseEntity.ok(results);
         } catch (IOException e) {
             return ResponseEntity.status(500).build();
@@ -174,39 +175,39 @@ public class YouTubeSearchController {
     }
 
     /**
-     * Response wrapper for search all endpoint
+     * Response wrapper for enriched search all endpoint
      */
-    public static class SearchAllResponse {
-        private final List<SearchResult> channels;
-        private final List<SearchResult> playlists;
-        private final List<SearchResult> videos;
+    public static class EnrichedSearchAllResponse {
+        private final List<EnrichedSearchResult> channels;
+        private final List<EnrichedSearchResult> playlists;
+        private final List<EnrichedSearchResult> videos;
 
-        public SearchAllResponse(List<SearchResult> channels, List<SearchResult> playlists, List<SearchResult> videos) {
+        public EnrichedSearchAllResponse(List<EnrichedSearchResult> channels, List<EnrichedSearchResult> playlists, List<EnrichedSearchResult> videos) {
             this.channels = channels;
             this.playlists = playlists;
             this.videos = videos;
         }
 
-        public List<SearchResult> getChannels() {
+        public List<EnrichedSearchResult> getChannels() {
             return channels;
         }
 
-        public List<SearchResult> getPlaylists() {
+        public List<EnrichedSearchResult> getPlaylists() {
             return playlists;
         }
 
-        public List<SearchResult> getVideos() {
+        public List<EnrichedSearchResult> getVideos() {
             return videos;
         }
     }
 
     /**
-     * Search for playlists
+     * Search for playlists with enriched metadata
      */
     @GetMapping("/search/playlists")
-    public ResponseEntity<List<SearchResult>> searchPlaylists(@RequestParam String query) {
+    public ResponseEntity<List<EnrichedSearchResult>> searchPlaylists(@RequestParam String query) {
         try {
-            List<SearchResult> results = youtubeService.searchPlaylists(query);
+            List<EnrichedSearchResult> results = youtubeService.searchPlaylistsEnriched(query);
             return ResponseEntity.ok(results);
         } catch (IOException e) {
             return ResponseEntity.status(500).build();
@@ -214,12 +215,12 @@ public class YouTubeSearchController {
     }
 
     /**
-     * Search for videos
+     * Search for videos with enriched metadata
      */
     @GetMapping("/search/videos")
-    public ResponseEntity<List<SearchResult>> searchVideos(@RequestParam String query) {
+    public ResponseEntity<List<EnrichedSearchResult>> searchVideos(@RequestParam String query) {
         try {
-            List<SearchResult> results = youtubeService.searchVideos(query);
+            List<EnrichedSearchResult> results = youtubeService.searchVideosEnriched(query);
             return ResponseEntity.ok(results);
         } catch (IOException e) {
             return ResponseEntity.status(500).build();

@@ -4,7 +4,7 @@
  */
 
 import apiClient from './api/client';
-import type { AdminSearchChannelResult, AdminSearchPlaylistResult, AdminSearchVideoResult } from '@/types/registry';
+import type { AdminSearchChannelResult, AdminSearchPlaylistResult, AdminSearchVideoResult, YouTubeEnrichedSearchResult } from '@/types/registry';
 
 interface YouTubeSearchResponse {
   channels: AdminSearchChannelResult[];
@@ -110,17 +110,17 @@ export async function toggleIncludeState(
   await apiClient.patch(endpoint);
 }
 
-// Transform Google API Channel to AdminSearchChannelResult
-function transformChannelResult(channel: any): AdminSearchChannelResult {
-  // Extract channelId from nested object if present
-  const channelId = typeof channel.id === 'object' ? channel.id.channelId : channel.id;
+// Transform EnrichedSearchResult to AdminSearchChannelResult
+function transformChannelResult(channel: YouTubeEnrichedSearchResult | any): AdminSearchChannelResult {
+  // Handle both EnrichedSearchResult and legacy Google API format
+  const channelId = channel.id || (typeof channel.id === 'object' ? channel.id.channelId : channel.id);
 
   return {
     id: channelId,
     ytId: channelId,
-    name: channel.snippet?.title || '',
-    avatarUrl: channel.snippet?.thumbnails?.medium?.url || channel.snippet?.thumbnails?.default?.url || '',
-    subscriberCount: parseInt(channel.statistics?.subscriberCount || '0'),
+    name: channel.title || channel.snippet?.title || '',
+    avatarUrl: channel.thumbnailUrl || channel.snippet?.thumbnails?.medium?.url || channel.snippet?.thumbnails?.default?.url || '',
+    subscriberCount: channel.subscriberCount || parseInt(channel.statistics?.subscriberCount || '0'),
     categories: [],
     includeState: 'NOT_INCLUDED',
     excludedItemCounts: { videos: 0, playlists: 0 },
@@ -134,22 +134,24 @@ function transformChannelResults(channels: any[]): AdminSearchChannelResult[] {
   return channels.map(transformChannelResult);
 }
 
-// Transform Google API SearchResult to AdminSearchPlaylistResult
+// Transform EnrichedSearchResult to AdminSearchPlaylistResult
 function transformPlaylistResults(playlists: any[]): AdminSearchPlaylistResult[] {
   return playlists.map(playlist => {
-    // Extract playlistId from nested object if present
-    const playlistId = typeof playlist.id === 'object' ? playlist.id.playlistId : playlist.id;
+    // Handle both EnrichedSearchResult and legacy Google API format
+    const playlistId = playlist.id || (typeof playlist.id === 'object' ? playlist.id.playlistId : playlist.id);
+    const channelId = playlist.channelId || playlist.snippet?.channelId || '';
+    const channelTitle = playlist.channelTitle || playlist.snippet?.channelTitle || '';
 
     return {
       id: playlistId,
       ytId: playlistId,
-      title: playlist.snippet?.title || '',
-      thumbnailUrl: playlist.snippet?.thumbnails?.medium?.url || playlist.snippet?.thumbnails?.default?.url || '',
-      itemCount: parseInt(playlist.contentDetails?.itemCount || '0'),
+      title: playlist.title || playlist.snippet?.title || '',
+      thumbnailUrl: playlist.thumbnailUrl || playlist.snippet?.thumbnails?.medium?.url || playlist.snippet?.thumbnails?.default?.url || '',
+      itemCount: playlist.itemCount || parseInt(playlist.contentDetails?.itemCount || '0'),
       owner: {
-        id: playlist.snippet?.channelId || '',
-        ytId: playlist.snippet?.channelId || '',
-        name: playlist.snippet?.channelTitle || '',
+        id: channelId,
+        ytId: channelId,
+        name: channelTitle,
         avatarUrl: '',
         subscriberCount: 0,
         categories: []
@@ -157,7 +159,7 @@ function transformPlaylistResults(playlists: any[]): AdminSearchPlaylistResult[]
       categories: [],
       downloadable: true,
       includeState: 'NOT_INCLUDED',
-      parentChannelId: playlist.snippet?.channelId || '',
+      parentChannelId: channelId,
       excludedVideoCount: 0,
       excludedVideoIds: [],
       bulkEligible: true
@@ -165,23 +167,26 @@ function transformPlaylistResults(playlists: any[]): AdminSearchPlaylistResult[]
   });
 }
 
-// Transform Google API SearchResult to AdminSearchVideoResult
+// Transform EnrichedSearchResult to AdminSearchVideoResult
 function transformVideoResults(videos: any[]): AdminSearchVideoResult[] {
   return videos.map(video => {
-    const videoId = typeof video.id === 'object' ? video.id.videoId : video.id;
+    // Handle both EnrichedSearchResult and legacy Google API format
+    const videoId = video.id || (typeof video.id === 'object' ? video.id.videoId : video.id);
+    const channelId = video.channelId || video.snippet?.channelId || '';
+    const channelTitle = video.channelTitle || video.snippet?.channelTitle || '';
 
     return {
       id: videoId,
       ytId: videoId,
-      title: video.snippet?.title || '',
-      thumbnailUrl: video.snippet?.thumbnails?.medium?.url || video.snippet?.thumbnails?.default?.url || '',
-      durationSeconds: parseDuration(video.contentDetails?.duration || ''),
-      publishedAt: video.snippet?.publishedAt || '',
-      viewCount: parseInt(video.statistics?.viewCount || '0'),
+      title: video.title || video.snippet?.title || '',
+      thumbnailUrl: video.thumbnailUrl || video.snippet?.thumbnails?.medium?.url || video.snippet?.thumbnails?.default?.url || '',
+      durationSeconds: video.duration ? parseDuration(video.duration) : parseDuration(video.contentDetails?.duration || ''),
+      publishedAt: video.publishedAt || video.snippet?.publishedAt || '',
+      viewCount: video.viewCount || parseInt(video.statistics?.viewCount || '0'),
       channel: {
-        id: video.snippet?.channelId || '',
-        ytId: video.snippet?.channelId || '',
-        name: video.snippet?.channelTitle || '',
+        id: channelId,
+        ytId: channelId,
+        name: channelTitle,
         avatarUrl: '',
         subscriberCount: 0,
         categories: []
@@ -190,7 +195,7 @@ function transformVideoResults(videos: any[]): AdminSearchVideoResult[] {
       bookmarked: null,
       downloaded: null,
       includeState: 'NOT_INCLUDED',
-      parentChannelId: video.snippet?.channelId || '',
+      parentChannelId: channelId,
       parentPlaylistIds: []
     };
   });

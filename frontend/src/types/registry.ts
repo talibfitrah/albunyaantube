@@ -97,3 +97,29 @@ export interface AdminSearchResponse {
   playlists: AdminSearchPlaylistResult[];
   videos: AdminSearchVideoResult[];
 }
+
+// YouTube API enriched search results
+export interface YouTubeEnrichedSearchResult {
+  id: string;
+  type: 'channel' | 'playlist' | 'video';
+  title: string;
+  description: string;
+  thumbnailUrl: string;
+  publishedAt: string;
+  channelId: string;
+  channelTitle: string;
+  // Channel-specific
+  subscriberCount?: number;
+  videoCount?: number;
+  // Playlist-specific
+  itemCount?: number;
+  // Video-specific
+  viewCount?: number;
+  duration?: string;
+}
+
+export interface YouTubeSearchAllResponse {
+  channels: YouTubeEnrichedSearchResult[];
+  playlists: YouTubeEnrichedSearchResult[];
+  videos: YouTubeEnrichedSearchResult[];
+}

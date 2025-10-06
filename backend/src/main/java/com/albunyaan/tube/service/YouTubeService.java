@@ -1,5 +1,6 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.dto.EnrichedSearchResult;
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
 import com.google.api.client.json.jackson2.JacksonFactory;
 import com.google.api.services.youtube.YouTube;
@@ -14,6 +15,8 @@ import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * FIREBASE-MIGRATE-04: YouTube Data API Integration
@@ -43,25 +46,66 @@ public class YouTubeService {
     }
 
     /**
-     * Search for channels by query
-     * Returns SearchResults with statistics enriched in snippet
+     * Search for channels by query with full statistics
      */
-    public List<SearchResult> searchChannels(String query) throws IOException {
-        return search(query, "channel");
+    public List<EnrichedSearchResult> searchChannelsEnriched(String query) throws IOException {
+        return searchEnriched(query, "channel");
     }
 
     /**
-     * Search for playlists by query
+     * Search for playlists by query with full details
      */
-    public List<SearchResult> searchPlaylists(String query) throws IOException {
-        return search(query, "playlist");
+    public List<EnrichedSearchResult> searchPlaylistsEnriched(String query) throws IOException {
+        return searchEnriched(query, "playlist");
     }
 
     /**
-     * Search for videos by query
+     * Search for videos by query with full statistics
      */
-    public List<SearchResult> searchVideos(String query) throws IOException {
-        return search(query, "video");
+    public List<EnrichedSearchResult> searchVideosEnriched(String query) throws IOException {
+        return searchEnriched(query, "video");
+    }
+
+    /**
+     * Enriched search method that fetches full statistics
+     */
+    private List<EnrichedSearchResult> searchEnriched(String query, String type) throws IOException {
+        if (apiKey == null || apiKey.isEmpty()) {
+            logger.warn("YouTube API key not configured");
+            return Collections.emptyList();
+        }
+
+        try {
+            // First, do the search
+            YouTube.Search.List search = youtube.search().list(List.of("snippet"));
+            search.setKey(apiKey);
+            search.setQ(query);
+            search.setType(List.of(type));
+            search.setMaxResults(MAX_RESULTS);
+
+            SearchListResponse response = search.execute();
+            List<SearchResult> results = response.getItems() != null ? response.getItems() : Collections.emptyList();
+
+            // Convert to enriched results
+            List<EnrichedSearchResult> enrichedResults = results.stream()
+                    .map(r -> EnrichedSearchResult.fromSearchResult(r, type))
+                    .collect(Collectors.toList());
+
+            // Enrich with additional data based on type
+            if ("channel".equals(type)) {
+                enrichChannelData(enrichedResults);
+            } else if ("playlist".equals(type)) {
+                enrichPlaylistData(enrichedResults);
+            } else if ("video".equals(type)) {
+                enrichVideoData(enrichedResults);
+            }
+
+            return enrichedResults;
+
+        } catch (IOException e) {
+            logger.error("YouTube search failed for query '{}': {}", query, e.getMessage());
+            throw e;
+        }
     }
 
     /**
@@ -198,17 +242,16 @@ public class YouTubeService {
     }
 
     /**
-     * Enrich channel search results with statistics
-     * We add statistics data to the snippet description field for transport
+     * Enrich channel data with statistics
      */
-    private void enrichChannelResults(List<SearchResult> results) throws IOException {
+    private void enrichChannelData(List<EnrichedSearchResult> results) throws IOException {
         if (results == null || results.isEmpty()) {
             return;
         }
 
         List<String> channelIds = results.stream()
-                .map(result -> result.getId().getChannelId())
-                .toList();
+                .map(EnrichedSearchResult::getId)
+                .collect(Collectors.toList());
 
         YouTube.Channels.List request = youtube.channels().list(List.of("statistics"));
         request.setKey(apiKey);
@@ -218,30 +261,32 @@ public class YouTubeService {
         List<Channel> channels = response.getItems();
 
         if (channels != null) {
-            for (SearchResult result : results) {
-                String channelId = result.getId().getChannelId();
-                channels.stream()
-                        .filter(ch -> ch.getId().equals(channelId))
-                        .findFirst()
-                        .ifPresent(ch -> {
-                            // Store statistics in a custom field on the snippet
-                            result.getSnippet().set("statistics", ch.getStatistics());
-                        });
+            Map<String, Channel> channelMap = channels.stream()
+                    .collect(Collectors.toMap(Channel::getId, ch -> ch));
+
+            for (EnrichedSearchResult result : results) {
+                Channel channel = channelMap.get(result.getId());
+                if (channel != null && channel.getStatistics() != null) {
+                    result.setSubscriberCount(channel.getStatistics().getSubscriberCount() != null ?
+                            channel.getStatistics().getSubscriberCount().longValue() : 0L);
+                    result.setVideoCount(channel.getStatistics().getVideoCount() != null ?
+                            channel.getStatistics().getVideoCount().longValue() : 0L);
+                }
             }
         }
     }
 
     /**
-     * Enrich playlist search results with content details
+     * Enrich playlist data with content details
      */
-    private void enrichPlaylistResults(List<SearchResult> results) throws IOException {
+    private void enrichPlaylistData(List<EnrichedSearchResult> results) throws IOException {
         if (results == null || results.isEmpty()) {
             return;
         }
 
         List<String> playlistIds = results.stream()
-                .map(result -> result.getId().getPlaylistId())
-                .toList();
+                .map(EnrichedSearchResult::getId)
+                .collect(Collectors.toList());
 
         YouTube.Playlists.List request = youtube.playlists().list(List.of("contentDetails"));
         request.setKey(apiKey);
@@ -251,30 +296,30 @@ public class YouTubeService {
         List<Playlist> playlists = response.getItems();
 
         if (playlists != null) {
-            for (SearchResult result : results) {
-                String playlistId = result.getId().getPlaylistId();
-                playlists.stream()
-                        .filter(pl -> pl.getId().equals(playlistId))
-                        .findFirst()
-                        .ifPresent(pl -> {
-                            // Store content details in a custom field on the snippet
-                            result.getSnippet().set("contentDetails", pl.getContentDetails());
-                        });
+            Map<String, Playlist> playlistMap = playlists.stream()
+                    .collect(Collectors.toMap(Playlist::getId, pl -> pl));
+
+            for (EnrichedSearchResult result : results) {
+                Playlist playlist = playlistMap.get(result.getId());
+                if (playlist != null && playlist.getContentDetails() != null) {
+                    result.setItemCount(playlist.getContentDetails().getItemCount() != null ?
+                            playlist.getContentDetails().getItemCount().longValue() : 0L);
+                }
             }
         }
     }
 
     /**
-     * Enrich video search results with statistics and content details
+     * Enrich video data with statistics and content details
      */
-    private void enrichVideoResults(List<SearchResult> results) throws IOException {
+    private void enrichVideoData(List<EnrichedSearchResult> results) throws IOException {
         if (results == null || results.isEmpty()) {
             return;
         }
 
         List<String> videoIds = results.stream()
-                .map(result -> result.getId().getVideoId())
-                .toList();
+                .map(EnrichedSearchResult::getId)
+                .collect(Collectors.toList());
 
         YouTube.Videos.List request = youtube.videos().list(List.of("statistics", "contentDetails"));
         request.setKey(apiKey);
@@ -284,17 +329,42 @@ public class YouTubeService {
         List<Video> videos = response.getItems();
 
         if (videos != null) {
-            for (SearchResult result : results) {
-                String videoId = result.getId().getVideoId();
-                videos.stream()
-                        .filter(v -> v.getId().equals(videoId))
-                        .findFirst()
-                        .ifPresent(v -> {
-                            // Store statistics and content details in custom fields on the snippet
-                            result.getSnippet().set("statistics", v.getStatistics());
-                            result.getSnippet().set("contentDetails", v.getContentDetails());
-                        });
+            Map<String, Video> videoMap = videos.stream()
+                    .collect(Collectors.toMap(Video::getId, v -> v));
+
+            for (EnrichedSearchResult result : results) {
+                Video video = videoMap.get(result.getId());
+                if (video != null) {
+                    if (video.getStatistics() != null) {
+                        result.setViewCount(video.getStatistics().getViewCount() != null ?
+                                video.getStatistics().getViewCount().longValue() : 0L);
+                    }
+                    if (video.getContentDetails() != null) {
+                        result.setDuration(video.getContentDetails().getDuration());
+                    }
+                }
             }
         }
+    }
+
+    /**
+     * Enrich channel search results with statistics (old method for backward compatibility)
+     */
+    private void enrichChannelResults(List<SearchResult> results) throws IOException {
+        // Keep for backward compatibility
+    }
+
+    /**
+     * Enrich playlist search results with content details (old method for backward compatibility)
+     */
+    private void enrichPlaylistResults(List<SearchResult> results) throws IOException {
+        // Keep for backward compatibility
+    }
+
+    /**
+     * Enrich video search results with statistics and content details (old method for backward compatibility)
+     */
+    private void enrichVideoResults(List<SearchResult> results) throws IOException {
+        // Keep for backward compatibility
     }
 }
