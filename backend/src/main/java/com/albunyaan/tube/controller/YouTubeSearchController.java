@@ -21,9 +21,20 @@ import java.util.List;
 public class YouTubeSearchController {
 
     private final YouTubeService youtubeService;
+    private final com.albunyaan.tube.repository.ChannelRepository channelRepository;
+    private final com.albunyaan.tube.repository.PlaylistRepository playlistRepository;
+    private final com.albunyaan.tube.repository.VideoRepository videoRepository;
 
-    public YouTubeSearchController(YouTubeService youtubeService) {
+    public YouTubeSearchController(
+            YouTubeService youtubeService,
+            com.albunyaan.tube.repository.ChannelRepository channelRepository,
+            com.albunyaan.tube.repository.PlaylistRepository playlistRepository,
+            com.albunyaan.tube.repository.VideoRepository videoRepository
+    ) {
         this.youtubeService = youtubeService;
+        this.channelRepository = channelRepository;
+        this.playlistRepository = playlistRepository;
+        this.videoRepository = videoRepository;
     }
 
     /**
@@ -53,6 +64,112 @@ public class YouTubeSearchController {
             return ResponseEntity.ok(results);
         } catch (IOException e) {
             return ResponseEntity.status(500).build();
+        }
+    }
+
+    /**
+     * Check which YouTube IDs already exist in the registry
+     */
+    @PostMapping("/check-existing")
+    public ResponseEntity<ExistingContentResponse> checkExisting(@RequestBody ExistingContentRequest request) {
+        try {
+            java.util.Set<String> existingChannels = new java.util.HashSet<>();
+            java.util.Set<String> existingPlaylists = new java.util.HashSet<>();
+            java.util.Set<String> existingVideos = new java.util.HashSet<>();
+
+            // Check channels
+            for (String ytId : request.getChannelIds()) {
+                try {
+                    if (channelRepository.findByYoutubeId(ytId).isPresent()) {
+                        existingChannels.add(ytId);
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+
+            // Check playlists
+            for (String ytId : request.getPlaylistIds()) {
+                try {
+                    if (playlistRepository.findByYoutubeId(ytId).isPresent()) {
+                        existingPlaylists.add(ytId);
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+
+            // Check videos
+            for (String ytId : request.getVideoIds()) {
+                try {
+                    if (videoRepository.findByYoutubeId(ytId).isPresent()) {
+                        existingVideos.add(ytId);
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+
+            return ResponseEntity.ok(new ExistingContentResponse(existingChannels, existingPlaylists, existingVideos));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).build();
+        }
+    }
+
+    /**
+     * Request body for checking existing content
+     */
+    public static class ExistingContentRequest {
+        private List<String> channelIds = List.of();
+        private List<String> playlistIds = List.of();
+        private List<String> videoIds = List.of();
+
+        public List<String> getChannelIds() {
+            return channelIds;
+        }
+
+        public void setChannelIds(List<String> channelIds) {
+            this.channelIds = channelIds;
+        }
+
+        public List<String> getPlaylistIds() {
+            return playlistIds;
+        }
+
+        public void setPlaylistIds(List<String> playlistIds) {
+            this.playlistIds = playlistIds;
+        }
+
+        public List<String> getVideoIds() {
+            return videoIds;
+        }
+
+        public void setVideoIds(List<String> videoIds) {
+            this.videoIds = videoIds;
+        }
+    }
+
+    /**
+     * Response for existing content check
+     */
+    public static class ExistingContentResponse {
+        private final java.util.Set<String> existingChannels;
+        private final java.util.Set<String> existingPlaylists;
+        private final java.util.Set<String> existingVideos;
+
+        public ExistingContentResponse(java.util.Set<String> existingChannels, java.util.Set<String> existingPlaylists, java.util.Set<String> existingVideos) {
+            this.existingChannels = existingChannels;
+            this.existingPlaylists = existingPlaylists;
+            this.existingVideos = existingVideos;
+        }
+
+        public java.util.Set<String> getExistingChannels() {
+            return existingChannels;
+        }
+
+        public java.util.Set<String> getExistingPlaylists() {
+            return existingPlaylists;
+        }
+
+        public java.util.Set<String> getExistingVideos() {
+            return existingVideos;
         }
     }
 
