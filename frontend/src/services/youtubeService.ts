@@ -104,9 +104,12 @@ export async function toggleIncludeState(
 
 // Transform Google API Channel to AdminSearchChannelResult
 function transformChannelResult(channel: any): AdminSearchChannelResult {
+  // Extract channelId from nested object if present
+  const channelId = typeof channel.id === 'object' ? channel.id.channelId : channel.id;
+
   return {
-    id: channel.id,
-    ytId: channel.id,
+    id: channelId,
+    ytId: channelId,
     name: channel.snippet?.title || '',
     avatarUrl: channel.snippet?.thumbnails?.default?.url || '',
     subscriberCount: parseInt(channel.statistics?.subscriberCount || '0'),
@@ -125,21 +128,26 @@ function transformChannelResults(channels: any[]): AdminSearchChannelResult[] {
 
 // Transform Google API SearchResult to AdminSearchPlaylistResult
 function transformPlaylistResults(playlists: any[]): AdminSearchPlaylistResult[] {
-  return playlists.map(playlist => ({
-    id: playlist.id,
-    ytId: playlist.id,
-    title: playlist.snippet?.title || '',
-    thumbnailUrl: playlist.snippet?.thumbnails?.default?.url || '',
-    itemCount: parseInt(playlist.contentDetails?.itemCount || '0'),
-    owner: null as any,
-    categories: [],
-    downloadable: true,
-    includeState: 'NOT_INCLUDED',
-    parentChannelId: playlist.snippet?.channelId || '',
-    excludedVideoCount: 0,
-    excludedVideoIds: [],
-    bulkEligible: true
-  }));
+  return playlists.map(playlist => {
+    // Extract playlistId from nested object if present
+    const playlistId = typeof playlist.id === 'object' ? playlist.id.playlistId : playlist.id;
+
+    return {
+      id: playlistId,
+      ytId: playlistId,
+      title: playlist.snippet?.title || '',
+      thumbnailUrl: playlist.snippet?.thumbnails?.default?.url || '',
+      itemCount: parseInt(playlist.contentDetails?.itemCount || '0'),
+      owner: null as any,
+      categories: [],
+      downloadable: true,
+      includeState: 'NOT_INCLUDED',
+      parentChannelId: playlist.snippet?.channelId || '',
+      excludedVideoCount: 0,
+      excludedVideoIds: [],
+      bulkEligible: true
+    };
+  });
 }
 
 // Transform Google API SearchResult to AdminSearchVideoResult

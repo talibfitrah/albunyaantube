@@ -209,9 +209,12 @@ async function handleAdd(item: any) {
       return;
     }
 
-    await addToPendingApprovals(item.rawData, contentType.value as 'channel' | 'playlist');
-    const itemType = contentType.value === 'channels' ? 'Channel' : 'Playlist';
-    toast.success(`${itemType} added to approval queue`);
+    // Convert contentType from plural to singular for API
+    const itemType = contentType.value === 'channels' ? 'channel' : 'playlist';
+    await addToPendingApprovals(item.rawData, itemType);
+
+    const displayType = contentType.value === 'channels' ? 'Channel' : 'Playlist';
+    toast.success(`${displayType} added to approval queue`);
   } catch (err: any) {
     console.error('Failed to add item for approval', err);
     if (err.response?.status === 409) {
