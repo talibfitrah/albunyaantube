@@ -1,6 +1,7 @@
 package com.albunyaan.tube.service;
 
 import com.albunyaan.tube.dto.EnrichedSearchResult;
+import com.albunyaan.tube.dto.SearchPageResponse;
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
 import com.google.api.client.json.jackson2.JacksonFactory;
 import com.google.api.services.youtube.YouTube;
@@ -52,14 +53,13 @@ public class YouTubeService {
     }
 
     /**
-     * Unified search for all content types - single API call, mixed results like YouTube
-     * MUCH faster than 3 separate calls!
+     * Unified search for all content types with pagination - single API call, mixed results like YouTube
+     * MUCH faster than 3 separate calls! Supports infinite scroll with nextPageToken
      */
-    @Cacheable(value = "youtubeUnifiedSearch", key = "#query", unless = "#result == null || #result.isEmpty()")
-    public List<EnrichedSearchResult> searchAllEnriched(String query) throws IOException {
+    public SearchPageResponse searchAllEnrichedPaged(String query, String pageToken) throws IOException {
         if (apiKey == null || apiKey.isEmpty()) {
             logger.warn("YouTube API key not configured");
-            return Collections.emptyList();
+            return new SearchPageResponse(Collections.emptyList(), null, 0);
         }
 
         // Single API call for all content types
@@ -68,13 +68,17 @@ public class YouTubeService {
         request.setQ(query);
         request.setType(List.of("video", "channel", "playlist"));
         request.setMaxResults(50L);
-        request.setFields("items(id,snippet)");
+        request.setFields("items(id,snippet),nextPageToken,pageInfo/totalResults");
+
+        if (pageToken != null && !pageToken.isEmpty()) {
+            request.setPageToken(pageToken);
+        }
 
         SearchListResponse response = request.execute();
         List<SearchResult> items = response.getItems();
 
         if (items == null || items.isEmpty()) {
-            return Collections.emptyList();
+            return new SearchPageResponse(Collections.emptyList(), null, 0);
         }
 
         // Separate by type for batch enrichment (but preserve order)
@@ -105,7 +109,23 @@ public class YouTubeService {
         if (!playlists.isEmpty()) enrichPlaylistData(playlists);
         if (!videos.isEmpty()) enrichVideoData(videos);
 
-        return allResults;
+        // Return with pagination info
+        return new SearchPageResponse(
+            allResults,
+            response.getNextPageToken(),
+            response.getPageInfo() != null ? response.getPageInfo().getTotalResults() : 0
+        );
+    }
+
+    /**
+     * Unified search for all content types - single API call, mixed results like YouTube
+     * MUCH faster than 3 separate calls!
+     * @deprecated Use searchAllEnrichedPaged for pagination support
+     */
+    @Cacheable(value = "youtubeUnifiedSearch", key = "#query", unless = "#result == null || #result.isEmpty()")
+    public List<EnrichedSearchResult> searchAllEnriched(String query) throws IOException {
+        SearchPageResponse response = searchAllEnrichedPaged(query, null);
+        return response.getItems();
     }
 
     /**

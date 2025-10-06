@@ -42,10 +42,8 @@
         <div class="filter-item">
           <label>{{ t('contentSearch.filters.sort') }}</label>
           <select v-model="sortFilter" class="filter-select">
-            <option value="RELEVANCE">{{ t('contentSearch.filters.mostRelevant') }}</option>
-            <option value="DATE">{{ t('contentSearch.filters.mostRecent') }}</option>
-            <option value="VIEW_COUNT">{{ t('contentSearch.filters.mostPopular') }}</option>
-            <option value="RATING">{{ t('contentSearch.filters.topRated') }}</option>
+            <option value="DATE">Most Recent</option>
+            <option value="POPULAR">Most Popular</option>
           </select>
         </div>
       </div>
@@ -125,7 +123,7 @@ const { t } = useI18n();
 
 const searchQuery = ref('');
 const contentType = ref<'all' | 'channels' | 'playlists' | 'videos'>('all');
-const sortFilter = ref('RELEVANCE');
+const sortFilter = ref('DATE');
 
 const isLoading = ref(false);
 const isLoadingMore = ref(false);
@@ -148,21 +146,66 @@ const contentTypes: Array<{ value: 'all' | 'channels' | 'playlists' | 'videos'; 
   { value: 'videos', labelKey: 'contentSearch.types.videos' }
 ];
 
-// Computed filtered results based on selected content type
+// Unified sorted results - combines all types and sorts globally
+const sortedResults = computed(() => {
+  // Filter by content type
+  let allItems: Array<{type: string; data: any}> = [];
+
+  if (contentType.value === 'all' || contentType.value === 'channels') {
+    allItems.push(...channels.value.map(c => ({ type: 'channel', data: c })));
+  }
+  if (contentType.value === 'all' || contentType.value === 'playlists') {
+    allItems.push(...playlists.value.map(p => ({ type: 'playlist', data: p })));
+  }
+  if (contentType.value === 'all' || contentType.value === 'videos') {
+    allItems.push(...videos.value.map(v => ({ type: 'video', data: v })));
+  }
+
+  // Apply global sorting
+  switch (sortFilter.value) {
+    case 'DATE':
+      // Sort all items by published date globally
+      return allItems.sort((a, b) => {
+        const dateA = new Date(a.data.publishedAt || 0).getTime();
+        const dateB = new Date(b.data.publishedAt || 0).getTime();
+        return dateB - dateA; // Most recent first
+      });
+    case 'POPULAR':
+      // Sort by popularity metric based on item type
+      return allItems.sort((a, b) => {
+        let valueA = 0;
+        let valueB = 0;
+
+        if (a.type === 'channel') valueA = a.data.subscriberCount || 0;
+        else if (a.type === 'video') valueA = a.data.viewCount || 0;
+        else if (a.type === 'playlist') valueA = a.data.itemCount || 0;
+
+        if (b.type === 'channel') valueB = b.data.subscriberCount || 0;
+        else if (b.type === 'video') valueB = b.data.viewCount || 0;
+        else if (b.type === 'playlist') valueB = b.data.itemCount || 0;
+
+        return valueB - valueA; // Highest first
+      });
+    default:
+      return allItems;
+  }
+});
+
+// Separate the unified sorted results back into types for rendering
 const filteredChannels = computed(() => {
-  return contentType.value === 'all' || contentType.value === 'channels' ? channels.value : [];
+  return sortedResults.value.filter(item => item.type === 'channel').map(item => item.data);
 });
 
 const filteredPlaylists = computed(() => {
-  return contentType.value === 'all' || contentType.value === 'playlists' ? playlists.value : [];
+  return sortedResults.value.filter(item => item.type === 'playlist').map(item => item.data);
 });
 
 const filteredVideos = computed(() => {
-  return contentType.value === 'all' || contentType.value === 'videos' ? videos.value : [];
+  return sortedResults.value.filter(item => item.type === 'video').map(item => item.data);
 });
 
 const hasResults = computed(() => {
-  return filteredChannels.value.length > 0 || filteredPlaylists.value.length > 0 || filteredVideos.value.length > 0;
+  return sortedResults.value.length > 0;
 });
 
 // Check if item is already added
@@ -178,43 +221,6 @@ function isVideoAlreadyAdded(videoId: string): boolean {
   return existingVideoIds.value.has(videoId);
 }
 
-// Apply sort filter to results
-function applySortFilter(results: any[], type: 'channels' | 'playlists' | 'videos') {
-  if (!results || results.length === 0) return results;
-
-  const sorted = [...results];
-
-  switch (sortFilter.value) {
-    case 'DATE':
-      return sorted.sort((a, b) => {
-        const dateA = new Date(a.publishedAt || 0).getTime();
-        const dateB = new Date(b.publishedAt || 0).getTime();
-        return dateB - dateA; // Most recent first
-      });
-    case 'VIEW_COUNT':
-      if (type === 'channels') {
-        return sorted.sort((a, b) => (b.subscriberCount || 0) - (a.subscriberCount || 0));
-      } else if (type === 'videos') {
-        return sorted.sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0));
-      } else if (type === 'playlists') {
-        return sorted.sort((a, b) => (b.itemCount || 0) - (a.itemCount || 0));
-      }
-      return sorted;
-    case 'RATING':
-      // For rating, we can use subscriber count for channels, view count for videos
-      if (type === 'channels') {
-        return sorted.sort((a, b) => (b.subscriberCount || 0) - (a.subscriberCount || 0));
-      } else if (type === 'videos') {
-        return sorted.sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0));
-      }
-      return sorted;
-    case 'RELEVANCE':
-    default:
-      // YouTube API returns results sorted by relevance by default
-      return results;
-  }
-}
-
 async function handleSearch() {
   if (!searchQuery.value.trim()) {
     return;
@@ -224,27 +230,23 @@ async function handleSearch() {
   error.value = null;
   hasSearched.value = true;
   currentPage.value = 0;
-  hasMoreResults.value = true;
   nextPageToken.value = null;
 
   try {
-    const response = await searchYouTube(searchQuery.value, contentType.value);
+    // Always search for 'all' types - contentType filter is applied client-side via computed properties
+    const response = await searchYouTube(searchQuery.value, 'all');
 
-    // Store all results separately with sorting applied
-    channels.value = applySortFilter(response.channels, 'channels');
-    playlists.value = applySortFilter(response.playlists, 'playlists');
-    videos.value = applySortFilter(response.videos, 'videos');
+    // Store all results separately (sorting applied by computed properties)
+    channels.value = response.channels;
+    playlists.value = response.playlists;
+    videos.value = response.videos;
+
+    // Update pagination state
+    nextPageToken.value = response.nextPageToken || null;
+    hasMoreResults.value = !!response.nextPageToken;
 
     // Don't check existing items upfront - check on-demand when user clicks "Add"
     // This speeds up search significantly!
-
-    // YouTube API typically returns 20 results per page, but we'll check if there are fewer
-    const totalResults = response.channels.length + response.playlists.length + response.videos.length;
-    if (totalResults === 0) {
-      hasMoreResults.value = false;
-    }
-    // Note: YouTube search API doesn't provide pageToken in the response we're getting
-    // We'll keep hasMoreResults true to allow user to try loading more
   } catch (err) {
     error.value = err instanceof Error ? err.message : t('contentSearch.error');
   } finally {
@@ -332,24 +334,29 @@ function handleScroll() {
 }
 
 async function loadMoreResults() {
-  if (isLoadingMore.value || !hasMoreResults.value) {
+  if (isLoadingMore.value || !hasMoreResults.value || !nextPageToken.value) {
     return; // Prevent duplicate requests
   }
 
   isLoadingMore.value = true;
 
   try {
-    // YouTube API returns max 20 results per search query without pagination support in current implementation
-    // Future enhancement: Add pageToken support to backend for true pagination
+    // Always load 'all' types for pagination since contentType filter is client-side
+    const response = await searchYouTube(searchQuery.value, 'all', nextPageToken.value);
 
-    // Simulate checking for more results
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // Append new results to existing ones (sorting applied by computed properties)
+    channels.value = [...channels.value, ...response.channels];
+    playlists.value = [...playlists.value, ...response.playlists];
+    videos.value = [...videos.value, ...response.videos];
 
-    // For now, disable further loading after initial results
-    // This prevents the "All results loaded" popup while maintaining smooth UX
-    hasMoreResults.value = false;
+    // Update pagination state
+    nextPageToken.value = response.nextPageToken || null;
+    hasMoreResults.value = !!response.nextPageToken;
+
+    currentPage.value++;
   } catch (err) {
     console.error('Failed to load more results', err);
+    hasMoreResults.value = false;
   } finally {
     isLoadingMore.value = false;
   }

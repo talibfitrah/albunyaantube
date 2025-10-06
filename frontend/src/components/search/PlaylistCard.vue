@@ -1,30 +1,25 @@
 <template>
   <div class="search-result-card playlist-card">
     <div class="card-thumbnail playlist-thumbnail">
-      <div v-if="hasVideoThumbnails" class="playlist-grid">
-        <img
-          v-for="(thumb, index) in displayThumbnails"
-          :key="index"
-          :src="thumb"
-          :alt="`Video ${index + 1}`"
-          class="grid-thumbnail"
-        />
-        <div v-for="index in emptySlots" :key="`empty-${index}`" class="grid-thumbnail-placeholder"></div>
-      </div>
-      <div v-else class="playlist-stack">
+      <div class="playlist-stack">
         <div class="stack-layer stack-3"></div>
         <div class="stack-layer stack-2"></div>
         <div class="stack-layer stack-1">
           <img v-if="playlist.thumbnailUrl" :src="playlist.thumbnailUrl" :alt="playlist.title" />
           <div v-else class="thumbnail-placeholder"></div>
+          <!-- Playlist icon overlay -->
+          <div class="playlist-icon-overlay">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/>
+              <circle cx="18" cy="18" r="4" fill="white"/>
+              <path d="M16 16l4 2-4 2z" fill="currentColor"/>
+            </svg>
+          </div>
         </div>
       </div>
     </div>
     <div class="card-content">
-      <div class="card-header-row">
-        <h3 class="card-title">{{ playlist.title }}</h3>
-        <span class="content-type-badge playlist-badge">PLAYLIST</span>
-      </div>
+      <h3 class="card-title">{{ playlist.title }}</h3>
       <div class="card-meta">
         <span class="meta-item">
           <svg class="meta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -52,6 +47,7 @@
       </div>
     </div>
     <div class="card-actions">
+      <span class="content-type-badge playlist-badge">PLAYLIST</span>
       <button
         v-if="alreadyAdded"
         type="button"
@@ -73,10 +69,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
 import type { AdminSearchPlaylistResult } from '@/types/registry';
 
-const props = defineProps<{
+defineProps<{
   playlist: AdminSearchPlaylistResult;
   alreadyAdded?: boolean;
 }>();
@@ -84,20 +79,6 @@ const props = defineProps<{
 defineEmits<{
   add: [playlist: AdminSearchPlaylistResult];
 }>();
-
-const hasVideoThumbnails = computed(() => {
-  return props.playlist.videoThumbnails && props.playlist.videoThumbnails.length > 0;
-});
-
-const displayThumbnails = computed(() => {
-  if (!props.playlist.videoThumbnails) return [];
-  return props.playlist.videoThumbnails.slice(0, 4);
-});
-
-const emptySlots = computed(() => {
-  const thumbnailCount = displayThumbnails.value.length;
-  return thumbnailCount < 4 ? 4 - thumbnailCount : 0;
-});
 
 function formatVideoCount(count: number): string {
   if (count >= 1_000_000_000) {
@@ -166,31 +147,6 @@ function formatRelativeTime(dateStr: string): string {
   height: 90px;
 }
 
-.playlist-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  grid-template-rows: repeat(2, 1fr);
-  gap: 2px;
-  width: 100%;
-  height: 100%;
-  border-radius: 0.5rem;
-  overflow: hidden;
-  background: var(--color-border);
-}
-
-.grid-thumbnail {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  background: var(--color-surface-alt);
-}
-
-.grid-thumbnail-placeholder {
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(135deg, var(--color-surface-alt), var(--color-border));
-}
-
 .playlist-stack {
   position: relative;
   width: 100%;
@@ -223,6 +179,7 @@ function formatRelativeTime(dateStr: string): string {
 }
 
 .stack-1 {
+  position: relative;
   top: 0;
   left: 0;
   z-index: 3;
@@ -233,6 +190,26 @@ function formatRelativeTime(dateStr: string): string {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.playlist-icon-overlay {
+  position: absolute;
+  bottom: 0.5rem;
+  right: 0.5rem;
+  width: 2rem;
+  height: 2rem;
+  background: rgba(0, 0, 0, 0.75);
+  border-radius: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  backdrop-filter: blur(4px);
+}
+
+.playlist-icon-overlay svg {
+  width: 1.25rem;
+  height: 1.25rem;
 }
 
 .thumbnail-placeholder {
@@ -248,20 +225,12 @@ function formatRelativeTime(dateStr: string): string {
   flex: 1;
 }
 
-.card-header-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
 .card-title {
   margin: 0;
   font-size: 1.125rem;
   font-weight: 600;
   color: var(--color-text-primary);
   line-height: 1.4;
-  flex: 1;
 }
 
 .card-meta {
@@ -309,6 +278,7 @@ function formatRelativeTime(dateStr: string): string {
 .card-actions {
   display: flex;
   align-items: center;
+  gap: 0.75rem;
 }
 
 .action-button {

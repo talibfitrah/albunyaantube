@@ -6,31 +6,40 @@
 import apiClient from './api/client';
 import type { AdminSearchChannelResult, AdminSearchPlaylistResult, AdminSearchVideoResult, YouTubeEnrichedSearchResult } from '@/types/registry';
 
+interface SearchPageResponse {
+  items: YouTubeEnrichedSearchResult[];
+  nextPageToken?: string;
+  totalResults?: number;
+}
+
 interface YouTubeSearchResponse {
   channels: AdminSearchChannelResult[];
   playlists: AdminSearchPlaylistResult[];
   videos: AdminSearchVideoResult[];
+  nextPageToken?: string;
+  totalResults?: number;
 }
 
 /**
- * Search YouTube for channels, playlists, or videos
+ * Search YouTube for channels, playlists, or videos with pagination support
  */
 export async function searchYouTube(
   query: string,
-  type: 'all' | 'channels' | 'playlists' | 'videos' = 'all'
+  type: 'all' | 'channels' | 'playlists' | 'videos' = 'all',
+  pageToken?: string
 ): Promise<YouTubeSearchResponse> {
-  // Use unified search for 'all' - MUCH faster (single API call)
+  // Use unified search for 'all' - MUCH faster (single API call) with pagination
   if (type === 'all') {
-    const response = await apiClient.get<YouTubeEnrichedSearchResult[]>('/api/admin/youtube/search/unified', {
-      params: { query }
+    const response = await apiClient.get<SearchPageResponse>('/api/admin/youtube/search/all', {
+      params: { query, pageToken }
     });
 
-    // Separate by type
+    // Separate by type but preserve mixed order
     const channels: any[] = [];
     const playlists: any[] = [];
     const videos: any[] = [];
 
-    response.data.forEach(item => {
+    response.data.items.forEach(item => {
       if (item.type === 'channel') channels.push(item);
       else if (item.type === 'playlist') playlists.push(item);
       else if (item.type === 'video') videos.push(item);
@@ -39,7 +48,9 @@ export async function searchYouTube(
     return {
       channels: transformChannelResults(channels),
       playlists: transformPlaylistResults(playlists),
-      videos: transformVideoResults(videos)
+      videos: transformVideoResults(videos),
+      nextPageToken: response.data.nextPageToken,
+      totalResults: response.data.totalResults
     };
   }
 

@@ -32,9 +32,9 @@
           {{ formatRelativeTime(video.publishedAt) }}
         </span>
       </div>
-      <span class="content-type-badge video-badge">Video</span>
     </div>
     <div class="card-actions">
+      <span class="content-type-badge video-badge">VIDEO</span>
       <button
         v-if="alreadyAdded"
         type="button"
@@ -180,7 +180,7 @@ function formatRelativeTime(dateStr: string): string {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  position: relative;
+  flex: 1;
 }
 
 .card-title {
@@ -217,15 +217,14 @@ function formatRelativeTime(dateStr: string): string {
 }
 
 .content-type-badge {
-  position: absolute;
-  top: 0;
-  right: 0;
   padding: 0.25rem 0.625rem;
   border-radius: 999px;
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .video-badge {
@@ -236,6 +235,7 @@ function formatRelativeTime(dateStr: string): string {
 .card-actions {
   display: flex;
   align-items: center;
+  gap: 0.75rem;
 }
 
 .action-button {

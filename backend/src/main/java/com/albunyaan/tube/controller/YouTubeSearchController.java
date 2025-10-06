@@ -1,6 +1,7 @@
 package com.albunyaan.tube.controller;
 
 import com.albunyaan.tube.dto.EnrichedSearchResult;
+import com.albunyaan.tube.dto.SearchPageResponse;
 import com.albunyaan.tube.service.YouTubeService;
 import com.google.api.services.youtube.model.*;
 import org.springframework.http.ResponseEntity;
@@ -52,18 +53,16 @@ public class YouTubeSearchController {
     }
 
     /**
-     * Search for all content types (channels, playlists, videos) with enriched metadata
-     * DEPRECATED: Use /search/unified instead (3x faster)
+     * Search for all content types with pagination support (FAST + INFINITE SCROLL!)
      */
     @GetMapping("/search/all")
-    public ResponseEntity<EnrichedSearchAllResponse> searchAll(@RequestParam String query) {
+    public ResponseEntity<SearchPageResponse> searchAll(
+            @RequestParam String query,
+            @RequestParam(required = false) String pageToken
+    ) {
         try {
-            List<EnrichedSearchResult> channels = youtubeService.searchChannelsEnriched(query);
-            List<EnrichedSearchResult> playlists = youtubeService.searchPlaylistsEnriched(query);
-            List<EnrichedSearchResult> videos = youtubeService.searchVideosEnriched(query);
-
-            EnrichedSearchAllResponse response = new EnrichedSearchAllResponse(channels, playlists, videos);
-            return ResponseEntity.ok(response);
+            SearchPageResponse results = youtubeService.searchAllEnrichedPaged(query, pageToken);
+            return ResponseEntity.ok(results);
         } catch (IOException e) {
             return ResponseEntity.status(500).build();
         }

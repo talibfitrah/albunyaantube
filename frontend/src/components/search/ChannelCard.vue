@@ -5,10 +5,7 @@
       <div v-else class="thumbnail-placeholder"></div>
     </div>
     <div class="card-content">
-      <div class="card-header-row">
-        <h3 class="card-title">{{ channel.name }}</h3>
-        <span class="content-type-badge channel-badge">CHANNEL</span>
-      </div>
+      <h3 class="card-title">{{ channel.name }}</h3>
       <div class="card-meta">
         <span class="meta-item">
           <svg class="meta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -31,6 +28,7 @@
       </div>
     </div>
     <div class="card-actions">
+      <span class="content-type-badge channel-badge">CHANNEL</span>
       <button
         v-if="alreadyAdded"
         type="button"
@@ -151,20 +149,12 @@ function formatRelativeTime(dateStr: string): string {
   flex: 1;
 }
 
-.card-header-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
 .card-title {
   margin: 0;
   font-size: 1.125rem;
   font-weight: 600;
   color: var(--color-text-primary);
   line-height: 1.4;
-  flex: 1;
 }
 
 .card-meta {
@@ -211,6 +201,7 @@ function formatRelativeTime(dateStr: string): string {
 .card-actions {
   display: flex;
   align-items: center;
+  gap: 0.75rem;
 }
 
 .action-button {
