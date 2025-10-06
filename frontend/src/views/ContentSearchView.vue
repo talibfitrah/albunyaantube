@@ -235,8 +235,8 @@ async function handleSearch() {
     playlists.value = applySortFilter(response.playlists, 'playlists');
     videos.value = applySortFilter(response.videos, 'videos');
 
-    // Check which items already exist in registry
-    await checkExistingItems();
+    // Don't check existing items upfront - check on-demand when user clicks "Add"
+    // This speeds up search significantly!
 
     // YouTube API typically returns 20 results per page, but we'll check if there are fewer
     const totalResults = response.channels.length + response.playlists.length + response.videos.length;

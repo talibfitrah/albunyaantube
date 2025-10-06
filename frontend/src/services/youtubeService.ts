@@ -19,21 +19,36 @@ export async function searchYouTube(
   query: string,
   type: 'all' | 'channels' | 'playlists' | 'videos' = 'all'
 ): Promise<YouTubeSearchResponse> {
+  // Use unified search for 'all' - MUCH faster (single API call)
+  if (type === 'all') {
+    const response = await apiClient.get<YouTubeEnrichedSearchResult[]>('/api/admin/youtube/search/unified', {
+      params: { query }
+    });
+
+    // Separate by type
+    const channels: any[] = [];
+    const playlists: any[] = [];
+    const videos: any[] = [];
+
+    response.data.forEach(item => {
+      if (item.type === 'channel') channels.push(item);
+      else if (item.type === 'playlist') playlists.push(item);
+      else if (item.type === 'video') videos.push(item);
+    });
+
+    return {
+      channels: transformChannelResults(channels),
+      playlists: transformPlaylistResults(playlists),
+      videos: transformVideoResults(videos)
+    };
+  }
+
+  // Handle single-type responses
   const endpoint = `/api/admin/youtube/search/${type}`;
   const response = await apiClient.get(endpoint, {
     params: { query }
   });
 
-  // Handle 'all' response with all three types
-  if (type === 'all') {
-    return {
-      channels: transformChannelResults(response.data.channels || []),
-      playlists: transformPlaylistResults(response.data.playlists || []),
-      videos: transformVideoResults(response.data.videos || [])
-    };
-  }
-
-  // Handle single-type responses
   const results = response.data;
   return {
     channels: type === 'channels' ? transformChannelResults(results) : [],

@@ -52,6 +52,63 @@ public class YouTubeService {
     }
 
     /**
+     * Unified search for all content types - single API call, mixed results like YouTube
+     * MUCH faster than 3 separate calls!
+     */
+    @Cacheable(value = "youtubeUnifiedSearch", key = "#query", unless = "#result == null || #result.isEmpty()")
+    public List<EnrichedSearchResult> searchAllEnriched(String query) throws IOException {
+        if (apiKey == null || apiKey.isEmpty()) {
+            logger.warn("YouTube API key not configured");
+            return Collections.emptyList();
+        }
+
+        // Single API call for all content types
+        YouTube.Search.List request = youtube.search().list(List.of("id", "snippet"));
+        request.setKey(apiKey);
+        request.setQ(query);
+        request.setType(List.of("video", "channel", "playlist"));
+        request.setMaxResults(50L);
+        request.setFields("items(id,snippet)");
+
+        SearchListResponse response = request.execute();
+        List<SearchResult> items = response.getItems();
+
+        if (items == null || items.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        // Separate by type for batch enrichment (but preserve order)
+        List<EnrichedSearchResult> channels = new ArrayList<>();
+        List<EnrichedSearchResult> playlists = new ArrayList<>();
+        List<EnrichedSearchResult> videos = new ArrayList<>();
+        List<EnrichedSearchResult> allResults = new ArrayList<>();
+
+        for (SearchResult item : items) {
+            EnrichedSearchResult result;
+            if (item.getId().getChannelId() != null) {
+                result = EnrichedSearchResult.fromSearchResult(item, "channel");
+                channels.add(result);
+            } else if (item.getId().getPlaylistId() != null) {
+                result = EnrichedSearchResult.fromSearchResult(item, "playlist");
+                playlists.add(result);
+            } else if (item.getId().getVideoId() != null) {
+                result = EnrichedSearchResult.fromSearchResult(item, "video");
+                videos.add(result);
+            } else {
+                continue;
+            }
+            allResults.add(result);
+        }
+
+        // Enrich with metadata
+        if (!channels.isEmpty()) enrichChannelData(channels);
+        if (!playlists.isEmpty()) enrichPlaylistData(playlists);
+        if (!videos.isEmpty()) enrichVideoData(videos);
+
+        return allResults;
+    }
+
+    /**
      * Search for channels by query with full statistics (with caching)
      */
     @Cacheable(value = "youtubeChannelSearch", key = "#query", unless = "#result == null || #result.isEmpty()")

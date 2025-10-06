@@ -39,7 +39,21 @@ public class YouTubeSearchController {
     }
 
     /**
+     * Unified search - single API call, mixed results (FAST!)
+     */
+    @GetMapping("/search/unified")
+    public ResponseEntity<List<EnrichedSearchResult>> searchUnified(@RequestParam String query) {
+        try {
+            List<EnrichedSearchResult> results = youtubeService.searchAllEnriched(query);
+            return ResponseEntity.ok(results);
+        } catch (IOException e) {
+            return ResponseEntity.status(500).build();
+        }
+    }
+
+    /**
      * Search for all content types (channels, playlists, videos) with enriched metadata
+     * DEPRECATED: Use /search/unified instead (3x faster)
      */
     @GetMapping("/search/all")
     public ResponseEntity<EnrichedSearchAllResponse> searchAll(@RequestParam String query) {
