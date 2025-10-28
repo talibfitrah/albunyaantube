@@ -2,6 +2,7 @@ package com.albunyaan.tube.model;
 
 import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.annotation.DocumentId;
+import com.google.cloud.firestore.annotation.IgnoreExtraProperties;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -12,7 +13,11 @@ import java.util.List;
  * Represents a YouTube playlist added to the master list.
  *
  * Collection: playlists
+ *
+ * Note: @IgnoreExtraProperties is used to ignore legacy fields (approved, category)
+ * that were seeded in historical data but are now replaced by approvalMetadata.
  */
+@IgnoreExtraProperties
 public class Playlist {
 
     @DocumentId
