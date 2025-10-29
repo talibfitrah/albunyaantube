@@ -395,6 +395,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
+import apiClient from '@/services/api';
 
 const { t } = useI18n();
 
@@ -578,10 +579,45 @@ async function loadContent() {
   error.value = null;
 
   try {
-    await new Promise(resolve => setTimeout(resolve, 500));
-    content.value = [];
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : t('contentLibrary.error');
+    // Build query parameters
+    const params: Record<string, any> = {
+      status: filters.value.status,
+      page: 0,
+      size: 100 // Load first 100 items for now
+    };
+
+    // Add content types if not all selected
+    if (filters.value.types.length > 0) {
+      params.types = filters.value.types.join(',');
+    }
+
+    // Add search query
+    if (searchQuery.value.trim()) {
+      params.search = searchQuery.value.trim();
+    }
+
+    // Add sort parameter
+    params.sort = sortBy.value.includes('asc') ? 'oldest' : 'newest';
+
+    // Make API call
+    const response = await apiClient.get('/api/admin/content', { params });
+
+    // Update content with response data
+    content.value = response.data.content.map((item: any) => ({
+      id: item.id,
+      title: item.title,
+      type: item.type,
+      thumbnailUrl: item.thumbnailUrl,
+      categoryIds: item.categoryIds || [],
+      status: item.status?.toLowerCase() || 'pending',
+      createdAt: new Date(item.createdAt),
+      description: item.description,
+      count: item.count
+    }));
+
+  } catch (err: any) {
+    console.error('Failed to load content:', err);
+    error.value = err.response?.data?.message || err.message || t('contentLibrary.error');
   } finally {
     isLoading.value = false;
   }
@@ -589,8 +625,11 @@ async function loadContent() {
 
 async function loadCategories() {
   try {
-    await new Promise(resolve => setTimeout(resolve, 300));
-    categories.value = [];
+    const response = await apiClient.get('/api/admin/categories');
+    categories.value = response.data.map((cat: any) => ({
+      id: cat.id,
+      name: cat.name
+    }));
   } catch (err) {
     console.error('Failed to load categories:', err);
   }
