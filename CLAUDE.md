@@ -264,7 +264,9 @@ Model (Firestore @DocumentId annotations)
 - `PublicContentController`: Public API (videos, channels, playlists) - `/api/v1`
 - `CategoryController`: Category CRUD - `/api/admin/categories`
 - `ChannelController`: Channel management - `/api/admin/channels`
-- `RegistryController`: Content registry management - `/api/admin/registry`
+- `RegistryController`: Internal workflow API for adding content to pending queue - `/api/admin/registry`
+  - **Note:** "Registry" is backend terminology only, not exposed in UI
+  - Powers the "Add for Approval" workflow from Content Search
 - `YouTubeSearchController`: YouTube search integration - `/api/admin/youtube`
 - `UserController`: Admin/moderator user management - `/api/admin/users`
 - `AuditLogController`: Action audit trail - `/api/admin/audit`
@@ -309,7 +311,6 @@ components/
 ├── admin/              # Admin-specific UI (moderation, approval)
 ├── categories/         # Category tree, assignment modal
 ├── search/            # YouTube search, results
-├── registry/          # Content registry views
 ├── navigation/        # App shell, main tab bar
 ├── common/            # Shared UI (buttons, dialogs, etc.)
 ├── content/           # Content display components
@@ -319,7 +320,7 @@ components/
 **State Management** (Pinia stores):
 - `auth.ts`: Firebase authentication (login, logout, currentUser)
 - `preferences.ts`: User preferences (locale, dark mode)
-- `registryFilters.ts`: Content registry filters (pagination, search)
+- `registryFilters.ts`: Legacy store (may need renaming to contentFilters)
 
 **Services** (API clients):
 - `api/`: Base HTTP client with axios
@@ -434,17 +435,26 @@ Spring Boot backend
 
 ### Approval Workflow
 
-**Flow** (implemented in BACKEND-FIX-01 and ADMIN-CAT-01):
-1. **Search**: Admin searches YouTube via `YouTubeSearchController`
-2. **Add to Registry**: Result added to registry with `approved: false`, `pending: true`
-3. **Assign Category**: `CategoryAssignmentModal` lets admin select category (ADMIN-CAT-01)
-4. **Approval Queue**: Pending items appear in `PendingApprovalsView`
-5. **Approve/Reject**: Admin approves → `approved: true`, `pending: false`
-6. **Public API**: Approved content returned by `/api/v1/content`
+**User-Facing Screens:**
+1. **Content Search** - Search YouTube and add content for approval
+2. **Pending Approvals** - Review and approve/reject submissions
+3. **Content Library** - Manage all approved content
+
+**Backend Flow** (implemented in BACKEND-FIX-01 and ADMIN-CAT-01):
+1. **Content Search**: Admin searches YouTube via `YouTubeSearchController`
+2. **Add for Approval**: Click "Add for Approval" → Opens `CategoryAssignmentModal`
+3. **Assign Categories**: Select one or more categories for the content
+4. **Submit to Pending**: Content added via `RegistryController` with status `PENDING`
+5. **Pending Approvals**: Admin reviews items in `PendingApprovalsView`
+6. **Approve/Reject**: Admin decision updates status to `APPROVED` or `REJECTED`
+7. **Content Library**: Approved content appears in Content Library for management
+8. **Public API**: Approved content served to Android app via `/api/v1/content`
 
 **Models Involved**:
-- `Channel`, `Playlist`, `Video` all have `ApprovalMetadata` with `approved`, `pending`, `category`
+- `Channel`, `Playlist`, `Video` all have `ApprovalMetadata` with `approved`, `pending`, `categoryIds`
 - `AuditLog` tracks all approvals (who, what, when)
+
+**Note:** "Registry" is internal backend terminology (RegistryController) and is not exposed in the UI.
 
 ### Content Seeding
 

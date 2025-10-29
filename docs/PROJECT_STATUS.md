@@ -60,23 +60,33 @@
 - **Impact:** Experience still appears empty until frontends consume seeded data
 - **Next:** Validate dashboards/Android views, automate seeding for staging, plan cleanup strategy
 
-**BLOCKER #2: Firestore Model Mismatches (MEDIUM)**
+**BLOCKER #2: Firestore Model Mismatches (MEDIUM)** ✅ FIXED (2025-10-28)
 ```
-WARNING: No setter/field for topLevel found on class Category      ✅ addressed
-WARNING: No setter/field for pending found on class Channel        ✅ addressed
-WARNING: No setter/field for approved found on class Channel       ✅ addressed
-WARNING: No setter/field for totalExcludedCount found on class Channel$ExcludedItems ✅ addressed
+WARNING: No setter/field for topLevel found on class Category      ✅ fixed
+WARNING: No setter/field for pending found on class Channel        ✅ fixed
+WARNING: No setter/field for approved found on class Channel       ✅ fixed
+WARNING: No setter/field for totalExcludedCount found on class Channel$ExcludedItems ✅ fixed
+WARNING: No setter/field for approved found on class Playlist      ✅ fixed (2025-10-28)
+WARNING: No setter/field for category found on class Playlist      ✅ fixed (2025-10-28)
 ```
-- **Impact:** Runtime warnings until deploy; fix merged, needs verification
-- **Next:** Deploy backend + review Firestore logs to confirm warnings cleared
+- **Status:** All model warnings resolved
+- **Fix Applied:** Added `@IgnoreExtraProperties` to Playlist model (follows Video model pattern)
+- **Verified:** Backend starts cleanly with no Firestore warnings
+- **Next:** Monitor logs in production for any remaining issues
 
 **BLOCKER #3: Missing Backend Endpoints (MEDIUM)**
-- Content Library - no backend (client-side only)
-- Exclusions - endpoints not implemented (shows warnings)
-- Bulk Import/Export - no backend
-- Settings (System/Notifications/YouTube API) - no persistence
-- **Impact:** 6 admin views non-functional
+- **Content Library** - UI complete with filters, needs backend endpoint to fetch approved content
+  - Current: Frontend stub returns empty array after 500ms
+  - Required: `/api/admin/content` endpoint with filtering support
+- **Exclusions** - endpoints not implemented (shows warnings)
+- **Bulk Import/Export** - no backend
+- **Settings** (System/Notifications/YouTube API) - no persistence
+- **Impact:** 4 admin views non-functional
 - **Fix:** Build backend endpoints for each feature
+
+**Note:** "Registry" terminology removed from UI. The workflow is now:
+- **Content Search** → **Pending Approvals** → **Content Library**
+- Backend RegistryController still exists as internal API for "Add for Approval" workflow
 
 **BLOCKER #4: Dashboard Metrics Structure Mismatch (MEDIUM)** ✅ FIXED
 - ~~Frontend expects: `{data: {...}, meta: {generatedAt}}`~~
