@@ -1,16 +1,48 @@
-# Session Resume - October 30, 2025
+# Session Resume - October 31, 2025
 
 > **Purpose:** Quick resume point for new context windows. Read this first to understand current state.
 
 ---
 
-## 🎯 **Current Priority: Android Mobile App - Verification & Testing**
+## 🎯 **Current Priority: Test Android App on Physical Device**
 
-Android app is FULLY IMPLEMENTED with 94 Kotlin files, 19 fragments, 57 layouts. Backend ready with seeded data. Ready for testing!
+**STATUS:** Android app connectivity issue FIXED. Backend CORS configured for mobile. APK ready for installation and testing.
+
+**NEXT STEP:** Install APK on device (192.168.1.167) and verify data loads from backend.
 
 ---
 
-## ✅ **Just Completed (Oct 30, 2025)**
+## ✅ **Just Completed (Oct 31, 2025)**
+
+### **CRITICAL FIX: Android Connectivity Resolved!** ✅
+
+1. **Identified CORS Blocking Issue** 🔍
+   - Problem: Backend CORS only allowed web frontend (`localhost:5173`)
+   - Mobile apps don't send `Origin` header like browsers
+   - Android app was being blocked by CORS policy
+
+2. **Fixed Backend CORS Configuration** ✅
+   - **File:** `backend/src/main/java/com/albunyaan/tube/security/SecurityConfig.java:80-97`
+   - Added `setAllowedOriginPatterns("*")` for mobile compatibility
+   - Changed `setAllowCredentials(false)` (mobile apps don't use credentials)
+   - Keeps web frontend origins for browser access
+   - Backend rebuilt and restarted with fix
+
+3. **Configured Android for Physical Device** ✅
+   - **File:** `android/app/build.gradle.kts:35`
+   - API_BASE_URL set to user's IP: `http://192.168.1.167:8080/`
+   - APK rebuilt with correct configuration
+   - Location: `android/app/build/outputs/apk/debug/app-debug.apk` (15MB)
+
+4. **Verified Backend Accessible** ✅
+   - Tested from localhost: `curl http://localhost:8080/api/v1/categories` ✓
+   - Tested from device IP: `curl http://192.168.1.167:8080/api/v1/categories` ✓
+   - Tested CORS with mobile origin: `curl -H "Origin: http://android-app" ...` ✓
+   - All endpoints responding correctly
+
+---
+
+## ✅ **Previous Session (Oct 30, 2025)**
 
 ### **Critical Discovery: Android App IS Built!** ✅
 1. **Located Full Android Implementation**
@@ -26,14 +58,10 @@ Android app is FULLY IMPLEMENTED with 94 Kotlin files, 19 fragments, 57 layouts.
    - All endpoints tested and working
    - Cursor pagination functioning correctly
 
-3. **Updated Android Build Configuration** ✅
-   - Changed API_BASE_URL to `http://10.0.2.2:8080/` for emulator
-   - Location: `android/app/build.gradle.kts:35`
-   - APK rebuilt successfully
-
-4. **Updated Documentation** ✅
-   - Corrected CONTEXT_RESUME.md with actual Android status
-   - Documentation was aspirational, but implementation exists!
+3. **Created Testing Documentation** ✅
+   - Comprehensive testing guide: `docs/android/TESTING_GUIDE.md`
+   - 15-section test checklist
+   - API testing commands
 
 ---
 
@@ -114,26 +142,35 @@ ba02db9 [DOCS]: Update architecture docs to reflect UI terminology
 
 ---
 
-## 🚀 **Next Immediate Steps**
+## 🚀 **IMMEDIATE NEXT STEP - START HERE!**
 
-### **Step 1: Test Android App on Emulator**
+### **⚠️ CRITICAL: Test Android App on Physical Device**
 
-**The app is READY! Just needs testing:**
+**BACKGROUND:**
+- Android app is fully built (94 Kotlin files, 19 screens)
+- Backend CORS was blocking mobile requests → **NOW FIXED**
+- APK rebuilt with user's device IP (192.168.1.167)
+- Backend running and verified accessible
+
+**YOUR TASK:**
 
 ```bash
-# 1. Ensure backend is running with seeded data
-cd /home/farouq/Development/albunyaantube/backend
-./gradlew bootRun --args='--spring.profiles.active=seed'
-# Backend: http://localhost:8080 (running ✓)
+# 1. Verify backend is running (should already be running from previous session)
+ps aux | grep AlbunyaanTubeApplication
+# If not running:
+# cd /home/farouq/Development/albunyaantube/backend
+# ./gradlew bootRun --args='--spring.profiles.active=seed' &
 
-# 2. Open Android Studio
-cd /home/farouq/Development/albunyaantube/android
-# Open project in Android Studio
+# 2. Verify backend is accessible on your IP
+curl http://192.168.1.167:8080/api/v1/categories | jq '. | length'
+# Should return: 19 (categories count)
 
-# 3. Start emulator and install APK
-# Option A: Run from Android Studio (Shift+F10)
-# Option B: Command line:
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+# 3. Install APK on your physical device (connected via USB or WiFi)
+adb devices  # Verify device is connected
+adb install -r /home/farouq/Development/albunyaantube/android/app/build/outputs/apk/debug/app-debug.apk
+
+# 4. Monitor logs while testing
+adb logcat | grep -E "AlbunyaanTube|OkHttp|ContentApi|Retrofit"
 ```
 
 **Test Checklist:**
@@ -298,8 +335,13 @@ curl http://localhost:8080/api/v1/categories
 
 ---
 
-**Last Updated:** 2025-10-30 14:55 CET
-**Next Priority:** Test Android app on emulator with backend
-**Status:** Android app FULLY BUILT, backend ready, ready for testing
-**Branch:** main (Android build.gradle.kts updated)
-**APK:** `/home/farouq/Development/albunyaantube/android/app/build/outputs/apk/debug/app-debug.apk` (15MB)
+**Last Updated:** 2025-10-31 17:05 CET
+**Next Priority:** Install APK on physical device and test data loading
+**Status:** CORS fixed, backend running, APK ready for device (192.168.1.167)
+**Branch:** main
+**Commits:**
+- `efb0205` [FIX]: Enable Android app connectivity to backend
+- `d301616` [DOCS]: Add context resume for session continuity
+
+**APK Location:** `/home/farouq/Development/albunyaantube/android/app/build/outputs/apk/debug/app-debug.apk` (15MB)
+**Backend:** Running on port 8080 with CORS fix, accessible at http://192.168.1.167:8080

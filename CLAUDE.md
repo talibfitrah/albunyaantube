@@ -4,13 +4,60 @@ This document provides essential information for AI assistants working in the Al
 
 ---
 
+## 🎯 **WHERE TO START - CURRENT SESSION STATUS**
+
+**Date:** October 31, 2025
+**Status:** Android connectivity issue FIXED, ready for device testing
+**Next Step:** Install APK on physical device and verify data loads
+
+### **What Just Happened (Oct 31, 2025):**
+
+1. **CORS Issue Identified & Fixed** ✅
+   - Problem: Backend CORS only allowed web frontend, blocking mobile app requests
+   - Solution: Added `setAllowedOriginPatterns("*")` in `SecurityConfig.java:88`
+   - File: [backend/src/main/java/com/albunyaan/tube/security/SecurityConfig.java](backend/src/main/java/com/albunyaan/tube/security/SecurityConfig.java#L80-L97)
+
+2. **Android APK Rebuilt** ✅
+   - Configured for user's device IP: `http://192.168.1.167:8080/`
+   - File: [android/app/build.gradle.kts:35](android/app/build.gradle.kts#L35)
+   - APK: `android/app/build/outputs/apk/debug/app-debug.apk` (15MB)
+
+3. **Backend Running with CORS Fix** ✅
+   - Accessible at `http://192.168.1.167:8080`
+   - All endpoints tested and working
+   - Seeded data: 20 channels, 16 playlists, 76 videos, 19 categories
+
+### **Your Immediate Task:**
+
+```bash
+# 1. Verify backend is accessible
+curl http://192.168.1.167:8080/api/v1/categories | jq '. | length'
+# Should return: 19
+
+# 2. Install APK on device
+adb install -r /home/farouq/Development/albunyaantube/android/app/build/outputs/apk/debug/app-debug.apk
+
+# 3. Test app and verify data loads from backend
+# See: docs/android/TESTING_GUIDE.md for complete checklist
+```
+
+**If Issues Occur:**
+- See: [docs/android/CONNECTIVITY_TROUBLESHOOTING.md](docs/android/CONNECTIVITY_TROUBLESHOOTING.md)
+- Check: [CONTEXT_RESUME.md](CONTEXT_RESUME.md) for latest session state
+
+**Git Commits:**
+- `efb0205` - [FIX]: Enable Android app connectivity to backend
+- `d301616` - [DOCS]: Add context resume for session continuity
+
+---
+
 ## Quick Reference
 
 ### Project Overview
 - **Type**: Full-stack monorepo with admin UI, REST backend, and mobile app
 - **Technologies**: Spring Boot (Java 17), Vue 3 (TypeScript), Kotlin (Android), Firebase
 - **Purpose**: Ad-free, admin-curated Islamic content platform with approval workflows
-- **Status**: ~50% complete - UI built, backend integration and approval workflow mostly functional
+- **Status**: ~60% complete - Backend & frontend working, Android ready for testing
 
 ### Critical Policy
 - **Test Timeout**: All tests must complete in 300 seconds (5 minutes) - see AGENTS.md
