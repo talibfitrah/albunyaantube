@@ -47,19 +47,24 @@ class RetrofitContentService(
                 category = category.orEmpty(),
                 durationMinutes = durationMinutes ?: 0,
                 uploadedDaysAgo = uploadedDaysAgo ?: 0,
-                description = description.orEmpty()
+                description = description.orEmpty(),
+                thumbnailUrl = thumbnailUrl,
+                viewCount = viewCount
             )
             "CHANNEL" -> ContentItem.Channel(
                 id = id,
                 name = name ?: title.orEmpty(),
                 category = category.orEmpty(),
-                subscribers = subscribers ?: 0
+                subscribers = subscribers ?: 0,
+                thumbnailUrl = thumbnailUrl,
+                videoCount = videoCount
             )
             "PLAYLIST" -> ContentItem.Playlist(
                 id = id,
                 title = title.orEmpty(),
                 category = category.orEmpty(),
-                itemCount = itemCount ?: 0
+                itemCount = itemCount ?: 0,
+                thumbnailUrl = thumbnailUrl
             )
             else -> null
         }

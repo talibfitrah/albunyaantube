@@ -49,7 +49,10 @@ data class ContentDto(
     val description: String? = null,
     val subscribers: Int? = null,
     val itemCount: Int? = null,
-    val type: String? = null
+    val type: String? = null,
+    val thumbnailUrl: String? = null,
+    val viewCount: Long? = null,
+    val videoCount: Int? = null
 )
 
 @JsonClass(generateAdapter = true)
