@@ -44,10 +44,10 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // Public endpoints
+                        // Public endpoints - ORDER MATTERS! Most specific first
                         .requestMatchers("/actuator/**").permitAll()
                         .requestMatchers("/api/public/**").permitAll()
-                        .requestMatchers("/api/v1/**").permitAll() // Public mobile app APIs
+                        .requestMatchers("/api/v1/**").permitAll() // Public mobile app APIs (includes /api/v1/search)
                         .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
 
                         // Admin-only endpoints

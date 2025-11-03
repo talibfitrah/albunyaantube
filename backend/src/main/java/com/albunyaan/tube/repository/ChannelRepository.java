@@ -118,8 +118,9 @@ public class ChannelRepository {
     public List<Channel> searchByName(String query) throws ExecutionException, InterruptedException {
         // Firestore doesn't support full-text search, so we'll use prefix matching
         // For production, consider using Algolia or Elasticsearch
+        // Note: Filtering by status removed from query to avoid composite index requirement
+        // Status filtering done in PublicContentService layer
         ApiFuture<QuerySnapshot> querySnapshot = getCollection()
-                .whereEqualTo("status", "APPROVED")
                 .orderBy("name")
                 .startAt(query)
                 .endAt(query + "\uf8ff")
