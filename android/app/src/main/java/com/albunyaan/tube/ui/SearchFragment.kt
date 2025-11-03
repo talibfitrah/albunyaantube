@@ -43,11 +43,18 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
         super.onViewCreated(view, savedInstanceState)
         binding = FragmentSearchBinding.bind(view)
 
+        setupToolbar()
         setupSearchView()
         setupSearchHistory()
         setupResultsList()
         loadSearchHistory()
         observeSearchResults()
+    }
+
+    private fun setupToolbar() {
+        binding?.toolbar?.setNavigationOnClickListener {
+            findNavController().navigateUp()
+        }
     }
 
     private fun setupSearchView() {
