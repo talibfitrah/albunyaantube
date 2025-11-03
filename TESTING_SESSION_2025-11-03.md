@@ -167,20 +167,31 @@
 
 ## 🐛 Critical Issues Found
 
-### 1. Search API 403 Forbidden ⚠️
-**Status:** NEEDS FIX
-**Logs:**
-```
-GET http://192.168.1.167:8080/api/v1/search?q=qu&limit=50
-<-- 403 (651ms, 0-byte body)
-```
-**Issue:** Search endpoint requires authentication but app calls it as public endpoint
-**Priority:** HIGH - Search is a core feature
+### 1. Search API 403 Forbidden ✅ FIXED
+**Status:** ✅ FIXED (2025-11-03)
+**Original Issue:** Search endpoint returning 403 Forbidden errors
+**Root Cause:** Firestore search queries included `whereEqualTo("status", "APPROVED")` which required composite indexes
+**Solution:**
+- Removed status filter from repository search queries
+- Status filtering now handled in-memory by PublicContentService
+- Updated ChannelRepository, PlaylistRepository, VideoRepository
+**Commit:** `866756f` - [FIX]: Resolve Android search endpoint 403 error
+**Tested:** ✅ Search works correctly with capitalized queries (e.g., "Qur", "Islam")
 
-### 2. Bottom Navigation Overlap (FIXED)
-**Status:** ✅ FIXED
+### 2. Missing Back Button on Search Screen ✅ FIXED
+**Status:** ✅ FIXED (2025-11-03)
+**Issue:** Users couldn't navigate back from search screen to home
+**Solution:**
+- Added navigation icon to search toolbar
+- Implemented click listener to call `findNavController().navigateUp()`
+**Commit:** `39b3c26` - [FIX]: Add back navigation button to search screen
+**Tested:** ✅ Back button visible and functional
+
+### 3. Bottom Navigation Overlap ✅ FIXED
+**Status:** ✅ FIXED (Previous session)
 **Issue:** Content at bottom hidden behind navigation bar
 **Solution:** Added proper padding to all affected screens
+**Commit:** `573204b` - [FIX]: Increase RecyclerView bottom padding
 
 ---
 
@@ -188,8 +199,8 @@ GET http://192.168.1.167:8080/api/v1/search?q=qu&limit=50
 
 ### HIGH PRIORITY
 1. **Video Player with NewPipe** - Not yet implemented with real YouTube IDs
-2. **Search 403 Error** - Backend needs to make `/api/v1/search` public
-3. **Back Button Missing** - Search screen needs back button to home
+2. ~~**Search 403 Error**~~ - ✅ FIXED (2025-11-03)
+3. ~~**Back Button Missing**~~ - ✅ FIXED (2025-11-03)
 
 ### MEDIUM PRIORITY
 4. **Missing Details in Lists:**
