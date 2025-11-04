@@ -1,0 +1,42 @@
+[Unit]
+Description=Albunyaan Tube Backend API
+Documentation=https://github.com/your-org/albunyaantube
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/albunyaan
+
+# Environment variables
+EnvironmentFile=/opt/albunyaan/.env
+
+# Java options for production
+Environment="JAVA_OPTS=-Xmx1024m -Xms512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200"
+
+# Main process
+ExecStart=/usr/bin/java ${JAVA_OPTS} -jar /opt/albunyaan/backend-0.0.1-SNAPSHOT.jar --server.port=8080
+
+# Logging
+StandardOutput=append:/opt/albunyaan/logs/app.log
+StandardError=append:/opt/albunyaan/logs/error.log
+SyslogIdentifier=albunyaan-backend
+
+# Restart policy
+Restart=on-failure
+RestartSec=10
+StartLimitBurst=3
+StartLimitInterval=60
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Resource limits
+LimitNOFILE=65536
+TimeoutStartSec=120
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
