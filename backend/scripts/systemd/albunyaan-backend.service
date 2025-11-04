@@ -1,0 +1,17 @@
+[Unit]
+Description=Albunyaan Tube Backend API
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/albunyaan
+EnvironmentFile=/opt/albunyaan/.env
+ExecStart=/usr/bin/java -Xmx512m -Xms256m -jar /opt/albunyaan/backend.jar --server.port=8080
+StandardOutput=append:/opt/albunyaan/logs/app.log
+StandardError=append:/opt/albunyaan/logs/error.log
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

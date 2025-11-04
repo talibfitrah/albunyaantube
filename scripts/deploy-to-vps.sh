@@ -43,10 +43,14 @@ echo -e "${YELLOW}[1/7] Building JAR file...${NC}"
 cd "$(dirname "$0")/../backend"
 ./gradlew clean bootJar
 
-if [ ! -f "build/libs/backend-0.0.1-SNAPSHOT.jar" ]; then
+# Find the JAR file (name may vary)
+JAR_FILE=$(find build/libs -name "*.jar" -type f | head -1)
+if [ -z "$JAR_FILE" ]; then
     echo -e "${RED}Error: JAR file not found after build${NC}"
     exit 1
 fi
+JAR_NAME=$(basename "$JAR_FILE")
+echo "Found JAR: $JAR_NAME"
 echo -e "${GREEN}✓ JAR built successfully${NC}"
 
 # Step 2: Check Firebase credentials
@@ -84,7 +88,7 @@ echo -e "${GREEN}✓ Server prepared${NC}"
 
 # Step 4: Copy files to server
 echo -e "${YELLOW}[4/7] Copying files to server...${NC}"
-scp build/libs/backend-0.0.1-SNAPSHOT.jar "${REMOTE_USER}@${REMOTE_HOST}:${DEPLOY_DIR}/"
+scp "$JAR_FILE" "${REMOTE_USER}@${REMOTE_HOST}:${DEPLOY_DIR}/backend.jar"
 scp src/main/resources/firebase-service-account.json "${REMOTE_USER}@${REMOTE_HOST}:${DEPLOY_DIR}/"
 echo -e "${GREEN}✓ Files copied${NC}"
 
@@ -113,12 +117,12 @@ if [ "$SEED_FLAG" = "--seed" ]; then
         cd ${DEPLOY_DIR}
         source .env
         echo "Starting seed process..."
-        timeout 600 java -jar backend-0.0.1-SNAPSHOT.jar \
+        timeout 600 java -jar backend.jar \
             --spring.profiles.active=real-seed \
             --server.port=8080 2>&1 | tee logs/seed.log || {
             if grep -q "Started AlbunyaanTubeApplication" logs/seed.log; then
                 echo "✓ Seed completed successfully"
-                pkill -f backend-0.0.1-SNAPSHOT.jar
+                pkill -f backend.jar
             else
                 echo "✗ Seed failed - check logs/seed.log"
                 exit 1
@@ -148,7 +152,7 @@ Type=simple
 User=root
 WorkingDirectory=/opt/albunyaan
 EnvironmentFile=/opt/albunyaan/.env
-ExecStart=/usr/bin/java -Xmx512m -Xms256m -jar /opt/albunyaan/backend-0.0.1-SNAPSHOT.jar --server.port=8080
+ExecStart=/usr/bin/java -Xmx512m -Xms256m -jar /opt/albunyaan/backend.jar --server.port=8080
 StandardOutput=append:/opt/albunyaan/logs/app.log
 StandardError=append:/opt/albunyaan/logs/error.log
 Restart=on-failure

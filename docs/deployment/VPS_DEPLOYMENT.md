@@ -88,8 +88,8 @@ If you prefer manual control or the script doesn't work:
 cd /home/farouq/Development/albunyaantube/backend
 ./gradlew clean bootJar
 
-# Verify JAR exists
-ls -lh build/libs/backend-0.0.1-SNAPSHOT.jar
+# Verify JAR exists (name may vary)
+ls -lh build/libs/*.jar
 ```
 
 ### Step 2: Prepare VPS Server

@@ -36,7 +36,7 @@ class RetrofitContentService(
         val hydratedItems = runCatching { metadataHydrator.hydrate(type, baseItems) }
             .onFailure { if (it is CancellationException) throw it }
             .getOrElse { baseItems }
-        return CursorResponse(hydratedItems, response.pageInfo.nextCursor)
+        return CursorResponse(hydratedItems, CursorResponse.PageInfo(response.pageInfo.nextCursor))
     }
 
     private fun ContentDto.toModel(): ContentItem? {

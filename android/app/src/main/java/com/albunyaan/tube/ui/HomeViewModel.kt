@@ -35,11 +35,11 @@ class HomeViewModel(
                     filters = FilterState()
                 )
 
-                android.util.Log.d("HomeViewModel", "Received ${response.items.size} total items")
+                android.util.Log.d("HomeViewModel", "Received ${response.data.size} total items")
 
-                val allChannels = response.items.filterIsInstance<ContentItem.Channel>()
-                val allPlaylists = response.items.filterIsInstance<ContentItem.Playlist>()
-                val allVideos = response.items.filterIsInstance<ContentItem.Video>()
+                val allChannels = response.data.filterIsInstance<ContentItem.Channel>()
+                val allPlaylists = response.data.filterIsInstance<ContentItem.Playlist>()
+                val allVideos = response.data.filterIsInstance<ContentItem.Video>()
 
                 android.util.Log.d("HomeViewModel", "Filtered: ${allChannels.size} channels, ${allPlaylists.size} playlists, ${allVideos.size} videos")
 

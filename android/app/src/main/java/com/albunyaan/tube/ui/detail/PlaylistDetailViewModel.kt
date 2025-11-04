@@ -42,7 +42,7 @@ class PlaylistDetailViewModel(
                     filters = FilterState()
                 )
 
-                val playlist = response.items
+                val playlist = response.data
                     .filterIsInstance<ContentItem.Playlist>()
                     .firstOrNull { it.id == playlistId }
 
@@ -78,7 +78,7 @@ class PlaylistDetailViewModel(
                     filters = FilterState()
                 )
                 
-                val videos = response.items.filterIsInstance<ContentItem.Video>()
+                val videos = response.data.filterIsInstance<ContentItem.Video>()
                 _videosState.value = VideosState.Success(videos)
                 Log.d(TAG, "Loaded ${videos.size} videos for playlist")
             } catch (e: Exception) {

@@ -164,6 +164,10 @@ public class RealYouTubeDataSeeder implements CommandLineRunner {
             // Thumbnail (YouTube standard)
             channel.setThumbnailUrl("https://yt3.ggpht.com/ytc/" + ytChannel.youtubeId);
 
+            // CRITICAL: Set default values for fields used in queries
+            channel.setSubscribers(100000L); // Default subscriber count
+            channel.setVideoCount(50); // Default video count
+
             channelRepository.save(channel);
             count++;
 

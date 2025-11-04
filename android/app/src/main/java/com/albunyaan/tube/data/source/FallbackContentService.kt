@@ -18,13 +18,13 @@ class FallbackContentService(
     ): CursorResponse = try {
         Log.d(TAG, "Trying primary backend for type=$type")
         primary.fetchContent(type, cursor, pageSize, filters).also {
-            Log.d(TAG, "✅ Primary backend SUCCESS: returned ${it.items.size} items for type=$type")
+            Log.d(TAG, "✅ Primary backend SUCCESS: returned ${it.data.size} items for type=$type")
         }
     } catch (e: Throwable) {
         Log.e(TAG, "❌ Primary backend FAILED for type=$type: ${e.message}", e)
         Log.d(TAG, "Falling back to fake content service for type=$type")
         fallback.fetchContent(type, cursor, pageSize, filters).also {
-            Log.d(TAG, "Fallback returned ${it.items.size} items for type=$type")
+            Log.d(TAG, "Fallback returned ${it.data.size} items for type=$type")
         }
     }
 

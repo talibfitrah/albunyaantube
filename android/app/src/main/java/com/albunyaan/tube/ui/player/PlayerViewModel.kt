@@ -217,7 +217,7 @@ class PlayerViewModel(
                     filters = FilterState()
                 )
 
-                val video = response.items
+                val video = response.data
                     .filterIsInstance<ContentItem.Video>()
                     .firstOrNull { it.id == videoId }
 

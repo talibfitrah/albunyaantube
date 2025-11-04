@@ -42,7 +42,7 @@ class ChannelDetailViewModel(
                     filters = FilterState()
                 )
 
-                val channel = response.items
+                val channel = response.data
                     .filterIsInstance<ContentItem.Channel>()
                     .firstOrNull { it.id == channelId }
 
@@ -80,7 +80,7 @@ class ChannelDetailViewModel(
                             filters = FilterState()
                         )
                         
-                        val videos = response.items.filterIsInstance<ContentItem.Video>()
+                        val videos = response.data.filterIsInstance<ContentItem.Video>()
                         _tabContent.value = _tabContent.value + (tab to TabContentState.Success(videos))
                         Log.d(TAG, "Loaded ${videos.size} videos for channel")
                     }
@@ -93,7 +93,7 @@ class ChannelDetailViewModel(
                             filters = FilterState()
                         )
                         
-                        val playlists = response.items.filterIsInstance<ContentItem.Playlist>()
+                        val playlists = response.data.filterIsInstance<ContentItem.Playlist>()
                         _tabContent.value = _tabContent.value + (tab to TabContentState.Success(playlists))
                         Log.d(TAG, "Loaded ${playlists.size} playlists for channel")
                     }

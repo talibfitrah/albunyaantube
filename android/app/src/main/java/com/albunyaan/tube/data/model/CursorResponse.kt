@@ -1,9 +1,13 @@
 package com.albunyaan.tube.data.model
 
 data class CursorResponse(
-    val items: List<ContentItem>,
-    val nextCursor: String?
-)
+    val data: List<ContentItem>,
+    val pageInfo: PageInfo?
+) {
+    data class PageInfo(
+        val nextCursor: String?
+    )
+}
 
 enum class ContentType {
     HOME,

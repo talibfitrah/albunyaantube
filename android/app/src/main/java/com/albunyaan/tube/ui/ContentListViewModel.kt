@@ -37,8 +37,8 @@ class ContentListViewModel(
                     filters = FilterState()
                 )
 
-                Log.d(TAG, "Received ${response.items.size} items for type=$contentType")
-                _content.value = ContentState.Success(response.items)
+                Log.d(TAG, "Received ${response.data.size} items for type=$contentType")
+                _content.value = ContentState.Success(response.data)
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading content for type=$contentType", e)
                 _content.value = ContentState.Error(e.message ?: "Unknown error")

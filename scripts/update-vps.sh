@@ -29,21 +29,30 @@ echo ""
 echo -e "${YELLOW}[1/4] Building new JAR...${NC}"
 cd "$(dirname "$0")/../backend"
 ./gradlew clean bootJar
+
+# Find the JAR file (name may vary)
+JAR_FILE=$(find build/libs -name "*.jar" -type f | head -1)
+if [ -z "$JAR_FILE" ]; then
+    echo -e "${RED}Error: JAR file not found after build${NC}"
+    exit 1
+fi
+JAR_NAME=$(basename "$JAR_FILE")
+echo "Found JAR: $JAR_NAME"
 echo -e "${GREEN}✓ Build complete${NC}"
 
 # Step 2: Backup current JAR on server
 echo -e "${YELLOW}[2/4] Backing up current version...${NC}"
 ssh "${REMOTE_USER}@${REMOTE_HOST}" << 'ENDSSH'
-    if [ -f /opt/albunyaan/backend-0.0.1-SNAPSHOT.jar ]; then
-        cp /opt/albunyaan/backend-0.0.1-SNAPSHOT.jar \
-           /opt/albunyaan/backend-0.0.1-SNAPSHOT.jar.bak
+    if [ -f /opt/albunyaan/backend.jar ]; then
+        cp /opt/albunyaan/backend.jar \
+           /opt/albunyaan/backend.jar.bak
         echo "✓ Backup created"
     fi
 ENDSSH
 
 # Step 3: Copy new JAR
 echo -e "${YELLOW}[3/4] Deploying new version...${NC}"
-scp build/libs/backend-0.0.1-SNAPSHOT.jar "${REMOTE_USER}@${REMOTE_HOST}:${DEPLOY_DIR}/"
+scp "$JAR_FILE" "${REMOTE_USER}@${REMOTE_HOST}:${DEPLOY_DIR}/backend.jar"
 echo -e "${GREEN}✓ Files copied${NC}"
 
 # Step 4: Restart service
@@ -56,8 +65,8 @@ ssh "${REMOTE_USER}@${REMOTE_HOST}" << 'ENDSSH'
     else
         echo "✗ Service failed to restart"
         echo "Rolling back..."
-        mv /opt/albunyaan/backend-0.0.1-SNAPSHOT.jar.bak \
-           /opt/albunyaan/backend-0.0.1-SNAPSHOT.jar
+        mv /opt/albunyaan/backend.jar.bak \
+           /opt/albunyaan/backend.jar
         sudo systemctl restart albunyaan-backend
         exit 1
     fi

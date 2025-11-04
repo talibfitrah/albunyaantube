@@ -19,9 +19,9 @@ class CursorPagingSource(
             val cursor = params.key
             val response = service.fetchContent(type, cursor, pageSize, filters)
             LoadResult.Page(
-                data = response.items,
+                data = response.data,
                 prevKey = null,
-                nextKey = response.nextCursor
+                nextKey = response.pageInfo?.nextCursor
             )
         } catch (t: Throwable) {
             LoadResult.Error(t)

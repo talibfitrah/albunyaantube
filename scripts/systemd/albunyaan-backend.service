@@ -16,7 +16,7 @@ EnvironmentFile=/opt/albunyaan/.env
 Environment="JAVA_OPTS=-Xmx1024m -Xms512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200"
 
 # Main process
-ExecStart=/usr/bin/java ${JAVA_OPTS} -jar /opt/albunyaan/backend-0.0.1-SNAPSHOT.jar --server.port=8080
+ExecStart=/usr/bin/java ${JAVA_OPTS} -jar /opt/albunyaan/backend.jar --server.port=8080
 
 # Logging
 StandardOutput=append:/opt/albunyaan/logs/app.log

@@ -77,7 +77,7 @@ class FakeContentService : ContentService {
         val pageItems = if (fromIndex >= filtered.size) emptyList() else filtered.subList(fromIndex, toIndex)
         val nextCursor = if (toIndex < filtered.size) (pageIndex + 1).toString() else null
 
-        return CursorResponse(pageItems, nextCursor)
+        return CursorResponse(pageItems, CursorResponse.PageInfo(nextCursor))
     }
 
     private fun FilterState.matchesVideo(video: ContentItem.Video): Boolean {
