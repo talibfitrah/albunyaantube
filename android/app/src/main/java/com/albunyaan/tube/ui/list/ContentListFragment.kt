@@ -13,6 +13,7 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.navigation.fragment.findNavController
 import androidx.paging.LoadState
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -433,7 +434,36 @@ abstract class ContentListFragment : Fragment(R.layout.fragment_home) {
         }
     }
 
-    protected open fun onContentClicked(item: ContentItem) = Unit
+    protected open fun onContentClicked(item: ContentItem) {
+        when (item) {
+            is ContentItem.Video -> {
+                findNavController().navigate(
+                    R.id.action_global_playerFragment,
+                    android.os.Bundle().apply {
+                        putString("videoId", item.id)
+                    }
+                )
+            }
+            is ContentItem.Channel -> {
+                findNavController().navigate(
+                    R.id.action_global_channelDetailFragment,
+                    android.os.Bundle().apply {
+                        putString(com.albunyaan.tube.ui.detail.ChannelDetailFragment.ARG_CHANNEL_ID, item.id)
+                        putString(com.albunyaan.tube.ui.detail.ChannelDetailFragment.ARG_CHANNEL_NAME, item.name)
+                    }
+                )
+            }
+            is ContentItem.Playlist -> {
+                findNavController().navigate(
+                    R.id.action_global_playlistDetailFragment,
+                    android.os.Bundle().apply {
+                        putString(com.albunyaan.tube.ui.detail.PlaylistDetailFragment.ARG_PLAYLIST_ID, item.id)
+                        putString(com.albunyaan.tube.ui.detail.PlaylistDetailFragment.ARG_PLAYLIST_TITLE, item.title)
+                    }
+                )
+            }
+        }
+    }
 
     private sealed interface UiState {
         object Loading : UiState
