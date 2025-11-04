@@ -111,6 +111,18 @@ class DownloadStorage(
         )
     }
 
+    fun listAllDownloads(): Map<String, java.io.File> {
+        if (!rootDir.exists()) return emptyMap()
+        return rootDir.listFiles()
+            ?.filterNot { it.isDirectory || it.name.endsWith(TEMP_SUFFIX) }
+            ?.associate { file ->
+                // Extract downloadId from filename (e.g., "videoId_timestamp.mp4" -> "videoId_timestamp")
+                val downloadId = file.nameWithoutExtension
+                downloadId to file
+            }
+            ?: emptyMap()
+    }
+
     private fun prune(requiredBytes: Long) {
         val files = rootDir.listFiles()
             ?.filterNot { it.isDirectory || it.name.endsWith(TEMP_SUFFIX) }

@@ -66,10 +66,18 @@ class DownloadsAdapter(
             }
             binding.downloadPauseResume.setText(pauseResumeText)
 
+            // For completed downloads, show as "Delete" button
+            // For active downloads, show as "Cancel" button
             binding.downloadCancel.isVisible = when (entry.status) {
-                DownloadStatus.COMPLETED, DownloadStatus.FAILED, DownloadStatus.CANCELLED -> false
-                else -> true
+                DownloadStatus.CANCELLED -> false  // Hide for cancelled items
+                else -> true  // Show for all other statuses including COMPLETED
             }
+
+            val cancelButtonText = when (entry.status) {
+                DownloadStatus.COMPLETED -> "Delete"  // TODO: Add string resource
+                else -> binding.root.context.getString(R.string.download_action_cancel)
+            }
+            binding.downloadCancel.text = cancelButtonText
 
             binding.downloadOpen.isVisible = entry.status == DownloadStatus.COMPLETED && entry.filePath != null
 

@@ -26,7 +26,8 @@ class DownloadScheduler(
             .setId(workId)
             .setConstraints(NETWORK_CONSTRAINTS)
             .setInputData(input)
-            .addTag(request.id)
+            .addTag("com.albunyaan.tube.download")
+            .addTag("download_${request.id}")
             .build()
 
         workManager.beginUniqueWork(request.id, ExistingWorkPolicy.REPLACE, workRequest).enqueue()

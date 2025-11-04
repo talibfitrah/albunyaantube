@@ -43,6 +43,64 @@ class DefaultDownloadRepository(
 
     override val downloads: StateFlow<List<DownloadEntry>> = entries.asStateFlow()
 
+    init {
+        // Restore downloads from WorkManager on initialization
+        restoreDownloadsFromWorkManager()
+    }
+
+    private fun restoreDownloadsFromWorkManager() {
+        scope.launch {
+            // Scan filesystem for completed downloads
+            val downloadFiles = storage.listAllDownloads()
+            android.util.Log.d("DownloadRepository", "Found ${downloadFiles.size} download files on disk")
+
+            for ((downloadId, file) in downloadFiles) {
+                // Parse downloadId: "videoId_timestamp" format
+                val videoId = downloadId.substringBefore('_')
+                val audioOnly = file.name.endsWith(".m4a")
+
+                // Try to fetch actual title from metadata extractor
+                val title = try {
+                    val extractedTitle = fetchVideoTitle(videoId)
+                    extractedTitle ?: videoId
+                } catch (e: Exception) {
+                    android.util.Log.w("DownloadRepository", "Failed to fetch title for $videoId", e)
+                    videoId  // Fallback to videoId
+                }
+
+                val request = DownloadRequest(
+                    id = downloadId,
+                    title = title,
+                    videoId = videoId,
+                    audioOnly = audioOnly
+                )
+
+                val metadata = DownloadFileMetadata(
+                    sizeBytes = file.length(),
+                    completedAtMillis = file.lastModified(),
+                    mimeType = if (audioOnly) "audio/mp4" else "video/mp4"
+                )
+
+                updateEntry(request) {
+                    it.copy(
+                        status = DownloadStatus.COMPLETED,
+                        progress = 100,
+                        filePath = file.absolutePath,
+                        metadata = metadata
+                    )
+                }
+            }
+
+            android.util.Log.d("DownloadRepository", "Restored ${entries.value.size} completed downloads")
+        }
+    }
+
+    private suspend fun fetchVideoTitle(videoId: String): String? {
+        // For now, just use the videoId as title
+        // TODO: Fetch actual title from extractor or backend
+        return videoId
+    }
+
     override fun enqueue(request: DownloadRequest) {
         val workId = scheduler.schedule(request)
         workIds[request.id] = workId

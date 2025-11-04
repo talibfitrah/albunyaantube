@@ -598,29 +598,57 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     }
 
     private fun openDownloadedFile(entry: DownloadEntry) {
+        android.util.Log.d("PlayerFragment", "openDownloadedFile called with entry: ${entry.request.videoId}")
         val filePath = entry.filePath ?: run {
-            Toast.makeText(requireContext(), R.string.download_toast_no_viewer, Toast.LENGTH_SHORT).show()
+            android.util.Log.e("PlayerFragment", "No filePath in entry")
+            Toast.makeText(requireContext(), "No file path available", Toast.LENGTH_SHORT).show()
             return
         }
+        android.util.Log.d("PlayerFragment", "File path: $filePath")
         val file = File(filePath)
         if (!file.exists()) {
-            Toast.makeText(requireContext(), R.string.download_toast_no_viewer, Toast.LENGTH_SHORT).show()
+            android.util.Log.e("PlayerFragment", "File does not exist: $filePath")
+            Toast.makeText(requireContext(), "File not found: ${file.name}", Toast.LENGTH_SHORT).show()
             return
         }
+        android.util.Log.d("PlayerFragment", "File exists, size: ${file.length()} bytes")
         val uri: Uri = FileProvider.getUriForFile(
             requireContext(),
             "${BuildConfig.APPLICATION_ID}.downloads.provider",
             file
         )
+        val mimeType = if (entry.request.audioOnly) "audio/*" else "video/*"
         val intent = Intent(Intent.ACTION_VIEW).apply {
-            data = uri
+            setDataAndType(uri, mimeType)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            type = if (entry.request.audioOnly) "audio/*" else "video/*"
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        if (intent.resolveActivity(requireContext().packageManager) != null) {
-            startActivity(intent)
+
+        // Grant temporary read permission to all apps that can handle this intent
+        val resolvedActivities = requireContext().packageManager.queryIntentActivities(intent, 0)
+        android.util.Log.d("PlayerFragment", "Found ${resolvedActivities.size} apps that can handle video")
+        for (resolvedInfo in resolvedActivities) {
+            val packageName = resolvedInfo.activityInfo.packageName
+            android.util.Log.d("PlayerFragment", "Granting permission to: $packageName")
+            requireContext().grantUriPermission(
+                packageName,
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        }
+
+        if (resolvedActivities.isNotEmpty()) {
+            android.util.Log.d("PlayerFragment", "Starting activity with intent")
+            try {
+                startActivity(intent)
+                android.util.Log.d("PlayerFragment", "Activity started successfully")
+            } catch (e: Exception) {
+                android.util.Log.e("PlayerFragment", "Failed to start activity", e)
+                Toast.makeText(requireContext(), "Error: ${e.message}", Toast.LENGTH_LONG).show()
+            }
         } else {
-            Toast.makeText(requireContext(), R.string.download_toast_no_viewer, Toast.LENGTH_SHORT).show()
+            android.util.Log.e("PlayerFragment", "No apps found to handle video")
+            Toast.makeText(requireContext(), "No video player found", Toast.LENGTH_SHORT).show()
         }
     }
 
