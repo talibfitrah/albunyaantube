@@ -577,10 +577,75 @@ sudo systemctl stop albunyaan-backend
 
 cd /opt/albunyaan
 source .env
-java -jar backend-0.0.1-SNAPSHOT.jar --spring.profiles.active=real-seed
+java -jar backend.jar --spring.profiles.active=real-seed
 
 # Wait for completion, then restart service
 sudo systemctl start albunyaan-backend
+```
+
+### API Returns Empty Results Despite Data in Firestore
+
+**Symptoms:**
+- Seeder shows items already exist and skips them
+- `curl http://localhost:8080/api/v1/content?type=CHANNELS` returns `{"data":[]}`
+- Firestore console shows data exists
+
+**Root Cause:**
+Seeded data is missing required fields for Firestore queries (e.g., `subscribers` field for `orderBy("subscribers")` queries).
+
+**Solution:**
+Run the approval status fixer to add missing fields:
+
+```bash
+cd /opt/albunyaan
+source .env
+sudo systemctl stop albunyaan-backend
+
+# Run the fixer
+java -jar backend.jar \
+    --spring.profiles.active=fix-approval \
+    --server.port=8080 \
+    --spring.config.location=file:/opt/albunyaan/application-prod.yml
+
+# Wait for "Approval Status Fix Complete" message
+# Then restart
+sudo systemctl start albunyaan-backend
+```
+
+Verify the fix:
+```bash
+curl http://localhost:8080/api/v1/content?type=CHANNELS&limit=10 | jq '.data | length'
+# Should return > 0
+```
+
+### Android App Shows Empty Screens
+
+**Symptoms:**
+- Backend API works: `curl http://YOUR_IP:8080/api/v1/categories` returns data
+- Android app shows empty home/channels/videos tabs
+
+**Common Causes:**
+
+1. **Network Security Config** (most common):
+   - Android blocks HTTP to unlisted IPs
+   - Fix: Add VPS IP to `network_security_config.xml` (see [Android App Configuration](#android-app-configuration))
+
+2. **Wrong API Base URL**:
+   - Check `android/app/build.gradle.kts` has correct IP
+   - Should be: `buildConfigField("String", "API_BASE_URL", "\"http://YOUR_IP:8080/\"")`
+
+3. **API Response Structure Mismatch**:
+   - Android expects `{"data": [...], "pageInfo": {...}}`
+   - Verify backend returns correct structure: `curl http://YOUR_IP:8080/api/v1/content?type=CHANNELS&limit=1`
+
+**Debug Steps:**
+```bash
+# Check Android logs
+adb logcat | grep -i "albunyaan\|retrofit\|network"
+
+# Test backend from Android device's network
+# (if on same WiFi as dev machine)
+curl http://YOUR_VPS_IP:8080/actuator/health
 ```
 
 ### High Memory Usage
@@ -746,5 +811,78 @@ If you encounter issues:
 
 ---
 
+---
+
+## Android App Configuration
+
+After deploying the backend to VPS, you must update the Android app to connect to the live server.
+
+### Step 1: Update API Base URL
+
+Edit `android/app/build.gradle.kts`:
+
+```kotlin
+buildConfigField("String", "API_BASE_URL", "\"http://YOUR_SERVER_IP:8080/\"")
+```
+
+Example:
+```kotlin
+buildConfigField("String", "API_BASE_URL", "\"http://72.60.179.47:8080/\"")
+```
+
+### Step 2: Allow HTTP Traffic to VPS
+
+**CRITICAL:** Android blocks HTTP traffic by default. You must whitelist your VPS IP.
+
+Edit `android/app/src/main/res/xml/network_security_config.xml`:
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <!-- Allow localhost for emulator -->
+        <domain includeSubdomains="true">10.0.2.2</domain>
+        <domain includeSubdomains="true">localhost</domain>
+
+        <!-- Allow VPS server -->
+        <domain includeSubdomains="true">YOUR_SERVER_IP</domain>
+    </domain-config>
+
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>
+```
+
+Example:
+```xml
+<domain includeSubdomains="true">72.60.179.47</domain>
+```
+
+### Step 3: Rebuild and Install APK
+
+```bash
+cd android
+./gradlew assembleDebug
+
+# Install on connected device
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+### Step 4: Verify Connection
+
+Open the app and check:
+- Home tab shows channels and videos
+- Channels tab shows all channels
+- Videos tab shows all videos
+- Search works
+
+If you see empty screens, check:
+1. VPS backend is running: `curl http://YOUR_IP:8080/actuator/health`
+2. Data is seeded: `curl http://YOUR_IP:8080/api/v1/categories | jq length`
+3. Network security config includes your VPS IP
+4. Android logcat for errors: `adb logcat | grep -i "albunyaan\|retrofit"`
+
+---
+
 **Last Updated:** 2025-11-04
 **Tested On:** Ubuntu 22.04 LTS, Debian 11
+**Verified:** Android app successfully connected to VPS at 72.60.179.47
