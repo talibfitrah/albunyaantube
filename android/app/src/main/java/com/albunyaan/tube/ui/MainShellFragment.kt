@@ -76,4 +76,11 @@ class MainShellFragment : Fragment(R.layout.fragment_main_shell) {
         binding = null
         super.onDestroyView()
     }
+
+    /**
+     * Show or hide the bottom navigation bar (called from MainActivity for fullscreen mode).
+     */
+    fun setBottomNavVisibility(visible: Boolean) {
+        binding?.mainBottomNav?.visibility = if (visible) View.VISIBLE else View.GONE
+    }
 }

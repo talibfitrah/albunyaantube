@@ -58,10 +58,14 @@ class PlaybackService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun buildNotification(contentText: String): Notification {
+        // Create intent that navigates to player
         val contentIntent = PendingIntent.getActivity(
             this,
             0,
-            Intent(this, MainActivity::class.java),
+            Intent(this, MainActivity::class.java).apply {
+                action = ACTION_OPEN_PLAYER
+                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            },
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val playPauseIntent = MediaButtonReceiver.buildMediaButtonPendingIntent(
@@ -126,6 +130,7 @@ class PlaybackService : Service() {
         private const val TAG = "PlaybackService"
         private const val CHANNEL_ID = "playback"
         private const val NOTIFICATION_ID = 42
+        const val ACTION_OPEN_PLAYER = "com.albunyaan.tube.OPEN_PLAYER"
 
         fun start(context: Context) {
             val intent = Intent(context, PlaybackService::class.java)

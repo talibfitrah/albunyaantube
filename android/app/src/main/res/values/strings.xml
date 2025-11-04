@@ -155,6 +155,10 @@
     <string name="player_action_like">Like video</string>
     <string name="player_action_share">Share video</string>
     <string name="player_action_download">Download video</string>
+    <string name="player_action_minimize">Minimize player</string>
+    <string name="player_action_fullscreen">Toggle fullscreen</string>
+    <string name="player_action_settings">Player settings</string>
+    <string name="player_action_cast">Cast to TV</string>
     <string name="home_select_category">Select content category</string>
     <string name="home_see_all_channels">See all channels</string>
     <string name="home_see_all_playlists">See all playlists</string>

@@ -55,6 +55,8 @@ class NewPipeExtractorClient(
         try {
             val handler = streamLinkHandlerFactory.fromId(videoId)
             val extractor = youtubeService.getStreamExtractor(handler)
+            // CRITICAL: Must call fetchPage() before getInfo() to get ALL video formats!
+            extractor.fetchPage()
             val info = StreamInfo.getInfo(extractor)
             val resolved = info.toResolvedStreams(videoId) ?: return@withContext null
             streamCache[videoId] = CacheEntry(resolved, clock())
@@ -274,19 +276,38 @@ class NewPipeExtractorClient(
     }
 
     private fun StreamInfo.toResolvedStreams(streamId: String): ResolvedStreams? {
-        val videoTracks = videoStreams
-            .filter { !it.isVideoOnly && it.content.isNotBlank() }
+        // Extract ALL video streams (muxed + video-only) for all quality options
+        android.util.Log.d("NewPipeExtractor", "Video streams (muxed): ${videoStreams.size}")
+        android.util.Log.d("NewPipeExtractor", "Video-only streams: ${videoOnlyStreams.size}")
+
+        // Combine both muxed AND video-only streams to get ALL qualities
+        val allVideoStreams = (videoStreams + videoOnlyStreams).distinctBy { it.content }
+        android.util.Log.d("NewPipeExtractor", "Total combined video streams: ${allVideoStreams.size}")
+
+        val videoTracks = allVideoStreams
+            .filter { it.content.isNotBlank() }
             .map { stream ->
+                // Create proper quality label based on height (e.g., "720p", "1080p")
+                val properLabel = when {
+                    stream.height > 0 -> "${stream.height}p${if (stream.fps > 30) stream.fps else ""}"
+                    stream.width > 0 -> "${stream.width}x${stream.height}"
+                    else -> stream.quality // Fallback to NewPipe's label
+                }
+                android.util.Log.d("NewPipeExtractor", "Video stream: $properLabel (${stream.width}x${stream.height}), videoOnly=${stream.isVideoOnly}")
                 VideoTrack(
                     url = stream.content,
                     mimeType = stream.format?.mimeType,
                     width = stream.width.takeIf { it > 0 },
                     height = stream.height.takeIf { it > 0 },
                     bitrate = stream.bitrate.takeIf { it > 0 },
-                    qualityLabel = stream.quality,
+                    qualityLabel = properLabel,
                     fps = stream.fps.takeIf { it > 0 }
                 )
             }
+            .distinctBy { it.height to it.fps } // Remove duplicates with same resolution
+            .sortedByDescending { it.height ?: 0 } // Sort by quality, highest first
+
+        android.util.Log.d("NewPipeExtractor", "Extracted ${videoTracks.size} unique video qualities: ${videoTracks.map { it.qualityLabel }}")
 
         val audioTracksRaw = audioStreams
             .filter { it.content.isNotBlank() }

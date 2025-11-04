@@ -1,5 +1,6 @@
 package com.albunyaan.tube.ui
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
@@ -8,6 +9,7 @@ import androidx.navigation.fragment.NavHostFragment
 import com.albunyaan.tube.R
 import com.albunyaan.tube.databinding.ActivityMainBinding
 import com.albunyaan.tube.locale.LocaleManager
+import com.albunyaan.tube.player.PlaybackService
 
 class MainActivity : AppCompatActivity() {
 
@@ -26,6 +28,14 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         navController // trigger lazy init if toolbar needed later
+
+        // Delay handling intent until after navigation is ready
+        if (intent?.action == PlaybackService.ACTION_OPEN_PLAYER) {
+            // Wait for the nav graph to be ready, then navigate
+            binding.root.post {
+                handleIntent(intent)
+            }
+        }
 
         // Handle back press for nested navigation
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -54,7 +64,54 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        if (intent?.action == PlaybackService.ACTION_OPEN_PLAYER) {
+            // Only navigate if we're not on splash screen
+            try {
+                val currentDest = navController.currentDestination?.id
+                if (currentDest == R.id.mainShellFragment || currentDest == R.id.playerFragment) {
+                    // We're already in the app, safe to navigate to player
+                    navController.navigate(R.id.playerFragment)
+                } else {
+                    // We're on splash, wait for it to finish then navigate
+                    // The splash screen will auto-navigate to mainShell, then we navigate to player
+                    navController.addOnDestinationChangedListener { _, destination, _ ->
+                        if (destination.id == R.id.mainShellFragment) {
+                            // Now we can safely navigate to player
+                            binding.root.postDelayed({
+                                try {
+                                    navController.navigate(R.id.playerFragment)
+                                } catch (e: Exception) {
+                                    // Ignore navigation errors
+                                }
+                            }, 100)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // If navigation fails, just ignore - user can manually open player
+                android.util.Log.e("MainActivity", "Failed to navigate to player", e)
+            }
+        }
+    }
+
     override fun onSupportNavigateUp(): Boolean {
         return navController.navigateUp() || super.onSupportNavigateUp()
+    }
+
+    /**
+     * Hide or show the bottom navigation bar (for fullscreen video playback).
+     * This finds the MainShellFragment and hides its bottom nav.
+     */
+    fun setBottomNavVisibility(visible: Boolean) {
+        val mainShellFragment = supportFragmentManager.findFragmentById(R.id.nav_host_fragment)
+            ?.childFragmentManager?.primaryNavigationFragment as? MainShellFragment
+
+        mainShellFragment?.setBottomNavVisibility(visible)
     }
 }

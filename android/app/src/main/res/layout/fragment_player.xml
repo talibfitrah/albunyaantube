@@ -12,12 +12,89 @@
         android:background="@android:color/black"
         app:elevation="0dp">
 
-        <com.google.android.exoplayer2.ui.StyledPlayerView
-            android:id="@+id/playerView"
+        <FrameLayout
             android:layout_width="match_parent"
-            android:layout_height="240dp"
-            android:keepScreenOn="true"
-            android:contentDescription="@string/player_video_player" />
+            android:layout_height="wrap_content">
+
+            <com.google.android.exoplayer2.ui.StyledPlayerView
+                android:id="@+id/playerView"
+                android:layout_width="match_parent"
+                android:layout_height="240dp"
+                android:keepScreenOn="true"
+                android:contentDescription="@string/player_video_player"
+                app:show_buffering="when_playing"
+                app:use_controller="true"
+                app:show_subtitle_button="true"
+                app:show_vr_button="false"
+                app:show_shuffle_button="false" />
+
+            <!-- Auto-hiding overlay controls -->
+            <LinearLayout
+                android:id="@+id/playerOverlayControls"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="vertical"
+                android:visibility="visible">
+
+                <!-- Top bar with minimize, quality, cast -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:padding="8dp">
+
+                    <!-- Minimize Button - Top Left -->
+                    <ImageButton
+                        android:id="@+id/minimizeButton"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:src="@drawable/ic_expand_more"
+                        android:contentDescription="@string/player_action_minimize"
+                        app:tint="@android:color/white" />
+
+                    <View
+                        android:layout_width="0dp"
+                        android:layout_height="1dp"
+                        android:layout_weight="1" />
+
+                    <!-- Quality Button -->
+                    <ImageButton
+                        android:id="@+id/qualityButton"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:src="@android:drawable/ic_menu_view"
+                        android:contentDescription="@string/player_quality_selector"
+                        android:tint="@android:color/white" />
+
+                    <!-- Chromecast Button -->
+                    <androidx.mediarouter.app.MediaRouteButton
+                        android:id="@+id/castButton"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:contentDescription="@string/player_action_cast"
+                        app:mediaRouteButtonTint="@android:color/white" />
+
+                </LinearLayout>
+
+            </LinearLayout>
+
+            <!-- Fullscreen Button - Bottom Right (above ExoPlayer controls) -->
+            <ImageButton
+                android:id="@+id/fullscreenButton"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_gravity="bottom|end"
+                android:layout_marginEnd="8dp"
+                android:layout_marginBottom="56dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_fullscreen"
+                android:contentDescription="@string/player_action_fullscreen"
+                app:tint="@android:color/white" />
+
+        </FrameLayout>
 
     </com.google.android.material.appbar.AppBarLayout>
 

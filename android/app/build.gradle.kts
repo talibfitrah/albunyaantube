@@ -121,6 +121,10 @@ dependencies {
     implementation("androidx.profileinstaller:profileinstaller:1.3.1")
     implementation("io.coil-kt:coil:2.6.0")
 
+    // Google Cast SDK
+    implementation("com.google.android.gms:play-services-cast-framework:21.4.0")
+    implementation("androidx.mediarouter:mediarouter:1.6.0")
+
     // Core library desugaring for Java 10+ APIs
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 
