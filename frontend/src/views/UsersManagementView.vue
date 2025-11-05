@@ -103,6 +103,14 @@
                 {{ t('users.actions.edit') }}
               </button>
               <button
+                type="button"
+                class="action"
+                :disabled="isLoading || resettingPasswordUserId === user.id"
+                @click="handleResetPassword(user)"
+              >
+                {{ resettingPasswordUserId === user.id ? t('users.actions.resettingPassword') : t('users.actions.resetPassword') }}
+              </button>
+              <button
                 v-if="user.status === 'ACTIVE'"
                 type="button"
                 class="action danger"
@@ -322,6 +330,7 @@ import {
   createUser,
   deleteUser,
   fetchUsersPage,
+  sendPasswordReset,
   updateUserRole,
   updateUserStatus
 } from '@/services/adminUsers';
@@ -340,6 +349,7 @@ const statusFilter = ref<'all' | AdminUserStatus>('all');
 const actionMessage = ref<string | null>(null);
 const actionError = ref<string | null>(null);
 const busyUserId = ref<string | null>(null);
+const resettingPasswordUserId = ref<string | null>(null);
 
 const pagination = useCursorPagination<AdminUser>(async (cursor, limit) => {
   return fetchUsersPage({
@@ -655,6 +665,22 @@ async function handleDelete() {
   }
 }
 
+async function handleResetPassword(user: AdminUser) {
+  if (resettingPasswordUserId.value === user.id) {
+    return;
+  }
+  resettingPasswordUserId.value = user.id;
+  actionError.value = null;
+  try {
+    await sendPasswordReset(user.id);
+    actionMessage.value = t('users.toasts.passwordReset', { email: user.email });
+  } catch (err) {
+    actionError.value = err instanceof Error ? err.message : t('users.errors.resetPassword');
+  } finally {
+    resettingPasswordUserId.value = null;
+  }
+}
+
 const paginationSummary = computed(() => {
   if (!pageInfo.value) {
     return '';
@@ -797,7 +823,7 @@ td {
 }
 
 .actions-column {
-  width: 280px;
+  width: 360px;
 }
 
 .user-email {

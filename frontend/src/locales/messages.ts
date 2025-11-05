@@ -566,7 +566,9 @@ export const messages = {
         activate: 'Activate',
         activating: 'Activating…',
         delete: 'Delete',
-        deleting: 'Deleting…'
+        deleting: 'Deleting…',
+        resetPassword: 'Reset password',
+        resettingPassword: 'Sending…'
       },
       columns: {
         email: 'Email',
@@ -633,12 +635,14 @@ export const messages = {
         updated: '{email} updated.',
         deactivated: '{email} deactivated.',
         activated: '{email} activated.',
-        deleted: '{email} deleted.'
+        deleted: '{email} deleted.',
+        passwordReset: 'Password reset email sent to {email}.'
       },
       errors: {
         deactivate: 'Unable to deactivate user. Try again.',
         activate: 'Unable to activate user. Try again.',
-        delete: 'Unable to delete user. Try again.'
+        delete: 'Unable to delete user. Try again.',
+        resetPassword: 'Unable to send password reset. Try again.'
       },
       confirm: {
         deactivate: 'Deactivate {email}?'
@@ -1488,7 +1492,9 @@ export const messages = {
         activate: 'تنشيط',
         activating: 'جارٍ التنشيط…',
         delete: 'حذف',
-        deleting: 'جارٍ الحذف…'
+        deleting: 'جارٍ الحذف…',
+        resetPassword: 'إعادة تعيين كلمة المرور',
+        resettingPassword: 'جارٍ الإرسال…'
       },
       columns: {
         email: 'البريد الإلكتروني',
@@ -1555,12 +1561,14 @@ export const messages = {
         updated: 'تم تحديث {email}.',
         deactivated: 'تم تعطيل {email}.',
         activated: 'تم تنشيط {email}.',
-        deleted: 'تم حذف {email}.'
+        deleted: 'تم حذف {email}.',
+        passwordReset: 'تم إرسال بريد إعادة تعيين كلمة المرور إلى {email}.'
       },
       errors: {
         deactivate: 'تعذّر تعطيل المستخدم. حاول مجددًا.',
         activate: 'تعذّر تنشيط المستخدم. حاول مجددًا.',
-        delete: 'تعذّر حذف المستخدم. حاول مجددًا.'
+        delete: 'تعذّر حذف المستخدم. حاول مجددًا.',
+        resetPassword: 'تعذّر إرسال إعادة تعيين كلمة المرور. حاول مجددًا.'
       },
       confirm: {
         deactivate: 'هل ترغب في تعطيل {email}؟'
@@ -2169,7 +2177,9 @@ export const messages = {
         activate: 'Activeren',
         activating: 'Bezig met activeren…',
         delete: 'Verwijderen',
-        deleting: 'Bezig met verwijderen…'
+        deleting: 'Bezig met verwijderen…',
+        resetPassword: 'Wachtwoord resetten',
+        resettingPassword: 'Bezig met verzenden…'
       },
       columns: {
         email: 'E-mail',
@@ -2236,12 +2246,14 @@ export const messages = {
         updated: '{email} bijgewerkt.',
         deactivated: '{email} gedeactiveerd.',
         activated: '{email} geactiveerd.',
-        deleted: '{email} verwijderd.'
+        deleted: '{email} verwijderd.',
+        passwordReset: 'Wachtwoordreset e-mail verzonden naar {email}.'
       },
       errors: {
         deactivate: 'Deactiveren is mislukt. Probeer het opnieuw.',
         activate: 'Activeren is mislukt. Probeer het opnieuw.',
-        delete: 'Verwijderen is mislukt. Probeer het opnieuw.'
+        delete: 'Verwijderen is mislukt. Probeer het opnieuw.',
+        resetPassword: 'Wachtwoordreset verzenden is mislukt. Probeer het opnieuw.'
       },
       confirm: {
         deactivate: '{email} deactiveren?'
