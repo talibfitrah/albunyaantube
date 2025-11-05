@@ -2,13 +2,14 @@ package com.albunyaan.tube.service;
 
 import com.albunyaan.tube.model.Category;
 import com.albunyaan.tube.repository.CategoryRepository;
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
@@ -18,6 +19,9 @@ import java.util.stream.Collectors;
  * - Multi-language matching (en, ar, nl)
  * - Subcategory matching via hierarchy
  * - Comma-separated category lists
+ *
+ * Performance optimization: Categories are preloaded into an in-memory map at startup
+ * to avoid repeated findAll() calls on cache misses.
  */
 @Service
 public class CategoryMappingService {
@@ -26,18 +30,64 @@ public class CategoryMappingService {
 
     private final CategoryRepository categoryRepository;
 
+    /**
+     * In-memory cache of all categories, keyed by category ID.
+     * Preloaded at startup to avoid repeated database queries.
+     */
+    private final Map<String, Category> categoriesById = new ConcurrentHashMap<>();
+
     public CategoryMappingService(CategoryRepository categoryRepository) {
         this.categoryRepository = categoryRepository;
     }
 
     /**
+     * Preload all categories into memory at startup.
+     * Called automatically by Spring after bean construction.
+     */
+    @PostConstruct
+    public void preloadCategories() {
+        try {
+            List<Category> allCategories = categoryRepository.findAll();
+            categoriesById.clear();
+            for (Category category : allCategories) {
+                categoriesById.put(category.getId(), category);
+            }
+            logger.info("Preloaded {} categories into memory", categoriesById.size());
+        } catch (Exception e) {
+            logger.error("Failed to preload categories: {}", e.getMessage(), e);
+            // Don't throw exception - allow service to start, will retry on first access
+        }
+    }
+
+    /**
+     * Refresh the in-memory category cache.
+     * Call this after category modifications (create/update/delete).
+     */
+    public void refreshCategoryCache() {
+        preloadCategories();
+    }
+
+    /**
+     * Get all categories from in-memory cache.
+     * If cache is empty, attempts to reload from database.
+     */
+    private Collection<Category> getAllCategories() {
+        if (categoriesById.isEmpty()) {
+            logger.warn("Category cache is empty, reloading from database");
+            preloadCategories();
+        }
+        return categoriesById.values();
+    }
+
+    /**
      * Map a single category name to its ID.
      * Performs case-insensitive search across name and localizedNames (en, ar, nl).
+     * Results are cached (including negative results) to prevent repeated lookups.
      *
      * @param categoryName Category name to search for
      * @return Category ID if found, null if not found
      */
-    @Cacheable(value = "categoryNameMapping", key = "#categoryName", unless = "#result == null")
+    @Cacheable(value = "categoryNameMapping", key = "#categoryName")
     public String mapCategoryNameToId(String categoryName) {
         if (categoryName == null || categoryName.trim().isEmpty()) {
             return null;
@@ -45,26 +95,21 @@ public class CategoryMappingService {
 
         String normalizedName = categoryName.trim();
 
-        try {
-            List<Category> allCategories = categoryRepository.findAll();
+        // Use in-memory cache instead of repository.findAll()
+        Collection<Category> allCategories = getAllCategories();
 
-            // Try exact match first (case-insensitive)
-            Optional<Category> exactMatch = allCategories.stream()
-                .filter(cat -> matchesCategoryName(cat, normalizedName))
-                .findFirst();
+        // Try exact match first (case-insensitive)
+        Optional<Category> exactMatch = allCategories.stream()
+            .filter(cat -> matchesCategoryName(cat, normalizedName))
+            .findFirst();
 
-            if (exactMatch.isPresent()) {
-                logger.debug("Found category ID '{}' for name '{}'", exactMatch.get().getId(), categoryName);
-                return exactMatch.get().getId();
-            }
-
-            logger.warn("No category found for name '{}'", categoryName);
-            return null;
-
-        } catch (ExecutionException | InterruptedException e) {
-            logger.error("Failed to fetch categories for name mapping: {}", e.getMessage());
-            return null;
+        if (exactMatch.isPresent()) {
+            logger.debug("Found category ID '{}' for name '{}'", exactMatch.get().getId(), categoryName);
+            return exactMatch.get().getId();
         }
+
+        logger.warn("No category found for name '{}'", categoryName);
+        return null;
     }
 
     /**
@@ -112,29 +157,25 @@ public class CategoryMappingService {
             return "";
         }
 
-        try {
-            // Fetch all categories
-            List<Category> categories = new ArrayList<>();
-            for (String categoryId : categoryIds) {
-                Optional<Category> category = categoryRepository.findById(categoryId);
-                category.ifPresent(categories::add);
+        // Fetch all categories from in-memory cache
+        List<Category> categories = new ArrayList<>();
+        for (String categoryId : categoryIds) {
+            Category category = categoriesById.get(categoryId);
+            if (category != null) {
+                categories.add(category);
             }
+        }
 
-            if (categories.isEmpty()) {
-                return "";
-            }
-
-            // Find most specific category (deepest in hierarchy)
-            Category primaryCategory = categories.stream()
-                .max(Comparator.comparingInt(cat -> getCategoryDepth(cat)))
-                .orElse(categories.get(0));
-
-            return primaryCategory.getName();
-
-        } catch (ExecutionException | InterruptedException e) {
-            logger.error("Failed to fetch categories for primary name: {}", e.getMessage());
+        if (categories.isEmpty()) {
             return "";
         }
+
+        // Find most specific category (deepest in hierarchy)
+        Category primaryCategory = categories.stream()
+            .max(Comparator.comparingInt(cat -> getCategoryDepth(cat)))
+            .orElse(categories.get(0));
+
+        return primaryCategory.getName();
     }
 
     /**
@@ -148,22 +189,16 @@ public class CategoryMappingService {
             return "";
         }
 
-        try {
-            List<String> categoryNames = new ArrayList<>();
+        List<String> categoryNames = new ArrayList<>();
 
-            for (String categoryId : categoryIds) {
-                Optional<Category> category = categoryRepository.findById(categoryId);
-                if (category.isPresent()) {
-                    categoryNames.add(category.get().getName());
-                }
+        for (String categoryId : categoryIds) {
+            Category category = categoriesById.get(categoryId);
+            if (category != null) {
+                categoryNames.add(category.getName());
             }
-
-            return String.join(",", categoryNames);
-
-        } catch (ExecutionException | InterruptedException e) {
-            logger.error("Failed to fetch category names: {}", e.getMessage());
-            return "";
         }
+
+        return String.join(",", categoryNames);
     }
 
     /**
@@ -173,18 +208,14 @@ public class CategoryMappingService {
         int depth = 0;
         String parentId = category.getParentCategoryId();
 
-        try {
-            while (parentId != null && depth < 10) { // Max depth 10 to prevent infinite loops
-                Optional<Category> parent = categoryRepository.findById(parentId);
-                if (parent.isPresent()) {
-                    parentId = parent.get().getParentCategoryId();
-                    depth++;
-                } else {
-                    break;
-                }
+        while (parentId != null && depth < 10) { // Max depth 10 to prevent infinite loops
+            Category parent = categoriesById.get(parentId);
+            if (parent != null) {
+                parentId = parent.getParentCategoryId();
+                depth++;
+            } else {
+                break;
             }
-        } catch (ExecutionException | InterruptedException e) {
-            logger.warn("Failed to calculate category depth: {}", e.getMessage());
         }
 
         return depth;
@@ -239,13 +270,8 @@ public class CategoryMappingService {
         }
 
         for (String categoryId : categoryIds) {
-            try {
-                boolean exists = categoryRepository.existsById(categoryId);
-                validationResults.put(categoryId, exists);
-            } catch (ExecutionException | InterruptedException e) {
-                logger.warn("Failed to validate category ID '{}': {}", categoryId, e.getMessage());
-                validationResults.put(categoryId, false);
-            }
+            boolean exists = categoriesById.containsKey(categoryId);
+            validationResults.put(categoryId, exists);
         }
 
         return validationResults;

@@ -59,7 +59,7 @@ export interface ImportResponse {
  * Supports both full format (complete backup) and simple format (quick bulk import).
  */
 class ImportExportService {
-  private readonly BASE_PATH = '/admin/import-export'
+  private readonly BASE_PATH = '/api/admin/import-export'
 
   // ============================================================
   // Simple Format (Quick Bulk Import)

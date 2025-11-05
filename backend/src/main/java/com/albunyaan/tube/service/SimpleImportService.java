@@ -15,7 +15,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
 
@@ -410,9 +412,23 @@ public class SimpleImportService {
                     }
 
                     if (ytVideo.getContentDetails() != null && ytVideo.getContentDetails().getDuration() != null) {
-                        // Convert ISO 8601 duration to seconds (simplified - may need better parsing)
-                        String duration = ytVideo.getContentDetails().getDuration();
-                        // For now, just store 0 - proper parsing would require additional logic
+                        // Convert ISO 8601 duration to seconds
+                        String durationString = ytVideo.getContentDetails().getDuration();
+                        try {
+                            if (durationString != null && !durationString.trim().isEmpty()) {
+                                Duration duration = Duration.parse(durationString);
+                                long durationSeconds = duration.toSeconds();
+                                video.setDurationSeconds((int) durationSeconds);
+                                logger.debug("Parsed video duration: {} -> {} seconds", durationString, durationSeconds);
+                            } else {
+                                video.setDurationSeconds(0);
+                            }
+                        } catch (DateTimeParseException e) {
+                            logger.warn("Failed to parse video duration '{}' for video {}: {}. Defaulting to 0.",
+                                    durationString, youtubeId, e.getMessage());
+                            video.setDurationSeconds(0);
+                        }
+                    } else {
                         video.setDurationSeconds(0);
                     }
 

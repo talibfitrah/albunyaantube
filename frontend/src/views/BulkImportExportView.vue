@@ -655,22 +655,27 @@ async function handleImport() {
 }
 
 .btn-primary {
-  background: var(--color-primary);
-  color: white;
+  background: var(--color-brand);
+  color: var(--color-text-inverse);
+  font-weight: 600;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: var(--color-primary-hover);
+  background: var(--color-accent);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  transform: translateY(-1px);
 }
 
 .btn-secondary {
-  background: var(--color-background-mute);
-  color: var(--color-text);
+  background: var(--color-surface-alt);
+  color: var(--color-text-primary);
   border: 1px solid var(--color-border);
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background: var(--color-background-soft);
+  background: var(--color-surface);
+  border-color: var(--color-brand);
 }
 
 .btn-primary:disabled,
