@@ -815,74 +815,16 @@ If you encounter issues:
 
 ## Android App Configuration
 
-After deploying the backend to VPS, you must update the Android app to connect to the live server.
+After deploying the backend to VPS, you must configure the Android app to connect to your server.
 
-### Step 1: Update API Base URL
+**See the "Update Android App Configuration" section above** (lines 306-326) for detailed instructions on:
+- Setting the API base URL via `local.properties`
+- Configuring network security for HTTP/HTTPS
+- Rebuilding and installing the APK
 
-Edit `android/app/build.gradle.kts`:
-
-```kotlin
-buildConfigField("String", "API_BASE_URL", "\"http://YOUR_SERVER_IP:8080/\"")
-```
-
-Example:
-```kotlin
-buildConfigField("String", "API_BASE_URL", "\"http://72.60.179.47:8080/\"")
-```
-
-### Step 2: Allow HTTP Traffic to VPS
-
-**CRITICAL:** Android blocks HTTP traffic by default. You must whitelist your VPS IP.
-
-Edit `android/app/src/main/res/xml/network_security_config.xml`:
-
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<network-security-config>
-    <domain-config cleartextTrafficPermitted="true">
-        <!-- Allow localhost for emulator -->
-        <domain includeSubdomains="true">10.0.2.2</domain>
-        <domain includeSubdomains="true">localhost</domain>
-
-        <!-- Allow VPS server -->
-        <domain includeSubdomains="true">YOUR_SERVER_IP</domain>
-    </domain-config>
-
-    <base-config cleartextTrafficPermitted="false" />
-</network-security-config>
-```
-
-Example:
-```xml
-<domain includeSubdomains="true">72.60.179.47</domain>
-```
-
-### Step 3: Rebuild and Install APK
-
-```bash
-cd android
-./gradlew assembleDebug
-
-# Install on connected device
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-```
-
-### Step 4: Verify Connection
-
-Open the app and check:
-- Home tab shows channels and videos
-- Channels tab shows all channels
-- Videos tab shows all videos
-- Search works
-
-If you see empty screens, check:
-1. VPS backend is running: `curl http://YOUR_IP:8080/actuator/health`
-2. Data is seeded: `curl http://YOUR_IP:8080/api/v1/categories | jq length`
-3. Network security config includes your VPS IP
-4. Android logcat for errors: `adb logcat | grep -i "albunyaan\|retrofit"`
+**Security Note:** The app now uses `local.properties` to configure the server URL, so production IPs are never committed to version control. For production deployments, always use HTTPS.
 
 ---
 
-**Last Updated:** 2025-11-04
+**Last Updated:** 2025-11-05
 **Tested On:** Ubuntu 22.04 LTS, Debian 11
-**Verified:** Android app successfully connected to VPS at 72.60.179.47

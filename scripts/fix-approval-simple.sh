@@ -1,11 +1,19 @@
 #!/bin/bash
 set -e
 
-# Simple approval fixer - just copy and run
-SERVER="72.60.179.47"
-USER="root"
+# Usage: ./fix-approval-simple.sh <server>
+# Environment: REMOTE_USER (default: root)
+SERVER="${1:-}"
+USER="${REMOTE_USER:-root}"
 
-echo "=== Fixing Approval Status ==="
+if [ -z "$SERVER" ]; then
+    echo "Usage: $0 <server>"
+    echo "Example: $0 192.168.1.100"
+    echo "Environment: REMOTE_USER (default: root)"
+    exit 1
+fi
+
+echo "=== Fixing Approval Status on $SERVER ==="
 echo "1. Copying JAR..."
 cd "$(dirname "$0")/../backend"
 JAR=$(find build/libs -name "*.jar" -type f | head -1)
@@ -43,7 +51,7 @@ EOF
 
 echo "3. Testing API..."
 sleep 5
-curl -s "http://${SERVER}:8080/api/v1/content?type=CHANNELS&limit=10" | jq '.items | length'
-curl -s "http://${SERVER}:8080/api/v1/content?type=VIDEOS&limit=10" | jq '.items | length'
+curl -s "http://${SERVER}:8080/api/v1/content?type=CHANNELS&limit=10" | jq '.data | length'
+curl -s "http://${SERVER}:8080/api/v1/content?type=VIDEOS&limit=10" | jq '.data | length'
 
 echo "Done!"

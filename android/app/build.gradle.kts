@@ -14,6 +14,14 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
+// Load API configuration from local.properties
+val localPropertiesFile = rootProject.file("local.properties")
+val localProperties = Properties()
+
+if (localPropertiesFile.exists()) {
+    localProperties.load(FileInputStream(localPropertiesFile))
+}
+
 android {
     namespace = "com.albunyaan.tube"
     compileSdk = 34
@@ -30,10 +38,11 @@ android {
 
         manifestPlaceholders["profileable"] = "false"
 
-        // For physical device testing, use your computer's local IP
-        // For emulator testing, use "http://10.0.2.2:8080/"
-        // Live VPS server
-        buildConfigField("String", "API_BASE_URL", "\"http://72.60.179.47:8080/\"")
+        // API Base URL configuration
+        // Configure via local.properties: api.base.url=http://YOUR_IP:8080/
+        // Default: Emulator localhost (10.0.2.2)
+        val apiBaseUrl = localProperties.getProperty("api.base.url", "http://10.0.2.2:8080/")
+        buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
         buildConfigField("boolean", "ENABLE_THUMBNAIL_IMAGES", "true")
     }
 

@@ -1,17 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- Allow cleartext (HTTP) traffic for local development and VPS -->
+    <!--
+        WARNING: Cleartext (HTTP) traffic is insecure and should ONLY be used for:
+        - Local development (emulator/localhost)
+        - Testing on local network
+
+        PRODUCTION DEPLOYMENT REQUIREMENTS:
+        - Configure HTTPS/TLS on your production server (use Let's Encrypt)
+        - Remove production server IPs from this config
+        - Update api.base.url in local.properties to use https://
+
+        For production, this config should ONLY contain local development IPs.
+    -->
     <domain-config cleartextTrafficPermitted="true">
         <!-- Allow localhost variations for emulator -->
         <domain includeSubdomains="true">10.0.2.2</domain>
         <domain includeSubdomains="true">localhost</domain>
         <domain includeSubdomains="true">127.0.0.1</domain>
 
-        <!-- Allow local network IP addresses (192.168.x.x) for physical device -->
-        <domain includeSubdomains="true">192.168.1.167</domain>
+        <!--
+            For physical device testing, add your local network IP here:
+            <domain includeSubdomains="true">192.168.x.x</domain>
 
-        <!-- Allow VPS server -->
-        <domain includeSubdomains="true">72.60.179.47</domain>
+            NEVER commit production server IPs to version control!
+        -->
     </domain-config>
 
     <!-- Default: require HTTPS for all other domains -->

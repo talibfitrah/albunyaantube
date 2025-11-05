@@ -49,7 +49,7 @@ echo -e "${GREEN}✓ JAR copied${NC}"
 
 # Step 4: Run fix-approval profile
 echo -e "${YELLOW}[4/4] Running approval status fix...${NC}"
-ssh "${REMOTE_USER}@${REMOTE_HOST}" << ENDSSH
+ssh "${REMOTE_USER}@${REMOTE_HOST}" << 'ENDSSH'
     cd ${DEPLOY_DIR}
     source .env
 
@@ -107,4 +107,3 @@ else
     echo -e "${YELLOW}⚠ Warning: API still returning empty. Check logs:${NC}"
     echo "ssh ${REMOTE_USER}@${REMOTE_HOST} 'cat ${DEPLOY_DIR}/logs/fix-approval.log'"
 fi
-ENDSSH

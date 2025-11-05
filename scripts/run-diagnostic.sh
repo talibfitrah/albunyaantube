@@ -1,10 +1,19 @@
 #!/bin/bash
 set -e
 
-SERVER="72.60.179.47"
-USER="root"
+# Usage: ./run-diagnostic.sh <server>
+# Environment: REMOTE_USER (default: root)
+SERVER="${1:-}"
+USER="${REMOTE_USER:-root}"
 
-echo "=== Running Firestore Diagnostic ==="
+if [ -z "$SERVER" ]; then
+    echo "Usage: $0 <server>"
+    echo "Example: $0 192.168.1.100"
+    echo "Environment: REMOTE_USER (default: root)"
+    exit 1
+fi
+
+echo "=== Running Firestore Diagnostic on $SERVER ==="
 echo "1. Copying JAR..."
 cd "$(dirname "$0")/../backend"
 JAR=$(find build/libs -name "*.jar" -type f | head -1)

@@ -91,15 +91,15 @@ public class ApprovalStatusFixer implements CommandLineRunner {
 
             // Fix missing subscribers field (required for orderBy queries)
             if (channel.getSubscribers() == null) {
-                log.debug("Setting channel {} subscribers=100000", channel.getId());
-                channel.setSubscribers(100000L);
+                log.debug("Setting channel {} subscribers=0 (unknown)", channel.getId());
+                channel.setSubscribers(0L);
                 updated = true;
             }
 
             // Fix missing videoCount field
             if (channel.getVideoCount() == null) {
-                log.debug("Setting channel {} videoCount=50", channel.getId());
-                channel.setVideoCount(50);
+                log.debug("Setting channel {} videoCount=0 (unknown)", channel.getId());
+                channel.setVideoCount(0);
                 updated = true;
             }
 
@@ -134,8 +134,8 @@ public class ApprovalStatusFixer implements CommandLineRunner {
 
             // Fix missing itemCount field
             if (playlist.getItemCount() == null) {
-                log.debug("Setting playlist {} itemCount=10", playlist.getId());
-                playlist.setItemCount(10);
+                log.debug("Setting playlist {} itemCount=0 (unknown)", playlist.getId());
+                playlist.setItemCount(0);
                 updated = true;
             }
 

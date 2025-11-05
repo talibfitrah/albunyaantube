@@ -4,7 +4,8 @@ After=network.target
 
 [Service]
 Type=simple
-User=root
+User=albunyaan
+Group=albunyaan
 WorkingDirectory=/opt/albunyaan
 EnvironmentFile=/opt/albunyaan/.env
 ExecStart=/usr/bin/java -Xmx512m -Xms256m -jar /opt/albunyaan/backend.jar --server.port=8080
