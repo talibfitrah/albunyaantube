@@ -14,7 +14,7 @@ Automates initial development environment setup for new developers.
 ```
 
 **What it does:**
-1. ✅ Checks all prerequisites (Java 17, Node.js 18+, Git, Docker)
+1. ✅ Checks all prerequisites (Java 17, Node.js 18+, Git)
 2. 📝 Creates `.env` file from template
 3. ☕ Downloads and builds backend (Gradle)
 4. ⚛️ Installs and builds frontend (npm)
@@ -23,7 +23,7 @@ Automates initial development environment setup for new developers.
 
 **Output:**
 - Colored terminal output (✓ success, ✗ error, ℹ info)
-- Summary of next steps (Docker or manual startup)
+- Summary of manual startup steps
 - Links to documentation
 
 **Estimated time:** 5-10 minutes (depending on internet speed)
@@ -52,11 +52,6 @@ Validates that all required tools and configurations are properly set up.
 **Version Control:**
 - Git installed
 - Git user configured
-
-**Docker (optional):**
-- Docker installed
-- Docker daemon running
-- Docker Compose available
 
 **Project Structure:**
 - All required directories present
@@ -88,8 +83,9 @@ nano .env  # Add your YOUTUBE_API_KEY
 # 4. Validate environment
 ./scripts/validate-env.sh
 
-# 5. Start development
-docker-compose up -d
+# 5. Start development services
+# Backend: cd backend && ./gradlew bootRun
+# Frontend: cd frontend && npm run dev
 ```
 
 ### For Existing Developers
@@ -106,6 +102,5 @@ docker-compose up -d
 
 ## Related Documentation
 
-- [Docker Setup](../docs/DOCKER_SETUP.md) - Running with Docker Compose
 - [Platform Guides](../docs/PLATFORM_GUIDES.md) - Platform-specific instructions
 - [Quick Start](../docs/QUICK_START_PARALLEL_WORK.md) - Parallel development workflow

@@ -132,7 +132,6 @@ ssh root@YOUR_SERVER_IP 'sudo ufw allow 8080/tcp'
 
 See [docs/deployment/](docs/deployment/) for:
 - Cloud Run (Google Cloud Platform)
-- Docker Compose on VPS
 - Kubernetes (GKE/EKS)
 
 ---

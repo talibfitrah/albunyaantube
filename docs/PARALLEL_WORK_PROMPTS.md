@@ -117,11 +117,10 @@ Completed during sprints without conflicts:
 
 1. ✅ **INFRA-01**: Android CI pipeline
 2. ✅ **INFRA-02**: Frontend CI pipeline
-3. ✅ **INFRA-03**: Docker Compose setup
-4. ✅ **DX-01**: Developer setup scripts
-5. ✅ **TEST-01**: Android test infrastructure
-6. ✅ **TEST-02**: Backend test utilities
-7. ✅ **TEST-03**: Frontend test infrastructure
+3. ✅ **DX-01**: Developer setup scripts
+4. ✅ **TEST-01**: Android test infrastructure
+5. ✅ **TEST-02**: Backend test utilities
+6. ✅ **TEST-03**: Frontend test infrastructure
 
 ---
 

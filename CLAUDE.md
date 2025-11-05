@@ -156,39 +156,27 @@ cd android
 ./gradlew clean build
 ```
 
-### Docker-Compose (Recommended Local Setup)
-
-**Location**: `/home/farouq/Development/albunyaantube/docker-compose.yml`
+### Local Service Startup
 
 ```bash
-# Start all services (backend, firebase emulator)
-docker-compose up -d
+# Start backend (Spring Boot API)
+cd backend
+./gradlew bootRun
 
-# View backend logs
-docker-compose logs -f backend
+# In a separate terminal, start the frontend dev server
+cd frontend
+npm run dev
 
-# View firebase logs
-docker-compose logs -f firebase-emulator
-
-# Stop services
-docker-compose down
-
-# Full cleanup (warning: deletes data)
-docker-compose down -v
-
-# Restart specific service
-docker-compose restart backend
-
-# Rebuild after dependency changes
-docker-compose build backend && docker-compose up -d backend
+# Optional: launch Firebase emulators (requires Firebase CLI)
+firebase emulators:start --only firestore,auth --import=firebase-data
 ```
 
-**Services**:
-- Backend: `http://localhost:8080` (Spring Boot API)
-- Frontend: `http://localhost:5173` (Vue dev server - run separately)
+**Service Ports**:
+- Backend: `http://localhost:8080`
+- Frontend: `http://localhost:5173`
 - Firebase Emulator UI: `http://localhost:4000`
-- Firestore: `localhost:8082`
-- Auth: `localhost:9099`
+- Firestore Emulator: `localhost:8082`
+- Auth Emulator: `localhost:9099`
 
 ### Environment Setup
 
@@ -227,7 +215,6 @@ albunyaantube/
 │   ├── src/main/java/...      # Core application code
 │   ├── src/test/java/...      # JUnit tests
 │   ├── build.gradle.kts       # Gradle config (Java 17, Spring 3.2.5)
-│   ├── Dockerfile            # Production container
 │   └── src/main/resources/
 │       ├── application.yml    # Spring configuration
 │       └── firebase-service-account.json.template
@@ -283,7 +270,6 @@ albunyaantube/
 │   ├── setup-dev.sh          # First-time setup
 │   └── validate-env.sh       # Environment validation
 │
-├── docker-compose.yml         # Local dev infrastructure
 ├── .env.example              # Environment template
 ├── .gitignore                # Git exclusions
 ├── AGENTS.md                 # Policy for AI agents (test timeout!)
@@ -651,7 +637,6 @@ Optional detailed explanation (wrapped at 72 chars)
 - [ ] Copy `.env.example` → `.env` and add API keys
 - [ ] Run `./scripts/setup-dev.sh` for first-time setup
 - [ ] Run `./scripts/validate-env.sh` to verify configuration
-- [ ] Start Docker: `docker-compose up -d`
 - [ ] Backend: `cd backend && ./gradlew bootRun`
 - [ ] Frontend: `cd frontend && npm run dev`
 - [ ] Android: Open `android/` in Android Studio
@@ -671,7 +656,6 @@ Optional detailed explanation (wrapped at 72 chars)
 | `frontend/vite.config.ts` | Vite bundler config | Code splitting, minification, dev server |
 | `frontend/tsconfig.json` | TypeScript config | @ alias for src/, strict mode |
 | `android/build.gradle.kts` | Android app build | SDK versions, dependencies, build flavors |
-| `docker-compose.yml` | Local infrastructure | Backend, Firebase Emulator services & ports |
 | `.env.example` | Environment template | FIREBASE_PROJECT_ID, YOUTUBE_API_KEY |
 | `.github/workflows/` | CI/CD pipelines | Build, test, lint steps for each platform |
 
@@ -757,9 +741,6 @@ Optional detailed explanation (wrapped at 72 chars)
 ### Debugging Backend Issues
 
 ```bash
-# View backend logs in docker-compose
-docker-compose logs -f backend
-
 # Run backend locally with debug logging
 cd backend
 LOGGING_LEVEL_COM_ALBUNYAAN=DEBUG ./gradlew bootRun
@@ -878,7 +859,6 @@ buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:8080/\"")
 - **git**: Version control ([Git Docs](https://git-scm.com/doc))
 - **Gradle**: Build automation (backend & Android)
 - **npm**: Package manager (frontend)
-- **Docker**: Containerization
 - **Firebase Emulator Suite**: Local Firebase testing
 - **Vite**: Frontend bundler
 - **Vitest**: Unit testing framework
@@ -900,7 +880,7 @@ This codebase is a **full-stack halal content platform** with:
 **Next Steps**:
 1. Read AGENTS.md (test timeout policy!)
 2. Read docs/PROJECT_STATUS.md (know what's broken)
-3. Set up local environment with docker-compose
+3. Start backend (`./gradlew bootRun`) and frontend (`npm run dev`)
 4. Run one platform's tests to verify setup
 5. Pick a feature from PROJECT_STATUS.md and contribute
 

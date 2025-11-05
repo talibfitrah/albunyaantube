@@ -42,8 +42,6 @@ dependencies {
     implementation("com.google.oauth-client:google-oauth-client-jetty:1.34.1")
     implementation("com.google.http-client:google-http-client-jackson2:1.43.3")
 
-    runtimeOnly("org.springframework.boot:spring-boot-docker-compose")
-
     testImplementation("org.springframework.boot:spring-boot-starter-test")
 
     // Embedded Redis - BACKEND-PERF-01: Enable for testing

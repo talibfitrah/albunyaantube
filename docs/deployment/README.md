@@ -46,23 +46,7 @@ See [VPS_DEPLOYMENT.md](VPS_DEPLOYMENT.md) for full Cloud Run instructions.
 
 ---
 
-### 3. Docker Compose on VPS
-
-Deploy using Docker containers for easier management.
-
-**Best For:**
-- Containerized environments
-- Easier updates and rollbacks
-- Consistent across environments
-
-**Quick Start:**
-```bash
-docker-compose -f docker-compose.prod.yml up -d
-```
-
----
-
-### 4. Kubernetes (Advanced)
+### 3. Kubernetes (Advanced)
 
 Deploy to Kubernetes cluster (GKE, EKS, AKS).
 

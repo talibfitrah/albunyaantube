@@ -325,7 +325,6 @@ WARNING: No setter/field for category found on class Playlist      ✅ fixed (20
 - Vue 3 admin dashboard (TypeScript)
 - Android app (Kotlin)
 - CI/CD pipelines (GitHub Actions)
-- Docker Compose for local dev
 - Test frameworks (Vitest, Espresso, JUnit)
 - YouTube Data API v3 integration
 - NewPipe extractor for video streaming
