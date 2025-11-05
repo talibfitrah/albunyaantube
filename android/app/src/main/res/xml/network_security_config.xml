@@ -18,12 +18,11 @@
         <domain includeSubdomains="true">localhost</domain>
         <domain includeSubdomains="true">127.0.0.1</domain>
 
-        <!--
-            For physical device testing, add your local network IP here:
-            <domain includeSubdomains="true">192.168.x.x</domain>
+        <!-- For physical device testing on local network -->
+        <domain includeSubdomains="true">192.168.1.167</domain>
 
-            NEVER commit production server IPs to version control!
-        -->
+        <!-- For VPS testing (HTTP only - use HTTPS in production!) -->
+        <domain includeSubdomains="true">72.60.179.47</domain>
     </domain-config>
 
     <!-- Default: require HTTPS for all other domains -->
