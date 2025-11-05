@@ -84,9 +84,7 @@
               <div class="user-id">{{ user.id }}</div>
             </td>
             <td>
-              <ul class="role-tags">
-                <li v-for="role in user.roles" :key="role" class="role-tag">{{ roleLabel(role) }}</li>
-              </ul>
+              <span class="role-tag">{{ roleLabel(user.role) }}</span>
             </td>
             <td>
               <span :class="['status-badge', user.status === 'ACTIVE' ? 'status-active' : 'status-disabled']">
@@ -166,16 +164,36 @@
             :disabled="createState.isSubmitting"
             required
           />
+
+          <label class="modal-label" for="create-password">{{ t('users.dialogs.create.password') }}</label>
+          <input
+            id="create-password"
+            v-model="createState.password"
+            type="password"
+            class="modal-input"
+            :disabled="createState.isSubmitting"
+            minlength="6"
+            required
+          />
+
+          <label class="modal-label" for="create-displayName">{{ t('users.dialogs.create.displayName') }}</label>
+          <input
+            id="create-displayName"
+            v-model="createState.displayName"
+            type="text"
+            class="modal-input"
+            :disabled="createState.isSubmitting"
+          />
+
           <fieldset class="modal-fieldset">
-            <legend>{{ t('users.dialogs.create.roles') }}</legend>
-            <div class="checkbox-list">
-              <label v-for="role in roleOptions" :key="role" class="checkbox-item">
+            <legend>{{ t('users.dialogs.create.role') }}</legend>
+            <div class="radio-list">
+              <label v-for="role in roleOptions" :key="role" class="radio-item">
                 <input
-                  type="checkbox"
+                  type="radio"
                   :value="role"
-                  :checked="createState.roles.includes(role)"
+                  v-model="createState.role"
                   :disabled="createState.isSubmitting"
-                  @change="toggleCreateRole(role, $event)"
                 />
                 <span>{{ roleLabel(role) }}</span>
               </label>
@@ -210,15 +228,14 @@
         </p>
         <form @submit.prevent="handleEdit">
           <fieldset class="modal-fieldset">
-            <legend>{{ t('users.dialogs.edit.roles') }}</legend>
-            <div class="checkbox-list">
-              <label v-for="role in roleOptions" :key="`edit-${role}`" class="checkbox-item">
+            <legend>{{ t('users.dialogs.edit.role') }}</legend>
+            <div class="radio-list">
+              <label v-for="role in roleOptions" :key="`edit-${role}`" class="radio-item">
                 <input
-                  type="checkbox"
+                  type="radio"
                   :value="role"
-                  :checked="editState.roles.includes(role)"
+                  v-model="editState.role"
                   :disabled="editState.isSubmitting"
-                  @change="toggleEditRole(role, $event)"
                 />
                 <span>{{ roleLabel(role) }}</span>
               </label>
@@ -317,14 +334,16 @@ const editDialogDescriptionId = 'edit-user-description';
 const createState = reactive({
   visible: false,
   email: '',
-  roles: [] as AdminRole[],
+  password: '',
+  displayName: '',
+  role: 'MODERATOR' as AdminRole,
   isSubmitting: false,
   error: null as string | null
 });
 
 const editState = reactive({
   visible: false,
-  roles: [] as AdminRole[],
+  role: 'MODERATOR' as AdminRole,
   status: 'ACTIVE' as AdminUserStatus,
   isSubmitting: false,
   error: null as string | null
@@ -416,7 +435,9 @@ function formatDateTime(value: string) {
 function openCreateDialog() {
   createState.visible = true;
   createState.email = '';
-  createState.roles = ['ADMIN'];
+  createState.password = '';
+  createState.displayName = '';
+  createState.role = 'MODERATOR';
   createState.error = null;
   actionError.value = null;
   nextTick(() => {
@@ -430,17 +451,6 @@ function closeCreateDialog() {
   deactivateCreateTrap();
 }
 
-function toggleCreateRole(role: AdminRole, event: Event) {
-  const target = event.target as HTMLInputElement;
-  if (target.checked) {
-    if (!createState.roles.includes(role)) {
-      createState.roles = [...createState.roles, role];
-    }
-  } else {
-    createState.roles = createState.roles.filter((value) => value !== role);
-  }
-}
-
 async function handleCreate() {
   if (createState.isSubmitting) {
     return;
@@ -449,8 +459,8 @@ async function handleCreate() {
     createState.error = t('users.dialogs.create.errors.email');
     return;
   }
-  if (createState.roles.length === 0) {
-    createState.error = t('users.dialogs.create.errors.roles');
+  if (!createState.password.trim() || createState.password.length < 6) {
+    createState.error = t('users.dialogs.create.errors.password');
     return;
   }
 
@@ -459,7 +469,9 @@ async function handleCreate() {
   try {
     await createUser({
       email: createState.email.trim(),
-      roles: createState.roles
+      password: createState.password,
+      displayName: createState.displayName.trim() || undefined,
+      role: createState.role
     });
     actionMessage.value = t('users.toasts.created', { email: createState.email.trim() });
     await reload();
@@ -474,7 +486,7 @@ async function handleCreate() {
 function openEditDialog(user: AdminUser) {
   editingUser.value = user;
   editState.visible = true;
-  editState.roles = [...user.roles];
+  editState.role = user.role;
   editState.status = user.status;
   editState.error = null;
   actionError.value = null;
@@ -489,31 +501,17 @@ function closeEditDialog() {
   deactivateEditTrap();
 }
 
-function toggleEditRole(role: AdminRole, event: Event) {
-  const target = event.target as HTMLInputElement;
-  if (target.checked) {
-    if (!editState.roles.includes(role)) {
-      editState.roles = [...editState.roles, role];
-    }
-  } else {
-    editState.roles = editState.roles.filter((value) => value !== role);
-  }
-}
-
 async function handleEdit() {
   if (!editingUser.value || editState.isSubmitting) {
     return;
   }
-  if (editState.roles.length === 0) {
-    editState.error = t('users.dialogs.edit.errors.roles');
-    return;
-  }
+
   editState.error = null;
   editState.isSubmitting = true;
   try {
     // Update role if changed
-    if (editState.roles && editState.roles.length > 0) {
-      await updateUserRole(editingUser.value.id, editState.roles[0]);
+    if (editState.role !== editingUser.value.role) {
+      await updateUserRole(editingUser.value.id, editState.role);
     }
     // Update status if changed
     if (editState.status) {
@@ -1104,5 +1102,26 @@ button,
     font-size: 0.875rem;
     padding: 0.5rem 0.875rem;
   }
+}
+
+.radio-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.radio-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.radio-item input[type="radio"] {
+  cursor: pointer;
+}
+
+.radio-item span {
+  user-select: none;
 }
 </style>

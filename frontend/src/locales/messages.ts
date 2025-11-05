@@ -568,7 +568,7 @@ export const messages = {
       },
       columns: {
         email: 'Email',
-        roles: 'Roles',
+        roles: 'Role',
         status: 'Status',
         lastLogin: 'Last login',
         created: 'Created',
@@ -592,26 +592,27 @@ export const messages = {
         },
         create: {
           title: 'Invite admin or moderator',
-          description: 'Enter the email address and assign at least one role. New users receive an email once provisioning completes.',
+          description: 'Enter the email address, password, and assign a role. New users can log in immediately.',
           email: 'Work email',
-          roles: 'Assign roles',
+          password: 'Password',
+          displayName: 'Display name (optional)',
+          role: 'Assign role',
           submit: 'Create user',
           submitting: 'Creating…',
           errors: {
             email: 'Enter an email address.',
-            roles: 'Select at least one role.',
+            password: 'Password must be at least 6 characters.',
             generic: 'Unable to create user. Try again.'
           }
         },
         edit: {
           title: 'Edit {email}',
-          description: 'Update role assignments or toggle the account status.',
-          roles: 'Roles',
+          description: 'Update role assignment or toggle the account status.',
+          role: 'Role',
           status: 'Account status',
           submit: 'Save changes',
           submitting: 'Saving…',
           errors: {
-            roles: 'Assign at least one role.',
             generic: 'Unable to update user. Try again.'
           }
         }
@@ -1476,7 +1477,7 @@ export const messages = {
       },
       columns: {
         email: 'البريد الإلكتروني',
-        roles: 'الأدوار',
+        roles: 'الدور',
         status: 'الحالة',
         lastLogin: 'آخر تسجيل دخول',
         created: 'تاريخ الإنشاء',
@@ -2143,7 +2144,7 @@ export const messages = {
       },
       columns: {
         email: 'E-mail',
-        roles: 'Rollen',
+        roles: 'Rol',
         status: 'Status',
         lastLogin: 'Laatste login',
         created: 'Aangemaakt',
