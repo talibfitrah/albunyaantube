@@ -266,11 +266,11 @@ const exclusions = ref<Exclusion[]>([]);
 const history = ref<HistoryEvent[]>([]);
 
 const tabs = [
-  { id: 'overview' },
-  { id: 'categories' },
-  { id: 'exclusions' },
-  { id: 'metadata' },
-  { id: 'history' }
+  { id: 'overview' as const },
+  { id: 'categories' as const },
+  { id: 'exclusions' as const },
+  { id: 'metadata' as const },
+  { id: 'history' as const }
 ];
 
 // Focus trap for modal

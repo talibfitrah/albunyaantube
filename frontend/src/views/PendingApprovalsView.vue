@@ -241,10 +241,10 @@ const isRejecting = ref(false);
 const rejectError = ref<string | null>(null);
 
 const contentTypes = [
-  { value: 'all', labelKey: 'approvals.types.all' },
-  { value: 'channels', labelKey: 'approvals.types.channels' },
-  { value: 'playlists', labelKey: 'approvals.types.playlists' },
-  { value: 'videos', labelKey: 'approvals.types.videos' }
+  { value: 'all' as const, labelKey: 'approvals.types.all' },
+  { value: 'channels' as const, labelKey: 'approvals.types.channels' },
+  { value: 'playlists' as const, labelKey: 'approvals.types.playlists' },
+  { value: 'videos' as const, labelKey: 'approvals.types.videos' }
 ];
 
 const totalPending = computed(() => approvals.value.length);

@@ -123,7 +123,7 @@
               <td>
                 <div class="actor-info">
                   <div class="actor-email">{{ entry.actor.email }}</div>
-                  <div class="actor-roles">{{ formatRoles(entry.actor.roles) }}</div>
+                  <div class="actor-roles">{{ formatRole(entry.actor.role) }}</div>
                 </div>
               </td>
               <td>
@@ -173,8 +173,8 @@
                 <div class="timeline-body">
                   <div class="timeline-actor">
                     <strong>{{ entry.actor.email }}</strong>
-                    <span v-if="entry.actor.roles.length" class="actor-roles">
-                      ({{ formatRoles(entry.actor.roles) }})
+                    <span v-if="entry.actor.role" class="actor-roles">
+                      ({{ formatRole(entry.actor.role) }})
                     </span>
                   </div>
                   <div class="timeline-entity">
@@ -320,11 +320,11 @@ function formatDateHeader(dateStr: string): string {
   }
 }
 
-function formatRoles(roles: string[]): string {
-  if (!roles || roles.length === 0) {
+function formatRole(role: string): string {
+  if (!role) {
     return t('activity.roles.none');
   }
-  return roles.map(r => r.charAt(0) + r.slice(1).toLowerCase()).join(', ');
+  return role.charAt(0) + role.slice(1).toLowerCase();
 }
 
 function formatMetadata(metadata: any): string {
@@ -342,11 +342,11 @@ const paginationSummary = computed(() => {
 
 function exportLog() {
   const csv = [
-    ['Timestamp', 'Actor', 'Roles', 'Action', 'Entity Type', 'Entity ID', 'Metadata'].join(','),
+    ['Timestamp', 'Actor', 'Role', 'Action', 'Entity Type', 'Entity ID', 'Metadata'].join(','),
     ...entries.value.map(entry => [
       new Date(entry.createdAt).toISOString(),
       entry.actor.email,
-      formatRoles(entry.actor.roles),
+      formatRole(entry.actor.role),
       entry.action,
       entry.entity.type,
       entry.entity.id,

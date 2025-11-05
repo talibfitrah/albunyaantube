@@ -120,6 +120,14 @@
               >
                 {{ busyUserId === user.id ? t('users.actions.activating') : t('users.actions.activate') }}
               </button>
+              <button
+                type="button"
+                class="action danger"
+                :disabled="isLoading || deleteState.isDeleting"
+                @click="openDeleteDialog(user)"
+              >
+                {{ t('users.actions.delete') }}
+              </button>
             </td>
           </tr>
         </tbody>
@@ -274,6 +282,34 @@
         </form>
       </div>
     </div>
+
+    <div v-if="deleteState.visible" class="modal-backdrop">
+      <div
+        ref="deleteDialogRef"
+        class="modal"
+        role="dialog"
+        aria-modal="true"
+        :aria-labelledby="deleteDialogTitleId"
+        :aria-describedby="deleteDialogDescriptionId"
+        tabindex="-1"
+      >
+        <h2 :id="deleteDialogTitleId">{{ t('users.dialogs.delete.title', { email: deleteState.userEmail }) }}</h2>
+        <p :id="deleteDialogDescriptionId" class="modal-description">
+          {{ t('users.dialogs.delete.description') }}
+        </p>
+        <form @submit.prevent="handleDelete">
+          <p v-if="deleteState.error" class="form-error" role="alert">{{ deleteState.error }}</p>
+          <div class="modal-actions">
+            <button type="button" class="modal-secondary" :disabled="deleteState.isDeleting" @click="closeDeleteDialog">
+              {{ t('users.dialogs.actions.cancel') }}
+            </button>
+            <button type="submit" class="modal-primary modal-danger" :disabled="deleteState.isDeleting">
+              {{ deleteState.isDeleting ? t('users.dialogs.delete.submitting') : t('users.dialogs.delete.submit') }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   </section>
 </template>
 
@@ -331,6 +367,10 @@ const editDialogRef = ref<HTMLDivElement | null>(null);
 const editDialogTitleId = 'edit-user-title';
 const editDialogDescriptionId = 'edit-user-description';
 
+const deleteDialogRef = ref<HTMLDivElement | null>(null);
+const deleteDialogTitleId = 'delete-user-title';
+const deleteDialogDescriptionId = 'delete-user-description';
+
 const createState = reactive({
   visible: false,
   email: '',
@@ -351,6 +391,14 @@ const editState = reactive({
 
 const editingUser = ref<AdminUser | null>(null);
 
+const deleteState = reactive({
+  visible: false,
+  userId: null as string | null,
+  userEmail: '',
+  isDeleting: false,
+  error: null as string | null
+});
+
 const { activate: activateCreateTrap, deactivate: deactivateCreateTrap } = useFocusTrap(createDialogRef, {
   onEscape: () => {
     if (!createState.isSubmitting) {
@@ -363,6 +411,14 @@ const { activate: activateEditTrap, deactivate: deactivateEditTrap } = useFocusT
   onEscape: () => {
     if (!editState.isSubmitting) {
       closeEditDialog();
+    }
+  }
+});
+
+const { activate: activateDeleteTrap, deactivate: deactivateDeleteTrap } = useFocusTrap(deleteDialogRef, {
+  onEscape: () => {
+    if (!deleteState.isDeleting) {
+      closeDeleteDialog();
     }
   }
 });
@@ -534,7 +590,7 @@ async function handleDeactivate(user: AdminUser) {
   busyUserId.value = user.id;
   actionError.value = null;
   try {
-    await deleteUser(user.id);
+    await updateUserStatus(user.id, 'DISABLED');
     actionMessage.value = t('users.toasts.deactivated', { email: user.email });
     await reload();
   } catch (err) {
@@ -558,6 +614,44 @@ async function handleActivate(user: AdminUser) {
     actionError.value = err instanceof Error ? err.message : t('users.errors.activate');
   } finally {
     busyUserId.value = null;
+  }
+}
+
+function openDeleteDialog(user: AdminUser) {
+  deleteState.visible = true;
+  deleteState.userId = user.id;
+  deleteState.userEmail = user.email;
+  deleteState.error = null;
+  actionError.value = null;
+  nextTick(() => {
+    activateDeleteTrap({ initialFocus: deleteDialogRef.value ?? null });
+  });
+}
+
+function closeDeleteDialog() {
+  deleteState.visible = false;
+  deleteState.isDeleting = false;
+  deleteState.userId = null;
+  deleteState.userEmail = '';
+  deactivateDeleteTrap();
+}
+
+async function handleDelete() {
+  if (!deleteState.userId || deleteState.isDeleting) {
+    return;
+  }
+
+  deleteState.error = null;
+  deleteState.isDeleting = true;
+  try {
+    await deleteUser(deleteState.userId);
+    actionMessage.value = t('users.toasts.deleted', { email: deleteState.userEmail });
+    await reload();
+    closeDeleteDialog();
+  } catch (err) {
+    deleteState.error = err instanceof Error ? err.message : t('users.dialogs.delete.errors.generic');
+  } finally {
+    deleteState.isDeleting = false;
   }
 }
 
@@ -703,7 +797,7 @@ td {
 }
 
 .actions-column {
-  width: 220px;
+  width: 280px;
 }
 
 .user-email {
@@ -955,6 +1049,11 @@ td {
 
 .modal-primary {
   background: var(--color-brand);
+  color: var(--color-text-inverse);
+}
+
+.modal-danger {
+  background: var(--color-danger);
   color: var(--color-text-inverse);
 }
 

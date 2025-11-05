@@ -85,11 +85,11 @@ const loading = ref(false);
 const channel = ref<AdminSearchChannelResult | null>(null);
 const videos = ref<AdminSearchVideoResult[]>([]);
 const playlists = ref<AdminSearchPlaylistResult[]>([]);
-const activeTab = ref<'videos' | 'playlists'>('videos' as 'videos' | 'playlists');
+const activeTab = ref<'videos' | 'playlists'>('videos');
 
 const tabs = [
-  { value: 'videos', label: 'Videos' },
-  { value: 'playlists', label: 'Playlists' }
+  { value: 'videos' as const, label: 'Videos' },
+  { value: 'playlists' as const, label: 'Playlists' }
 ];
 
 watch(() => props.channelId, async (newId) => {

@@ -564,7 +564,9 @@ export const messages = {
         deactivate: 'Deactivate',
         deactivating: 'Deactivating…',
         activate: 'Activate',
-        activating: 'Activating…'
+        activating: 'Activating…',
+        delete: 'Delete',
+        deleting: 'Deleting…'
       },
       columns: {
         email: 'Email',
@@ -615,17 +617,28 @@ export const messages = {
           errors: {
             generic: 'Unable to update user. Try again.'
           }
+        },
+        delete: {
+          title: 'Delete {email}?',
+          description: 'This will permanently remove this user account and revoke all access. This action cannot be undone.',
+          submit: 'Delete user',
+          submitting: 'Deleting…',
+          errors: {
+            generic: 'Unable to delete user. Try again.'
+          }
         }
       },
       toasts: {
         created: '{email} invited.',
         updated: '{email} updated.',
         deactivated: '{email} deactivated.',
-        activated: '{email} activated.'
+        activated: '{email} activated.',
+        deleted: '{email} deleted.'
       },
       errors: {
         deactivate: 'Unable to deactivate user. Try again.',
-        activate: 'Unable to activate user. Try again.'
+        activate: 'Unable to activate user. Try again.',
+        delete: 'Unable to delete user. Try again.'
       },
       confirm: {
         deactivate: 'Deactivate {email}?'
@@ -1473,7 +1486,9 @@ export const messages = {
         deactivate: 'تعطيل',
         deactivating: 'جارٍ التعطيل…',
         activate: 'تنشيط',
-        activating: 'جارٍ التنشيط…'
+        activating: 'جارٍ التنشيط…',
+        delete: 'حذف',
+        deleting: 'جارٍ الحذف…'
       },
       columns: {
         email: 'البريد الإلكتروني',
@@ -1501,27 +1516,37 @@ export const messages = {
         },
         create: {
           title: 'دعوة مشرف أو مراقب',
-          description: 'أدخل البريد الإلكتروني وعيِّن دورًا واحدًا على الأقل. سيتلقى المستخدم الجديد رسالة عند تجهيز الحساب.',
+          description: 'أدخل عنوان البريد الإلكتروني وكلمة المرور وعيِّن دورًا. يمكن للمستخدمين الجدد تسجيل الدخول فورًا.',
           email: 'البريد الإلكتروني للعمل',
-          roles: 'تعيين الأدوار',
+          password: 'كلمة المرور',
+          displayName: 'اسم العرض (اختياري)',
+          role: 'تعيين الدور',
           submit: 'إنشاء مستخدم',
           submitting: 'جارٍ الإنشاء…',
           errors: {
             email: 'أدخل البريد الإلكتروني.',
-            roles: 'اختر دورًا واحدًا على الأقل.',
+            password: 'يجب أن تكون كلمة المرور 6 أحرف على الأقل.',
             generic: 'تعذّر إنشاء المستخدم. حاول مجددًا.'
           }
         },
         edit: {
           title: 'تعديل {email}',
-          description: 'حدّث الأدوار أو غيّر حالة الحساب.',
-          roles: 'الأدوار',
+          description: 'حدّث تعيين الدور أو غيّر حالة الحساب.',
+          role: 'الدور',
           status: 'حالة الحساب',
           submit: 'حفظ التغييرات',
           submitting: 'جارٍ الحفظ…',
           errors: {
-            roles: 'عيّن دورًا واحدًا على الأقل.',
             generic: 'تعذّر تحديث المستخدم. حاول مجددًا.'
+          }
+        },
+        delete: {
+          title: 'حذف {email}؟',
+          description: 'سيؤدي هذا إلى إزالة حساب المستخدم نهائيًا وإلغاء جميع الصلاحيات. لا يمكن التراجع عن هذا الإجراء.',
+          submit: 'حذف المستخدم',
+          submitting: 'جارٍ الحذف…',
+          errors: {
+            generic: 'تعذّر حذف المستخدم. حاول مجددًا.'
           }
         }
       },
@@ -1529,11 +1554,13 @@ export const messages = {
         created: 'تمت دعوة {email}.',
         updated: 'تم تحديث {email}.',
         deactivated: 'تم تعطيل {email}.',
-        activated: 'تم تنشيط {email}.'
+        activated: 'تم تنشيط {email}.',
+        deleted: 'تم حذف {email}.'
       },
       errors: {
         deactivate: 'تعذّر تعطيل المستخدم. حاول مجددًا.',
-        activate: 'تعذّر تنشيط المستخدم. حاول مجددًا.'
+        activate: 'تعذّر تنشيط المستخدم. حاول مجددًا.',
+        delete: 'تعذّر حذف المستخدم. حاول مجددًا.'
       },
       confirm: {
         deactivate: 'هل ترغب في تعطيل {email}؟'
@@ -2140,7 +2167,9 @@ export const messages = {
         deactivate: 'Deactiveren',
         deactivating: 'Bezig met deactiveren…',
         activate: 'Activeren',
-        activating: 'Bezig met activeren…'
+        activating: 'Bezig met activeren…',
+        delete: 'Verwijderen',
+        deleting: 'Bezig met verwijderen…'
       },
       columns: {
         email: 'E-mail',
@@ -2168,27 +2197,37 @@ export const messages = {
         },
         create: {
           title: 'Beheerder of moderator uitnodigen',
-          description: 'Voer een e-mailadres in en ken minimaal één rol toe. Nieuwe gebruikers ontvangen een e-mail zodra het account klaarstaat.',
+          description: 'Voer het e-mailadres, wachtwoord in en wijs een rol toe. Nieuwe gebruikers kunnen direct inloggen.',
           email: 'Werk e-mailadres',
-          roles: 'Rollen toewijzen',
+          password: 'Wachtwoord',
+          displayName: 'Weergavenaam (optioneel)',
+          role: 'Rol toewijzen',
           submit: 'Gebruiker aanmaken',
           submitting: 'Bezig met aanmaken…',
           errors: {
             email: 'Voer een e-mailadres in.',
-            roles: 'Selecteer minimaal één rol.',
+            password: 'Wachtwoord moet minimaal 6 tekens bevatten.',
             generic: 'Gebruiker kan niet worden aangemaakt. Probeer het opnieuw.'
           }
         },
         edit: {
           title: '{email} bewerken',
-          description: 'Werk roltoewijzingen of de accountstatus bij.',
-          roles: 'Rollen',
+          description: 'Werk roltoewijzing of de accountstatus bij.',
+          role: 'Rol',
           status: 'Accountstatus',
           submit: 'Wijzigingen opslaan',
           submitting: 'Bezig met opslaan…',
           errors: {
-            roles: 'Wijs minimaal één rol toe.',
             generic: 'Gebruiker kan niet worden bijgewerkt. Probeer het opnieuw.'
+          }
+        },
+        delete: {
+          title: '{email} verwijderen?',
+          description: 'Dit verwijdert het gebruikersaccount permanent en trekt alle toegang in. Deze actie kan niet ongedaan worden gemaakt.',
+          submit: 'Gebruiker verwijderen',
+          submitting: 'Bezig met verwijderen…',
+          errors: {
+            generic: 'Gebruiker kan niet worden verwijderd. Probeer het opnieuw.'
           }
         }
       },
@@ -2196,11 +2235,13 @@ export const messages = {
         created: '{email} uitgenodigd.',
         updated: '{email} bijgewerkt.',
         deactivated: '{email} gedeactiveerd.',
-        activated: '{email} geactiveerd.'
+        activated: '{email} geactiveerd.',
+        deleted: '{email} verwijderd.'
       },
       errors: {
         deactivate: 'Deactiveren is mislukt. Probeer het opnieuw.',
-        activate: 'Activeren is mislukt. Probeer het opnieuw.'
+        activate: 'Activeren is mislukt. Probeer het opnieuw.',
+        delete: 'Verwijderen is mislukt. Probeer het opnieuw.'
       },
       confirm: {
         deactivate: '{email} deactiveren?'

@@ -57,7 +57,7 @@
           <tr v-for="entry in entries" :key="entry.id">
             <td>
               <div class="actor-email">{{ entry.actor.email }}</div>
-              <div class="actor-roles">{{ roleSummary(entry.actor.roles) }}</div>
+              <div class="actor-roles">{{ roleSummary(entry.actor.role) }}</div>
             </td>
             <td class="action-cell">
               <span class="action-badge">{{ entry.action }}</span>
@@ -147,11 +147,11 @@ onBeforeUnmount(() => {
   }
 });
 
-function roleSummary(roles: string[]) {
-  if (!roles.length) {
+function roleSummary(role: string) {
+  if (!role) {
     return t('audit.roles.none');
   }
-  return roles.map((role) => (role === 'ADMIN' ? t('users.roles.admin') : t('users.roles.moderator'))).join(', ');
+  return role === 'ADMIN' ? t('users.roles.admin') : t('users.roles.moderator');
 }
 
 function formatMetadata(metadata: Record<string, unknown>) {

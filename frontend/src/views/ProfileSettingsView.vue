@@ -33,8 +33,8 @@ async function loadProfile() {
 
   try {
     // Mock data - replace with actual API call
-    displayName.value = authStore.user?.displayName || '';
-    email.value = authStore.user?.email || '';
+    displayName.value = authStore.currentUser?.displayName || '';
+    email.value = authStore.currentUser?.email || '';
   } catch (err) {
     error.value = t('settings.profile.errors.loadFailed');
   } finally {
