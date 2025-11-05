@@ -7,14 +7,13 @@ Complete guide for setting up and developing AlBunyaan Tube across all platforms
 ## Table of Contents
 
 1. [Quick Start](#quick-start)
-2. [Docker Setup](#docker-setup)
-3. [Platform Guides](#platform-guides)
+2. [Platform Guides](#platform-guides)
    - [Backend (Spring Boot + Firebase)](#backend)
    - [Frontend (Vue.js)](#frontend)
    - [Android (Kotlin)](#android)
-4. [Testing](#testing)
-5. [CI/CD](#cicd)
-6. [Deployment](#deployment)
+3. [Testing](#testing)
+4. [CI/CD](#cicd)
+5. [Deployment](#deployment)
 
 ---
 
@@ -24,7 +23,6 @@ Complete guide for setting up and developing AlBunyaan Tube across all platforms
 - **Java 17** (backend)
 - **Node.js 18+** (frontend)
 - **Android Studio** (Android, optional)
-- **Docker** (recommended)
 - **Git**
 
 ### First-Time Setup
@@ -44,69 +42,9 @@ nano .env  # Add your YOUTUBE_API_KEY
 # 4. Validate setup
 ./scripts/validate-env.sh
 
-# 5. Start with Docker (recommended)
-docker-compose up -d
-
-# OR start manually
+# 5. Start services manually
 # Backend: cd backend && ./gradlew bootRun
 # Frontend: cd frontend && npm run dev
-```
-
----
-
-## Docker Setup
-
-### Quick Start with Docker
-
-```bash
-# Start all services
-docker-compose up -d
-
-# View logs
-docker-compose logs -f backend
-
-# Stop services
-docker-compose down
-```
-
-### Services
-
-| Service | URL | Purpose |
-|---------|-----|---------|
-| Backend | `http://localhost:8080` | Spring Boot API |
-| Frontend | `http://localhost:5173` | Vue.js UI |
-| Firebase UI | `http://localhost:4000` | Emulator dashboard |
-| Firestore | Port 8082 | Database emulator |
-| Auth | Port 9099 | Auth emulator |
-
-### Architecture
-
-```
-Android App (Emulator: 10.0.2.2)
-    ↓
-Backend Container (localhost:8080)
-    ↓
-Firebase Emulator (localhost:4000)
-    ├─ Firestore (8082)
-    ├─ Auth (9099)
-    └─ Storage (9199)
-```
-
-### Docker Commands
-
-```bash
-# Restart specific service
-docker-compose restart backend
-
-# Rebuild after dependency changes
-docker-compose build backend
-docker-compose up -d backend
-
-# View service logs
-docker-compose logs -f backend
-
-# Clean up everything
-docker-compose down -v  # WARNING: Deletes data
 ```
 
 ---
@@ -424,14 +362,13 @@ act -j build -W .github/workflows/frontend-ci.yml
 - [ ] Set up monitoring (Prometheus/Grafana)
 - [ ] Configure DNS and SSL
 
-**Docker Production Build**:
+**Backend Production Build**:
 ```bash
 cd backend
-docker build -t albunyaan-tube-backend:latest .
-docker run -p 8080:8080 \
-  -e GOOGLE_APPLICATION_CREDENTIALS=/app/key.json \
-  -e YOUTUBE_API_KEY=your_key \
-  albunyaan-tube-backend:latest
+./gradlew clean bootJar
+java -jar build/libs/*-SNAPSHOT.jar \
+  --spring.profiles.active=prod \
+  --youtube.api.key=$YOUTUBE_API_KEY
 ```
 
 ### Frontend Deployment

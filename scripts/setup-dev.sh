@@ -77,16 +77,6 @@ else
     ERRORS=$((ERRORS + 1))
 fi
 
-# Check Docker (optional)
-if command_exists docker; then
-    DOCKER_VERSION=$(docker --version | awk '{print $3}' | tr -d ',')
-    print_success "Docker $DOCKER_VERSION installed"
-    DOCKER_AVAILABLE=true
-else
-    print_info "Docker not found (optional, but recommended)"
-    DOCKER_AVAILABLE=false
-fi
-
 # Check Android SDK (optional for backend/frontend devs)
 if [ -n "$ANDROID_HOME" ] && [ -d "$ANDROID_HOME" ]; then
     print_success "Android SDK found at $ANDROID_HOME"
@@ -101,7 +91,7 @@ if command_exists firebase; then
     FIREBASE_VERSION=$(firebase --version)
     print_success "Firebase CLI $FIREBASE_VERSION installed"
 else
-    print_info "Firebase CLI not found (optional, can use Docker instead)"
+    print_info "Firebase CLI not found (optional for emulator management)"
 fi
 
 echo ""
@@ -212,16 +202,7 @@ echo "✅ Setup complete!"
 echo "════════════════════════════════════"
 echo ""
 echo "Next steps:"
-echo ""
-
-if [ "$DOCKER_AVAILABLE" = true ]; then
-    echo "🐳 Option 1: Use Docker (Recommended)"
-    echo "   docker-compose up -d"
-    echo "   docker-compose logs -f backend"
-    echo ""
-fi
-
-echo "🔧 Option 2: Run services manually"
+echo "🔧 Run services manually"
 echo ""
 echo "   Backend:"
 echo "   cd backend && ./gradlew bootRun"
@@ -238,7 +219,6 @@ fi
 
 echo "📚 Documentation:"
 echo "   - Quick Start: docs/QUICK_START_PARALLEL_WORK.md"
-echo "   - Docker Setup: docs/DOCKER_SETUP.md"
 echo "   - Platform Guides: docs/PLATFORM_GUIDES.md"
 echo ""
 

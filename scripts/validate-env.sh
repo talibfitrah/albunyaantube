@@ -103,32 +103,6 @@ else
 fi
 echo ""
 
-# Docker validation (optional)
-echo "Docker (Optional):"
-if command_exists docker; then
-    DOCKER_VERSION=$(docker --version | awk '{print $3}' | tr -d ',')
-    print_success "Docker $DOCKER_VERSION"
-
-    # Check if Docker daemon is running
-    if docker info >/dev/null 2>&1; then
-        print_success "Docker daemon running"
-    else
-        print_warning "Docker daemon not running"
-        WARNINGS=$((WARNINGS + 1))
-    fi
-
-    if command_exists docker-compose; then
-        COMPOSE_VERSION=$(docker-compose --version | awk '{print $3}' | tr -d ',')
-        print_success "Docker Compose $COMPOSE_VERSION"
-    else
-        print_warning "Docker Compose not installed"
-        WARNINGS=$((WARNINGS + 1))
-    fi
-else
-    print_info "Docker not installed (recommended for local development)"
-fi
-echo ""
-
 # Project structure validation
 echo "Project Structure:"
 REQUIRED_DIRS=("backend" "frontend" "android" "docs")
@@ -163,14 +137,6 @@ else
     print_error ".env file missing (copy from .env.example)"
     ERRORS=$((ERRORS + 1))
 fi
-
-if [ -f docker-compose.yml ]; then
-    print_success "docker-compose.yml exists"
-else
-    print_warning "docker-compose.yml missing"
-    WARNINGS=$((WARNINGS + 1))
-fi
-echo ""
 
 # Gradle wrapper validation
 echo "Build Tools:"
@@ -220,7 +186,8 @@ if [ $ERRORS -eq 0 ] && [ $WARNINGS -eq 0 ]; then
     print_success "All checks passed! ✨"
     echo ""
     echo "You're ready to start development!"
-    echo "Run: docker-compose up -d"
+    echo "Start backend: cd backend && ./gradlew bootRun"
+    echo "Start frontend: cd frontend && npm run dev"
     exit 0
 elif [ $ERRORS -eq 0 ]; then
     print_warning "$WARNINGS warning(s) found"

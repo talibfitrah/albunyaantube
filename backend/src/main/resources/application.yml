@@ -1,9 +1,6 @@
 spring:
   application:
     name: albunyaan-tube
-  docker:
-    compose:
-      enabled: false
   # BACKEND-PERF-01: Cache configuration
   # Using Caffeine (in-memory) for dev, can switch to Redis for prod
   cache:

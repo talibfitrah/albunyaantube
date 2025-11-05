@@ -109,7 +109,7 @@ backend/src/generated/
 !android/gradle/wrapper/gradle-wrapper.properties
 
 # -----------------------
-# Docker / Ops
+# Ops
 # -----------------------
 /ops/.env
 /ops/**/data/

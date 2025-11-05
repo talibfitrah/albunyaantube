@@ -110,7 +110,6 @@ See [FIREBASE_SETUP.md](../../backend/FIREBASE_SETUP.md) for Firestore security 
 - **Follow-up Backlog**: PERF-API-01 targets slow playlist hydration queries; PERF-ANDROID-01 tackles list diffing and image prefetch tuning. These backlog items ensure optimization debt is traceable post-hardening.
 
 ## Deployment & Ops
-- Docker Compose for local dev: services for backend, Postgres, Redis (see future `/ops/docker-compose.yml`).
 - CI/CD: GitHub Actions building backend (Gradle), admin (Vite), Android (Gradle). Automated tests with Testcontainers for backend integration.
 - Environments: dev, staging, prod with separate Redis namespaces and JWT signing keys stored in secrets manager.
 
