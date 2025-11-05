@@ -12,8 +12,8 @@
     <!-- Playlist Thumbnail (Square with rounded corners) -->
     <ImageView
         android:id="@+id/playlistThumbnail"
-        android:layout_width="80dp"
-        android:layout_height="80dp"
+        android:layout_width="@dimen/playlist_thumbnail_size"
+        android:layout_height="@dimen/playlist_thumbnail_size"
         android:scaleType="centerCrop"
         android:background="@drawable/thumbnail_placeholder"
         android:clipToOutline="true"

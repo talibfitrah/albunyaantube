@@ -39,4 +39,27 @@
 
     <!-- Grid/List Spacing -->
     <dimen name="grid_gutter">16dp</dimen>
+
+    <!-- Grid Configuration -->
+    <dimen name="grid_item_min_width">160dp</dimen>
+    <integer name="grid_span_count_default">2</integer>
+
+    <!-- Player -->
+    <dimen name="player_portrait_height">240dp</dimen>
+    <dimen name="player_controls_offset">56dp</dimen>
+
+    <!-- Thumbnails -->
+    <dimen name="thumbnail_height">180dp</dimen>
+    <dimen name="playlist_thumbnail_size">80dp</dimen>
+
+    <!-- Content Constraints -->
+    <dimen name="content_max_width">9999dp</dimen>  <!-- no limit on phone -->
+
+    <!-- Navigation -->
+    <dimen name="navigation_rail_width">0dp</dimen>  <!-- not used on phones -->
+
+    <!-- Screen Type Booleans -->
+    <bool name="is_tablet">false</bool>
+    <bool name="is_large_screen">false</bool>
+    <bool name="use_two_pane_layout">false</bool>
 </resources>

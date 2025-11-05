@@ -8,11 +8,14 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
+import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.albunyaan.tube.R
 import com.albunyaan.tube.ServiceLocator
 import com.albunyaan.tube.databinding.FragmentPlaylistDetailBinding
 import com.albunyaan.tube.ui.adapters.VideoGridAdapter
+import com.albunyaan.tube.ui.utils.calculateGridSpanCount
+import com.albunyaan.tube.ui.utils.isTablet
 import kotlinx.coroutines.launch
 
 class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
@@ -81,7 +84,13 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
 
         binding?.videosRecyclerView?.apply {
             adapter = videoAdapter
-            layoutManager = LinearLayoutManager(context)
+            // Use grid layout on tablets for better space utilization
+            layoutManager = if (requireContext().isTablet()) {
+                val spanCount = requireContext().calculateGridSpanCount(itemMinWidthDp = 180)
+                GridLayoutManager(context, spanCount)
+            } else {
+                LinearLayoutManager(context)
+            }
             setHasFixedSize(true)
         }
     }

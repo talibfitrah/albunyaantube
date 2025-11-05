@@ -14,7 +14,10 @@
         app:controller_layout_id="@layout/exo_player_control_view"
         app:show_buffering="when_playing"
         app:use_controller="true"
-        app:resize_mode="fit" />
+        app:resize_mode="fit"
+        app:show_timeout="5000"
+        app:auto_show="true"
+        app:hide_on_touch="true" />
 
     <!-- Hidden views for compatibility with existing binding -->
     <LinearLayout

@@ -19,14 +19,17 @@
             <com.google.android.exoplayer2.ui.StyledPlayerView
                 android:id="@+id/playerView"
                 android:layout_width="match_parent"
-                android:layout_height="240dp"
+                android:layout_height="@dimen/player_portrait_height"
                 android:keepScreenOn="true"
                 android:contentDescription="@string/player_video_player"
                 app:show_buffering="when_playing"
                 app:use_controller="true"
                 app:show_subtitle_button="true"
                 app:show_vr_button="false"
-                app:show_shuffle_button="false" />
+                app:show_shuffle_button="false"
+                app:show_timeout="5000"
+                app:auto_show="true"
+                app:hide_on_touch="true" />
 
             <!-- Auto-hiding overlay controls -->
             <LinearLayout
@@ -84,11 +87,11 @@
             <!-- Fullscreen Button - Bottom Right (above ExoPlayer controls) -->
             <ImageButton
                 android:id="@+id/fullscreenButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:layout_width="@dimen/touch_target_min"
+                android:layout_height="@dimen/touch_target_min"
                 android:layout_gravity="bottom|end"
-                android:layout_marginEnd="8dp"
-                android:layout_marginBottom="56dp"
+                android:layout_marginEnd="@dimen/spacing_sm"
+                android:layout_marginBottom="@dimen/player_controls_offset"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:src="@drawable/ic_fullscreen"
                 android:contentDescription="@string/player_action_fullscreen"

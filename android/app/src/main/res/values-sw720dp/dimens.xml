@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Large Tablet / TV (10"+ devices, 1080p TV boxes) - Responsive Dimensions -->
+
+    <!-- Navigation (TV/Large Tablets) -->
+    <dimen name="bottom_nav_height">0dp</dimen>
+    <dimen name="navigation_rail_width">80dp</dimen>  <!-- NavigationRail width for large tablets/TV -->
+
+    <!-- Grid (more columns for larger screens) -->
+    <dimen name="grid_gutter">32dp</dimen>
+    <dimen name="grid_item_min_width">200dp</dimen>
+    <integer name="grid_span_count_default">4</integer>
+
+    <!-- Player (optimized for Full HD displays) -->
+    <dimen name="player_portrait_height">480dp</dimen>  <!-- was 240dp on phone, 360dp on tablet -->
+    <dimen name="player_controls_offset">72dp</dimen>
+
+    <!-- Thumbnails (further scaled up) -->
+    <dimen name="thumbnail_height">320dp</dimen>  <!-- was 180dp on phone, 240dp on tablet -->
+    <dimen name="playlist_thumbnail_size">160dp</dimen>  <!-- was 80dp on phone, 120dp on tablet -->
+
+    <!-- Content -->
+    <dimen name="content_max_width">1600dp</dimen>  <!-- wider constraint for large screens -->
+
+    <!-- Spacing (increased further) -->
+    <dimen name="spacing_md">24dp</dimen>  <!-- was 16dp on phone, 20dp on tablet -->
+    <dimen name="spacing_lg">40dp</dimen>  <!-- was 24dp on phone, 32dp on tablet -->
+    <dimen name="spacing_xl">64dp</dimen>  <!-- was 32dp on phone, 48dp on tablet -->
+
+    <!-- Touch Targets (larger for TV D-pad navigation) -->
+    <dimen name="touch_target_min">56dp</dimen>  <!-- was 48dp -->
+    <dimen name="touch_target_button">64dp</dimen>  <!-- was 56dp -->
+
+    <!-- Icons (larger for 10-foot viewing) -->
+    <dimen name="icon_medium">40dp</dimen>  <!-- was 32dp on phone, 36dp on tablet -->
+    <dimen name="icon_large">64dp</dimen>  <!-- was 48dp on phone, 56dp on tablet -->
+    <dimen name="icon_xlarge">128dp</dimen>  <!-- was 96dp -->
+
+    <!-- Avatar Sizes (larger) -->
+    <dimen name="avatar_medium">72dp</dimen>  <!-- was 56dp on phone, 64dp on tablet -->
+    <dimen name="avatar_large">128dp</dimen>  <!-- was 96dp on phone, 112dp on tablet -->
+
+    <!-- Screen Type -->
+    <bool name="is_tablet">true</bool>
+    <bool name="is_large_screen">true</bool>
+    <bool name="use_two_pane_layout">true</bool>
+</resources>

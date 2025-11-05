@@ -3,10 +3,10 @@
     android:orientation="vertical"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:padding="12dp"
+    android:padding="@dimen/spacing_md"
     android:background="@color/surface_variant"
-    android:layout_marginBottom="12dp"
-    android:layout_marginTop="4dp"
+    android:layout_marginBottom="@dimen/spacing_md"
+    android:layout_marginTop="@dimen/spacing_xs"
     android:layout_gravity="center_horizontal"
     android:clickable="true"
     android:focusable="true"
@@ -15,9 +15,9 @@
     <ImageView
         android:id="@+id/thumbnail"
         android:layout_width="match_parent"
-        android:layout_height="180dp"
+        android:layout_height="@dimen/thumbnail_height"
         android:scaleType="centerCrop"
-        android:layout_marginBottom="12dp"
+        android:layout_marginBottom="@dimen/spacing_md"
         android:background="@drawable/thumbnail_placeholder"
         android:clipToOutline="true"
         android:outlineProvider="background"
@@ -37,7 +37,7 @@
         android:layout_height="wrap_content"
         android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
         android:textColor="@color/primary_green"
-        android:paddingTop="4dp"
+        android:paddingTop="@dimen/spacing_xs"
         android:text="Category • Duration"/>
 
     <TextView
@@ -45,6 +45,6 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:textAppearance="@style/TextAppearance.MaterialComponents.Caption"
-        android:paddingTop="4dp"
+        android:paddingTop="@dimen/spacing_xs"
         android:text="Description placeholder"/>
 </LinearLayout>

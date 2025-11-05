@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Large tablet/TV layout (10"+ devices, 1080p TV boxes) with NavigationRail -->
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:layoutDirection="ltr">
+
+    <!-- NavigationRail for large tablets/TV (left side, larger touch targets) -->
+    <com.google.android.material.navigationrail.NavigationRailView
+        android:id="@+id/mainBottomNav"
+        android:layout_width="@dimen/navigation_rail_width"
+        android:layout_height="match_parent"
+        android:layout_gravity="start"
+        android:background="@color/background_gray"
+        android:elevation="8dp"
+        app:itemIconTint="@color/bottom_nav_item_color"
+        app:itemTextColor="@color/bottom_nav_item_color"
+        app:itemRippleColor="@android:color/transparent"
+        app:labelVisibilityMode="labeled"
+        app:menu="@menu/bottom_nav_menu" />
+
+    <!-- Content area offset by NavigationRail width -->
+    <androidx.fragment.app.FragmentContainerView
+        android:id="@+id/main_shell_nav_host"
+        android:name="androidx.navigation.fragment.NavHostFragment"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginStart="@dimen/navigation_rail_width"
+        app:navGraph="@navigation/main_tabs_nav"
+        app:defaultNavHost="false" />
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

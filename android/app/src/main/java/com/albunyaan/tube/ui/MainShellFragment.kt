@@ -6,23 +6,26 @@ import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.setupWithNavController
 import com.albunyaan.tube.R
-import com.albunyaan.tube.databinding.FragmentMainShellBinding
+import com.google.android.material.navigation.NavigationBarView
 
 class MainShellFragment : Fragment(R.layout.fragment_main_shell) {
 
-    private var binding: FragmentMainShellBinding? = null
+    private var navigationView: NavigationBarView? = null
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        binding = FragmentMainShellBinding.bind(view)
+
+        // Find navigation view by ID (works for both BottomNavigationView and NavigationRailView)
+        navigationView = view.findViewById(R.id.mainBottomNav)
+
         val navHost = childFragmentManager.findFragmentById(R.id.main_shell_nav_host) as? NavHostFragment
         val navController = navHost?.navController ?: return
 
         // Use setupWithNavController for automatic navigation
-        binding?.mainBottomNav?.setupWithNavController(navController)
+        navigationView?.setupWithNavController(navController)
 
         // Override to handle back stack properly
-        binding?.mainBottomNav?.setOnItemSelectedListener { item ->
+        navigationView?.setOnItemSelectedListener { item ->
             android.util.Log.d("MainShellFragment", "Tab selected: ${item.itemId}, current: ${navController.currentDestination?.id}")
 
             when {
@@ -50,7 +53,7 @@ class MainShellFragment : Fragment(R.layout.fragment_main_shell) {
         }
 
         // Re-click same tab to scroll to top OR navigate back if on a sub-screen
-        binding?.mainBottomNav?.setOnItemReselectedListener { item ->
+        navigationView?.setOnItemReselectedListener { item ->
             android.util.Log.d("MainShellFragment", "⚠️ Tab reselected: ${item.itemId}, current dest: ${navController.currentDestination?.id}")
 
             // If current destination is different from the tab, navigate back to the tab
@@ -73,14 +76,15 @@ class MainShellFragment : Fragment(R.layout.fragment_main_shell) {
     }
 
     override fun onDestroyView() {
-        binding = null
+        navigationView = null
         super.onDestroyView()
     }
 
     /**
-     * Show or hide the bottom navigation bar (called from MainActivity for fullscreen mode).
+     * Show or hide the navigation bar (called from MainActivity for fullscreen mode).
+     * Works for both BottomNavigationView and NavigationRailView.
      */
     fun setBottomNavVisibility(visible: Boolean) {
-        binding?.mainBottomNav?.visibility = if (visible) View.VISIBLE else View.GONE
+        navigationView?.visibility = if (visible) View.VISIBLE else View.GONE
     }
 }

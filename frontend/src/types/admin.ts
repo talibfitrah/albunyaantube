@@ -7,8 +7,9 @@ export type AdminUserStatus = 'ACTIVE' | 'DISABLED';
 export interface AdminUser {
   id: string;
   email: string;
-  roles: AdminRole[];
+  role: AdminRole;
   status: AdminUserStatus;
+  displayName?: string;
   lastLoginAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -16,11 +17,13 @@ export interface AdminUser {
 
 export interface AdminUserCreatePayload {
   email: string;
-  roles: AdminRole[];
+  password: string;
+  displayName?: string;
+  role: AdminRole;
 }
 
 export interface AdminUserUpdatePayload {
-  roles: AdminRole[];
+  role: AdminRole;
   status: AdminUserStatus;
 }
 

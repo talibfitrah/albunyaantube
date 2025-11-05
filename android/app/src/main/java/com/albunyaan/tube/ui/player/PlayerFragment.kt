@@ -228,6 +228,20 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         binding.playerView.player = player
         player.addListener(viewModel.playerListener)
 
+        // Configure auto-hide controls
+        binding.playerView.apply {
+            setControllerAutoShow(true)
+            setControllerHideOnTouch(true)
+            controllerShowTimeoutMs = 5000 // 5 seconds
+
+            // Sync custom overlay controls with ExoPlayer controller visibility
+            setControllerVisibilityListener(
+                com.google.android.exoplayer2.ui.StyledPlayerView.ControllerVisibilityListener { visibility ->
+                    binding.playerOverlayControls?.visibility = visibility
+                }
+            )
+        }
+
         // Keep overlay controls visible initially (user needs to see quality button)
         binding.playerOverlayControls?.visibility = View.VISIBLE
 

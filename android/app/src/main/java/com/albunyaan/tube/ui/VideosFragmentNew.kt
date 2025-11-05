@@ -16,6 +16,7 @@ import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.databinding.FragmentSimpleListBinding
 import com.albunyaan.tube.ui.adapters.VideoGridAdapter
+import com.albunyaan.tube.ui.utils.calculateGridSpanCount
 import kotlinx.coroutines.launch
 
 class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
@@ -44,7 +45,10 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
         }
 
         binding?.recyclerView?.apply {
-            layoutManager = GridLayoutManager(requireContext(), 2)
+            // Dynamic grid span calculation for responsive layout
+            // Phone: 2 columns, Tablet: 3-4 columns, TV: 4-6 columns
+            val spanCount = requireContext().calculateGridSpanCount(itemMinWidthDp = 180)
+            layoutManager = GridLayoutManager(requireContext(), spanCount)
             adapter = this@VideosFragmentNew.adapter
         }
     }

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Tablet (7"+ devices) - Responsive Dimensions -->
+
+    <!-- Navigation -->
+    <dimen name="bottom_nav_height">0dp</dimen>  <!-- Use NavigationRail instead -->
+    <dimen name="navigation_rail_width">80dp</dimen>
+
+    <!-- Grid -->
+    <dimen name="grid_gutter">24dp</dimen>
+    <dimen name="grid_item_min_width">180dp</dimen>
+    <integer name="grid_span_count_default">3</integer>
+
+    <!-- Player -->
+    <dimen name="player_portrait_height">360dp</dimen>  <!-- was 240dp on phone -->
+    <dimen name="player_controls_offset">64dp</dimen>
+
+    <!-- Thumbnails (scaled up) -->
+    <dimen name="thumbnail_height">240dp</dimen>  <!-- was 180dp -->
+    <dimen name="playlist_thumbnail_size">120dp</dimen>  <!-- was 80dp -->
+
+    <!-- Content -->
+    <dimen name="content_max_width">1200dp</dimen>  <!-- constrain content width -->
+
+    <!-- Spacing (increased for larger screens) -->
+    <dimen name="spacing_md">20dp</dimen>  <!-- was 16dp -->
+    <dimen name="spacing_lg">32dp</dimen>  <!-- was 24dp -->
+    <dimen name="spacing_xl">48dp</dimen>  <!-- was 32dp -->
+
+    <!-- Icons (slightly larger) -->
+    <dimen name="icon_medium">36dp</dimen>  <!-- was 32dp -->
+    <dimen name="icon_large">56dp</dimen>  <!-- was 48dp -->
+
+    <!-- Avatar Sizes (larger) -->
+    <dimen name="avatar_medium">64dp</dimen>  <!-- was 56dp -->
+    <dimen name="avatar_large">112dp</dimen>  <!-- was 96dp -->
+
+    <!-- Screen Type -->
+    <bool name="is_tablet">true</bool>
+    <bool name="is_large_screen">true</bool>
+    <bool name="use_two_pane_layout">true</bool>
+</resources>
