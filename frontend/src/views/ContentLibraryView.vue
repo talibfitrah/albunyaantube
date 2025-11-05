@@ -395,7 +395,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
-import apiClient from '@/services/api';
+import apiClient from '@/services/api/client';
 
 const { t } = useI18n();
 

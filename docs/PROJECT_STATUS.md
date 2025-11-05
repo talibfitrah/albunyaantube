@@ -79,9 +79,9 @@ WARNING: No setter/field for category found on class Playlist      ✅ fixed (20
   - Current: Frontend stub returns empty array after 500ms
   - Required: `/api/admin/content` endpoint with filtering support
 - **Exclusions** - endpoints not implemented (shows warnings)
-- **Bulk Import/Export** - no backend
+- **Bulk Import/Export** - ✅ COMPLETE (simple + full formats with YouTube validation)
 - **Settings** (System/Notifications/YouTube API) - no persistence
-- **Impact:** 4 admin views non-functional
+- **Impact:** 3 admin views non-functional
 - **Fix:** Build backend endpoints for each feature
 
 **Note:** "Registry" terminology removed from UI. The workflow is now:
@@ -128,7 +128,7 @@ WARNING: No setter/field for category found on class Playlist      ✅ fixed (20
 - ✅ Pending Approvals - Approval queue
 - ✅ Content Library - Table view (no backend)
 - ✅ Exclusions - Management UI (no backend)
-- ✅ Bulk Import/Export - CSV handling (no backend)
+- ✅ Bulk Import/Export - ✅ FULLY FUNCTIONAL (JSON import/export with YouTube validation)
 - ✅ Users Management - Full CRUD UI
 - ✅ Audit Log - Filtering and pagination
 - ✅ Activity Log - Timeline view
@@ -198,9 +198,15 @@ WARNING: No setter/field for category found on class Playlist      ✅ fixed (20
 - [ ] Connect frontend
 - [ ] Remove "not implemented" warnings
 
-**B4. Bulk Import/Export** (2 days)
-- [ ] Build CSV upload/download endpoints
-- [ ] Connect frontend
+**B4. Bulk Import/Export** ✅ COMPLETE (2025-11-05)
+- [x] Build JSON upload/download endpoints (simple + full formats)
+- [x] YouTube validation for all IDs (404 detection)
+- [x] Category name-to-ID mapping with multi-language support (EN, AR, NL)
+- [x] Duplicate detection (skip existing items)
+- [x] Metadata fetching from YouTube API
+- [x] Connect frontend with format selection UI
+- [x] i18n support for all UI strings
+- [x] Validation endpoint (dry-run mode)
 
 ### Phase C: Fix Android Integration (1 week) 🟠 HIGH
 

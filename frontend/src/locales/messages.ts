@@ -968,56 +968,69 @@ export const messages = {
     },
     bulkImportExport: {
       heading: 'Bulk Import/Export',
-      subtitle: 'Import or export content and categories in bulk using CSV files',
+      subtitle: 'Import or export content in bulk using JSON files',
+      format: {
+        title: 'Select Format',
+        description: 'Choose the import/export format that best suits your needs',
+        simple: {
+          title: 'Simple Format',
+          description: 'Quick bulk import with YouTube ID validation',
+          feature1: 'Easy to create in spreadsheet',
+          feature2: 'Validates YouTube IDs still exist',
+          feature3: 'Perfect for one-time bulk imports'
+        },
+        full: {
+          title: 'Full Format',
+          description: 'Complete backup with all metadata',
+          feature1: 'Preserves all data and settings',
+          feature2: 'Ideal for backup and restore',
+          feature3: 'Includes approval status and timestamps'
+        }
+      },
       export: {
         title: 'Export Data',
-        description: 'Download your data as CSV files for backup or analysis',
-        selectType: 'Select data type',
-        types: {
-          content: 'All Content',
-          categories: 'Categories'
-        },
+        description: 'Download your data as JSON file',
         contentFilters: 'Content filters',
+        includeCategories: 'Include Categories',
         includeChannels: 'Include Channels',
         includePlaylists: 'Include Playlists',
         includeVideos: 'Include Videos',
-        downloadCSV: 'Download CSV',
+        download: 'Download JSON',
         exporting: 'Exporting...',
         success: 'Export completed successfully!',
         error: 'Failed to export data. Please try again.'
       },
       import: {
         title: 'Import Data',
-        description: 'Upload CSV files to add content or categories in bulk',
-        selectType: 'Select import type',
-        types: {
-          channels: 'Channels',
-          categories: 'Categories'
-        },
-        chooseFile: 'Choose CSV file',
-        fileSize: 'File size',
-        uploadCSV: 'Upload and Process',
+        description: 'Upload JSON file to add content in bulk',
+        downloadTemplate: 'Download Template',
+        defaultStatus: 'Default approval status',
+        statusApproved: 'Approved',
+        statusPending: 'Pending Review',
+        mergeStrategy: 'Merge strategy',
+        strategySkip: 'Skip existing items',
+        strategyOverwrite: 'Overwrite existing items',
+        selectFile: 'Choose JSON file or drag and drop',
+        validate: 'Validate File',
+        validating: 'Validating...',
+        submit: 'Import',
         importing: 'Importing...',
-        results: 'Import Results',
-        totalProcessed: 'Total rows processed',
-        successful: 'Successful',
-        failed: 'Failed',
-        row: 'Row',
-        status: 'Status',
-        message: 'Message',
-        statusSuccess: 'Success',
-        statusError: 'Error',
-        rowSuccess: 'Imported successfully',
-        rowError: 'Failed to import',
-        importComplete: '{count} items imported successfully',
-        error: 'Failed to import file. Please check the format.',
-        errorEmptyFile: 'CSV file is empty or invalid'
+        validationComplete: 'Validation completed. Review results below.',
+        validationError: 'Validation failed. Please check the file format.',
+        successSimple: 'Import complete: {imported} imported, {skipped} skipped, {errors} errors',
+        successFull: 'Import complete: {imported} imported, {skipped} skipped, {errors} errors',
+        error: 'Failed to import file. Please check the format.'
       },
-      templates: {
-        title: 'CSV Templates',
-        description: 'Download template files to see the required format for imports',
-        channels: 'Download Channels Template',
-        categories: 'Download Categories Template'
+      results: {
+        title: 'Import Results',
+        youtubeId: 'YouTube ID',
+        itemTitle: 'Title',
+        type: 'Type',
+        status: 'Status',
+        reason: 'Reason',
+        successful: 'successful',
+        skipped: 'skipped',
+        failed: 'failed'
       }
     }
   },
@@ -1622,56 +1635,69 @@ export const messages = {
     },
     bulkImportExport: {
       heading: 'الاستيراد/التصدير المجمّع',
-      subtitle: 'استورد أو صدّر المحتوى والفئات بشكل مجمّع باستخدام ملفات CSV',
+      subtitle: 'استورد أو صدّر المحتوى بشكل مجمّع باستخدام ملفات JSON',
+      format: {
+        title: 'اختر التنسيق',
+        description: 'اختر تنسيق الاستيراد/التصدير الذي يناسب احتياجاتك',
+        simple: {
+          title: 'التنسيق البسيط',
+          description: 'استيراد مجمّع سريع مع التحقق من معرّفات يوتيوب',
+          feature1: 'سهل الإنشاء في جدول بيانات',
+          feature2: 'يتحقق من وجود معرّفات يوتيوب',
+          feature3: 'مثالي للاستيراد المجمّع لمرة واحدة'
+        },
+        full: {
+          title: 'التنسيق الكامل',
+          description: 'نسخة احتياطية كاملة مع جميع البيانات الوصفية',
+          feature1: 'يحفظ جميع البيانات والإعدادات',
+          feature2: 'مثالي للنسخ الاحتياطي والاستعادة',
+          feature3: 'يتضمن حالة الموافقة والطوابع الزمنية'
+        }
+      },
       export: {
         title: 'تصدير البيانات',
-        description: 'قم بتنزيل بياناتك كملفات CSV للنسخ الاحتياطي أو التحليل',
-        selectType: 'اختر نوع البيانات',
-        types: {
-          content: 'جميع المحتوى',
-          categories: 'الفئات'
-        },
+        description: 'قم بتنزيل بياناتك كملف JSON',
         contentFilters: 'مرشحات المحتوى',
+        includeCategories: 'تضمين الفئات',
         includeChannels: 'تضمين القنوات',
         includePlaylists: 'تضمين قوائم التشغيل',
         includeVideos: 'تضمين الفيديوهات',
-        downloadCSV: 'تنزيل CSV',
+        download: 'تنزيل JSON',
         exporting: 'جارٍ التصدير...',
         success: 'تم التصدير بنجاح!',
         error: 'فشل تصدير البيانات. يرجى المحاولة مرة أخرى.'
       },
       import: {
         title: 'استيراد البيانات',
-        description: 'قم برفع ملفات CSV لإضافة محتوى أو فئات بشكل مجمّع',
-        selectType: 'اختر نوع الاستيراد',
-        types: {
-          channels: 'القنوات',
-          categories: 'الفئات'
-        },
-        chooseFile: 'اختر ملف CSV',
-        fileSize: 'حجم الملف',
-        uploadCSV: 'رفع ومعالجة',
+        description: 'قم برفع ملف JSON لإضافة محتوى بشكل مجمّع',
+        downloadTemplate: 'تنزيل القالب',
+        defaultStatus: 'حالة الموافقة الافتراضية',
+        statusApproved: 'معتمد',
+        statusPending: 'قيد المراجعة',
+        mergeStrategy: 'استراتيجية الدمج',
+        strategySkip: 'تخطي العناصر الموجودة',
+        strategyOverwrite: 'استبدال العناصر الموجودة',
+        selectFile: 'اختر ملف JSON أو اسحبه وأفلته',
+        validate: 'التحقق من الملف',
+        validating: 'جارٍ التحقق...',
+        submit: 'استيراد',
         importing: 'جارٍ الاستيراد...',
-        results: 'نتائج الاستيراد',
-        totalProcessed: 'إجمالي الصفوف المعالجة',
-        successful: 'ناجح',
-        failed: 'فشل',
-        row: 'الصف',
-        status: 'الحالة',
-        message: 'الرسالة',
-        statusSuccess: 'نجاح',
-        statusError: 'خطأ',
-        rowSuccess: 'تم الاستيراد بنجاح',
-        rowError: 'فشل الاستيراد',
-        importComplete: 'تم استيراد {count} عنصر بنجاح',
-        error: 'فشل استيراد الملف. يرجى التحقق من التنسيق.',
-        errorEmptyFile: 'ملف CSV فارغ أو غير صالح'
+        validationComplete: 'اكتمل التحقق. راجع النتائج أدناه.',
+        validationError: 'فشل التحقق. يرجى التحقق من تنسيق الملف.',
+        successSimple: 'اكتمل الاستيراد: {imported} مستورد، {skipped} متخطى، {errors} أخطاء',
+        successFull: 'اكتمل الاستيراد: {imported} مستورد، {skipped} متخطى، {errors} أخطاء',
+        error: 'فشل استيراد الملف. يرجى التحقق من التنسيق.'
       },
-      templates: {
-        title: 'قوالب CSV',
-        description: 'قم بتنزيل ملفات القوالب لمعرفة التنسيق المطلوب للاستيراد',
-        channels: 'تنزيل قالب القنوات',
-        categories: 'تنزيل قالب الفئات'
+      results: {
+        title: 'نتائج الاستيراد',
+        youtubeId: 'معرّف يوتيوب',
+        itemTitle: 'العنوان',
+        type: 'النوع',
+        status: 'الحالة',
+        reason: 'السبب',
+        successful: 'ناجح',
+        skipped: 'متخطى',
+        failed: 'فاشل'
       }
     }
   },
@@ -2276,56 +2302,69 @@ export const messages = {
     },
     bulkImportExport: {
       heading: 'Bulk Import/Export',
-      subtitle: 'Importeer of exporteer inhoud en categorieën in bulk met CSV-bestanden',
+      subtitle: 'Importeer of exporteer inhoud in bulk met JSON-bestanden',
+      format: {
+        title: 'Selecteer formaat',
+        description: 'Kies het import/export formaat dat het beste bij uw behoeften past',
+        simple: {
+          title: 'Eenvoudig formaat',
+          description: 'Snelle bulk import met YouTube ID-validatie',
+          feature1: 'Gemakkelijk te maken in spreadsheet',
+          feature2: 'Valideert of YouTube IDs nog bestaan',
+          feature3: 'Perfect voor eenmalige bulk imports'
+        },
+        full: {
+          title: 'Volledig formaat',
+          description: 'Volledige back-up met alle metadata',
+          feature1: 'Behoudt alle gegevens en instellingen',
+          feature2: 'Ideaal voor back-up en herstel',
+          feature3: 'Inclusief goedkeuringsstatus en tijdstempels'
+        }
+      },
       export: {
         title: 'Gegevens exporteren',
-        description: 'Download uw gegevens als CSV-bestanden voor back-up of analyse',
-        selectType: 'Selecteer gegevenstype',
-        types: {
-          content: 'Alle inhoud',
-          categories: 'Categorieën'
-        },
+        description: 'Download uw gegevens als JSON-bestand',
         contentFilters: 'Inhoudsfilters',
+        includeCategories: 'Categorieën opnemen',
         includeChannels: 'Kanalen opnemen',
         includePlaylists: 'Afspeellijsten opnemen',
         includeVideos: "Video's opnemen",
-        downloadCSV: 'Download CSV',
+        download: 'Download JSON',
         exporting: 'Exporteren...',
         success: 'Export succesvol voltooid!',
         error: 'Gegevens exporteren mislukt. Probeer het opnieuw.'
       },
       import: {
         title: 'Gegevens importeren',
-        description: 'Upload CSV-bestanden om inhoud of categorieën in bulk toe te voegen',
-        selectType: 'Selecteer importtype',
-        types: {
-          channels: 'Kanalen',
-          categories: 'Categorieën'
-        },
-        chooseFile: 'Kies CSV-bestand',
-        fileSize: 'Bestandsgrootte',
-        uploadCSV: 'Uploaden en verwerken',
+        description: 'Upload JSON-bestand om inhoud in bulk toe te voegen',
+        downloadTemplate: 'Download sjabloon',
+        defaultStatus: 'Standaard goedkeuringsstatus',
+        statusApproved: 'Goedgekeurd',
+        statusPending: 'In afwachting van beoordeling',
+        mergeStrategy: 'Samenvoegstrategie',
+        strategySkip: 'Bestaande items overslaan',
+        strategyOverwrite: 'Bestaande items overschrijven',
+        selectFile: 'Kies JSON-bestand of sleep en zet neer',
+        validate: 'Bestand valideren',
+        validating: 'Valideren...',
+        submit: 'Importeren',
         importing: 'Importeren...',
-        results: 'Importresultaten',
-        totalProcessed: 'Totaal verwerkte rijen',
-        successful: 'Gelukt',
-        failed: 'Mislukt',
-        row: 'Rij',
-        status: 'Status',
-        message: 'Bericht',
-        statusSuccess: 'Succes',
-        statusError: 'Fout',
-        rowSuccess: 'Succesvol geïmporteerd',
-        rowError: 'Importeren mislukt',
-        importComplete: '{count} items succesvol geïmporteerd',
-        error: 'Bestand importeren mislukt. Controleer het formaat.',
-        errorEmptyFile: 'CSV-bestand is leeg of ongeldig'
+        validationComplete: 'Validatie voltooid. Bekijk de resultaten hieronder.',
+        validationError: 'Validatie mislukt. Controleer het bestandsformaat.',
+        successSimple: 'Import voltooid: {imported} geïmporteerd, {skipped} overgeslagen, {errors} fouten',
+        successFull: 'Import voltooid: {imported} geïmporteerd, {skipped} overgeslagen, {errors} fouten',
+        error: 'Bestand importeren mislukt. Controleer het formaat.'
       },
-      templates: {
-        title: 'CSV-sjablonen',
-        description: 'Download sjabloonbestanden om het vereiste formaat voor imports te zien',
-        channels: 'Download kanalensjabloon',
-        categories: 'Download categorieënsjabloon'
+      results: {
+        title: 'Importresultaten',
+        youtubeId: 'YouTube ID',
+        itemTitle: 'Titel',
+        type: 'Type',
+        status: 'Status',
+        reason: 'Reden',
+        successful: 'gelukt',
+        skipped: 'overgeslagen',
+        failed: 'mislukt'
       }
     }
   }

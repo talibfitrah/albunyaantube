@@ -548,4 +548,154 @@ public class YouTubeService {
         }
         return partitions;
     }
+
+    /**
+     * Validate and fetch channel by YouTube ID.
+     * Returns channel details if exists, null if not found (404) or deleted.
+     * Used for import validation to check if YouTube content still exists.
+     */
+    @Cacheable(value = "youtubeChannelValidation", key = "#youtubeId", unless = "#result == null")
+    public Channel validateAndFetchChannel(String youtubeId) {
+        try {
+            return getChannelDetails(youtubeId);
+        } catch (IOException e) {
+            logger.warn("Channel validation failed for {}: {}", youtubeId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Validate and fetch playlist by YouTube ID.
+     * Returns playlist details if exists, null if not found (404) or deleted.
+     * Used for import validation to check if YouTube content still exists.
+     */
+    @Cacheable(value = "youtubePlaylistValidation", key = "#youtubeId", unless = "#result == null")
+    public Playlist validateAndFetchPlaylist(String youtubeId) {
+        try {
+            return getPlaylistDetails(youtubeId);
+        } catch (IOException e) {
+            logger.warn("Playlist validation failed for {}: {}", youtubeId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Validate and fetch video by YouTube ID.
+     * Returns video details if exists, null if not found (404) or deleted.
+     * Used for import validation to check if YouTube content still exists.
+     */
+    @Cacheable(value = "youtubeVideoValidation", key = "#youtubeId", unless = "#result == null")
+    public Video validateAndFetchVideo(String youtubeId) {
+        try {
+            return getVideoDetails(youtubeId);
+        } catch (IOException e) {
+            logger.warn("Video validation failed for {}: {}", youtubeId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Batch validate and fetch channels.
+     * More efficient than individual calls when validating multiple channels.
+     * Returns map of youtubeId -> Channel (only includes found channels).
+     */
+    public Map<String, Channel> batchValidateChannels(List<String> youtubeIds) {
+        if (youtubeIds == null || youtubeIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        Map<String, Channel> channelMap = new java.util.HashMap<>();
+        List<List<String>> batches = partitionList(youtubeIds, BATCH_SIZE);
+
+        for (List<String> batch : batches) {
+            try {
+                YouTube.Channels.List request = youtube.channels().list(List.of("snippet", "statistics"));
+                request.setKey(apiKey);
+                request.setId(batch);
+
+                ChannelListResponse response = request.execute();
+                List<Channel> channels = response.getItems();
+
+                if (channels != null) {
+                    channels.stream()
+                        .filter(ch -> ch.getId() != null)
+                        .forEach(ch -> channelMap.put(ch.getId(), ch));
+                }
+            } catch (IOException e) {
+                logger.warn("Batch channel validation failed for batch: {}", e.getMessage());
+            }
+        }
+
+        return channelMap;
+    }
+
+    /**
+     * Batch validate and fetch playlists.
+     * More efficient than individual calls when validating multiple playlists.
+     * Returns map of youtubeId -> Playlist (only includes found playlists).
+     */
+    public Map<String, Playlist> batchValidatePlaylists(List<String> youtubeIds) {
+        if (youtubeIds == null || youtubeIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        Map<String, Playlist> playlistMap = new java.util.HashMap<>();
+        List<List<String>> batches = partitionList(youtubeIds, BATCH_SIZE);
+
+        for (List<String> batch : batches) {
+            try {
+                YouTube.Playlists.List request = youtube.playlists().list(List.of("snippet", "contentDetails"));
+                request.setKey(apiKey);
+                request.setId(batch);
+
+                PlaylistListResponse response = request.execute();
+                List<Playlist> playlists = response.getItems();
+
+                if (playlists != null) {
+                    playlists.stream()
+                        .filter(pl -> pl.getId() != null)
+                        .forEach(pl -> playlistMap.put(pl.getId(), pl));
+                }
+            } catch (IOException e) {
+                logger.warn("Batch playlist validation failed for batch: {}", e.getMessage());
+            }
+        }
+
+        return playlistMap;
+    }
+
+    /**
+     * Batch validate and fetch videos.
+     * More efficient than individual calls when validating multiple videos.
+     * Returns map of youtubeId -> Video (only includes found videos).
+     */
+    public Map<String, Video> batchValidateVideos(List<String> youtubeIds) {
+        if (youtubeIds == null || youtubeIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        Map<String, Video> videoMap = new java.util.HashMap<>();
+        List<List<String>> batches = partitionList(youtubeIds, BATCH_SIZE);
+
+        for (List<String> batch : batches) {
+            try {
+                YouTube.Videos.List request = youtube.videos().list(List.of("snippet", "statistics", "contentDetails"));
+                request.setKey(apiKey);
+                request.setId(batch);
+
+                VideoListResponse response = request.execute();
+                List<Video> videos = response.getItems();
+
+                if (videos != null) {
+                    videos.stream()
+                        .filter(v -> v.getId() != null)
+                        .forEach(v -> videoMap.put(v.getId(), v));
+                }
+            } catch (IOException e) {
+                logger.warn("Batch video validation failed for batch: {}", e.getMessage());
+            }
+        }
+
+        return videoMap;
+    }
 }

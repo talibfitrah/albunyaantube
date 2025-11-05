@@ -3,8 +3,14 @@ package com.albunyaan.tube.controller;
 import com.albunyaan.tube.dto.ExportResponse;
 import com.albunyaan.tube.dto.ImportRequest;
 import com.albunyaan.tube.dto.ImportResponse;
+import com.albunyaan.tube.dto.SimpleExportResponse;
+import com.albunyaan.tube.dto.SimpleImportResponse;
 import com.albunyaan.tube.security.FirebaseUserDetails;
 import com.albunyaan.tube.service.ImportExportService;
+import com.albunyaan.tube.service.SimpleExportService;
+import com.albunyaan.tube.service.SimpleImportService;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -14,6 +20,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 
 /**
@@ -29,9 +37,17 @@ import java.util.concurrent.ExecutionException;
 public class ImportExportController {
 
     private final ImportExportService importExportService;
+    private final SimpleImportService simpleImportService;
+    private final SimpleExportService simpleExportService;
 
-    public ImportExportController(ImportExportService importExportService) {
+    public ImportExportController(
+            ImportExportService importExportService,
+            SimpleImportService simpleImportService,
+            SimpleExportService simpleExportService
+    ) {
         this.importExportService = importExportService;
+        this.simpleImportService = simpleImportService;
+        this.simpleExportService = simpleExportService;
     }
 
     /**
@@ -239,6 +255,149 @@ public class ImportExportController {
         ImportRequest importRequest = ImportRequest.fromJson(jsonContent);
 
         ImportResponse validation = importExportService.validateImport(importRequest);
+
+        return ResponseEntity.ok(validation);
+    }
+
+    // ============================================================
+    // Simple Format Endpoints
+    // ============================================================
+
+    /**
+     * Export content in simple format: [{channelId: "Title|Cat1,Cat2"}, ...]
+     * Only exports APPROVED items.
+     *
+     * @param includeChannels Include channels in export
+     * @param includePlaylists Include playlists in export
+     * @param includeVideos Include videos in export
+     * @param user Current authenticated user
+     * @return JSON file download in simple format
+     */
+    @GetMapping("/export/simple")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<byte[]> exportSimpleFormat(
+            @RequestParam(defaultValue = "true") boolean includeChannels,
+            @RequestParam(defaultValue = "true") boolean includePlaylists,
+            @RequestParam(defaultValue = "true") boolean includeVideos,
+            @AuthenticationPrincipal FirebaseUserDetails user
+    ) throws IOException {
+
+        SimpleExportResponse export = simpleExportService.exportSimpleFormat(
+            includeChannels,
+            includePlaylists,
+            includeVideos
+        );
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setContentDispositionFormData("attachment", "albunyaan-tube-export-simple.json");
+
+        return ResponseEntity.ok()
+                .headers(headers)
+                .body(export.toJson().getBytes());
+    }
+
+    /**
+     * Import content from simple format: [{channelId: "Title|Cat1,Cat2"}, ...]
+     * Validates YouTube IDs still exist and skips duplicates.
+     *
+     * @param file JSON file in simple format
+     * @param defaultStatus Default approval status (APPROVED or PENDING)
+     * @param user Current authenticated user
+     * @return Import results with counts and errors
+     */
+    @PostMapping("/import/simple")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<SimpleImportResponse> importSimpleFormat(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(defaultValue = "APPROVED") String defaultStatus,
+            @AuthenticationPrincipal FirebaseUserDetails user
+    ) throws IOException {
+
+        if (file.isEmpty()) {
+            return ResponseEntity.badRequest().body(
+                SimpleImportResponse.error("File is empty")
+            );
+        }
+
+        if (!file.getOriginalFilename().endsWith(".json")) {
+            return ResponseEntity.badRequest().body(
+                SimpleImportResponse.error("Only JSON files are supported")
+            );
+        }
+
+        String jsonContent = new String(file.getBytes());
+
+        // Parse simple format: [{channels}, {playlists}, {videos}]
+        ObjectMapper mapper = new ObjectMapper();
+        List<Map<String, String>> simpleData = mapper.readValue(
+            jsonContent,
+            new TypeReference<List<Map<String, String>>>() {}
+        );
+
+        if (simpleData.size() != 3) {
+            return ResponseEntity.badRequest().body(
+                SimpleImportResponse.error("Invalid format: expected array of 3 objects [channels, playlists, videos]")
+            );
+        }
+
+        SimpleImportResponse response = simpleImportService.importSimpleFormat(
+            simpleData,
+            defaultStatus,
+            user.getUid(),
+            false // not validateOnly
+        );
+
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Validate simple format import file without actually importing (dry-run)
+     *
+     * @param file JSON file in simple format
+     * @param user Current authenticated user
+     * @return Validation results with potential errors
+     */
+    @PostMapping("/import/simple/validate")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<SimpleImportResponse> validateSimpleImport(
+            @RequestParam("file") MultipartFile file,
+            @AuthenticationPrincipal FirebaseUserDetails user
+    ) throws IOException {
+
+        if (file.isEmpty()) {
+            return ResponseEntity.badRequest().body(
+                SimpleImportResponse.error("File is empty")
+            );
+        }
+
+        if (!file.getOriginalFilename().endsWith(".json")) {
+            return ResponseEntity.badRequest().body(
+                SimpleImportResponse.error("Only JSON files are supported")
+            );
+        }
+
+        String jsonContent = new String(file.getBytes());
+
+        // Parse simple format
+        ObjectMapper mapper = new ObjectMapper();
+        List<Map<String, String>> simpleData = mapper.readValue(
+            jsonContent,
+            new TypeReference<List<Map<String, String>>>() {}
+        );
+
+        if (simpleData.size() != 3) {
+            return ResponseEntity.badRequest().body(
+                SimpleImportResponse.error("Invalid format: expected array of 3 objects [channels, playlists, videos]")
+            );
+        }
+
+        SimpleImportResponse validation = simpleImportService.importSimpleFormat(
+            simpleData,
+            "APPROVED", // default status doesn't matter for validation
+            user.getUid(),
+            true // validateOnly = true (dry-run)
+        );
 
         return ResponseEntity.ok(validation);
     }

@@ -817,7 +817,7 @@ buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:8080/\"")
    - Settings persistence: Not implemented
    - Content library: Endpoints exist but incomplete
    - Exclusions: UI exists, backend missing
-   - Bulk import/export: UI exists, backend missing
+   - Bulk import/export: ✅ COMPLETE (both simple and full formats implemented)
 
 4. **Android Shows Empty Screens**
    - Categories API wired (✅ FIXED 2025-10-05)

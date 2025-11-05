@@ -8,6 +8,52 @@
     </header>
 
     <div class="content-grid">
+      <!-- Format Selection -->
+      <section class="format-section">
+        <div class="section-header">
+          <h2>{{ t('bulkImportExport.format.title') }}</h2>
+          <p class="section-description">{{ t('bulkImportExport.format.description') }}</p>
+        </div>
+
+        <div class="format-options">
+          <label class="format-card" :class="{ selected: selectedFormat === 'simple' }">
+            <input
+              type="radio"
+              name="format"
+              value="simple"
+              v-model="selectedFormat"
+            />
+            <div class="format-content">
+              <h3>{{ t('bulkImportExport.format.simple.title') }}</h3>
+              <p>{{ t('bulkImportExport.format.simple.description') }}</p>
+              <ul class="format-features">
+                <li>{{ t('bulkImportExport.format.simple.feature1') }}</li>
+                <li>{{ t('bulkImportExport.format.simple.feature2') }}</li>
+                <li>{{ t('bulkImportExport.format.simple.feature3') }}</li>
+              </ul>
+            </div>
+          </label>
+
+          <label class="format-card" :class="{ selected: selectedFormat === 'full' }">
+            <input
+              type="radio"
+              name="format"
+              value="full"
+              v-model="selectedFormat"
+            />
+            <div class="format-content">
+              <h3>{{ t('bulkImportExport.format.full.title') }}</h3>
+              <p>{{ t('bulkImportExport.format.full.description') }}</p>
+              <ul class="format-features">
+                <li>{{ t('bulkImportExport.format.full.feature1') }}</li>
+                <li>{{ t('bulkImportExport.format.full.feature2') }}</li>
+                <li>{{ t('bulkImportExport.format.full.feature3') }}</li>
+              </ul>
+            </div>
+          </label>
+        </div>
+      </section>
+
       <!-- Export Section -->
       <section class="export-section">
         <div class="section-header">
@@ -17,23 +63,12 @@
 
         <div class="export-options">
           <div class="option-group">
-            <label class="option-label">{{ t('bulkImportExport.export.selectType') }}</label>
-            <div class="radio-group">
-              <label v-for="type in exportTypes" :key="type.value" class="radio-option">
-                <input
-                  type="radio"
-                  name="exportType"
-                  :value="type.value"
-                  v-model="exportForm.type"
-                />
-                <span>{{ type.label }}</span>
-              </label>
-            </div>
-          </div>
-
-          <div v-if="exportForm.type === 'content'" class="option-group">
             <label class="option-label">{{ t('bulkImportExport.export.contentFilters') }}</label>
             <div class="filter-grid">
+              <label v-if="selectedFormat === 'full'" class="checkbox-option">
+                <input type="checkbox" v-model="exportForm.includeCategories" />
+                <span>{{ t('bulkImportExport.export.includeCategories') }}</span>
+              </label>
               <label class="checkbox-option">
                 <input type="checkbox" v-model="exportForm.includeChannels" />
                 <span>{{ t('bulkImportExport.export.includeChannels') }}</span>
@@ -55,7 +90,7 @@
             :disabled="isExporting"
             @click="handleExport"
           >
-            {{ isExporting ? t('bulkImportExport.export.exporting') : t('bulkImportExport.export.downloadCSV') }}
+            {{ isExporting ? t('bulkImportExport.export.exporting') : t('bulkImportExport.export.download') }}
           </button>
         </div>
 
@@ -75,46 +110,98 @@
         </div>
 
         <div class="import-options">
-          <div class="option-group">
-            <label class="option-label">{{ t('bulkImportExport.import.selectType') }}</label>
+          <!-- Template Download (Simple Format Only) -->
+          <div v-if="selectedFormat === 'simple'" class="template-download">
+            <button type="button" class="btn-secondary" @click="downloadTemplate">
+              {{ t('bulkImportExport.import.downloadTemplate') }}
+            </button>
+          </div>
+
+          <!-- Default Status (Simple Format Only) -->
+          <div v-if="selectedFormat === 'simple'" class="option-group">
+            <label class="option-label">{{ t('bulkImportExport.import.defaultStatus') }}</label>
             <div class="radio-group">
-              <label v-for="type in importTypes" :key="type.value" class="radio-option">
+              <label class="radio-option">
                 <input
                   type="radio"
-                  name="importType"
-                  :value="type.value"
-                  v-model="importForm.type"
-                  @change="resetImport"
+                  name="defaultStatus"
+                  value="APPROVED"
+                  v-model="importForm.defaultStatus"
                 />
-                <span>{{ type.label }}</span>
+                <span>{{ t('bulkImportExport.import.statusApproved') }}</span>
+              </label>
+              <label class="radio-option">
+                <input
+                  type="radio"
+                  name="defaultStatus"
+                  value="PENDING"
+                  v-model="importForm.defaultStatus"
+                />
+                <span>{{ t('bulkImportExport.import.statusPending') }}</span>
               </label>
             </div>
           </div>
 
+          <!-- Merge Strategy (Full Format Only) -->
+          <div v-if="selectedFormat === 'full'" class="option-group">
+            <label class="option-label">{{ t('bulkImportExport.import.mergeStrategy') }}</label>
+            <div class="radio-group">
+              <label class="radio-option">
+                <input
+                  type="radio"
+                  name="mergeStrategy"
+                  value="SKIP"
+                  v-model="importForm.mergeStrategy"
+                />
+                <span>{{ t('bulkImportExport.import.strategySkip') }}</span>
+              </label>
+              <label class="radio-option">
+                <input
+                  type="radio"
+                  name="mergeStrategy"
+                  value="OVERWRITE"
+                  v-model="importForm.mergeStrategy"
+                />
+                <span>{{ t('bulkImportExport.import.strategyOverwrite') }}</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- File Upload -->
           <div class="file-upload">
             <label class="upload-label">
               <input
                 type="file"
-                accept=".csv"
+                accept=".json"
                 @change="handleFileSelect"
                 ref="fileInput"
-                class="file-input"
               />
-              <span class="upload-button">
-                {{ importForm.file ? importForm.file.name : t('bulkImportExport.import.chooseFile') }}
+              <span class="upload-text">
+                {{ importForm.file ? importForm.file.name : t('bulkImportExport.import.selectFile') }}
               </span>
             </label>
+            <span v-if="importForm.file" class="file-size">
+              {{ formatFileSize(importForm.file.size) }}
+            </span>
           </div>
 
-          <div v-if="importForm.file" class="file-info">
-            <p>{{ t('bulkImportExport.import.fileSize') }}: {{ formatFileSize(importForm.file.size) }}</p>
+          <!-- Action Buttons -->
+          <div class="import-actions">
+            <button
+              type="button"
+              class="btn-secondary"
+              :disabled="!importForm.file || isValidating"
+              @click="handleValidate"
+            >
+              {{ isValidating ? t('bulkImportExport.import.validating') : t('bulkImportExport.import.validate') }}
+            </button>
             <button
               type="button"
               class="btn-primary"
-              :disabled="isImporting"
+              :disabled="!importForm.file || isImporting"
               @click="handleImport"
             >
-              {{ isImporting ? t('bulkImportExport.import.importing') : t('bulkImportExport.import.uploadCSV') }}
+              {{ isImporting ? t('bulkImportExport.import.importing') : t('bulkImportExport.import.submit') }}
             </button>
           </div>
         </div>
@@ -126,31 +213,43 @@
           {{ importSuccess }}
         </div>
 
-        <div v-if="importResults.length > 0" class="import-results">
-          <h3>{{ t('bulkImportExport.import.results') }}</h3>
-          <div class="results-summary">
-            <p>{{ t('bulkImportExport.import.totalProcessed') }}: {{ importResults.length }}</p>
-            <p>{{ t('bulkImportExport.import.successful') }}: {{ successCount }}</p>
-            <p v-if="errorCount > 0" class="error-count">{{ t('bulkImportExport.import.failed') }}: {{ errorCount }}</p>
+        <!-- Import Results Table -->
+        <div v-if="importResults.length > 0" class="results-section">
+          <div class="results-header">
+            <h3>{{ t('bulkImportExport.results.title') }}</h3>
+            <div class="results-summary">
+              <span class="success-count">{{ successCount }} {{ t('bulkImportExport.results.successful') }}</span>
+              <span class="skipped-count">{{ skippedCount }} {{ t('bulkImportExport.results.skipped') }}</span>
+              <span class="error-count">{{ errorCount }} {{ t('bulkImportExport.results.failed') }}</span>
+            </div>
           </div>
-          <div class="results-table-container">
+
+          <div class="results-table-wrapper">
             <table class="results-table">
               <thead>
                 <tr>
-                  <th>{{ t('bulkImportExport.import.row') }}</th>
-                  <th>{{ t('bulkImportExport.import.status') }}</th>
-                  <th>{{ t('bulkImportExport.import.message') }}</th>
+                  <th>{{ t('bulkImportExport.results.youtubeId') }}</th>
+                  <th>{{ t('bulkImportExport.results.title') }}</th>
+                  <th>{{ t('bulkImportExport.results.type') }}</th>
+                  <th>{{ t('bulkImportExport.results.status') }}</th>
+                  <th>{{ t('bulkImportExport.results.reason') }}</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(result, idx) in importResults" :key="idx" :class="{ 'error-row': !result.success }">
-                  <td>{{ result.row }}</td>
-                  <td>
-                    <span :class="['status-badge', result.success ? 'success' : 'error']">
-                      {{ result.success ? t('bulkImportExport.import.statusSuccess') : t('bulkImportExport.import.statusError') }}
+                <tr
+                  v-for="(result, index) in importResults"
+                  :key="index"
+                  :class="getResultRowClass(result)"
+                >
+                  <td class="youtube-id">{{ result.youtubeId }}</td>
+                  <td class="title">{{ result.title }}</td>
+                  <td class="type">{{ result.type }}</td>
+                  <td class="status">
+                    <span :class="`status-badge status-${result.status.toLowerCase()}`">
+                      {{ result.status }}
                     </span>
                   </td>
-                  <td>{{ result.message }}</td>
+                  <td class="reason">{{ result.errorReason || '-' }}</td>
                 </tr>
               </tbody>
             </table>
@@ -158,243 +257,214 @@
         </div>
       </section>
     </div>
-
-    <!-- Template Download Links -->
-    <section class="templates-section">
-      <h3>{{ t('bulkImportExport.templates.title') }}</h3>
-      <p>{{ t('bulkImportExport.templates.description') }}</p>
-      <div class="template-links">
-        <button
-          v-for="template in templates"
-          :key="template.type"
-          type="button"
-          class="btn-secondary"
-          @click="downloadTemplate(template.type)"
-        >
-          {{ template.label }}
-        </button>
-      </div>
-    </section>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
-import { useI18n } from 'vue-i18n';
+import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+import importExportService, { type SimpleImportItemResult } from '@/services/importExportService'
 
-const { t } = useI18n();
+const { t } = useI18n()
 
-interface ImportResult {
-  row: number;
-  success: boolean;
-  message: string;
-}
+// Format selection
+const selectedFormat = ref<'simple' | 'full'>('simple')
 
+// Export form
 const exportForm = ref({
-  type: 'content' as 'content' | 'categories',
+  includeCategories: true,
   includeChannels: true,
   includePlaylists: true,
   includeVideos: true
-});
+})
 
+// Import form
 const importForm = ref({
-  type: 'channels' as 'channels' | 'categories',
-  file: null as File | null
-});
+  file: null as File | null,
+  defaultStatus: 'APPROVED' as 'APPROVED' | 'PENDING',
+  mergeStrategy: 'SKIP' as 'SKIP' | 'OVERWRITE' | 'MERGE'
+})
 
-const isExporting = ref(false);
-const isImporting = ref(false);
-const exportError = ref('');
-const exportSuccess = ref('');
-const importError = ref('');
-const importSuccess = ref('');
-const importResults = ref<ImportResult[]>([]);
-const fileInput = ref<HTMLInputElement | null>(null);
+// State
+const isExporting = ref(false)
+const isImporting = ref(false)
+const isValidating = ref(false)
+const exportError = ref('')
+const exportSuccess = ref('')
+const importError = ref('')
+const importSuccess = ref('')
+const importResults = ref<SimpleImportItemResult[]>([])
+const fileInput = ref<HTMLInputElement | null>(null)
 
-const exportTypes = computed(() => [
-  { value: 'content', label: t('bulkImportExport.export.types.content') },
-  { value: 'categories', label: t('bulkImportExport.export.types.categories') }
-]);
+// Computed
+const successCount = computed(() => importResults.value.filter(r => r.status === 'SUCCESS').length)
+const skippedCount = computed(() => importResults.value.filter(r => r.status === 'SKIPPED').length)
+const errorCount = computed(() => importResults.value.filter(r => r.status === 'FAILED').length)
 
-const importTypes = computed(() => [
-  { value: 'channels', label: t('bulkImportExport.import.types.channels') },
-  { value: 'categories', label: t('bulkImportExport.import.types.categories') }
-]);
-
-const templates = computed(() => [
-  { type: 'channels', label: t('bulkImportExport.templates.channels') },
-  { type: 'categories', label: t('bulkImportExport.templates.categories') }
-]);
-
-const successCount = computed(() => importResults.value.filter(r => r.success).length);
-const errorCount = computed(() => importResults.value.filter(r => !r.success).length);
-
+// Methods
 function handleFileSelect(event: Event) {
-  const target = event.target as HTMLInputElement;
+  const target = event.target as HTMLInputElement
   if (target.files && target.files.length > 0) {
-    importForm.value.file = target.files[0];
-    importError.value = '';
-    importSuccess.value = '';
-  }
-}
-
-function resetImport() {
-  importForm.value.file = null;
-  importError.value = '';
-  importSuccess.value = '';
-  importResults.value = [];
-  if (fileInput.value) {
-    fileInput.value.value = '';
+    importForm.value.file = target.files[0]
+    importError.value = ''
+    importSuccess.value = ''
+    importResults.value = []
   }
 }
 
 function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return bytes + ' B';
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
-  return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(2) + ' MB'
+}
+
+function getResultRowClass(result: SimpleImportItemResult): string {
+  return `result-${result.status.toLowerCase()}`
+}
+
+function downloadTemplate() {
+  const blob = importExportService.generateSimpleFormatTemplate()
+  importExportService.downloadBlob(blob, 'albunyaan-import-template.json')
 }
 
 async function handleExport() {
-  exportError.value = '';
-  exportSuccess.value = '';
-  isExporting.value = true;
+  exportError.value = ''
+  exportSuccess.value = ''
+  isExporting.value = true
 
   try {
-    // Simulate export logic - replace with actual API call
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    let blob: Blob
 
-    const csvData = generateCSVData();
-    const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${exportForm.value.type}-export-${new Date().toISOString().split('T')[0]}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    if (selectedFormat.value === 'simple') {
+      blob = await importExportService.exportSimple({
+        includeChannels: exportForm.value.includeChannels,
+        includePlaylists: exportForm.value.includePlaylists,
+        includeVideos: exportForm.value.includeVideos
+      })
+    } else {
+      blob = await importExportService.exportFull({
+        includeCategories: exportForm.value.includeCategories,
+        includeChannels: exportForm.value.includeChannels,
+        includePlaylists: exportForm.value.includePlaylists,
+        includeVideos: exportForm.value.includeVideos
+      })
+    }
 
-    exportSuccess.value = t('bulkImportExport.export.success');
-  } catch (error) {
-    exportError.value = t('bulkImportExport.export.error');
+    const filename = selectedFormat.value === 'simple'
+      ? `albunyaan-export-simple-${new Date().toISOString().split('T')[0]}.json`
+      : `albunyaan-export-full-${new Date().toISOString().split('T')[0]}.json`
+
+    importExportService.downloadBlob(blob, filename)
+    exportSuccess.value = t('bulkImportExport.export.success')
+  } catch (error: any) {
+    console.error('Export failed:', error)
+    exportError.value = error.response?.data?.message || t('bulkImportExport.export.error')
   } finally {
-    isExporting.value = false;
+    isExporting.value = false
   }
 }
 
-function generateCSVData(): string {
-  if (exportForm.value.type === 'categories') {
-    return 'id,name,parentId,description\n1,Islamic Studies,,Learn about Islam\n2,Quran Recitation,1,Beautiful Quran recitations';
-  } else {
-    let headers = '';
-    let rows = '';
+async function handleValidate() {
+  if (!importForm.value.file) return
 
-    if (exportForm.value.includeChannels) {
-      headers = 'type,youtubeId,title,description,categoryIds\n';
-      rows += 'channel,UCxyz123,Example Channel,A great channel,1;2\n';
-    }
-    if (exportForm.value.includePlaylists) {
-      if (!headers) headers = 'type,youtubeId,title,description,categoryIds\n';
-      rows += 'playlist,PLabc456,Example Playlist,A helpful playlist,1\n';
-    }
-    if (exportForm.value.includeVideos) {
-      if (!headers) headers = 'type,youtubeId,title,description,categoryIds\n';
-      rows += 'video,VIDdef789,Example Video,An informative video,2\n';
+  importError.value = ''
+  importSuccess.value = ''
+  importResults.value = []
+  isValidating.value = true
+
+  try {
+    let response
+
+    if (selectedFormat.value === 'simple') {
+      response = await importExportService.validateSimple(importForm.value.file)
+      importResults.value = response.results
+    } else {
+      const fullResponse = await importExportService.validateFull(importForm.value.file)
+      // Convert full format errors to results format
+      importResults.value = fullResponse.errors.map(err => ({
+        youtubeId: err.id,
+        title: err.id,
+        type: err.type as any,
+        status: 'FAILED' as const,
+        errorReason: err.error
+      }))
     }
 
-    return headers + rows;
+    importSuccess.value = t('bulkImportExport.import.validationComplete')
+  } catch (error: any) {
+    console.error('Validation failed:', error)
+    importError.value = error.response?.data?.message || t('bulkImportExport.import.validationError')
+  } finally {
+    isValidating.value = false
   }
 }
 
 async function handleImport() {
-  if (!importForm.value.file) return;
+  if (!importForm.value.file) return
 
-  importError.value = '';
-  importSuccess.value = '';
-  importResults.value = [];
-  isImporting.value = true;
+  importError.value = ''
+  importSuccess.value = ''
+  importResults.value = []
+  isImporting.value = true
 
   try {
-    const text = await importForm.value.file.text();
-    const lines = text.split('\n').filter(line => line.trim());
+    let response
 
-    if (lines.length < 2) {
-      throw new Error(t('bulkImportExport.import.errorEmptyFile'));
+    if (selectedFormat.value === 'simple') {
+      response = await importExportService.importSimple(
+        importForm.value.file,
+        importForm.value.defaultStatus
+      )
+      importResults.value = response.results
+
+      const { counts } = response
+      const totalImported = counts.channelsImported + counts.playlistsImported + counts.videosImported
+      const totalSkipped = counts.channelsSkipped + counts.playlistsSkipped + counts.videosSkipped
+
+      importSuccess.value = t('bulkImportExport.import.successSimple', {
+        imported: totalImported,
+        skipped: totalSkipped,
+        errors: counts.totalErrors
+      })
+    } else {
+      const fullResponse = await importExportService.importFull(
+        importForm.value.file,
+        importForm.value.mergeStrategy
+      )
+
+      // Convert full format errors to results format
+      importResults.value = fullResponse.errors.map(err => ({
+        youtubeId: err.id,
+        title: err.id,
+        type: err.type as any,
+        status: 'FAILED' as const,
+        errorReason: err.error
+      }))
+
+      const { counts } = fullResponse
+      const totalImported = counts.categoriesImported + counts.channelsImported +
+                           counts.playlistsImported + counts.videosImported
+      const totalSkipped = counts.categoriesSkipped + counts.channelsSkipped +
+                          counts.playlistsSkipped + counts.videosSkipped
+
+      importSuccess.value = t('bulkImportExport.import.successFull', {
+        imported: totalImported,
+        skipped: totalSkipped,
+        errors: counts.totalErrors
+      })
     }
 
-    const headers = lines[0].split(',').map(h => h.trim());
-    const results: ImportResult[] = [];
-
-    // Validate and process each row
-    for (let i = 1; i < lines.length; i++) {
-      const row = i + 1;
-      const values = lines[i].split(',').map(v => v.trim());
-
-      try {
-        validateRow(headers, values, importForm.value.type);
-        results.push({
-          row,
-          success: true,
-          message: t('bulkImportExport.import.rowSuccess')
-        });
-      } catch (error) {
-        results.push({
-          row,
-          success: false,
-          message: error instanceof Error ? error.message : t('bulkImportExport.import.rowError')
-        });
-      }
+    // Reset file input
+    if (fileInput.value) {
+      fileInput.value.value = ''
     }
-
-    importResults.value = results;
-
-    const successCount = results.filter(r => r.success).length;
-    importSuccess.value = t('bulkImportExport.import.importComplete', { count: successCount });
-  } catch (error) {
-    importError.value = error instanceof Error ? error.message : t('bulkImportExport.import.error');
+    importForm.value.file = null
+  } catch (error: any) {
+    console.error('Import failed:', error)
+    importError.value = error.response?.data?.message || t('bulkImportExport.import.error')
   } finally {
-    isImporting.value = false;
+    isImporting.value = false
   }
-}
-
-function validateRow(headers: string[], values: string[], type: string) {
-  if (type === 'channels') {
-    const requiredFields = ['youtubeId', 'title'];
-    for (const field of requiredFields) {
-      const idx = headers.indexOf(field);
-      if (idx === -1) throw new Error(`Missing required column: ${field}`);
-      if (!values[idx]) throw new Error(`Missing ${field} value`);
-    }
-
-    // Validate YouTube ID format
-    const youtubeIdIdx = headers.indexOf('youtubeId');
-    if (values[youtubeIdIdx] && !/^UC[a-zA-Z0-9_-]{22}$/.test(values[youtubeIdIdx])) {
-      throw new Error('Invalid YouTube channel ID format');
-    }
-  } else if (type === 'categories') {
-    const requiredFields = ['name'];
-    for (const field of requiredFields) {
-      const idx = headers.indexOf(field);
-      if (idx === -1) throw new Error(`Missing required column: ${field}`);
-      if (!values[idx]) throw new Error(`Missing ${field} value`);
-    }
-  }
-}
-
-function downloadTemplate(type: string) {
-  let csvContent = '';
-
-  if (type === 'channels') {
-    csvContent = 'youtubeId,title,description,categoryIds\nUCxyz123abc,Example Channel,Description here,1;2';
-  } else if (type === 'categories') {
-    csvContent = 'name,parentId,description\nIslamic Studies,,Learn about Islam\nQuran Recitation,1,Beautiful Quran recitations';
-  }
-
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `${type}-template.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
 }
 </script>
 
@@ -411,29 +481,24 @@ function downloadTemplate(type: string) {
 
 .heading {
   font-size: 1.875rem;
-  font-weight: 700;
-  color: var(--color-text-primary);
-  margin: 0 0 0.5rem 0;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
 }
 
 .subtitle {
-  font-size: 1rem;
   color: var(--color-text-secondary);
-  margin: 0;
 }
 
 .content-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
   gap: 2rem;
-  margin-bottom: 2rem;
 }
 
+.format-section,
 .export-section,
 .import-section {
-  background: var(--color-background-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: 0.5rem;
+  background: var(--color-background-soft);
+  border-radius: 8px;
   padding: 1.5rem;
 }
 
@@ -444,14 +509,70 @@ function downloadTemplate(type: string) {
 .section-header h2 {
   font-size: 1.25rem;
   font-weight: 600;
-  color: var(--color-text-primary);
-  margin: 0 0 0.5rem 0;
+  margin-bottom: 0.5rem;
 }
 
 .section-description {
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+}
+
+.format-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1rem;
+}
+
+.format-card {
+  border: 2px solid var(--color-border);
+  border-radius: 8px;
+  padding: 1.5rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.format-card:hover {
+  border-color: var(--color-primary);
+}
+
+.format-card.selected {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+.format-card input[type="radio"] {
+  display: none;
+}
+
+.format-content h3 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.format-content p {
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+.format-features {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.format-features li {
+  padding: 0.25rem 0;
   font-size: 0.875rem;
   color: var(--color-text-secondary);
-  margin: 0;
+}
+
+.format-features li::before {
+  content: "✓ ";
+  color: var(--color-success);
+  font-weight: bold;
+  margin-right: 0.5rem;
 }
 
 .option-group {
@@ -460,20 +581,17 @@ function downloadTemplate(type: string) {
 
 .option-label {
   display: block;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--color-text-primary);
+  font-weight: 500;
   margin-bottom: 0.75rem;
 }
 
 .radio-group {
   display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+  gap: 1rem;
+  flex-wrap: wrap;
 }
 
-.radio-option,
-.checkbox-option {
+.radio-option {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -482,135 +600,139 @@ function downloadTemplate(type: string) {
 
 .filter-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 0.75rem;
 }
 
+.checkbox-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
 .file-upload {
-  margin-bottom: 1rem;
+  margin: 1.5rem 0;
 }
 
 .upload-label {
-  display: block;
+  display: inline-block;
+  padding: 0.75rem 1.5rem;
+  border: 2px dashed var(--color-border);
+  border-radius: 8px;
   cursor: pointer;
+  transition: all 0.2s;
 }
 
-.file-input {
+.upload-label:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+.upload-label input[type="file"] {
   display: none;
 }
 
-.upload-button {
-  display: inline-block;
-  padding: 0.75rem 1.25rem;
-  background: var(--color-background-tertiary);
-  border: 2px dashed var(--color-border);
-  border-radius: 0.5rem;
-  color: var(--color-text-primary);
-  font-size: 0.875rem;
-  transition: all 0.2s;
-}
-
-.upload-button:hover {
-  border-color: var(--color-primary);
-  background: var(--color-primary-light);
-}
-
-.file-info {
-  padding: 1rem;
-  background: var(--color-background-tertiary);
-  border-radius: 0.5rem;
-  margin-bottom: 1rem;
-}
-
-.file-info p {
-  margin: 0 0 0.75rem 0;
-  font-size: 0.875rem;
+.file-size {
+  margin-left: 1rem;
   color: var(--color-text-secondary);
+  font-size: 0.875rem;
+}
+
+.import-actions {
+  display: flex;
+  gap: 1rem;
+}
+
+.btn-primary,
+.btn-secondary {
+  padding: 0.75rem 1.5rem;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
 }
 
 .btn-primary {
-  padding: 0.75rem 1.5rem;
   background: var(--color-primary);
   color: white;
-  border: none;
-  border-radius: 0.5rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.2s;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: var(--color-primary-dark);
-}
-
-.btn-primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+  background: var(--color-primary-hover);
 }
 
 .btn-secondary {
-  padding: 0.75rem 1.5rem;
-  background: var(--color-background-tertiary);
-  color: var(--color-text-primary);
+  background: var(--color-background-mute);
+  color: var(--color-text);
   border: 1px solid var(--color-border);
-  border-radius: 0.5rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
 }
 
-.btn-secondary:hover {
-  background: var(--color-background-secondary);
-  border-color: var(--color-primary);
+.btn-secondary:hover:not(:disabled) {
+  background: var(--color-background-soft);
+}
+
+.btn-primary:disabled,
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.error-message,
+.success-message {
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
 }
 
 .error-message {
-  padding: 0.75rem 1rem;
-  background: #fee;
-  border: 1px solid #fcc;
-  border-radius: 0.5rem;
-  color: #c33;
-  font-size: 0.875rem;
-  margin-top: 1rem;
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  border: 1px solid var(--color-danger);
 }
 
 .success-message {
-  padding: 0.75rem 1rem;
-  background: #efe;
-  border: 1px solid #cfc;
-  border-radius: 0.5rem;
-  color: #363;
-  font-size: 0.875rem;
-  margin-top: 1rem;
+  background: var(--color-success-soft);
+  color: var(--color-success);
+  border: 1px solid var(--color-success);
 }
 
-.import-results {
+.results-section {
   margin-top: 2rem;
-  padding-top: 2rem;
   border-top: 1px solid var(--color-border);
+  padding-top: 1.5rem;
 }
 
-.import-results h3 {
-  font-size: 1.125rem;
-  font-weight: 600;
-  margin: 0 0 1rem 0;
+.results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
 }
 
 .results-summary {
-  margin-bottom: 1rem;
+  display: flex;
+  gap: 1.5rem;
   font-size: 0.875rem;
 }
 
-.results-summary p {
-  margin: 0.25rem 0;
+.success-count {
+  color: var(--color-success);
+  font-weight: 500;
+}
+
+.skipped-count {
+  color: var(--color-warning);
+  font-weight: 500;
 }
 
 .error-count {
-  color: #c33;
-  font-weight: 600;
+  color: var(--color-danger);
+  font-weight: 500;
 }
 
-.results-table-container {
+.results-table-wrapper {
   overflow-x: auto;
 }
 
@@ -623,79 +745,51 @@ function downloadTemplate(type: string) {
 .results-table th,
 .results-table td {
   padding: 0.75rem;
-  text-align: start;
+  text-align: left;
   border-bottom: 1px solid var(--color-border);
 }
 
 .results-table th {
   font-weight: 600;
-  background: var(--color-background-tertiary);
+  background: var(--color-background-mute);
 }
 
-.error-row {
-  background: #fff5f5;
+.result-success {
+  background: var(--color-success-soft);
+}
+
+.result-skipped {
+  background: var(--color-warning-soft);
+}
+
+.result-failed {
+  background: var(--color-danger-soft);
 }
 
 .status-badge {
   display: inline-block;
   padding: 0.25rem 0.5rem;
-  border-radius: 0.25rem;
+  border-radius: 4px;
   font-size: 0.75rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
-.status-badge.success {
-  background: #d4edda;
-  color: #155724;
+.status-success {
+  background: var(--color-success);
+  color: white;
 }
 
-.status-badge.error {
-  background: #f8d7da;
-  color: #721c24;
+.status-skipped {
+  background: var(--color-warning);
+  color: white;
 }
 
-.templates-section {
-  background: var(--color-background-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: 0.5rem;
-  padding: 1.5rem;
+.status-failed {
+  background: var(--color-danger);
+  color: white;
 }
 
-.templates-section h3 {
-  font-size: 1.125rem;
-  font-weight: 600;
-  margin: 0 0 0.5rem 0;
-}
-
-.templates-section p {
-  font-size: 0.875rem;
-  color: var(--color-text-secondary);
-  margin: 0 0 1rem 0;
-}
-
-.template-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-}
-
-@media (max-width: 768px) {
-  .bulk-import-export {
-    padding: 1rem;
-  }
-
-  .content-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .filter-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* RTL Support */
-[dir='rtl'] .radio-option,
-[dir='rtl'] .checkbox-option {
-  flex-direction: row-reverse;
+.template-download {
+  margin-bottom: 1.5rem;
 }
 </style>
