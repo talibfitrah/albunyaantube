@@ -439,9 +439,18 @@ enum class PlaybackStartReason(@StringRes val labelRes: Int) {
     RESUME(R.string.player_start_reason_resume)
 }
 
+/**
+ * Smart quality selection based on available tracks.
+ * Selects 720p as default for balance between quality and loading speed.
+ * Users can manually switch to higher quality if needed.
+ */
 private fun ResolvedStreams.toDefaultSelection(): PlaybackSelection? {
-    val preferredVideo = videoTracks.maxWithOrNull(compareBy<VideoTrack> { it.height ?: 0 }
-        .thenBy { it.bitrate ?: 0 })
+    // Smart quality selection: prefer 720p for faster loading, fallback to best available
+    val preferredVideo = videoTracks.firstOrNull { it.height == 720 }
+        ?: videoTracks.firstOrNull { it.height == 480 }
+        ?: videoTracks.maxWithOrNull(compareBy<VideoTrack> { it.height ?: 0 }
+            .thenBy { it.bitrate ?: 0 })
+
     val preferredAudio = (audioTracks.maxByOrNull { it.bitrate ?: 0 }
         ?: preferredVideo?.let {
             AudioTrack(

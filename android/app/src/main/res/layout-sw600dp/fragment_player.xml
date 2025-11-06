@@ -34,11 +34,10 @@
                 app:hide_on_touch="true" />
 
             <!-- Auto-hiding overlay controls -->
-            <LinearLayout
+            <FrameLayout
                 android:id="@+id/playerOverlayControls"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:orientation="vertical"
                 android:visibility="visible">
 
                 <!-- Top bar with minimize, quality, cast -->
@@ -84,20 +83,20 @@
 
                 </LinearLayout>
 
-            </LinearLayout>
+                <!-- Fullscreen Button - Bottom Right (inside overlay controls) -->
+                <ImageButton
+                    android:id="@+id/fullscreenButton"
+                    android:layout_width="@dimen/touch_target_min"
+                    android:layout_height="@dimen/touch_target_min"
+                    android:layout_gravity="bottom|end"
+                    android:layout_marginEnd="@dimen/spacing_md"
+                    android:layout_marginBottom="@dimen/player_controls_offset"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:src="@drawable/ic_fullscreen"
+                    android:contentDescription="@string/player_action_fullscreen"
+                    app:tint="@android:color/white" />
 
-            <!-- Fullscreen Button - Bottom Right (above ExoPlayer controls) -->
-            <ImageButton
-                android:id="@+id/fullscreenButton"
-                android:layout_width="@dimen/touch_target_min"
-                android:layout_height="@dimen/touch_target_min"
-                android:layout_gravity="bottom|end"
-                android:layout_marginEnd="@dimen/spacing_md"
-                android:layout_marginBottom="@dimen/player_controls_offset"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:src="@drawable/ic_fullscreen"
-                android:contentDescription="@string/player_action_fullscreen"
-                app:tint="@android:color/white" />
+            </FrameLayout>
 
         </FrameLayout>
 
@@ -305,18 +304,18 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:orientation="vertical"
-                        android:gravity="center"
                         android:background="?attr/selectableItemBackground"
                         android:clickable="true"
+                        android:contentDescription="@string/player_action_download"
                         android:focusable="true"
-                        android:padding="@dimen/spacing_md"
-                        android:contentDescription="@string/player_action_download">
+                        android:gravity="center"
+                        android:orientation="vertical"
+                        android:padding="@dimen/spacing_md">
 
                         <ImageView
                             android:layout_width="@dimen/icon_medium"
                             android:layout_height="@dimen/icon_medium"
-                            android:src="@drawable/ic_downloads"
+                            android:src="@drawable/outline_download_24"
                             app:tint="@color/primary_green" />
 
                         <TextView

@@ -26,10 +26,42 @@ class MultiQualityMediaSourceFactory(context: Context) {
         context,
         DefaultHttpDataSource.Factory()
             .setUserAgent("Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36")
-            .setConnectTimeoutMs(10000)  // Reduced from 30s to 10s for faster quality switching
-            .setReadTimeoutMs(10000)      // Reduced from 30s to 10s
+            .setConnectTimeoutMs(8000)   // Faster timeout for quicker failure detection
+            .setReadTimeoutMs(8000)      // Faster read timeout
             .setAllowCrossProtocolRedirects(true)  // Allow HTTP -> HTTPS redirects
     )
+
+    // Cache factory to enable HTTP response caching for faster subsequent loads
+    private val cacheDataSourceFactory: DataSource.Factory = com.google.android.exoplayer2.upstream.cache.CacheDataSource.Factory()
+        .setCache(getOrCreateCache(context))
+        .setUpstreamDataSourceFactory(dataSourceFactory)
+        .setFlags(com.google.android.exoplayer2.upstream.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+
+    companion object {
+        private var simpleCache: com.google.android.exoplayer2.upstream.cache.SimpleCache? = null
+
+        @Synchronized
+        private fun getOrCreateCache(context: Context): com.google.android.exoplayer2.upstream.cache.SimpleCache {
+            if (simpleCache == null) {
+                val cacheDir = java.io.File(context.cacheDir, "exoplayer")
+                val databaseProvider = com.google.android.exoplayer2.database.StandaloneDatabaseProvider(context)
+                // 100MB cache for video chunks
+                val evictor = com.google.android.exoplayer2.upstream.cache.LeastRecentlyUsedCacheEvictor(100 * 1024 * 1024L)
+                simpleCache = com.google.android.exoplayer2.upstream.cache.SimpleCache(cacheDir, evictor, databaseProvider)
+            }
+            return simpleCache!!
+        }
+
+        /**
+         * Releases the cache and clears references to prevent memory leaks.
+         * Should be called from the Application lifecycle (e.g., in onTerminate).
+         */
+        @Synchronized
+        fun releaseCache() {
+            simpleCache?.release()
+            simpleCache = null
+        }
+    }
 
     /**
      * Creates a MediaSource for the selected quality.
@@ -73,7 +105,8 @@ class MultiQualityMediaSourceFactory(context: Context) {
             .setMimeType(videoTrack.mimeType ?: "video/mp4")
             .build()
 
-        val videoSource = ProgressiveMediaSource.Factory(dataSourceFactory)
+        // Use cached data source for faster subsequent loads
+        val videoSource = ProgressiveMediaSource.Factory(cacheDataSourceFactory)
             .createMediaSource(videoMediaItem)
 
         // If we have separate audio tracks, merge video with best audio
@@ -86,7 +119,7 @@ class MultiQualityMediaSourceFactory(context: Context) {
                 .setMimeType(audioTrack.mimeType ?: "audio/mp4")
                 .build()
 
-            val audioSource = ProgressiveMediaSource.Factory(dataSourceFactory)
+            val audioSource = ProgressiveMediaSource.Factory(cacheDataSourceFactory)
                 .createMediaSource(audioMediaItem)
 
             return MergingMediaSource(videoSource, audioSource)
@@ -109,7 +142,7 @@ class MultiQualityMediaSourceFactory(context: Context) {
             .setMimeType(audioTrack.mimeType ?: "audio/mp4")
             .build()
 
-        return ProgressiveMediaSource.Factory(dataSourceFactory)
+        return ProgressiveMediaSource.Factory(cacheDataSourceFactory)
             .createMediaSource(mediaItem)
     }
 }

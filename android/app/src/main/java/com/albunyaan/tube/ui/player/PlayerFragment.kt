@@ -198,6 +198,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     }
 
     override fun onDestroyView() {
+        // Clean up player resources - ExoPlayer handles its own callback cleanup during release
         binding?.playerView?.player = null
         preparedStreamKey = null
         preparedStreamUrl = null
@@ -220,13 +221,62 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     }
 
     private fun setupPlayer(binding: FragmentPlayerBinding) {
+        // Configure load control for better buffering and faster startup
+        val loadControl = com.google.android.exoplayer2.DefaultLoadControl.Builder()
+            // Increase buffer for smoother playback (default is 50s max)
+            .setBufferDurationsMs(
+                /* minBufferMs= */ 2500,         // Start playback after 2.5s (faster startup)
+                /* maxBufferMs= */ 60000,        // Buffer up to 60s ahead
+                /* bufferForPlaybackMs= */ 1500, // Resume after rebuffer at 1.5s (faster)
+                /* bufferForPlaybackAfterRebufferMs= */ 2500 // Faster recovery from stalls
+            )
+            // Prioritize minimum rebuffer time over memory
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
+
         val player = ExoPlayer.Builder(requireContext())
+            .setLoadControl(loadControl)
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(com.google.android.exoplayer2.C.WAKE_MODE_NETWORK)
+            // Enable seek back/forward optimizations
+            .setSeekBackIncrementMs(10000) // 10s back
+            .setSeekForwardIncrementMs(10000) // 10s forward
             .build().also { this.player = it }
+
+        // Optimize playback parameters for smoother experience
+        player.playWhenReady = false // Don't auto-play until ready
 
         binding.playerView.player = player
         player.addListener(viewModel.playerListener)
+
+        // Add listener to auto-hide controls when playback starts
+        player.addListener(object : com.google.android.exoplayer2.Player.Listener {
+            private var hasAutoHidden = false
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                android.util.Log.d("PlayerFragment", "onIsPlayingChanged: isPlaying=$isPlaying, hasAutoHidden=$hasAutoHidden")
+                if (isPlaying && !hasAutoHidden) {
+                    // Auto-hide controls after playback starts
+                    hasAutoHidden = true
+                    binding.playerView.postDelayed({
+                        if (player?.isPlaying == true) {
+                            android.util.Log.d("PlayerFragment", "Auto-hiding controls now")
+                            binding.playerView.hideController()
+                            // Also explicitly hide overlay controls
+                            binding.playerOverlayControls?.visibility = View.GONE
+                        }
+                    }, 3000) // 3 seconds delay to give user time to see controls
+                }
+            }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                android.util.Log.d("PlayerFragment", "onPlaybackStateChanged: state=$playbackState")
+                // When a new video loads, reset the auto-hide flag
+                if (playbackState == com.google.android.exoplayer2.Player.STATE_IDLE) {
+                    hasAutoHidden = false
+                }
+            }
+        })
 
         // Configure auto-hide controls
         binding.playerView.apply {
@@ -237,6 +287,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // Sync custom overlay controls with ExoPlayer controller visibility
             setControllerVisibilityListener(
                 com.google.android.exoplayer2.ui.StyledPlayerView.ControllerVisibilityListener { visibility ->
+                    android.util.Log.d("PlayerFragment", "Controller visibility changed: $visibility")
                     binding.playerOverlayControls?.visibility = visibility
                 }
             )
@@ -727,52 +778,106 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         isFullscreen = !isFullscreen
 
         if (isFullscreen) {
-            // Enter fullscreen
+            // Hide bottom navigation FIRST (this sets it to View.GONE)
+            (requireActivity() as? com.albunyaan.tube.ui.MainActivity)?.setBottomNavVisibility(false)
+
+            // Enter fullscreen - Use system UI flags for status bar and system navigation
+            // Don't use HIDE_NAVIGATION flag as it conflicts with our custom bottom nav
+            @Suppress("DEPRECATION")
             requireActivity().window.decorView.systemUiVisibility = (
                 View.SYSTEM_UI_FLAG_FULLSCREEN
-                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
                 or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
             )
 
             // Hide scrollable content
             binding.playerScrollView?.visibility = View.GONE
 
-            // Hide bottom navigation
-            (requireActivity() as? com.albunyaan.tube.ui.MainActivity)?.setBottomNavVisibility(false)
-
-            // Expand player to fill screen
+            // Expand AppBar to fill screen (do this before player container manipulation)
             binding.appBarLayout?.layoutParams?.let { params ->
-                params.height = ViewGroup.LayoutParams.MATCH_PARENT
+                if (params is androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams) {
+                    params.height = ViewGroup.LayoutParams.MATCH_PARENT
+                }
                 binding.appBarLayout?.layoutParams = params
             }
 
+            // Center the player container (FrameLayout) within AppBarLayout
+            binding.playerView?.parent?.let { parent ->
+                if (parent is android.widget.FrameLayout) {
+                    parent.layoutParams?.let { frameParams ->
+                        if (frameParams is com.google.android.material.appbar.AppBarLayout.LayoutParams) {
+                            frameParams.height = ViewGroup.LayoutParams.MATCH_PARENT
+                            frameParams.width = ViewGroup.LayoutParams.MATCH_PARENT
+                        }
+                        parent.layoutParams = frameParams
+                    }
+                    // Set gravity on the FrameLayout itself to center its children
+                    (parent as? android.widget.FrameLayout)?.foregroundGravity = android.view.Gravity.CENTER
+                }
+            }
+
+            // Set player to wrap content (aspect ratio) and center it
             binding.playerView?.layoutParams?.let { playerParams ->
-                playerParams.height = ViewGroup.LayoutParams.MATCH_PARENT
+                if (playerParams is android.widget.FrameLayout.LayoutParams) {
+                    playerParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+                    playerParams.width = ViewGroup.LayoutParams.MATCH_PARENT
+                    playerParams.gravity = android.view.Gravity.CENTER
+                }
                 binding.playerView?.layoutParams = playerParams
             }
+
+            // Make player resize mode to FIT for proper aspect ratio
+            binding.playerView?.resizeMode = com.google.android.exoplayer2.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
 
             // Update button icon
             binding.fullscreenButton?.setImageResource(R.drawable.ic_fullscreen_exit)
         } else {
-            // Exit fullscreen
+            // Exit fullscreen - Clear system UI flags
+            @Suppress("DEPRECATION")
             requireActivity().window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+
+            // Show bottom navigation FIRST
+            (requireActivity() as? com.albunyaan.tube.ui.MainActivity)?.setBottomNavVisibility(true)
 
             // Show scrollable content
             binding.playerScrollView?.visibility = View.VISIBLE
 
-            // Show bottom navigation
-            (requireActivity() as? com.albunyaan.tube.ui.MainActivity)?.setBottomNavVisibility(true)
-
-            // Restore player to normal size
+            // Restore AppBar to normal size
             binding.appBarLayout?.layoutParams?.let { params ->
-                params.height = ViewGroup.LayoutParams.WRAP_CONTENT
+                if (params is androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams) {
+                    params.height = ViewGroup.LayoutParams.WRAP_CONTENT
+                }
                 binding.appBarLayout?.layoutParams = params
             }
 
+            // Restore player container (FrameLayout) to normal size
+            binding.playerView?.parent?.let { parent ->
+                if (parent is android.widget.FrameLayout) {
+                    parent.layoutParams?.let { frameParams ->
+                        if (frameParams is com.google.android.material.appbar.AppBarLayout.LayoutParams) {
+                            frameParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+                            frameParams.width = ViewGroup.LayoutParams.MATCH_PARENT
+                        }
+                        parent.layoutParams = frameParams
+                    }
+                    // Remove gravity
+                    (parent as? android.widget.FrameLayout)?.foregroundGravity = android.view.Gravity.NO_GRAVITY
+                }
+            }
+
+            // Restore player to normal size
             binding.playerView?.layoutParams?.let { playerParams ->
-                playerParams.height = (240 * resources.displayMetrics.density).toInt()
+                if (playerParams is android.widget.FrameLayout.LayoutParams) {
+                    playerParams.height = resources.getDimensionPixelSize(R.dimen.player_portrait_height)
+                    playerParams.width = ViewGroup.LayoutParams.MATCH_PARENT
+                    playerParams.gravity = android.view.Gravity.NO_GRAVITY
+                }
                 binding.playerView?.layoutParams = playerParams
             }
+
+            // Restore resize mode
+            binding.playerView?.resizeMode = com.google.android.exoplayer2.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
 
             // Update button icon
             binding.fullscreenButton?.setImageResource(R.drawable.ic_fullscreen)

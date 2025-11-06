@@ -359,7 +359,9 @@ class NewPipeExtractorClient(
     }
 
     companion object {
-        private const val STREAM_CACHE_TTL_MILLIS = 10 * 60 * 1000L
+        // Increased cache TTL to 30 minutes for better performance
+        // YouTube stream URLs typically expire after 6 hours
+        private const val STREAM_CACHE_TTL_MILLIS = 30 * 60 * 1000L
         private val YOUTUBE_ID_PATTERN: Pattern = Pattern.compile("^[a-zA-Z0-9_-]{11}")
     }
 }
