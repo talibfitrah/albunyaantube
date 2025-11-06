@@ -3,11 +3,12 @@ import { fetchDashboardMetrics } from '@/services/dashboard';
 import type {
   ComparisonMetric,
   DashboardMetricsResponse,
-  DashboardTimeframe
+  DashboardTimeframe,
+  ValidationMetric
 } from '@/types/dashboard';
 
 interface BaseCard {
-  id: 'pendingModeration' | 'categories' | 'moderators';
+  id: 'pendingModeration' | 'categories' | 'moderators' | 'videoValidation';
   titleKey: string;
   captionKey: string;
 }
@@ -24,7 +25,12 @@ export interface CategoryCard extends BaseCard {
   previousTotal: number;
 }
 
-export type DashboardCard = ComparisonCard | CategoryCard;
+export interface ValidationCard extends BaseCard {
+  kind: 'validation';
+  metric: ValidationMetric;
+}
+
+export type DashboardCard = ComparisonCard | CategoryCard | ValidationCard;
 
 export function useDashboardMetrics(initialTimeframe: DashboardTimeframe = 'LAST_24_HOURS') {
   const timeframe = ref<DashboardTimeframe>(initialTimeframe);
@@ -84,6 +90,13 @@ export function useDashboardMetrics(initialTimeframe: DashboardTimeframe = 'LAST
         titleKey: 'dashboard.cards.moderators',
         captionKey: 'dashboard.cards.moderatorsCaption',
         metric: data.moderators
+      },
+      {
+        id: 'videoValidation',
+        kind: 'validation',
+        titleKey: 'dashboard.cards.videoValidation',
+        captionKey: 'dashboard.cards.videoValidationCaption',
+        metric: data.videoValidation
       }
     ];
   });

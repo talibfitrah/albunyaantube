@@ -23,6 +23,7 @@ export const messages = {
       moderation: 'Moderation',
       exclusions: 'Exclusions',
       bulkImportExport: 'Import/Export',
+      videoValidation: 'Video Validation',
       users: 'Users',
       audit: 'Audit log',
       activity: 'Activity log',
@@ -58,7 +59,18 @@ export const messages = {
         previousValue: 'Previous: {value}',
         categoriesNewThisPeriod: '{count} new this period',
         categoriesPreviousTotal: 'Previously {count}',
-        thresholdBreached: 'Action required'
+        thresholdBreached: 'Action required',
+        videoValidation: 'Video Validation',
+        videoValidationCaption: 'Standalone video checks',
+        validationNeverRun: 'Never run',
+        validationRunning: 'Running...',
+        validationCompleted: 'Completed',
+        validationFailed: 'Failed',
+        validationError: 'Error occurred',
+        validationNever: 'Never',
+        validationLastRun: 'Last run: {time}',
+        validationUnavailable: '{count} unavailable',
+        validationErrors: '{count} errors'
       },
       timeframe: {
         label: 'Timeframe',
@@ -984,6 +996,40 @@ export const messages = {
         nl: 'Nederlands'
       }
     },
+    videoValidation: {
+      heading: 'Video Validation',
+      subtitle: 'Validate standalone videos against YouTube to detect removed or unavailable content',
+      triggerButton: 'Run Validation',
+      triggering: 'Running...',
+      triggerSuccess: 'Validation completed: {checked} videos checked, {unavailable} marked unavailable',
+      triggerError: 'Failed to trigger validation',
+      loadError: 'Failed to load validation data',
+      latestRun: 'Latest Validation Run',
+      history: 'Validation History',
+      noHistory: 'No validation runs yet',
+      status: 'Status',
+      videosChecked: 'Videos Checked',
+      videosMarkedUnavailable: 'Marked Unavailable',
+      errors: 'Errors',
+      startedAt: 'Started At',
+      duration: 'Duration',
+      checked: '{count} checked',
+      unavailable: '{count} unavailable',
+      triggeredBy: 'by {name}',
+      durationFormat: '{minutes}m {seconds}s',
+      secondsFormat: '{seconds}s',
+      statuses: {
+        running: 'Running',
+        completed: 'Completed',
+        failed: 'Failed'
+      },
+      triggerTypes: {
+        scheduled: 'Scheduled',
+        manual: 'Manual',
+        import: 'Import',
+        export: 'Export'
+      }
+    },
     bulkImportExport: {
       heading: 'Bulk Import/Export',
       subtitle: 'Import or export content in bulk using JSON files',
@@ -1076,6 +1122,7 @@ export const messages = {
       moderation: 'الإشراف',
       exclusions: 'الاستثناءات',
       bulkImportExport: 'استيراد/تصدير',
+      videoValidation: 'التحقق من الفيديوهات',
       users: 'المستخدمون',
       audit: 'سجل التدقيق',
       activity: 'سجل النشاط',
@@ -1104,7 +1151,18 @@ export const messages = {
         previousValue: 'القيمة السابقة: {value}',
         categoriesNewThisPeriod: 'جديد خلال الفترة: {count}',
         categoriesPreviousTotal: 'الإجمالي السابق: {count}',
-        thresholdBreached: 'يتطلب إجراءً'
+        thresholdBreached: 'يتطلب إجراءً',
+        videoValidation: 'التحقق من الفيديوهات',
+        videoValidationCaption: 'فحص الفيديوهات المستقلة',
+        validationNeverRun: 'لم يتم التشغيل بعد',
+        validationRunning: 'قيد التشغيل...',
+        validationCompleted: 'مكتمل',
+        validationFailed: 'فشل',
+        validationError: 'حدث خطأ',
+        validationNever: 'أبداً',
+        validationLastRun: 'آخر تشغيل: {time}',
+        validationUnavailable: '{count} غير متاح',
+        validationErrors: '{count} أخطاء'
       },
       timeframe: {
         label: 'الإطار الزمني',
@@ -1669,6 +1727,40 @@ export const messages = {
         nl: 'الهولندية'
       }
     },
+    videoValidation: {
+      heading: 'التحقق من الفيديوهات',
+      subtitle: 'التحقق من الفيديوهات المستقلة مع يوتيوب لاكتشاف المحتوى المحذوف أو غير المتاح',
+      triggerButton: 'تشغيل التحقق',
+      triggering: 'قيد التشغيل...',
+      triggerSuccess: 'اكتمل التحقق: {checked} فيديو تم فحصه، {unavailable} تم وضع علامة غير متاح',
+      triggerError: 'فشل في تشغيل التحقق',
+      loadError: 'فشل في تحميل بيانات التحقق',
+      latestRun: 'آخر عملية تحقق',
+      history: 'سجل التحقق',
+      noHistory: 'لا توجد عمليات تحقق بعد',
+      status: 'الحالة',
+      videosChecked: 'الفيديوهات المفحوصة',
+      videosMarkedUnavailable: 'تم وضع علامة غير متاح',
+      errors: 'الأخطاء',
+      startedAt: 'بدأ في',
+      duration: 'المدة',
+      checked: '{count} تم الفحص',
+      unavailable: '{count} غير متاح',
+      triggeredBy: 'بواسطة {name}',
+      durationFormat: '{minutes}د {seconds}ث',
+      secondsFormat: '{seconds}ث',
+      statuses: {
+        running: 'قيد التشغيل',
+        completed: 'مكتمل',
+        failed: 'فشل'
+      },
+      triggerTypes: {
+        scheduled: 'مجدول',
+        manual: 'يدوي',
+        import: 'استيراد',
+        export: 'تصدير'
+      }
+    },
     bulkImportExport: {
       heading: 'الاستيراد/التصدير المجمّع',
       subtitle: 'استورد أو صدّر المحتوى بشكل مجمّع باستخدام ملفات JSON',
@@ -1761,6 +1853,7 @@ export const messages = {
       moderation: 'Moderatie',
       exclusions: 'Uitzonderingen',
       bulkImportExport: 'Importeren/Exporteren',
+      videoValidation: 'Video Validatie',
       users: 'Gebruikers',
       audit: 'Auditlogboek',
       activity: 'Activiteitenlogboek',
@@ -1789,7 +1882,18 @@ export const messages = {
         previousValue: 'Vorige waarde: {value}',
         categoriesNewThisPeriod: 'Nieuw in deze periode: {count}',
         categoriesPreviousTotal: 'Vorige totaal: {count}',
-        thresholdBreached: 'Actie nodig'
+        thresholdBreached: 'Actie nodig',
+        videoValidation: 'Video Validatie',
+        videoValidationCaption: 'Zelfstandige videocontroles',
+        validationNeverRun: 'Nooit uitgevoerd',
+        validationRunning: 'Bezig...',
+        validationCompleted: 'Voltooid',
+        validationFailed: 'Mislukt',
+        validationError: 'Fout opgetreden',
+        validationNever: 'Nooit',
+        validationLastRun: 'Laatst uitgevoerd: {time}',
+        validationUnavailable: '{count} niet beschikbaar',
+        validationErrors: '{count} fouten'
       },
       timeframe: {
         label: 'Tijdsperiode',
@@ -2352,6 +2456,40 @@ export const messages = {
         en: 'Engels',
         ar: 'Arabisch',
         nl: 'Nederlands'
+      }
+    },
+    videoValidation: {
+      heading: 'Video Validatie',
+      subtitle: 'Valideer zelfstandige video\'s met YouTube om verwijderde of niet beschikbare inhoud te detecteren',
+      triggerButton: 'Validatie Uitvoeren',
+      triggering: 'Bezig...',
+      triggerSuccess: 'Validatie voltooid: {checked} video\'s gecontroleerd, {unavailable} gemarkeerd als niet beschikbaar',
+      triggerError: 'Validatie starten mislukt',
+      loadError: 'Validatiegegevens laden mislukt',
+      latestRun: 'Laatste Validatie Uitvoering',
+      history: 'Validatie Geschiedenis',
+      noHistory: 'Nog geen validatie uitgevoerd',
+      status: 'Status',
+      videosChecked: 'Video\'s Gecontroleerd',
+      videosMarkedUnavailable: 'Gemarkeerd als Niet Beschikbaar',
+      errors: 'Fouten',
+      startedAt: 'Gestart Om',
+      duration: 'Duur',
+      checked: '{count} gecontroleerd',
+      unavailable: '{count} niet beschikbaar',
+      triggeredBy: 'door {name}',
+      durationFormat: '{minutes}m {seconds}s',
+      secondsFormat: '{seconds}s',
+      statuses: {
+        running: 'Bezig',
+        completed: 'Voltooid',
+        failed: 'Mislukt'
+      },
+      triggerTypes: {
+        scheduled: 'Gepland',
+        manual: 'Handmatig',
+        import: 'Import',
+        export: 'Export'
       }
     },
     bulkImportExport: {

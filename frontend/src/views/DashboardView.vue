@@ -149,6 +149,41 @@ function buildDisplayCards(source: DashboardCard[], localeCode: string) {
       };
     }
 
+    if (card.kind === 'validation') {
+      const metric = card.metric;
+      const checked = formatNumber(metric.videosChecked, localeCode);
+      const unavailable = formatNumber(metric.videosMarkedUnavailable, localeCode);
+      const errors = formatNumber(metric.validationErrors, localeCode);
+
+      const statusKey = metric.status === 'NEVER_RUN'
+        ? 'dashboard.cards.validationNeverRun'
+        : metric.status === 'RUNNING'
+        ? 'dashboard.cards.validationRunning'
+        : metric.status === 'FAILED'
+        ? 'dashboard.cards.validationFailed'
+        : metric.status === 'ERROR'
+        ? 'dashboard.cards.validationError'
+        : 'dashboard.cards.validationCompleted';
+
+      const lastRun = metric.lastRunAt
+        ? formatDateTime(metric.lastRunAt, localeCode)
+        : t('dashboard.cards.validationNever');
+
+      return {
+        id: card.id,
+        titleKey: card.titleKey,
+        captionKey: card.captionKey,
+        value: checked,
+        meta: [
+          t(statusKey),
+          t('dashboard.cards.validationLastRun', { time: lastRun }),
+          t('dashboard.cards.validationUnavailable', { count: unavailable }),
+          t('dashboard.cards.validationErrors', { count: errors })
+        ],
+        threshold: metric.validationErrors > 0 || metric.status === 'FAILED'
+      };
+    }
+
     const total = formatNumber(card.total, localeCode);
     const newCount = formatNumber(card.newThisPeriod, localeCode);
     const previous = formatNumber(card.previousTotal, localeCode);

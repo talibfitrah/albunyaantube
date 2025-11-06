@@ -15,10 +15,19 @@ export interface CategoryMetric {
   previousTotal: number;
 }
 
+export interface ValidationMetric {
+  lastRunAt: string | null;
+  videosChecked: number;
+  videosMarkedUnavailable: number;
+  validationErrors: number;
+  status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'NEVER_RUN' | 'ERROR';
+}
+
 export interface DashboardMetrics {
   pendingModeration: ComparisonMetric;
   categories: CategoryMetric;
   moderators: ComparisonMetric;
+  videoValidation: ValidationMetric;
 }
 
 export interface DashboardMetricsMeta {
