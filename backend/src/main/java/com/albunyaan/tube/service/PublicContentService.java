@@ -3,10 +3,11 @@ package com.albunyaan.tube.service;
 import com.albunyaan.tube.dto.CategoryDto;
 import com.albunyaan.tube.dto.ContentItemDto;
 import com.albunyaan.tube.dto.CursorPageDto;
+import com.albunyaan.tube.model.Category;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
+import com.albunyaan.tube.model.ValidationStatus;
 import com.albunyaan.tube.model.Video;
-import com.albunyaan.tube.model.Category;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
@@ -145,6 +146,7 @@ public class PublicContentService {
 
         return videos.stream()
                 .filter(this::isApproved)
+                .filter(this::isAvailable)
                 .filter(v -> matchesLengthFilter(v, length))
                 .filter(v -> matchesDateFilter(v, date))
                 .limit(limit)
@@ -212,6 +214,7 @@ public class PublicContentService {
     private List<ContentItemDto> searchVideos(String query, int limit) throws ExecutionException, InterruptedException {
         return videoRepository.searchByTitle(query).stream()
                 .filter(this::isApproved)
+                .filter(this::isAvailable)
                 .limit(limit)
                 .map(this::toDto)
                 .collect(Collectors.toList());
@@ -228,6 +231,14 @@ public class PublicContentService {
 
     private boolean isApproved(Video video) {
         return "APPROVED".equals(video.getStatus());
+    }
+
+    /**
+     * Check if video is available (not marked as UNAVAILABLE by validation)
+     */
+    private boolean isAvailable(Video video) {
+        ValidationStatus validationStatus = video.getValidationStatus();
+        return validationStatus != ValidationStatus.UNAVAILABLE;
     }
 
     private boolean matchesLengthFilter(Video video, String length) {

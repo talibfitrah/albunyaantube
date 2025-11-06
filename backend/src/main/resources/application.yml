@@ -35,6 +35,12 @@ spring:
     enabled: true
     mime-types: application/json,application/xml,text/html,text/xml,text/plain
     min-response-size: 1024
+  # Task scheduling configuration
+  task:
+    scheduling:
+      pool:
+        size: 3 # Thread pool size for scheduled tasks
+      thread-name-prefix: scheduled-task-
 server:
   port: 8080
   compression:
