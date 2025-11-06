@@ -7,16 +7,19 @@ import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.setupWithNavController
 import com.albunyaan.tube.R
 import com.google.android.material.navigation.NavigationBarView
+import androidx.coordinatorlayout.widget.CoordinatorLayout
 
 class MainShellFragment : Fragment(R.layout.fragment_main_shell) {
 
     private var navigationView: NavigationBarView? = null
+    private var navHostFragment: View? = null
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
         // Find navigation view by ID (works for both BottomNavigationView and NavigationRailView)
         navigationView = view.findViewById(R.id.mainBottomNav)
+        navHostFragment = view.findViewById(R.id.main_shell_nav_host)
 
         val navHost = childFragmentManager.findFragmentById(R.id.main_shell_nav_host) as? NavHostFragment
         val navController = navHost?.navController ?: return
@@ -77,14 +80,30 @@ class MainShellFragment : Fragment(R.layout.fragment_main_shell) {
 
     override fun onDestroyView() {
         navigationView = null
+        navHostFragment = null
         super.onDestroyView()
     }
 
     /**
      * Show or hide the navigation bar (called from MainActivity for fullscreen mode).
      * Works for both BottomNavigationView and NavigationRailView.
+     * On tablets, also adjusts the content margin to fill the space.
      */
     fun setBottomNavVisibility(visible: Boolean) {
         navigationView?.visibility = if (visible) View.VISIBLE else View.GONE
+
+        // On tablets (NavigationRail), adjust content margin when hiding/showing
+        val isTablet = resources.getBoolean(R.bool.is_tablet)
+        if (isTablet) {
+            navHostFragment?.let { host ->
+                val params = host.layoutParams as? CoordinatorLayout.LayoutParams
+                params?.marginStart = if (visible) {
+                    resources.getDimensionPixelSize(R.dimen.navigation_rail_width)
+                } else {
+                    0
+                }
+                host.layoutParams = params
+            }
+        }
     }
 }
