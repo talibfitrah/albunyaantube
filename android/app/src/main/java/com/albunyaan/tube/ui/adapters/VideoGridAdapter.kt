@@ -9,7 +9,7 @@ import coil.load
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.databinding.ItemVideoGridBinding
-import com.albunyaan.tube.ui.utils.ChipUtils
+import com.google.android.material.chip.Chip
 import java.text.NumberFormat
 
 class VideoGridAdapter(
@@ -70,10 +70,15 @@ class VideoGridAdapter(
 
             // Add category chip
             binding.categoryChipsContainer.removeAllViews()
-            video.category?.let { category ->
-                val chip = ChipUtils.createCategoryChip(binding.root.context, category)
-                binding.categoryChipsContainer.addView(chip)
+            val chip = Chip(binding.root.context).apply {
+                text = video.category
+                isClickable = false
+                chipBackgroundColor = android.content.res.ColorStateList.valueOf(
+                    binding.root.context.getColor(R.color.surface_variant)
+                )
+                setTextColor(binding.root.context.getColor(R.color.primary_green))
             }
+            binding.categoryChipsContainer.addView(chip)
 
             binding.root.setOnClickListener {
                 onVideoClick(video)
