@@ -12,7 +12,7 @@ import androidx.viewpager2.adapter.FragmentStateAdapter
 import com.albunyaan.tube.R
 import com.albunyaan.tube.ServiceLocator
 import com.albunyaan.tube.databinding.FragmentChannelDetailBinding
-import com.google.android.material.chip.Chip
+import com.albunyaan.tube.ui.utils.ChipUtils
 import com.google.android.material.tabs.TabLayoutMediator
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
@@ -104,17 +104,12 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
 
                             // Update category chips
                             categoryChipsContainer.removeAllViews()
-                            val categories = state.channel.categories ?: listOf(state.channel.category)
+                            val categories = state.channel.categories
+                                ?: state.channel.category?.let { listOf(it) }
+                                ?: emptyList()
                             if (categories.isNotEmpty()) {
                                 categories.forEach { category ->
-                                    val chip = Chip(requireContext()).apply {
-                                        text = category
-                                        isClickable = false
-                                        chipBackgroundColor = android.content.res.ColorStateList.valueOf(
-                                            requireContext().getColor(R.color.surface_variant)
-                                        )
-                                        setTextColor(requireContext().getColor(R.color.primary_green))
-                                    }
+                                    val chip = ChipUtils.createCategoryChip(requireContext(), category)
                                     categoryChipsContainer.addView(chip)
                                 }
                                 categoryChipsContainer.isVisible = true
