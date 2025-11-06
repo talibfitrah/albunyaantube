@@ -148,7 +148,7 @@ public class ChannelController {
     }
 
     /**
-     * Update channel exclusions
+     * Update channel exclusions (bulk update)
      */
     @PutMapping("/{id}/exclusions")
     @PreAuthorize("hasRole('ADMIN')")
@@ -164,6 +164,151 @@ public class ChannelController {
         channel.setExcludedItems(excludedItems);
         Channel updated = channelRepository.save(channel);
         return ResponseEntity.ok(updated);
+    }
+
+    /**
+     * Get channel exclusions
+     */
+    @GetMapping("/{id}/exclusions")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Channel.ExcludedItems> getExclusions(@PathVariable String id)
+            throws ExecutionException, InterruptedException {
+        Channel channel = channelRepository.findById(id).orElse(null);
+        if (channel == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        Channel.ExcludedItems excluded = channel.getExcludedItems();
+        if (excluded == null) {
+            excluded = new Channel.ExcludedItems();
+        }
+        return ResponseEntity.ok(excluded);
+    }
+
+    /**
+     * Add a single exclusion to channel
+     * @param type The type of content to exclude: video, playlist, livestream, short, post
+     * @param youtubeId The YouTube ID of the content to exclude
+     */
+    @PostMapping("/{id}/exclusions/{type}/{youtubeId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Channel.ExcludedItems> addExclusion(
+            @PathVariable String id,
+            @PathVariable String type,
+            @PathVariable String youtubeId
+    ) throws ExecutionException, InterruptedException {
+        // Validate YouTube ID format (basic validation)
+        if (youtubeId == null || youtubeId.trim().isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        Channel channel = channelRepository.findById(id).orElse(null);
+        if (channel == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        Channel.ExcludedItems excluded = channel.getExcludedItems();
+        if (excluded == null) {
+            excluded = new Channel.ExcludedItems();
+        }
+
+        // Add to appropriate list based on type
+        boolean added = false;
+        switch (type.toLowerCase()) {
+            case "video":
+                if (!excluded.getVideos().contains(youtubeId)) {
+                    excluded.getVideos().add(youtubeId);
+                    added = true;
+                }
+                break;
+            case "playlist":
+                if (!excluded.getPlaylists().contains(youtubeId)) {
+                    excluded.getPlaylists().add(youtubeId);
+                    added = true;
+                }
+                break;
+            case "livestream":
+                if (!excluded.getLiveStreams().contains(youtubeId)) {
+                    excluded.getLiveStreams().add(youtubeId);
+                    added = true;
+                }
+                break;
+            case "short":
+                if (!excluded.getShorts().contains(youtubeId)) {
+                    excluded.getShorts().add(youtubeId);
+                    added = true;
+                }
+                break;
+            case "post":
+                if (!excluded.getPosts().contains(youtubeId)) {
+                    excluded.getPosts().add(youtubeId);
+                    added = true;
+                }
+                break;
+            default:
+                return ResponseEntity.badRequest().build();
+        }
+
+        if (added) {
+            channel.setExcludedItems(excluded);
+            channel.touch();
+            channelRepository.save(channel);
+        }
+
+        return ResponseEntity.ok(excluded);
+    }
+
+    /**
+     * Remove a single exclusion from channel
+     * @param type The type of content to remove exclusion from: video, playlist, livestream, short, post
+     * @param youtubeId The YouTube ID of the content to remove exclusion from
+     */
+    @DeleteMapping("/{id}/exclusions/{type}/{youtubeId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Channel.ExcludedItems> removeExclusion(
+            @PathVariable String id,
+            @PathVariable String type,
+            @PathVariable String youtubeId
+    ) throws ExecutionException, InterruptedException {
+        Channel channel = channelRepository.findById(id).orElse(null);
+        if (channel == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        Channel.ExcludedItems excluded = channel.getExcludedItems();
+        if (excluded == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        // Remove from appropriate list based on type
+        boolean removed = false;
+        switch (type.toLowerCase()) {
+            case "video":
+                removed = excluded.getVideos().remove(youtubeId);
+                break;
+            case "playlist":
+                removed = excluded.getPlaylists().remove(youtubeId);
+                break;
+            case "livestream":
+                removed = excluded.getLiveStreams().remove(youtubeId);
+                break;
+            case "short":
+                removed = excluded.getShorts().remove(youtubeId);
+                break;
+            case "post":
+                removed = excluded.getPosts().remove(youtubeId);
+                break;
+            default:
+                return ResponseEntity.badRequest().build();
+        }
+
+        if (removed) {
+            channel.setExcludedItems(excluded);
+            channel.touch();
+            channelRepository.save(channel);
+        }
+
+        return ResponseEntity.ok(excluded);
     }
 
     /**

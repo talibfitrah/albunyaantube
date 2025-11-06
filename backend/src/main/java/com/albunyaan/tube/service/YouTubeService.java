@@ -250,12 +250,27 @@ public class YouTubeService {
      * Get videos from a channel
      */
     public List<SearchResult> getChannelVideos(String channelId, String pageToken) throws IOException {
+        return getChannelVideos(channelId, pageToken, null);
+    }
+
+    /**
+     * Get videos from a channel with optional search query
+     * @param channelId The YouTube channel ID
+     * @param pageToken Pagination token (can be null)
+     * @param searchQuery Optional search query to filter videos (can be null)
+     */
+    public List<SearchResult> getChannelVideos(String channelId, String pageToken, String searchQuery) throws IOException {
         YouTube.Search.List request = youtube.search().list(List.of("snippet"));
         request.setKey(apiKey);
         request.setChannelId(channelId);
         request.setType(List.of("video"));
         request.setOrder("date");
         request.setMaxResults(MAX_RESULTS);
+
+        // Add search query if provided (YouTube API supports this natively)
+        if (searchQuery != null && !searchQuery.trim().isEmpty()) {
+            request.setQ(searchQuery.trim());
+        }
 
         if (pageToken != null && !pageToken.isEmpty()) {
             request.setPageToken(pageToken);
@@ -300,6 +315,17 @@ public class YouTubeService {
      * Get videos in a playlist
      */
     public List<PlaylistItem> getPlaylistVideos(String playlistId, String pageToken) throws IOException {
+        return getPlaylistVideos(playlistId, pageToken, null);
+    }
+
+    /**
+     * Get videos in a playlist with optional search query (client-side filtering)
+     * Note: YouTube API doesn't support search within playlists, so we filter results client-side
+     * @param playlistId The YouTube playlist ID
+     * @param pageToken Pagination token (can be null)
+     * @param searchQuery Optional search query to filter videos by title/description (can be null)
+     */
+    public List<PlaylistItem> getPlaylistVideos(String playlistId, String pageToken, String searchQuery) throws IOException {
         YouTube.PlaylistItems.List request = youtube.playlistItems().list(List.of("snippet", "contentDetails"));
         request.setKey(apiKey);
         request.setPlaylistId(playlistId);
@@ -310,7 +336,23 @@ public class YouTubeService {
         }
 
         PlaylistItemListResponse response = request.execute();
-        return response.getItems() != null ? response.getItems() : Collections.emptyList();
+        List<PlaylistItem> items = response.getItems() != null ? response.getItems() : Collections.emptyList();
+
+        // If search query provided, filter results client-side
+        if (searchQuery != null && !searchQuery.trim().isEmpty()) {
+            String lowerQuery = searchQuery.trim().toLowerCase();
+            return items.stream()
+                    .filter(item -> {
+                        if (item.getSnippet() == null) return false;
+                        String title = item.getSnippet().getTitle();
+                        String desc = item.getSnippet().getDescription();
+                        return (title != null && title.toLowerCase().contains(lowerQuery)) ||
+                               (desc != null && desc.toLowerCase().contains(lowerQuery));
+                    })
+                    .collect(Collectors.toList());
+        }
+
+        return items;
     }
 
     /**

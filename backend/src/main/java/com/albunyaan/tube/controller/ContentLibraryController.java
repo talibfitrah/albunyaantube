@@ -223,4 +223,242 @@ public class ContentLibraryController {
             this.count = count;
         }
     }
+
+    // Bulk Actions
+
+    /**
+     * Bulk approve content items
+     */
+    @PostMapping("/bulk/approve")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<BulkActionResponse> bulkApprove(@RequestBody BulkActionRequest request)
+            throws ExecutionException, InterruptedException {
+        int successCount = 0;
+        List<String> errors = new ArrayList<>();
+
+        for (BulkActionItem item : request.items) {
+            try {
+                switch (item.type.toLowerCase()) {
+                    case "channel":
+                        Channel channel = channelRepository.findById(item.id).orElse(null);
+                        if (channel != null) {
+                            channel.setStatus("APPROVED");
+                            channelRepository.save(channel);
+                            successCount++;
+                        } else {
+                            errors.add("Channel not found: " + item.id);
+                        }
+                        break;
+                    case "playlist":
+                        Playlist playlist = playlistRepository.findById(item.id).orElse(null);
+                        if (playlist != null) {
+                            playlist.setStatus("APPROVED");
+                            playlistRepository.save(playlist);
+                            successCount++;
+                        } else {
+                            errors.add("Playlist not found: " + item.id);
+                        }
+                        break;
+                    case "video":
+                        Video video = videoRepository.findById(item.id).orElse(null);
+                        if (video != null) {
+                            video.setStatus("APPROVED");
+                            videoRepository.save(video);
+                            successCount++;
+                        } else {
+                            errors.add("Video not found: " + item.id);
+                        }
+                        break;
+                    default:
+                        errors.add("Invalid type: " + item.type);
+                }
+            } catch (Exception e) {
+                errors.add("Error approving " + item.type + " " + item.id + ": " + e.getMessage());
+            }
+        }
+
+        return ResponseEntity.ok(new BulkActionResponse(successCount, errors));
+    }
+
+    /**
+     * Bulk reject content items
+     */
+    @PostMapping("/bulk/reject")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<BulkActionResponse> bulkReject(@RequestBody BulkActionRequest request)
+            throws ExecutionException, InterruptedException {
+        int successCount = 0;
+        List<String> errors = new ArrayList<>();
+
+        for (BulkActionItem item : request.items) {
+            try {
+                switch (item.type.toLowerCase()) {
+                    case "channel":
+                        Channel channel = channelRepository.findById(item.id).orElse(null);
+                        if (channel != null) {
+                            channel.setStatus("REJECTED");
+                            channelRepository.save(channel);
+                            successCount++;
+                        } else {
+                            errors.add("Channel not found: " + item.id);
+                        }
+                        break;
+                    case "playlist":
+                        Playlist playlist = playlistRepository.findById(item.id).orElse(null);
+                        if (playlist != null) {
+                            playlist.setStatus("REJECTED");
+                            playlistRepository.save(playlist);
+                            successCount++;
+                        } else {
+                            errors.add("Playlist not found: " + item.id);
+                        }
+                        break;
+                    case "video":
+                        Video video = videoRepository.findById(item.id).orElse(null);
+                        if (video != null) {
+                            video.setStatus("REJECTED");
+                            videoRepository.save(video);
+                            successCount++;
+                        } else {
+                            errors.add("Video not found: " + item.id);
+                        }
+                        break;
+                    default:
+                        errors.add("Invalid type: " + item.type);
+                }
+            } catch (Exception e) {
+                errors.add("Error rejecting " + item.type + " " + item.id + ": " + e.getMessage());
+            }
+        }
+
+        return ResponseEntity.ok(new BulkActionResponse(successCount, errors));
+    }
+
+    /**
+     * Bulk delete content items
+     */
+    @PostMapping("/bulk/delete")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<BulkActionResponse> bulkDelete(@RequestBody BulkActionRequest request)
+            throws ExecutionException, InterruptedException {
+        int successCount = 0;
+        List<String> errors = new ArrayList<>();
+
+        for (BulkActionItem item : request.items) {
+            try {
+                switch (item.type.toLowerCase()) {
+                    case "channel":
+                        if (channelRepository.findById(item.id).isPresent()) {
+                            channelRepository.deleteById(item.id);
+                            successCount++;
+                        } else {
+                            errors.add("Channel not found: " + item.id);
+                        }
+                        break;
+                    case "playlist":
+                        if (playlistRepository.findById(item.id).isPresent()) {
+                            playlistRepository.deleteById(item.id);
+                            successCount++;
+                        } else {
+                            errors.add("Playlist not found: " + item.id);
+                        }
+                        break;
+                    case "video":
+                        if (videoRepository.findById(item.id).isPresent()) {
+                            videoRepository.deleteById(item.id);
+                            successCount++;
+                        } else {
+                            errors.add("Video not found: " + item.id);
+                        }
+                        break;
+                    default:
+                        errors.add("Invalid type: " + item.type);
+                }
+            } catch (Exception e) {
+                errors.add("Error deleting " + item.type + " " + item.id + ": " + e.getMessage());
+            }
+        }
+
+        return ResponseEntity.ok(new BulkActionResponse(successCount, errors));
+    }
+
+    /**
+     * Bulk assign categories to content items
+     */
+    @PostMapping("/bulk/assign-categories")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<BulkActionResponse> bulkAssignCategories(@RequestBody BulkCategoryAssignmentRequest request)
+            throws ExecutionException, InterruptedException {
+        int successCount = 0;
+        List<String> errors = new ArrayList<>();
+
+        for (BulkActionItem item : request.items) {
+            try {
+                switch (item.type.toLowerCase()) {
+                    case "channel":
+                        Channel channel = channelRepository.findById(item.id).orElse(null);
+                        if (channel != null) {
+                            channel.setCategoryIds(request.categoryIds);
+                            channelRepository.save(channel);
+                            successCount++;
+                        } else {
+                            errors.add("Channel not found: " + item.id);
+                        }
+                        break;
+                    case "playlist":
+                        Playlist playlist = playlistRepository.findById(item.id).orElse(null);
+                        if (playlist != null) {
+                            playlist.setCategoryIds(request.categoryIds);
+                            playlistRepository.save(playlist);
+                            successCount++;
+                        } else {
+                            errors.add("Playlist not found: " + item.id);
+                        }
+                        break;
+                    case "video":
+                        Video video = videoRepository.findById(item.id).orElse(null);
+                        if (video != null) {
+                            video.setCategoryIds(request.categoryIds);
+                            videoRepository.save(video);
+                            successCount++;
+                        } else {
+                            errors.add("Video not found: " + item.id);
+                        }
+                        break;
+                    default:
+                        errors.add("Invalid type: " + item.type);
+                }
+            } catch (Exception e) {
+                errors.add("Error assigning categories to " + item.type + " " + item.id + ": " + e.getMessage());
+            }
+        }
+
+        return ResponseEntity.ok(new BulkActionResponse(successCount, errors));
+    }
+
+    // Bulk action DTOs
+
+    public static class BulkActionRequest {
+        public List<BulkActionItem> items;
+    }
+
+    public static class BulkActionItem {
+        public String type; // channel, playlist, or video
+        public String id;
+    }
+
+    public static class BulkCategoryAssignmentRequest {
+        public List<BulkActionItem> items;
+        public List<String> categoryIds;
+    }
+
+    public static class BulkActionResponse {
+        public int successCount;
+        public List<String> errors;
+
+        public BulkActionResponse(int successCount, List<String> errors) {
+            this.successCount = successCount;
+            this.errors = errors;
+        }
+    }
 }

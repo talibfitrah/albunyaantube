@@ -257,3 +257,79 @@ function parseDuration(duration: string): number {
 
   return hours * 3600 + minutes * 60 + seconds;
 }
+
+// Additional YouTube API functions for exclusions modals
+
+export async function getChannelVideos(
+  channelId: string,
+  pageToken?: string,
+  searchQuery?: string
+): Promise<any> {
+  const params: any = {};
+  if (pageToken) params.pageToken = pageToken;
+  if (searchQuery) params.q = searchQuery;
+
+  const response = await apiClient.get(`/api/admin/youtube/channels/${channelId}/videos`, { params });
+
+  return {
+    items: response.data.map((item: any) => ({
+      id: item.id?.videoId || item.id,
+      title: item.snippet?.title || '',
+      thumbnailUrl: item.snippet?.thumbnails?.medium?.url || item.snippet?.thumbnails?.default?.url,
+      publishedAt: item.snippet?.publishedAt
+    })),
+    nextPageToken: response.data.nextPageToken
+  };
+}
+
+export async function getChannelPlaylists(
+  channelId: string,
+  pageToken?: string
+): Promise<any> {
+  const params: any = {};
+  if (pageToken) params.pageToken = pageToken;
+
+  const response = await apiClient.get(`/api/admin/youtube/channels/${channelId}/playlists`, { params });
+
+  return {
+    items: response.data.map((item: any) => ({
+      id: item.id,
+      title: item.snippet?.title || '',
+      thumbnailUrl: item.snippet?.thumbnails?.medium?.url || item.snippet?.thumbnails?.default?.url,
+      itemCount: item.contentDetails?.itemCount || 0
+    })),
+    nextPageToken: response.data.nextPageToken
+  };
+}
+
+export async function getPlaylistDetails(playlistId: string): Promise<any> {
+  const response = await apiClient.get(`/api/admin/youtube/playlists/${playlistId}`);
+
+  return {
+    title: response.data.snippet?.title || '',
+    thumbnailUrl: response.data.snippet?.thumbnails?.medium?.url || response.data.snippet?.thumbnails?.default?.url,
+    itemCount: response.data.contentDetails?.itemCount || 0
+  };
+}
+
+export async function getPlaylistVideos(
+  playlistId: string,
+  pageToken?: string,
+  searchQuery?: string
+): Promise<any> {
+  const params: any = {};
+  if (pageToken) params.pageToken = pageToken;
+  if (searchQuery) params.q = searchQuery;
+
+  const response = await apiClient.get(`/api/admin/youtube/playlists/${playlistId}/videos`, { params });
+
+  return {
+    items: response.data.map((item: any) => ({
+      id: item.id,
+      videoId: item.contentDetails?.videoId || item.snippet?.resourceId?.videoId,
+      title: item.snippet?.title || '',
+      thumbnailUrl: item.snippet?.thumbnails?.medium?.url || item.snippet?.thumbnails?.default?.url
+    })),
+    nextPageToken: response.data.nextPageToken
+  };
+}
