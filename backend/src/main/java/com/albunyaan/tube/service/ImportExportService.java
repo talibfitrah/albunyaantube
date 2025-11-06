@@ -41,36 +41,60 @@ public class ImportExportService {
     private final PlaylistRepository playlistRepository;
     private final VideoRepository videoRepository;
     private final AuditLogService auditLogService;
+    private final VideoValidationService videoValidationService;
 
     public ImportExportService(
             CategoryRepository categoryRepository,
             ChannelRepository channelRepository,
             PlaylistRepository playlistRepository,
             VideoRepository videoRepository,
-            AuditLogService auditLogService
+            AuditLogService auditLogService,
+            VideoValidationService videoValidationService
     ) {
         this.categoryRepository = categoryRepository;
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
         this.videoRepository = videoRepository;
         this.auditLogService = auditLogService;
+        this.videoValidationService = videoValidationService;
     }
 
     /**
      * Export all content to JSON
+     *
+     * @param includeCategories Include categories in export
+     * @param includeChannels Include channels in export
+     * @param includePlaylists Include playlists in export
+     * @param includeVideos Include videos in export
+     * @param excludeUnavailableVideos Exclude videos marked as UNAVAILABLE from export
+     * @param exportedBy User ID performing the export
+     * @return Export response with all requested content
      */
     public ExportResponse exportAll(
             boolean includeCategories,
             boolean includeChannels,
             boolean includePlaylists,
             boolean includeVideos,
+            boolean excludeUnavailableVideos,
             String exportedBy
     ) throws ExecutionException, InterruptedException {
 
         List<Category> categories = includeCategories ? categoryRepository.findAll() : null;
         List<Channel> channels = includeChannels ? channelRepository.findAll() : null;
         List<Playlist> playlists = includePlaylists ? playlistRepository.findAll() : null;
-        List<Video> videos = includeVideos ? videoRepository.findAll() : null;
+        List<Video> videos = null;
+
+        if (includeVideos) {
+            videos = videoRepository.findAll();
+
+            // Filter out unavailable videos if requested
+            if (excludeUnavailableVideos && videos != null) {
+                videos = videos.stream()
+                        .filter(v -> v.getValidationStatus() != com.albunyaan.tube.model.ValidationStatus.UNAVAILABLE)
+                        .collect(java.util.stream.Collectors.toList());
+                logger.info("Filtered out unavailable videos, remaining: {}", videos.size());
+            }
+        }
 
         ExportResponse.ExportMetadata metadata = new ExportResponse.ExportMetadata(
                 exportedBy,
@@ -175,6 +199,7 @@ public class ImportExportService {
         }
 
         // Import videos (no setCreatedBy/setUpdatedBy - these fields don't exist)
+        List<Video> importedVideos = new ArrayList<>();
         if (request.getVideos() != null) {
             for (Video video : request.getVideos()) {
                 try {
@@ -190,11 +215,24 @@ public class ImportExportService {
 
                     videoRepository.save(video);
                     counts.incrementVideosImported();
+                    importedVideos.add(video);
                 } catch (Exception e) {
                     logger.error("Failed to import video {}: {}", video.getId(), e.getMessage());
                     response.addError("VIDEO", video.getId(), e.getMessage());
                     counts.incrementTotalErrors();
                 }
+            }
+        }
+
+        // Validate imported videos against YouTube
+        if (!importedVideos.isEmpty()) {
+            try {
+                logger.info("Validating {} imported videos against YouTube API", importedVideos.size());
+                videoValidationService.validateSpecificVideos(importedVideos, "IMPORT");
+            } catch (Exception e) {
+                logger.error("Failed to validate imported videos: {}", e.getMessage(), e);
+                // Don't fail the import if validation fails
+                response.addError("VALIDATION", "import", "Video validation failed: " + e.getMessage());
             }
         }
 
