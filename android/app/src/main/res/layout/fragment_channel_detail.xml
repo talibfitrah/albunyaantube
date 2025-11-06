@@ -99,6 +99,16 @@
                 tools:text="Channel description goes here..."
                 tools:visibility="visible"/>
 
+            <!-- Category Chips -->
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/categoryChipsContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                app:singleLine="false"
+                android:visibility="gone"
+                tools:visibility="visible"/>
+
         </LinearLayout>
 
         <!-- Tabs -->

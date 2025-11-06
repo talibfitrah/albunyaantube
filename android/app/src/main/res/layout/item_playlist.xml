@@ -56,4 +56,15 @@
         app:layout_constraintTop_toBottomOf="@id/playlistTitle"
         tools:text="10 items • Albunyaan"/>
 
+    <!-- Category Chip -->
+    <com.google.android.material.chip.ChipGroup
+        android:id="@+id/categoryChipsContainer"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/spacing_xs"
+        app:singleLine="true"
+        app:layout_constraintStart_toStartOf="@id/playlistTitle"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/playlistMeta"/>
+
 </androidx.constraintlayout.widget.ConstraintLayout>

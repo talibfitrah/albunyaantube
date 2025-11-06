@@ -9,6 +9,7 @@ import coil.load
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.databinding.ItemPlaylistBinding
+import com.google.android.material.chip.Chip
 
 class PlaylistAdapter(
     private val onPlaylistClick: (ContentItem.Playlist) -> Unit
@@ -34,7 +35,7 @@ class PlaylistAdapter(
 
         fun bind(playlist: ContentItem.Playlist) {
             binding.playlistTitle.text = playlist.title
-            binding.playlistMeta.text = "${playlist.itemCount} items • ${playlist.category}"
+            binding.playlistMeta.text = "${playlist.itemCount} items"
 
             // Load thumbnail
             binding.playlistThumbnail.load(playlist.thumbnailUrl) {
@@ -42,6 +43,18 @@ class PlaylistAdapter(
                 error(R.drawable.thumbnail_placeholder)
                 crossfade(true)
             }
+
+            // Add category chip
+            binding.categoryChipsContainer.removeAllViews()
+            val chip = Chip(binding.root.context).apply {
+                text = playlist.category
+                isClickable = false
+                chipBackgroundColor = android.content.res.ColorStateList.valueOf(
+                    binding.root.context.getColor(R.color.surface_variant)
+                )
+                setTextColor(binding.root.context.getColor(R.color.primary_green))
+            }
+            binding.categoryChipsContainer.addView(chip)
 
             binding.root.setOnClickListener {
                 onPlaylistClick(playlist)

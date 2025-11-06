@@ -16,6 +16,7 @@ import com.albunyaan.tube.databinding.FragmentPlaylistDetailBinding
 import com.albunyaan.tube.ui.adapters.VideoGridAdapter
 import com.albunyaan.tube.ui.utils.calculateGridSpanCount
 import com.albunyaan.tube.ui.utils.isTablet
+import com.google.android.material.chip.Chip
 import kotlinx.coroutines.launch
 
 class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
@@ -117,11 +118,22 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
                             // Update toolbar and content
                             toolbar.title = state.playlist.title
                             playlistTitle.text = state.playlist.title
-                            playlistCategory.text = state.playlist.category
                             playlistItemCount.text = getString(
                                 R.string.playlist_detail_item_count,
                                 state.playlist.itemCount
                             )
+
+                            // Update category chips
+                            categoryChipsContainer.removeAllViews()
+                            val chip = Chip(requireContext()).apply {
+                                text = state.playlist.category
+                                isClickable = false
+                                chipBackgroundColor = android.content.res.ColorStateList.valueOf(
+                                    requireContext().getColor(R.color.surface_variant)
+                                )
+                                setTextColor(requireContext().getColor(R.color.primary_green))
+                            }
+                            categoryChipsContainer.addView(chip)
 
                             if (!state.playlist.description.isNullOrBlank()) {
                                 playlistDescription.text = state.playlist.description

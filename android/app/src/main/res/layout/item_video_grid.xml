@@ -75,4 +75,15 @@
         app:layout_constraintTop_toBottomOf="@id/videoTitle"
         tools:text="100K views • 2 weeks ago"/>
 
+    <!-- Category Chip -->
+    <com.google.android.material.chip.ChipGroup
+        android:id="@+id/categoryChipsContainer"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/spacing_xs"
+        app:singleLine="true"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/videoMeta"/>
+
 </androidx.constraintlayout.widget.ConstraintLayout>

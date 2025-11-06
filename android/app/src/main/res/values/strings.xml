@@ -24,6 +24,7 @@
     <string name="channel_tab_shorts">Shorts</string>
     <string name="channel_tab_playlists">Playlists</string>
     <string name="channel_tab_posts">Posts</string>
+    <string name="channel_tab_about">About</string>
     <string name="channel_detail_placeholder">%1$s tab for %2$s coming soon.</string>
     <string name="playlist_detail_title_placeholder">%1$s</string>
     <string name="playlist_detail_category">Category: %1$s</string>

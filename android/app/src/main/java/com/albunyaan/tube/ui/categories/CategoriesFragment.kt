@@ -103,5 +103,6 @@ class CategoriesFragment : Fragment(R.layout.fragment_categories) {
 data class Category(
     val id: String,
     val name: String,
-    val hasSubcategories: Boolean = false
+    val hasSubcategories: Boolean = false,
+    val icon: String? = null // Emoji or icon identifier
 )

@@ -12,6 +12,7 @@ import androidx.viewpager2.adapter.FragmentStateAdapter
 import com.albunyaan.tube.R
 import com.albunyaan.tube.ServiceLocator
 import com.albunyaan.tube.databinding.FragmentChannelDetailBinding
+import com.google.android.material.chip.Chip
 import com.google.android.material.tabs.TabLayoutMediator
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
@@ -100,6 +101,26 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
                             } else {
                                 channelDescriptionText.isVisible = false
                             }
+
+                            // Update category chips
+                            categoryChipsContainer.removeAllViews()
+                            val categories = state.channel.categories ?: listOf(state.channel.category)
+                            if (categories.isNotEmpty()) {
+                                categories.forEach { category ->
+                                    val chip = Chip(requireContext()).apply {
+                                        text = category
+                                        isClickable = false
+                                        chipBackgroundColor = android.content.res.ColorStateList.valueOf(
+                                            requireContext().getColor(R.color.surface_variant)
+                                        )
+                                        setTextColor(requireContext().getColor(R.color.primary_green))
+                                    }
+                                    categoryChipsContainer.addView(chip)
+                                }
+                                categoryChipsContainer.isVisible = true
+                            } else {
+                                categoryChipsContainer.isVisible = false
+                            }
                         }
                     }
                     is ChannelDetailViewModel.ChannelState.Error -> {
@@ -150,5 +171,6 @@ enum class ChannelTab(val titleRes: Int) {
     LIVE(R.string.channel_tab_live),
     SHORTS(R.string.channel_tab_shorts),
     PLAYLISTS(R.string.channel_tab_playlists),
-    POSTS(R.string.channel_tab_posts)
+    POSTS(R.string.channel_tab_posts),
+    ABOUT(R.string.channel_tab_about)
 }

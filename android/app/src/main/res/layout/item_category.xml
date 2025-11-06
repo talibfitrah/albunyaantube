@@ -18,6 +18,20 @@
         android:layout_height="wrap_content"
         android:padding="@dimen/spacing_lg">
 
+        <!-- Category Icon/Emoji -->
+        <TextView
+            android:id="@+id/categoryIcon"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="24sp"
+            android:layout_marginEnd="@dimen/spacing_md"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            android:visibility="gone"
+            tools:text="📖"
+            tools:visibility="visible"/>
+
         <!-- Category Name -->
         <TextView
             android:id="@+id/categoryName"
@@ -26,7 +40,7 @@
             android:textSize="16sp"
             android:textColor="@android:color/black"
             android:textStyle="normal"
-            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintStart_toEndOf="@id/categoryIcon"
             app:layout_constraintEnd_toStartOf="@id/chevron"
             app:layout_constraintTop_toTopOf="parent"
             app:layout_constraintBottom_toBottomOf="parent"
