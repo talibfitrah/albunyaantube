@@ -3,6 +3,7 @@ package com.albunyaan.tube.model;
 import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.annotation.DocumentId;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -162,7 +163,7 @@ public class ValidationRun {
     }
 
     public Map<String, Object> getDetails() {
-        return details;
+        return Collections.unmodifiableMap(details);
     }
 
     public void setDetails(Map<String, Object> details) {

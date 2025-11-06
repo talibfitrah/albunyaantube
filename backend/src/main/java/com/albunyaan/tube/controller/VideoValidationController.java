@@ -40,6 +40,12 @@ public class VideoValidationController {
             @AuthenticationPrincipal FirebaseUserDetails user,
             @RequestParam(required = false) Integer maxVideos
     ) {
+        // Validate maxVideos parameter
+        if (maxVideos != null && (maxVideos < 1 || maxVideos > 1000)) {
+            return ResponseEntity.badRequest()
+                    .body(new ValidationRunResponse(false, "maxVideos must be between 1 and 1000", null));
+        }
+
         try {
             ValidationRun result = videoValidationService.validateStandaloneVideos(
                     "MANUAL",
@@ -82,6 +88,9 @@ public class VideoValidationController {
             return ResponseEntity.ok(run);
 
         } catch (ExecutionException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Failed to fetch validation status: " + e.getMessage()));
         }
@@ -96,6 +105,12 @@ public class VideoValidationController {
     public ResponseEntity<?> getValidationHistory(
             @RequestParam(required = false, defaultValue = "20") int limit
     ) {
+        // Validate limit parameter
+        if (limit < 1 || limit > 100) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "Limit must be between 1 and 100"));
+        }
+
         try {
             List<ValidationRun> history = videoValidationService.getValidationHistory(limit);
 
@@ -106,6 +121,9 @@ public class VideoValidationController {
             return ResponseEntity.ok(response);
 
         } catch (ExecutionException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Failed to fetch validation history: " + e.getMessage()));
         }
@@ -128,6 +146,9 @@ public class VideoValidationController {
             return ResponseEntity.ok(latest);
 
         } catch (ExecutionException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Failed to fetch latest validation: " + e.getMessage()));
         }

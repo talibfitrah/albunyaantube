@@ -58,7 +58,19 @@ public class ValidationRunRepository {
         return Optional.empty();
     }
 
+    /**
+     * Find all validation runs ordered by start time.
+     * Note: Requires Firestore index on validation_runs collection with startedAt (DESCENDING).
+     *
+     * @param limit Maximum number of results (1-1000)
+     * @return List of validation runs
+     * @throws IllegalArgumentException if limit is out of bounds
+     */
     public List<ValidationRun> findAll(int limit) throws ExecutionException, InterruptedException {
+        if (limit < 1 || limit > 1000) {
+            throw new IllegalArgumentException("Limit must be between 1 and 1000");
+        }
+
         ApiFuture<QuerySnapshot> query = getCollection()
                 .orderBy("startedAt", Query.Direction.DESCENDING)
                 .limit(limit)
@@ -67,6 +79,11 @@ public class ValidationRunRepository {
         return query.get().toObjects(ValidationRun.class);
     }
 
+    /**
+     * Find validation runs by trigger type.
+     * Note: Requires composite Firestore index: validation_runs collection with
+     * triggerType (ASCENDING) and startedAt (DESCENDING).
+     */
     public List<ValidationRun> findByTriggerType(String triggerType, int limit) throws ExecutionException, InterruptedException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereEqualTo("triggerType", triggerType)
@@ -77,6 +94,11 @@ public class ValidationRunRepository {
         return query.get().toObjects(ValidationRun.class);
     }
 
+    /**
+     * Find validation runs by status.
+     * Note: Requires composite Firestore index: validation_runs collection with
+     * status (ASCENDING) and startedAt (DESCENDING).
+     */
     public List<ValidationRun> findByStatus(String status, int limit) throws ExecutionException, InterruptedException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereEqualTo("status", status)
@@ -101,7 +123,9 @@ public class ValidationRunRepository {
     }
 
     /**
-     * Find the most recent completed validation run
+     * Find the most recent completed validation run.
+     * Note: Requires composite Firestore index: validation_runs collection with
+     * status (ASCENDING) and startedAt (DESCENDING).
      */
     public Optional<ValidationRun> findLatestCompleted() throws ExecutionException, InterruptedException {
         ApiFuture<QuerySnapshot> query = getCollection()

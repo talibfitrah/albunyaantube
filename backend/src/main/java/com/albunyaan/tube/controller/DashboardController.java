@@ -219,14 +219,14 @@ public class DashboardController {
     public static class ValidationMetric {
         public Timestamp lastRunAt;
         public int videosChecked;
-        public int videosRemoved;
+        public int videosMarkedUnavailable;
         public int validationErrors;
         public String status;
 
-        public ValidationMetric(Timestamp lastRunAt, int checked, int removed, int errors, String status) {
+        public ValidationMetric(Timestamp lastRunAt, int checked, int markedUnavailable, int errors, String status) {
             this.lastRunAt = lastRunAt;
             this.videosChecked = checked;
-            this.videosRemoved = removed;
+            this.videosMarkedUnavailable = markedUnavailable;
             this.validationErrors = errors;
             this.status = status;
         }

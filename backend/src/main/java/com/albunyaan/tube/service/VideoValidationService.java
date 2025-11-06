@@ -119,11 +119,6 @@ public class VideoValidationService {
                         unavailableVideoIds.add(video.getId());
 
                         // Create audit log for unavailable video
-                        Map<String, Object> auditDetails = new HashMap<>();
-                        auditDetails.put("youtubeId", video.getYoutubeId());
-                        auditDetails.put("title", video.getTitle());
-                        auditDetails.put("triggerType", triggerType);
-
                         auditLogService.logSystem(
                                 "video_marked_unavailable",
                                 "video",
