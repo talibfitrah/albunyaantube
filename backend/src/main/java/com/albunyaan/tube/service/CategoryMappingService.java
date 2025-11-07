@@ -5,6 +5,7 @@ import com.albunyaan.tube.repository.CategoryRepository;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
@@ -63,6 +64,7 @@ public class CategoryMappingService {
      * Refresh the in-memory category cache.
      * Call this after category modifications (create/update/delete).
      */
+    @CacheEvict(value = "categoryNameMapping", allEntries = true)
     public void refreshCategoryCache() {
         preloadCategories();
     }
