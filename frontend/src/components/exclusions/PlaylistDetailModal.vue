@@ -169,6 +169,7 @@ watch(() => props.open, (isOpen) => {
   } else {
     // Invalidate any in-flight requests when closing
     requestIdCounter++
+    isLoading.value = false
 
     // Reset state when closed
     items.value = []
@@ -266,6 +267,7 @@ async function loadMore() {
 function performSearch() {
   // Invalidate any in-flight requests
   requestIdCounter++
+  isLoading.value = false
 
   activeSearch.value = searchQuery.value.trim()
   items.value = []

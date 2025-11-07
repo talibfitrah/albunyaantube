@@ -194,6 +194,7 @@ watch(() => props.open, (isOpen) => {
   } else {
     // Invalidate any in-flight requests when closing
     requestIdCounter++
+    isLoading.value = false
 
     // Reset state when closed
     items.value = []
@@ -309,6 +310,7 @@ function switchTab(tab: 'videos' | 'playlists') {
 
   // Invalidate any in-flight requests
   requestIdCounter++
+  isLoading.value = false
 
   activeTab.value = tab
   items.value = []
@@ -324,6 +326,7 @@ function switchTab(tab: 'videos' | 'playlists') {
 function performSearch() {
   // Invalidate any in-flight requests
   requestIdCounter++
+  isLoading.value = false
 
   activeSearch.value = searchQuery.value.trim()
   items.value = []

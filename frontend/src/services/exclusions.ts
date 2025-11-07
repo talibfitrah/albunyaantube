@@ -32,10 +32,10 @@ export async function fetchChannelExclusions(channelId: string): Promise<Channel
 
 export async function addChannelExclusion(
   channelId: string,
-  type: string,
+  type: 'video' | 'playlist',
   youtubeId: string
-): Promise<ChannelExclusion[]> {
-  const response = await authorizedJsonFetch<ChannelExclusion[]>(
+): Promise<ChannelExclusions> {
+  const response = await authorizedJsonFetch<ChannelExclusions>(
     `/admin/channels/${channelId}/exclusions/${type}/${youtubeId}`,
     { method: 'POST' }
   );
@@ -44,10 +44,10 @@ export async function addChannelExclusion(
 
 export async function removeChannelExclusion(
   channelId: string,
-  type: string,
+  type: 'video' | 'playlist',
   youtubeId: string
-): Promise<ChannelExclusion[]> {
-  const response = await authorizedJsonFetch<ChannelExclusion[]>(
+): Promise<ChannelExclusions> {
+  const response = await authorizedJsonFetch<ChannelExclusions>(
     `/admin/channels/${channelId}/exclusions/${type}/${youtubeId}`,
     { method: 'DELETE' }
   );

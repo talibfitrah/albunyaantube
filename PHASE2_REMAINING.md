@@ -151,23 +151,25 @@ function showToast(
   duration: number = 3000
 ) {
   // Non-blocking toast notification implementation
-  // Uses the project's toast utility from @/utils/toast
-  import('@/utils/toast').then(({ toast }) => {
-    toast[type](message)
-  })
-
-  // Alternative: Create a simple non-blocking toast
   const toastEl = document.createElement('div')
   toastEl.className = `toast toast-${type}`
   toastEl.textContent = message
   toastEl.setAttribute('role', 'alert')
   toastEl.setAttribute('aria-live', 'polite')
+
+  const colors = {
+    success: '#4caf50',
+    error: '#f44336',
+    warning: '#ff9800',
+    info: '#2196f3'
+  }
+
   toastEl.style.cssText = `
     position: fixed;
     top: 20px;
     right: 20px;
     padding: 12px 20px;
-    background: ${type === 'success' ? '#4caf50' : type === 'error' ? '#f44336' : type === 'warning' ? '#ff9800' : '#2196f3'};
+    background: ${colors[type]};
     color: white;
     border-radius: 4px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.2);
