@@ -389,6 +389,25 @@
         </button>
       </div>
     </div>
+
+    <!-- Exclusion Detail Modals -->
+    <ChannelDetailModal
+      v-if="selectedItemForModal && selectedItemForModal.type === 'channel'"
+      :open="channelModalOpen"
+      :channel-id="selectedItemForModal.id"
+      :channel-youtube-id="selectedItemForModal.id"
+      @close="channelModalOpen = false"
+      @updated="handleModalUpdated"
+    />
+
+    <PlaylistDetailModal
+      v-if="selectedItemForModal && selectedItemForModal.type === 'playlist'"
+      :open="playlistModalOpen"
+      :playlist-id="selectedItemForModal.id"
+      :playlist-youtube-id="selectedItemForModal.id"
+      @close="playlistModalOpen = false"
+      @updated="handleModalUpdated"
+    />
   </div>
 </template>
 
@@ -396,6 +415,9 @@
 import { ref, computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import apiClient from '@/services/api/client';
+import ChannelDetailModal from '@/components/exclusions/ChannelDetailModal.vue';
+import PlaylistDetailModal from '@/components/exclusions/PlaylistDetailModal.vue';
+import * as contentLibraryService from '@/services/contentLibrary';
 
 const { t } = useI18n();
 
@@ -432,6 +454,11 @@ const filters = ref({
   categories: [] as string[],
   dateAdded: 'any'
 });
+
+// Modal State
+const channelModalOpen = ref(false);
+const playlistModalOpen = ref(false);
+const selectedItemForModal = ref<ContentItem | null>(null);
 
 // Filter Options
 const contentTypes = computed(() => [
@@ -539,12 +566,38 @@ function closeBulkActionsMenu() {
 }
 
 async function bulkChangeStatus(status: string) {
-  console.log('Bulk change status to:', status, selectedItems.value);
-  closeBulkActionsMenu();
+  try {
+    const items = selectedItems.value.map(id => {
+      const item = content.value.find(c => c.id === id);
+      return { type: item!.type, id: item!.id };
+    });
+
+    if (status === 'approved') {
+      const result = await contentLibraryService.bulkApprove(items);
+      alert(`${t('contentLibrary.success')} - ${result.successCount} ${t('contentLibrary.itemsApproved')}`);
+      if (result.errors.length > 0) {
+        console.error('Bulk approve errors:', result.errors);
+      }
+    } else {
+      const result = await contentLibraryService.bulkReject(items);
+      alert(`${t('contentLibrary.success')} - ${result.successCount} ${t('contentLibrary.itemsRejected')}`);
+      if (result.errors.length > 0) {
+        console.error('Bulk reject errors:', result.errors);
+      }
+    }
+
+    clearSelection();
+    await loadContent();
+  } catch (err: any) {
+    alert(t('contentLibrary.errorBulkAction') + ': ' + (err.message || ''));
+  } finally {
+    closeBulkActionsMenu();
+  }
 }
 
 function openBulkCategoryAssignment() {
-  console.log('Open bulk category assignment for:', selectedItems.value);
+  // TODO: Implement category assignment modal
+  alert('Category assignment not yet implemented');
   closeBulkActionsMenu();
 }
 
@@ -552,14 +605,46 @@ async function bulkDelete() {
   if (!confirm(t('contentLibrary.confirmBulkDelete', { count: selectedItems.value.length }))) {
     return;
   }
-  console.log('Bulk delete:', selectedItems.value);
-  closeBulkActionsMenu();
-  clearSelection();
+
+  try {
+    const items = selectedItems.value.map(id => {
+      const item = content.value.find(c => c.id === id);
+      return { type: item!.type, id: item!.id };
+    });
+
+    const result = await contentLibraryService.bulkDelete(items);
+    alert(`${t('contentLibrary.success')} - ${result.successCount} ${t('contentLibrary.itemsDeleted')}`);
+
+    if (result.errors.length > 0) {
+      console.error('Bulk delete errors:', result.errors);
+    }
+
+    clearSelection();
+    await loadContent();
+  } catch (err: any) {
+    alert(t('contentLibrary.errorBulkAction') + ': ' + (err.message || ''));
+  } finally {
+    closeBulkActionsMenu();
+  }
 }
 
 // Item Actions
 function openDetailsModal(item: ContentItem) {
-  console.log('Open details for:', item);
+  selectedItemForModal.value = item;
+
+  if (item.type === 'channel') {
+    channelModalOpen.value = true;
+  } else if (item.type === 'playlist') {
+    playlistModalOpen.value = true;
+  } else {
+    // Videos don't have detail modals
+    console.log('Video details not implemented');
+  }
+}
+
+function handleModalUpdated() {
+  // Refresh content after exclusions are modified
+  loadContent();
 }
 
 function openCategoryModal(item: ContentItem) {

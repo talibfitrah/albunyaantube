@@ -253,7 +253,18 @@ export const messages = {
         assignCategories: 'Assign Categories',
         delete: 'Delete Selected',
         cancel: 'Cancel'
-      }
+      },
+      success: 'Success',
+      itemsApproved: 'items approved',
+      itemsRejected: 'items rejected',
+      itemsDeleted: 'items deleted',
+      errorBulkAction: 'Error performing bulk action'
+    },
+    common: {
+      loading: 'Loading...',
+      error: 'An error occurred',
+      retry: 'Retry',
+      close: 'Close'
     },
     channelDetails: {
       close: 'Close',
@@ -534,6 +545,37 @@ export const messages = {
         previous: 'Previous',
         next: 'Next',
         showing: 'Showing {count} of {limit} exclusions'
+      },
+      channelDetail: {
+        title: 'Channel Details',
+        subscribers: '{count} subscribers',
+        videos: '{count} videos',
+        tabs: {
+          videos: 'Videos',
+          playlists: 'Playlists'
+        },
+        search: 'Search within channel...',
+        exclude: 'Exclude',
+        removeExclusion: 'Remove Exclusion',
+        loadingMore: 'Loading more...',
+        noResults: 'No results found',
+        noMoreItems: 'No more items',
+        excludeError: 'Error adding exclusion',
+        removeError: 'Error removing exclusion',
+        itemCount: '{count} items'
+      },
+      playlistDetail: {
+        title: 'Playlist Details',
+        totalVideos: '{count} videos',
+        search: 'Search within playlist...',
+        exclude: 'Exclude',
+        removeExclusion: 'Remove Exclusion',
+        loadingMore: 'Loading more...',
+        noResults: 'No results found',
+        noMoreItems: 'No more items',
+        excludeError: 'Error adding exclusion',
+        removeError: 'Error removing exclusion',
+        position: 'Position #{position}'
       }
     },
     users: {
@@ -1213,6 +1255,83 @@ export const messages = {
         error: 'فشل رفض الطلب.'
       }
     },
+    contentLibrary: {
+      heading: 'مكتبة المحتوى',
+      subtitle: 'إدارة جميع المحتوى المعتمد عبر القنوات وقوائم التشغيل والفيديوهات',
+      searchPlaceholder: 'البحث بالعنوان أو المعرّف أو الوصف...',
+      loading: 'جارٍ تحميل المحتوى...',
+      retry: 'إعادة المحاولة',
+      empty: 'لم يتم العثور على محتوى. جرب تعديل الفلاتر.',
+      error: 'فشل تحميل المحتوى.',
+      clearSelection: 'مسح التحديد',
+      clear: 'مسح',
+      bulkActions: 'إجراءات جماعية',
+      viewDetails: 'عرض التفاصيل',
+      view: 'عرض',
+      categories: 'الفئات',
+      assignCategories: 'تعيين الفئات',
+      delete: 'حذف',
+      confirmDelete: 'هل أنت متأكد من حذف "{title}"؟',
+      confirmBulkDelete: 'هل أنت متأكد من حذف {count} عنصر؟',
+      types: {
+        channel: 'قناة',
+        playlist: 'قائمة تشغيل',
+        video: 'فيديو'
+      },
+      statuses: {
+        approved: 'معتمد',
+        pending: 'قيد الانتظار',
+        rejected: 'مرفوض'
+      },
+      columns: {
+        title: 'العنوان',
+        type: 'النوع',
+        categories: 'الفئات',
+        status: 'الحالة',
+        dateAdded: 'تاريخ الإضافة',
+        actions: 'الإجراءات'
+      },
+      filters: {
+        title: 'الفلاتر',
+        contentType: 'نوع المحتوى',
+        status: 'الحالة',
+        allStatuses: 'جميع الحالات',
+        categories: 'الفئات',
+        searchCategories: 'البحث عن الفئات...',
+        dateAdded: 'تاريخ الإضافة',
+        anyDate: 'أي تاريخ',
+        today: 'اليوم',
+        thisWeek: 'هذا الأسبوع',
+        thisMonth: 'هذا الشهر',
+        resetAll: 'إعادة تعيين جميع الفلاتر',
+        apply: 'تطبيق الفلاتر'
+      },
+      sort: {
+        newestFirst: 'الأحدث أولاً',
+        oldestFirst: 'الأقدم أولاً',
+        nameAZ: 'الاسم (أ-ي)',
+        nameZA: 'الاسم (ي-أ)'
+      },
+      bulkMenu: {
+        title: 'إجراءات جماعية',
+        approve: 'اعتماد المحدد',
+        markPending: 'وضع علامة قيد الانتظار',
+        assignCategories: 'تعيين الفئات',
+        delete: 'حذف المحدد',
+        cancel: 'إلغاء'
+      },
+      success: 'نجاح',
+      itemsApproved: 'عنصر معتمد',
+      itemsRejected: 'عنصر مرفوض',
+      itemsDeleted: 'عنصر محذوف',
+      errorBulkAction: 'خطأ في تنفيذ الإجراء الجماعي'
+    },
+    common: {
+      loading: 'جارٍ التحميل...',
+      error: 'حدث خطأ',
+      retry: 'إعادة المحاولة',
+      close: 'إغلاق'
+    },
     registry: {
       heading: 'مساحة عمل السجل',
       description: 'أدر القنوات وقوائم التشغيل والفيديوهات المسموح بها من مكان واحد.',
@@ -1442,6 +1561,36 @@ export const messages = {
         previous: 'السابق',
         next: 'التالي',
         showing: 'إظهار {count} من أصل {limit} استثناءات'
+      },
+      channelDetail: {
+        title: 'تفاصيل القناة',
+        subscribers: '{count} مشترك',
+        videos: '{count} فيديو',
+        tabs: {
+          videos: 'الفيديوهات',
+          playlists: 'قوائم التشغيل'
+        },
+        search: 'البحث داخل القناة...',
+        exclude: 'استبعاد',
+        removeExclusion: 'إزالة الاستثناء',
+        loadingMore: 'جارٍ تحميل المزيد...',
+        noResults: 'لم يتم العثور على نتائج',
+        noMoreItems: 'لا توجد عناصر أخرى',
+        excludeError: 'خطأ في إضافة الاستثناء',
+        removeError: 'خطأ في إزالة الاستثناء',
+        itemCount: '{count} عنصر'
+      },
+      playlistDetail: {
+        title: 'تفاصيل قائمة التشغيل',
+        totalVideos: '{count} فيديو',
+        search: 'البحث داخل قائمة التشغيل...',
+        exclude: 'استبعاد',
+        removeExclusion: 'إزالة الاستثناء',
+        loadingMore: 'جارٍ تحميل المزيد...',
+        noResults: 'لم يتم العثور على نتائج',
+        noMoreItems: 'لا توجد عناصر أخرى',
+        excludeError: 'خطأ في إضافة الاستثناء',
+        removeError: 'خطأ في إزالة الاستثناء'
       }
     },
     users: {
@@ -1880,6 +2029,83 @@ export const messages = {
         error: 'Indiening afwijzen is mislukt.'
       }
     },
+    contentLibrary: {
+      heading: 'Inhoudsbibliotheek',
+      subtitle: 'Beheer alle goedgekeurde inhoud voor kanalen, afspeellijsten en video\'s',
+      searchPlaceholder: 'Zoeken op titel, ID of beschrijving...',
+      loading: 'Inhoud laden...',
+      retry: 'Opnieuw proberen',
+      empty: 'Geen inhoud gevonden. Probeer de filters aan te passen.',
+      error: 'Inhoud laden is mislukt.',
+      clearSelection: 'Selectie wissen',
+      clear: 'Wissen',
+      bulkActions: 'Bulkacties',
+      viewDetails: 'Details bekijken',
+      view: 'Bekijken',
+      categories: 'Categorieën',
+      assignCategories: 'Categorieën toewijzen',
+      delete: 'Verwijderen',
+      confirmDelete: 'Weet je zeker dat je "{title}" wilt verwijderen?',
+      confirmBulkDelete: 'Weet je zeker dat je {count} items wilt verwijderen?',
+      types: {
+        channel: 'Kanaal',
+        playlist: 'Afspeellijst',
+        video: 'Video'
+      },
+      statuses: {
+        approved: 'Goedgekeurd',
+        pending: 'In behandeling',
+        rejected: 'Afgewezen'
+      },
+      columns: {
+        title: 'Titel',
+        type: 'Type',
+        categories: 'Categorieën',
+        status: 'Status',
+        dateAdded: 'Toegevoegd op',
+        actions: 'Acties'
+      },
+      filters: {
+        title: 'Filters',
+        contentType: 'Inhoudstype',
+        status: 'Status',
+        allStatuses: 'Alle statussen',
+        categories: 'Categorieën',
+        searchCategories: 'Zoek categorieën...',
+        dateAdded: 'Toegevoegd op',
+        anyDate: 'Elke datum',
+        today: 'Vandaag',
+        thisWeek: 'Deze week',
+        thisMonth: 'Deze maand',
+        resetAll: 'Alle filters wissen',
+        apply: 'Filters toepassen'
+      },
+      sort: {
+        newestFirst: 'Nieuwste eerst',
+        oldestFirst: 'Oudste eerst',
+        nameAZ: 'Naam (A-Z)',
+        nameZA: 'Naam (Z-A)'
+      },
+      bulkMenu: {
+        title: 'Bulkacties',
+        approve: 'Geselecteerde goedkeuren',
+        markPending: 'Markeren als in behandeling',
+        assignCategories: 'Categorieën toewijzen',
+        delete: 'Geselecteerde verwijderen',
+        cancel: 'Annuleren'
+      },
+      success: 'Succes',
+      itemsApproved: 'items goedgekeurd',
+      itemsRejected: 'items afgewezen',
+      itemsDeleted: 'items verwijderd',
+      errorBulkAction: 'Fout bij uitvoeren van bulkactie'
+    },
+    common: {
+      loading: 'Laden...',
+      error: 'Er is een fout opgetreden',
+      retry: 'Opnieuw proberen',
+      close: 'Sluiten'
+    },
     registry: {
       heading: 'Registerwerkruimte',
       description: 'Beheer goedgekeurde kanalen, afspeellijsten en video\'s vanuit één workspace.',
@@ -2109,6 +2335,36 @@ export const messages = {
         previous: 'Vorige',
         next: 'Volgende',
         showing: '{count} van {limit} uitzonderingen'
+      },
+      channelDetail: {
+        title: 'Kanaaldetails',
+        subscribers: '{count} abonnees',
+        videos: '{count} video\'s',
+        tabs: {
+          videos: 'Video\'s',
+          playlists: 'Afspeellijsten'
+        },
+        search: 'Zoeken binnen kanaal...',
+        exclude: 'Uitsluiten',
+        removeExclusion: 'Uitzondering verwijderen',
+        loadingMore: 'Meer laden...',
+        noResults: 'Geen resultaten gevonden',
+        noMoreItems: 'Geen items meer',
+        excludeError: 'Fout bij toevoegen van uitzondering',
+        removeError: 'Fout bij verwijderen van uitzondering',
+        itemCount: '{count} items'
+      },
+      playlistDetail: {
+        title: 'Afspeellijstdetails',
+        totalVideos: '{count} video\'s',
+        search: 'Zoeken binnen afspeellijst...',
+        exclude: 'Uitsluiten',
+        removeExclusion: 'Uitzondering verwijderen',
+        loadingMore: 'Meer laden...',
+        noResults: 'Geen resultaten gevonden',
+        noMoreItems: 'Geen items meer',
+        excludeError: 'Fout bij toevoegen van uitzondering',
+        removeError: 'Fout bij verwijderen van uitzondering'
       }
     },
     users: {
