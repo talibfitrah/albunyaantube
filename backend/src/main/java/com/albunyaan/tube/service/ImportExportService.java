@@ -90,7 +90,8 @@ public class ImportExportService {
             // Filter out unavailable videos if requested
             if (excludeUnavailableVideos && videos != null) {
                 videos = videos.stream()
-                        .filter(v -> v.getValidationStatus() != com.albunyaan.tube.model.ValidationStatus.UNAVAILABLE)
+                        .filter(v -> v.getValidationStatus() != null
+                            && v.getValidationStatus() != com.albunyaan.tube.model.ValidationStatus.UNAVAILABLE)
                         .collect(java.util.stream.Collectors.toList());
                 logger.info("Filtered out unavailable videos, remaining: {}", videos.size());
             }
@@ -233,6 +234,7 @@ public class ImportExportService {
                 logger.error("Failed to validate imported videos: {}", e.getMessage(), e);
                 // Don't fail the import if validation fails
                 response.addError("VALIDATION", "import", "Video validation failed: " + e.getMessage());
+                counts.incrementTotalErrors();
             }
         }
 

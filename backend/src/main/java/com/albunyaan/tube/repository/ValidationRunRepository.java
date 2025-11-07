@@ -147,7 +147,7 @@ public class ValidationRunRepository {
      */
     public Optional<ValidationRun> findLatestCompleted() throws ExecutionException, InterruptedException {
         ApiFuture<QuerySnapshot> query = getCollection()
-                .whereEqualTo("status", "COMPLETED")
+                .whereEqualTo("status", ValidationRun.STATUS_COMPLETED)
                 .orderBy("startedAt", Query.Direction.DESCENDING)
                 .limit(1)
                 .get();

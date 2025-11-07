@@ -55,7 +55,7 @@
         </div>
         <div class="detail-item" v-if="latestRun.durationMs">
           <span class="detail-label">{{ t('videoValidation.duration') }}:</span>
-          <span class="detail-value">{{ formatDuration(latestRun.durationMs) }}</span>
+          <span class="detail-value">{{ formatDuration(Math.floor(latestRun.durationMs / 1000), locale) }}</span>
         </div>
       </div>
     </div>
@@ -103,9 +103,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { formatDateTime } from '@/utils/formatters';
+import { formatDateTime, formatDuration } from '@/utils/formatters';
 import type { ValidationRun } from '@/types/validation';
 import {
   getLatestValidationRun,
@@ -121,6 +121,7 @@ const errorMessage = ref<string | null>(null);
 const successMessage = ref<string | null>(null);
 const latestRun = ref<ValidationRun | null>(null);
 const validationHistory = ref<ValidationRun[]>([]);
+let successMessageTimeout: ReturnType<typeof setTimeout> | null = null;
 
 async function loadData() {
   isLoading.value = true;
@@ -146,6 +147,11 @@ async function handleTriggerValidation() {
   errorMessage.value = null;
   successMessage.value = null;
 
+  // Clear any existing timeout
+  if (successMessageTimeout) {
+    clearTimeout(successMessageTimeout);
+  }
+
   try {
     const result = await triggerValidation();
 
@@ -159,8 +165,9 @@ async function handleTriggerValidation() {
       await loadData();
 
       // Clear success message after 5 seconds
-      setTimeout(() => {
+      successMessageTimeout = setTimeout(() => {
         successMessage.value = null;
+        successMessageTimeout = null;
       }, 5000);
     } else {
       errorMessage.value = result.message || t('videoValidation.triggerError');
@@ -176,19 +183,14 @@ function handleRetry() {
   loadData();
 }
 
-function formatDuration(ms: number): string {
-  const seconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-
-  if (minutes > 0) {
-    return t('videoValidation.durationFormat', { minutes, seconds: remainingSeconds });
-  }
-  return t('videoValidation.secondsFormat', { seconds });
-}
-
 onMounted(() => {
   loadData();
+});
+
+onBeforeUnmount(() => {
+  if (successMessageTimeout) {
+    clearTimeout(successMessageTimeout);
+  }
 });
 </script>
 
