@@ -101,12 +101,18 @@ The Exclusions and Content Library feature provides administrators with fine-gra
   - `throttleMs: number` - Throttle delay (default: 500ms)
   - `onLoadMore: () => void` - Callback for loading more items
 - **Returns:**
-  - `scrollContainerRef: Ref<HTMLElement | null>` - Ref to attach to scroll container
-  - `cleanup: () => void` - Manual cleanup function
+  - `containerRef: Ref<HTMLElement | null>` - Ref to attach to scroll container
+  - `isLoading: Ref<boolean>` - Loading state (set to true when loading triggered)
+  - `hasMore: Ref<boolean>` - Whether more items are available to load
+  - `reset: () => void` - Reset state (clears loading, sets hasMore to true)
 - **Behavior:**
   - Auto-attaches scroll event listener on mount
   - Auto-cleanup on unmount
   - Prevents duplicate calls during loading
+  - Sets `isLoading` to true when triggering load
+  - Consumer must set `isLoading` back to false when load completes
+  - Throttles scroll events to prevent excessive triggers
+  - Schedules delayed trigger if scrolled during throttle window
 
 #### Services
 

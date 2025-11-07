@@ -7,16 +7,16 @@ import { messages } from '@/locales/messages';
 import {
   fetchExclusionsPage,
   createExclusion,
-  deleteExclusion,
-  updateExclusion
+  updateExclusion,
+  removeExclusion
 } from '@/services/exclusions';
 import type { Exclusion, ExclusionPage } from '@/types/exclusions';
 
 vi.mock('@/services/exclusions', () => ({
   fetchExclusionsPage: vi.fn(),
   createExclusion: vi.fn(),
-  deleteExclusion: vi.fn(),
-  updateExclusion: vi.fn()
+  updateExclusion: vi.fn(),
+  removeExclusion: vi.fn()
 }));
 
 const i18n = createI18n({
@@ -83,7 +83,7 @@ describe('ExclusionsWorkspaceView', () => {
       }
     ]));
     (createExclusion as unknown as vi.Mock).mockReset();
-    (deleteExclusion as unknown as vi.Mock).mockReset();
+    (removeExclusion as unknown as vi.Mock).mockReset();
     (updateExclusion as unknown as vi.Mock).mockReset();
   });
 
@@ -171,11 +171,11 @@ describe('ExclusionsWorkspaceView', () => {
     expect(await screen.findByText('1 selected')).toBeInTheDocument();
 
     const bulkRemove = screen.getByRole('button', { name: /remove selected/i });
-    (deleteExclusion as unknown as vi.Mock).mockResolvedValue(undefined);
+    (removeExclusion as unknown as vi.Mock).mockResolvedValue(undefined);
     await fireEvent.click(bulkRemove);
 
     await waitFor(() => {
-      expect(deleteExclusion).toHaveBeenCalledWith('exclusion-1');
+      expect(removeExclusion).toHaveBeenCalledWith('exclusion-1');
       expect(screen.getByRole('status')).toHaveTextContent('1 exclusions removed.');
     });
   });
@@ -359,7 +359,9 @@ describe('ExclusionsWorkspaceView', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     // Note: Testing the refresh after modal update would require
-    // emitting the 'updated' event from the modal component
-    // This is tested in the individual modal test files
+    // the modal to actually make API calls that modify data,
+    // which is tested in the individual modal component test files.
+    // The handleModalUpdated function is called when modals emit 'updated',
+    // and it calls loadContent() which triggers fetchExclusionsPage.
   });
 });

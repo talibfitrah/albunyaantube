@@ -85,9 +85,11 @@ export async function removePlaylistExclusion(
   return response;
 }
 
-// Legacy function for backward compatibility
+// Workspace Exclusions
+
 export async function fetchExclusionsPage(params: any = {}): Promise<CursorPage<any>> {
-  // This function is not used in the new implementation
+  // TODO: Implement proper backend endpoint for workspace exclusions
+  // For now, return empty page
   return {
     data: [],
     pageInfo: {
@@ -98,7 +100,40 @@ export async function fetchExclusionsPage(params: any = {}): Promise<CursorPage<
   };
 }
 
+export async function createExclusion(payload: any): Promise<any> {
+  // TODO: Implement proper backend endpoint for creating exclusions
+  // For now, return mock response
+  console.warn('createExclusion not fully implemented - using mock response');
+  return {
+    id: 'mock-' + Date.now(),
+    ...payload,
+    createdAt: new Date().toISOString(),
+    createdBy: {
+      id: 'user-1',
+      email: 'admin@example.com',
+      displayName: 'Admin',
+      roles: ['ADMIN'],
+      status: 'ACTIVE',
+      lastLoginAt: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }
+  };
+}
+
+export async function updateExclusion(exclusionId: string, payload: any): Promise<any> {
+  // TODO: Implement proper backend endpoint for updating exclusions
+  // For now, return mock response
+  console.warn('updateExclusion not fully implemented - using mock response');
+  return {
+    id: exclusionId,
+    ...payload,
+    updatedAt: new Date().toISOString()
+  };
+}
+
 export async function removeExclusion(exclusionId: string): Promise<void> {
-  // This function is not used in the new implementation
-  console.warn('Use removeChannelExclusion or removePlaylistExclusion instead');
+  // TODO: Implement proper backend endpoint for removing exclusions
+  console.warn('removeExclusion not fully implemented - using mock');
+  // For now, do nothing
 }

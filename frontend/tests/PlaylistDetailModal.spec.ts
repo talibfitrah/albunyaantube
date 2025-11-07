@@ -329,6 +329,6 @@ describe('PlaylistDetailModal', () => {
 
     // Note: Actual pagination scrolling would require more complex testing with scroll simulation
     // This test verifies that the nextPageToken is captured from the API response
-    expect(vi.mocked(getPlaylistVideos).mock.results[0].value).resolves.toHaveProperty('nextPageToken', 'token123');
+    await expect(vi.mocked(getPlaylistVideos).mock.results[0].value).resolves.toHaveProperty('nextPageToken', 'token123');
   });
 });

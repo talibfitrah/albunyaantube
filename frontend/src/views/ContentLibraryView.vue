@@ -395,7 +395,7 @@
       v-if="selectedItemForModal && selectedItemForModal.type === 'channel'"
       :open="channelModalOpen"
       :channel-id="selectedItemForModal.id"
-      :channel-youtube-id="selectedItemForModal.id"
+      :channel-youtube-id="selectedItemForModal.youtubeId || selectedItemForModal.id"
       @close="channelModalOpen = false"
       @updated="handleModalUpdated"
     />
@@ -404,7 +404,7 @@
       v-if="selectedItemForModal && selectedItemForModal.type === 'playlist'"
       :open="playlistModalOpen"
       :playlist-id="selectedItemForModal.id"
-      :playlist-youtube-id="selectedItemForModal.id"
+      :playlist-youtube-id="selectedItemForModal.youtubeId || selectedItemForModal.id"
       @close="playlistModalOpen = false"
       @updated="handleModalUpdated"
     />
@@ -439,6 +439,7 @@ interface ContentItem {
   categoryIds: string[];
   status: 'approved' | 'pending' | 'rejected';
   createdAt: Date;
+  youtubeId?: string;
 }
 
 interface Category {
@@ -761,7 +762,12 @@ async function loadContent() {
       status: item.status?.toLowerCase() || 'pending',
       createdAt: new Date(item.createdAt),
       description: item.description,
-      count: item.count
+      count: item.count,
+      youtubeId:
+        item.youtubeId ||
+        item.youtubeChannelId ||
+        item.youtubePlaylistId ||
+        item.youtubeVideoId
     }));
 
   } catch (err: any) {

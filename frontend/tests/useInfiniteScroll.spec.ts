@@ -117,11 +117,17 @@ describe('useInfiniteScroll', () => {
   });
 
   it('should throttle scroll events', async () => {
-    const onLoadMore = vi.fn();
+    const onLoadMore = vi.fn().mockImplementation((wrapper: any) => {
+      // Simulate async load completion
+      setTimeout(() => {
+        wrapper.vm.isLoading = false;
+      }, 50);
+    });
+
     const wrapper = mount(createTestComponent({
       threshold: 200,
       throttleMs: 500,
-      onLoadMore
+      onLoadMore: () => onLoadMore(wrapper)
     }));
 
     await wrapper.vm.$nextTick();
@@ -132,25 +138,37 @@ describe('useInfiniteScroll', () => {
       Object.defineProperty(container, 'scrollHeight', { value: 2000, writable: true });
       Object.defineProperty(container, 'clientHeight', { value: 500, writable: true });
 
-      // Trigger multiple scroll events
+      // Trigger first scroll event
       container.dispatchEvent(new Event('scroll'));
-      wrapper.vm.isLoading = false; // Reset loading
-      container.dispatchEvent(new Event('scroll'));
-      wrapper.vm.isLoading = false; // Reset loading
-      container.dispatchEvent(new Event('scroll'));
-
       await wrapper.vm.$nextTick();
 
-      // Should only call once due to throttling
+      // Should call once immediately
+      expect(onLoadMore).toHaveBeenCalledTimes(1);
+      expect(wrapper.vm.isLoading).toBe(true);
+
+      // Trigger more scroll events during loading - should be ignored
+      container.dispatchEvent(new Event('scroll'));
+      container.dispatchEvent(new Event('scroll'));
+      await wrapper.vm.$nextTick();
+
+      // Still only called once
       expect(onLoadMore).toHaveBeenCalledTimes(1);
 
-      // Advance time to allow next call
-      vi.advanceTimersByTime(500);
-      wrapper.vm.isLoading = false; // Reset loading
-      container.dispatchEvent(new Event('scroll'));
-
+      // Advance time to complete async load
+      vi.advanceTimersByTime(50);
       await wrapper.vm.$nextTick();
 
+      // Now loading should be false
+      expect(wrapper.vm.isLoading).toBe(false);
+
+      // Advance time past throttle window
+      vi.advanceTimersByTime(500);
+
+      // Trigger another scroll
+      container.dispatchEvent(new Event('scroll'));
+      await wrapper.vm.$nextTick();
+
+      // Should call again after throttle window
       expect(onLoadMore).toHaveBeenCalledTimes(2);
     }
   });

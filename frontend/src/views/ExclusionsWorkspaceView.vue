@@ -265,7 +265,9 @@ import { useFocusTrap } from '@/composables/useFocusTrap';
 import { useCursorPagination } from '@/composables/useCursorPagination';
 import {
   fetchExclusionsPage,
-  removeExclusion
+  removeExclusion,
+  createExclusion,
+  updateExclusion
 } from '@/services/exclusions';
 import type { Exclusion, ExclusionParentType, ExclusionResourceType } from '@/types/exclusions';
 import { emitAuditEvent } from '@/services/audit';
@@ -540,9 +542,7 @@ async function handleSubmit() {
         excludeId: addDialog.excludeId.trim(),
         reason: addDialog.reason.trim()
       };
-      // FIREBASE-MIGRATE: Exclusions not implemented
-      console.warn('Exclusions management not implemented');
-      const created = { id: 'stub', ...payload } as any;
+      const created = await createExclusion(payload);
       emitAuditEvent({
         name: 'exclusions:create',
         exclusionId: created.id,
@@ -558,9 +558,7 @@ async function handleSubmit() {
       actionMessage.value = t('exclusions.toasts.added', { name: created.excludeId });
       closeAddDialog();
     } else if (editingId.value) {
-      // FIREBASE-MIGRATE: Exclusions not implemented
-      console.warn('Exclusions management not implemented');
-      const updated = { id: editingId.value, reason: addDialog.reason.trim() } as any;
+      const updated = await updateExclusion(editingId.value, { reason: addDialog.reason.trim() });
       emitAuditEvent({
         name: 'exclusions:update',
         exclusionId: updated.id,
@@ -649,11 +647,9 @@ function openAddDialog() {
 }
 
 function openViewDetails(entry: Exclusion) {
-  // Use parentId as both document ID and YouTube ID for now
-  // In a real scenario, we might need to fetch the parent entity to get both IDs
   selectedItem.value = {
     id: entry.parentId,
-    youtubeId: entry.parentId
+    youtubeId: entry.parentYoutubeId || entry.parentId
   };
 
   if (entry.parentType === 'CHANNEL') {

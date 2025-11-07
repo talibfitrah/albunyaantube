@@ -258,7 +258,9 @@ export const messages = {
       itemsApproved: 'items approved',
       itemsRejected: 'items rejected',
       itemsDeleted: 'items deleted',
-      errorBulkAction: 'Error performing bulk action'
+      errorBulkAction: 'Error performing bulk action',
+      categoriesAssigned: 'categories assigned',
+      deleteSuccess: 'Item deleted'
     },
     common: {
       loading: 'Loading...',
@@ -1325,7 +1327,9 @@ export const messages = {
       itemsApproved: 'عنصر معتمد',
       itemsRejected: 'عنصر مرفوض',
       itemsDeleted: 'عنصر محذوف',
-      errorBulkAction: 'خطأ في تنفيذ الإجراء الجماعي'
+      errorBulkAction: 'خطأ في تنفيذ الإجراء الجماعي',
+      categoriesAssigned: 'تم تعيين الفئات',
+      deleteSuccess: 'تم حذف العنصر'
     },
     common: {
       loading: 'جارٍ التحميل...',
@@ -1592,7 +1596,8 @@ export const messages = {
         noResults: 'لم يتم العثور على نتائج',
         noMoreItems: 'لا توجد عناصر أخرى',
         excludeError: 'خطأ في إضافة الاستثناء',
-        removeError: 'خطأ في إزالة الاستثناء'
+        removeError: 'خطأ في إزالة الاستثناء',
+        position: 'المركز #{position}'
       }
     },
     users: {
@@ -2100,7 +2105,9 @@ export const messages = {
       itemsApproved: 'items goedgekeurd',
       itemsRejected: 'items afgewezen',
       itemsDeleted: 'items verwijderd',
-      errorBulkAction: 'Fout bij uitvoeren van bulkactie'
+      errorBulkAction: 'Fout bij uitvoeren van bulkactie',
+      categoriesAssigned: 'categorieën toegewezen',
+      deleteSuccess: 'Item verwijderd'
     },
     common: {
       loading: 'Laden...',
@@ -2367,7 +2374,8 @@ export const messages = {
         noResults: 'Geen resultaten gevonden',
         noMoreItems: 'Geen items meer',
         excludeError: 'Fout bij toevoegen van uitzondering',
-        removeError: 'Fout bij verwijderen van uitzondering'
+        removeError: 'Fout bij verwijderen van uitzondering',
+        position: 'Positie #{position}'
       }
     },
     users: {
