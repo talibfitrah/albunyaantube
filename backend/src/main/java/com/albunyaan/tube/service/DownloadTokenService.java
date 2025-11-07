@@ -1,5 +1,6 @@
 package com.albunyaan.tube.service;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -10,7 +11,9 @@ import java.util.Base64;
 
 @Service
 public class DownloadTokenService {
-    private static final String SECRET_KEY = "albunyaan-download-secret-key-change-in-production";
+    @Value("${download.token.secret-key}")
+    private String secretKey;
+
     private static final String HMAC_ALGORITHM = "HmacSHA256";
     private static final long TOKEN_VALIDITY_MS = 3600000;
 
@@ -54,7 +57,7 @@ public class DownloadTokenService {
 
     private String generateSignature(String data) throws NoSuchAlgorithmException, InvalidKeyException {
         Mac mac = Mac.getInstance(HMAC_ALGORITHM);
-        SecretKeySpec secretKeySpec = new SecretKeySpec(SECRET_KEY.getBytes(StandardCharsets.UTF_8), HMAC_ALGORITHM);
+        SecretKeySpec secretKeySpec = new SecretKeySpec(secretKey.getBytes(StandardCharsets.UTF_8), HMAC_ALGORITHM);
         mac.init(secretKeySpec);
         byte[] hash = mac.doFinal(data.getBytes(StandardCharsets.UTF_8));
         return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);

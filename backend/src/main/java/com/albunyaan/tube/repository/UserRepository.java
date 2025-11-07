@@ -13,6 +13,8 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * FIREBASE-MIGRATE-03: User Repository (Firestore)
@@ -31,7 +33,7 @@ public class UserRepository {
         return firestore.collection(COLLECTION_NAME);
     }
 
-    public User save(User user) throws ExecutionException, InterruptedException {
+    public User save(User user) throws ExecutionException, InterruptedException, TimeoutException {
         user.touch();
 
         // Use Firebase UID as document ID
@@ -39,51 +41,51 @@ public class UserRepository {
                 .document(user.getUid())
                 .set(user);
 
-        result.get();
+        result.get(5, TimeUnit.SECONDS);
         return user;
     }
 
-    public Optional<User> findByUid(String uid) throws ExecutionException, InterruptedException {
+    public Optional<User> findByUid(String uid) throws ExecutionException, InterruptedException, TimeoutException {
         DocumentReference docRef = getCollection().document(uid);
-        User user = docRef.get().get().toObject(User.class);
+        User user = docRef.get().get(5, TimeUnit.SECONDS).toObject(User.class);
         return Optional.ofNullable(user);
     }
 
-    public Optional<User> findByEmail(String email) throws ExecutionException, InterruptedException {
+    public Optional<User> findByEmail(String email) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereEqualTo("email", email)
                 .limit(1)
                 .get();
 
-        List<User> users = query.get().toObjects(User.class);
+        List<User> users = query.get(5, TimeUnit.SECONDS).toObjects(User.class);
         return users.isEmpty() ? Optional.empty() : Optional.of(users.get(0));
     }
 
-    public List<User> findAll() throws ExecutionException, InterruptedException {
+    public List<User> findAll() throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .get();
 
-        return query.get().toObjects(User.class);
+        return query.get(5, TimeUnit.SECONDS).toObjects(User.class);
     }
 
-    public List<User> findByRole(String role) throws ExecutionException, InterruptedException {
+    public List<User> findByRole(String role) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereEqualTo("role", role)
                 .orderBy("displayName", Query.Direction.ASCENDING)
                 .get();
 
-        return query.get().toObjects(User.class);
+        return query.get(5, TimeUnit.SECONDS).toObjects(User.class);
     }
 
-    public void deleteByUid(String uid) throws ExecutionException, InterruptedException {
+    public void deleteByUid(String uid) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<WriteResult> result = getCollection().document(uid).delete();
-        result.get();
+        result.get(5, TimeUnit.SECONDS);
     }
 
-    public boolean existsByUid(String uid) throws ExecutionException, InterruptedException {
+    public boolean existsByUid(String uid) throws ExecutionException, InterruptedException, TimeoutException {
         DocumentReference docRef = getCollection().document(uid);
-        return docRef.get().get().exists();
+        return docRef.get().get(5, TimeUnit.SECONDS).exists();
     }
 }
 

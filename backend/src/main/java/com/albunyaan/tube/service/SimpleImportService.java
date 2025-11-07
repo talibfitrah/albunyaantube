@@ -79,6 +79,14 @@ public class SimpleImportService {
             return SimpleImportResponse.error("Invalid format: expected array of 3 objects [channels, playlists, videos]");
         }
 
+        // Validate element types
+        for (int i = 0; i < 3; i++) {
+            if (simpleData.get(i) != null && !(simpleData.get(i) instanceof Map)) {
+                return SimpleImportResponse.error(
+                    "Invalid format: element at index " + i + " must be a Map");
+            }
+        }
+
         // Extract the 3 maps
         Map<String, String> channelsMap = simpleData.get(0);
         Map<String, String> playlistsMap = simpleData.get(1);
@@ -208,13 +216,22 @@ public class SimpleImportService {
                         "CHANNEL"
                 ));
 
-            } catch (ExecutionException | InterruptedException e) {
+            } catch (InterruptedException e) {
+                logger.error("Import interrupted for channel {}: {}", youtubeId, e.getMessage());
+                Thread.currentThread().interrupt();
+                response.addResult(SimpleImportItemResult.failed(
+                        youtubeId,
+                        titleFromFile,
+                        "CHANNEL",
+                        "Operation interrupted: " + e.getMessage()
+                ));
+            } catch (ExecutionException e) {
                 logger.error("Failed to import channel {}: {}", youtubeId, e.getMessage());
                 response.addResult(SimpleImportItemResult.failed(
                         youtubeId,
                         titleFromFile,
                         "CHANNEL",
-                        "Database error: " + e.getMessage()
+                        "Database operation failed: " + e.getMessage()
                 ));
             } catch (Exception e) {
                 logger.error("Unexpected error importing channel {}: {}", youtubeId, e.getMessage());
@@ -324,13 +341,22 @@ public class SimpleImportService {
                         "PLAYLIST"
                 ));
 
-            } catch (ExecutionException | InterruptedException e) {
+            } catch (InterruptedException e) {
+                logger.error("Import interrupted for playlist {}: {}", youtubeId, e.getMessage());
+                Thread.currentThread().interrupt();
+                response.addResult(SimpleImportItemResult.failed(
+                        youtubeId,
+                        titleFromFile,
+                        "PLAYLIST",
+                        "Operation interrupted: " + e.getMessage()
+                ));
+            } catch (ExecutionException e) {
                 logger.error("Failed to import playlist {}: {}", youtubeId, e.getMessage());
                 response.addResult(SimpleImportItemResult.failed(
                         youtubeId,
                         titleFromFile,
                         "PLAYLIST",
-                        "Database error: " + e.getMessage()
+                        "Database operation failed: " + e.getMessage()
                 ));
             } catch (Exception e) {
                 logger.error("Unexpected error importing playlist {}: {}", youtubeId, e.getMessage());
@@ -463,13 +489,22 @@ public class SimpleImportService {
                         "VIDEO"
                 ));
 
-            } catch (ExecutionException | InterruptedException e) {
+            } catch (InterruptedException e) {
+                logger.error("Import interrupted for video {}: {}", youtubeId, e.getMessage());
+                Thread.currentThread().interrupt();
+                response.addResult(SimpleImportItemResult.failed(
+                        youtubeId,
+                        titleFromFile,
+                        "VIDEO",
+                        "Operation interrupted: " + e.getMessage()
+                ));
+            } catch (ExecutionException e) {
                 logger.error("Failed to import video {}: {}", youtubeId, e.getMessage());
                 response.addResult(SimpleImportItemResult.failed(
                         youtubeId,
                         titleFromFile,
                         "VIDEO",
-                        "Database error: " + e.getMessage()
+                        "Database operation failed: " + e.getMessage()
                 ));
             } catch (Exception e) {
                 logger.error("Unexpected error importing video {}: {}", youtubeId, e.getMessage());

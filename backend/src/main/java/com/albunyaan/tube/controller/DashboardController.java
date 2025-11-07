@@ -161,9 +161,9 @@ public class DashboardController {
                     CategoryStats categoryStats = stats.get(categoryId);
                     categoryStats.totalChannels++;
 
-                    if ("approved".equals(channel.getStatus())) {
+                    if ("APPROVED".equalsIgnoreCase(channel.getStatus())) {
                         categoryStats.approvedChannels++;
-                    } else if ("pending".equals(channel.getStatus())) {
+                    } else if ("PENDING".equalsIgnoreCase(channel.getStatus())) {
                         categoryStats.pendingChannels++;
                     }
                 }
