@@ -2,21 +2,55 @@ import '@testing-library/jest-dom';
 import { render, screen, fireEvent, waitFor } from '@testing-library/vue';
 import { createI18n } from 'vue-i18n';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { h } from 'vue';
 import ExclusionsWorkspaceView from '@/views/ExclusionsWorkspaceView.vue';
 import { messages } from '@/locales/messages';
 import {
   fetchExclusionsPage,
   createExclusion,
-  deleteExclusion,
-  updateExclusion
+  updateExclusion,
+  removeExclusion
 } from '@/services/exclusions';
 import type { Exclusion, ExclusionPage } from '@/types/exclusions';
 
 vi.mock('@/services/exclusions', () => ({
   fetchExclusionsPage: vi.fn(),
   createExclusion: vi.fn(),
-  deleteExclusion: vi.fn(),
-  updateExclusion: vi.fn()
+  updateExclusion: vi.fn(),
+  removeExclusion: vi.fn()
+}));
+
+// Mock the modal components to emit 'updated' event when needed
+vi.mock('@/components/exclusions/ChannelDetailModal.vue', () => ({
+  default: {
+    name: 'ChannelDetailModal',
+    props: ['open', 'channelId', 'channelYoutubeId'],
+    emits: ['close', 'updated'],
+    setup(props: any, { emit }: any) {
+      return () => h('div', { 'data-testid': 'channel-modal', role: 'dialog' }, [
+        h('button', {
+          'data-testid': 'trigger-update',
+          onClick: () => emit('updated')
+        }, 'Trigger Update')
+      ]);
+    }
+  }
+}));
+
+vi.mock('@/components/exclusions/PlaylistDetailModal.vue', () => ({
+  default: {
+    name: 'PlaylistDetailModal',
+    props: ['open', 'playlistId', 'playlistYoutubeId'],
+    emits: ['close', 'updated'],
+    setup(props: any, { emit }: any) {
+      return () => h('div', { 'data-testid': 'playlist-modal', role: 'dialog' }, [
+        h('button', {
+          'data-testid': 'trigger-update',
+          onClick: () => emit('updated')
+        }, 'Trigger Update')
+      ]);
+    }
+  }
 }));
 
 const i18n = createI18n({
@@ -83,7 +117,7 @@ describe('ExclusionsWorkspaceView', () => {
       }
     ]));
     (createExclusion as unknown as vi.Mock).mockReset();
-    (deleteExclusion as unknown as vi.Mock).mockReset();
+    (removeExclusion as unknown as vi.Mock).mockReset();
     (updateExclusion as unknown as vi.Mock).mockReset();
   });
 
@@ -171,11 +205,11 @@ describe('ExclusionsWorkspaceView', () => {
     expect(await screen.findByText('1 selected')).toBeInTheDocument();
 
     const bulkRemove = screen.getByRole('button', { name: /remove selected/i });
-    (deleteExclusion as unknown as vi.Mock).mockResolvedValue(undefined);
+    (removeExclusion as unknown as vi.Mock).mockResolvedValue(undefined);
     await fireEvent.click(bulkRemove);
 
     await waitFor(() => {
-      expect(deleteExclusion).toHaveBeenCalledWith('exclusion-1');
+      expect(removeExclusion).toHaveBeenCalledWith('exclusion-1');
       expect(screen.getByRole('status')).toHaveTextContent('1 exclusions removed.');
     });
   });
@@ -261,6 +295,139 @@ describe('ExclusionsWorkspaceView', () => {
       expect(updateExclusion).toHaveBeenCalledWith('exclusion-1', { reason: 'Updated note' });
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
       expect(screen.getByRole('status')).toHaveTextContent('Exclusion updated.');
+    });
+  });
+
+  it('displays "View Details" button for each exclusion', async () => {
+    renderView();
+
+    await waitFor(() => {
+      const viewDetailsButtons = screen.getAllByRole('button', { name: /view details/i });
+      expect(viewDetailsButtons.length).toBeGreaterThan(0);
+    });
+  });
+
+  it('opens ChannelDetailModal when clicking "View Details" for a channel exclusion', async () => {
+    const fetchMock = fetchExclusionsPage as unknown as vi.Mock;
+    fetchMock.mockResolvedValueOnce(
+      createPage([
+        {
+          id: 'exclusion-1',
+          parentType: 'CHANNEL',
+          parentId: 'UCxxxxxx',
+          excludeType: 'PLAYLIST',
+          excludeId: 'playlist:test',
+          reason: 'Test',
+          createdAt: '2025-09-20T08:30:00Z',
+          createdBy: baseUser
+        }
+      ])
+    );
+
+    renderView();
+
+    const viewDetailsButton = await screen.findByRole('button', { name: /view details/i });
+    await fireEvent.click(viewDetailsButton);
+
+    // Modal should be rendered (checking for modal presence)
+    // Note: Actual modal testing is in ChannelDetailModal.spec.ts
+    await waitFor(() => {
+      // The modal should be in the DOM when opened
+      expect(document.querySelector('[role="dialog"]')).toBeInTheDocument();
+    });
+  });
+
+  it('opens PlaylistDetailModal when clicking "View Details" for a playlist exclusion', async () => {
+    const fetchMock = fetchExclusionsPage as unknown as vi.Mock;
+    fetchMock.mockResolvedValueOnce(
+      createPage([
+        {
+          id: 'exclusion-2',
+          parentType: 'PLAYLIST',
+          parentId: 'PLxxxxxx',
+          excludeType: 'VIDEO',
+          excludeId: 'video:test',
+          reason: 'Test',
+          createdAt: '2025-09-25T12:40:00Z',
+          createdBy: baseUser
+        }
+      ])
+    );
+
+    renderView();
+
+    const viewDetailsButton = await screen.findByRole('button', { name: /view details/i });
+    await fireEvent.click(viewDetailsButton);
+
+    // Modal should be rendered (checking for modal presence)
+    // Note: Actual modal testing is in PlaylistDetailModal.spec.ts
+    await waitFor(() => {
+      // The modal should be in the DOM when opened
+      expect(document.querySelector('[role="dialog"]')).toBeInTheDocument();
+    });
+  });
+
+  it('refreshes exclusions list after modal is updated', async () => {
+    const fetchMock = fetchExclusionsPage as unknown as vi.Mock;
+    const initialPage = createPage([
+      {
+        id: 'exclusion-1',
+        parentType: 'CHANNEL',
+        parentId: 'UCxxxxxx',
+        excludeType: 'VIDEO',
+        excludeId: 'video:test',
+        reason: 'Test',
+        createdAt: '2025-09-20T08:30:00Z',
+        createdBy: baseUser
+      }
+    ]);
+
+    const updatedPage = createPage([
+      {
+        id: 'exclusion-1',
+        parentType: 'CHANNEL',
+        parentId: 'UCxxxxxx',
+        excludeType: 'VIDEO',
+        excludeId: 'video:updated',
+        reason: 'Updated',
+        createdAt: '2025-09-20T08:30:00Z',
+        createdBy: baseUser
+      }
+    ]);
+
+    // Mock initial load
+    fetchMock.mockResolvedValueOnce(initialPage);
+    // Mock second load after modal update
+    fetchMock.mockResolvedValueOnce(updatedPage);
+
+    renderView();
+
+    // Wait for initial load
+    await screen.findByText('video:test', { selector: '.entity-label' });
+
+    // Verify initial fetch was called once
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Click "View Details" to open modal
+    const viewDetailsButton = await screen.findByRole('button', { name: /view details/i });
+    await fireEvent.click(viewDetailsButton);
+
+    // Wait for modal to appear
+    const modal = await screen.findByTestId('channel-modal');
+    expect(modal).toBeInTheDocument();
+
+    // Find and click the trigger update button in the mock modal
+    const triggerButton = await screen.findByTestId('trigger-update');
+    await fireEvent.click(triggerButton);
+
+    // Wait for the second fetch to complete
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    // Verify updated data appears
+    await waitFor(() => {
+      expect(screen.getByText('video:updated', { selector: '.entity-label' })).toBeInTheDocument();
     });
   });
 });

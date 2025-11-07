@@ -123,6 +123,10 @@
               </div>
             </td>
             <td>
+              <button type="button" class="link-action" @click="openViewDetails(entry)">
+                {{ t('exclusions.actions.viewDetails') }}
+              </button>
+              <span aria-hidden="true">·</span>
               <button type="button" class="link-action" @click="openEditDialog(entry)">
                 {{ t('exclusions.actions.edit') }}
               </button>
@@ -155,6 +159,25 @@
       {{ actionMessage }}
     </p>
   </section>
+
+  <!-- Detail Modals -->
+  <ChannelDetailModal
+    v-if="selectedItem && channelModalOpen"
+    :open="channelModalOpen"
+    :channel-id="selectedItem.id"
+    :channel-youtube-id="selectedItem.youtubeId"
+    @close="closeChannelModal"
+    @updated="handleModalUpdated"
+  />
+
+  <PlaylistDetailModal
+    v-if="selectedItem && playlistModalOpen"
+    :open="playlistModalOpen"
+    :playlist-id="selectedItem.id"
+    :playlist-youtube-id="selectedItem.youtubeId"
+    @close="closePlaylistModal"
+    @updated="handleModalUpdated"
+  />
 
   <div v-if="addDialog.visible" class="modal-backdrop">
     <div
@@ -242,10 +265,14 @@ import { useFocusTrap } from '@/composables/useFocusTrap';
 import { useCursorPagination } from '@/composables/useCursorPagination';
 import {
   fetchExclusionsPage,
-  removeExclusion
+  removeExclusion,
+  createExclusion,
+  updateExclusion
 } from '@/services/exclusions';
 import type { Exclusion, ExclusionParentType, ExclusionResourceType } from '@/types/exclusions';
 import { emitAuditEvent } from '@/services/audit';
+import ChannelDetailModal from '@/components/exclusions/ChannelDetailModal.vue';
+import PlaylistDetailModal from '@/components/exclusions/PlaylistDetailModal.vue';
 
 type TypeFilterValue = 'all' | 'parent:CHANNEL' | 'parent:PLAYLIST' | 'exclude:PLAYLIST' | 'exclude:VIDEO';
 
@@ -294,6 +321,11 @@ const editingId = ref<string | null>(null);
 
 const addDialogRef = ref<HTMLDivElement | null>(null);
 const addDialogTargetRef = ref<HTMLInputElement | null>(null);
+
+// Detail modals state
+const channelModalOpen = ref(false);
+const playlistModalOpen = ref(false);
+const selectedItem = ref<{ id: string; youtubeId: string } | null>(null);
 
 const { activate: activateAddTrap, deactivate: deactivateAddTrap } = useFocusTrap(addDialogRef, {
   onEscape: () => {
@@ -510,9 +542,7 @@ async function handleSubmit() {
         excludeId: addDialog.excludeId.trim(),
         reason: addDialog.reason.trim()
       };
-      // FIREBASE-MIGRATE: Exclusions not implemented
-      console.warn('Exclusions management not implemented');
-      const created = { id: 'stub', ...payload } as any;
+      const created = await createExclusion(payload);
       emitAuditEvent({
         name: 'exclusions:create',
         exclusionId: created.id,
@@ -528,9 +558,7 @@ async function handleSubmit() {
       actionMessage.value = t('exclusions.toasts.added', { name: created.excludeId });
       closeAddDialog();
     } else if (editingId.value) {
-      // FIREBASE-MIGRATE: Exclusions not implemented
-      console.warn('Exclusions management not implemented');
-      const updated = { id: editingId.value, reason: addDialog.reason.trim() } as any;
+      const updated = await updateExclusion(editingId.value, { reason: addDialog.reason.trim() });
       emitAuditEvent({
         name: 'exclusions:update',
         exclusionId: updated.id,
@@ -616,6 +644,34 @@ function openAddDialog() {
   editingId.value = null;
   resetDialog();
   openDialog();
+}
+
+function openViewDetails(entry: Exclusion) {
+  selectedItem.value = {
+    id: entry.parentId,
+    youtubeId: entry.parentYoutubeId || entry.parentId
+  };
+
+  if (entry.parentType === 'CHANNEL') {
+    channelModalOpen.value = true;
+  } else {
+    playlistModalOpen.value = true;
+  }
+}
+
+function closeChannelModal() {
+  channelModalOpen.value = false;
+  selectedItem.value = null;
+}
+
+function closePlaylistModal() {
+  playlistModalOpen.value = false;
+  selectedItem.value = null;
+}
+
+async function handleModalUpdated() {
+  // Refresh the current page after exclusions are updated
+  await reloadCurrentPage();
 }
 </script>
 

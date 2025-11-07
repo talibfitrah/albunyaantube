@@ -389,6 +389,34 @@
         </button>
       </div>
     </div>
+
+    <!-- Exclusion Detail Modals -->
+    <ChannelDetailModal
+      v-if="selectedItemForModal && selectedItemForModal.type === 'channel'"
+      :open="channelModalOpen"
+      :channel-id="selectedItemForModal.id"
+      :channel-youtube-id="selectedItemForModal.youtubeId || selectedItemForModal.id"
+      @close="channelModalOpen = false"
+      @updated="handleModalUpdated"
+    />
+
+    <PlaylistDetailModal
+      v-if="selectedItemForModal && selectedItemForModal.type === 'playlist'"
+      :open="playlistModalOpen"
+      :playlist-id="selectedItemForModal.id"
+      :playlist-youtube-id="selectedItemForModal.youtubeId || selectedItemForModal.id"
+      @close="playlistModalOpen = false"
+      @updated="handleModalUpdated"
+    />
+
+    <!-- Category Assignment Modal -->
+    <CategoryAssignmentModal
+      v-if="categoryModalOpen"
+      :is-open="categoryModalOpen"
+      :multi-select="true"
+      @close="closeCategoryModal"
+      @assign="handleCategoriesAssigned"
+    />
   </div>
 </template>
 
@@ -396,6 +424,10 @@
 import { ref, computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import apiClient from '@/services/api/client';
+import ChannelDetailModal from '@/components/exclusions/ChannelDetailModal.vue';
+import PlaylistDetailModal from '@/components/exclusions/PlaylistDetailModal.vue';
+import CategoryAssignmentModal from '@/components/CategoryAssignmentModal.vue';
+import * as contentLibraryService from '@/services/contentLibrary';
 
 const { t } = useI18n();
 
@@ -407,6 +439,7 @@ interface ContentItem {
   categoryIds: string[];
   status: 'approved' | 'pending' | 'rejected';
   createdAt: Date;
+  youtubeId?: string;
 }
 
 interface Category {
@@ -432,6 +465,13 @@ const filters = ref({
   categories: [] as string[],
   dateAdded: 'any'
 });
+
+// Modal State
+const channelModalOpen = ref(false);
+const playlistModalOpen = ref(false);
+const selectedItemForModal = ref<ContentItem | null>(null);
+const categoryModalOpen = ref(false);
+const itemsForCategoryAssignment = ref<ContentItem[]>([]);
 
 // Filter Options
 const contentTypes = computed(() => [
@@ -539,12 +579,43 @@ function closeBulkActionsMenu() {
 }
 
 async function bulkChangeStatus(status: string) {
-  console.log('Bulk change status to:', status, selectedItems.value);
-  closeBulkActionsMenu();
+  try {
+    const items = selectedItems.value.map(id => {
+      const item = content.value.find(c => c.id === id);
+      return { type: item!.type, id: item!.id };
+    });
+
+    if (status === 'approved') {
+      const result = await contentLibraryService.bulkApprove(items);
+      alert(`${t('contentLibrary.success')} - ${result.successCount} ${t('contentLibrary.itemsApproved')}`);
+      if (result.errors.length > 0) {
+        console.error('Bulk approve errors:', result.errors);
+      }
+    } else {
+      const result = await contentLibraryService.bulkReject(items);
+      alert(`${t('contentLibrary.success')} - ${result.successCount} ${t('contentLibrary.itemsRejected')}`);
+      if (result.errors.length > 0) {
+        console.error('Bulk reject errors:', result.errors);
+      }
+    }
+
+    clearSelection();
+    await loadContent();
+  } catch (err: any) {
+    alert(t('contentLibrary.errorBulkAction') + ': ' + (err.message || ''));
+  } finally {
+    closeBulkActionsMenu();
+  }
 }
 
 function openBulkCategoryAssignment() {
-  console.log('Open bulk category assignment for:', selectedItems.value);
+  // Get selected items
+  const items = selectedItems.value
+    .map(id => content.value.find(c => c.id === id))
+    .filter(item => item !== undefined) as ContentItem[];
+
+  itemsForCategoryAssignment.value = items;
+  categoryModalOpen.value = true;
   closeBulkActionsMenu();
 }
 
@@ -552,25 +623,104 @@ async function bulkDelete() {
   if (!confirm(t('contentLibrary.confirmBulkDelete', { count: selectedItems.value.length }))) {
     return;
   }
-  console.log('Bulk delete:', selectedItems.value);
-  closeBulkActionsMenu();
-  clearSelection();
+
+  try {
+    const items = selectedItems.value.map(id => {
+      const item = content.value.find(c => c.id === id);
+      return { type: item!.type, id: item!.id };
+    });
+
+    const result = await contentLibraryService.bulkDelete(items);
+    alert(`${t('contentLibrary.success')} - ${result.successCount} ${t('contentLibrary.itemsDeleted')}`);
+
+    if (result.errors.length > 0) {
+      console.error('Bulk delete errors:', result.errors);
+    }
+
+    clearSelection();
+    await loadContent();
+  } catch (err: any) {
+    alert(t('contentLibrary.errorBulkAction') + ': ' + (err.message || ''));
+  } finally {
+    closeBulkActionsMenu();
+  }
 }
 
 // Item Actions
 function openDetailsModal(item: ContentItem) {
-  console.log('Open details for:', item);
+  selectedItemForModal.value = item;
+
+  if (item.type === 'channel') {
+    channelModalOpen.value = true;
+  } else if (item.type === 'playlist') {
+    playlistModalOpen.value = true;
+  } else {
+    // Videos don't have detail modals
+    console.log('Video details not implemented');
+  }
+}
+
+function handleModalUpdated() {
+  // Refresh content after exclusions are modified
+  loadContent();
 }
 
 function openCategoryModal(item: ContentItem) {
-  console.log('Assign categories to:', item);
+  itemsForCategoryAssignment.value = [item];
+  categoryModalOpen.value = true;
 }
 
 async function confirmDelete(item: ContentItem) {
   if (!confirm(t('contentLibrary.confirmDelete', { title: item.title }))) {
     return;
   }
-  console.log('Delete item:', item);
+
+  try {
+    const result = await contentLibraryService.bulkDelete([{ type: item.type, id: item.id }]);
+
+    if (result.successCount > 0) {
+      alert(t('contentLibrary.deleteSuccess'));
+      await loadContent();
+    } else if (result.errors.length > 0) {
+      alert(t('contentLibrary.errorBulkAction') + ': ' + result.errors[0]);
+    }
+  } catch (err: any) {
+    alert(t('contentLibrary.errorBulkAction') + ': ' + (err.message || ''));
+  }
+}
+
+async function handleCategoriesAssigned(categoryIds: string[]) {
+  try {
+    const items = itemsForCategoryAssignment.value.map(item => ({
+      type: item.type,
+      id: item.id
+    }));
+
+    const result = await contentLibraryService.bulkAssignCategories(items, categoryIds);
+
+    if (result.successCount > 0) {
+      alert(`${t('contentLibrary.success')} - ${result.successCount} ${t('contentLibrary.categoriesAssigned')}`);
+
+      if (result.errors.length > 0) {
+        console.error('Category assignment errors:', result.errors);
+      }
+
+      clearSelection();
+      await loadContent();
+    } else if (result.errors.length > 0) {
+      alert(t('contentLibrary.errorBulkAction') + ': ' + result.errors[0]);
+    }
+  } catch (err: any) {
+    alert(t('contentLibrary.errorBulkAction') + ': ' + (err.message || ''));
+  } finally {
+    categoryModalOpen.value = false;
+    itemsForCategoryAssignment.value = [];
+  }
+}
+
+function closeCategoryModal() {
+  categoryModalOpen.value = false;
+  itemsForCategoryAssignment.value = [];
 }
 
 // Data Loading
@@ -612,7 +762,12 @@ async function loadContent() {
       status: item.status?.toLowerCase() || 'pending',
       createdAt: new Date(item.createdAt),
       description: item.description,
-      count: item.count
+      count: item.count,
+      youtubeId:
+        item.youtubeId ||
+        item.youtubeChannelId ||
+        item.youtubePlaylistId ||
+        item.youtubeVideoId
     }));
 
   } catch (err: any) {

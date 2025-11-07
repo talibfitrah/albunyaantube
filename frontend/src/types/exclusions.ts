@@ -8,6 +8,7 @@ export interface Exclusion {
   id: string;
   parentType: ExclusionParentType;
   parentId: string;
+  parentYoutubeId?: string;
   excludeType: ExclusionResourceType;
   excludeId: string;
   reason: string;
