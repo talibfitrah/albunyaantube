@@ -4,6 +4,7 @@ import com.albunyaan.tube.data.filters.FilterState
 import com.albunyaan.tube.data.filters.PublishedDate
 import com.albunyaan.tube.data.filters.SortOption
 import com.albunyaan.tube.data.filters.VideoLength
+import com.albunyaan.tube.data.model.Category
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.model.CursorResponse
@@ -130,9 +131,9 @@ class FakeContentService : ContentService {
         }.take(limit)
     }
 
-    override suspend fun fetchCategories(): List<com.albunyaan.tube.ui.categories.Category> {
+    override suspend fun fetchCategories(): List<Category> {
         return categories.map { category ->
-            com.albunyaan.tube.ui.categories.Category(
+            Category(
                 id = category.lowercase(),
                 name = category,
                 hasSubcategories = false
@@ -140,7 +141,7 @@ class FakeContentService : ContentService {
         }
     }
 
-    override suspend fun fetchSubcategories(parentId: String): List<com.albunyaan.tube.ui.categories.Category> {
+    override suspend fun fetchSubcategories(parentId: String): List<Category> {
         // Fake service doesn't have hierarchical categories, return empty list
         return emptyList()
     }

@@ -83,8 +83,17 @@ public class ValidationRunRepository {
      * Find validation runs by trigger type.
      * Note: Requires composite Firestore index: validation_runs collection with
      * triggerType (ASCENDING) and startedAt (DESCENDING).
+     *
+     * @param triggerType The trigger type to filter by
+     * @param limit Maximum number of results (1-1000)
+     * @return List of validation runs
+     * @throws IllegalArgumentException if limit is out of bounds
      */
     public List<ValidationRun> findByTriggerType(String triggerType, int limit) throws ExecutionException, InterruptedException {
+        if (limit < 1 || limit > 1000) {
+            throw new IllegalArgumentException("Limit must be between 1 and 1000");
+        }
+
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereEqualTo("triggerType", triggerType)
                 .orderBy("startedAt", Query.Direction.DESCENDING)
@@ -98,8 +107,17 @@ public class ValidationRunRepository {
      * Find validation runs by status.
      * Note: Requires composite Firestore index: validation_runs collection with
      * status (ASCENDING) and startedAt (DESCENDING).
+     *
+     * @param status The status to filter by
+     * @param limit Maximum number of results (1-1000)
+     * @return List of validation runs
+     * @throws IllegalArgumentException if limit is out of bounds
      */
     public List<ValidationRun> findByStatus(String status, int limit) throws ExecutionException, InterruptedException {
+        if (limit < 1 || limit > 1000) {
+            throw new IllegalArgumentException("Limit must be between 1 and 1000");
+        }
+
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereEqualTo("status", status)
                 .orderBy("startedAt", Query.Direction.DESCENDING)

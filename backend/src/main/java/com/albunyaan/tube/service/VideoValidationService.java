@@ -11,6 +11,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -170,6 +172,9 @@ public class VideoValidationService {
 
         // Filter for standalone videos (sourceType = STANDALONE or UNKNOWN)
         // and videos that need validation (validationStatus != UNAVAILABLE)
+        // Skip videos validated within the last day
+        Instant oneDayAgo = Instant.now().minus(1, ChronoUnit.DAYS);
+
         List<Video> standaloneVideos = allVideos.stream()
                 .filter(v -> {
                     SourceType sourceType = v.getSourceType();
@@ -178,7 +183,22 @@ public class VideoValidationService {
                 })
                 .filter(v -> {
                     // Skip videos already marked as unavailable
-                    return v.getValidationStatus() != ValidationStatus.UNAVAILABLE;
+                    if (v.getValidationStatus() == ValidationStatus.UNAVAILABLE) {
+                        return false;
+                    }
+
+                    // Skip videos validated within the last day
+                    Timestamp lastValidated = v.getLastValidatedAt();
+                    if (lastValidated != null) {
+                        Instant lastValidatedInstant = Instant.ofEpochSecond(
+                            lastValidated.getSeconds(),
+                            lastValidated.getNanos()
+                        );
+                        return lastValidatedInstant.isBefore(oneDayAgo);
+                    }
+
+                    // Include videos that have never been validated
+                    return true;
                 })
                 .sorted(Comparator.comparing(
                         Video::getCreatedAt,

@@ -17,11 +17,22 @@ import java.util.Map;
  */
 public class ValidationRun {
 
+    // Trigger type constants
+    public static final String TRIGGER_SCHEDULED = "SCHEDULED";
+    public static final String TRIGGER_MANUAL = "MANUAL";
+    public static final String TRIGGER_IMPORT = "IMPORT";
+    public static final String TRIGGER_EXPORT = "EXPORT";
+
+    // Status constants
+    public static final String STATUS_RUNNING = "RUNNING";
+    public static final String STATUS_COMPLETED = "COMPLETED";
+    public static final String STATUS_FAILED = "FAILED";
+
     @DocumentId
     private String id;
 
     /**
-     * Trigger type: "SCHEDULED", "MANUAL", "IMPORT", "EXPORT"
+     * Trigger type: TRIGGER_SCHEDULED, TRIGGER_MANUAL, TRIGGER_IMPORT, TRIGGER_EXPORT
      */
     private String triggerType;
 
@@ -36,7 +47,7 @@ public class ValidationRun {
     private String triggeredByDisplayName;
 
     /**
-     * Status: "RUNNING", "COMPLETED", "FAILED"
+     * Status: STATUS_RUNNING, STATUS_COMPLETED, STATUS_FAILED
      */
     private String status;
 
@@ -78,7 +89,7 @@ public class ValidationRun {
 
     public ValidationRun() {
         this.startedAt = Timestamp.now();
-        this.status = "RUNNING";
+        this.status = STATUS_RUNNING;
         this.videosChecked = 0;
         this.videosMarkedUnavailable = 0;
         this.errorCount = 0;

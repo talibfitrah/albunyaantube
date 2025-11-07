@@ -2,6 +2,7 @@ package com.albunyaan.tube.data.source
 
 import android.util.Log
 import com.albunyaan.tube.data.filters.FilterState
+import com.albunyaan.tube.data.model.Category
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.model.CursorResponse
@@ -41,7 +42,7 @@ class FallbackContentService(
         }
     }
 
-    override suspend fun fetchCategories(): List<com.albunyaan.tube.ui.categories.Category> = try {
+    override suspend fun fetchCategories(): List<Category> = try {
         Log.d(TAG, "Trying primary backend for categories")
         primary.fetchCategories().also {
             Log.d(TAG, "✅ Primary categories SUCCESS: returned ${it.size} categories")
@@ -54,7 +55,7 @@ class FallbackContentService(
         }
     }
 
-    override suspend fun fetchSubcategories(parentId: String): List<com.albunyaan.tube.ui.categories.Category> = try {
+    override suspend fun fetchSubcategories(parentId: String): List<Category> = try {
         Log.d(TAG, "Trying primary backend for subcategories: parentId=$parentId")
         primary.fetchSubcategories(parentId).also {
             Log.d(TAG, "✅ Primary subcategories SUCCESS: returned ${it.size} subcategories")

@@ -104,7 +104,8 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
 
                             // Update category chips
                             categoryChipsContainer.removeAllViews()
-                            val categories = state.channel.categories ?: listOf(state.channel.category)
+                            val categories = state.channel.categories?.filterNotNull()
+                                ?: listOfNotNull(state.channel.category)
                             if (categories.isNotEmpty()) {
                                 categories.forEach { category ->
                                     val chip = Chip(requireContext()).apply {
