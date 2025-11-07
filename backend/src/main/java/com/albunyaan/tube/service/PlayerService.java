@@ -5,6 +5,7 @@ import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.VideoRepository;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -42,27 +43,32 @@ public class PlayerService {
         }
 
         Video currentVideo = currentVideoOpt.get();
-        
-        // Find videos from same category (using categoryIds)
-        List<Video> recommendations = videoRepository.findAll().stream()
-                .filter(v -> "APPROVED".equals(v.getStatus()))
-                .filter(v -> !v.getYoutubeId().equals(videoId)) // Exclude current video
-                .filter(v -> currentVideo.getCategoryIds() != null &&
-                            !currentVideo.getCategoryIds().isEmpty() &&
-                            v.getCategoryIds() != null &&
-                            !v.getCategoryIds().isEmpty() &&
-                            v.getCategoryIds().stream().anyMatch(currentVideo.getCategoryIds()::contains))
-                .limit(DEFAULT_NEXT_UP_LIMIT)
-                .collect(Collectors.toList());
+
+        // Find videos from same category (using first categoryId)
+        // Fetch more than needed to account for filtering out current video
+        List<Video> recommendations = new ArrayList<>();
+        if (currentVideo.getCategoryIds() != null && !currentVideo.getCategoryIds().isEmpty()) {
+            String firstCategoryId = currentVideo.getCategoryIds().get(0);
+            recommendations = videoRepository.findByCategoryIdWithLimit(firstCategoryId, DEFAULT_NEXT_UP_LIMIT + 5)
+                    .stream()
+                    .filter(v -> !v.getYoutubeId().equals(videoId)) // Exclude current video
+                    .limit(DEFAULT_NEXT_UP_LIMIT)
+                    .collect(Collectors.toCollection(ArrayList::new));
+        }
 
         // If not enough, add videos from same channel
         if (recommendations.size() < DEFAULT_NEXT_UP_LIMIT && currentVideo.getChannelId() != null) {
-            List<Video> channelVideos = videoRepository.findAll().stream()
-                    .filter(v -> "APPROVED".equals(v.getStatus()))
+            int remaining = DEFAULT_NEXT_UP_LIMIT - recommendations.size();
+            List<String> existingIds = recommendations.stream()
+                    .map(Video::getYoutubeId)
+                    .collect(Collectors.toList());
+
+            List<Video> channelVideos = videoRepository.findByChannelIdAndStatus(
+                        currentVideo.getChannelId(), "APPROVED", remaining + 5)
+                    .stream()
                     .filter(v -> !v.getYoutubeId().equals(videoId))
-                    .filter(v -> currentVideo.getChannelId().equals(v.getChannelId()))
-                    .filter(v -> !recommendations.contains(v)) // Avoid duplicates
-                    .limit(DEFAULT_NEXT_UP_LIMIT - recommendations.size())
+                    .filter(v -> !existingIds.contains(v.getYoutubeId())) // Avoid duplicates
+                    .limit(remaining)
                     .collect(Collectors.toList());
 
             recommendations.addAll(channelVideos);

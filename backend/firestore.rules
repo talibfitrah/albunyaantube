@@ -2,11 +2,61 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Allow all access for Firebase Admin SDK and emulator testing
-    // When using Firebase Admin SDK, these rules are bypassed in production
-    // For emulator, we allow all to support integration tests
-    match /{document=**} {
-      allow read, write: if true;
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+             request.auth.token.role == 'ADMIN';
+    }
+
+    function isModerator() {
+      return isAuthenticated() &&
+             (request.auth.token.role == 'ADMIN' ||
+              request.auth.token.role == 'MODERATOR');
+    }
+
+    // Public content (read-only for all, write for moderators)
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow write: if isModerator();
+    }
+
+    match /channels/{channelId} {
+      allow read: if true;
+      allow write: if isModerator();
+    }
+
+    match /playlists/{playlistId} {
+      allow read: if true;
+      allow write: if isModerator();
+    }
+
+    match /videos/{videoId} {
+      allow read: if true;
+      allow write: if isModerator();
+    }
+
+    // Admin-only collections
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /audit_logs/{logId} {
+      allow read: if isModerator();
+      allow create: if isAuthenticated();
+      allow update, delete: if false; // Audit logs are immutable
+    }
+
+    // Download events (user can read their own)
+    match /download_events/{eventId} {
+      allow read: if isAuthenticated() &&
+                     resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
     }
   }
 }

@@ -126,6 +126,18 @@ public class CategoryController {
             return ResponseEntity.notFound().build();
         }
 
+        // Validate parent category if specified
+        if (category.getParentCategoryId() != null) {
+            // Check if parent category exists
+            if (!categoryRepository.existsById(category.getParentCategoryId())) {
+                return ResponseEntity.badRequest().build();
+            }
+            // Prevent self-reference
+            if (category.getParentCategoryId().equals(id)) {
+                return ResponseEntity.badRequest().build();
+            }
+        }
+
         existing.setName(category.getName());
         existing.setParentCategoryId(category.getParentCategoryId());
         existing.setIcon(category.getIcon());

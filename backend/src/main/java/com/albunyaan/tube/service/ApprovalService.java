@@ -146,9 +146,11 @@ public class ApprovalService {
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .limit(limit);
 
-        if (cursor != null) {
-            // In a real implementation, we'd use startAfter with the document snapshot
-            // For simplicity, we'll skip this for now
+        if (cursor != null && !cursor.isEmpty()) {
+            var cursorSnapshot = firestore.collection("channels").document(cursor).get().get();
+            if (cursorSnapshot.exists()) {
+                query = query.startAfter(cursorSnapshot);
+            }
         }
 
         List<Channel> channels = new ArrayList<>();
@@ -176,6 +178,13 @@ public class ApprovalService {
                 .whereEqualTo("status", "PENDING")
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .limit(limit);
+
+        if (cursor != null && !cursor.isEmpty()) {
+            var cursorSnapshot = firestore.collection("playlists").document(cursor).get().get();
+            if (cursorSnapshot.exists()) {
+                query = query.startAfter(cursorSnapshot);
+            }
+        }
 
         List<Playlist> playlists = new ArrayList<>();
         var snapshot = query.get().get();

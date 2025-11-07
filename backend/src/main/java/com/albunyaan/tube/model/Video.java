@@ -80,7 +80,7 @@ public class Video {
 
     public Video() {
         this.categoryIds = new ArrayList<>();
-        this.status = "pending";
+        this.status = "PENDING";
         this.sourceType = SourceType.UNKNOWN;
         this.validationStatus = null; // Not yet validated
         this.createdAt = Timestamp.now();
