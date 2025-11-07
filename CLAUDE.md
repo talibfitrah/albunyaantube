@@ -7,52 +7,55 @@ This document provides essential information for AI assistants working in the Al
 ## 🎯 **WHERE TO START - CURRENT SESSION STATUS**
 
 **Date:** November 7, 2025
-**Status:** Documentation cleanup complete, project ~60% complete
+**Status:** Documentation radically simplified, project ~60% complete
 **Next Step:** Continue Android app testing and backend feature development
 
 ### **Recent Updates (Nov 7, 2025):**
 
-1. **Documentation Cleanup** ✅
-   - Removed 2 outdated/misleading files
-   - Archived 9 historical documents to `docs/archived/`
-   - Consolidated 6 files into 3 comprehensive docs
-   - Updated `docs/README.md` with clear navigation
-   - Result: 18% reduction in active docs, much clearer structure
+1. **Radical Documentation Simplification** ✅
+   - Consolidated from 22 directories → 4 core categories
+   - Merged 11 files into 3 comprehensive guides
+   - Archived implementation details
+   - Result: 45% fewer files, 82% fewer directories
 
-2. **Android Configuration** ✅
+2. **New 4-Category Structure** ✅
+   - **design/**: UX, i18n, design system
+   - **architecture/**: Technical architecture, API, security
+   - **plan/**: Roadmap, acceptance criteria, backlog
+   - **status/**: Current status & operational guides
+
+3. **Android Configuration** ✅
    - Backend: `http://192.168.1.167:8080/`
    - APK: `android/app/build/outputs/apk/debug/app-debug.apk` (17MB)
-   - CORS configured to allow mobile app requests
    - Seeded data: 13 channels, 6 playlists, 173 videos, 19 categories
-
-3. **Key Documentation** ✅
-   - Quick Start: [docs/README.md](docs/README.md)
-   - Project Status: [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md)
-   - Android Setup: [docs/android/BACKEND_CONFIGURATION.md](docs/android/BACKEND_CONFIGURATION.md)
-   - Development Guide: [docs/DEVELOPMENT_GUIDE.md](docs/DEVELOPMENT_GUIDE.md)
 
 ### **Your Immediate Tasks:**
 
 ```bash
-# 1. Review documentation structure
+# 1. Review simplified documentation structure
 cat docs/README.md
 
 # 2. Check current project status
-cat docs/PROJECT_STATUS.md
+cat docs/status/PROJECT_STATUS.md
 
-# 3. For Android development
-cat docs/android/BACKEND_CONFIGURATION.md
-cat docs/android/TESTING_GUIDE.md
+# 3. For development setup
+cat docs/status/DEVELOPMENT_GUIDE.md
+
+# 4. For Android work
+cat docs/status/ANDROID_GUIDE.md
 ```
 
-**Navigation:**
-- **Setup Instructions**: [docs/DEVELOPMENT_GUIDE.md](docs/DEVELOPMENT_GUIDE.md)
-- **Android Configuration**: [docs/android/BACKEND_CONFIGURATION.md](docs/android/BACKEND_CONFIGURATION.md)
-- **Troubleshooting**: [docs/android/CONNECTIVITY_TROUBLESHOOTING.md](docs/android/CONNECTIVITY_TROUBLESHOOTING.md)
-- **All Documentation**: [docs/README.md](docs/README.md)
+**Quick Links:**
+- **Documentation Index**: [docs/README.md](docs/README.md)
+- **Current Status**: [docs/status/PROJECT_STATUS.md](docs/status/PROJECT_STATUS.md)
+- **Dev Setup**: [docs/status/DEVELOPMENT_GUIDE.md](docs/status/DEVELOPMENT_GUIDE.md)
+- **Android Guide**: [docs/status/ANDROID_GUIDE.md](docs/status/ANDROID_GUIDE.md)
+- **Testing Guide**: [docs/status/TESTING_GUIDE.md](docs/status/TESTING_GUIDE.md)
+- **Deployment**: [docs/status/DEPLOYMENT_GUIDE.md](docs/status/DEPLOYMENT_GUIDE.md)
+- **Architecture**: [docs/architecture/overview.md](docs/architecture/overview.md)
 
 **Recent Git Commits:**
-- `685b70d` - [DOCS]: Clean up and reorganize documentation structure
+- Upcoming commit - [DOCS]: Radical simplification to 4 core categories
 
 ---
 
@@ -256,29 +259,41 @@ albunyaantube/
 │   ├── settings.gradle.kts    # Module config
 │   └── gradlew
 │
-├── docs/                       # Design & architecture docs
+├── docs/                       # Documentation (4 core categories)
 │   ├── README.md              # Documentation index & navigation
-│   ├── PROJECT_STATUS.md      # Current completion status
-│   ├── DEVELOPMENT_GUIDE.md   # Setup & troubleshooting
-│   ├── vision/                # Product vision
-│   ├── architecture/          # C4 diagrams, solution architecture
-│   ├── api/                   # OpenAPI specs
-│   ├── android/               # Android configuration & testing
-│   ├── testing/               # Test strategies & verification
-│   ├── features/              # Feature-specific documentation
-│   ├── deployment/            # VPS deployment guides
-│   ├── archived/              # Historical documents
-│   │   ├── sessions/          # Development session notes
-│   │   ├── planning/          # Historical planning docs
-│   │   ├── android-player/    # Player development work logs
-│   │   ├── performance-profiling/ # Historical performance notes
-│   │   └── system-prompts/    # AI agent system prompts
-│   ├── ux/                    # Design system & mockups
-│   ├── i18n/                  # Internationalization strategy
-│   ├── security/              # Threat model
-│   ├── roadmap/               # Phased delivery plan
-│   ├── acceptance/            # Acceptance criteria
-│   └── backlog/               # Product backlog CSVs
+│   │
+│   ├── design/                # UX, i18n, design system
+│   │   ├── design-system.md   # UI specs, tokens, components
+│   │   ├── i18n-strategy.md   # Internationalization (en/ar/nl)
+│   │   ├── design-tokens.json # CSS tokens
+│   │   └── mockups/           # Screenshots & Figma
+│   │
+│   ├── architecture/          # Technical architecture
+│   │   ├── overview.md        # System architecture & vision
+│   │   ├── api-specification.yaml # OpenAPI REST API spec
+│   │   ├── security.md        # Threat model & security
+│   │   └── diagrams/          # C4 diagrams
+│   │
+│   ├── plan/                  # Planning & requirements
+│   │   ├── roadmap.md         # Phased delivery plan
+│   │   ├── acceptance-criteria.md # Acceptance criteria
+│   │   ├── risk-register.md   # Risk register
+│   │   └── backlog/           # Product backlog CSVs
+│   │
+│   ├── status/                # Current status & guides
+│   │   ├── PROJECT_STATUS.md  # Current completion status
+│   │   ├── DEVELOPMENT_GUIDE.md # Setup & troubleshooting
+│   │   ├── ANDROID_GUIDE.md   # Android config, testing, player
+│   │   ├── TESTING_GUIDE.md   # Testing strategy & verification
+│   │   └── DEPLOYMENT_GUIDE.md # VPS deployment & monitoring
+│   │
+│   └── archived/              # Historical documents
+│       ├── sessions/          # Development session notes
+│       ├── planning/          # Historical planning docs
+│       ├── android-player/    # Player development work logs
+│       ├── performance-profiling/ # Historical performance notes
+│       ├── features/          # Feature implementation docs
+│       └── system-prompts/    # AI agent system prompts
 │
 ├── .github/
 │   └── workflows/             # CI/CD pipelines
@@ -679,30 +694,57 @@ Optional detailed explanation (wrapped at 72 chars)
 | `.env.example` | Environment template | FIREBASE_PROJECT_ID, YOUTUBE_API_KEY |
 | `.github/workflows/` | CI/CD pipelines | Build, test, lint steps for each platform |
 
-### Documentation Files
+### Documentation Files (Simplified Structure)
 
-| File/Folder | Purpose |
-|-------------|---------|
-| `README.md` | Project overview, navigation guide |
+**Core Documentation**:
+| File | Purpose |
+|------|---------|
+| `README.md` | Project overview |
 | `AGENTS.md` | Policy for AI agents (test timeout!) |
-| `docs/README.md` | Documentation index with role-based navigation |
-| `docs/PROJECT_STATUS.md` | Current state, blockers, completion estimate |
-| `docs/DEVELOPMENT_GUIDE.md` | Detailed setup, troubleshooting, deployment |
-| `docs/CATEGORY_MANAGEMENT.md` | Category system overview |
-| `docs/REAL_YOUTUBE_DATA_INTEGRATION.md` | YouTube data integration guide |
-| `docs/architecture/` | C4 diagrams, solution architecture, decision records |
-| `docs/api/openapi-draft.yaml` | REST API specification |
-| `docs/android/` | Android configuration, troubleshooting, testing |
-| ├─ `BACKEND_CONFIGURATION.md` | Backend connection setup (local/VPS/production) |
-| ├─ `CONNECTIVITY_TROUBLESHOOTING.md` | Network and API troubleshooting |
-| ├─ `PLAYER_DEVELOPMENT.md` | Video player implementation status |
-| └─ `TESTING_GUIDE.md` | Android testing procedures |
-| `docs/testing/` | Test strategies and verification |
-| ├─ `DATA_VERIFICATION.md` | Backend data verification & seeding results |
-| └─ `test-strategy.md` | Overall testing approach |
-| `docs/features/` | Feature-specific documentation |
-| `docs/deployment/` | VPS deployment guides and checklists |
-| `docs/archived/` | Historical documents (session notes, planning, etc.) |
+| `docs/README.md` | Documentation index (start here!) |
+
+**Design** (`docs/design/`):
+| File | Purpose |
+|------|---------|
+| `design-system.md` | UI specifications, design tokens, components |
+| `i18n-strategy.md` | Internationalization (en/ar/nl), RTL |
+| `design-tokens.json` | CSS tokens, colors, typography |
+| `mockups/` | Screenshots & Figma exports |
+
+**Architecture** (`docs/architecture/`):
+| File | Purpose |
+|------|---------|
+| `overview.md` | System architecture, tech stack, vision |
+| `api-specification.yaml` | OpenAPI REST API specification |
+| `security.md` | Threat model & security considerations |
+| `diagrams/` | C4 diagrams (context, container, component) |
+
+**Plan** (`docs/plan/`):
+| File | Purpose |
+|------|---------|
+| `roadmap.md` | Phased delivery plan (Phases 0-12) |
+| `acceptance-criteria.md` | Acceptance criteria with traceability |
+| `risk-register.md` | Project risks with likelihood/impact |
+| `backlog/` | Product backlog CSVs (stories, estimates) |
+
+**Status** (`docs/status/`):
+| File | Purpose |
+|------|---------|
+| `PROJECT_STATUS.md` | Current completion %, blockers, next steps |
+| `DEVELOPMENT_GUIDE.md` | Setup instructions, troubleshooting |
+| `ANDROID_GUIDE.md` | Android: config, testing, player, troubleshooting |
+| `TESTING_GUIDE.md` | Testing strategy, data verification, performance |
+| `DEPLOYMENT_GUIDE.md` | VPS deployment, HTTPS setup, monitoring |
+
+**Archived** (`docs/archived/`):
+| Folder | Contents |
+|--------|----------|
+| `sessions/` | Development session notes |
+| `planning/` | Historical planning documents |
+| `android-player/` | Player development work logs |
+| `performance-profiling/` | Historical performance notes |
+| `features/` | Feature implementation docs |
+| `system-prompts/` | AI agent system prompts |
 
 ### Key Source Files
 
@@ -870,27 +912,34 @@ buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:8080/\"")
 
 ### Documentation
 
-**Quick Start**:
-- **Documentation Index**: `docs/README.md` - Start here for navigation
-- **Project Status**: `docs/PROJECT_STATUS.md` - Current completion & blockers
-- **Development Guide**: `docs/DEVELOPMENT_GUIDE.md` - Setup & troubleshooting
+**📌 Start Here**:
+- **Documentation Index**: `docs/README.md` - Navigation hub for all docs
 
-**Architecture & Design**:
-- **Full architecture**: `docs/architecture/solution-architecture.md`
-- **API spec**: `docs/api/openapi-draft.yaml` (OpenAPI format)
-- **Design system**: `docs/ux/design.md`
+**✅ Status & Guides** (`docs/status/`):
+- **Project Status**: `PROJECT_STATUS.md` - Current completion & blockers
+- **Development Guide**: `DEVELOPMENT_GUIDE.md` - Setup & troubleshooting
+- **Android Guide**: `ANDROID_GUIDE.md` - Config, testing, player, troubleshooting
+- **Testing Guide**: `TESTING_GUIDE.md` - Testing strategy & verification
+- **Deployment Guide**: `DEPLOYMENT_GUIDE.md` - VPS deployment & monitoring
 
-**Platform-Specific**:
-- **Android Configuration**: `docs/android/BACKEND_CONFIGURATION.md`
-- **Android Troubleshooting**: `docs/android/CONNECTIVITY_TROUBLESHOOTING.md`
-- **Testing Strategy**: `docs/testing/test-strategy.md`
+**🏗️ Architecture** (`docs/architecture/`):
+- **Overview**: `overview.md` - System architecture, tech stack, vision
+- **API Specification**: `api-specification.yaml` - OpenAPI REST API spec
+- **Security**: `security.md` - Threat model & security
+- **Diagrams**: `diagrams/` - C4 diagrams
 
-**Planning & Requirements**:
-- **Roadmap**: `docs/roadmap/roadmap.md`
-- **Security**: `docs/security/threat-model.md`
-- **Internationalization**: `docs/i18n/strategy.md`
+**🎨 Design** (`docs/design/`):
+- **Design System**: `design-system.md` - UI specs, tokens, components
+- **i18n Strategy**: `i18n-strategy.md` - Internationalization (en/ar/nl)
 
-**Note**: Documentation was reorganized on Nov 7, 2025. See `docs/README.md` for the latest structure. Historical documents are in `docs/archived/`.
+**📋 Plan** (`docs/plan/`):
+- **Roadmap**: `roadmap.md` - Phased delivery plan
+- **Acceptance Criteria**: `acceptance-criteria.md` - Requirements traceability
+- **Risk Register**: `risk-register.md` - Project risks
+
+**📦 Archived**: Historical documents in `docs/archived/` (sessions, planning, features)
+
+**Note**: Documentation was radically simplified on Nov 7, 2025 into 4 core categories. See `docs/README.md` for complete navigation.
 
 ### External Links
 - [Spring Boot Docs](https://spring.io/projects/spring-boot)
