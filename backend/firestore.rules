@@ -47,7 +47,7 @@ service cloud.firestore {
 
     match /audit_logs/{logId} {
       allow read: if isModerator();
-      allow create: if isAuthenticated();
+      allow create: if false; // Only backend services should write audit logs
       allow update, delete: if false; // Audit logs are immutable
     }
 
