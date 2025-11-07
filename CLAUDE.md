@@ -6,48 +6,53 @@ This document provides essential information for AI assistants working in the Al
 
 ## 🎯 **WHERE TO START - CURRENT SESSION STATUS**
 
-**Date:** October 31, 2025
-**Status:** Android connectivity issue FIXED, ready for device testing
-**Next Step:** Install APK on physical device and verify data loads
+**Date:** November 7, 2025
+**Status:** Documentation cleanup complete, project ~60% complete
+**Next Step:** Continue Android app testing and backend feature development
 
-### **What Just Happened (Oct 31, 2025):**
+### **Recent Updates (Nov 7, 2025):**
 
-1. **CORS Issue Identified & Fixed** ✅
-   - Problem: Backend CORS only allowed web frontend, blocking mobile app requests
-   - Solution: Added `setAllowedOriginPatterns("*")` in `SecurityConfig.java:88`
-   - File: [backend/src/main/java/com/albunyaan/tube/security/SecurityConfig.java](backend/src/main/java/com/albunyaan/tube/security/SecurityConfig.java#L80-L97)
+1. **Documentation Cleanup** ✅
+   - Removed 2 outdated/misleading files
+   - Archived 9 historical documents to `docs/archived/`
+   - Consolidated 6 files into 3 comprehensive docs
+   - Updated `docs/README.md` with clear navigation
+   - Result: 18% reduction in active docs, much clearer structure
 
-2. **Android APK Rebuilt** ✅
-   - Configured for user's device IP: `http://192.168.1.167:8080/`
-   - File: [android/app/build.gradle.kts:35](android/app/build.gradle.kts#L35)
-   - APK: `android/app/build/outputs/apk/debug/app-debug.apk` (15MB)
+2. **Android Configuration** ✅
+   - Backend: `http://192.168.1.167:8080/`
+   - APK: `android/app/build/outputs/apk/debug/app-debug.apk` (17MB)
+   - CORS configured to allow mobile app requests
+   - Seeded data: 13 channels, 6 playlists, 173 videos, 19 categories
 
-3. **Backend Running with CORS Fix** ✅
-   - Accessible at `http://192.168.1.167:8080`
-   - All endpoints tested and working
-   - Seeded data: 20 channels, 16 playlists, 76 videos, 19 categories
+3. **Key Documentation** ✅
+   - Quick Start: [docs/README.md](docs/README.md)
+   - Project Status: [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md)
+   - Android Setup: [docs/android/BACKEND_CONFIGURATION.md](docs/android/BACKEND_CONFIGURATION.md)
+   - Development Guide: [docs/DEVELOPMENT_GUIDE.md](docs/DEVELOPMENT_GUIDE.md)
 
-### **Your Immediate Task:**
+### **Your Immediate Tasks:**
 
 ```bash
-# 1. Verify backend is accessible
-curl http://192.168.1.167:8080/api/v1/categories | jq '. | length'
-# Should return: 19
+# 1. Review documentation structure
+cat docs/README.md
 
-# 2. Install APK on device
-adb install -r /home/farouq/Development/albunyaantube/android/app/build/outputs/apk/debug/app-debug.apk
+# 2. Check current project status
+cat docs/PROJECT_STATUS.md
 
-# 3. Test app and verify data loads from backend
-# See: docs/android/TESTING_GUIDE.md for complete checklist
+# 3. For Android development
+cat docs/android/BACKEND_CONFIGURATION.md
+cat docs/android/TESTING_GUIDE.md
 ```
 
-**If Issues Occur:**
-- See: [docs/android/CONNECTIVITY_TROUBLESHOOTING.md](docs/android/CONNECTIVITY_TROUBLESHOOTING.md)
-- Check: [CONTEXT_RESUME.md](CONTEXT_RESUME.md) for latest session state
+**Navigation:**
+- **Setup Instructions**: [docs/DEVELOPMENT_GUIDE.md](docs/DEVELOPMENT_GUIDE.md)
+- **Android Configuration**: [docs/android/BACKEND_CONFIGURATION.md](docs/android/BACKEND_CONFIGURATION.md)
+- **Troubleshooting**: [docs/android/CONNECTIVITY_TROUBLESHOOTING.md](docs/android/CONNECTIVITY_TROUBLESHOOTING.md)
+- **All Documentation**: [docs/README.md](docs/README.md)
 
-**Git Commits:**
-- `efb0205` - [FIX]: Enable Android app connectivity to backend
-- `d301616` - [DOCS]: Add context resume for session continuity
+**Recent Git Commits:**
+- `685b70d` - [DOCS]: Clean up and reorganize documentation structure
 
 ---
 
@@ -252,13 +257,28 @@ albunyaantube/
 │   └── gradlew
 │
 ├── docs/                       # Design & architecture docs
+│   ├── README.md              # Documentation index & navigation
+│   ├── PROJECT_STATUS.md      # Current completion status
+│   ├── DEVELOPMENT_GUIDE.md   # Setup & troubleshooting
 │   ├── vision/                # Product vision
 │   ├── architecture/          # C4 diagrams, solution architecture
 │   ├── api/                   # OpenAPI specs
-│   ├── frontend/              # Frontend-specific docs
-│   ├── backend/               # Backend setup & Firebase config
-│   ├── android/               # Android-specific docs
-│   └── acceptance/            # Test plans & criteria
+│   ├── android/               # Android configuration & testing
+│   ├── testing/               # Test strategies & verification
+│   ├── features/              # Feature-specific documentation
+│   ├── deployment/            # VPS deployment guides
+│   ├── archived/              # Historical documents
+│   │   ├── sessions/          # Development session notes
+│   │   ├── planning/          # Historical planning docs
+│   │   ├── android-player/    # Player development work logs
+│   │   ├── performance-profiling/ # Historical performance notes
+│   │   └── system-prompts/    # AI agent system prompts
+│   ├── ux/                    # Design system & mockups
+│   ├── i18n/                  # Internationalization strategy
+│   ├── security/              # Threat model
+│   ├── roadmap/               # Phased delivery plan
+│   ├── acceptance/            # Acceptance criteria
+│   └── backlog/               # Product backlog CSVs
 │
 ├── .github/
 │   └── workflows/             # CI/CD pipelines
@@ -661,17 +681,28 @@ Optional detailed explanation (wrapped at 72 chars)
 
 ### Documentation Files
 
-| File | Purpose |
-|------|---------|
+| File/Folder | Purpose |
+|-------------|---------|
 | `README.md` | Project overview, navigation guide |
 | `AGENTS.md` | Policy for AI agents (test timeout!) |
+| `docs/README.md` | Documentation index with role-based navigation |
 | `docs/PROJECT_STATUS.md` | Current state, blockers, completion estimate |
 | `docs/DEVELOPMENT_GUIDE.md` | Detailed setup, troubleshooting, deployment |
+| `docs/CATEGORY_MANAGEMENT.md` | Category system overview |
+| `docs/REAL_YOUTUBE_DATA_INTEGRATION.md` | YouTube data integration guide |
 | `docs/architecture/` | C4 diagrams, solution architecture, decision records |
 | `docs/api/openapi-draft.yaml` | REST API specification |
-| `docs/frontend/dashboard-metrics-plan.md` | Dashboard design & metrics |
-| `docs/backend/` | Firebase setup, data models |
-| `docs/android/` | Android-specific setup & release guide |
+| `docs/android/` | Android configuration, troubleshooting, testing |
+| ├─ `BACKEND_CONFIGURATION.md` | Backend connection setup (local/VPS/production) |
+| ├─ `CONNECTIVITY_TROUBLESHOOTING.md` | Network and API troubleshooting |
+| ├─ `PLAYER_DEVELOPMENT.md` | Video player implementation status |
+| └─ `TESTING_GUIDE.md` | Android testing procedures |
+| `docs/testing/` | Test strategies and verification |
+| ├─ `DATA_VERIFICATION.md` | Backend data verification & seeding results |
+| └─ `test-strategy.md` | Overall testing approach |
+| `docs/features/` | Feature-specific documentation |
+| `docs/deployment/` | VPS deployment guides and checklists |
+| `docs/archived/` | Historical documents (session notes, planning, etc.) |
 
 ### Key Source Files
 
@@ -838,12 +869,28 @@ buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:8080/\"")
 ## Part 8: Resources and References
 
 ### Documentation
+
+**Quick Start**:
+- **Documentation Index**: `docs/README.md` - Start here for navigation
+- **Project Status**: `docs/PROJECT_STATUS.md` - Current completion & blockers
+- **Development Guide**: `docs/DEVELOPMENT_GUIDE.md` - Setup & troubleshooting
+
+**Architecture & Design**:
 - **Full architecture**: `docs/architecture/solution-architecture.md`
 - **API spec**: `docs/api/openapi-draft.yaml` (OpenAPI format)
-- **Testing strategy**: `docs/testing/test-strategy.md`
+- **Design system**: `docs/ux/design.md`
+
+**Platform-Specific**:
+- **Android Configuration**: `docs/android/BACKEND_CONFIGURATION.md`
+- **Android Troubleshooting**: `docs/android/CONNECTIVITY_TROUBLESHOOTING.md`
+- **Testing Strategy**: `docs/testing/test-strategy.md`
+
+**Planning & Requirements**:
+- **Roadmap**: `docs/roadmap/roadmap.md`
 - **Security**: `docs/security/threat-model.md`
 - **Internationalization**: `docs/i18n/strategy.md`
-- **Roadmap**: `docs/roadmap/roadmap.md`
+
+**Note**: Documentation was reorganized on Nov 7, 2025. See `docs/README.md` for the latest structure. Historical documents are in `docs/archived/`.
 
 ### External Links
 - [Spring Boot Docs](https://spring.io/projects/spring-boot)
@@ -886,5 +933,5 @@ This codebase is a **full-stack halal content platform** with:
 
 ---
 
-**Last Updated**: 2025-10-27
-**For Questions**: See docs/ folder or review existing code patterns
+**Last Updated**: November 7, 2025
+**For Questions**: See [docs/README.md](docs/README.md) for navigation or review existing code patterns
