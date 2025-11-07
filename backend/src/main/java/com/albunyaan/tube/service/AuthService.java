@@ -15,6 +15,7 @@ import jakarta.annotation.PostConstruct;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 
 /**
  * FIREBASE-MIGRATE-02: Authentication Service
@@ -75,7 +76,7 @@ public class AuthService {
      * Create a new user in Firebase Auth and Firestore
      */
     public User createUser(String email, String password, String displayName, String role, String createdByUid)
-            throws FirebaseAuthException, ExecutionException, InterruptedException {
+            throws FirebaseAuthException, ExecutionException, InterruptedException, TimeoutException {
 
         // Create user in Firebase Authentication
         UserRecord.CreateRequest request = new UserRecord.CreateRequest()
@@ -105,7 +106,7 @@ public class AuthService {
      * Update user role (both Firebase claims and Firestore)
      */
     public User updateUserRole(String uid, String newRole)
-            throws FirebaseAuthException, ExecutionException, InterruptedException {
+            throws FirebaseAuthException, ExecutionException, InterruptedException, TimeoutException {
 
         // Update custom claims in Firebase
         Map<String, Object> claims = new HashMap<>();
@@ -127,7 +128,7 @@ public class AuthService {
      * Activate/deactivate user
      */
     public User updateUserStatus(String uid, String status)
-            throws FirebaseAuthException, ExecutionException, InterruptedException {
+            throws FirebaseAuthException, ExecutionException, InterruptedException, TimeoutException {
 
         boolean disabled = "inactive".equals(status);
 

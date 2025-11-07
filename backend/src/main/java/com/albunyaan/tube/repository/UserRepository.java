@@ -87,5 +87,31 @@ public class UserRepository {
         DocumentReference docRef = getCollection().document(uid);
         return docRef.get().get(5, TimeUnit.SECONDS).exists();
     }
+
+    /**
+     * Count all users
+     */
+    public long countAll() throws ExecutionException, InterruptedException, TimeoutException {
+        ApiFuture<QuerySnapshot> query = getCollection().get();
+        return query.get(5, TimeUnit.SECONDS).size();
+    }
+
+    /**
+     * Count users with ADMIN or MODERATOR role
+     */
+    public long countModerators() throws ExecutionException, InterruptedException, TimeoutException {
+        // Note: Firestore doesn't support OR queries, so we need to count separately and sum
+        ApiFuture<QuerySnapshot> adminQuery = getCollection()
+                .whereEqualTo("role", "ADMIN")
+                .get();
+        ApiFuture<QuerySnapshot> modQuery = getCollection()
+                .whereEqualTo("role", "MODERATOR")
+                .get();
+
+        long adminCount = adminQuery.get(5, TimeUnit.SECONDS).size();
+        long modCount = modQuery.get(5, TimeUnit.SECONDS).size();
+
+        return adminCount + modCount;
+    }
 }
 

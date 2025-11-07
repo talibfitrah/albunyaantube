@@ -128,5 +128,23 @@ public class ChannelRepository {
 
         return querySnapshot.get().toObjects(Channel.class);
     }
+
+    /**
+     * Count all channels
+     */
+    public long countAll() throws ExecutionException, InterruptedException {
+        ApiFuture<QuerySnapshot> query = getCollection().get();
+        return query.get().size();
+    }
+
+    /**
+     * Count channels by status
+     */
+    public long countByStatus(String status) throws ExecutionException, InterruptedException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereEqualTo("status", status)
+                .get();
+        return query.get().size();
+    }
 }
 

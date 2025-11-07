@@ -56,7 +56,7 @@ public class DownloadService {
         if (video == null) {
             throw new IllegalStateException("Video not found");
         }
-        DownloadManifestDto manifest = new DownloadManifestDto(videoId, video.getTitle(), tokenService.getExpirationTime(videoId, ""));
+        DownloadManifestDto manifest = new DownloadManifestDto(videoId, video.getTitle(), tokenService.getExpirationTimeFromToken(token));
         manifest.getVideoStreams().add(new DownloadManifestDto.StreamOption("720p", "https://example.com/video/720p/" + videoId, "mp4", 50_000_000L, 2500));
         manifest.getVideoStreams().add(new DownloadManifestDto.StreamOption("480p", "https://example.com/video/480p/" + videoId, "mp4", 30_000_000L, 1500));
         manifest.getVideoStreams().add(new DownloadManifestDto.StreamOption("360p", "https://example.com/video/360p/" + videoId, "mp4", 15_000_000L, 800));

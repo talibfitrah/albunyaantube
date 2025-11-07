@@ -93,12 +93,12 @@ public class SimpleExportService {
     /**
      * Export approved channels
      */
-    private void exportChannels(SimpleExportResponse response) throws ExecutionException, InterruptedException {
+    private void exportChannels(SimpleExportResponse response) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Query only APPROVED channels
         QuerySnapshot querySnapshot = firestore.collection("channels")
                 .whereEqualTo("status", "APPROVED")
                 .get()
-                .get();
+                .get(30, java.util.concurrent.TimeUnit.SECONDS);
 
         List<Channel> channels = querySnapshot.toObjects(Channel.class);
 
@@ -120,12 +120,12 @@ public class SimpleExportService {
     /**
      * Export approved playlists
      */
-    private void exportPlaylists(SimpleExportResponse response) throws ExecutionException, InterruptedException {
+    private void exportPlaylists(SimpleExportResponse response) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Query only APPROVED playlists
         QuerySnapshot querySnapshot = firestore.collection("playlists")
                 .whereEqualTo("status", "APPROVED")
                 .get()
-                .get();
+                .get(30, java.util.concurrent.TimeUnit.SECONDS);
 
         List<Playlist> playlists = querySnapshot.toObjects(Playlist.class);
 
@@ -147,12 +147,12 @@ public class SimpleExportService {
     /**
      * Export approved videos
      */
-    private void exportVideos(SimpleExportResponse response) throws ExecutionException, InterruptedException {
+    private void exportVideos(SimpleExportResponse response) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Query only APPROVED videos
         QuerySnapshot querySnapshot = firestore.collection("videos")
                 .whereEqualTo("status", "APPROVED")
                 .get()
-                .get();
+                .get(30, java.util.concurrent.TimeUnit.SECONDS);
 
         List<Video> videos = querySnapshot.toObjects(Video.class);
 

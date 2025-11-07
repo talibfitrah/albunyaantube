@@ -182,17 +182,26 @@ public class PublicContentService {
     public List<ContentItemDto> search(String query, String type, int limit) throws ExecutionException, InterruptedException {
         List<ContentItemDto> results = new ArrayList<>();
 
-        if (type == null || type.equalsIgnoreCase("CHANNELS")) {
+        if (type == null) {
+            // When searching all types, distribute limit evenly across content types
+            int limitPerType = limit / 3;
+            results.addAll(searchChannels(query, limitPerType));
+            results.addAll(searchPlaylists(query, limitPerType));
+            results.addAll(searchVideos(query, limitPerType));
+            // If limit doesn't divide evenly, add extra videos to fill up to limit
+            int remaining = limit - results.size();
+            if (remaining > 0) {
+                results.addAll(searchVideos(query, remaining));
+            }
+        } else if (type.equalsIgnoreCase("CHANNELS")) {
             results.addAll(searchChannels(query, limit));
-        }
-        if (type == null || type.equalsIgnoreCase("PLAYLISTS")) {
+        } else if (type.equalsIgnoreCase("PLAYLISTS")) {
             results.addAll(searchPlaylists(query, limit));
-        }
-        if (type == null || type.equalsIgnoreCase("VIDEOS")) {
+        } else if (type.equalsIgnoreCase("VIDEOS")) {
             results.addAll(searchVideos(query, limit));
         }
 
-        return results.stream().limit(limit).collect(Collectors.toList());
+        return results;
     }
 
     private List<ContentItemDto> searchChannels(String query, int limit) throws ExecutionException, InterruptedException {

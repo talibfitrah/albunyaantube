@@ -55,6 +55,25 @@ public class DownloadTokenService {
         return System.currentTimeMillis() + TOKEN_VALIDITY_MS;
     }
 
+    /**
+     * Extract expiration time from an existing token.
+     * Used when validating or using a token to get its actual expiration time.
+     *
+     * @param token The base64-encoded token
+     * @return The expiration timestamp in milliseconds, or 0 if token is invalid
+     */
+    public long getExpirationTimeFromToken(String token) {
+        try {
+            String decoded = new String(Base64.getUrlDecoder().decode(token), StandardCharsets.UTF_8);
+            String[] parts = decoded.split("\\|");
+            if (parts.length != 4) return 0;
+
+            return Long.parseLong(parts[2]);
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
     private String generateSignature(String data) throws NoSuchAlgorithmException, InvalidKeyException {
         Mac mac = Mac.getInstance(HMAC_ALGORITHM);
         SecretKeySpec secretKeySpec = new SecretKeySpec(secretKey.getBytes(StandardCharsets.UTF_8), HMAC_ALGORITHM);
