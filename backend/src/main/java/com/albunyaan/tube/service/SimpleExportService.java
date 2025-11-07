@@ -59,12 +59,13 @@ public class SimpleExportService {
      * @param includePlaylists Whether to include playlists
      * @param includeVideos Whether to include videos
      * @return SimpleExportResponse with 3-object array structure
+     * @throws java.util.concurrent.TimeoutException if export operation times out
      */
     public SimpleExportResponse exportSimpleFormat(
             boolean includeChannels,
             boolean includePlaylists,
             boolean includeVideos
-    ) {
+    ) throws java.util.concurrent.TimeoutException {
         SimpleExportResponse response = new SimpleExportResponse();
 
         try {
@@ -83,6 +84,9 @@ public class SimpleExportService {
                 exportVideos(response);
             }
 
+        } catch (java.util.concurrent.TimeoutException e) {
+            logger.error("Timed out exporting simple format", e);
+            throw e;
         } catch (Exception e) {
             logger.error("Failed to export simple format: {}", e.getMessage(), e);
         }

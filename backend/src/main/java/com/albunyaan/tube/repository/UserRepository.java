@@ -2,6 +2,8 @@ package com.albunyaan.tube.repository;
 
 import com.albunyaan.tube.model.User;
 import com.google.api.core.ApiFuture;
+import com.google.cloud.firestore.AggregateQuery;
+import com.google.cloud.firestore.AggregateQuerySnapshot;
 import com.google.cloud.firestore.CollectionReference;
 import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.Firestore;
@@ -62,19 +64,21 @@ public class UserRepository {
         return users.isEmpty() ? Optional.empty() : Optional.of(users.get(0));
     }
 
+    /**
+     * Find all users (returns complete result set).
+     * For paginated queries, use {@link #findAll(int, int)} instead.
+     */
     public List<User> findAll() throws ExecutionException, InterruptedException, TimeoutException {
-        // Paginated query to avoid loading large datasets - limit to 100 users
         ApiFuture<QuerySnapshot> query = getCollection()
                 .orderBy("createdAt", Query.Direction.DESCENDING)
-                .limit(100)
                 .get();
 
         return query.get(5, TimeUnit.SECONDS).toObjects(User.class);
     }
 
     /**
-     * Find all users with pagination
-     * @param limit Maximum number of users to return (default 100)
+     * Find all users with pagination (paginated query).
+     * @param limit Maximum number of users to return
      * @param offset Starting offset for pagination
      */
     public List<User> findAll(int limit, int offset) throws ExecutionException, InterruptedException, TimeoutException {
@@ -87,21 +91,24 @@ public class UserRepository {
         return query.get(5, TimeUnit.SECONDS).toObjects(User.class);
     }
 
+    /**
+     * Find users by role (returns complete result set).
+     * For paginated queries, use {@link #findByRole(String, int, int)} instead.
+     * @param role User role to filter by
+     */
     public List<User> findByRole(String role) throws ExecutionException, InterruptedException, TimeoutException {
-        // Paginated query to avoid loading large datasets - limit to 100 users
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereEqualTo("role", role)
                 .orderBy("displayName", Query.Direction.ASCENDING)
-                .limit(100)
                 .get();
 
         return query.get(5, TimeUnit.SECONDS).toObjects(User.class);
     }
 
     /**
-     * Find users by role with pagination
+     * Find users by role with pagination (paginated query).
      * @param role User role to filter by
-     * @param limit Maximum number of users to return (default 100)
+     * @param limit Maximum number of users to return
      * @param offset Starting offset for pagination
      */
     public List<User> findByRole(String role, int limit, int offset) throws ExecutionException, InterruptedException, TimeoutException {
@@ -127,27 +134,28 @@ public class UserRepository {
     }
 
     /**
-     * Count all users
+     * Count all users using server-side aggregation
      */
     public long countAll() throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> query = getCollection().get();
-        return query.get(5, TimeUnit.SECONDS).size();
+        AggregateQuery countQuery = getCollection().count();
+        AggregateQuerySnapshot snapshot = countQuery.get().get(5, TimeUnit.SECONDS);
+        return snapshot.getCount();
     }
 
     /**
-     * Count users with ADMIN or MODERATOR role
+     * Count users with ADMIN or MODERATOR role using server-side aggregation
      */
     public long countModerators() throws ExecutionException, InterruptedException, TimeoutException {
         // Note: Firestore doesn't support OR queries, so we need to count separately and sum
-        ApiFuture<QuerySnapshot> adminQuery = getCollection()
+        AggregateQuery adminCountQuery = getCollection()
                 .whereEqualTo("role", "ADMIN")
-                .get();
-        ApiFuture<QuerySnapshot> modQuery = getCollection()
+                .count();
+        AggregateQuery modCountQuery = getCollection()
                 .whereEqualTo("role", "MODERATOR")
-                .get();
+                .count();
 
-        long adminCount = adminQuery.get(5, TimeUnit.SECONDS).size();
-        long modCount = modQuery.get(5, TimeUnit.SECONDS).size();
+        long adminCount = adminCountQuery.get().get(5, TimeUnit.SECONDS).getCount();
+        long modCount = modCountQuery.get().get(5, TimeUnit.SECONDS).getCount();
 
         return adminCount + modCount;
     }

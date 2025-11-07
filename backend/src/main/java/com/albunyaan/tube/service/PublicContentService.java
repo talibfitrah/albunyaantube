@@ -220,10 +220,13 @@ public class PublicContentService {
         if (type == null) {
             // When searching all types, distribute limit evenly across content types
             int limitPerType = limit / 3;
+
+            // Add channels and playlists first
             results.addAll(searchChannels(query, limitPerType));
             results.addAll(searchPlaylists(query, limitPerType));
-            results.addAll(searchVideos(query, limitPerType));
-            // If limit doesn't divide evenly, add extra videos to fill up to limit
+
+            // Calculate remaining space and fill with videos in a single call
+            // This ensures we never get duplicate videos from calling searchVideos twice
             int remaining = limit - results.size();
             if (remaining > 0) {
                 results.addAll(searchVideos(query, remaining));

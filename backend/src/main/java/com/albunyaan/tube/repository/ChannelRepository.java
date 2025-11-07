@@ -2,6 +2,8 @@ package com.albunyaan.tube.repository;
 
 import com.albunyaan.tube.model.Channel;
 import com.google.api.core.ApiFuture;
+import com.google.cloud.firestore.AggregateQuery;
+import com.google.cloud.firestore.AggregateQuerySnapshot;
 import com.google.cloud.firestore.CollectionReference;
 import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.Firestore;
@@ -130,21 +132,23 @@ public class ChannelRepository {
     }
 
     /**
-     * Count all channels
+     * Count all channels using server-side aggregation
      */
     public long countAll() throws ExecutionException, InterruptedException {
-        ApiFuture<QuerySnapshot> query = getCollection().get();
-        return query.get().size();
+        AggregateQuery countQuery = getCollection().count();
+        AggregateQuerySnapshot snapshot = countQuery.get().get();
+        return snapshot.getCount();
     }
 
     /**
-     * Count channels by status
+     * Count channels by status using server-side aggregation
      */
     public long countByStatus(String status) throws ExecutionException, InterruptedException {
-        ApiFuture<QuerySnapshot> query = getCollection()
+        AggregateQuery countQuery = getCollection()
                 .whereEqualTo("status", status)
-                .get();
-        return query.get().size();
+                .count();
+        AggregateQuerySnapshot snapshot = countQuery.get().get();
+        return snapshot.getCount();
     }
 }
 
