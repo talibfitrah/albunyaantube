@@ -106,6 +106,7 @@ class RetrofitContentService(
             Category(
                 id = categoryDto.id,
                 name = categoryDto.name,
+                slug = categoryDto.slug,
                 hasSubcategories = hasSubcategories
             )
         }
@@ -120,6 +121,7 @@ class RetrofitContentService(
                 Category(
                     id = categoryDto.id,
                     name = categoryDto.name,
+                    slug = categoryDto.slug,
                     hasSubcategories = false // Subcategories don't have further children in current design
                 )
             }
