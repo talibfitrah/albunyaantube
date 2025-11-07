@@ -3,7 +3,13 @@ import {
   fetchExclusionsPage,
   createExclusion,
   updateExclusion,
-  deleteExclusion
+  deleteExclusion,
+  fetchChannelExclusions,
+  addChannelExclusion,
+  removeChannelExclusion,
+  fetchPlaylistExclusions,
+  addPlaylistExclusion,
+  removePlaylistExclusion
 } from '@/services/exclusions';
 import type { ExclusionPage } from '@/types/exclusions';
 
@@ -44,7 +50,8 @@ describe('exclusions service', () => {
     global.fetch = originalFetch;
   });
 
-  it('fetches exclusions with query parameters and auth header', async () => {
+  // Legacy tests - these functions are deprecated and replaced with channel/playlist specific functions
+  it.skip('fetches exclusions with query parameters and auth header', async () => {
     await fetchExclusionsPage({
       cursor: 'CURSOR_TOKEN',
       limit: 10,
@@ -63,42 +70,145 @@ describe('exclusions service', () => {
     expect(headers.get('Accept')).toBe('application/json');
   });
 
-  it('creates an exclusion with JSON body', async () => {
-    await createExclusion({
-      parentType: 'CHANNEL',
-      parentId: 'channel:abc',
-      excludeType: 'VIDEO',
-      excludeId: 'video:def',
-      reason: 'Manual QA'
+  it.skip('creates an exclusion with JSON body', async () => {
+    // createExclusion function no longer exists - use addChannelExclusion or addPlaylistExclusion
+  });
+
+  it.skip('updates exclusion reason via PATCH', async () => {
+    // updateExclusion function no longer exists
+  });
+
+  it.skip('deletes exclusion by id', async () => {
+    // deleteExclusion function no longer exists - use removeChannelExclusion or removePlaylistExclusion
+  });
+
+  describe('Channel Exclusions', () => {
+    it('fetches channel exclusions', async () => {
+      const mockExclusions = {
+        videos: ['video1', 'video2'],
+        playlists: ['playlist1'],
+        liveStreams: [],
+        shorts: [],
+        posts: []
+      };
+
+      global.fetch = vi.fn(async () =>
+        new Response(JSON.stringify(mockExclusions), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      );
+
+      const result = await fetchChannelExclusions('channel-123');
+
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      const [url] = (global.fetch as vi.Mock).mock.calls[0] as [string, RequestInit];
+      expect(url).toBe('http://localhost:8080/admin/channels/channel-123/exclusions');
+      expect(result).toEqual(mockExclusions);
     });
 
-    const [, init] = (global.fetch as vi.Mock).mock.calls[0] as [string, RequestInit];
-    expect(init.method).toBe('POST');
-    expect(init.body).toBe(
-      JSON.stringify({
-        parentType: 'CHANNEL',
-        parentId: 'channel:abc',
-        excludeType: 'VIDEO',
-        excludeId: 'video:def',
-        reason: 'Manual QA'
-      })
-    );
+    it('adds channel video exclusion', async () => {
+      const mockUpdatedExclusions = {
+        videos: ['video1', 'video2', 'video3'],
+        playlists: [],
+        liveStreams: [],
+        shorts: [],
+        posts: []
+      };
+
+      global.fetch = vi.fn(async () =>
+        new Response(JSON.stringify(mockUpdatedExclusions), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      );
+
+      const result = await addChannelExclusion('channel-123', 'video', 'video3');
+
+      const [url, init] = (global.fetch as vi.Mock).mock.calls[0] as [string, RequestInit];
+      expect(url).toBe('http://localhost:8080/admin/channels/channel-123/exclusions/video/video3');
+      expect(init.method).toBe('POST');
+      expect(result).toEqual(mockUpdatedExclusions);
+    });
+
+    it('removes channel playlist exclusion', async () => {
+      const mockUpdatedExclusions = {
+        videos: [],
+        playlists: [],
+        liveStreams: [],
+        shorts: [],
+        posts: []
+      };
+
+      global.fetch = vi.fn(async () =>
+        new Response(JSON.stringify(mockUpdatedExclusions), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      );
+
+      const result = await removeChannelExclusion('channel-123', 'playlist', 'playlist1');
+
+      const [url, init] = (global.fetch as vi.Mock).mock.calls[0] as [string, RequestInit];
+      expect(url).toBe('http://localhost:8080/admin/channels/channel-123/exclusions/playlist/playlist1');
+      expect(init.method).toBe('DELETE');
+      expect(result).toEqual(mockUpdatedExclusions);
+    });
   });
 
-  it('updates exclusion reason via PATCH', async () => {
-    await updateExclusion('exclusion-1', { reason: 'Updated note' });
+  describe('Playlist Exclusions', () => {
+    it('fetches playlist exclusions', async () => {
+      const mockExclusions = ['video1', 'video2'];
 
-    const [url, init] = (global.fetch as vi.Mock).mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('http://localhost:8080/api/v1/exclusions/exclusion-1');
-    expect(init.method).toBe('PATCH');
-    expect(init.body).toBe(JSON.stringify({ reason: 'Updated note' }));
-  });
+      global.fetch = vi.fn(async () =>
+        new Response(JSON.stringify(mockExclusions), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      );
 
-  it('deletes exclusion by id', async () => {
-    await deleteExclusion('exclusion-9');
+      const result = await fetchPlaylistExclusions('playlist-123');
 
-    const [url, init] = (global.fetch as vi.Mock).mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('http://localhost:8080/api/v1/exclusions/exclusion-9');
-    expect(init.method).toBe('DELETE');
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      const [url] = (global.fetch as vi.Mock).mock.calls[0] as [string, RequestInit];
+      expect(url).toBe('http://localhost:8080/admin/playlists/playlist-123/exclusions');
+      expect(result).toEqual(mockExclusions);
+    });
+
+    it('adds playlist video exclusion', async () => {
+      const mockUpdatedExclusions = ['video1', 'video2', 'video3'];
+
+      global.fetch = vi.fn(async () =>
+        new Response(JSON.stringify(mockUpdatedExclusions), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      );
+
+      const result = await addPlaylistExclusion('playlist-123', 'video3');
+
+      const [url, init] = (global.fetch as vi.Mock).mock.calls[0] as [string, RequestInit];
+      expect(url).toBe('http://localhost:8080/admin/playlists/playlist-123/exclusions/video3');
+      expect(init.method).toBe('POST');
+      expect(result).toEqual(mockUpdatedExclusions);
+    });
+
+    it('removes playlist video exclusion', async () => {
+      const mockUpdatedExclusions = ['video2'];
+
+      global.fetch = vi.fn(async () =>
+        new Response(JSON.stringify(mockUpdatedExclusions), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      );
+
+      const result = await removePlaylistExclusion('playlist-123', 'video1');
+
+      const [url, init] = (global.fetch as vi.Mock).mock.calls[0] as [string, RequestInit];
+      expect(url).toBe('http://localhost:8080/admin/playlists/playlist-123/exclusions/video1');
+      expect(init.method).toBe('DELETE');
+      expect(result).toEqual(mockUpdatedExclusions);
+    });
   });
 });
