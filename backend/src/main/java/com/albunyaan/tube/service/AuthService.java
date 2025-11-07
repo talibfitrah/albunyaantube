@@ -151,7 +151,7 @@ public class AuthService {
     /**
      * Delete user from Firebase Auth and Firestore
      */
-    public void deleteUser(String uid) throws FirebaseAuthException, ExecutionException, InterruptedException {
+    public void deleteUser(String uid) throws FirebaseAuthException, ExecutionException, InterruptedException, TimeoutException {
         firebaseAuth.deleteUser(uid);
         userRepository.deleteByUid(uid);
         logger.info("Deleted user: {}", uid);
@@ -160,7 +160,7 @@ public class AuthService {
     /**
      * Record user login
      */
-    public void recordLogin(String uid) throws ExecutionException, InterruptedException {
+    public void recordLogin(String uid) throws ExecutionException, InterruptedException, TimeoutException {
         User user = userRepository.findByUid(uid).orElse(null);
         if (user != null) {
             user.recordLogin();

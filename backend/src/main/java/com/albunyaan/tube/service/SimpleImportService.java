@@ -87,6 +87,22 @@ public class SimpleImportService {
             }
         }
 
+        // Validate status
+        if (defaultStatus != null && !defaultStatus.isEmpty()) {
+            String normalizedStatus = defaultStatus.toUpperCase();
+            if (!normalizedStatus.equals("PENDING") &&
+                !normalizedStatus.equals("APPROVED") &&
+                !normalizedStatus.equals("REJECTED")) {
+                return SimpleImportResponse.error(
+                    "Invalid status: must be one of PENDING, APPROVED, or REJECTED");
+            }
+            // Normalize to uppercase for consistency
+            defaultStatus = normalizedStatus;
+        } else {
+            // Default to PENDING if not specified
+            defaultStatus = "PENDING";
+        }
+
         // Extract the 3 maps
         Map<String, String> channelsMap = simpleData.get(0);
         Map<String, String> playlistsMap = simpleData.get(1);
@@ -225,6 +241,8 @@ public class SimpleImportService {
                         "CHANNEL",
                         "Operation interrupted: " + e.getMessage()
                 ));
+                // Exit immediately after interrupt - do not continue processing
+                return;
             } catch (ExecutionException e) {
                 logger.error("Failed to import channel {}: {}", youtubeId, e.getMessage());
                 response.addResult(SimpleImportItemResult.failed(

@@ -1,5 +1,6 @@
 package com.albunyaan.tube.service;
 
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import javax.crypto.Mac;
@@ -11,11 +12,34 @@ import java.util.Base64;
 
 @Service
 public class DownloadTokenService {
-    @Value("${download.token.secret-key}")
-    private String secretKey;
-
     private static final String HMAC_ALGORITHM = "HmacSHA256";
     private static final long TOKEN_VALIDITY_MS = 3600000;
+    private static final int MIN_KEY_LENGTH = 32; // Minimum 32 characters for security
+
+    private final String secretKey;
+
+    public DownloadTokenService(@Value("${download.token.secret-key}") String secretKey) {
+        this.secretKey = secretKey;
+    }
+
+    @PostConstruct
+    public void validateSecretKey() {
+        if (secretKey == null || secretKey.isEmpty()) {
+            throw new IllegalStateException("Download token secret key must not be null or empty. " +
+                    "Please set 'download.token.secret-key' in application properties.");
+        }
+
+        if (secretKey.length() < MIN_KEY_LENGTH) {
+            throw new IllegalStateException("Download token secret key must be at least " + MIN_KEY_LENGTH +
+                    " characters long for security. Current length: " + secretKey.length());
+        }
+
+        // Validate key contains only allowed characters (alphanumeric and common symbols)
+        if (!secretKey.matches("^[a-zA-Z0-9!@#$%^&*()_+\\-=\\[\\]{};':\"\\\\|,.<>/?]+$")) {
+            throw new IllegalStateException("Download token secret key contains invalid characters. " +
+                    "Only alphanumeric characters and common symbols are allowed.");
+        }
+    }
 
     public String generateToken(String videoId, String userId) {
         long expiresAt = System.currentTimeMillis() + TOKEN_VALIDITY_MS;

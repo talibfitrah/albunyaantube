@@ -47,7 +47,8 @@ public class UserRepository {
 
     public Optional<User> findByUid(String uid) throws ExecutionException, InterruptedException, TimeoutException {
         DocumentReference docRef = getCollection().document(uid);
-        User user = docRef.get().get(5, TimeUnit.SECONDS).toObject(User.class);
+        // Single document reads: use shorter timeout (2 seconds)
+        User user = docRef.get().get(2, TimeUnit.SECONDS).toObject(User.class);
         return Optional.ofNullable(user);
     }
 
@@ -62,17 +63,53 @@ public class UserRepository {
     }
 
     public List<User> findAll() throws ExecutionException, InterruptedException, TimeoutException {
+        // Paginated query to avoid loading large datasets - limit to 100 users
         ApiFuture<QuerySnapshot> query = getCollection()
                 .orderBy("createdAt", Query.Direction.DESCENDING)
+                .limit(100)
+                .get();
+
+        return query.get(5, TimeUnit.SECONDS).toObjects(User.class);
+    }
+
+    /**
+     * Find all users with pagination
+     * @param limit Maximum number of users to return (default 100)
+     * @param offset Starting offset for pagination
+     */
+    public List<User> findAll(int limit, int offset) throws ExecutionException, InterruptedException, TimeoutException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .orderBy("createdAt", Query.Direction.DESCENDING)
+                .limit(limit)
+                .offset(offset)
                 .get();
 
         return query.get(5, TimeUnit.SECONDS).toObjects(User.class);
     }
 
     public List<User> findByRole(String role) throws ExecutionException, InterruptedException, TimeoutException {
+        // Paginated query to avoid loading large datasets - limit to 100 users
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereEqualTo("role", role)
                 .orderBy("displayName", Query.Direction.ASCENDING)
+                .limit(100)
+                .get();
+
+        return query.get(5, TimeUnit.SECONDS).toObjects(User.class);
+    }
+
+    /**
+     * Find users by role with pagination
+     * @param role User role to filter by
+     * @param limit Maximum number of users to return (default 100)
+     * @param offset Starting offset for pagination
+     */
+    public List<User> findByRole(String role, int limit, int offset) throws ExecutionException, InterruptedException, TimeoutException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereEqualTo("role", role)
+                .orderBy("displayName", Query.Direction.ASCENDING)
+                .limit(limit)
+                .offset(offset)
                 .get();
 
         return query.get(5, TimeUnit.SECONDS).toObjects(User.class);
@@ -85,7 +122,8 @@ public class UserRepository {
 
     public boolean existsByUid(String uid) throws ExecutionException, InterruptedException, TimeoutException {
         DocumentReference docRef = getCollection().document(uid);
-        return docRef.get().get(5, TimeUnit.SECONDS).exists();
+        // Single document reads: use shorter timeout (2 seconds)
+        return docRef.get().get(2, TimeUnit.SECONDS).exists();
     }
 
     /**
