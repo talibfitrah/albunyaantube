@@ -153,6 +153,7 @@ const actionLoading = reactive<Record<string, boolean>>({})
 const initialLoading = ref(false)
 const error = ref<string | null>(null)
 const playlistDetails = ref<any>(null)
+let requestIdCounter = 0 // Track in-flight requests to prevent race conditions
 
 // Infinite scroll
 const { containerRef, isLoading, hasMore, reset } = useInfiniteScroll({
@@ -166,6 +167,9 @@ watch(() => props.open, (isOpen) => {
   if (isOpen) {
     loadInitialData()
   } else {
+    // Invalidate any in-flight requests when closing
+    requestIdCounter++
+
     // Reset state when closed
     items.value = []
     nextPageToken.value = null
@@ -206,29 +210,63 @@ async function loadMore() {
     return
   }
 
+  // Capture request context before any await to prevent race conditions
+  const requestId = ++requestIdCounter
+  const capturedPlaylistId = props.playlistYoutubeId
+  const capturedPageToken = nextPageToken.value
+  const capturedSearch = activeSearch.value
+
   isLoading.value = true
   error.value = null
 
   try {
     const result = await getPlaylistVideos(
-      props.playlistYoutubeId,
-      nextPageToken.value || undefined,
-      activeSearch.value || undefined
+      capturedPlaylistId,
+      capturedPageToken || undefined,
+      capturedSearch || undefined
     )
+
+    // Verify context hasn't changed while request was in flight
+    if (
+      requestId !== requestIdCounter ||
+      capturedPlaylistId !== props.playlistYoutubeId ||
+      capturedPageToken !== nextPageToken.value ||
+      capturedSearch !== activeSearch.value
+    ) {
+      // Context changed (playlist/search changed), discard this response
+      return
+    }
 
     // Append new items
     items.value.push(...result.items)
     nextPageToken.value = result.nextPageToken || null
     hasMore.value = !!result.nextPageToken
   } catch (err: any) {
+    // Verify context still matches before updating error state
+    if (
+      requestId !== requestIdCounter ||
+      capturedPlaylistId !== props.playlistYoutubeId ||
+      capturedPageToken !== nextPageToken.value ||
+      capturedSearch !== activeSearch.value
+    ) {
+      // Context changed, discard error from stale request
+      return
+    }
+
     error.value = err.message || $t('common.error')
     hasMore.value = false
   } finally {
-    isLoading.value = false
+    // Only clear loading if this is still the latest request
+    if (requestId === requestIdCounter) {
+      isLoading.value = false
+    }
   }
 }
 
 function performSearch() {
+  // Invalidate any in-flight requests
+  requestIdCounter++
+
   activeSearch.value = searchQuery.value.trim()
   items.value = []
   nextPageToken.value = null

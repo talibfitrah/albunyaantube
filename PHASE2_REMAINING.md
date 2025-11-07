@@ -145,10 +145,42 @@ async function bulkRejectItems() {
   }
 }
 
-function showToast(message: string, type: 'success' | 'error' = 'success') {
-  // Implement toast notification
-  // Could use existing notification system or add simple alert for now
-  alert(message)
+function showToast(
+  message: string,
+  type: 'success' | 'error' | 'warning' | 'info' = 'success',
+  duration: number = 3000
+) {
+  // Non-blocking toast notification implementation
+  // Uses the project's toast utility from @/utils/toast
+  import('@/utils/toast').then(({ toast }) => {
+    toast[type](message)
+  })
+
+  // Alternative: Create a simple non-blocking toast
+  const toastEl = document.createElement('div')
+  toastEl.className = `toast toast-${type}`
+  toastEl.textContent = message
+  toastEl.setAttribute('role', 'alert')
+  toastEl.setAttribute('aria-live', 'polite')
+  toastEl.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 12px 20px;
+    background: ${type === 'success' ? '#4caf50' : type === 'error' ? '#f44336' : type === 'warning' ? '#ff9800' : '#2196f3'};
+    color: white;
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    z-index: 9999;
+    animation: slideIn 0.3s ease-out;
+  `
+
+  document.body.appendChild(toastEl)
+
+  setTimeout(() => {
+    toastEl.style.animation = 'slideOut 0.3s ease-in'
+    setTimeout(() => toastEl.remove(), 300)
+  }, duration)
 }
 ```
 

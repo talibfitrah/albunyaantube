@@ -178,6 +178,7 @@ const actionLoading = reactive<Record<string, boolean>>({})
 const initialLoading = ref(false)
 const error = ref<string | null>(null)
 const channelDetails = ref<any>(null)
+let requestIdCounter = 0 // Track in-flight requests to prevent race conditions
 
 // Infinite scroll
 const { containerRef, isLoading, hasMore, reset } = useInfiniteScroll({
@@ -191,6 +192,9 @@ watch(() => props.open, (isOpen) => {
   if (isOpen) {
     loadInitialData()
   } else {
+    // Invalidate any in-flight requests when closing
+    requestIdCounter++
+
     // Reset state when closed
     items.value = []
     nextPageToken.value = null
@@ -238,23 +242,40 @@ async function loadMore() {
     return
   }
 
+  // Capture request context before any await to prevent race conditions
+  const requestId = ++requestIdCounter
+  const capturedTab = activeTab.value
+  const capturedPageToken = nextPageToken.value
+  const capturedSearch = activeSearch.value
+
   isLoading.value = true
   error.value = null
 
   try {
     let result: any
 
-    if (activeTab.value === 'videos') {
+    if (capturedTab === 'videos') {
       result = await getChannelVideos(
         props.channelYoutubeId,
-        nextPageToken.value || undefined,
-        activeSearch.value || undefined
+        capturedPageToken || undefined,
+        capturedSearch || undefined
       )
     } else {
       result = await getChannelPlaylists(
         props.channelYoutubeId,
-        nextPageToken.value || undefined
+        capturedPageToken || undefined
       )
+    }
+
+    // Verify context hasn't changed while request was in flight
+    if (
+      requestId !== requestIdCounter ||
+      capturedTab !== activeTab.value ||
+      capturedPageToken !== nextPageToken.value ||
+      capturedSearch !== activeSearch.value
+    ) {
+      // Context changed (user switched tabs/search), discard this response
+      return
     }
 
     // Append new items
@@ -262,15 +283,32 @@ async function loadMore() {
     nextPageToken.value = result.nextPageToken || null
     hasMore.value = !!result.nextPageToken
   } catch (err: any) {
+    // Verify context still matches before updating error state
+    if (
+      requestId !== requestIdCounter ||
+      capturedTab !== activeTab.value ||
+      capturedPageToken !== nextPageToken.value ||
+      capturedSearch !== activeSearch.value
+    ) {
+      // Context changed, discard error from stale request
+      return
+    }
+
     error.value = err.message || $t('common.error')
     hasMore.value = false
   } finally {
-    isLoading.value = false
+    // Only clear loading if this is still the latest request
+    if (requestId === requestIdCounter) {
+      isLoading.value = false
+    }
   }
 }
 
 function switchTab(tab: 'videos' | 'playlists') {
   if (tab === activeTab.value) return
+
+  // Invalidate any in-flight requests
+  requestIdCounter++
 
   activeTab.value = tab
   items.value = []
@@ -284,6 +322,9 @@ function switchTab(tab: 'videos' | 'playlists') {
 }
 
 function performSearch() {
+  // Invalidate any in-flight requests
+  requestIdCounter++
+
   activeSearch.value = searchQuery.value.trim()
   items.value = []
   nextPageToken.value = null

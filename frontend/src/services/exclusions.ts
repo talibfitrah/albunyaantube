@@ -1,10 +1,32 @@
 import { authorizedJsonFetch } from '@/services/http';
 import type { CursorPage } from '@/types/pagination';
 
+// Types
+
+export interface ChannelExclusion {
+  type: 'video' | 'playlist';
+  youtubeId: string;
+  title?: string;
+  thumbnailUrl?: string;
+  addedAt?: string;
+}
+
+export interface ChannelExclusions {
+  videos: string[];
+  playlists: string[];
+}
+
+export interface ExclusionResponse {
+  success: boolean;
+  message?: string;
+}
+
 // Channel Exclusions
 
-export async function fetchChannelExclusions(channelId: string): Promise<any> {
-  const response = await authorizedJsonFetch(`/admin/channels/${channelId}/exclusions`);
+export async function fetchChannelExclusions(channelId: string): Promise<ChannelExclusions> {
+  const response = await authorizedJsonFetch<ChannelExclusions>(
+    `/admin/channels/${channelId}/exclusions`
+  );
   return response;
 }
 
@@ -12,8 +34,8 @@ export async function addChannelExclusion(
   channelId: string,
   type: string,
   youtubeId: string
-): Promise<any> {
-  const response = await authorizedJsonFetch(
+): Promise<ChannelExclusion[]> {
+  const response = await authorizedJsonFetch<ChannelExclusion[]>(
     `/admin/channels/${channelId}/exclusions/${type}/${youtubeId}`,
     { method: 'POST' }
   );
@@ -24,8 +46,8 @@ export async function removeChannelExclusion(
   channelId: string,
   type: string,
   youtubeId: string
-): Promise<any> {
-  const response = await authorizedJsonFetch(
+): Promise<ChannelExclusion[]> {
+  const response = await authorizedJsonFetch<ChannelExclusion[]>(
     `/admin/channels/${channelId}/exclusions/${type}/${youtubeId}`,
     { method: 'DELETE' }
   );
@@ -35,7 +57,9 @@ export async function removeChannelExclusion(
 // Playlist Exclusions
 
 export async function fetchPlaylistExclusions(playlistId: string): Promise<string[]> {
-  const response = await authorizedJsonFetch(`/admin/playlists/${playlistId}/exclusions`);
+  const response = await authorizedJsonFetch<string[]>(
+    `/admin/playlists/${playlistId}/exclusions`
+  );
   return response;
 }
 
@@ -43,7 +67,7 @@ export async function addPlaylistExclusion(
   playlistId: string,
   videoId: string
 ): Promise<string[]> {
-  const response = await authorizedJsonFetch(
+  const response = await authorizedJsonFetch<string[]>(
     `/admin/playlists/${playlistId}/exclusions/${videoId}`,
     { method: 'POST' }
   );
@@ -54,7 +78,7 @@ export async function removePlaylistExclusion(
   playlistId: string,
   videoId: string
 ): Promise<string[]> {
-  const response = await authorizedJsonFetch(
+  const response = await authorizedJsonFetch<string[]>(
     `/admin/playlists/${playlistId}/exclusions/${videoId}`,
     { method: 'DELETE' }
   );

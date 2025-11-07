@@ -271,14 +271,17 @@ export async function getChannelVideos(
 
   const response = await apiClient.get(`/api/admin/youtube/channels/${channelId}/videos`, { params });
 
+  // Destructure items and nextPageToken from response.data
+  const { items = [], nextPageToken } = response.data;
+
   return {
-    items: response.data.map((item: any) => ({
+    items: items.map((item: any) => ({
       id: item.id?.videoId || item.id,
       title: item.snippet?.title || '',
       thumbnailUrl: item.snippet?.thumbnails?.medium?.url || item.snippet?.thumbnails?.default?.url,
       publishedAt: item.snippet?.publishedAt
     })),
-    nextPageToken: response.data.nextPageToken
+    nextPageToken
   };
 }
 
@@ -291,14 +294,17 @@ export async function getChannelPlaylists(
 
   const response = await apiClient.get(`/api/admin/youtube/channels/${channelId}/playlists`, { params });
 
+  // Destructure items and nextPageToken from response.data
+  const { items = [], nextPageToken } = response.data;
+
   return {
-    items: response.data.map((item: any) => ({
+    items: items.map((item: any) => ({
       id: item.id,
       title: item.snippet?.title || '',
       thumbnailUrl: item.snippet?.thumbnails?.medium?.url || item.snippet?.thumbnails?.default?.url,
       itemCount: item.contentDetails?.itemCount || 0
     })),
-    nextPageToken: response.data.nextPageToken
+    nextPageToken
   };
 }
 
@@ -323,13 +329,16 @@ export async function getPlaylistVideos(
 
   const response = await apiClient.get(`/api/admin/youtube/playlists/${playlistId}/videos`, { params });
 
+  // Destructure items and nextPageToken from response.data
+  const { items = [], nextPageToken } = response.data;
+
   return {
-    items: response.data.map((item: any) => ({
+    items: items.map((item: any) => ({
       id: item.id,
       videoId: item.contentDetails?.videoId || item.snippet?.resourceId?.videoId,
       title: item.snippet?.title || '',
       thumbnailUrl: item.snippet?.thumbnails?.medium?.url || item.snippet?.thumbnails?.default?.url
     })),
-    nextPageToken: response.data.nextPageToken
+    nextPageToken
   };
 }
