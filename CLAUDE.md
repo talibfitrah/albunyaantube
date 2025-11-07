@@ -55,7 +55,9 @@ cat docs/status/ANDROID_GUIDE.md
 - **Architecture**: [docs/architecture/overview.md](docs/architecture/overview.md)
 
 **Recent Git Commits:**
-- Upcoming commit - [DOCS]: Radical simplification to 4 core categories
+- `5a61121` - [DOCS]: Radical simplification to 4 core categories
+- `0c63060` - [DOCS]: Update CLAUDE.md to reflect documentation cleanup
+- `685b70d` - [DOCS]: Clean up and reorganize documentation structure
 
 ---
 
