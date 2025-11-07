@@ -2,6 +2,7 @@ import '@testing-library/jest-dom';
 import { render, screen, fireEvent, waitFor } from '@testing-library/vue';
 import { createI18n } from 'vue-i18n';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { h } from 'vue';
 import ExclusionsWorkspaceView from '@/views/ExclusionsWorkspaceView.vue';
 import { messages } from '@/locales/messages';
 import {
@@ -17,6 +18,39 @@ vi.mock('@/services/exclusions', () => ({
   createExclusion: vi.fn(),
   updateExclusion: vi.fn(),
   removeExclusion: vi.fn()
+}));
+
+// Mock the modal components to emit 'updated' event when needed
+vi.mock('@/components/exclusions/ChannelDetailModal.vue', () => ({
+  default: {
+    name: 'ChannelDetailModal',
+    props: ['open', 'channelId', 'channelYoutubeId'],
+    emits: ['close', 'updated'],
+    setup(props: any, { emit }: any) {
+      return () => h('div', { 'data-testid': 'channel-modal', role: 'dialog' }, [
+        h('button', {
+          'data-testid': 'trigger-update',
+          onClick: () => emit('updated')
+        }, 'Trigger Update')
+      ]);
+    }
+  }
+}));
+
+vi.mock('@/components/exclusions/PlaylistDetailModal.vue', () => ({
+  default: {
+    name: 'PlaylistDetailModal',
+    props: ['open', 'playlistId', 'playlistYoutubeId'],
+    emits: ['close', 'updated'],
+    setup(props: any, { emit }: any) {
+      return () => h('div', { 'data-testid': 'playlist-modal', role: 'dialog' }, [
+        h('button', {
+          'data-testid': 'trigger-update',
+          onClick: () => emit('updated')
+        }, 'Trigger Update')
+      ]);
+    }
+  }
 }));
 
 const i18n = createI18n({
@@ -348,7 +382,23 @@ describe('ExclusionsWorkspaceView', () => {
       }
     ]);
 
+    const updatedPage = createPage([
+      {
+        id: 'exclusion-1',
+        parentType: 'CHANNEL',
+        parentId: 'UCxxxxxx',
+        excludeType: 'VIDEO',
+        excludeId: 'video:updated',
+        reason: 'Updated',
+        createdAt: '2025-09-20T08:30:00Z',
+        createdBy: baseUser
+      }
+    ]);
+
+    // Mock initial load
     fetchMock.mockResolvedValueOnce(initialPage);
+    // Mock second load after modal update
+    fetchMock.mockResolvedValueOnce(updatedPage);
 
     renderView();
 
@@ -358,10 +408,26 @@ describe('ExclusionsWorkspaceView', () => {
     // Verify initial fetch was called once
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    // Note: Testing the refresh after modal update would require
-    // the modal to actually make API calls that modify data,
-    // which is tested in the individual modal component test files.
-    // The handleModalUpdated function is called when modals emit 'updated',
-    // and it calls loadContent() which triggers fetchExclusionsPage.
+    // Click "View Details" to open modal
+    const viewDetailsButton = await screen.findByRole('button', { name: /view details/i });
+    await fireEvent.click(viewDetailsButton);
+
+    // Wait for modal to appear
+    const modal = await screen.findByTestId('channel-modal');
+    expect(modal).toBeInTheDocument();
+
+    // Find and click the trigger update button in the mock modal
+    const triggerButton = await screen.findByTestId('trigger-update');
+    await fireEvent.click(triggerButton);
+
+    // Wait for the second fetch to complete
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    // Verify updated data appears
+    await waitFor(() => {
+      expect(screen.getByText('video:updated', { selector: '.entity-label' })).toBeInTheDocument();
+    });
   });
 });
