@@ -357,4 +357,9 @@ public class Channel {
      * Get the first category from categoryIds list
      * Helper method for PublicContentService
      */
+    @Exclude
+    public String getFirstCategoryId() {
+        return categoryIds != null && !categoryIds.isEmpty() ? categoryIds.get(0) : null;
+    }
 }
+

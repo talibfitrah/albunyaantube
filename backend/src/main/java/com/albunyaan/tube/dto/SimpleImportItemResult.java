@@ -78,3 +78,4 @@ public class SimpleImportItemResult {
         this.errorReason = errorReason;
     }
 }
+

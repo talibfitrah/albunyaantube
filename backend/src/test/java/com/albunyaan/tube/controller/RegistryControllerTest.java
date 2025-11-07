@@ -354,3 +354,4 @@ class RegistryControllerTest {
         verify(playlistRepository).deleteById("playlist-123");
     }
 }
+

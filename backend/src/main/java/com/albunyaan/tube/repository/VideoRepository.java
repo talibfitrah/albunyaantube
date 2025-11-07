@@ -81,6 +81,28 @@ public class VideoRepository {
         return query.get().toObjects(Video.class);
     }
 
+    public List<Video> findByCategoryIdWithLimit(String categoryId, int limit) throws ExecutionException, InterruptedException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereArrayContains("categoryIds", categoryId)
+                .whereEqualTo("status", "APPROVED")
+                .orderBy("uploadedAt", Query.Direction.DESCENDING)
+                .limit(limit)
+                .get();
+
+        return query.get().toObjects(Video.class);
+    }
+
+    public List<Video> findByChannelIdAndStatus(String channelId, String status, int limit) throws ExecutionException, InterruptedException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereEqualTo("channelId", channelId)
+                .whereEqualTo("status", status)
+                .orderBy("uploadedAt", Query.Direction.DESCENDING)
+                .limit(limit)
+                .get();
+
+        return query.get().toObjects(Video.class);
+    }
+
     public List<Video> findByCategoryOrderByUploadedAtDesc(String category) throws ExecutionException, InterruptedException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereArrayContains("categoryIds", category)
@@ -126,3 +148,4 @@ public class VideoRepository {
         return query.get().toObjects(Video.class);
     }
 }
+

@@ -149,3 +149,4 @@ public class User {
         return "active".equals(status);
     }
 }
+

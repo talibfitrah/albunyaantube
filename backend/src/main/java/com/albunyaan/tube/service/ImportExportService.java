@@ -11,12 +11,14 @@ import com.albunyaan.tube.repository.CategoryRepository;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
+import com.google.cloud.Timestamp;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 
 /**
@@ -129,16 +131,27 @@ public class ImportExportService {
         if (request.getCategories() != null) {
             for (Category category : request.getCategories()) {
                 try {
-                    boolean exists = categoryRepository.findById(category.getId()).isPresent();
+                    Optional<Category> existingOpt = categoryRepository.findById(category.getId());
 
-                    if (exists && "SKIP".equals(mergeStrategy)) {
+                    if (existingOpt.isPresent() && "SKIP".equals(mergeStrategy)) {
                         counts.incrementCategoriesSkipped();
                         continue;
                     }
 
-                    category.setUpdatedBy(importedBy);
-                    if (!exists) {
-                        category.setCreatedBy(importedBy);
+                    if (existingOpt.isPresent() && "MERGE".equals(mergeStrategy)) {
+                        // MERGE: Preserve timestamps and audit fields, update content fields
+                        Category existing = existingOpt.get();
+                        category.setCreatedAt(existing.getCreatedAt());
+                        category.setCreatedBy(existing.getCreatedBy());
+                        category.setUpdatedBy(importedBy);
+                        category.setUpdatedAt(Timestamp.now());
+                    } else {
+                        // OVERWRITE or new entity
+                        category.setUpdatedBy(importedBy);
+                        category.setUpdatedAt(Timestamp.now());
+                        if (!existingOpt.isPresent()) {
+                            category.setCreatedBy(importedBy);
+                        }
                     }
 
                     categoryRepository.save(category);
@@ -155,11 +168,19 @@ public class ImportExportService {
         if (request.getChannels() != null) {
             for (Channel channel : request.getChannels()) {
                 try {
-                    boolean exists = channelRepository.findById(channel.getId()).isPresent();
+                    Optional<Channel> existingOpt = channelRepository.findById(channel.getId());
 
-                    if (exists && "SKIP".equals(mergeStrategy)) {
+                    if (existingOpt.isPresent() && "SKIP".equals(mergeStrategy)) {
                         counts.incrementChannelsSkipped();
                         continue;
+                    }
+
+                    if (existingOpt.isPresent() && "MERGE".equals(mergeStrategy)) {
+                        // MERGE: Preserve timestamps, audit fields, update content
+                        Channel existing = existingOpt.get();
+                        channel.setCreatedAt(existing.getCreatedAt());
+                        channel.setSubmittedBy(existing.getSubmittedBy());
+                        channel.setApprovedBy(existing.getApprovedBy());
                     }
 
                     // Update timestamp
@@ -179,11 +200,19 @@ public class ImportExportService {
         if (request.getPlaylists() != null) {
             for (Playlist playlist : request.getPlaylists()) {
                 try {
-                    boolean exists = playlistRepository.findById(playlist.getId()).isPresent();
+                    Optional<Playlist> existingOpt = playlistRepository.findById(playlist.getId());
 
-                    if (exists && "SKIP".equals(mergeStrategy)) {
+                    if (existingOpt.isPresent() && "SKIP".equals(mergeStrategy)) {
                         counts.incrementPlaylistsSkipped();
                         continue;
+                    }
+
+                    if (existingOpt.isPresent() && "MERGE".equals(mergeStrategy)) {
+                        // MERGE: Preserve timestamps, audit fields, update content
+                        Playlist existing = existingOpt.get();
+                        playlist.setCreatedAt(existing.getCreatedAt());
+                        playlist.setSubmittedBy(existing.getSubmittedBy());
+                        playlist.setApprovedBy(existing.getApprovedBy());
                     }
 
                     // Update timestamp
@@ -204,11 +233,22 @@ public class ImportExportService {
         if (request.getVideos() != null) {
             for (Video video : request.getVideos()) {
                 try {
-                    boolean exists = videoRepository.findById(video.getId()).isPresent();
+                    Optional<Video> existingOpt = videoRepository.findById(video.getId());
 
-                    if (exists && "SKIP".equals(mergeStrategy)) {
+                    if (existingOpt.isPresent() && "SKIP".equals(mergeStrategy)) {
                         counts.incrementVideosSkipped();
                         continue;
+                    }
+
+                    if (existingOpt.isPresent() && "MERGE".equals(mergeStrategy)) {
+                        // MERGE: Preserve timestamps, audit fields, validation status, update content
+                        Video existing = existingOpt.get();
+                        video.setCreatedAt(existing.getCreatedAt());
+                        video.setSubmittedBy(existing.getSubmittedBy());
+                        video.setApprovedBy(existing.getApprovedBy());
+                        // Preserve validation status - don't overwrite with import data
+                        video.setValidationStatus(existing.getValidationStatus());
+                        video.setLastValidatedAt(existing.getLastValidatedAt());
                     }
 
                     // Update timestamp
@@ -329,3 +369,4 @@ public class ImportExportService {
         return response;
     }
 }
+

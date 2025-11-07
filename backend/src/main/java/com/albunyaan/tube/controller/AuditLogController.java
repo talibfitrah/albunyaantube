@@ -76,3 +76,4 @@ public class AuditLogController {
         return ResponseEntity.ok(logs);
     }
 }
+

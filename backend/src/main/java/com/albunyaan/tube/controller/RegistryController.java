@@ -566,3 +566,4 @@ public class RegistryController {
         return ResponseEntity.noContent().build();
     }
 }
+

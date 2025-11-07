@@ -15,6 +15,7 @@ import jakarta.annotation.PostConstruct;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 
 /**
  * FIREBASE-MIGRATE-02: Authentication Service
@@ -60,7 +61,7 @@ public class AuthService {
 
             if (existingUser == null) {
                 logger.info("Creating initial admin user: {}", initialAdminEmail);
-                createUser(initialAdminEmail, initialAdminPassword, initialAdminDisplayName, "admin", null);
+                createUser(initialAdminEmail, initialAdminPassword, initialAdminDisplayName, "ADMIN", null);
                 logger.info("Initial admin user created successfully");
             } else {
                 logger.info("Initial admin user already exists: {}", initialAdminEmail);
@@ -75,7 +76,7 @@ public class AuthService {
      * Create a new user in Firebase Auth and Firestore
      */
     public User createUser(String email, String password, String displayName, String role, String createdByUid)
-            throws FirebaseAuthException, ExecutionException, InterruptedException {
+            throws FirebaseAuthException, ExecutionException, InterruptedException, TimeoutException {
 
         // Create user in Firebase Authentication
         UserRecord.CreateRequest request = new UserRecord.CreateRequest()
@@ -89,7 +90,7 @@ public class AuthService {
 
         // Set custom claims for role-based access
         Map<String, Object> claims = new HashMap<>();
-        claims.put("role", role);
+        claims.put("role", role != null ? role.toUpperCase() : null);
         firebaseAuth.setCustomUserClaims(uid, claims);
 
         // Create user document in Firestore
@@ -105,11 +106,11 @@ public class AuthService {
      * Update user role (both Firebase claims and Firestore)
      */
     public User updateUserRole(String uid, String newRole)
-            throws FirebaseAuthException, ExecutionException, InterruptedException {
+            throws FirebaseAuthException, ExecutionException, InterruptedException, TimeoutException {
 
         // Update custom claims in Firebase
         Map<String, Object> claims = new HashMap<>();
-        claims.put("role", newRole);
+        claims.put("role", newRole != null ? newRole.toUpperCase() : null);
         firebaseAuth.setCustomUserClaims(uid, claims);
 
         // Update Firestore document
@@ -127,7 +128,7 @@ public class AuthService {
      * Activate/deactivate user
      */
     public User updateUserStatus(String uid, String status)
-            throws FirebaseAuthException, ExecutionException, InterruptedException {
+            throws FirebaseAuthException, ExecutionException, InterruptedException, TimeoutException {
 
         boolean disabled = "inactive".equals(status);
 
@@ -150,7 +151,7 @@ public class AuthService {
     /**
      * Delete user from Firebase Auth and Firestore
      */
-    public void deleteUser(String uid) throws FirebaseAuthException, ExecutionException, InterruptedException {
+    public void deleteUser(String uid) throws FirebaseAuthException, ExecutionException, InterruptedException, TimeoutException {
         firebaseAuth.deleteUser(uid);
         userRepository.deleteByUid(uid);
         logger.info("Deleted user: {}", uid);
@@ -159,7 +160,7 @@ public class AuthService {
     /**
      * Record user login
      */
-    public void recordLogin(String uid) throws ExecutionException, InterruptedException {
+    public void recordLogin(String uid) throws ExecutionException, InterruptedException, TimeoutException {
         User user = userRepository.findByUid(uid).orElse(null);
         if (user != null) {
             user.recordLogin();
@@ -189,3 +190,4 @@ public class AuthService {
         }
     }
 }
+

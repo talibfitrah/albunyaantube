@@ -4,6 +4,8 @@ import com.albunyaan.tube.dto.EnrichedSearchResult;
 import com.albunyaan.tube.dto.SearchPageResponse;
 import com.albunyaan.tube.service.YouTubeService;
 import com.google.api.services.youtube.model.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -21,6 +23,8 @@ import java.util.List;
 @RequestMapping("/api/admin/youtube")
 @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
 public class YouTubeSearchController {
+
+    private static final Logger logger = LoggerFactory.getLogger(YouTubeSearchController.class);
 
     private final YouTubeService youtubeService;
     private final com.albunyaan.tube.repository.ChannelRepository channelRepository;
@@ -97,7 +101,8 @@ public class YouTubeSearchController {
                     if (channelRepository.findByYoutubeId(ytId).isPresent()) {
                         existingChannels.add(ytId);
                     }
-                } catch (Exception ignored) {
+                } catch (Exception e) {
+                    logger.warn("Failed to check channel existence for {}: {}", ytId, e.getMessage());
                 }
             }
 
@@ -107,7 +112,8 @@ public class YouTubeSearchController {
                     if (playlistRepository.findByYoutubeId(ytId).isPresent()) {
                         existingPlaylists.add(ytId);
                     }
-                } catch (Exception ignored) {
+                } catch (Exception e) {
+                    logger.warn("Failed to check playlist existence for {}: {}", ytId, e.getMessage());
                 }
             }
 
@@ -117,7 +123,8 @@ public class YouTubeSearchController {
                     if (videoRepository.findByYoutubeId(ytId).isPresent()) {
                         existingVideos.add(ytId);
                     }
-                } catch (Exception ignored) {
+                } catch (Exception e) {
+                    logger.warn("Failed to check video existence for {}: {}", ytId, e.getMessage());
                 }
             }
 
@@ -344,3 +351,4 @@ public class YouTubeSearchController {
         }
     }
 }
+

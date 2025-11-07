@@ -21,8 +21,10 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Controller for bulk import/export of content (channels, playlists, videos, categories).
@@ -214,7 +216,8 @@ public class ImportExportController {
             );
         }
 
-        if (!file.getOriginalFilename().endsWith(".json")) {
+        String originalFilename = file.getOriginalFilename();
+        if (originalFilename == null || !originalFilename.toLowerCase(Locale.ROOT).endsWith(".json")) {
             return ResponseEntity.badRequest().body(
                 ImportResponse.error("Only JSON files are supported")
             );
@@ -250,7 +253,8 @@ public class ImportExportController {
             );
         }
 
-        if (!file.getOriginalFilename().endsWith(".json")) {
+        String originalFilename = file.getOriginalFilename();
+        if (originalFilename == null || !originalFilename.toLowerCase(Locale.ROOT).endsWith(".json")) {
             return ResponseEntity.badRequest().body(
                 ImportResponse.error("Only JSON files are supported")
             );
@@ -285,7 +289,7 @@ public class ImportExportController {
             @RequestParam(defaultValue = "true") boolean includePlaylists,
             @RequestParam(defaultValue = "true") boolean includeVideos,
             @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws IOException {
+    ) throws IOException, ExecutionException, InterruptedException, TimeoutException {
 
         SimpleExportResponse export = simpleExportService.exportSimpleFormat(
             includeChannels,
@@ -325,7 +329,8 @@ public class ImportExportController {
             );
         }
 
-        if (!file.getOriginalFilename().endsWith(".json")) {
+        String originalFilename = file.getOriginalFilename();
+        if (originalFilename == null || !originalFilename.toLowerCase(Locale.ROOT).endsWith(".json")) {
             return ResponseEntity.badRequest().body(
                 SimpleImportResponse.error("Only JSON files are supported")
             );
@@ -376,7 +381,8 @@ public class ImportExportController {
             );
         }
 
-        if (!file.getOriginalFilename().endsWith(".json")) {
+        String originalFilename = file.getOriginalFilename();
+        if (originalFilename == null || !originalFilename.toLowerCase(Locale.ROOT).endsWith(".json")) {
             return ResponseEntity.badRequest().body(
                 SimpleImportResponse.error("Only JSON files are supported")
             );
@@ -407,3 +413,4 @@ public class ImportExportController {
         return ResponseEntity.ok(validation);
     }
 }
+

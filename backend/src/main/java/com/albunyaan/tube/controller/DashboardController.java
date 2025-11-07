@@ -50,29 +50,19 @@ public class DashboardController {
     @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
     public ResponseEntity<DashboardMetricsResponse> getDashboardMetrics(
             @RequestParam(required = false, defaultValue = "LAST_7_DAYS") String timeframe
-    ) throws ExecutionException, InterruptedException {
+    ) throws Exception {
 
-        // Count totals
-        long totalCategories = categoryRepository.findAll().size();
-        long totalChannels = channelRepository.findAll().size();
-        long totalUsers = userRepository.findAll().size();
+        // Count totals - using optimized count queries
+        long totalCategories = categoryRepository.count();
+        long totalChannels = channelRepository.countAll();
+        long totalUsers = userRepository.countAll();
 
-        // Count by status
-        List<Channel> allChannels = channelRepository.findAll();
-        long pendingChannels = allChannels.stream()
-                .filter(ch -> "PENDING".equalsIgnoreCase(ch.getStatus()))
-                .count();
-        long approvedChannels = allChannels.stream()
-                .filter(ch -> "APPROVED".equalsIgnoreCase(ch.getStatus()))
-                .count();
+        // Count by status - using database-level queries instead of loading all channels
+        long pendingChannels = channelRepository.countByStatus("PENDING");
+        long approvedChannels = channelRepository.countByStatus("APPROVED");
 
-        // Count moderators (users with MODERATOR or ADMIN role)
-        long totalModerators = userRepository.findAll().stream()
-                .filter(user -> {
-                    String role = user.getRole();
-                    return "ADMIN".equalsIgnoreCase(role) || "MODERATOR".equalsIgnoreCase(role);
-                })
-                .count();
+        // Count moderators - using optimized query
+        long totalModerators = userRepository.countModerators();
 
         // Create metrics in the expected frontend format
         DashboardMetricsData data = new DashboardMetricsData();
@@ -161,10 +151,12 @@ public class DashboardController {
                     CategoryStats categoryStats = stats.get(categoryId);
                     categoryStats.totalChannels++;
 
-                    if ("approved".equals(channel.getStatus())) {
-                        categoryStats.approvedChannels++;
-                    } else if ("pending".equals(channel.getStatus())) {
-                        categoryStats.pendingChannels++;
+                    if (channel.getStatus() != null) {
+                        if ("APPROVED".equalsIgnoreCase(channel.getStatus())) {
+                            categoryStats.approvedChannels++;
+                        } else if ("PENDING".equalsIgnoreCase(channel.getStatus())) {
+                            categoryStats.pendingChannels++;
+                        }
                     }
                 }
             }
@@ -257,3 +249,4 @@ public class DashboardController {
         public int pendingChannels = 0;
     }
 }
+

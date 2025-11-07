@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 
 /**
  * FIREBASE-MIGRATE-04: User Management Controller
@@ -44,9 +45,17 @@ public class UserController {
      */
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<List<User>> getAllUsers() throws ExecutionException, InterruptedException {
-        List<User> users = userRepository.findAll();
-        return ResponseEntity.ok(users);
+    public ResponseEntity<List<User>> getAllUsers() {
+        try {
+            List<User> users = userRepository.findAll();
+            return ResponseEntity.ok(users);
+        } catch (TimeoutException e) {
+            log.error("Timeout while fetching all users", e);
+            return ResponseEntity.status(HttpStatus.GATEWAY_TIMEOUT).build();
+        } catch (ExecutionException | InterruptedException e) {
+            log.error("Error fetching all users", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
     }
 
     /**
@@ -54,11 +63,18 @@ public class UserController {
      */
     @GetMapping("/{uid}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<User> getUserByUid(@PathVariable String uid)
-            throws ExecutionException, InterruptedException {
-        return userRepository.findByUid(uid)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+    public ResponseEntity<User> getUserByUid(@PathVariable String uid) {
+        try {
+            return userRepository.findByUid(uid)
+                    .map(ResponseEntity::ok)
+                    .orElse(ResponseEntity.notFound().build());
+        } catch (TimeoutException e) {
+            log.error("Timeout while fetching user by UID: {}", uid, e);
+            return ResponseEntity.status(HttpStatus.GATEWAY_TIMEOUT).build();
+        } catch (ExecutionException | InterruptedException e) {
+            log.error("Error fetching user by UID: {}", uid, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
     }
 
     /**
@@ -66,10 +82,17 @@ public class UserController {
      */
     @GetMapping("/role/{role}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<List<User>> getUsersByRole(@PathVariable String role)
-            throws ExecutionException, InterruptedException {
-        List<User> users = userRepository.findByRole(role);
-        return ResponseEntity.ok(users);
+    public ResponseEntity<List<User>> getUsersByRole(@PathVariable String role) {
+        try {
+            List<User> users = userRepository.findByRole(role);
+            return ResponseEntity.ok(users);
+        } catch (TimeoutException e) {
+            log.error("Timeout while fetching users by role: {}", role, e);
+            return ResponseEntity.status(HttpStatus.GATEWAY_TIMEOUT).build();
+        } catch (ExecutionException | InterruptedException e) {
+            log.error("Error fetching users by role: {}", role, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
     }
 
     /**
@@ -184,7 +207,7 @@ public class UserController {
     public ResponseEntity<Void> sendPasswordReset(
             @PathVariable String uid,
             @AuthenticationPrincipal FirebaseUserDetails currentUser
-    ) throws ExecutionException, InterruptedException {
+    ) {
         try {
             User user = userRepository.findByUid(uid).orElse(null);
             if (user == null) {
@@ -197,7 +220,14 @@ public class UserController {
                 log.error("Failed to audit user_password_reset for uid={}", uid, auditEx);
             }
             return ResponseEntity.ok().build();
+        } catch (TimeoutException e) {
+            log.error("Timeout while sending password reset for uid: {}", uid, e);
+            return ResponseEntity.status(HttpStatus.GATEWAY_TIMEOUT).build();
+        } catch (ExecutionException | InterruptedException e) {
+            log.error("Error sending password reset for uid: {}", uid, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         } catch (FirebaseAuthException e) {
+            log.error("Firebase auth error for password reset, uid: {}", uid, e);
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
         }
     }
@@ -219,3 +249,4 @@ public class UserController {
         public String status; // "active" | "inactive"
     }
 }
+

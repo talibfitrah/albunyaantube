@@ -59,12 +59,14 @@ public class SimpleExportService {
      * @param includePlaylists Whether to include playlists
      * @param includeVideos Whether to include videos
      * @return SimpleExportResponse with 3-object array structure
+     * @throws java.util.concurrent.TimeoutException if export operation times out
+     * @throws RuntimeException if export operation fails due to execution or interruption errors
      */
     public SimpleExportResponse exportSimpleFormat(
             boolean includeChannels,
             boolean includePlaylists,
             boolean includeVideos
-    ) {
+    ) throws java.util.concurrent.TimeoutException {
         SimpleExportResponse response = new SimpleExportResponse();
 
         try {
@@ -83,8 +85,16 @@ public class SimpleExportService {
                 exportVideos(response);
             }
 
-        } catch (Exception e) {
+        } catch (java.util.concurrent.TimeoutException e) {
+            logger.error("Timed out exporting simple format", e);
+            throw e;
+        } catch (InterruptedException e) {
+            logger.error("Export interrupted: {}", e.getMessage(), e);
+            Thread.currentThread().interrupt(); // Restore interrupted status
+            throw new RuntimeException("Export operation was interrupted", e);
+        } catch (ExecutionException e) {
             logger.error("Failed to export simple format: {}", e.getMessage(), e);
+            throw new RuntimeException("Export operation failed", e);
         }
 
         return response;
@@ -93,12 +103,12 @@ public class SimpleExportService {
     /**
      * Export approved channels
      */
-    private void exportChannels(SimpleExportResponse response) throws ExecutionException, InterruptedException {
+    private void exportChannels(SimpleExportResponse response) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Query only APPROVED channels
         QuerySnapshot querySnapshot = firestore.collection("channels")
                 .whereEqualTo("status", "APPROVED")
                 .get()
-                .get();
+                .get(30, java.util.concurrent.TimeUnit.SECONDS);
 
         List<Channel> channels = querySnapshot.toObjects(Channel.class);
 
@@ -120,12 +130,12 @@ public class SimpleExportService {
     /**
      * Export approved playlists
      */
-    private void exportPlaylists(SimpleExportResponse response) throws ExecutionException, InterruptedException {
+    private void exportPlaylists(SimpleExportResponse response) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Query only APPROVED playlists
         QuerySnapshot querySnapshot = firestore.collection("playlists")
                 .whereEqualTo("status", "APPROVED")
                 .get()
-                .get();
+                .get(30, java.util.concurrent.TimeUnit.SECONDS);
 
         List<Playlist> playlists = querySnapshot.toObjects(Playlist.class);
 
@@ -147,12 +157,12 @@ public class SimpleExportService {
     /**
      * Export approved videos
      */
-    private void exportVideos(SimpleExportResponse response) throws ExecutionException, InterruptedException {
+    private void exportVideos(SimpleExportResponse response) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Query only APPROVED videos
         QuerySnapshot querySnapshot = firestore.collection("videos")
                 .whereEqualTo("status", "APPROVED")
                 .get()
-                .get();
+                .get(30, java.util.concurrent.TimeUnit.SECONDS);
 
         List<Video> videos = querySnapshot.toObjects(Video.class);
 
@@ -171,3 +181,4 @@ public class SimpleExportService {
         }
     }
 }
+

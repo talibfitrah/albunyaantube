@@ -62,3 +62,4 @@ public class DownloadManifestDto {
     public List<StreamOption> getAudioStreams() { return audioStreams; }
     public void setAudioStreams(List<StreamOption> audioStreams) { this.audioStreams = audioStreams; }
 }
+

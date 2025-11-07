@@ -64,3 +64,4 @@ public abstract class BaseIntegrationTest {
         return FirestoreTestHelper.documentExists(firestore, collectionName, documentId);
     }
 }
+

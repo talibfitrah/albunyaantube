@@ -18,7 +18,7 @@ import java.util.concurrent.ExecutionException;
  */
 @RestController
 @RequestMapping("/api/v1")
-@CrossOrigin(origins = "*")
+@CrossOrigin(origins = "${app.security.cors.allowed-origins}")
 public class PublicContentController {
 
     private final PublicContentService contentService;
@@ -111,3 +111,4 @@ public class PublicContentController {
         return ResponseEntity.ok(contentService.search(q, type, validLimit));
     }
 }
+

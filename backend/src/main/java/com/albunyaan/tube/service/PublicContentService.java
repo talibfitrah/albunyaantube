@@ -3,6 +3,7 @@ package com.albunyaan.tube.service;
 import com.albunyaan.tube.dto.CategoryDto;
 import com.albunyaan.tube.dto.ContentItemDto;
 import com.albunyaan.tube.dto.CursorPageDto;
+import com.albunyaan.tube.exception.ResourceNotFoundException;
 import com.albunyaan.tube.model.Category;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
@@ -144,11 +145,45 @@ public class PublicContentService {
             videos = videoRepository.findAllByOrderByUploadedAtDesc();
         }
 
-        return videos.stream()
+        // Apply filters
+        var stream = videos.stream()
                 .filter(this::isApproved)
                 .filter(this::isAvailable)
                 .filter(v -> matchesLengthFilter(v, length))
-                .filter(v -> matchesDateFilter(v, date))
+                .filter(v -> matchesDateFilter(v, date));
+
+        // Apply sorting based on sort parameter
+        if (sort != null && !sort.isBlank()) {
+            switch (sort.toUpperCase()) {
+                case "OLDEST":
+                    stream = stream.sorted((v1, v2) -> {
+                        if (v1.getUploadedAt() == null) return 1;
+                        if (v2.getUploadedAt() == null) return -1;
+                        return v1.getUploadedAt().compareTo(v2.getUploadedAt());
+                    });
+                    break;
+                case "POPULAR":
+                    stream = stream.sorted((v1, v2) -> {
+                        Long views1 = v1.getViewCount() != null ? v1.getViewCount() : 0L;
+                        Long views2 = v2.getViewCount() != null ? v2.getViewCount() : 0L;
+                        return views2.compareTo(views1); // Descending
+                    });
+                    break;
+                case "ALPHABETICAL":
+                    stream = stream.sorted((v1, v2) -> {
+                        String title1 = v1.getTitle() != null ? v1.getTitle() : "";
+                        String title2 = v2.getTitle() != null ? v2.getTitle() : "";
+                        return title1.compareToIgnoreCase(title2);
+                    });
+                    break;
+                case "NEWEST":
+                default:
+                    // Already sorted by uploadedAt descending from repository
+                    break;
+            }
+        }
+
+        return stream
                 .limit(limit)
                 .map(this::toDto)
                 .collect(Collectors.toList());
@@ -171,28 +206,40 @@ public class PublicContentService {
 
     public Object getChannelDetails(String channelId) throws ExecutionException, InterruptedException {
         return channelRepository.findByYoutubeId(channelId)
-                .orElseThrow(() -> new RuntimeException("Channel not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Channel", channelId));
     }
 
     public Object getPlaylistDetails(String playlistId) throws ExecutionException, InterruptedException {
         return playlistRepository.findByYoutubeId(playlistId)
-                .orElseThrow(() -> new RuntimeException("Playlist not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Playlist", playlistId));
     }
 
     public List<ContentItemDto> search(String query, String type, int limit) throws ExecutionException, InterruptedException {
         List<ContentItemDto> results = new ArrayList<>();
 
-        if (type == null || type.equalsIgnoreCase("CHANNELS")) {
+        if (type == null) {
+            // When searching all types, distribute limit evenly across content types
+            int limitPerType = limit / 3;
+
+            // Add channels and playlists first
+            results.addAll(searchChannels(query, limitPerType));
+            results.addAll(searchPlaylists(query, limitPerType));
+
+            // Calculate remaining space and fill with videos in a single call
+            // This ensures we never get duplicate videos from calling searchVideos twice
+            int remaining = limit - results.size();
+            if (remaining > 0) {
+                results.addAll(searchVideos(query, remaining));
+            }
+        } else if (type.equalsIgnoreCase("CHANNELS")) {
             results.addAll(searchChannels(query, limit));
-        }
-        if (type == null || type.equalsIgnoreCase("PLAYLISTS")) {
+        } else if (type.equalsIgnoreCase("PLAYLISTS")) {
             results.addAll(searchPlaylists(query, limit));
-        }
-        if (type == null || type.equalsIgnoreCase("VIDEOS")) {
+        } else if (type.equalsIgnoreCase("VIDEOS")) {
             results.addAll(searchVideos(query, limit));
         }
 
-        return results.stream().limit(limit).collect(Collectors.toList());
+        return results;
     }
 
     private List<ContentItemDto> searchChannels(String query, int limit) throws ExecutionException, InterruptedException {
@@ -327,3 +374,4 @@ public class PublicContentService {
         return Base64.getEncoder().encodeToString(String.valueOf(offset).getBytes());
     }
 }
+

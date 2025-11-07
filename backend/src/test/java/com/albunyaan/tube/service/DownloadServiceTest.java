@@ -92,3 +92,4 @@ class DownloadServiceTest {
         verify(firestore, times(1)).collection("download_events");
     }
 }
+

@@ -136,3 +136,4 @@ public class FirebaseConfig {
         return optionsBuilder.build().getService();
     }
 }
+

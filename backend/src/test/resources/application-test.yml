@@ -41,3 +41,4 @@ logging:
   level:
     com.albunyaan.tube: DEBUG
     com.google.cloud.firestore: WARN
+

@@ -79,3 +79,10 @@ app:
       email: admin@albunyaan.tube
       password: ChangeMe!123
       display-name: Initial Admin
+download:
+  token:
+    # SECURITY: Secret key for generating download tokens
+    # Set via environment variable in production: DOWNLOAD_TOKEN_SECRET_KEY
+    # NEVER commit production secrets to version control
+    secret-key: ${DOWNLOAD_TOKEN_SECRET_KEY:albunyaan-download-secret-key-change-in-production}
+

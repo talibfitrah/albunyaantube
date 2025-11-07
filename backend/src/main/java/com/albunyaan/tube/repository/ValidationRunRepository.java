@@ -156,3 +156,4 @@ public class ValidationRunRepository {
         return runs.isEmpty() ? Optional.empty() : Optional.of(runs.get(0));
     }
 }
+

@@ -40,3 +40,4 @@ class ListingSweepSimulation extends Simulation {
     listPlaylists.inject(rampUsers(userCount).during(rampSeconds.seconds))
   ).protocols(httpProtocol)
 }
+

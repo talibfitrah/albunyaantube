@@ -97,3 +97,4 @@ class PlayerControllerTest {
         verify(playerService).getNextUpRecommendations("video-123", "user-456");
     }
 }
+

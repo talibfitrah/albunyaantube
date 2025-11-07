@@ -375,6 +375,9 @@ public class FirestoreDataSeeder implements CommandLineRunner {
 
     private void cleanupLegacySeedData() throws ExecutionException, InterruptedException {
         removeLegacyCategories();
+        removeLegacyChannels();
+        removeLegacyPlaylists();
+        removeLegacyVideos();
     }
 
     private void removeLegacyCategories() throws ExecutionException, InterruptedException {
@@ -399,6 +402,81 @@ public class FirestoreDataSeeder implements CommandLineRunner {
 
         if (removed > 0) {
             log.info("🧼 Removed {} legacy categories created by previous seed runs", removed);
+        }
+    }
+
+    private void removeLegacyChannels() throws ExecutionException, InterruptedException {
+        List<Channel> existingChannels = channelRepository.findAll();
+        Set<String> targetIds = CHANNEL_SEEDS.stream()
+                .map(ChannelSeed::id)
+                .collect(Collectors.toSet());
+        int removed = 0;
+
+        for (Channel channel : existingChannels) {
+            if (targetIds.contains(channel.getId())) {
+                continue;
+            }
+
+            String submittedBy = channel.getSubmittedBy();
+            if (submittedBy == null || SEED_USER.equals(submittedBy) || "system".equalsIgnoreCase(submittedBy)) {
+                log.info("🧹 Removing legacy seed channel: {} ({})", channel.getName(), channel.getId());
+                channelRepository.deleteById(channel.getId());
+                removed++;
+            }
+        }
+
+        if (removed > 0) {
+            log.info("🧼 Removed {} legacy channels created by previous seed runs", removed);
+        }
+    }
+
+    private void removeLegacyPlaylists() throws ExecutionException, InterruptedException {
+        List<Playlist> existingPlaylists = playlistRepository.findAll();
+        Set<String> targetIds = PLAYLIST_SEEDS.stream()
+                .map(PlaylistSeed::id)
+                .collect(Collectors.toSet());
+        int removed = 0;
+
+        for (Playlist playlist : existingPlaylists) {
+            if (targetIds.contains(playlist.getId())) {
+                continue;
+            }
+
+            String submittedBy = playlist.getSubmittedBy();
+            if (submittedBy == null || SEED_USER.equals(submittedBy) || "system".equalsIgnoreCase(submittedBy)) {
+                log.info("🧹 Removing legacy seed playlist: {} ({})", playlist.getTitle(), playlist.getId());
+                playlistRepository.deleteById(playlist.getId());
+                removed++;
+            }
+        }
+
+        if (removed > 0) {
+            log.info("🧼 Removed {} legacy playlists created by previous seed runs", removed);
+        }
+    }
+
+    private void removeLegacyVideos() throws ExecutionException, InterruptedException {
+        List<Video> existingVideos = videoRepository.findAll();
+        Set<String> targetChannelIds = CHANNEL_SEEDS.stream()
+                .map(ChannelSeed::id)
+                .collect(Collectors.toSet());
+        int removed = 0;
+
+        for (Video video : existingVideos) {
+            // Remove videos that were submitted by seed script and don't belong to current seed channels
+            String submittedBy = video.getSubmittedBy();
+            if (submittedBy == null || SEED_USER.equals(submittedBy) || "system".equalsIgnoreCase(submittedBy)) {
+                // Check if video belongs to a current seed channel
+                if (!targetChannelIds.contains(video.getChannelId())) {
+                    log.info("🧹 Removing legacy seed video: {} ({})", video.getTitle(), video.getId());
+                    videoRepository.deleteById(video.getId());
+                    removed++;
+                }
+            }
+        }
+
+        if (removed > 0) {
+            log.info("🧼 Removed {} legacy videos created by previous seed runs", removed);
         }
     }
 
@@ -640,3 +718,4 @@ public class FirestoreDataSeeder implements CommandLineRunner {
         }
     }
 }
+

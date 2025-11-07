@@ -126,6 +126,22 @@ public class CategoryController {
             return ResponseEntity.notFound().build();
         }
 
+        // Validate parent category if specified
+        if (category.getParentCategoryId() != null) {
+            // Check if parent category exists
+            if (!categoryRepository.existsById(category.getParentCategoryId())) {
+                return ResponseEntity.badRequest().build();
+            }
+            // Prevent self-reference
+            if (category.getParentCategoryId().equals(id)) {
+                return ResponseEntity.badRequest().build();
+            }
+            // Prevent circular reference (moving category under its own descendant)
+            if (isDescendant(id, category.getParentCategoryId())) {
+                return ResponseEntity.badRequest().build();
+            }
+        }
+
         existing.setName(category.getName());
         existing.setParentCategoryId(category.getParentCategoryId());
         existing.setIcon(category.getIcon());
@@ -163,4 +179,31 @@ public class CategoryController {
         auditLogService.log("category_deleted", "category", id, user);
         return ResponseEntity.noContent().build();
     }
+
+    /**
+     * Check if categoryId is a descendant of potentialAncestorId
+     * Used to prevent circular references in category hierarchy
+     */
+    private boolean isDescendant(String categoryId, String potentialAncestorId) throws ExecutionException, InterruptedException {
+        String currentId = potentialAncestorId;
+
+        // Walk up the parent chain from potentialAncestorId
+        while (currentId != null) {
+            if (currentId.equals(categoryId)) {
+                // Found categoryId in the ancestor chain - this would create a cycle
+                return true;
+            }
+
+            // Get parent of current category
+            Category category = categoryRepository.findById(currentId).orElse(null);
+            if (category == null) {
+                break;
+            }
+
+            currentId = category.getParentCategoryId();
+        }
+
+        return false;
+    }
 }
+

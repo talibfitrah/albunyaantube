@@ -319,3 +319,4 @@ class AuthServiceTest {
         verify(firebaseAuth).getUserByEmail("nonexistent@example.com");
     }
 }
+

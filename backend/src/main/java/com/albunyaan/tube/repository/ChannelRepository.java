@@ -2,6 +2,8 @@ package com.albunyaan.tube.repository;
 
 import com.albunyaan.tube.model.Channel;
 import com.google.api.core.ApiFuture;
+import com.google.cloud.firestore.AggregateQuery;
+import com.google.cloud.firestore.AggregateQuerySnapshot;
 import com.google.cloud.firestore.CollectionReference;
 import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.Firestore;
@@ -13,6 +15,8 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * FIREBASE-MIGRATE-03: Channel Repository (Firestore)
@@ -128,4 +132,25 @@ public class ChannelRepository {
 
         return querySnapshot.get().toObjects(Channel.class);
     }
+
+    /**
+     * Count all channels using server-side aggregation
+     */
+    public long countAll() throws ExecutionException, InterruptedException, TimeoutException {
+        AggregateQuery countQuery = getCollection().count();
+        AggregateQuerySnapshot snapshot = countQuery.get().get(5, TimeUnit.SECONDS);
+        return snapshot.getCount();
+    }
+
+    /**
+     * Count channels by status using server-side aggregation
+     */
+    public long countByStatus(String status) throws ExecutionException, InterruptedException, TimeoutException {
+        AggregateQuery countQuery = getCollection()
+                .whereEqualTo("status", status)
+                .count();
+        AggregateQuerySnapshot snapshot = countQuery.get().get(5, TimeUnit.SECONDS);
+        return snapshot.getCount();
+    }
 }
+

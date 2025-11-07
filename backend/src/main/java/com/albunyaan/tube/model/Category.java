@@ -205,3 +205,4 @@ public class Category {
         this.updatedAt = Timestamp.now();
     }
 }
+

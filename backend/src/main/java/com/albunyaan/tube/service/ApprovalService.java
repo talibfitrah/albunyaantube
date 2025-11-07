@@ -15,6 +15,8 @@ import org.springframework.stereotype.Service;
 
 import java.util.*;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * BACKEND-APPR-01: Approval Service
@@ -25,6 +27,7 @@ import java.util.concurrent.ExecutionException;
 public class ApprovalService {
 
     private static final Logger log = LoggerFactory.getLogger(ApprovalService.class);
+    private static final int QUERY_TIMEOUT_SECONDS = 5;
 
     private final Firestore firestore;
     private final ChannelRepository channelRepository;
@@ -51,7 +54,7 @@ public class ApprovalService {
             String type,
             String category,
             Integer limit,
-            String cursor) throws ExecutionException, InterruptedException {
+            String cursor) throws ExecutionException, InterruptedException, TimeoutException {
 
         List<PendingApprovalDto> items = new ArrayList<>();
         String nextCursor = null;
@@ -140,19 +143,26 @@ public class ApprovalService {
     // Private helper methods
 
     private List<Channel> queryPendingChannels(String category, int limit, String cursor)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, TimeoutException {
         Query query = firestore.collection("channels")
                 .whereEqualTo("status", "PENDING")
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .limit(limit);
 
-        if (cursor != null) {
-            // In a real implementation, we'd use startAfter with the document snapshot
-            // For simplicity, we'll skip this for now
+        if (cursor != null && !cursor.isEmpty()) {
+            // Add timeout to cursor resolution
+            var cursorSnapshot = firestore.collection("channels").document(cursor)
+                    .get().get(QUERY_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            if (cursorSnapshot.exists()) {
+                query = query.startAfter(cursorSnapshot);
+            } else {
+                // Invalid cursor - document not found
+                throw new IllegalArgumentException("Invalid cursor: channel document '" + cursor + "' not found");
+            }
         }
 
         List<Channel> channels = new ArrayList<>();
-        var snapshot = query.get().get();
+        var snapshot = query.get().get(QUERY_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         for (QueryDocumentSnapshot doc : snapshot.getDocuments()) {
             Channel channel = doc.toObject(Channel.class);
             channel.setId(doc.getId());
@@ -171,14 +181,26 @@ public class ApprovalService {
     }
 
     private List<Playlist> queryPendingPlaylists(String category, int limit, String cursor)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, TimeoutException {
         Query query = firestore.collection("playlists")
                 .whereEqualTo("status", "PENDING")
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .limit(limit);
 
+        if (cursor != null && !cursor.isEmpty()) {
+            // Add timeout to cursor resolution
+            var cursorSnapshot = firestore.collection("playlists").document(cursor)
+                    .get().get(QUERY_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            if (cursorSnapshot.exists()) {
+                query = query.startAfter(cursorSnapshot);
+            } else {
+                // Invalid cursor - document not found
+                throw new IllegalArgumentException("Invalid cursor: playlist document '" + cursor + "' not found");
+            }
+        }
+
         List<Playlist> playlists = new ArrayList<>();
-        var snapshot = query.get().get();
+        var snapshot = query.get().get(QUERY_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         for (QueryDocumentSnapshot doc : snapshot.getDocuments()) {
             Playlist playlist = doc.toObject(Playlist.class);
             playlist.setId(doc.getId());
@@ -398,3 +420,4 @@ public class ApprovalService {
         return String.valueOf(number);
     }
 }
+
