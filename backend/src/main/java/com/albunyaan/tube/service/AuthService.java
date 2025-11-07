@@ -61,7 +61,7 @@ public class AuthService {
 
             if (existingUser == null) {
                 logger.info("Creating initial admin user: {}", initialAdminEmail);
-                createUser(initialAdminEmail, initialAdminPassword, initialAdminDisplayName, "admin", null);
+                createUser(initialAdminEmail, initialAdminPassword, initialAdminDisplayName, "ADMIN", null);
                 logger.info("Initial admin user created successfully");
             } else {
                 logger.info("Initial admin user already exists: {}", initialAdminEmail);
@@ -90,7 +90,7 @@ public class AuthService {
 
         // Set custom claims for role-based access
         Map<String, Object> claims = new HashMap<>();
-        claims.put("role", role);
+        claims.put("role", role != null ? role.toUpperCase() : null);
         firebaseAuth.setCustomUserClaims(uid, claims);
 
         // Create user document in Firestore
@@ -110,7 +110,7 @@ public class AuthService {
 
         // Update custom claims in Firebase
         Map<String, Object> claims = new HashMap<>();
-        claims.put("role", newRole);
+        claims.put("role", newRole != null ? newRole.toUpperCase() : null);
         firebaseAuth.setCustomUserClaims(uid, claims);
 
         // Update Firestore document

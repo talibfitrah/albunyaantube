@@ -11,6 +11,7 @@ import com.albunyaan.tube.repository.CategoryRepository;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
+import com.google.cloud.Timestamp;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -143,9 +144,11 @@ public class ImportExportService {
                         category.setCreatedAt(existing.getCreatedAt());
                         category.setCreatedBy(existing.getCreatedBy());
                         category.setUpdatedBy(importedBy);
+                        category.setUpdatedAt(Timestamp.now());
                     } else {
                         // OVERWRITE or new entity
                         category.setUpdatedBy(importedBy);
+                        category.setUpdatedAt(Timestamp.now());
                         if (!existingOpt.isPresent()) {
                             category.setCreatedBy(importedBy);
                         }

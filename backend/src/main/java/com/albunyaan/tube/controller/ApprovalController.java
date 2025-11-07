@@ -10,6 +10,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 
 /**
  * BACKEND-APPR-01: Approval Controller
@@ -46,7 +47,8 @@ public class ApprovalController {
             @RequestParam(required = false) String category,
             @RequestParam(required = false) Integer limit,
             @RequestParam(required = false) String cursor,
-            @AuthenticationPrincipal FirebaseUserDetails user) {
+            @AuthenticationPrincipal FirebaseUserDetails user)
+            throws ExecutionException, InterruptedException, TimeoutException {
 
         try {
             log.debug("GET /pending - type={}, category={}, limit={}, cursor={}, user={}",
@@ -77,7 +79,8 @@ public class ApprovalController {
     public ResponseEntity<ApprovalResponseDto> approve(
             @PathVariable String id,
             @RequestBody ApprovalRequestDto request,
-            @AuthenticationPrincipal FirebaseUserDetails user) {
+            @AuthenticationPrincipal FirebaseUserDetails user)
+            throws ExecutionException, InterruptedException, TimeoutException {
 
         try {
             log.debug("POST /approve - id={}, user={}", id, user.getUid());
@@ -110,7 +113,8 @@ public class ApprovalController {
     public ResponseEntity<ApprovalResponseDto> reject(
             @PathVariable String id,
             @RequestBody RejectionRequestDto request,
-            @AuthenticationPrincipal FirebaseUserDetails user) {
+            @AuthenticationPrincipal FirebaseUserDetails user)
+            throws ExecutionException, InterruptedException, TimeoutException {
 
         try {
             log.debug("POST /reject - id={}, reason={}, user={}",
