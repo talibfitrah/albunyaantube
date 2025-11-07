@@ -1,9 +1,12 @@
 package com.albunyaan.tube.controller;
 
+import com.albunyaan.tube.model.Channel;
+import com.albunyaan.tube.model.ValidationRun;
 import com.albunyaan.tube.repository.CategoryRepository;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.UserRepository;
-import com.albunyaan.tube.model.Channel;
+import com.albunyaan.tube.service.VideoValidationService;
+import com.google.cloud.Timestamp;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -26,15 +29,18 @@ public class DashboardController {
     private final CategoryRepository categoryRepository;
     private final ChannelRepository channelRepository;
     private final UserRepository userRepository;
+    private final VideoValidationService videoValidationService;
 
     public DashboardController(
             CategoryRepository categoryRepository,
             ChannelRepository channelRepository,
-            UserRepository userRepository
+            UserRepository userRepository,
+            VideoValidationService videoValidationService
     ) {
         this.categoryRepository = categoryRepository;
         this.channelRepository = channelRepository;
         this.userRepository = userRepository;
+        this.videoValidationService = videoValidationService;
     }
 
     /**
@@ -91,6 +97,24 @@ public class DashboardController {
                 (int) totalModerators, // TODO: Calculate previous period value
                 "FLAT"
         );
+
+        // Video validation metric
+        try {
+            ValidationRun latestRun = videoValidationService.getLatestValidationRun();
+            if (latestRun != null) {
+                data.videoValidation = new ValidationMetric(
+                        latestRun.getStartedAt(),
+                        latestRun.getVideosChecked(),
+                        latestRun.getVideosMarkedUnavailable(),
+                        latestRun.getErrorCount(),
+                        latestRun.getStatus()
+                );
+            } else {
+                data.videoValidation = new ValidationMetric(null, 0, 0, 0, "NEVER_RUN");
+            }
+        } catch (Exception e) {
+            data.videoValidation = new ValidationMetric(null, 0, 0, 0, "ERROR");
+        }
 
         // Create metadata
         DashboardMetricsMeta meta = new DashboardMetricsMeta();
@@ -160,6 +184,7 @@ public class DashboardController {
         public ComparisonMetric pendingModeration;
         public CategoryMetric categories;
         public ComparisonMetric moderators;
+        public ValidationMetric videoValidation;
 
         public DashboardMetricsData() {
         }
@@ -188,6 +213,22 @@ public class DashboardController {
             this.total = total;
             this.newThisPeriod = newThisPeriod;
             this.previousTotal = previousTotal;
+        }
+    }
+
+    public static class ValidationMetric {
+        public Timestamp lastRunAt;
+        public int videosChecked;
+        public int videosMarkedUnavailable;
+        public int validationErrors;
+        public String status;
+
+        public ValidationMetric(Timestamp lastRunAt, int checked, int markedUnavailable, int errors, String status) {
+            this.lastRunAt = lastRunAt;
+            this.videosChecked = checked;
+            this.videosMarkedUnavailable = markedUnavailable;
+            this.validationErrors = errors;
+            this.status = status;
         }
     }
 

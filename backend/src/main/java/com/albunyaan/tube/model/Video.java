@@ -49,6 +49,28 @@ public class Video {
     private String status;
 
     /**
+     * Source tracking - where this video came from
+     */
+    private SourceType sourceType;
+
+    /**
+     * Source ID - Internal Channel/Playlist document ID
+     * Null for standalone videos
+     */
+    private String sourceId;
+
+    /**
+     * Validation status - whether the video still exists on YouTube
+     * Null if not yet validated
+     */
+    private ValidationStatus validationStatus;
+
+    /**
+     * Last time this video was validated against YouTube API
+     */
+    private Timestamp lastValidatedAt;
+
+    /**
      * Metadata
      */
     private Timestamp createdAt;
@@ -59,6 +81,8 @@ public class Video {
     public Video() {
         this.categoryIds = new ArrayList<>();
         this.status = "pending";
+        this.sourceType = SourceType.UNKNOWN;
+        this.validationStatus = null; // Not yet validated
         this.createdAt = Timestamp.now();
         this.updatedAt = Timestamp.now();
     }
@@ -196,6 +220,38 @@ public class Video {
 
     public void setChannelTitle(String channelTitle) {
         this.channelTitle = channelTitle;
+    }
+
+    public SourceType getSourceType() {
+        return sourceType;
+    }
+
+    public void setSourceType(SourceType sourceType) {
+        this.sourceType = sourceType;
+    }
+
+    public String getSourceId() {
+        return sourceId;
+    }
+
+    public void setSourceId(String sourceId) {
+        this.sourceId = sourceId;
+    }
+
+    public ValidationStatus getValidationStatus() {
+        return validationStatus;
+    }
+
+    public void setValidationStatus(ValidationStatus validationStatus) {
+        this.validationStatus = validationStatus;
+    }
+
+    public Timestamp getLastValidatedAt() {
+        return lastValidatedAt;
+    }
+
+    public void setLastValidatedAt(Timestamp lastValidatedAt) {
+        this.lastValidatedAt = lastValidatedAt;
     }
 
     public void touch() {

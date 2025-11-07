@@ -10,6 +10,7 @@ import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.albunyaan.tube.R
 import com.albunyaan.tube.ServiceLocator
+import com.albunyaan.tube.data.model.Category
 import com.albunyaan.tube.databinding.FragmentCategoriesBinding
 import kotlinx.coroutines.launch
 
@@ -99,10 +100,3 @@ class CategoriesFragment : Fragment(R.layout.fragment_categories) {
         private const val TAG = "CategoriesFragment"
     }
 }
-
-data class Category(
-    val id: String,
-    val name: String,
-    val hasSubcategories: Boolean = false,
-    val icon: String? = null // Emoji or icon identifier
-)

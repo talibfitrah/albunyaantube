@@ -6,6 +6,7 @@ import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import com.albunyaan.tube.data.model.Category
 import com.albunyaan.tube.databinding.ItemCategoryBinding
 
 class CategoryAdapter(

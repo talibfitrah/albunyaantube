@@ -13,6 +13,7 @@ const PendingApprovalsView = () => import('@/views/PendingApprovalsView.vue');
 const ContentLibraryView = () => import('@/views/ContentLibraryView.vue');
 const ExclusionsWorkspaceView = () => import('@/views/ExclusionsWorkspaceView.vue');
 const BulkImportExportView = () => import('@/views/BulkImportExportView.vue');
+const VideoValidationView = () => import('@/views/VideoValidationView.vue');
 const UsersManagementView = () => import('@/views/UsersManagementView.vue');
 const AuditLogView = () => import('@/views/AuditLogView.vue');
 const ActivityLogView = () => import('@/views/ActivityLogView.vue');
@@ -62,6 +63,12 @@ const protectedChildRoutes = [
     path: 'bulk-import-export',
     name: 'bulk-import-export',
     component: BulkImportExportView,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: 'video-validation',
+    name: 'video-validation',
+    component: VideoValidationView,
     meta: { requiresAuth: true }
   },
   {

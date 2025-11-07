@@ -4,6 +4,7 @@ import com.albunyaan.tube.data.filters.FilterState
 import com.albunyaan.tube.data.filters.PublishedDate
 import com.albunyaan.tube.data.filters.SortOption
 import com.albunyaan.tube.data.filters.VideoLength
+import com.albunyaan.tube.data.model.Category
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.model.CursorResponse
@@ -95,30 +96,32 @@ class RetrofitContentService(
         return response.results.mapNotNull { it.toModel() }
     }
 
-    override suspend fun fetchCategories(): List<com.albunyaan.tube.ui.categories.Category> {
+    override suspend fun fetchCategories(): List<Category> {
         val response = api.fetchCategories()
         // Filter to only top-level categories (those without parentId)
         val topLevelCategories = response.filter { it.parentId == null }
         return topLevelCategories.map { categoryDto ->
             // Check if this category has any subcategories
             val hasSubcategories = response.any { it.parentId == categoryDto.id }
-            com.albunyaan.tube.ui.categories.Category(
+            Category(
                 id = categoryDto.id,
                 name = categoryDto.name,
+                slug = categoryDto.slug,
                 hasSubcategories = hasSubcategories
             )
         }
     }
 
-    override suspend fun fetchSubcategories(parentId: String): List<com.albunyaan.tube.ui.categories.Category> {
+    override suspend fun fetchSubcategories(parentId: String): List<Category> {
         val response = api.fetchCategories()
         // Filter to only categories with matching parentId
         return response
             .filter { it.parentId == parentId }
             .map { categoryDto ->
-                com.albunyaan.tube.ui.categories.Category(
+                Category(
                     id = categoryDto.id,
                     name = categoryDto.name,
+                    slug = categoryDto.slug,
                     hasSubcategories = false // Subcategories don't have further children in current design
                 )
             }

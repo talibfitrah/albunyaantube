@@ -57,6 +57,7 @@ public class ImportExportController {
      * @param includeChannels Include channels in export
      * @param includePlaylists Include playlists in export
      * @param includeVideos Include videos in export
+     * @param excludeUnavailableVideos Exclude videos marked as UNAVAILABLE (default: true)
      * @param user Current authenticated user
      * @return JSON file download
      */
@@ -67,6 +68,7 @@ public class ImportExportController {
             @RequestParam(defaultValue = "true") boolean includeChannels,
             @RequestParam(defaultValue = "true") boolean includePlaylists,
             @RequestParam(defaultValue = "true") boolean includeVideos,
+            @RequestParam(defaultValue = "true") boolean excludeUnavailableVideos,
             @AuthenticationPrincipal FirebaseUserDetails user
     ) throws ExecutionException, InterruptedException, IOException {
 
@@ -75,6 +77,7 @@ public class ImportExportController {
             includeChannels,
             includePlaylists,
             includeVideos,
+            excludeUnavailableVideos,
             user.getUid()
         );
 
@@ -100,7 +103,7 @@ public class ImportExportController {
     ) throws ExecutionException, InterruptedException, IOException {
 
         ExportResponse export = importExportService.exportAll(
-            true, false, false, false, user.getUid()
+            true, false, false, false, true, user.getUid()
         );
 
         HttpHeaders headers = new HttpHeaders();
@@ -125,7 +128,7 @@ public class ImportExportController {
     ) throws ExecutionException, InterruptedException, IOException {
 
         ExportResponse export = importExportService.exportAll(
-            false, true, false, false, user.getUid()
+            false, true, false, false, true, user.getUid()
         );
 
         HttpHeaders headers = new HttpHeaders();
@@ -150,7 +153,7 @@ public class ImportExportController {
     ) throws ExecutionException, InterruptedException, IOException {
 
         ExportResponse export = importExportService.exportAll(
-            false, false, true, false, user.getUid()
+            false, false, true, false, true, user.getUid()
         );
 
         HttpHeaders headers = new HttpHeaders();
@@ -165,17 +168,19 @@ public class ImportExportController {
     /**
      * Export only videos as JSON
      *
+     * @param excludeUnavailableVideos Exclude videos marked as UNAVAILABLE (default: true)
      * @param user Current authenticated user
      * @return JSON file download
      */
     @GetMapping("/export/videos")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<byte[]> exportVideos(
+            @RequestParam(defaultValue = "true") boolean excludeUnavailableVideos,
             @AuthenticationPrincipal FirebaseUserDetails user
     ) throws ExecutionException, InterruptedException, IOException {
 
         ExportResponse export = importExportService.exportAll(
-            false, false, false, true, user.getUid()
+            false, false, false, true, excludeUnavailableVideos, user.getUid()
         );
 
         HttpHeaders headers = new HttpHeaders();
