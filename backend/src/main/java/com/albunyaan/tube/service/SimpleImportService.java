@@ -368,6 +368,8 @@ public class SimpleImportService {
                         "PLAYLIST",
                         "Operation interrupted: " + e.getMessage()
                 ));
+                // Exit immediately after interrupt - do not continue processing
+                return;
             } catch (ExecutionException e) {
                 logger.error("Failed to import playlist {}: {}", youtubeId, e.getMessage());
                 response.addResult(SimpleImportItemResult.failed(
@@ -516,6 +518,8 @@ public class SimpleImportService {
                         "VIDEO",
                         "Operation interrupted: " + e.getMessage()
                 ));
+                // Exit immediately after interrupt - do not continue processing
+                return;
             } catch (ExecutionException e) {
                 logger.error("Failed to import video {}: {}", youtubeId, e.getMessage());
                 response.addResult(SimpleImportItemResult.failed(

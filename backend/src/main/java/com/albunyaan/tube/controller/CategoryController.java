@@ -136,6 +136,10 @@ public class CategoryController {
             if (category.getParentCategoryId().equals(id)) {
                 return ResponseEntity.badRequest().build();
             }
+            // Prevent circular reference (moving category under its own descendant)
+            if (isDescendant(id, category.getParentCategoryId())) {
+                return ResponseEntity.badRequest().build();
+            }
         }
 
         existing.setName(category.getName());
