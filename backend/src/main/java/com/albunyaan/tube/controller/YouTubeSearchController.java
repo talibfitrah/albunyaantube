@@ -257,15 +257,19 @@ public class YouTubeSearchController {
     }
 
     /**
-     * Get videos from a channel
+     * Get videos from a channel with optional search
+     * @param channelId The YouTube channel ID
+     * @param pageToken Optional pagination token
+     * @param q Optional search query to filter videos
      */
     @GetMapping("/channels/{channelId}/videos")
     public ResponseEntity<List<SearchResult>> getChannelVideos(
             @PathVariable String channelId,
-            @RequestParam(required = false) String pageToken
+            @RequestParam(required = false) String pageToken,
+            @RequestParam(required = false) String q
     ) {
         try {
-            List<SearchResult> videos = youtubeService.getChannelVideos(channelId, pageToken);
+            List<SearchResult> videos = youtubeService.getChannelVideos(channelId, pageToken, q);
             return ResponseEntity.ok(videos);
         } catch (IOException e) {
             return ResponseEntity.status(500).build();
@@ -305,15 +309,19 @@ public class YouTubeSearchController {
     }
 
     /**
-     * Get videos in a playlist
+     * Get videos in a playlist with optional search (client-side filtering)
+     * @param playlistId The YouTube playlist ID
+     * @param pageToken Optional pagination token
+     * @param q Optional search query to filter videos by title/description
      */
     @GetMapping("/playlists/{playlistId}/videos")
     public ResponseEntity<List<PlaylistItem>> getPlaylistVideos(
             @PathVariable String playlistId,
-            @RequestParam(required = false) String pageToken
+            @RequestParam(required = false) String pageToken,
+            @RequestParam(required = false) String q
     ) {
         try {
-            List<PlaylistItem> items = youtubeService.getPlaylistVideos(playlistId, pageToken);
+            List<PlaylistItem> items = youtubeService.getPlaylistVideos(playlistId, pageToken, q);
             return ResponseEntity.ok(items);
         } catch (IOException e) {
             return ResponseEntity.status(500).build();

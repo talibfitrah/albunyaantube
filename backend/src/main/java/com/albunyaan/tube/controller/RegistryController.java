@@ -331,6 +331,96 @@ public class RegistryController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * Get playlist exclusions (excluded video IDs)
+     */
+    @GetMapping("/playlists/{id}/exclusions")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<String>> getPlaylistExclusions(@PathVariable String id)
+            throws ExecutionException, InterruptedException {
+        Playlist playlist = playlistRepository.findById(id).orElse(null);
+        if (playlist == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        List<String> excluded = playlist.getExcludedVideoIds();
+        if (excluded == null) {
+            excluded = new java.util.ArrayList<>();
+        }
+        return ResponseEntity.ok(excluded);
+    }
+
+    /**
+     * Add a video exclusion to playlist
+     * @param videoId The YouTube video ID to exclude
+     */
+    @PostMapping("/playlists/{id}/exclusions/{videoId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<String>> addPlaylistExclusion(
+            @PathVariable String id,
+            @PathVariable String videoId,
+            @AuthenticationPrincipal FirebaseUserDetails user
+    ) throws ExecutionException, InterruptedException {
+        // Validate video ID format (basic validation)
+        if (videoId == null || videoId.trim().isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        Playlist playlist = playlistRepository.findById(id).orElse(null);
+        if (playlist == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        List<String> excluded = playlist.getExcludedVideoIds();
+        if (excluded == null) {
+            excluded = new java.util.ArrayList<>();
+        }
+
+        // Add only if not already excluded
+        if (!excluded.contains(videoId)) {
+            excluded.add(videoId);
+            playlist.setExcludedVideoIds(excluded);
+            playlist.touch();
+            playlistRepository.save(playlist);
+            auditLogService.log("playlist_video_excluded", "playlist", id, user);
+        }
+
+        return ResponseEntity.ok(excluded);
+    }
+
+    /**
+     * Remove a video exclusion from playlist
+     * @param videoId The YouTube video ID to remove from exclusions
+     */
+    @DeleteMapping("/playlists/{id}/exclusions/{videoId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<String>> removePlaylistExclusion(
+            @PathVariable String id,
+            @PathVariable String videoId,
+            @AuthenticationPrincipal FirebaseUserDetails user
+    ) throws ExecutionException, InterruptedException {
+        Playlist playlist = playlistRepository.findById(id).orElse(null);
+        if (playlist == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        List<String> excluded = playlist.getExcludedVideoIds();
+        if (excluded == null) {
+            excluded = new java.util.ArrayList<>();
+        }
+
+        // Remove if present
+        boolean removed = excluded.remove(videoId);
+        if (removed) {
+            playlist.setExcludedVideoIds(excluded);
+            playlist.touch();
+            playlistRepository.save(playlist);
+            auditLogService.log("playlist_video_exclusion_removed", "playlist", id, user);
+        }
+
+        return ResponseEntity.ok(excluded);
+    }
+
     // ==================== VIDEO ENDPOINTS ====================
 
     /**
