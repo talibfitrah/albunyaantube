@@ -82,7 +82,7 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContextHolder.getContext().setAuthentication(authentication);
 
-                logger.info("✓ Authenticated user: {} with role: {} (authority: ROLE_{})", email, role, role.toUpperCase());
+                logger.debug("✓ Authenticated user UID: {} with role: {} (authority: ROLE_{})", uid, role, role.toUpperCase());
 
             } catch (FirebaseAuthException e) {
                 logger.error("Firebase token verification failed: {}", e.getMessage());

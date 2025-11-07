@@ -97,7 +97,8 @@ public class YouTubeSearchController {
                     if (channelRepository.findByYoutubeId(ytId).isPresent()) {
                         existingChannels.add(ytId);
                     }
-                } catch (Exception ignored) {
+                } catch (Exception e) {
+                    logger.warn("Failed to check channel existence for {}: {}", ytId, e.getMessage());
                 }
             }
 
@@ -107,7 +108,8 @@ public class YouTubeSearchController {
                     if (playlistRepository.findByYoutubeId(ytId).isPresent()) {
                         existingPlaylists.add(ytId);
                     }
-                } catch (Exception ignored) {
+                } catch (Exception e) {
+                    logger.warn("Failed to check playlist existence for {}: {}", ytId, e.getMessage());
                 }
             }
 
@@ -117,7 +119,8 @@ public class YouTubeSearchController {
                     if (videoRepository.findByYoutubeId(ytId).isPresent()) {
                         existingVideos.add(ytId);
                     }
-                } catch (Exception ignored) {
+                } catch (Exception e) {
+                    logger.warn("Failed to check video existence for {}: {}", ytId, e.getMessage());
                 }
             }
 
