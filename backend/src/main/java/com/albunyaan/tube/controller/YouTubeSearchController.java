@@ -4,6 +4,8 @@ import com.albunyaan.tube.dto.EnrichedSearchResult;
 import com.albunyaan.tube.dto.SearchPageResponse;
 import com.albunyaan.tube.service.YouTubeService;
 import com.google.api.services.youtube.model.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -21,6 +23,8 @@ import java.util.List;
 @RequestMapping("/api/admin/youtube")
 @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
 public class YouTubeSearchController {
+
+    private static final Logger logger = LoggerFactory.getLogger(YouTubeSearchController.class);
 
     private final YouTubeService youtubeService;
     private final com.albunyaan.tube.repository.ChannelRepository channelRepository;

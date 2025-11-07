@@ -19,6 +19,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -60,7 +61,7 @@ class UserControllerTest {
     }
 
     @Test
-    void getAllUsers_shouldReturnAllUsers() throws ExecutionException, InterruptedException {
+    void getAllUsers_shouldReturnAllUsers() throws ExecutionException, InterruptedException, TimeoutException {
         // Arrange
         List<User> users = Arrays.asList(testAdmin, testModerator);
         when(userRepository.findAll()).thenReturn(users);
@@ -75,7 +76,7 @@ class UserControllerTest {
     }
 
     @Test
-    void getUserByUid_shouldReturnUser_whenExists() throws ExecutionException, InterruptedException {
+    void getUserByUid_shouldReturnUser_whenExists() throws ExecutionException, InterruptedException, TimeoutException {
         // Arrange
         when(userRepository.findByUid("test-admin-uid")).thenReturn(Optional.of(testAdmin));
 
@@ -89,7 +90,7 @@ class UserControllerTest {
     }
 
     @Test
-    void getUserByUid_shouldReturn404_whenNotFound() throws ExecutionException, InterruptedException {
+    void getUserByUid_shouldReturn404_whenNotFound() throws ExecutionException, InterruptedException, TimeoutException {
         // Arrange
         when(userRepository.findByUid("nonexistent")).thenReturn(Optional.empty());
 
@@ -102,7 +103,7 @@ class UserControllerTest {
     }
 
     @Test
-    void getUsersByRole_shouldReturnUsersWithRole() throws ExecutionException, InterruptedException {
+    void getUsersByRole_shouldReturnUsersWithRole() throws ExecutionException, InterruptedException, TimeoutException {
         // Arrange
         List<User> admins = Arrays.asList(testAdmin);
         when(userRepository.findByRole("admin")).thenReturn(admins);

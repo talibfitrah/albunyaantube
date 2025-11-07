@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 
 /**
  * FIREBASE-MIGRATE-04: User Management Controller
@@ -44,7 +45,7 @@ public class UserController {
      */
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<List<User>> getAllUsers() throws ExecutionException, InterruptedException {
+    public ResponseEntity<List<User>> getAllUsers() throws ExecutionException, InterruptedException, TimeoutException {
         List<User> users = userRepository.findAll();
         return ResponseEntity.ok(users);
     }
@@ -55,7 +56,7 @@ public class UserController {
     @GetMapping("/{uid}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<User> getUserByUid(@PathVariable String uid)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, TimeoutException {
         return userRepository.findByUid(uid)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
@@ -67,7 +68,7 @@ public class UserController {
     @GetMapping("/role/{role}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<User>> getUsersByRole(@PathVariable String role)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, TimeoutException {
         List<User> users = userRepository.findByRole(role);
         return ResponseEntity.ok(users);
     }
@@ -184,7 +185,7 @@ public class UserController {
     public ResponseEntity<Void> sendPasswordReset(
             @PathVariable String uid,
             @AuthenticationPrincipal FirebaseUserDetails currentUser
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, TimeoutException {
         try {
             User user = userRepository.findByUid(uid).orElse(null);
             if (user == null) {

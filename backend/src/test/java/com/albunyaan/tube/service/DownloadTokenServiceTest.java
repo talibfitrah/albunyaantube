@@ -9,7 +9,9 @@ class DownloadTokenServiceTest {
 
     @BeforeEach
     void setUp() {
-        tokenService = new DownloadTokenService();
+        // Use a test secret key (min 32 characters required)
+        String testSecretKey = "test-secret-key-for-download-tokens-12345678";
+        tokenService = new DownloadTokenService(testSecretKey);
     }
 
     @Test

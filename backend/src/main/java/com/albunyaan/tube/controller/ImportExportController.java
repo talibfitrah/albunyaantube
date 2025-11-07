@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Controller for bulk import/export of content (channels, playlists, videos, categories).
@@ -288,7 +289,7 @@ public class ImportExportController {
             @RequestParam(defaultValue = "true") boolean includePlaylists,
             @RequestParam(defaultValue = "true") boolean includeVideos,
             @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws IOException {
+    ) throws IOException, ExecutionException, InterruptedException, TimeoutException {
 
         SimpleExportResponse export = simpleExportService.exportSimpleFormat(
             includeChannels,

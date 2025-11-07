@@ -27,6 +27,7 @@ import java.util.concurrent.TimeoutException;
 public class ApprovalService {
 
     private static final Logger log = LoggerFactory.getLogger(ApprovalService.class);
+    private static final int QUERY_TIMEOUT_SECONDS = 5;
 
     private final Firestore firestore;
     private final ChannelRepository channelRepository;
@@ -149,9 +150,9 @@ public class ApprovalService {
                 .limit(limit);
 
         if (cursor != null && !cursor.isEmpty()) {
-            // Add timeout to cursor resolution (5 seconds)
+            // Add timeout to cursor resolution
             var cursorSnapshot = firestore.collection("channels").document(cursor)
-                    .get().get(5, TimeUnit.SECONDS);
+                    .get().get(QUERY_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             if (cursorSnapshot.exists()) {
                 query = query.startAfter(cursorSnapshot);
             } else {
@@ -161,7 +162,7 @@ public class ApprovalService {
         }
 
         List<Channel> channels = new ArrayList<>();
-        var snapshot = query.get().get();
+        var snapshot = query.get().get(QUERY_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         for (QueryDocumentSnapshot doc : snapshot.getDocuments()) {
             Channel channel = doc.toObject(Channel.class);
             channel.setId(doc.getId());
@@ -187,9 +188,9 @@ public class ApprovalService {
                 .limit(limit);
 
         if (cursor != null && !cursor.isEmpty()) {
-            // Add timeout to cursor resolution (5 seconds)
+            // Add timeout to cursor resolution
             var cursorSnapshot = firestore.collection("playlists").document(cursor)
-                    .get().get(5, TimeUnit.SECONDS);
+                    .get().get(QUERY_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             if (cursorSnapshot.exists()) {
                 query = query.startAfter(cursorSnapshot);
             } else {
@@ -199,7 +200,7 @@ public class ApprovalService {
         }
 
         List<Playlist> playlists = new ArrayList<>();
-        var snapshot = query.get().get();
+        var snapshot = query.get().get(QUERY_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         for (QueryDocumentSnapshot doc : snapshot.getDocuments()) {
             Playlist playlist = doc.toObject(Playlist.class);
             playlist.setId(doc.getId());
