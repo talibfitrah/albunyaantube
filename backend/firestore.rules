@@ -59,6 +59,8 @@ service cloud.firestore {
       allow create: if isAuthenticated() &&
                        request.resource.data.userId == request.auth.uid &&
                        request.resource.data.keys().hasAll(['userId', 'videoId', 'timestamp']) &&
+                       request.resource.data.userId is string &&
+                       request.resource.data.videoId is string &&
                        request.resource.data.timestamp is timestamp &&
                        request.resource.data.timestamp <= request.time;
       allow update, delete: if false;

@@ -15,6 +15,8 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * FIREBASE-MIGRATE-03: Channel Repository (Firestore)
@@ -134,20 +136,20 @@ public class ChannelRepository {
     /**
      * Count all channels using server-side aggregation
      */
-    public long countAll() throws ExecutionException, InterruptedException {
+    public long countAll() throws ExecutionException, InterruptedException, TimeoutException {
         AggregateQuery countQuery = getCollection().count();
-        AggregateQuerySnapshot snapshot = countQuery.get().get();
+        AggregateQuerySnapshot snapshot = countQuery.get().get(5, TimeUnit.SECONDS);
         return snapshot.getCount();
     }
 
     /**
      * Count channels by status using server-side aggregation
      */
-    public long countByStatus(String status) throws ExecutionException, InterruptedException {
+    public long countByStatus(String status) throws ExecutionException, InterruptedException, TimeoutException {
         AggregateQuery countQuery = getCollection()
                 .whereEqualTo("status", status)
                 .count();
-        AggregateQuerySnapshot snapshot = countQuery.get().get();
+        AggregateQuerySnapshot snapshot = countQuery.get().get(5, TimeUnit.SECONDS);
         return snapshot.getCount();
     }
 }

@@ -60,6 +60,7 @@ public class SimpleExportService {
      * @param includeVideos Whether to include videos
      * @return SimpleExportResponse with 3-object array structure
      * @throws java.util.concurrent.TimeoutException if export operation times out
+     * @throws RuntimeException if export operation fails due to execution or interruption errors
      */
     public SimpleExportResponse exportSimpleFormat(
             boolean includeChannels,
@@ -87,8 +88,13 @@ public class SimpleExportService {
         } catch (java.util.concurrent.TimeoutException e) {
             logger.error("Timed out exporting simple format", e);
             throw e;
-        } catch (Exception e) {
+        } catch (InterruptedException e) {
+            logger.error("Export interrupted: {}", e.getMessage(), e);
+            Thread.currentThread().interrupt(); // Restore interrupted status
+            throw new RuntimeException("Export operation was interrupted", e);
+        } catch (ExecutionException e) {
             logger.error("Failed to export simple format: {}", e.getMessage(), e);
+            throw new RuntimeException("Export operation failed", e);
         }
 
         return response;
