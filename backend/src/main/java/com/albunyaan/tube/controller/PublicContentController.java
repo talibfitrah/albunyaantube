@@ -111,3 +111,4 @@ public class PublicContentController {
         return ResponseEntity.ok(contentService.search(q, type, validLimit));
     }
 }
+

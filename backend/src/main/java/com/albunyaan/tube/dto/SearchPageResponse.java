@@ -43,3 +43,4 @@ public class SearchPageResponse {
         this.totalResults = totalResults;
     }
 }
+

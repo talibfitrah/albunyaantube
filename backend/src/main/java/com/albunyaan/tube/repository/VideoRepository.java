@@ -126,3 +126,4 @@ public class VideoRepository {
         return query.get().toObjects(Video.class);
     }
 }
+

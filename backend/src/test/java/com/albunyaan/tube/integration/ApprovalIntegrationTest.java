@@ -267,3 +267,4 @@ public class ApprovalIntegrationTest extends BaseIntegrationTest {
         assertEquals(newCategory.getId(), updated.getCategoryIds().get(0));
     }
 }
+

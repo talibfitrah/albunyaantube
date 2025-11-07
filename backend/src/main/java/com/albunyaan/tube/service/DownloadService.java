@@ -87,3 +87,4 @@ public class DownloadService {
         firestore.collection("download_events").add(event);
     }
 }
+

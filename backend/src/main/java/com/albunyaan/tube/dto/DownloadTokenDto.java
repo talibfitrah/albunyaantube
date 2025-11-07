@@ -20,3 +20,4 @@ public class DownloadTokenDto {
     public String getVideoId() { return videoId; }
     public void setVideoId(String videoId) { this.videoId = videoId; }
 }
+

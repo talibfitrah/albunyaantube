@@ -62,3 +62,4 @@ public class DataInspector implements CommandLineRunner {
         System.exit(0);
     }
 }
+

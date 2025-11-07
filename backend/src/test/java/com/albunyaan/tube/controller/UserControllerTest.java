@@ -345,3 +345,4 @@ class UserControllerTest {
         verify(auditLogService, never()).log(any(), any(), any(), any());
     }
 }
+

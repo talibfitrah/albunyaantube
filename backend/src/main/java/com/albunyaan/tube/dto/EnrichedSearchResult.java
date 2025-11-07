@@ -178,3 +178,4 @@ public class EnrichedSearchResult {
         this.videoThumbnails = videoThumbnails;
     }
 }
+

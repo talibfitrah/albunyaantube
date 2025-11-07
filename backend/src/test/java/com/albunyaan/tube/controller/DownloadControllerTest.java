@@ -75,3 +75,4 @@ class DownloadControllerTest {
         verify(downloadService).trackDownloadStarted("video-123", "user-123", "720p", "mobile");
     }
 }
+

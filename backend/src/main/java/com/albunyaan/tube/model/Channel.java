@@ -358,3 +358,4 @@ public class Channel {
      * Helper method for PublicContentService
      */
 }
+

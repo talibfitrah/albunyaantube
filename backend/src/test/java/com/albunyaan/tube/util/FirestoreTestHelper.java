@@ -64,3 +64,4 @@ public class FirestoreTestHelper {
         firestore.collection(collectionName).document(documentId).delete().get();
     }
 }
+

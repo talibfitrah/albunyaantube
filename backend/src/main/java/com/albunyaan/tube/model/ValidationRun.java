@@ -242,3 +242,4 @@ public class ValidationRun {
         this.errorCount++;
     }
 }
+

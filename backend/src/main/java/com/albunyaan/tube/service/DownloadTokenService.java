@@ -60,3 +60,4 @@ public class DownloadTokenService {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
     }
 }
+

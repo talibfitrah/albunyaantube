@@ -166,3 +166,4 @@ public class CategoryIntegrationTest extends BaseIntegrationTest {
         assertEquals("Tajweed", level2Children.get(0).getName());
     }
 }
+

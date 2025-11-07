@@ -32,3 +32,4 @@ public class DownloadPolicyDto {
     public boolean isRequiresEula() { return requiresEula; }
     public void setRequiresEula(boolean requiresEula) { this.requiresEula = requiresEula; }
 }
+

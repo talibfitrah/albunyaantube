@@ -261,3 +261,4 @@ class UserRepositoryTest {
         verify(documentSnapshot).exists();
     }
 }
+

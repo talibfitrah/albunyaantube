@@ -45,3 +45,4 @@ public class DownloadEvent {
     public String getErrorReason() { return errorReason; }
     public void setErrorReason(String errorReason) { this.errorReason = errorReason; }
 }
+

@@ -37,3 +37,4 @@ public class FirebaseUserDetails {
         return "moderator".equalsIgnoreCase(role) || isAdmin();
     }
 }
+

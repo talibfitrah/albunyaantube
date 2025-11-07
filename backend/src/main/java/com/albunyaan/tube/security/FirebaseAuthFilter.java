@@ -106,3 +106,4 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
                path.equals("/api/auth/login");
     }
 }
+
