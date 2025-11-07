@@ -15,6 +15,8 @@ import org.springframework.stereotype.Service;
 
 import java.util.*;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * BACKEND-APPR-01: Approval Service
@@ -51,7 +53,7 @@ public class ApprovalService {
             String type,
             String category,
             Integer limit,
-            String cursor) throws ExecutionException, InterruptedException {
+            String cursor) throws ExecutionException, InterruptedException, TimeoutException {
 
         List<PendingApprovalDto> items = new ArrayList<>();
         String nextCursor = null;
@@ -140,16 +142,21 @@ public class ApprovalService {
     // Private helper methods
 
     private List<Channel> queryPendingChannels(String category, int limit, String cursor)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, TimeoutException {
         Query query = firestore.collection("channels")
                 .whereEqualTo("status", "PENDING")
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .limit(limit);
 
         if (cursor != null && !cursor.isEmpty()) {
-            var cursorSnapshot = firestore.collection("channels").document(cursor).get().get();
+            // Add timeout to cursor resolution (5 seconds)
+            var cursorSnapshot = firestore.collection("channels").document(cursor)
+                    .get().get(5, TimeUnit.SECONDS);
             if (cursorSnapshot.exists()) {
                 query = query.startAfter(cursorSnapshot);
+            } else {
+                // Invalid cursor - document not found
+                throw new IllegalArgumentException("Invalid cursor: channel document '" + cursor + "' not found");
             }
         }
 
@@ -173,16 +180,21 @@ public class ApprovalService {
     }
 
     private List<Playlist> queryPendingPlaylists(String category, int limit, String cursor)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, TimeoutException {
         Query query = firestore.collection("playlists")
                 .whereEqualTo("status", "PENDING")
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .limit(limit);
 
         if (cursor != null && !cursor.isEmpty()) {
-            var cursorSnapshot = firestore.collection("playlists").document(cursor).get().get();
+            // Add timeout to cursor resolution (5 seconds)
+            var cursorSnapshot = firestore.collection("playlists").document(cursor)
+                    .get().get(5, TimeUnit.SECONDS);
             if (cursorSnapshot.exists()) {
                 query = query.startAfter(cursorSnapshot);
+            } else {
+                // Invalid cursor - document not found
+                throw new IllegalArgumentException("Invalid cursor: playlist document '" + cursor + "' not found");
             }
         }
 

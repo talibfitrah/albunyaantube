@@ -179,5 +179,31 @@ public class CategoryController {
         auditLogService.log("category_deleted", "category", id, user);
         return ResponseEntity.noContent().build();
     }
+
+    /**
+     * Check if categoryId is a descendant of potentialAncestorId
+     * Used to prevent circular references in category hierarchy
+     */
+    private boolean isDescendant(String categoryId, String potentialAncestorId) throws ExecutionException, InterruptedException {
+        String currentId = potentialAncestorId;
+
+        // Walk up the parent chain from potentialAncestorId
+        while (currentId != null) {
+            if (currentId.equals(categoryId)) {
+                // Found categoryId in the ancestor chain - this would create a cycle
+                return true;
+            }
+
+            // Get parent of current category
+            Category category = categoryRepository.findById(currentId).orElse(null);
+            if (category == null) {
+                break;
+            }
+
+            currentId = category.getParentCategoryId();
+        }
+
+        return false;
+    }
 }
 
