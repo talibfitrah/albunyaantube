@@ -12,7 +12,7 @@ const USERS_BASE_PATH = '/api/admin/users';
 
 // Transform frontend types to backend format
 function toBackendRole(role: AdminRole): string {
-  return role.toLowerCase();
+  return role.toUpperCase();
 }
 
 function toBackendStatus(status: AdminUserStatus): string {

@@ -325,6 +325,10 @@ async function handleCategoryAssignment(categoryIds: string[]) {
   // Store reference before clearing
   const content = pendingContent.value;
 
+  // Close modal immediately to prevent intercept issues
+  isCategoryModalOpen.value = false;
+  pendingContent.value = null;
+
   try {
     // Submit with selected categories
     await addToPendingApprovals(

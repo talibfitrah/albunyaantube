@@ -52,7 +52,9 @@ public class SecurityConfig {
 
                         // Admin-only endpoints
                         .requestMatchers("/api/admin/users/**").hasRole("ADMIN")
-                        .requestMatchers("/api/admin/categories/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/admin/categories/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.PUT, "/api/admin/categories/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/admin/categories/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/api/admin/**").hasRole("ADMIN")
 
                         // Moderator and Admin endpoints

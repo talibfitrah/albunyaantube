@@ -115,8 +115,10 @@ import { useI18n } from 'vue-i18n';
 import { getAllCategories, createCategory, updateCategory, deleteCategory } from '@/services/categoryService';
 import CategoryTreeItem from '@/components/categories/CategoryTreeItem.vue';
 import ErrorRetry from '@/components/common/ErrorRetry.vue';
+import { useToast } from '@/composables/useToast';
 
 const { t } = useI18n();
+const { success, error: showError } = useToast();
 
 const categories = ref<any[]>([]);
 const isLoading = ref(false);
@@ -194,12 +196,14 @@ async function handleSubmit() {
         icon: dialogData.value.icon,
         displayOrder: dialogData.value.displayOrder
       });
+      success(t('categories.createSuccess'));
     } else {
       await updateCategory(dialogData.value.id, {
         name: dialogData.value.name,
         icon: dialogData.value.icon,
         displayOrder: dialogData.value.displayOrder
       });
+      success(t('categories.updateSuccess'));
     }
 
     closeDialog();
@@ -218,9 +222,11 @@ async function handleDelete(categoryId: string) {
 
   try {
     await deleteCategory(categoryId);
+    success(t('categories.deleteSuccess'));
     await loadCategories();
   } catch (err) {
-    error.value = err instanceof Error ? err.message : t('categories.deleteError');
+    const errorMessage = err instanceof Error ? err.message : t('categories.deleteError');
+    showError(errorMessage);
   }
 }
 

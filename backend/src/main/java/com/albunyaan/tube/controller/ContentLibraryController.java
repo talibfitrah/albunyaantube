@@ -169,30 +169,33 @@ public class ContentLibraryController {
         if (category != null && !category.isBlank()) {
             return channelRepository.findByCategoryId(category);
         }
-        if ("all".equals(status)) {
+        if ("all".equalsIgnoreCase(status)) {
             return channelRepository.findAll();
         }
-        return channelRepository.findByStatus(status);
+        // Normalize status to uppercase for Firestore query
+        return channelRepository.findByStatus(status.toUpperCase());
     }
 
     private List<Playlist> fetchPlaylists(String status, String category) throws ExecutionException, InterruptedException {
         if (category != null && !category.isBlank()) {
             return playlistRepository.findByCategoryId(category);
         }
-        if ("all".equals(status)) {
+        if ("all".equalsIgnoreCase(status)) {
             return playlistRepository.findAll();
         }
-        return playlistRepository.findByStatus(status);
+        // Normalize status to uppercase for Firestore query
+        return playlistRepository.findByStatus(status.toUpperCase());
     }
 
     private List<Video> fetchVideos(String status, String category) throws ExecutionException, InterruptedException {
         if (category != null && !category.isBlank()) {
             return videoRepository.findByCategoryId(category);
         }
-        if ("all".equals(status)) {
+        if ("all".equalsIgnoreCase(status)) {
             return videoRepository.findAll();
         }
-        return videoRepository.findByStatus(status);
+        // Normalize status to uppercase for Firestore query
+        return videoRepository.findByStatus(status.toUpperCase());
     }
 
     // DTOs

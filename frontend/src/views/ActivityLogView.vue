@@ -117,13 +117,13 @@
             </tr>
             <tr v-for="entry in entries" :key="entry.id">
               <td class="timestamp-cell">
-                <div class="timestamp">{{ formatTime(entry.createdAt) }}</div>
-                <div class="date">{{ formatDate(entry.createdAt) }}</div>
+                <div class="timestamp">{{ formatTime(entry.timestamp) }}</div>
+                <div class="date">{{ formatDate(entry.timestamp) }}</div>
               </td>
               <td>
                 <div class="actor-info">
-                  <div class="actor-email">{{ entry.actor.email }}</div>
-                  <div class="actor-roles">{{ formatRole(entry.actor.role) }}</div>
+                  <div class="actor-email">{{ entry.actorUid }}</div>
+                  <div class="actor-roles">{{ entry.actorDisplayName || 'Unknown' }}</div>
                 </div>
               </td>
               <td>
@@ -133,12 +133,12 @@
               </td>
               <td>
                 <div class="entity-info">
-                  <div class="entity-type">{{ entry.entity.type }}</div>
-                  <div class="entity-id">{{ entry.entity.id }}</div>
+                  <div class="entity-type">{{ entry.entityType }}</div>
+                  <div class="entity-id">{{ entry.entityId }}</div>
                 </div>
               </td>
               <td>
-                <code v-if="entry.metadata" class="metadata">{{ formatMetadata(entry.metadata) }}</code>
+                <code v-if="entry.details && Object.keys(entry.details).length > 0" class="metadata">{{ formatMetadata(entry.details) }}</code>
                 <span v-else class="no-metadata">—</span>
               </td>
             </tr>
@@ -165,26 +165,26 @@
               <div class="timeline-dot" :class="`action-${entry.action.toLowerCase()}`"></div>
               <div class="timeline-card">
                 <div class="timeline-header">
-                  <span class="timeline-time">{{ formatTime(entry.createdAt) }}</span>
+                  <span class="timeline-time">{{ formatTime(entry.timestamp) }}</span>
                   <span class="action-badge" :class="`action-${entry.action.toLowerCase()}`">
                     {{ entry.action }}
                   </span>
                 </div>
                 <div class="timeline-body">
                   <div class="timeline-actor">
-                    <strong>{{ entry.actor.email }}</strong>
-                    <span v-if="entry.actor.role" class="actor-roles">
-                      ({{ formatRole(entry.actor.role) }})
+                    <strong>{{ entry.actorUid }}</strong>
+                    <span v-if="entry.actorDisplayName" class="actor-roles">
+                      ({{ entry.actorDisplayName }})
                     </span>
                   </div>
                   <div class="timeline-entity">
-                    {{ entry.action }} {{ entry.entity.type.toLowerCase() }}
-                    <code class="entity-id-inline">{{ entry.entity.id }}</code>
+                    {{ entry.action }} {{ entry.entityType.toLowerCase() }}
+                    <code class="entity-id-inline">{{ entry.entityId }}</code>
                   </div>
-                  <div v-if="entry.metadata" class="timeline-metadata">
+                  <div v-if="entry.details && Object.keys(entry.details).length > 0" class="timeline-metadata">
                     <details>
                       <summary>{{ t('activity.showDetails') }}</summary>
-                      <code>{{ formatMetadata(entry.metadata) }}</code>
+                      <code>{{ formatMetadata(entry.details) }}</code>
                     </details>
                   </div>
                 </div>
@@ -274,7 +274,7 @@ const groupedByDate = computed(() => {
   const groups: Record<string, AuditEntry[]> = {};
 
   entries.value.forEach((entry) => {
-    const date = new Date(entry.createdAt).toISOString().split('T')[0];
+    const date = new Date(entry.timestamp).toISOString().split('T')[0];
     if (!groups[date]) {
       groups[date] = [];
     }
@@ -342,15 +342,15 @@ const paginationSummary = computed(() => {
 
 function exportLog() {
   const csv = [
-    ['Timestamp', 'Actor', 'Role', 'Action', 'Entity Type', 'Entity ID', 'Metadata'].join(','),
+    ['Timestamp', 'Actor UID', 'Actor Name', 'Action', 'Entity Type', 'Entity ID', 'Details'].join(','),
     ...entries.value.map(entry => [
-      new Date(entry.createdAt).toISOString(),
-      entry.actor.email,
-      formatRole(entry.actor.role),
+      new Date(entry.timestamp).toISOString(),
+      entry.actorUid,
+      entry.actorDisplayName || 'Unknown',
       entry.action,
-      entry.entity.type,
-      entry.entity.id,
-      entry.metadata ? JSON.stringify(entry.metadata) : ''
+      entry.entityType,
+      entry.entityId,
+      entry.details ? JSON.stringify(entry.details) : ''
     ].map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
   ].join('\n');
 

@@ -135,7 +135,10 @@ export const messages = {
       empty: 'No categories yet. Add your first category to get started.',
       error: 'Failed to load categories.',
       deleteError: 'Failed to delete category.',
+      deleteSuccess: 'Category deleted successfully.',
       confirmDelete: 'Are you sure you want to delete this category? All subcategories will also be deleted.',
+      createSuccess: 'Category created successfully.',
+      updateSuccess: 'Category updated successfully.',
       dialog: {
         addTitle: 'Add Category',
         editTitle: 'Edit Category',
@@ -1275,7 +1278,10 @@ export const messages = {
       empty: 'لا توجد فئات بعد. أضف فئتك الأولى للبدء.',
       error: 'فشل تحميل الفئات.',
       deleteError: 'فشل حذف الفئة.',
+      deleteSuccess: 'تم حذف الفئة بنجاح.',
       confirmDelete: 'هل أنت متأكد من حذف هذه الفئة؟ سيتم أيضًا حذف جميع الفئات الفرعية.',
+      createSuccess: 'تم إنشاء الفئة بنجاح.',
+      updateSuccess: 'تم تحديث الفئة بنجاح.',
       dialog: {
         addTitle: 'إضافة فئة',
         editTitle: 'تعديل فئة',
@@ -2122,7 +2128,10 @@ export const messages = {
       empty: 'Nog geen categorieën. Voeg je eerste categorie toe om te beginnen.',
       error: 'Categorieën kunnen niet worden geladen.',
       deleteError: 'Categorie kan niet worden verwijderd.',
+      deleteSuccess: 'Categorie succesvol verwijderd.',
       confirmDelete: 'Weet je zeker dat je deze categorie wilt verwijderen? Alle subcategorieën worden ook verwijderd.',
+      createSuccess: 'Categorie succesvol aangemaakt.',
+      updateSuccess: 'Categorie succesvol bijgewerkt.',
       dialog: {
         addTitle: 'Categorie toevoegen',
         editTitle: 'Categorie bewerken',
