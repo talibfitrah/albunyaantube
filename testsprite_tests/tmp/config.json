@@ -1,0 +1,18 @@
+{
+  "status": "commited",
+  "type": "frontend",
+  "scope": "codebase",
+  "localEndpoint": "http://localhost:5173",
+  "loginUser": "admin@albunyaan.tube",
+  "loginPassword": "ChangeMe!123",
+  "executionArgs": {
+    "projectName": "albunyaantube",
+    "projectPath": "/home/farouq/Development/albunyaantube",
+    "testIds": [],
+    "additionalInstruction": "Please test the admin dashboard for Albunyaan Tube, which is an ad-free, admin-curated halal YouTube client. Focus on authentication, category management, content approval workflow, and YouTube content search features. Use the test credentials from the application.yml file if needed: email: admin@albunyaan.tube, password: ChangeMe!123",
+    "envs": {
+      "API_KEY": "sk-user-YTcg_sL4fCvn331gaxtWT8-_UpOwh-6n1dQIfY4Renvf7WYV0ZZ5mCEoeVDShyvUoRbkdVckd5OAgWbux7l_PkqHwQoxc1YlxWFSFwv2OCYekCAIKETGlrltUUfj7pWv5IE"
+    }
+  },
+  "proxy": "http://173f2ccd-849a-4e15-a936-d69c8510f1f8:4KfEVqTOxgNwlkpy2bHSqI8KXV0RTslY@tun.testsprite.com:8080"
+}

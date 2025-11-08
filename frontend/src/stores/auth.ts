@@ -24,6 +24,7 @@ export const useAuthStore = defineStore('auth', () => {
   const idToken = ref<string | null>(null);
   const isLoading = ref(false);
   const error = ref<string | null>(null);
+  const authInitialized = ref(false);
 
   // Computed properties
   const isAuthenticated = computed(() => currentUser.value !== null);
@@ -34,21 +35,29 @@ export const useAuthStore = defineStore('auth', () => {
    * Initialize auth state listener
    * This runs automatically and keeps the store synced with Firebase Auth
    */
-  function initializeAuthListener() {
-    onAuthStateChanged(auth, async (user) => {
-      currentUser.value = user;
+  function initializeAuthListener(): Promise<void> {
+    return new Promise((resolve) => {
+      onAuthStateChanged(auth, async (user) => {
+        currentUser.value = user;
 
-      if (user) {
-        // Get fresh ID token
-        try {
-          idToken.value = await user.getIdToken();
-        } catch (err) {
-          console.error('Failed to get ID token', err);
+        if (user) {
+          // Get fresh ID token
+          try {
+            idToken.value = await user.getIdToken();
+          } catch (err) {
+            console.error('Failed to get ID token', err);
+            idToken.value = null;
+          }
+        } else {
           idToken.value = null;
         }
-      } else {
-        idToken.value = null;
-      }
+
+        // Mark as initialized on first auth state change
+        if (!authInitialized.value) {
+          authInitialized.value = true;
+          resolve();
+        }
+      });
     });
   }
 
@@ -153,6 +162,7 @@ export const useAuthStore = defineStore('auth', () => {
     idToken,
     isLoading,
     error,
+    authInitialized,
     isAuthenticated,
     bearerToken,
     userEmail,

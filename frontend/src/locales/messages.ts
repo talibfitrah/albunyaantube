@@ -276,7 +276,12 @@ export const messages = {
     },
     common: {
       loading: 'Loading...',
-      error: 'An error occurred',
+      error: {
+        title: 'Something went wrong',
+        message: 'An error occurred while loading this content. Please try again.',
+        retry: 'Retry',
+        retrying: 'Retrying...'
+      },
       retry: 'Retry',
       close: 'Close'
     },
@@ -1177,7 +1182,9 @@ export const messages = {
       videos: 'الفيديوهات'
     },
     layout: {
-      skipToContent: 'تخطي إلى المحتوى الرئيسي'
+      skipToContent: 'تخطي إلى المحتوى الرئيسي',
+      openMenu: 'افتح القائمة',
+      closeMenu: 'أغلق القائمة'
     },
     dashboard: {
       heading: 'سلام عليكم، مرحباً بعودتك',
@@ -1409,7 +1416,12 @@ export const messages = {
     },
     common: {
       loading: 'جارٍ التحميل...',
-      error: 'حدث خطأ',
+      error: {
+        title: 'حدث خطأ ما',
+        message: 'حدث خطأ أثناء تحميل هذا المحتوى. يرجى المحاولة مرة أخرى.',
+        retry: 'إعادة المحاولة',
+        retrying: 'جارٍ إعادة المحاولة...'
+      },
       retry: 'إعادة المحاولة',
       close: 'إغلاق'
     },
@@ -2251,7 +2263,12 @@ export const messages = {
     },
     common: {
       loading: 'Laden...',
-      error: 'Er is een fout opgetreden',
+      error: {
+        title: 'Er is iets misgegaan',
+        message: 'Er is een fout opgetreden bij het laden van deze inhoud. Probeer het opnieuw.',
+        retry: 'Opnieuw proberen',
+        retrying: 'Opnieuw proberen...'
+      },
       retry: 'Opnieuw proberen',
       close: 'Sluiten'
     },

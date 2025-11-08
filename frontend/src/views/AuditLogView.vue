@@ -56,20 +56,20 @@
           </tr>
           <tr v-for="entry in entries" :key="entry.id">
             <td>
-              <div class="actor-email">{{ entry.actor.email }}</div>
-              <div class="actor-roles">{{ roleSummary(entry.actor.role) }}</div>
+              <div class="actor-email">{{ entry.actorUid }}</div>
+              <div class="actor-roles">{{ entry.actorDisplayName || t('audit.roles.none') }}</div>
             </td>
             <td class="action-cell">
               <span class="action-badge">{{ entry.action }}</span>
             </td>
             <td>
-              <div class="entity-type">{{ entry.entity.type }}</div>
-              <div class="entity-id">{{ entry.entity.id }}</div>
+              <div class="entity-type">{{ entry.entityType }}</div>
+              <div class="entity-id">{{ entry.entityId }}</div>
             </td>
             <td>
-              <code class="metadata">{{ formatMetadata(entry.metadata) }}</code>
+              <code class="metadata">{{ formatMetadata(entry.details) }}</code>
             </td>
-            <td>{{ formatDateTime(entry.createdAt) }}</td>
+            <td>{{ formatDateTime(entry.timestamp) }}</td>
           </tr>
         </tbody>
       </table>
@@ -146,13 +146,6 @@ onBeforeUnmount(() => {
     clearTimeout(reloadTimeout);
   }
 });
-
-function roleSummary(role: string) {
-  if (!role) {
-    return t('audit.roles.none');
-  }
-  return role === 'ADMIN' ? t('users.roles.admin') : t('users.roles.moderator');
-}
 
 function formatMetadata(metadata: Record<string, unknown>) {
   try {

@@ -1,0 +1,606 @@
+{
+  "tech_stack": [
+    "TypeScript",
+    "Vue 3",
+    "Vite",
+    "Pinia (State Management)",
+    "Vue Router",
+    "Axios (HTTP Client)",
+    "Vue I18n (Internationalization)",
+    "Firebase Authentication",
+    "Firebase Firestore",
+    "Material Design 3",
+    "Java 17 (Backend)",
+    "Spring Boot 3.2.5 (Backend)",
+    "Gradle (Backend Build Tool)"
+  ],
+  "features": [
+    {
+      "name": "User Authentication",
+      "description": "Firebase-based authentication system with role-based access control (ADMIN, MODERATOR). Supports login, logout, and session management with JWT tokens.",
+      "files": [
+        "frontend/src/views/LoginView.vue",
+        "frontend/src/stores/auth.ts",
+        "frontend/src/services/api/client.ts"
+      ],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "paths": {
+          "/auth/login": {
+            "post": {
+              "summary": "Authenticate admin user",
+              "requestBody": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "type": "object",
+                      "properties": {
+                        "email": {"type": "string"},
+                        "password": {"type": "string"}
+                      }
+                    }
+                  }
+                }
+              },
+              "responses": {
+                "200": {
+                  "description": "Authentication successful",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "token": {"type": "string"},
+                          "user": {
+                            "type": "object",
+                            "properties": {
+                              "email": {"type": "string"},
+                              "role": {"type": "string", "enum": ["admin", "moderator"]}
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Admin Dashboard",
+      "description": "Real-time dashboard showing platform metrics including total categories, channels, playlists, videos, pending approvals, and active moderators.",
+      "files": [
+        "frontend/src/views/DashboardView.vue",
+        "frontend/src/services/dashboard.ts"
+      ],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "paths": {
+          "/api/admin/dashboard": {
+            "get": {
+              "summary": "Get dashboard metrics",
+              "parameters": [
+                {
+                  "name": "timeframe",
+                  "in": "query",
+                  "schema": {"type": "string", "enum": ["24h", "7d", "30d"]}
+                }
+              ],
+              "responses": {
+                "200": {
+                  "description": "Dashboard metrics",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "data": {
+                            "type": "object",
+                            "properties": {
+                              "totalCategories": {"type": "integer"},
+                              "totalChannels": {"type": "integer"},
+                              "totalPlaylists": {"type": "integer"},
+                              "totalVideos": {"type": "integer"},
+                              "pendingApprovals": {"type": "integer"},
+                              "activeModerators": {"type": "integer"}
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Category Management",
+      "description": "Hierarchical category system for organizing Islamic content. Supports parent-child relationships, localization (en/ar/nl), and drag-drop reordering.",
+      "files": [
+        "frontend/src/views/CategoriesView.vue",
+        "frontend/src/services/categories.ts",
+        "frontend/src/services/categoryService.ts",
+        "frontend/src/components/CategoryAssignmentModal.vue"
+      ],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "paths": {
+          "/api/admin/categories": {
+            "get": {
+              "summary": "List all categories",
+              "responses": {
+                "200": {
+                  "description": "List of categories",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {"type": "string"},
+                            "name": {"type": "string"},
+                            "parentCategoryId": {"type": "string", "nullable": true},
+                            "topLevel": {"type": "boolean"},
+                            "localizedNames": {
+                              "type": "object",
+                              "properties": {
+                                "en": {"type": "string"},
+                                "ar": {"type": "string"},
+                                "nl": {"type": "string"}
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "post": {
+              "summary": "Create new category",
+              "requestBody": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "type": "object",
+                      "properties": {
+                        "name": {"type": "string"},
+                        "parentCategoryId": {"type": "string", "nullable": true},
+                        "localizedNames": {"type": "object"}
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "YouTube Content Search",
+      "description": "Search YouTube for Islamic content (channels, playlists, videos) and add them to the approval queue. Integrates with YouTube Data API v3.",
+      "files": [
+        "frontend/src/views/ContentSearchView.vue",
+        "frontend/src/services/youtubeService.ts"
+      ],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "paths": {
+          "/api/admin/youtube/search": {
+            "get": {
+              "summary": "Search YouTube content",
+              "parameters": [
+                {
+                  "name": "q",
+                  "in": "query",
+                  "required": true,
+                  "schema": {"type": "string"}
+                },
+                {
+                  "name": "type",
+                  "in": "query",
+                  "schema": {"type": "string", "enum": ["all", "channel", "playlist", "video"]}
+                },
+                {
+                  "name": "maxResults",
+                  "in": "query",
+                  "schema": {"type": "integer", "default": 20}
+                }
+              ],
+              "responses": {
+                "200": {
+                  "description": "Search results from YouTube",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "items": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {"type": "string"},
+                                "title": {"type": "string"},
+                                "description": {"type": "string"},
+                                "thumbnailUrl": {"type": "string"},
+                                "type": {"type": "string"}
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Content Approval Workflow",
+      "description": "Three-stage approval workflow: Add for Approval → Pending Review → Approved/Rejected. Moderators review pending content with category assignment and exclusion capabilities.",
+      "files": [
+        "frontend/src/views/PendingApprovalsView.vue",
+        "frontend/src/services/approvalService.ts",
+        "frontend/src/services/registry.ts"
+      ],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "paths": {
+          "/api/admin/approvals/pending": {
+            "get": {
+              "summary": "Get pending approvals",
+              "parameters": [
+                {
+                  "name": "type",
+                  "in": "query",
+                  "schema": {"type": "string", "enum": ["channel", "playlist", "video"]}
+                },
+                {
+                  "name": "categoryId",
+                  "in": "query",
+                  "schema": {"type": "string"}
+                }
+              ],
+              "responses": {
+                "200": {
+                  "description": "List of pending items"
+                }
+              }
+            }
+          },
+          "/api/admin/approvals/{id}/approve": {
+            "post": {
+              "summary": "Approve content",
+              "parameters": [
+                {
+                  "name": "id",
+                  "in": "path",
+                  "required": true,
+                  "schema": {"type": "string"}
+                }
+              ],
+              "requestBody": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "type": "object",
+                      "properties": {
+                        "categoryIds": {"type": "array", "items": {"type": "string"}},
+                        "note": {"type": "string"}
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "/api/admin/approvals/{id}/reject": {
+            "post": {
+              "summary": "Reject content",
+              "parameters": [
+                {
+                  "name": "id",
+                  "in": "path",
+                  "required": true,
+                  "schema": {"type": "string"}
+                }
+              ],
+              "requestBody": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "type": "object",
+                      "properties": {
+                        "reason": {"type": "string"}
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Content Library",
+      "description": "Manage all approved content including channels, playlists, and videos. Supports filtering by category, editing, and deletion.",
+      "files": [
+        "frontend/src/views/ContentLibraryView.vue",
+        "frontend/src/services/contentLibrary.ts"
+      ],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "paths": {
+          "/api/admin/content": {
+            "get": {
+              "summary": "List approved content",
+              "parameters": [
+                {
+                  "name": "type",
+                  "in": "query",
+                  "schema": {"type": "string", "enum": ["channel", "playlist", "video"]}
+                },
+                {
+                  "name": "categoryId",
+                  "in": "query",
+                  "schema": {"type": "string"}
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Content Exclusions",
+      "description": "Exclude specific videos or playlists from approved channels. Allows granular control over what content is visible to end users.",
+      "files": [
+        "frontend/src/views/ExclusionsWorkspaceView.vue",
+        "frontend/src/services/exclusions.ts"
+      ],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "paths": {
+          "/api/admin/channels/{id}/exclude-video": {
+            "post": {
+              "summary": "Exclude video from channel",
+              "parameters": [
+                {
+                  "name": "id",
+                  "in": "path",
+                  "required": true,
+                  "schema": {"type": "string"}
+                }
+              ],
+              "requestBody": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "type": "object",
+                      "properties": {
+                        "videoId": {"type": "string"},
+                        "reason": {"type": "string"}
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Bulk Import/Export",
+      "description": "Import and export channels, playlists, and videos in bulk using JSON format. Supports simple (ID-only) and full (complete metadata) formats.",
+      "files": [
+        "frontend/src/views/BulkImportExportView.vue",
+        "frontend/src/services/importExportService.ts"
+      ],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "paths": {
+          "/api/admin/import/validate": {
+            "post": {
+              "summary": "Validate import data (dry-run)",
+              "requestBody": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "type": "object",
+                      "properties": {
+                        "channels": {"type": "array"},
+                        "playlists": {"type": "array"},
+                        "videos": {"type": "array"}
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "/api/admin/export/channels": {
+            "get": {
+              "summary": "Export channels",
+              "parameters": [
+                {
+                  "name": "format",
+                  "in": "query",
+                  "schema": {"type": "string", "enum": ["simple", "full"]}
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "User Management",
+      "description": "Create and manage admin and moderator accounts. Only ADMIN role can create/delete users. Supports role assignment and status management.",
+      "files": [
+        "frontend/src/views/UsersManagementView.vue",
+        "frontend/src/services/adminUsers.ts"
+      ],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "paths": {
+          "/api/admin/users": {
+            "get": {
+              "summary": "List all users",
+              "responses": {
+                "200": {
+                  "description": "List of admin/moderator users"
+                }
+              }
+            },
+            "post": {
+              "summary": "Create new user",
+              "requestBody": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "type": "object",
+                      "properties": {
+                        "email": {"type": "string"},
+                        "displayName": {"type": "string"},
+                        "role": {"type": "string", "enum": ["admin", "moderator"]},
+                        "password": {"type": "string"}
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Audit Logging",
+      "description": "Comprehensive audit trail of all admin actions for compliance and accountability. Logs include actor, action type, entity, timestamp, and IP address.",
+      "files": [
+        "frontend/src/views/AuditLogView.vue",
+        "frontend/src/services/adminAudit.ts",
+        "frontend/src/services/audit.ts"
+      ],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "paths": {
+          "/api/admin/audit": {
+            "get": {
+              "summary": "Get audit logs",
+              "parameters": [
+                {
+                  "name": "actor",
+                  "in": "query",
+                  "schema": {"type": "string"}
+                },
+                {
+                  "name": "action",
+                  "in": "query",
+                  "schema": {"type": "string", "enum": ["approve", "reject", "create", "update", "delete"]}
+                },
+                {
+                  "name": "startDate",
+                  "in": "query",
+                  "schema": {"type": "string", "format": "date-time"}
+                },
+                {
+                  "name": "endDate",
+                  "in": "query",
+                  "schema": {"type": "string", "format": "date-time"}
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Video Validation",
+      "description": "Validate YouTube video metadata and check availability before adding to the system.",
+      "files": [
+        "frontend/src/views/VideoValidationView.vue",
+        "frontend/src/services/videoValidation.ts"
+      ],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "paths": {
+          "/api/admin/youtube/video/{id}": {
+            "get": {
+              "summary": "Get video details and validate",
+              "parameters": [
+                {
+                  "name": "id",
+                  "in": "path",
+                  "required": true,
+                  "schema": {"type": "string"}
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Settings Management",
+      "description": "Configure system settings including profile, notifications, and YouTube API configuration.",
+      "files": [
+        "frontend/src/views/ProfileSettingsView.vue",
+        "frontend/src/views/NotificationsSettingsView.vue",
+        "frontend/src/views/YouTubeAPISettingsView.vue",
+        "frontend/src/views/SystemSettingsView.vue"
+      ],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "paths": {
+          "/api/admin/settings/profile": {
+            "get": {
+              "summary": "Get user profile settings"
+            },
+            "put": {
+              "summary": "Update user profile"
+            }
+          },
+          "/api/admin/settings/youtube-api": {
+            "get": {
+              "summary": "Get YouTube API settings"
+            },
+            "put": {
+              "summary": "Update YouTube API key"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Internationalization (i18n)",
+      "description": "Multi-language support for English, Arabic (RTL), and Dutch. Locale selection persisted in user preferences.",
+      "files": [
+        "frontend/src/locales/messages.ts",
+        "frontend/src/stores/preferences.ts"
+      ],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "i18n Support",
+          "description": "All API responses honor Accept-Language header (en, ar, nl) with fallback to English"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,614 @@
+[
+  {
+    "id": "TC001",
+    "title": "Admin Login Success with Valid Credentials",
+    "description": "Verify that an admin user can successfully log in with correct email and password using Firebase authentication and receives a valid JWT token.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to the admin login page"
+      },
+      {
+        "type": "action",
+        "description": "Enter valid admin email"
+      },
+      {
+        "type": "action",
+        "description": "Enter correct password"
+      },
+      {
+        "type": "action",
+        "description": "Click the login button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify successful login and reception of JWT token"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify role-based access control grants admin privileges"
+      }
+    ]
+  },
+  {
+    "id": "TC002",
+    "title": "Moderator Login Restriction for User Management",
+    "description": "Verify that a user with the MODERATOR role cannot access user creation or deletion functions and receives appropriate access denied messages.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login as a MODERATOR user"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to user management interface"
+      },
+      {
+        "type": "action",
+        "description": "Attempt to create or delete a user account"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify access denied or UI elements disabled"
+      }
+    ]
+  },
+  {
+    "id": "TC003",
+    "title": "Hierarchical Category Creation with Localization",
+    "description": "Verify that an admin can create hierarchical categories with correct parent-child structure and localized names for English, Arabic (RTL), and Dutch locales.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to category management page"
+      },
+      {
+        "type": "action",
+        "description": "Create a top-level category with localized names in en, ar, nl"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify category is created with correct localized names"
+      },
+      {
+        "type": "action",
+        "description": "Create a child category under the top-level category with localized names"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify child category hierarchy and localization"
+      }
+    ]
+  },
+  {
+    "id": "TC004",
+    "title": "Prevent Deletion of Category Assigned to Content",
+    "description": "Verify that the system prevents deletion of categories currently assigned to any approved content and displays an appropriate error message.",
+    "category": "error handling",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Identify category assigned to approved channel or playlist"
+      },
+      {
+        "type": "action",
+        "description": "Attempt to delete the category"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify deletion is blocked with a meaningful message"
+      }
+    ]
+  },
+  {
+    "id": "TC005",
+    "title": "YouTube Search Returns Mixed Content Types with Caching",
+    "description": "Verify that searching YouTube returns channels, playlists, and videos in a blended result within 2 seconds, using proper caching and pagination.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to content search interface"
+      },
+      {
+        "type": "action",
+        "description": "Search for keyword 'Islamic education'"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify response contains mixed content types: channels, playlists, and videos"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify search completes in less than 2 seconds"
+      },
+      {
+        "type": "action",
+        "description": "Execute the same search again and verify that cached results are returned"
+      },
+      {
+        "type": "assertion",
+        "description": "Validate pagination works correctly and loads subsequent pages"
+      }
+    ]
+  },
+  {
+    "id": "TC006",
+    "title": "Content Addition Initiates Add for Approval Status",
+    "description": "Verify that adding YouTube content begins the approval workflow with status 'Add for Approval'.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "From search results, select a channel for addition"
+      },
+      {
+        "type": "action",
+        "description": "Add the channel to approval queue with category assignment and notes"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify item status is 'Add for Approval' and listed in approval queue"
+      }
+    ]
+  },
+  {
+    "id": "TC007",
+    "title": "Moderator Approves Content with Category Assignment and Notes",
+    "description": "Verify that a moderator can review pending content, assign categories, add notes, and approve content, moving it to 'Approved' state with audit logging.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login as a moderator"
+      },
+      {
+        "type": "action",
+        "description": "Open the pending approvals queue"
+      },
+      {
+        "type": "action",
+        "description": "Select a channel or playlist to review"
+      },
+      {
+        "type": "action",
+        "description": "Assign one or more categories"
+      },
+      {
+        "type": "action",
+        "description": "Add approval notes"
+      },
+      {
+        "type": "action",
+        "description": "Approve the content"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify content status changes to 'Approved'"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify audit log entry created with moderator identity, action, timestamp, and notes"
+      }
+    ]
+  },
+  {
+    "id": "TC008",
+    "title": "Moderator Rejects Content with Reason and Audit Trail",
+    "description": "Verify that rejecting content records the rejection reason, transitions item state to 'Rejected', and audit logs are created accordingly.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login as a moderator"
+      },
+      {
+        "type": "action",
+        "description": "Access pending approvals"
+      },
+      {
+        "type": "action",
+        "description": "Select an item to reject"
+      },
+      {
+        "type": "action",
+        "description": "Provide a mandatory rejection reason"
+      },
+      {
+        "type": "action",
+        "description": "Confirm rejection"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify status updates to 'Rejected'"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify rejection reason is stored"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify audit log entry is created"
+      }
+    ]
+  },
+  {
+    "id": "TC009",
+    "title": "Exclude Specific Video from Approved Channel",
+    "description": "Verify that a moderator/admin can exclude a specific video from an approved channel, and the exclusion prevents display in the public API and Android app.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to exclusions workspace for an approved channel"
+      },
+      {
+        "type": "action",
+        "description": "Exclude a video by providing video ID and reason"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify video no longer appears in content API responses for end users"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify video is not visible or playable in the Android app"
+      }
+    ]
+  },
+  {
+    "id": "TC010",
+    "title": "Public API Serves Approved, Non-Excluded Content with Localization",
+    "description": "Verify that the public content API only returns approved content filtered for exclusions and respects the Accept-Language header for English, Arabic, and Dutch.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Call public content API with no Accept-Language header"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify only approved, non-excluded content is returned in English"
+      },
+      {
+        "type": "action",
+        "description": "Call API with Accept-Language: ar"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify content names and descriptions are in Arabic (RTL support)"
+      },
+      {
+        "type": "action",
+        "description": "Call API with Accept-Language: nl"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify content names and descriptions are in Dutch"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify excluded videos and playlists do not appear"
+      }
+    ]
+  },
+  {
+    "id": "TC011",
+    "title": "Android App Cold Start and Onboarding with Language Selection",
+    "description": "Verify that the native Android app cold starts in under 2.5 seconds and completes onboarding including language selection (English, Arabic RTL, Dutch) correctly with locale persistence.",
+    "category": "performance",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Launch fresh install of the Android app"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify app cold start completes within 2.5 seconds"
+      },
+      {
+        "type": "action",
+        "description": "Complete onboarding language selection choosing Arabic"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify UI switches to RTL layout"
+      },
+      {
+        "type": "action",
+        "description": "Restart app"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify previously selected language and locale persist"
+      }
+    ]
+  },
+  {
+    "id": "TC012",
+    "title": "Android App Video Playback Quality Selection and PiP Mode",
+    "description": "Verify video player supports quality selection, Picture-in-Picture mode, and audio-only playback for halal videos.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Play approved video in the Android app"
+      },
+      {
+        "type": "action",
+        "description": "Select different video quality levels"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify video quality changes accordingly without playback issues"
+      },
+      {
+        "type": "action",
+        "description": "Activate PiP mode"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify video continues playing in a floating window"
+      },
+      {
+        "type": "action",
+        "description": "Switch to audio-only playback mode"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify only audio plays and video is hidden"
+      }
+    ]
+  },
+  {
+    "id": "TC013",
+    "title": "Offline Playlist Download with EULA Acceptance and Quota Enforcement",
+    "description": "Verify users can download a playlist offline after accepting EULA and passing storage quota check; videos show accurate download progress and playback offline.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Select a playlist for offline download"
+      },
+      {
+        "type": "action",
+        "description": "Accept the EULA presented"
+      },
+      {
+        "type": "action",
+        "description": "Verify device storage is sufficient for download"
+      },
+      {
+        "type": "action",
+        "description": "Initiate playlist download"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify download progress indicators show accurate progress per video"
+      },
+      {
+        "type": "action",
+        "description": "Play downloaded videos offline"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify smooth playback without network connection"
+      }
+    ]
+  },
+  {
+    "id": "TC014",
+    "title": "Audit Logging Captures All Admin Actions with Query and Pagination",
+    "description": "Verify that all administrative actions including approve, reject, create, update, and delete are logged with actor, timestamp, IP, and notes; logs can be queried and paginated.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Perform various admin actions: create user, approve content, reject content"
+      },
+      {
+        "type": "action",
+        "description": "Access audit log view"
+      },
+      {
+        "type": "action",
+        "description": "Filter audit logs by action type and actor"
+      },
+      {
+        "type": "action",
+        "description": "Navigate through paginated audit logs"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify each log entry contains correct actor, action type, timestamp, IP address and notes"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify filtering and pagination work correctly and efficiently"
+      }
+    ]
+  },
+  {
+    "id": "TC015",
+    "title": "Bulk Import Validation for Duplicate YouTube IDs and Metadata Completeness",
+    "description": "Verify bulk import validation detects duplicate YouTube IDs across channels, playlists, videos and validates required metadata for both simple and full formats with detailed feedback.",
+    "category": "error handling",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Prepare bulk import JSON with duplicate and incomplete entries"
+      },
+      {
+        "type": "action",
+        "description": "Perform bulk import validation dry-run"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify duplicate ID detection and metadata validation errors are reported with details"
+      },
+      {
+        "type": "action",
+        "description": "Correct errors and retry validation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify validation passes for correct entries"
+      }
+    ]
+  },
+  {
+    "id": "TC016",
+    "title": "User Interface Supports English, Arabic (RTL), and Dutch with Correct Numeric/Date Formats",
+    "description": "Verify all UI components display correctly in English, Arabic (including RTL layout), and Dutch with proper numeric and date formatting consistent with locale standards.",
+    "category": "ui",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Switch UI language to English"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify all text elements, numbers, and dates display properly"
+      },
+      {
+        "type": "action",
+        "description": "Switch UI language to Arabic"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify UI layout switches to RTL and text is correctly displayed"
+      },
+      {
+        "type": "action",
+        "description": "Switch UI language to Dutch"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify Dutch translations and locale-specific formats"
+      }
+    ]
+  },
+  {
+    "id": "TC017",
+    "title": "Admin Dashboard Shows Accurate Metrics and Refreshes Every 60 Seconds",
+    "description": "Verify the admin dashboard displays real-time metrics for total categories, channels, playlists, videos, pending approvals, and active moderators and auto-refreshes metrics every 60 seconds without UI glitches.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login as admin and navigate to dashboard"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify displayed metrics for totals and pending items are accurate based on backend data"
+      },
+      {
+        "type": "action",
+        "description": "Wait for 60 seconds or trigger dashboard refresh"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify metrics update reflects changes in data without UI issues"
+      }
+    ]
+  },
+  {
+    "id": "TC018",
+    "title": "Video Metadata Validation Detects Invalid or Unavailable Videos",
+    "description": "Verify that fetching YouTube video metadata via API returns correct details and flags unavailable or invalid videos preventing their addition to the system.",
+    "category": "error handling",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Request video details for a valid YouTube ID"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify metadata includes title, description, thumbnail and is valid"
+      },
+      {
+        "type": "action",
+        "description": "Request video details for a deleted or private YouTube ID"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify error or unavailability is reported and user is prevented from adding the video"
+      }
+    ]
+  },
+  {
+    "id": "TC019",
+    "title": "User Creation by ADMIN with Role Enforcement and Status Management",
+    "description": "Verify that only users with ADMIN role can create, edit, or delete user accounts, assign roles (ADMIN or MODERATOR), and change user statuses; moderators cannot perform these actions.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login as ADMIN user"
+      },
+      {
+        "type": "action",
+        "description": "Create a new user with role MODERATOR"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify user creation success and role assignment"
+      },
+      {
+        "type": "action",
+        "description": "Login as MODERATOR user and attempt to create or delete users"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify access denied or disabled UI controls"
+      }
+    ]
+  },
+  {
+    "id": "TC020",
+    "title": "Bulk Export in Simple and Full Metadata Formats",
+    "description": "Verify bulk export of channels in both simple (ID only) and full metadata formats returns correctly structured JSON files without data loss.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Request bulk export of channels with 'simple' format"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify exported file contains only channel IDs"
+      },
+      {
+        "type": "action",
+        "description": "Request bulk export of channels with 'full' format"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify exported file contains complete metadata including names, descriptions, localized values"
+      }
+    ]
+  }
+]

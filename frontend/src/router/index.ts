@@ -133,8 +133,19 @@ const router = createRouter({
   ]
 });
 
-router.beforeEach((to: RouteLocationNormalized, _from: RouteLocationNormalized, next: NavigationGuardNext) => {
+router.beforeEach(async (to: RouteLocationNormalized, _from: RouteLocationNormalized, next: NavigationGuardNext) => {
   const authStore = useAuthStore();
+
+  // Wait for auth to initialize before checking authentication
+  if (!authStore.authInitialized) {
+    // This should be fast since initializeAuthListener is called in main.ts
+    // But we add this as a safeguard
+    let attempts = 0;
+    while (!authStore.authInitialized && attempts < 50) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      attempts++;
+    }
+  }
 
   if (to.meta.public) {
     if (authStore.isAuthenticated) {

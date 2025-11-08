@@ -29,12 +29,15 @@ app:
     application-name: Albunyaan Tube Test
   security:
     cors:
-      allowed-origins:
-        - http://localhost:5173
+      allowed-origins: "http://localhost:5173"
     initial-admin:
       email: test-admin@albunyaan.tube
       password: TestPassword123!
       display-name: Test Admin
+    initial-moderator:
+      email: test-moderator@albunyaan.tube
+      password: TestPassword123!
+      display-name: Test Moderator
 
 # Logging for tests
 logging:

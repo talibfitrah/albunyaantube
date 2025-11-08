@@ -35,13 +35,23 @@ export interface AuditEntity {
   slug?: string | null;
 }
 
+export interface AuditActor {
+  uid: string;
+  email: string;
+  displayName?: string;
+  role?: string;
+}
+
 export interface AuditEntry {
   id: string;
-  actor: AdminUser;
+  actorUid: string;
+  actorDisplayName?: string;
   action: string;
-  entity: AuditEntity;
-  metadata: Record<string, unknown>;
-  createdAt: string;
+  entityType: string;
+  entityId: string;
+  details: Record<string, unknown>;
+  timestamp: string;
+  ipAddress?: string;
 }
 
 export interface AuditPage extends CursorPage<AuditEntry> {}
