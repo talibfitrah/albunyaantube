@@ -34,13 +34,13 @@
       </ul>
     </div>
 
-    <div v-if="errorMessage" class="error-panel" role="alert">
-      <p>{{ t('dashboard.error.title') }}</p>
-      <p class="error-detail">{{ errorMessage }}</p>
-      <button type="button" class="retry" @click="handleRetry">
-        {{ t('dashboard.error.retry') }}
-      </button>
-    </div>
+    <ErrorRetry
+      v-if="errorMessage"
+      :title="t('dashboard.error.title')"
+      :message="errorMessage"
+      :loading="isLoading"
+      @retry="handleRetry"
+    />
 
     <div v-else>
       <div v-if="isLoading && !cards.length" class="cards cards-skeleton">
@@ -73,6 +73,7 @@ import { useDashboardMetrics } from '@/composables/useDashboardMetrics';
 import type { DashboardCard } from '@/composables/useDashboardMetrics';
 import type { DashboardTimeframe } from '@/types/dashboard';
 import { formatDateTime, formatNumber } from '@/utils/formatters';
+import ErrorRetry from '@/components/common/ErrorRetry.vue';
 
 const { t, locale } = useI18n();
 const metrics = useDashboardMetrics();

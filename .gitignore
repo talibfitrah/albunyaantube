@@ -159,3 +159,8 @@ backend/src/generated/
 /shared/**/generated/
 /shared/**/openapi-client/
 
+# -----------------------
+# TestSprite test artifacts
+# -----------------------
+/testsprite_tests/
+

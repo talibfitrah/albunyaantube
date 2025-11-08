@@ -17,10 +17,12 @@
     </div>
 
     <!-- Error State -->
-    <div v-else-if="error" class="error-panel" role="alert">
-      <p>{{ error }}</p>
-      <button type="button" @click="loadCategories">{{ t('categories.retry') }}</button>
-    </div>
+    <ErrorRetry
+      v-else-if="error"
+      :message="error"
+      :loading="isLoading"
+      @retry="loadCategories"
+    />
 
     <!-- Categories Tree -->
     <div v-else class="categories-tree-container">
@@ -112,6 +114,7 @@ import { ref, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { getAllCategories, createCategory, updateCategory, deleteCategory } from '@/services/categoryService';
 import CategoryTreeItem from '@/components/categories/CategoryTreeItem.vue';
+import ErrorRetry from '@/components/common/ErrorRetry.vue';
 
 const { t } = useI18n();
 
@@ -312,27 +315,6 @@ onMounted(() => {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
-}
-
-.error-panel {
-  background: var(--color-danger-soft);
-  border: 1px solid var(--color-danger);
-  border-radius: 0.75rem;
-  padding: 1.5rem;
-  text-align: center;
-}
-
-.error-panel button {
-  margin-top: 1rem;
-  padding: 0.625rem 1.25rem;
-  background: var(--color-brand);
-  color: var(--color-text-inverse);
-  border: none;
-  border-radius: 0.5rem;
-  font-weight: 600;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  min-height: 44px;
 }
 
 .categories-tree-container {
