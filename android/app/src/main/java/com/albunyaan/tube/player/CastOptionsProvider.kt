@@ -46,4 +46,3 @@ class CastOptionsProvider : OptionsProvider {
         return null
     }
 }
-

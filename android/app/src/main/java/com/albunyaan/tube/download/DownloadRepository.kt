@@ -237,4 +237,3 @@ class DefaultDownloadRepository(
 
 private fun WorkManager.workInfoFlow(id: UUID) =
     getWorkInfoByIdLiveData(id).asFlow().filterNotNull()
-

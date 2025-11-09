@@ -6,4 +6,3 @@ import com.albunyaan.tube.ui.list.ContentListFragment
 class HomeFragment : ContentListFragment() {
     override val contentType: ContentType = ContentType.HOME
 }
-

@@ -32,4 +32,3 @@ sealed class ContentItem {
         val thumbnailUrl: String? = null
     ) : ContentItem()
 }
-

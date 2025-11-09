@@ -565,4 +565,3 @@ private fun ContentItem.thumbnailUrl(): String? = when (this) {
     is ContentItem.Channel -> thumbnailUrl
     is ContentItem.Playlist -> thumbnailUrl
 }
-

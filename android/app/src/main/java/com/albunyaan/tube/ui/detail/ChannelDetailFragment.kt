@@ -175,4 +175,3 @@ enum class ChannelTab(val titleRes: Int) {
     POSTS(R.string.channel_tab_posts),
     ABOUT(R.string.channel_tab_about)
 }
-

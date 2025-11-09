@@ -161,4 +161,3 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
         private const val TAG = "HomeFragment"
     }
 }
-

@@ -100,4 +100,3 @@ class CategoriesFragment : Fragment(R.layout.fragment_categories) {
         private const val TAG = "CategoriesFragment"
     }
 }
-

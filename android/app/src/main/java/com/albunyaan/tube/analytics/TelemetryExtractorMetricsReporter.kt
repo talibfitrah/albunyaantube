@@ -93,4 +93,3 @@ class TelemetryExtractorMetricsReporter(
         delegate.onDownloadFailed(downloadId, throwable)
     }
 }
-

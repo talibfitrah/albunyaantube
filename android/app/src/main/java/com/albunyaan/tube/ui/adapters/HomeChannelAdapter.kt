@@ -92,4 +92,3 @@ class HomeChannelAdapter(
         }
     }
 }
-

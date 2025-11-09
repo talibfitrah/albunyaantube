@@ -7,4 +7,3 @@ interface ExtractorClient {
 
     suspend fun fetchPlaylistMetadata(ids: List<String>): Map<String, PlaylistMetadata>
 }
-

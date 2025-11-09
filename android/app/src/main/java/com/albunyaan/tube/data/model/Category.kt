@@ -8,4 +8,3 @@ data class Category(
     val hasSubcategories: Boolean = false,
     val icon: String? = null // Emoji or icon identifier
 )
-

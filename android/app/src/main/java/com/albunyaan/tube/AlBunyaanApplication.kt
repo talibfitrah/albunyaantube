@@ -31,4 +31,3 @@ class AlBunyaanApplication : Application() {
         private const val TAG = "AlBunyaanApp"
     }
 }
-

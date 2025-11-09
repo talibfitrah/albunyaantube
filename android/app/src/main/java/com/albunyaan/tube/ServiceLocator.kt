@@ -222,4 +222,3 @@ object ServiceLocator {
 
     private const val DOWNLOAD_QUOTA_BYTES = 500L * 1024 * 1024 // 500 MB
 }
-

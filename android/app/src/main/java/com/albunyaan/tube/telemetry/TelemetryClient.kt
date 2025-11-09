@@ -75,4 +75,3 @@ class LogTelemetryClient : TelemetryClient {
         const val TAG = "Telemetry"
     }
 }
-

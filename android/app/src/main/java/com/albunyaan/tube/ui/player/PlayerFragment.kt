@@ -976,4 +976,3 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         private const val DEFAULT_VIDEO_MIME = "video/mp4"
     }
 }
-

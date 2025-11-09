@@ -22,4 +22,3 @@ data class PlaylistMetadata(
     val thumbnailUrl: String? = null,
     val itemCount: Int? = null
 )
-

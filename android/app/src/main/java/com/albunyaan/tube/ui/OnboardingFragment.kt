@@ -81,4 +81,3 @@ class OnboardingFragment : Fragment(R.layout.fragment_onboarding) {
         }
     }
 }
-

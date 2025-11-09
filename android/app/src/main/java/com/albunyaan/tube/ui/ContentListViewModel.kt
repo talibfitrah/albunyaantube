@@ -69,4 +69,3 @@ class ContentListViewModel(
         private const val TAG = "ContentListViewModel"
     }
 }
-
