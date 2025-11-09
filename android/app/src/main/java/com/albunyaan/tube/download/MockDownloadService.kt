@@ -134,3 +134,4 @@ data class DownloadPolicyResult(
     val reason: String,
     val requiresEula: Boolean
 )
+

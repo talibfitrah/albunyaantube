@@ -39,3 +39,4 @@ class MetadataCacheTest {
         assertEquals("Playlist", cached?.title)
     }
 }
+

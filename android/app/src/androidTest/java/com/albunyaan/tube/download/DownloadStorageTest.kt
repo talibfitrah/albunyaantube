@@ -51,3 +51,4 @@ class DownloadStorageTest {
         assertTrue("Quota exceeded after pruning", totalSize <= 1024)
     }
 }
+

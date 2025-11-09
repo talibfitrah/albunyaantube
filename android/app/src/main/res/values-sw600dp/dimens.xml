@@ -40,3 +40,4 @@
     <bool name="is_large_screen">true</bool>
     <bool name="use_two_pane_layout">true</bool>
 </resources>
+

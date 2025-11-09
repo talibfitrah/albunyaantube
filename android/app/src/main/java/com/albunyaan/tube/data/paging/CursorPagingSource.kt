@@ -30,3 +30,4 @@ class CursorPagingSource(
 
     override fun getRefreshKey(state: PagingState<String, ContentItem>): String? = null
 }
+

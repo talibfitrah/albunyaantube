@@ -9,3 +9,4 @@
         android:title="@string/downloads"
         android:icon="@android:drawable/stat_sys_download"/>
 </menu>
+

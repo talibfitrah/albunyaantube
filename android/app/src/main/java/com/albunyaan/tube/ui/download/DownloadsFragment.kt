@@ -167,3 +167,4 @@ class DownloadsFragment : Fragment(R.layout.fragment_downloads) {
         }
     }
 }
+

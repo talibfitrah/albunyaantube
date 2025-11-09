@@ -10,3 +10,4 @@
         android:text="Videos placeholder"
         android:textAppearance="@style/TextAppearance.MaterialComponents.Headline6" />
 </FrameLayout>
+

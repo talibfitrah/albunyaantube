@@ -72,3 +72,4 @@ class AboutFragment : Fragment() {
         startActivity(intent)
     }
 }
+

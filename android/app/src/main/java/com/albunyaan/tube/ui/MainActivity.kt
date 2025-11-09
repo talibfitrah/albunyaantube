@@ -115,3 +115,4 @@ class MainActivity : AppCompatActivity() {
         mainShellFragment?.setBottomNavVisibility(visible)
     }
 }
+

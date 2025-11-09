@@ -123,3 +123,4 @@ class SettingsPreferences(private val context: Context) {
         }
     }
 }
+

@@ -28,3 +28,4 @@
     <!-- Default: require HTTPS for all other domains -->
     <base-config cleartextTrafficPermitted="false" />
 </network-security-config>
+

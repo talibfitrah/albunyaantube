@@ -111,3 +111,4 @@ class DownloadsAdapter(
             oldItem == newItem
     }
 }
+

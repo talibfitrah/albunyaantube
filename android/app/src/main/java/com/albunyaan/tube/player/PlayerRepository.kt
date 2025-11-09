@@ -12,3 +12,4 @@ class DefaultPlayerRepository(
 ) : PlayerRepository {
     override suspend fun resolveStreams(videoId: String): ResolvedStreams? = extractorClient.resolveStreams(videoId)
 }
+

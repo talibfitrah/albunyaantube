@@ -75,3 +75,4 @@ class FilterManager(
         private inline fun <reified T : Enum<T>> enumOrNull(name: String): T? = enumOrNull(name, enumValues<T>())
     }
 }
+

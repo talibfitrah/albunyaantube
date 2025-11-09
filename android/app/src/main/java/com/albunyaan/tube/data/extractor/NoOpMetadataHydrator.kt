@@ -18,3 +18,4 @@ private object NoOpExtractorClient : ExtractorClient {
     override suspend fun fetchChannelMetadata(ids: List<String>): Map<String, ChannelMetadata> = emptyMap()
     override suspend fun fetchPlaylistMetadata(ids: List<String>): Map<String, PlaylistMetadata> = emptyMap()
 }
+

@@ -90,3 +90,4 @@ class ChannelsFragmentNew : Fragment(R.layout.fragment_channels_new) {
         super.onDestroyView()
     }
 }
+

@@ -23,3 +23,4 @@ data class DownloadEntry(
     val filePath: String? = null,
     val metadata: DownloadFileMetadata? = null
 )
+

@@ -19,3 +19,4 @@ enum class VideoLength { ANY, UNDER_FOUR_MIN, FOUR_TO_TWENTY_MIN, OVER_TWENTY_MI
 enum class PublishedDate { ANY, LAST_24_HOURS, LAST_7_DAYS, LAST_30_DAYS }
 
 enum class SortOption { DEFAULT, MOST_POPULAR, NEWEST }
+

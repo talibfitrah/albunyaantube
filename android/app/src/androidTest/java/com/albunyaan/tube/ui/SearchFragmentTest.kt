@@ -89,3 +89,4 @@ class SearchFragmentTest {
             .check(matches(isDisplayed()))
     }
 }
+

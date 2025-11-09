@@ -5,3 +5,4 @@
         android:startColor="#AA000000"
         android:endColor="@android:color/transparent"/>
 </shape>
+

@@ -221,3 +221,4 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
 }
 
 enum class DownloadPolicy { ENABLED, QUEUED, DISABLED }
+

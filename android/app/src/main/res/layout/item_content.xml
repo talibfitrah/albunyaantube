@@ -48,3 +48,4 @@
         android:paddingTop="@dimen/spacing_xs"
         android:text="Description placeholder"/>
 </LinearLayout>
+

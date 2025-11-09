@@ -28,3 +28,4 @@ class EulaManager(
         val KEY_ACCEPTED = booleanPreferencesKey("downloads_eula_accepted")
     }
 }
+

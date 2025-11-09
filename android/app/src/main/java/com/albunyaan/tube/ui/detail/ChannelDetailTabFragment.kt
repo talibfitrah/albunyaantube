@@ -40,3 +40,4 @@ class ChannelDetailTabFragment : Fragment(R.layout.fragment_channel_detail_tab) 
         }
     }
 }
+

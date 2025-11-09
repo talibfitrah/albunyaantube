@@ -67,3 +67,4 @@ class QualitySelectionDialog : DialogFragment() {
         val isSelected: Boolean
     )
 }
+

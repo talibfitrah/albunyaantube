@@ -82,3 +82,4 @@ class PlaylistsFragmentNew : Fragment(R.layout.fragment_simple_list) {
         super.onDestroyView()
     }
 }
+

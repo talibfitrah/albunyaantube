@@ -65,3 +65,4 @@ class NetworkMonitor(private val context: Context) {
         return capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
     }
 }
+

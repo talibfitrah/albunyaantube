@@ -98,3 +98,4 @@ tasks.register("collectBaselineProfile") {
     dependsOn("collectNonMinifiedBenchmarkBaselineProfile")
 }
 
+

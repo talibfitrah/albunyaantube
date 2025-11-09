@@ -11,3 +11,4 @@
     android:textAppearance="@style/TextAppearance.MaterialComponents.Body1"
     android:textColor="@android:color/black"
     android:checkMark="@drawable/selector_filter_option_check"/>
+

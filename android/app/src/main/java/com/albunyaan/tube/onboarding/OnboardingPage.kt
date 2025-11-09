@@ -27,3 +27,4 @@ val onboardingPages = listOf(
         descriptionRes = R.string.onboarding_page3_desc
     )
 )
+

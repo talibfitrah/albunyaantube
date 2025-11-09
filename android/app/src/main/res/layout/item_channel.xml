@@ -66,3 +66,4 @@
         app:layout_constraintTop_toBottomOf="@id/subscriberCount"/>
 
 </androidx.constraintlayout.widget.ConstraintLayout>
+

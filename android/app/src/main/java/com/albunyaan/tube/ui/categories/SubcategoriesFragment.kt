@@ -83,3 +83,4 @@ class SubcategoriesFragment : Fragment(R.layout.fragment_subcategories) {
         const val ARG_CATEGORY_NAME = "categoryName"
     }
 }
+

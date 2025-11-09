@@ -6,3 +6,4 @@ import com.albunyaan.tube.ui.list.ContentListFragment
 class VideosFragment : ContentListFragment() {
     override val contentType: ContentType = ContentType.VIDEOS
 }
+

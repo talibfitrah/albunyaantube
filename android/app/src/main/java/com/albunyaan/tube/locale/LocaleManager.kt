@@ -97,3 +97,4 @@ object LocaleManager {
         return SUPPORTED_LANGUAGES[languageCode] ?: languageCode.uppercase()
     }
 }
+

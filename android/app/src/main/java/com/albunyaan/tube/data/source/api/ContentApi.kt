@@ -68,3 +68,4 @@ data class SearchResponseDto(
     val results: List<ContentDto>,
     val total: Int? = null
 )
+
