@@ -87,4 +87,3 @@
         app:layout_constraintTop_toBottomOf="@id/videoMeta"/>
 
 </androidx.constraintlayout.widget.ConstraintLayout>
-

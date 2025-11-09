@@ -63,4 +63,3 @@ fun Context.isLargeScreen(): Boolean {
 fun Context.useTwoPaneLayout(): Boolean {
     return resources.getBoolean(com.albunyaan.tube.R.bool.use_two_pane_layout)
 }
-

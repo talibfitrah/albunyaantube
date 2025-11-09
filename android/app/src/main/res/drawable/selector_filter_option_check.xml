@@ -3,4 +3,3 @@
     <item android:state_checked="true" android:drawable="@drawable/ic_chip_check"/>
     <item android:drawable="@android:color/transparent"/>
 </selector>
-

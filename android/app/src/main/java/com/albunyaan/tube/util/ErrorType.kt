@@ -43,4 +43,3 @@ enum class ErrorType {
         }
     }
 }
-

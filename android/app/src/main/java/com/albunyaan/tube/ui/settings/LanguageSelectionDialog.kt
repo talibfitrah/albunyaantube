@@ -49,4 +49,3 @@ class LanguageSelectionDialog : DialogFragment() {
         }
     }
 }
-

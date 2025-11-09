@@ -502,4 +502,3 @@ private fun stubUpNextItems(): List<UpNextItem> = listOf(
         streamId = "dQw4w9WgXcQ"
     )
 )
-

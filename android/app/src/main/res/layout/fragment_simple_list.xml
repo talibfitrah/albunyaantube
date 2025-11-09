@@ -7,4 +7,3 @@
     android:overScrollMode="never"
     android:padding="@dimen/spacing_md"
     android:paddingBottom="@dimen/bottom_nav_height"/>
-

@@ -50,4 +50,3 @@
         android:contentDescription="@string/cd_delete_search_history" />
 
 </LinearLayout>
-

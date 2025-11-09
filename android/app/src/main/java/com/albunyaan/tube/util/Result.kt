@@ -51,4 +51,3 @@ inline fun <T> Result<T>.onError(action: (Throwable) -> Unit): Result<T> {
     if (this is Result.Error) action(exception)
     return this
 }
-

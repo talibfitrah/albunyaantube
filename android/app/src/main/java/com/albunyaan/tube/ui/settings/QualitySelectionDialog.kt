@@ -51,4 +51,3 @@ class QualitySelectionDialog : DialogFragment() {
         }
     }
 }
-

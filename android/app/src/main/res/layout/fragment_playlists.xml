@@ -10,4 +10,3 @@
         android:text="Playlists placeholder"
         android:textAppearance="@style/TextAppearance.MaterialComponents.Headline6" />
 </FrameLayout>
-

@@ -3,4 +3,3 @@
     <item android:color="@color/primary" android:state_checked="true"/>
     <item android:color="@color/filter_chip_selected_text" android:alpha="0.5"/>
 </selector>
-
