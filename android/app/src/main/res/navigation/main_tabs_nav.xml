@@ -163,4 +163,3 @@
         android:id="@+id/action_global_playerFragment"
         app:destination="@id/playerFragment" />
 </navigation>
-

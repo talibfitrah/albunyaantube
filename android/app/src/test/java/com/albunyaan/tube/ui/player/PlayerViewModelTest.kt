@@ -176,4 +176,3 @@ class PlayerViewModelTest {
         assertTrue(downloadRepository.enqueued.isNotEmpty())
     }
 }
-

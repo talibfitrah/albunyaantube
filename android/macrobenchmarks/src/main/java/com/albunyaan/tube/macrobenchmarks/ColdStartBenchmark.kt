@@ -138,4 +138,3 @@ class ColdStartBenchmark {
         const val TAG = "ColdStartBenchmark"
     }
 }
-

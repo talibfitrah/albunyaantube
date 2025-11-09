@@ -21,4 +21,3 @@
         android:text="@string/list_footer_freshness"
         android:paddingTop="4dp"/>
 </LinearLayout>
-

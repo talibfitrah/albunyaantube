@@ -46,4 +46,3 @@
         <item name="android:minHeight">@dimen/bottom_nav_height</item>
     </style>
 </resources>
-

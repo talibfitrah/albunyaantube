@@ -51,4 +51,3 @@ class DownloadStorageJvmTest {
         assertTrue(totalSize <= 1024)
     }
 }
-

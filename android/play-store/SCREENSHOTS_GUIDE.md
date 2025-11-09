@@ -269,4 +269,3 @@ mv Screenshot_*.png 02-player.png
 ```
 
 Done! You now have screenshots ready for Play Store submission.
-

@@ -16,4 +16,3 @@
         android:id="@+id/filter_clear"
         android:title="@string/filter_clear"/>
 </menu>
-

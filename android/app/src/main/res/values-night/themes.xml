@@ -13,4 +13,3 @@
         <item name="android:windowLightStatusBar" tools:targetApi="m">false</item>
     </style>
 </resources>
-

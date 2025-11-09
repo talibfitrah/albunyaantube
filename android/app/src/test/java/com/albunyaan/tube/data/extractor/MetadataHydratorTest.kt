@@ -151,4 +151,3 @@ class MetadataHydratorTest {
         assertEquals("channel-thumb", hydrated.thumbnailUrl)
     }
 }
-

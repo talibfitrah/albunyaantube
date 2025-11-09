@@ -52,4 +52,3 @@ class HomeScrollBenchmark {
         const val FIND_TIMEOUT_MS = 5_000L
     }
 }
-
