@@ -1,4 +1,0 @@
-# timestamp,device,scenario,metric,value,threshold,status,notes
-2025-10-03T01:54:00Z,COR-L29,ColdStart,StartupMs,383.58,2500,PASS,"Macrobenchmark run on HONOR COR-L29 (API 28); shader cache drop disabled"
-2025-10-03T02:19:30Z,Pixel_7_API_33_Emu,ColdStart,StartupMs,962.19,2500,INFO,"Emulator run with baseline profile + EMULATOR suppression"
-2025-10-03T03:31:23Z,COR-L29,ColdStart,StartupMs,404.38,2500,PASS,"Release build with baseline profile on device; shader cache drop disabled"
