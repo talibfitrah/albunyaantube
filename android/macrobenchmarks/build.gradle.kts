@@ -97,3 +97,4 @@ tasks.register("collectBaselineProfile") {
     description = "Collects Baseline Profiles on a connected device via the benchmark module."
     dependsOn("collectNonMinifiedBenchmarkBaselineProfile")
 }
+
