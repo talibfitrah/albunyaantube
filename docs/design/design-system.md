@@ -699,49 +699,82 @@ Any Video Click → Player (app-level navigation)
 
 ### 4.5 Data Models (Implemented)
 
-**File**: `data/model/ContentItem.kt`
+**Location**: `android/app/src/main/java/com/albunyaan/tube/data/model/`
 
+#### ContentItem.kt
 ```kotlin
-sealed class ContentItem
+sealed class ContentItem {
+    data class Video(
+        val id: String,
+        val title: String,
+        val category: String,
+        val durationMinutes: Int,
+        val uploadedDaysAgo: Int,
+        val description: String,
+        val thumbnailUrl: String? = null,
+        val viewCount: Long? = null
+    ) : ContentItem()
 
-data class Channel(
-    val id: String,
-    val name: String,
-    val category: String,
-    val subscribers: Int,
-    val description: String? = null,
-    val thumbnailUrl: String? = null,
-    val videoCount: Int? = null,
-    val categories: List<String>? = null // Multiple categories
-) : ContentItem()
+    data class Channel(
+        val id: String,
+        val name: String,
+        val category: String, // Primary category for backward compatibility
+        val subscribers: Int,
+        val description: String? = null,
+        val thumbnailUrl: String? = null,
+        val videoCount: Int? = null,
+        val categories: List<String>? = null // Multiple categories
+    ) : ContentItem()
 
-data class Playlist(
-    val id: String,
-    val title: String,
-    val category: String,
-    val videoCount: Int,
-    val thumbnailUrl: String? = null
-) : ContentItem()
-
-data class Video(
-    val id: String,
-    val title: String,
-    val channelName: String,
-    val views: Int,
-    val uploadDate: String,
-    val duration: String,
-    val thumbnailUrl: String? = null
-) : ContentItem()
+    data class Playlist(
+        val id: String,
+        val title: String,
+        val category: String,
+        val itemCount: Int,
+        val description: String? = null,
+        val thumbnailUrl: String? = null
+    ) : ContentItem()
+}
 ```
 
-**Category Model**:
+#### Category.kt
 ```kotlin
 data class Category(
     val id: String,
     val name: String,
-    val hasSubcategories: Boolean = false
+    val slug: String? = null,
+    val parentId: String? = null,
+    val hasSubcategories: Boolean = false,
+    val icon: String? = null // Emoji or icon identifier
 )
 ```
+
+#### CursorResponse.kt
+```kotlin
+data class CursorResponse(
+    val data: List<ContentItem>,
+    val pageInfo: PageInfo?
+) {
+    data class PageInfo(
+        val nextCursor: String?
+    )
+}
+
+enum class ContentType {
+    HOME,
+    CHANNELS,
+    PLAYLISTS,
+    VIDEOS
+}
+```
+
+**Key Model Features**:
+- **Sealed Class**: `ContentItem` ensures type-safe content handling
+- **Multiple Categories**: Channels support both single `category` (primary) and `categories` list
+- **Cursor Pagination**: `CursorResponse` with `nextCursor` for infinite scroll
+- **Hierarchical Categories**: `parentId` and `hasSubcategories` support category trees
+- **Relative Time**: Videos use `uploadedDaysAgo` and `durationMinutes` (not strings)
+- **View Counts**: Videos support `viewCount` as nullable `Long`
 
 ---
 
