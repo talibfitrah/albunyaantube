@@ -170,7 +170,6 @@ app:
 - **Backend Check**: `DownloadService` verifies video is approved before issuing download token
 - **Token Expiration**: Download tokens expire after 24 hours
 - **Storage Management**: Android app shows available device storage; Android OS manages low storage warnings
-- **EULA Acceptance**: Android app requires user acceptance before first download (DataStore flag)
 - **Note**: No artificial storage quota - user's device storage is the natural limit
 
 #### Deferred to v1.1+
@@ -247,7 +246,6 @@ app:
 - **Audit Trail**: Immutable record of all moderation decisions
 
 ### Offline Media Rights
-- **EULA Requirement**: Android app requires acceptance before first download
 - **No DRM**: Videos downloaded as plain files (no encryption, no expiration enforcement beyond 30 days)
 - **Policy Compliance**: Backend checks `approved=true` before issuing download token
 

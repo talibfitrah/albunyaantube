@@ -1659,15 +1659,7 @@ paths:
           schema:
             type: string
       requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [eulaAccepted]
-              properties:
-                eulaAccepted:
-                  type: boolean
+        required: false
       responses:
         '200':
           description: Download token

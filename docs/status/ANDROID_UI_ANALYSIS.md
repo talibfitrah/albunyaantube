@@ -690,7 +690,7 @@ CoordinatorLayout
 - Description: Tap to expand/collapse with arrow rotation
 - Like button: Toast "Coming soon"
 - Share button: Open Android share sheet
-- Download button: Trigger download with EULA check
+- Download button: Trigger download
 - Audio button: Toggle audio-only mode
 - Quality button: Show quality selection dialog
 
@@ -976,7 +976,6 @@ Player Screen (from any tab):
 - Additional adapters for different content types
 - Gesture controls for player
 - Cast framework integration
-- EULA system for downloads
 - Search history persistence
 - Multiple dialog implementations
 
@@ -998,12 +997,11 @@ Player Screen (from any tab):
 - **Analysis**: Code is more flexible with both colors available
 - **Status**: Both colors available, design system works correctly
 
-**4. Missing from Docs**: 
+**4. Missing from Docs**:
 - SearchFragment (search implementation)
 - Gesture controls documentation
 - Cast framework integration
 - Landscape player layout
-- EULA system details
 
 ---
 

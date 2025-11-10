@@ -250,7 +250,6 @@
     - RUNNING: Disabled
     - QUEUED: Disabled
     - Otherwise: Start new download
-  - EULA acceptance required
 
 ### 3.9 Chromecast/Cast Support
 - **Cast Button**: MediaRouter button in player
@@ -650,7 +649,7 @@ Splash → Onboarding (optional)
 | UI Fragments | 19 | 6 main screens + 13 detail/dialog screens |
 | Screens/Tabs | 5 | Home, Channels, Playlists, Videos, Downloads |
 | Player Features | 13 | Quality, captions, PiP, fullscreen, cast, etc. |
-| Download Features | 8 | Quality, pause/resume, storage, EULA, etc. |
+| Download Features | 7 | Quality, pause/resume, storage, etc. |
 | Settings Options | 7 | Locale, audio-only, background, quality, WiFi, safe mode, storage |
 | Supported Languages | 3 | English, Arabic (RTL), Dutch |
 | Gesture Controls | 5 | Brightness, volume, 2x seek forward/backward |

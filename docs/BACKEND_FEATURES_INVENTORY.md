@@ -179,7 +179,6 @@ All bulk operations:
 ### Advanced Features:
 - **Download Policy Enforcement:** Check download eligibility by video
 - **Token-Based Access Control:** Generate time-limited download tokens
-- **EULA Acceptance Tracking:** Require user acceptance before download
 - **Download Analytics:** Track started, completed, failed downloads
 - **Quality Tracking:** Record requested quality levels
 - **Device Type Tracking:** Categorize downloads by device (mobile, desktop, etc.)
@@ -188,7 +187,6 @@ All bulk operations:
 ### Endpoints:
 1. `GET /policy/{videoId}` - Check if video can be downloaded
 2. `POST /token/{videoId}` - Generate download token
-   - Body: {eulaAccepted: boolean}
 3. `GET /manifest/{videoId}` - Get download manifest with URLs
    - Query param: token
 4. `POST /analytics/download-started` - Track download start

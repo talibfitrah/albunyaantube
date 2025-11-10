@@ -632,7 +632,7 @@ Same structure as Categories, with dynamic title
 - Description dropdown: Tap to expand/collapse with arrow rotation
 - Like button: Shows "coming soon" toast
 - Share button: Opens Android share sheet
-- Download button: Triggers download (with EULA check)
+- Download button: Triggers download
 - Audio button: Toggles audio-only mode
 
 **Navigation**:

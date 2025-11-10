@@ -223,17 +223,19 @@ Response: {items[], totalItems, totalPages}
 ```
 Advantages: Can jump to specific page, knows total count
 
-**Strategy 3: Next Page Token (YouTube Style)**
+**Strategy 3: Next Page Token (YouTube-Style Pagination)**
 Used by: YouTubeSearchController
 ```
 GET /api/admin/youtube/search/all?query=quran&pageToken=...
 Response: {items[], nextPageToken}
 ```
-Advantages: Matches YouTube API expectations
+Advantages: Familiar pagination pattern, efficient for streamed results
 
 ---
 
-## 9. YouTube Integration with Enrichment (YouTubeSearchController)
+## 9. YouTube Content Discovery with NewPipeExtractor (YouTubeSearchController)
+
+**Technology:** Uses NewPipeExtractor library (not YouTube Data API v3) for quota-free content discovery
 
 **Search Capabilities:**
 1. **Unified Search:** Single API call, mixed content types
@@ -254,7 +256,7 @@ Advantages: Matches YouTube API expectations
    GET /api/admin/youtube/search/all?query=quran&pageToken=...
    ```
 
-4. **Content Details:** Full metadata retrieval
+4. **Content Details:** Full metadata retrieval via NewPipeExtractor
    ```
    GET /api/admin/youtube/channels/{id}
    GET /api/admin/youtube/playlists/{id}/videos?q=search&pageToken=...
@@ -267,6 +269,12 @@ Advantages: Matches YouTube API expectations
    Body: {channelIds, playlistIds, videoIds}
    Returns: {existingChannels, existingPlaylists, existingVideos}
    ```
+
+**Advantages of NewPipeExtractor:**
+- No API quota limits
+- No API key required
+- Direct content extraction from YouTube
+- Faster response times (no external API calls)
 
 **Caching Strategy:**
 - YouTube searches cached (1 hour TTL)
@@ -332,12 +340,7 @@ Advantages: Matches YouTube API expectations
    Returns: {token, expiresAt}
    ```
 
-3. **EULA Acceptance:** Require user acknowledgment
-   ```
-   Body: {eulaAccepted: true}
-   ```
-
-4. **Download Analytics:** Track all downloads
+3. **Download Analytics:** Track all downloads
    - Started: user initiated
    - Completed: user finished (includes file size)
    - Failed: user abandoned (includes error reason)
@@ -347,7 +350,7 @@ Advantages: Matches YouTube API expectations
 **Workflow:**
 ```
 1. Check Policy → GET /policy/{videoId}
-2. Accept EULA → POST /token/{videoId}
+2. Get Token → POST /token/{videoId}
 3. Get Manifest → GET /manifest/{videoId}?token=...
 4. Track Start → POST /analytics/download-started
 5. Download file...
@@ -478,6 +481,6 @@ Advantages: Matches YouTube API expectations
 1. **Not Just CRUD:** Features include transactions, validation, workflows
 2. **Production-Ready:** Enterprise patterns (audit, caching, pagination)
 3. **Scalable:** Batch operations, pagination, caching for large datasets
-4. **Compliant:** Complete audit trail, approval workflows, EULA tracking
+4. **Compliant:** Complete audit trail, approval workflows, download tracking
 5. **User-Centric:** Role-based access, approval reasons, error messages
 

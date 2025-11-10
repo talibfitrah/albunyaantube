@@ -204,7 +204,6 @@ This index guides you through the comprehensive backend API documentation.
 ### Download Management
 - Policy enforcement
 - Token-based access
-- EULA tracking
 - Download analytics
 - See: [ADVANCED_FEATURES_SUMMARY.md#11](ADVANCED_FEATURES_SUMMARY.md)
 
