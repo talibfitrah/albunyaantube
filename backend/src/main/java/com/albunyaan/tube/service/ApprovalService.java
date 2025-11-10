@@ -5,7 +5,6 @@ import com.albunyaan.tube.model.*;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.CategoryRepository;
-import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.Query;
 import com.google.cloud.firestore.QueryDocumentSnapshot;

@@ -2,7 +2,6 @@ package com.albunyaan.tube.service;
 
 import com.albunyaan.tube.model.User;
 import com.albunyaan.tube.repository.UserRepository;
-import com.google.cloud.Timestamp;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
 import com.google.firebase.auth.UserRecord;
