@@ -21,7 +21,7 @@ This document summarizes the end-to-end architecture for Albunyaan Tube, an ad-f
 - **Privacy-first**: Never use official YouTube API in mobile app (NewPipeExtractor only)
 - **Human moderation**: All content manually approved by admins before public visibility
 - **Multilingual**: English, Arabic (RTL), Dutch across all platforms
-- **Offline-first**: Android app supports downloads with 500MB quota
+- **Offline-first**: Android app supports downloads
 - **No user accounts**: Mobile app is public access only (admin dashboard requires Firebase Auth)
 
 ---
@@ -167,11 +167,11 @@ All use Firestore SDK directly (no Spring Data JPA):
 ### Key Screens (16 Total)
 - **Onboarding**: 3-page carousel (Browse, Listen in background, Download for offline)
 - **Main Shell**: Bottom navigation with 5 tabs
-  - Home (category filter + 3 horizontal lists: Channels, Playlists, Videos)
+  - Home (category filter + 3 horizontal lists: Channels, Playlists, Videos + search and settings buttons)
   - Channels (vertical list)
   - Playlists (vertical list)
   - Videos (vertical list)
-  - More (Settings, Downloads, About)
+  - Downloads
 - **Detail Screens**: Channel, Playlist detail
 - **Player**: Full-screen video player
 - **Search**: Backend-integrated search
@@ -180,7 +180,7 @@ All use Firestore SDK directly (no Spring Data JPA):
 - **Settings**: Locale switcher, safe mode toggle
 
 ### Video Player Features (ExoPlayer)
-- **Quality selection**: 144p-1080p with resolution info display
+- **Quality selection**: 144p-4k with resolution info display
 - **Audio-only mode**: Toggle for audio stream only
 - **Subtitles**: Multi-language tracks, auto-generated detection, "Off" option
 - **Picture-in-Picture**: Android 8+ with auto aspect ratio
@@ -213,11 +213,12 @@ All use Firestore SDK directly (no Spring Data JPA):
 
 ### Backend Integration
 - **Base URL**:
-  - Emulator: `http://10.0.2.2:8080/api`
-  - Device: `http://192.168.1.167:8080/api` (configured in app)
+  - Emulator: `http://10.0.2.2:8080/api` (Android emulator's gateway to host localhost)
+  - Device: `http://192.168.1.167:8080/api` (or configured backend IP)
+  - Production: `https://api.albunyaan.tube/api`
 - **API Client**: Retrofit with JSON payloads
 - **Authentication**: None (public content access)
-- **NewPipeExtractor**: Stream URL resolution (never official YouTube API)
+- **NewPipeExtractor**: Stream URL resolution on-device (never official YouTube API)
 
 ### Performance Budgets (PRD Requirements)
 - **Cold start**: < 2.5s on Pixel 4a (mid-range device, API 31)
@@ -362,16 +363,25 @@ All use Firestore SDK directly (no Spring Data JPA):
 - **Unit tests**: Mock Firestore repositories
 - **Integration tests**: Firebase Emulator Suite
 - **Performance tests**: Gatling load testing (200 RPS, p95 < 200ms)
+- **Scope**: Test only `/backend` directory (exclude `/frontend` and `/android`)
 
 ### Frontend (Vitest + Playwright)
 - **Unit tests**: Component tests with `@testing-library/vue`
 - **E2E tests**: Playwright (approval workflow, category assignment)
 - **Timeout**: 300 seconds (5 minutes) enforced per AGENTS.md policy
+- **Scope**: Test only `/frontend` directory (Vue 3 Admin Dashboard)
+- **IMPORTANT**: Exclude `/android` directory from frontend test scope (Android has separate native testing)
 
-### Android
+### Android (Kotlin Native Testing)
 - **Unit tests**: `./gradlew test` (JUnit, Mockito)
 - **Instrumentation tests**: `./gradlew connectedAndroidTest` (Espresso)
 - **Manual testing**: Device/emulator with real backend
+- **Scope**: Native Kotlin/Gradle testing separate from frontend
+
+### TestSprite Integration
+- **Frontend Testing**: Test only `/frontend` directory (exclude `/android`)
+- **Backend Testing**: Test only `/backend` directory (exclude `/frontend` and `/android`)
+- Android app has separate native testing tooling
 
 See [../status/TESTING_GUIDE.md](../status/TESTING_GUIDE.md) for detailed testing procedures.
 
