@@ -66,6 +66,7 @@ backend/.classpath
 backend/.project
 backend/.settings/
 backend/*.iml
+backend/bin/
 # Generated sources (keep wrapper!)
 backend/buildGenerated/
 backend/src/generated/
