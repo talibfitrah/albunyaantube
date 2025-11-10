@@ -79,19 +79,56 @@ children's ability to learn Islam independently.
 
 **Mobile Experience (Android)**:
 - Browse approved content by category, channel, playlist, video
-- Video player with quality selection (144p-1080p), audio-only mode, captions
+- Video player with advanced features:
+  - Quality selection (144p-1080p) with resolution info display
+  - Audio-only mode toggle (playback and downloads)
+  - Subtitle/caption support with multi-language tracks, auto-generated detection, "Off" option
+  - Picture-in-Picture mode (Android 8+) with auto aspect ratio calculation
+  - Fullscreen mode with immersive UI (hides status/navigation bars)
+  - Gesture controls: swipe for brightness/volume, double-tap to seek ±10s
+  - Chromecast support: Cast button, device detection, metadata passthrough
+  - UpNext queue with backend recommendations API integration
+  - Share functionality (external apps via intent chooser)
 - Live stream playback: "LIVE" badge on active streams, disabled seek bar, auto-transition to VOD when ended
-- Offline downloads with quality selector (144p-1080p), separate audio/video stream merging for HD (>480p), storage quota (500MB default), 30-day expiry
-- Search across approved content
+- Offline downloads with quality selector (144p-1080p), separate audio/video stream merging for HD (>480p), storage quota (500MB default), 30-day expiry, audio-only download option
+- Search across approved content with persistent search history (max 10 items, delete individual entries)
+- Safe mode toggle for family-friendly content filtering
 - Multi-language support: English, Arabic (RTL), Dutch
+- Basic analytics: event tracking for playback, quality changes, subtitle changes, queue interactions
 
 **Admin Dashboard (Web)**:
 - YouTube content search and preview
 - Pending approvals queue with inline category assignment
-- Content library management (approved items)
-- Exclusions editor
+- Content library management with advanced features:
+  - Dual layout (desktop sidebar filters + mobile bottom sheet)
+  - Multi-select with bulk actions (approve, delete, assign categories)
+  - Advanced filtering (type, status, category, date added, search)
+  - Sort options (newest, oldest, alphabetical)
+  - Inline editing and exclusion management
+- Exclusions workspace:
+  - Dedicated management interface for all exclusions
+  - Search and type filtering
+  - Bulk removal operations
+  - Parent context display (shows which channel/playlist)
+  - Reason tracking and audit trail
+- Bulk import/export system:
+  - Full format: Complete JSON backup with merge strategies (SKIP_EXISTING, OVERWRITE, MERGE)
+  - Simple format: JSON-like format with downloadable templates
+  - Selective export (categories, channels, playlists, videos)
+  - Option to exclude unavailable videos
+- Video validation system:
+  - Manual trigger with configurable video limits
+  - Validation history tracking with statistics
+  - Status tracking (NEVER_RUN, RUNNING, COMPLETED, FAILED, ERROR)
+  - Detects unavailable/deleted YouTube videos
+  - Dashboard panel showing validation status and unavailable video counts
 - User management (create/assign admin/moderator roles)
-- Metrics dashboard (pending queue depth, content totals, moderator activity)
+- Metrics dashboard:
+  - Pending queue depth, content totals, moderator activity
+  - Comparison to previous timeframe with trend indicators (UP/DOWN/FLAT)
+  - Timeframe selector (Last 24h / Last 7 Days / Last 30 Days)
+  - Validation status panel with error counts
+  - Warning banners for threshold breaches
 - Audit log with filtering by actor, action, date range
 
 **Technical Requirements**:
@@ -100,6 +137,13 @@ children's ability to learn Islam independently.
 - Response caching (5-minute TTL) with cache stampede protection
 - Cursor-based pagination for infinite scroll
 - Internationalization with ICU MessageFormat plurals
+
+**Testing Scope (TestSprite)**:
+- **Frontend Testing**: Test only the `/frontend` directory (Vue 3 Admin Dashboard)
+  - **IMPORTANT**: Exclude `/android` directory from frontend test scope
+  - Android app has separate native testing (Kotlin/Gradle)
+- **Backend Testing**: Test only the `/backend` directory (Spring Boot API)
+  - **IMPORTANT**: Exclude `/frontend` and `/android` directories from backend test scope
 
 ---
 
@@ -110,17 +154,22 @@ children's ability to learn Islam independently.
 - User accounts for mobile viewers (public access, no login)
 - Community content suggestions from end-users
 - Video uploads (YouTube-only sourcing)
-- Premium features (playlists, bookmarks, watch history)
+- Premium features (playlists, bookmarks, watch history sync across devices)
+  - Note: Basic search history (local, max 10 items) IS in scope
 - Automated moderation via ML/AI
-- Social features (comments, likes, shares within app)
+- In-app social features (comments, likes, in-app sharing)
+  - Note: External sharing via intent chooser (WhatsApp, email, etc.) IS in scope
 - Cloud storage integration (app-private storage only)
 
 **Future Consideration**:
 - Volunteer moderator program
-- Advanced analytics (watch time, completion rates)
-- Content recommendations engine
+- Advanced analytics (watch time heatmaps, completion rates, retention metrics)
+  - Note: Basic event tracking (playback events, quality changes) IS in scope
+- Content recommendations engine (ML-based personalization)
+  - Note: UpNext queue with backend recommendations IS in scope
 - Multi-device sync
-- Parental controls and profiles
+- Parental controls and profiles (kid mode, time limits)
+  - Note: Safe mode toggle IS in scope
 
 ---
 
@@ -475,12 +524,20 @@ children's ability to learn Islam independently.
   - **Note**: FreeTube/Invidious fallback system deferred to v1.1
 - Approval workflow: ADMIN direct approval, MODERATOR submission for review
 - Category management (hierarchical, max 2 levels)
-- Exclusions (videos/playlists within channels)
-- Android app: browse by category, video playback, quality selection, live stream support
-- Offline downloads with 500MB quota, 30-day expiry
+- Exclusions (videos/playlists within channels) with dedicated workspace
+- Bulk import/export (formats: full JSON)
+- Video validation system (detect unavailable videos)
+- Content library with advanced filtering and bulk actions
+- Android app: browse by category, video playback with advanced features
+  - Quality selection, audio-only mode, subtitles
+  - Picture-in-Picture, fullscreen, gesture controls
+  - Chromecast support, UpNext recommendations
+  - External sharing, search history
+  - Live stream support
+- Offline downloads with 500MB quota, 30-day expiry, audio-only option
 - Multi-language: English, Arabic (RTL), Dutch
 - Audit logging of all approval actions
-- Metrics dashboard: pending queue, content totals, admin activity
+- Metrics dashboard with trend analysis: pending queue, content totals, admin activity, validation status
 
 **Launch Criteria**:
 - 500+ approved videos across 20 categories
@@ -491,19 +548,15 @@ children's ability to learn Islam independently.
 - Security audit passed
 
 **MVP Backlog** (defer if time-constrained):
-- Bulk import/export (JSON format)
 - Advanced search filters (video length, publish date)
 - Email notifications for admins (pending queue alerts)
 
 ### v1.1 (Months 4-6): Optimization & Scale
 **Next Features**:
 - Auto-approval rules for trusted channels (skip manual review)
-- Bulk approval actions for admins
 - Content suggestions from mobile users (submission form)
 - Advanced analytics: watch time, completion rates per category
 - Admin-managed settings persistence (locale, notifications)
-- Download queue management (pause/resume individual items)
-- Video player: Picture-in-Picture mode (Android 8+)
 - Background audio playback with MediaSession notifications
 
 **Performance Enhancements**:
