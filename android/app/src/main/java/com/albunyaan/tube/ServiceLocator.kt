@@ -97,7 +97,7 @@ object ServiceLocator {
     private val listMetricsReporter: ListMetricsReporter by lazy { LogListMetricsReporter() }
     private val playerRepository: PlayerRepository by lazy { DefaultPlayerRepository(extractorClient) }
     private val downloadScheduler: DownloadScheduler by lazy { DownloadScheduler(workManager) }
-    private val downloadStorage: DownloadStorage by lazy { DownloadStorage(appContext, DOWNLOAD_QUOTA_BYTES) }
+    private val downloadStorage: DownloadStorage by lazy { DownloadStorage(appContext) }
     private val downloadRepository: DownloadRepository by lazy {
         DefaultDownloadRepository(workManager, downloadScheduler, downloadStorage, extractorMetrics, scope)
     }
@@ -219,6 +219,4 @@ object ServiceLocator {
     fun setImagesEnabledForTesting(enabled: Boolean?) {
         overrideImagesEnabled = enabled
     }
-
-    private const val DOWNLOAD_QUOTA_BYTES = 500L * 1024 * 1024 // 500 MB
 }

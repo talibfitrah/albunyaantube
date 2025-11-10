@@ -1,6 +1,8 @@
 package com.albunyaan.tube.ui.settings
 
 import android.os.Bundle
+import android.os.Environment
+import android.os.StatFs
 import android.text.format.Formatter
 import android.view.View
 import android.widget.ProgressBar
@@ -10,6 +12,7 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import com.albunyaan.tube.R
+import com.albunyaan.tube.ServiceLocator
 import com.albunyaan.tube.databinding.FragmentSettingsBinding
 import com.albunyaan.tube.locale.LocaleManager
 import com.albunyaan.tube.preferences.SettingsPreferences
@@ -156,6 +159,7 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
 
     /**
      * ANDROID-DL-03: Storage Management
+     * Shows device storage information (no artificial quota)
      */
     private fun setupStorageManagement() {
         binding?.root?.let { view ->
@@ -170,25 +174,30 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
                 showClearDownloadsConfirmation()
             }
 
-            updateStorageQuota()
+            updateStorageDisplay()
         }
     }
 
-    private fun updateStorageQuota() {
+    private fun updateStorageDisplay() {
         binding?.root?.let { view ->
             val storageQuotaValue = view.findViewById<TextView>(R.id.storageQuotaValue)
             val storageQuotaProgress = view.findViewById<ProgressBar>(R.id.storageQuotaProgress)
 
             viewLifecycleOwner.lifecycleScope.launch {
-                val downloadDir = File(requireContext().filesDir, "downloads")
-                val usedBytes = calculateDirectorySize(downloadDir)
-                val quotaBytes = 500_000_000L // 500 MB default quota
+                val downloadStorage = ServiceLocator.provideDownloadStorage()
+                val downloadedBytes = downloadStorage.getCurrentDownloadSize()
+                val availableBytes = downloadStorage.getAvailableDeviceStorage()
+                val totalBytes = downloadStorage.getTotalDeviceStorage()
 
-                val usedStr = Formatter.formatShortFileSize(requireContext(), usedBytes)
-                val quotaStr = Formatter.formatShortFileSize(requireContext(), quotaBytes)
-                val progress = ((usedBytes.toDouble() / quotaBytes) * 100).toInt()
+                val downloadedStr = Formatter.formatShortFileSize(requireContext(), downloadedBytes)
+                val availableStr = Formatter.formatShortFileSize(requireContext(), availableBytes)
+                val totalStr = Formatter.formatShortFileSize(requireContext(), totalBytes)
 
-                storageQuotaValue?.text = "$usedStr of $quotaStr"
+                // Calculate used device storage percentage (not downloads, but total device usage)
+                val usedDeviceBytes = totalBytes - availableBytes
+                val progress = ((usedDeviceBytes.toDouble() / totalBytes) * 100).toInt().coerceIn(0, 100)
+
+                storageQuotaValue?.text = "Downloads: $downloadedStr • Available: $availableStr of $totalStr"
                 storageQuotaProgress?.progress = progress
             }
         }
@@ -252,7 +261,7 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
                 Snackbar.make(view, "Cleared $deletedCount files", Snackbar.LENGTH_SHORT).show()
             }
 
-            updateStorageQuota()
+            updateStorageDisplay()
         }
     }
 

@@ -19,9 +19,11 @@ class DownloadStorageJvmTest {
     }
 
     @Test
-    fun ensureSpace_prunesOldestFileWhenOverQuota() {
+    fun ensureSpace_doesNotPruneFiles_noArtificialQuota() {
+        // No longer tests quota enforcement since there is no artificial quota
+        // Device storage is the natural limit; Android OS handles low storage warnings
         val root = tmp.newFolder("files")
-        val storage = DownloadStorage(context(root), 1024) // 1 KB
+        val storage = DownloadStorage(context(root))
 
         val firstTemp = storage.createTempFile("first")
         firstTemp.outputStream().use { it.write(ByteArray(600)) }
@@ -34,20 +36,16 @@ class DownloadStorageJvmTest {
         val thirdTemp = storage.createTempFile("third")
         thirdTemp.outputStream().use { it.write(ByteArray(800)) }
 
-        storage.ensureSpace(800)
+        storage.ensureSpace(800) // No-op in current implementation
 
         val third = storage.commit("third", true, thirdTemp)
 
+        // All files should exist (no pruning)
         val first = storage.targetFile("first", true)
         val second = storage.targetFile("second", true)
 
-        assertFalse(first.exists())
-        assertTrue(third.exists())
-
-        val totalSize = sequenceOf(second, third)
-            .filter { it.exists() }
-            .map { it.length() }
-            .sum()
-        assertTrue(totalSize <= 1024)
+        assertTrue("First file should exist (no quota pruning)", first.exists())
+        assertTrue("Second file should exist", second.exists())
+        assertTrue("Third file should exist", third.exists())
     }
 }

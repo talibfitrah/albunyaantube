@@ -6,8 +6,7 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.max
 
 class DownloadStorage(
-    private val context: Context,
-    private val quotaBytes: Long
+    private val context: Context
 ) {
 
     private val rootDir: File = File(context.filesDir, "downloads").apply { mkdirs() }
@@ -22,8 +21,8 @@ class DownloadStorage(
         if (requiredBytes <= 0) return
         val committedSize = calculateCommittedSize(rootDir)
         currentSize.set(committedSize)
-        if (committedSize + requiredBytes <= quotaBytes) return
-        prune(requiredBytes)
+        // No artificial quota - device storage is the natural limit
+        // Android OS will handle low storage warnings
     }
 
     fun createTempFile(downloadId: String): File {
@@ -123,19 +122,16 @@ class DownloadStorage(
             ?: emptyMap()
     }
 
-    private fun prune(requiredBytes: Long) {
-        val files = rootDir.listFiles()
-            ?.filterNot { it.isDirectory || it.name.endsWith(TEMP_SUFFIX) }
-            ?.sortedBy { it.lastModified() }
-            ?: return
-        for (file in files) {
-            if (currentSize.get() + requiredBytes <= quotaBytes) break
-            val size = calculateEntrySize(file)
-            if (deleteFileSafely(file)) {
-                currentSize.addAndGet(-size)
-            }
-        }
-        currentSize.set(calculateCommittedSize(rootDir))
+    fun getAvailableDeviceStorage(): Long {
+        return rootDir.usableSpace
+    }
+
+    fun getTotalDeviceStorage(): Long {
+        return rootDir.totalSpace
+    }
+
+    fun getCurrentDownloadSize(): Long {
+        return currentSize.get()
     }
 
     private fun calculateCommittedSize(dir: File): Long {

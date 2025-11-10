@@ -22,7 +22,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Storage Used"
+            android:text="Device Storage"
             android:textSize="16sp"
             android:textColor="@android:color/black"/>
 
@@ -30,7 +30,7 @@
             android:id="@+id/storageQuotaValue"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="0 MB of 500 MB"
+            android:text="Downloads: 0 MB • Available: 0 GB of 0 GB"
             android:textSize="14sp"
             android:textColor="@color/icon_gray"
             android:layout_marginTop="@dimen/spacing_xs"/>
