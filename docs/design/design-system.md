@@ -189,15 +189,17 @@ This document provides the complete UI/UX design specifications for both the Adm
 
 **Design**:
 - White background, 8dp elevation
-- 4 tabs: Home | Channels | Playlists | Videos
+- **5 tabs**: Home | Channels | Playlists | Videos | Downloads
 - **Selection**: Icon color changes to `primary_green` (no background)
 - **Unselected**: White with 60% opacity
+- **Height**: 72dp (Material Design 3 standard)
 
 **Tab Icons** (`res/drawable/`):
 1. `ic_home.xml` - House icon
 2. `ic_channels.xml` - Play button in rectangle
 3. `ic_playlists.xml` - Horizontal lines
 4. `ic_videos.xml` - 2×2 grid
+5. `ic_download.xml` - Download icon
 
 **State Selector**: `res/color/bottom_nav_item_color.xml`
 ```xml
