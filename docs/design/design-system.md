@@ -1,7 +1,7 @@
 # Albunyaan Tube - Design Specification
 
-> **Last Updated**: 2025-10-04
-> **Status**: Admin UI ✅ | Android UI ✅
+> **Last Updated**: 2025-11-10
+> **Status**: Admin UI ✅ | Android UI ✅ (15 screens, production-ready)
 > **Authority**: **Implemented code is the source of truth**
 
 ---
@@ -77,10 +77,11 @@ This document provides the complete UI/UX design specifications for both the Adm
 #### Android App (Implemented)
 ```xml
 <!-- colors.xml -->
-<color name="primary_green">#35C491</color>
+<color name="primary_green">#275E4B</color>      <!-- Brand primary (darker) -->
+<color name="primary_variant">#35C491</color>    <!-- Accents, active states (lighter) -->
 <color name="background_gray">#F5F5F5</color>
 <color name="icon_gray">#9E9E9E</color>
-<color name="surface_variant">#E5E7EB</color>
+<color name="surface_variant">#E3E9E7</color>
 ```
 
 ### Typography
@@ -154,9 +155,11 @@ This document provides the complete UI/UX design specifications for both the Adm
 #### Color Palette
 **File**: `res/values/colors.xml`
 
-- `primary_green`: `#35C491` - Brand color, accents, selection states
+- `primary_green`: `#275E4B` - Brand primary color (darker shade)
+- `primary_variant`: `#35C491` - Accents, active states, highlights (lighter shade)
 - `background_gray`: `#F5F5F5` - Screen backgrounds
 - `icon_gray`: `#9E9E9E` - Secondary text, icons
+- `surface_variant`: `#E3E9E7` - Secondary backgrounds, cards
 - White: Card backgrounds, toolbars
 - Black: Primary text
 
@@ -206,7 +209,7 @@ This document provides the complete UI/UX design specifications for both the Adm
 
 ---
 
-### 4.3 Screen Implementations
+### 4.3 Screen Implementations (15 Total)
 
 #### Home Screen ✅
 **Fragment**: `ui/home/HomeFragmentNew.kt`
@@ -431,8 +434,10 @@ Same structure as Categories, with dynamic title
     │       │   └── "Downloaded videos will appear here" (14sp)
     │       └── Storage Info Card
     │           ├── "Storage Used" (14sp, bold)
-    │           ├── "0 MB of 500 MB" (14sp, gray)
+    │           ├── "X MB used" (14sp, gray)
+    │           ├── "Device storage available: Y GB" (12sp, gray)
     │           └── ProgressBar (green)
+    │           Note: No artificial quota - user's device storage is the natural limit
     └── Library Section
         └── White Card
             ├── Saved (0 videos) →
@@ -448,6 +453,58 @@ Same structure as Categories, with dynamic title
 ```
 
 **Access**: Home menu → Downloads
+
+---
+
+#### Search Screen ✅
+**Fragment**: `ui/search/SearchFragment.kt`
+**Layout**: `res/layout/fragment_search.xml`
+
+**Structure**:
+```
+├── Toolbar (\"Search\", back button)
+└── SearchView (Material3)
+    ├── Search History (if empty query)
+    │   ├── Recent searches list (max 10)
+    │   └── Clear all button
+    └── Search Results (after query)
+        ├── Channels section
+        ├── Playlists section
+        └── Videos section
+```
+
+**Search History**:
+- Stored in DataStore (persistent)
+- Max 10 recent searches
+- Delete individual entries
+- Clear all button
+
+**Search Results**:
+- Combined results from backend API
+- Sections: Channels, Playlists, Videos
+- Click → Navigate to detail screen
+
+**Access**: Home screen search icon
+
+---
+
+#### About Screen ✅
+**Fragment**: `ui/AboutFragment.kt`
+**Layout**: `res/layout/fragment_about.xml`
+
+**Structure**:
+```
+├── Toolbar (\"About\")
+└── Content
+    ├── App Icon (120dp)
+    ├── App Name + Version
+    ├── Description text
+    └── Links
+        ├── Support Center
+        └── Privacy Policy
+```
+
+**Access**: Settings → About
 
 ---
 
@@ -552,15 +609,21 @@ Same structure as Categories, with dynamic title
 ```
 
 **Player Features**:
-- ✅ ExoPlayer integration with NewPipe extractor
+- ✅ ExoPlayer integration with NewPipeExtractor (no official YouTube API)
 - ✅ Custom gesture controls:
-  - Left side swipe: Brightness control
-  - Right side swipe: Volume control
-  - Double-tap left/right: Seek ±10s
-- ✅ Picture-in-Picture with dynamic aspect ratio
-- ✅ Landscape fullscreen support
-- ✅ Quality selection dialog
-- ✅ Background playback service ready
+  - Left side swipe: Brightness control (0-100%)
+  - Right side swipe: Volume control (system volume)
+  - Double-tap left/right: Seek ±10 seconds
+  - Single tap: Show/hide controls
+- ✅ Picture-in-Picture with dynamic aspect ratio (Android 8+)
+- ✅ Landscape fullscreen with immersive mode (hides status/nav bars)
+- ✅ Quality selection dialog (144p-4K, auto quality)
+- ✅ Google Cast Framework integration (Chromecast support)
+- ✅ Subtitle/caption support with multi-language tracks
+- ✅ Audio-only mode toggle
+- ✅ Background playback service structure (MediaSession ready)
+- ✅ Share functionality (external apps via intent chooser)
+- ✅ UpNext recommendations queue display
 
 **UI Interactions**:
 - Description dropdown: Tap to expand/collapse with arrow rotation
@@ -609,14 +672,19 @@ Same structure as Categories, with dynamic title
 Splash → Onboarding (first launch) → Main Shell
       ↘ Main Shell (returning users)
 
-Main Shell (Tabs):
-├── Home → Settings/Downloads
-├── Channels → Channel Detail
-├── Channels → Categories → Subcategories
+Main Shell (Bottom Navigation - 5 Tabs):
+├── Home
+│   ├── Search → Search Results
+│   ├── Settings → Language/Theme/About dialogs
+│   └── Downloads → Downloads & Library
+├── Channels
+│   ├── Categories FAB → Categories → Subcategories
+│   └── Channel Click → Channel Detail
 ├── Playlists → Playlist Detail
-└── Videos
+├── Videos
+└── More (future features)
 
-Any Video Click → Player (parent-level navigation)
+Any Video Click → Player (app-level navigation)
 ```
 
 **Key Navigation Features**:
@@ -870,7 +938,7 @@ val chip = Chip(context).apply {
 - Performance optimized
 
 ### Android App ✅
-**Completed Screens** (13 total):
+**Completed Screens** (15 total):
 - ✅ Splash Screen with auto-navigation
 - ✅ Onboarding (3 swipeable pages with working indicators)
 - ✅ Home Screen with sections and menu
@@ -881,23 +949,33 @@ val chip = Chip(context).apply {
 - ✅ Playlist Detail Screen
 - ✅ Categories Screen
 - ✅ Subcategories Screen
-- ✅ Settings Screen with all preferences
-- ✅ Downloads & Library Screen
-- ✅ **Player Screen with modern UI** (NEW)
+- ✅ Settings Screen with all preferences (language, theme, quality, toggles)
+- ✅ Downloads & Library Screen (with device storage management)
+- ✅ **Player Screen with gesture controls** (ExoPlayer + NewPipeExtractor)
+- ✅ **Search Screen** (backend-integrated with history)
+- ✅ **About Screen** (version info and links)
 
 **Completed Features**:
-- ✅ Bottom navigation (icon-only green selection)
+- ✅ Bottom navigation (5 tabs with icon-only green selection)
 - ✅ Nested navigation with proper back button handling
-- ✅ ExoPlayer integration with NewPipe extractor
-- ✅ Custom player controls with gesture support
+- ✅ ExoPlayer integration with NewPipeExtractor (no official YouTube API)
+- ✅ Custom player controls with gesture support:
+  - Brightness/volume swipe controls
+  - Double-tap seek (±10s)
+  - Single tap show/hide controls
 - ✅ Picture-in-Picture with dynamic aspect ratio
+- ✅ Google Cast Framework integration (Chromecast)
+- ✅ Subtitle/caption support with multi-language tracks
+- ✅ Quality selection dialog (144p-4K, auto)
 - ✅ Expandable video description
-- ✅ Share functionality
+- ✅ Share functionality (external apps via intent)
 - ✅ Audio-only mode toggle
-- ✅ Landscape fullscreen player
-- ✅ All adapters created and wired
+- ✅ Landscape fullscreen with immersive mode
+- ✅ Search with persistent history (max 10 items)
+- ✅ Device storage management (no artificial quota)
+- ✅ All 12+ RecyclerView adapters created and wired
 - ✅ Material Design 3 components throughout
-- ✅ Consistent `primary_green` (#35C491) design system
+- ✅ Consistent design system with `primary_green` (#275E4B) and `primary_variant` (#35C491)
 
 **Bug Fixes (Latest)**:
 - ✅ Fixed video click navigation crash
@@ -906,12 +984,16 @@ val chip = Chip(context).apply {
 - ✅ Fixed onboarding indicator dots updating on swipe
 - ✅ Fixed question marks in onboarding icons
 
-**Pending**:
-- [ ] Connect to real backend API
-- [ ] Implement video downloads
-- [ ] Background playback MediaSession
-- [ ] Fetch real video metadata (views, date, description)
-- [ ] Quality selection implementation
+**Backend Integration Needed**:
+- [ ] Connect to production backend API
+- [ ] Implement video downloads with WorkManager
+- [ ] Background playback MediaSession notifications
+- [ ] Fetch real video metadata from NewPipeExtractor (views, date, descriptions)
+- [ ] Quality stream selection from NewPipeExtractor
+- [ ] UpNext recommendations from backend API
+- [ ] Download policy enforcement
+
+**Note**: All UI scaffolding is complete and production-ready. Remaining work is backend integration only.
 
 ---
 
@@ -944,6 +1026,12 @@ val chip = Chip(context).apply {
 
 ---
 
-**Document Version**: 3.0
-**Last Updated**: 2025-10-04
-**Next Review**: After Phase 5 completion
+**Document Version**: 4.0
+**Last Updated**: 2025-11-10
+**Next Review**: After backend API integration complete
+
+**Changelog**:
+- **v4.0 (2025-11-10)**: Updated color tokens (primary_green + primary_variant), added Search and About screens, documented gesture controls, removed artificial storage quota, clarified NewPipeExtractor usage (no YouTube API), updated to 15 total screens
+- **v3.0 (2025-10-04)**: Initial production documentation
+- **v2.0**: Design system finalization
+- **v1.0**: Initial draft
