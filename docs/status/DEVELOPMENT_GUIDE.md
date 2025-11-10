@@ -450,10 +450,6 @@ lsof -ti:8080 | xargs kill -9
 
 ## Additional Resources
 
-- **Architecture**: See `docs/architecture/solution-architecture.md`
-- **Roadmap**: See `docs/roadmap/roadmap.md`
-- **Testing Strategy**: See `docs/testing/test-strategy.md`
-- **Security**: See `docs/security/threat-model.md`
 - **i18n**: See `docs/i18n/strategy.md`
 
 ---

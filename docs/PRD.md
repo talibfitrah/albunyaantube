@@ -1,5 +1,10 @@
 # Product Requirements Document: Albunyaan Tube
 
+> **Related Documentation:**
+> - **Architecture**: [System Overview](architecture/overview.md) | [API Spec](architecture/api-specification.yaml) | [Security Model](architecture/security.md)
+> - **Design**: [Design System](design/design-system.md) | [i18n Strategy](design/i18n-strategy.md)
+> - **Guides**: [Android Guide](status/ANDROID_GUIDE.md) | [Testing Guide](status/TESTING_GUIDE.md) | [Deployment Guide](status/DEPLOYMENT_GUIDE.md)
+
 ## Overview & Goals
 
 Albunyaan Tube is an ad-free, admin-curated YouTube client delivering safe
@@ -131,6 +136,9 @@ children's ability to learn Islam independently.
   - Warning banners for threshold breaches
 - Audit log with filtering by actor, action, date range
 
+> **See Also:**
+> - [Design System](design/design-system.md) - UI specifications, design tokens, component library, and accessibility guidelines
+
 **Technical Requirements**:
 - Role-based access control (ADMIN: full permissions including direct approval and user management; MODERATOR: can submit content for admin review, view dashboard metrics)
 - NoSQL document database with composite indexes
@@ -138,12 +146,19 @@ children's ability to learn Islam independently.
 - Cursor-based pagination for infinite scroll
 - Internationalization with ICU MessageFormat plurals
 
+> **See Also:**
+> - [Architecture Overview](architecture/overview.md) - System architecture, tech stack details, and C4 diagrams
+> - [API Specification](architecture/api-specification.yaml) - Complete OpenAPI REST API documentation
+
 **Testing Scope (TestSprite)**:
 - **Frontend Testing**: Test only the `/frontend` directory (Vue 3 Admin Dashboard)
   - **IMPORTANT**: Exclude `/android` directory from frontend test scope
   - Android app has separate native testing (Kotlin/Gradle)
 - **Backend Testing**: Test only the `/backend` directory (Spring Boot API)
   - **IMPORTANT**: Exclude `/frontend` and `/android` directories from backend test scope
+
+> **See Also:**
+> - [Testing Guide](status/TESTING_GUIDE.md) - Comprehensive testing strategy, data verification, and performance testing
 
 ---
 
@@ -174,6 +189,9 @@ children's ability to learn Islam independently.
 ---
 
 ## User Stories & Acceptance Criteria
+
+> **See Also:**
+> - [Acceptance Criteria](plan/acceptance-criteria.md) - Complete traceability matrix linking requirements to user stories and test scenarios
 
 ### Story 1: Admin Searches and Directly Approves Content
 **As an** administrator
@@ -378,11 +396,17 @@ children's ability to learn Islam independently.
 - HSTS headers
 - Argon2id password hashing (Firebase default is sufficient for MVP)
 
+> **See Also:**
+> - [Security & Threat Model](architecture/security.md) - Detailed threat analysis, security controls, and mitigation strategies
+
 ### Accessibility
 - WCAG 2.1 AA compliance: color contrast ≥ 4.5:1 (text), ≥ 3:1 (UI)
 - All interactive elements have TalkBack labels (Android) or aria-label (web)
 - Focus order follows visual hierarchy; keyboard navigation supported (web)
 - TalkBack/VoiceOver tested on Android; screen reader announces pagination
+
+> **See Also:**
+> - [Design System - Accessibility](design/design-system.md) - Detailed accessibility guidelines, WCAG compliance checklist, and testing procedures
 
 ### Localization
 **Supported Languages**: English (default), Arabic (RTL), Dutch
@@ -401,6 +425,9 @@ children's ability to learn Islam independently.
 - Admin-managed content (titles, descriptions) stored as locale maps in
   database
 - Error messages, empty states, accessibility labels localized
+
+> **See Also:**
+> - [i18n Strategy](design/i18n-strategy.md) - Comprehensive internationalization guidelines, RTL implementation, and translation workflows
 
 ### Reliability
 **Uptime Target**: 99.9% (43 hours downtime/year max)
@@ -437,6 +464,9 @@ children's ability to learn Islam independently.
 ---
 
 ## Risks & Open Questions
+
+> **See Also:**
+> - [Risk Register](plan/risk-register.md) - Comprehensive risk analysis with likelihood, impact ratings, and detailed mitigation plans
 
 **High-Priority Risks**:
 
@@ -515,6 +545,10 @@ children's ability to learn Islam independently.
 ---
 
 ## Release Plan (MVP → v1.1)
+
+> **See Also:**
+> - [Product Roadmap](plan/roadmap.md) - Detailed phased delivery plan with milestones, dependencies, and timeline estimates
+> - [Deployment Guide](status/DEPLOYMENT_GUIDE.md) - VPS deployment procedures, HTTPS setup, monitoring, and operations
 
 ### MVP (Months 1-3): Core Curation & Playback
 **Must-Have Features**:
