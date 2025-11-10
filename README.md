@@ -1,58 +1,151 @@
-# Albunyaan Tube Design Repository
+# Albunyaan Tube
 
-Welcome to the design workspace for Albunyaan Tube, an ad-free, admin-curated halal YouTube client. This repository captures all discovery outcomes, architectural decisions, experience specifications, and planning artifacts required before implementation. The materials are organized by discipline and phase to keep product, engineering, and design aligned.
+Welcome to **Albunyaan Tube**, an ad-free, admin-curated halal YouTube client delivering safe Islamic content to Muslim families and students of knowledge through native mobile apps and a web-based moderation dashboard.
+
+**Vision**: Become the trusted global platform for halal YouTube content where every Muslim can confidently access safe Islamic content without compromising values or exposure to inappropriate material.
+
+This repository contains the complete codebase (Android app, admin dashboard, backend API) along with all design artifacts, architectural decisions, and planning documentation organized by discipline to keep product, engineering, and design aligned.
+
+**See**: [`docs/PRD.md`](docs/PRD.md) for complete product requirements and feature specifications.
 
 ## How to Navigate
-- Start with [`docs/vision/vision.md`](docs/vision/vision.md) to understand goals, success metrics, and guardrails.
-- Review the phased delivery plan in [`docs/roadmap/roadmap.md`](docs/roadmap/roadmap.md) which maps required deliverables to milestones.
-- Experience specifications, including canonical layouts and design tokens, live in [`docs/ux/ui-spec.md`](docs/ux/ui-spec.md) and [`docs/ux/design-tokens.json`](docs/ux/design-tokens.json).
-- Solution architecture, C4 diagrams, and integration sequences are in [`docs/architecture`](docs/architecture).
-- API contracts are drafted in [`docs/api/openapi-draft.yaml`](docs/api/openapi-draft.yaml) with supporting JSON Schemas under [`docs/data/json-schemas`](docs/data/json-schemas).
-- Security, internationalization, testing, and acceptance criteria are documented in their respective folders.
-- Admin onboarding, login, and locale QA runbooks live in [`docs/runbooks`](docs/runbooks) for day-one setup guidance.
-- Product backlog and risk register are maintained in [`docs/backlog/product-backlog.csv`](docs/backlog/product-backlog.csv) and [`docs/risk-register.md`](docs/risk-register.md).
 
-### Admin UI Quick Links
-- **Frontend prototypes & state**: see [`frontend/src/views`](frontend/src/views) for registry, moderation, and dashboard implementations aligning with Phase 3 specs.
-- **Locale bundles**: translation sources for English, Arabic, and Dutch live in [`frontend/src/locales/messages.ts`](frontend/src/locales/messages.ts).
-- **Registry search filters**: shared Pinia store and component located in [`frontend/src/stores/registryFilters.ts`](frontend/src/stores/registryFilters.ts) and [`frontend/src/components/registry/RegistryFilters.vue`](frontend/src/components/registry/RegistryFilters.vue).
-- **Dashboard metrics plan**: refer to [`docs/frontend/dashboard-metrics-plan.md`](docs/frontend/dashboard-metrics-plan.md) and contract details in [`docs/api/openapi-draft.yaml`](docs/api/openapi-draft.yaml#L220).
-- **Onboarding & QA**: pair this README with the [`Admin Onboarding`](docs/runbooks/admin-onboarding.md) and [`Admin Workspace Login`](docs/runbooks/admin-login.md) guides to validate locale smoke tests, dashboard warnings, and registry filters.
+**📌 Start Here:**
+- **Complete Product Requirements**: [`docs/PRD.md`](docs/PRD.md) - Vision, features, user stories, success metrics
+- **Documentation Hub**: [`docs/README.md`](docs/README.md) - Complete navigation for all documentation
+- **Developer Guide**: [`CLAUDE.md`](CLAUDE.md) - Essential guide for AI assistants and developers
+
+**🎨 Design & UX:**
+- Design system, UI specifications: [`docs/design/design-system.md`](docs/design/design-system.md)
+- Internationalization strategy (en/ar/nl): [`docs/design/i18n-strategy.md`](docs/design/i18n-strategy.md)
+- Design tokens (CSS variables): [`frontend/src/assets/main.css`](frontend/src/assets/main.css)
+
+**🏗️ Architecture:**
+- System architecture overview: [`docs/architecture/overview.md`](docs/architecture/overview.md)
+- REST API specification (OpenAPI): [`docs/architecture/api-specification.yaml`](docs/architecture/api-specification.yaml)
+- Security & threat model: [`docs/architecture/security.md`](docs/architecture/security.md)
+- C4 diagrams: [`docs/architecture/diagrams/`](docs/architecture/diagrams/)
+
+**📋 Planning:**
+- Product requirements & roadmap: [`docs/PRD.md`](docs/PRD.md) - Includes phased delivery plan, user stories, and acceptance criteria
+- Risk analysis: See [`docs/PRD.md#risks--open-questions`](docs/PRD.md#risks--open-questions) - Content moderation scalability, NewPipe breakage, Firebase costs
+
+**✅ Current Status:**
+- Project status & completion: [`docs/status/PROJECT_STATUS.md`](docs/status/PROJECT_STATUS.md)
+- Development setup guide: [`docs/status/DEVELOPMENT_GUIDE.md`](docs/status/DEVELOPMENT_GUIDE.md)
+- Android app guide: [`docs/status/ANDROID_GUIDE.md`](docs/status/ANDROID_GUIDE.md)
+- Testing & deployment: See [`docs/PRD.md`](docs/PRD.md) for testing requirements and performance budgets
+
+## Key Features
+
+**Content Curation:**
+- YouTube content search via NewPipeExtractor (no API key required)
+- Three-stage approval workflow: submission → pending → approved/rejected
+- ADMIN role: direct approval; MODERATOR role: submission for review
+- Hierarchical category assignment (max 2 levels)
+- Granular exclusions (specific videos/playlists within approved channels)
+- Live stream support with automatic status updates
+- Bulk import/export system with merge strategies
+- Video validation system to detect unavailable content
+
+**Mobile Experience (Android):**
+- Browse approved content by category, channel, playlist, video
+- Advanced video player: quality selection, audio-only mode, subtitles, PiP, Chromecast
+- Offline downloads with 30-day expiry and audio-only option
+- Search with persistent history (max 10 items)
+- Safe mode toggle for family-friendly filtering
+- Multi-language: English, Arabic (RTL), Dutch
+
+**Admin Dashboard (Web):**
+- Content search and preview
+- Pending approvals queue with inline category assignment
+- Advanced content library with filters and bulk actions
+- Exclusions workspace for granular content management
+- Metrics dashboard with trend analysis and validation status
+- User management (ADMIN/MODERATOR roles)
+- Audit log with comprehensive filtering
 
 ## Traceability
 Every document references related artifacts to ensure consistency:
-- Requirements → APIs → Acceptance criteria are linked through the traceability matrix in [`docs/acceptance/criteria.md`](docs/acceptance/criteria.md).
-- Security controls, data models, and internationalization strategies are cross-linked within architecture and API sections.
+- Requirements → APIs → Acceptance criteria are linked through user stories in [`docs/PRD.md`](docs/PRD.md)
+- Security controls and threat model documented in [`docs/architecture/security.md`](docs/architecture/security.md)
+- Data models and API contracts specified in [`docs/architecture/api-specification.yaml`](docs/architecture/api-specification.yaml)
+- Internationalization strategy detailed in [`docs/design/i18n-strategy.md`](docs/design/i18n-strategy.md)
 
 ## Project Components
 
 ### Android App
-- The `android/` directory contains the mobile app with Material Design 3, RTL support, and offline-first architecture.
-- **Documentation**: See [`docs/android/`](docs/android/) for setup, release checklist, and Play Store guidelines.
-- **Current Status**: Phase 5 complete - Production ready with signed AAB and RTL polish.
-- Run: `./gradlew assembleDebug` from the `android/` directory to build.
+- **Location**: `android/` directory
+- **Tech Stack**: Kotlin, Jetpack Compose, Material Design 3, ExoPlayer
+- **Features**: RTL support, offline-first architecture, background downloads, advanced video player
+- **Documentation**: See [`docs/status/ANDROID_GUIDE.md`](docs/status/ANDROID_GUIDE.md) for configuration, testing, and troubleshooting
+- **Current Status**: Phase 5 complete - Production ready with signed AAB and RTL polish
+- **Build**: `cd android && ./gradlew assembleDebug` (outputs to `app/build/outputs/apk/debug/`)
+- **Backend URL**: Configure in `app/build.gradle.kts` (default: `http://192.168.1.167:8080/` for testing)
 
 ### Backend API
-- The `backend/` directory contains Spring Boot REST API with Firebase integration.
-- **Documentation**: See [`docs/backend/`](docs/backend/) for Firebase setup and [`docs/status/backend-integration.md`](docs/status/backend-integration.md) for current status.
-- **Current Status**: ✅ Integrated with Standard Firestore, seeded with sample data, public APIs enabled.
-- Run: `./gradlew bootRun` from the `backend/` directory to start on http://localhost:8080.
+- **Location**: `backend/` directory
+- **Tech Stack**: Spring Boot 3.2.5, Java 17, Firebase Firestore, NewPipeExtractor
+- **Features**: REST API (67 endpoints across 11 controllers), role-based auth, caching, audit logging
+- **Documentation**: See [`docs/architecture/api-specification.yaml`](docs/architecture/api-specification.yaml) for complete API spec
+- **Current Status**: ✅ Integrated with Firestore, seeded with sample data (173 videos, 13 channels, 6 playlists, 19 categories)
+- **Run**: `cd backend && ./gradlew bootRun` (starts on `http://localhost:8080`)
+- **Test**: `./gradlew test` for JUnit tests
 
 ### Admin Frontend
-- The `frontend/` directory contains Vue 3 admin dashboard for content moderation.
-- **Documentation**: See [`docs/frontend/`](docs/frontend/) for setup and metrics plan.
-- **Current Status**: Phase 3 complete - Registry, moderation, and dashboard implemented.
+- **Location**: `frontend/` directory
+- **Tech Stack**: Vue 3, TypeScript, Vite, Pinia, Vue Router, Vue-i18n
+- **Features**: Content search, approval workflow, category management, metrics dashboard, bulk operations
+- **Documentation**: See [`docs/status/DEVELOPMENT_GUIDE.md`](docs/status/DEVELOPMENT_GUIDE.md) for setup
+- **Current Status**: Phase 3 complete - Content library, moderation queue, and dashboard implemented
+- **Run**: `cd frontend && npm run dev` (starts on `http://localhost:5173`)
+- **Test**: `npm test` for Vitest unit tests (300s timeout enforced)
 
-## Change Workflow
-1. Update relevant design artifact(s).
-2. Ensure cross-references remain valid.
-3. Run documentation linters (TBD in future phases).
-4. Submit for stakeholder review per phase exit criteria.
+## Development Workflow
 
-These documents will evolve through the pre-development phases until implementation is approved. When onboarding new
-administrators, pair the README with the [`Admin Onboarding` runbook](docs/runbooks/admin-onboarding.md) and
-[`Admin Workspace Login Guide`](docs/runbooks/admin-login.md) to validate environment setup, credential rotation, and
-locale QA expectations.
+**Quick Start:**
+```bash
+# 1. Clone and setup
+git clone <repository-url>
+cd albunyaantube
+cp .env.example .env  # Configure Firebase credentials
+
+# 2. Start backend (Terminal 1)
+cd backend
+./gradlew bootRun  # Runs on http://localhost:8080
+
+# 3. Start frontend (Terminal 2)
+cd frontend
+npm install
+npm run dev  # Runs on http://localhost:5173
+
+# 4. Build Android app (Terminal 3)
+cd android
+./gradlew assembleDebug  # APK in app/build/outputs/apk/debug/
+```
+
+**Testing:**
+```bash
+# Backend tests
+cd backend && ./gradlew test
+
+# Frontend tests (300s timeout enforced)
+cd frontend && npm test
+
+# Android tests
+cd android && ./gradlew test
+```
+
+**Documentation Updates:**
+1. Update relevant documentation in `docs/` directory
+2. Ensure cross-references remain valid
+3. Update `docs/status/PROJECT_STATUS.md` after completing features
+4. Follow commit message format from [`CLAUDE.md`](CLAUDE.md)
+
+**For Contributors:**
+- See [`CLAUDE.md`](CLAUDE.md) for complete developer guide
+- See [`docs/status/DEVELOPMENT_GUIDE.md`](docs/status/DEVELOPMENT_GUIDE.md) for troubleshooting
+- See [`docs/PRD.md`](docs/PRD.md) for feature requirements and acceptance criteria
 
 ## Dark Mode Tokens
 | Token | Light | Dark | Component Mapping |
@@ -66,7 +159,7 @@ locale QA expectations.
 | `--color-accent` | `#2fa172` | `#7cdcb3` | Hover states for actions, tab highlights |
 | `--color-danger` | `#dc2626` | `#f87171` | Error banners, moderation rejection badges |
 
-The token definitions live in `frontend/src/assets/main.css` and are referenced by all Vue views and registry tables. Tokens are also mirrored in the design asset at [`docs/ux/design-tokens.json`](docs/ux/design-tokens.json) for Figma parity.
+The token definitions live in [`frontend/src/assets/main.css`](frontend/src/assets/main.css) and are referenced by all Vue views and registry tables. These tokens are the source of truth for both implementation and design mockups (see [`docs/design/mockups/`](docs/design/mockups/) and [`docs/design/design-system.md`](docs/design/design-system.md)).
 
 ## Canonical Navigation Tabs
 The end-user app shell uses a single source of truth for the Home/Channels/Playlists/Videos tabs defined in `frontend/src/constants/tabs.ts`. A reusable navigation component (`frontend/src/components/navigation/MainTabBar.vue`) consumes that config so every surface renders the same iconography and labels.
