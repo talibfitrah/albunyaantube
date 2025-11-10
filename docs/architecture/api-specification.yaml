@@ -1,145 +1,259 @@
 openapi: 3.1.0
 info:
   title: Albunyaan Tube API
-  version: 0.1.0
+  version: 1.0.0
   description: |
-    Draft REST contract for Albunyaan Tube backend. All list endpoints use cursor-based pagination with opaque cursors.
-    Localized fields respond to `Accept-Language` header with fallback to English.
+    REST API for Albunyaan Tube backend. Production implementation with 113+ endpoints across 14 controllers.
+
+    **Key Features:**
+    - Public content API for Android app (no auth required)
+    - Admin/moderator content management with approval workflows
+    - YouTube integration for content discovery
+    - Bulk import/export functionality
+    - Video validation and health monitoring
+    - Comprehensive audit logging
+
+    **Authentication:**
+    - Firebase Authentication with JWT tokens
+    - Role-based access: ADMIN, MODERATOR
+    - Public endpoints require no authentication
+
+    **Pagination:**
+    - Cursor-based pagination for infinite scroll
+    - Page-based pagination for admin interfaces
+
+    **Caching:**
+    - Categories: 1 hour TTL
+    - Channels: 15 minutes TTL
+    - YouTube searches: Varies by type
+
 servers:
-  - url: https://api.albunyaan.tld/v1
+  - url: http://localhost:8080/api
+    description: Local Development
+  - url: http://192.168.1.167:8080/api
+    description: Local Network (Android Testing)
+  - url: https://api.albunyaan.com/api
     description: Production
-  - url: https://staging-api.albunyaan.tld/v1
-    description: Staging
+
 security:
   - bearerAuth: []
+
+tags:
+  - name: Public Content
+    description: Public API for mobile app (no auth required)
+  - name: Categories
+    description: Category management (hierarchical tree)
+  - name: Channels
+    description: Channel management with approval workflow
+  - name: Playlists
+    description: Playlist management (via Registry)
+  - name: Videos
+    description: Video management (via Registry)
+  - name: Registry
+    description: Internal content registry API (admin workflow)
+  - name: YouTube
+    description: YouTube Data API integration
+  - name: Users
+    description: Admin and moderator user management
+  - name: Audit
+    description: Audit log viewing
+  - name: Dashboard
+    description: Analytics and metrics
+  - name: Approvals
+    description: Content approval workflow
+  - name: Player
+    description: Player functionality (recommendations)
+  - name: Downloads
+    description: Video download management
+  - name: Import/Export
+    description: Bulk data import and export
+  - name: Validation
+    description: Video validation and health checks
+  - name: Content Library
+    description: Unified content library management
+
 paths:
-  /auth/login:
-    post:
-      summary: Authenticate admin or moderator
-      operationId: login
-      tags: [Auth]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '../data/json-schemas/auth-login-request.json'
-      responses:
-        '200':
-          description: Tokens issued
-          content:
-            application/json:
-              schema:
-                $ref: '../data/json-schemas/auth-login-response.json'
-        '401': { $ref: '#/components/responses/UnauthorizedError' }
-  /auth/refresh:
-    post:
-      summary: Rotate refresh token
-      operationId: refreshToken
-      tags: [Auth]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '../data/json-schemas/auth-refresh-request.json'
-      responses:
-        '200':
-          description: Tokens rotated
-          content:
-            application/json:
-              schema:
-                $ref: '../data/json-schemas/auth-login-response.json'
-        '401': { $ref: '#/components/responses/UnauthorizedError' }
-  /auth/logout:
-    post:
-      summary: Invalidate refresh token and blacklist access token
-      operationId: logout
-      tags: [Auth]
-      responses:
-        '204': { description: Logged out }
-        '401': { $ref: '#/components/responses/UnauthorizedError' }
-  /admin/users:
+  # ============================================================================
+  # PUBLIC CONTENT API (No Authentication Required)
+  # ============================================================================
+
+  /v1/content:
     get:
-      summary: List users
-      operationId: listUsers
-      tags: [Users]
+      summary: Get paginated content for mobile app
+      description: |
+        Fetch content filtered by type (HOME, CHANNELS, PLAYLISTS, VIDEOS).
+        Returns cursor-paginated results for infinite scroll.
+      operationId: getPublicContent
+      tags: [Public Content]
+      security: []
       parameters:
-        - $ref: '#/components/parameters/CursorParam'
-        - $ref: '#/components/parameters/LimitParam'
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [HOME, CHANNELS, PLAYLISTS, VIDEOS]
+            default: HOME
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+        - name: category
+          in: query
+          description: Filter by category slug
+          schema:
+            type: string
+        - name: length
+          in: query
+          schema:
+            type: string
+            enum: [SHORT, MEDIUM, LONG]
+        - name: date
+          in: query
+          schema:
+            type: string
+            enum: [LAST_24_HOURS, LAST_7_DAYS, LAST_30_DAYS]
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [DEFAULT, MOST_POPULAR, NEWEST]
       responses:
         '200':
-          description: Users page
+          description: Content page
           content:
             application/json:
               schema:
-                $ref: '../data/json-schemas/admin-users-page.json'
-    post:
-      summary: Create user
-      operationId: createUser
-      tags: [Users]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '../data/json-schemas/admin-user-create-request.json'
-      responses:
-        '201':
-          description: User created
-          content:
-            application/json:
-              schema:
-                $ref: '../data/json-schemas/admin-user-response.json'
-  /admin/users/{id}:
-    parameters:
-      - $ref: '#/components/parameters/IdPathParam'
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      oneOf:
+                        - $ref: '#/components/schemas/VideoDto'
+                        - $ref: '#/components/schemas/ChannelDto'
+                        - $ref: '#/components/schemas/PlaylistDto'
+                  pageInfo:
+                    type: object
+                    properties:
+                      nextCursor:
+                        type: string
+                        nullable: true
+
+  /v1/categories:
     get:
-      summary: Get user
-      operationId: getUser
-      tags: [Users]
-      responses:
-        '200': { description: OK, content: { application/json: { schema: { $ref: '../data/json-schemas/admin-user-response.json' } } } }
-    put:
-      summary: Update user
-      operationId: updateUser
-      tags: [Users]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '../data/json-schemas/admin-user-update-request.json'
+      summary: List all active categories
+      operationId: listPublicCategories
+      tags: [Public Content]
+      security: []
       responses:
         '200':
-          description: Updated
+          description: Category list
           content:
             application/json:
               schema:
-                $ref: '../data/json-schemas/admin-user-response.json'
-    delete:
-      summary: Delete user
-      operationId: deleteUser
-      tags: [Users]
-      responses:
-        '204': { description: Deleted }
-  /categories:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Category'
+
+  /v1/channels/{channelId}:
     get:
-      summary: List categories
+      summary: Get channel details by YouTube ID
+      operationId: getPublicChannel
+      tags: [Public Content]
+      security: []
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Channel details with playlists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelDetail'
+
+  /v1/playlists/{playlistId}:
+    get:
+      summary: Get playlist details by YouTube ID
+      operationId: getPublicPlaylist
+      tags: [Public Content]
+      security: []
+      parameters:
+        - name: playlistId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Playlist details with videos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaylistDetail'
+
+  /v1/search:
+    get:
+      summary: Search across all content types
+      operationId: searchPublicContent
+      tags: [Public Content]
+      security: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [CHANNELS, PLAYLISTS, VIDEOS]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: object
+
+  # ============================================================================
+  # CATEGORIES (Admin/Moderator)
+  # ============================================================================
+
+  /admin/categories:
+    get:
+      summary: List all categories (hierarchical)
       operationId: listCategories
       tags: [Categories]
-      parameters:
-        - $ref: '#/components/parameters/CursorParam'
-        - $ref: '#/components/parameters/LimitParam'
       responses:
         '200':
-          description: Category page
+          description: Category tree
           content:
             application/json:
               schema:
-                $ref: '../data/json-schemas/category-page.json'
+                type: array
+                items:
+                  $ref: '#/components/schemas/Category'
     post:
-      summary: Create category
+      summary: Create new category
       operationId: createCategory
       tags: [Categories]
       requestBody:
@@ -147,507 +261,2185 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '../data/json-schemas/category-create-request.json'
+              $ref: '#/components/schemas/Category'
       responses:
         '201':
-          description: Created
+          description: Category created
           content:
             application/json:
               schema:
-                $ref: '../data/json-schemas/category-response.json'
-  /categories/{id}:
-    parameters:
-      - $ref: '#/components/parameters/IdPathParam'
+                $ref: '#/components/schemas/Category'
+
+  /admin/categories/top-level:
     get:
-      summary: Get category
-      operationId: getCategory
+      summary: Get top-level categories only
+      operationId: listTopLevelCategories
       tags: [Categories]
       responses:
-        '200': { description: OK, content: { application/json: { schema: { $ref: '../data/json-schemas/category-response.json' } } } }
+        '200':
+          description: Top-level categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Category'
+
+  /admin/categories/{parentId}/subcategories:
+    get:
+      summary: Get subcategories of a parent
+      operationId: listSubcategories
+      tags: [Categories]
+      parameters:
+        - name: parentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Subcategories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Category'
+
+  /admin/categories/{id}:
+    get:
+      summary: Get category by ID
+      operationId: getCategory
+      tags: [Categories]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Category
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
     put:
       summary: Update category
       operationId: updateCategory
       tags: [Categories]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '../data/json-schemas/category-update-request.json'
+              $ref: '#/components/schemas/Category'
       responses:
-        '200': { description: Updated, content: { application/json: { schema: { $ref: '../data/json-schemas/category-response.json' } } } }
+        '200':
+          description: Category updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
     delete:
-      summary: Archive category
+      summary: Delete category (fails if has subcategories)
       operationId: deleteCategory
       tags: [Categories]
-      responses:
-        '204': { description: Deleted }
-  /admin/registry/channels:
-    get:
-      summary: Admin list channels
-      operationId: adminListChannels
-      tags: ['Admin Registry']
       parameters:
-        - $ref: '#/components/parameters/CursorParam'
-        - $ref: '#/components/parameters/LimitParam'
-        - $ref: '#/components/parameters/CategoryIdQuery'
-      responses:
-        '200':
-          description: Channels page
-          content:
-            application/json:
-              schema:
-                $ref: '../data/json-schemas/channel-page.json'
-  /admin/registry/playlists:
-    get:
-      summary: Admin list playlists
-      operationId: adminListPlaylists
-      tags: ['Admin Registry']
-      parameters:
-        - $ref: '#/components/parameters/CursorParam'
-        - $ref: '#/components/parameters/LimitParam'
-        - $ref: '#/components/parameters/CategoryIdQuery'
-      responses:
-        '200':
-          description: Playlists page
-          content:
-            application/json:
-              schema:
-                $ref: '../data/json-schemas/playlist-page.json'
-  /admin/registry/videos:
-    get:
-      summary: Admin list videos
-      operationId: adminListVideos
-      tags: ['Admin Registry']
-      parameters:
-        - $ref: '#/components/parameters/CursorParam'
-        - $ref: '#/components/parameters/LimitParam'
-        - $ref: '#/components/parameters/CategoryIdQuery'
-        - name: q
-          in: query
-          schema: { type: string, maxLength: 120 }
-        - name: length
-          in: query
-          schema: { type: string, enum: [SHORT, MEDIUM, LONG] }
-        - name: date
-          in: query
-          schema: { type: string, enum: [LAST_24_HOURS, LAST_7_DAYS, LAST_30_DAYS, ANYTIME] }
-        - name: sort
-          in: query
-          schema: { type: string, enum: [RECENT, POPULAR] }
-      responses:
-        '200':
-          description: Video page
-          content:
-            application/json:
-              schema:
-                $ref: '../data/json-schemas/video-page.json'
-  /admin/dashboard:
-    get:
-      summary: Fetch admin dashboard metrics snapshot
-      operationId: getAdminDashboardMetrics
-      tags: ['Admin Dashboard']
-      parameters:
-        - $ref: '#/components/parameters/DashboardTimeframeParam'
-      responses:
-        '200':
-          description: Aggregated moderation, catalog, and staff counts
-          content:
-            application/json:
-              schema:
-                $ref: '../data/json-schemas/admin-dashboard-metrics-response.json'
-        '401': { $ref: '#/components/responses/UnauthorizedError' }
-        '403': { $ref: '#/components/responses/ForbiddenError' }
-  /home:
-    get:
-      summary: Aggregated home feed
-      operationId: getHome
-      tags: [Registry]
-      parameters:
-        - $ref: '#/components/parameters/CursorParam'
-        - $ref: '#/components/parameters/LimitParam'
-        - $ref: '#/components/parameters/CategoryIdQuery'
-      responses:
-        '200':
-          description: Home sections with 3-latest rule
-          content:
-            application/json:
-              schema:
-                $ref: '../data/json-schemas/home-response.json'
-  /channels:
-    get:
-      summary: List channels
-      operationId: listChannels
-      tags: [Registry]
-      parameters:
-        - $ref: '#/components/parameters/CursorParam'
-        - $ref: '#/components/parameters/LimitParam'
-        - $ref: '#/components/parameters/CategoryIdQuery'
-      responses:
-        '200': { description: Channels page, content: { application/json: { schema: { $ref: '../data/json-schemas/channel-page.json' } } } }
-  /channels/{id}:
-    parameters:
-      - $ref: '#/components/parameters/IdPathParam'
-    get:
-      summary: Channel detail
-      operationId: getChannel
-      tags: [Registry]
-      responses:
-        '200': { description: Channel detail, content: { application/json: { schema: { $ref: '../data/json-schemas/channel-detail.json' } } } }
-  /channels/{id}/videos:
-    get:
-      summary: Channel videos
-      operationId: getChannelVideos
-      tags: [Registry]
-      parameters:
-        - $ref: '#/components/parameters/IdPathParam'
-        - $ref: '#/components/parameters/CursorParam'
-        - $ref: '#/components/parameters/LimitParam'
-      responses:
-        '200': { description: Video page, content: { application/json: { schema: { $ref: '../data/json-schemas/video-page.json' } } } }
-  /channels/{id}/live:
-    get:
-      summary: Channel live streams
-      operationId: getChannelLive
-      tags: [Registry]
-      parameters:
-        - $ref: '#/components/parameters/IdPathParam'
-        - $ref: '#/components/parameters/CursorParam'
-        - $ref: '#/components/parameters/LimitParam'
-      responses:
-        '200': { description: Live page, content: { application/json: { schema: { $ref: '../data/json-schemas/live-page.json' } } } }
-  /channels/{id}/shorts:
-    get:
-      summary: Channel shorts
-      operationId: getChannelShorts
-      tags: [Registry]
-      parameters:
-        - $ref: '#/components/parameters/IdPathParam'
-        - $ref: '#/components/parameters/CursorParam'
-        - $ref: '#/components/parameters/LimitParam'
-      responses:
-        '200': { description: Shorts page, content: { application/json: { schema: { $ref: '../data/json-schemas/video-page.json' } } } }
-  /channels/{id}/playlists:
-    get:
-      summary: Channel playlists
-      operationId: getChannelPlaylists
-      tags: [Registry]
-      parameters:
-        - $ref: '#/components/parameters/IdPathParam'
-        - $ref: '#/components/parameters/CursorParam'
-        - $ref: '#/components/parameters/LimitParam'
-      responses:
-        '200': { description: Playlist page, content: { application/json: { schema: { $ref: '../data/json-schemas/playlist-page.json' } } } }
-  /channels/{id}/posts:
-    get:
-      summary: Channel posts (community)
-      operationId: getChannelPosts
-      tags: [Registry]
-      parameters:
-        - $ref: '#/components/parameters/IdPathParam'
-        - $ref: '#/components/parameters/CursorParam'
-        - $ref: '#/components/parameters/LimitParam'
-      responses:
-        '200': { description: Posts page, content: { application/json: { schema: { $ref: '../data/json-schemas/post-page.json' } } } }
-  /playlists:
-    get:
-      summary: List playlists
-      operationId: listPlaylists
-      tags: [Registry]
-      parameters:
-        - $ref: '#/components/parameters/CursorParam'
-        - $ref: '#/components/parameters/LimitParam'
-        - $ref: '#/components/parameters/CategoryIdQuery'
-      responses:
-        '200': { description: Playlists page, content: { application/json: { schema: { $ref: '../data/json-schemas/playlist-page.json' } } } }
-  /playlists/{id}:
-    parameters:
-      - $ref: '#/components/parameters/IdPathParam'
-    get:
-      summary: Playlist detail
-      operationId: getPlaylist
-      tags: [Registry]
-      responses:
-        '200': { description: Playlist detail, content: { application/json: { schema: { $ref: '../data/json-schemas/playlist-detail.json' } } } }
-  /playlists/{id}/videos:
-    get:
-      summary: Videos in playlist
-      operationId: getPlaylistVideos
-      tags: [Registry]
-      parameters:
-        - $ref: '#/components/parameters/IdPathParam'
-        - $ref: '#/components/parameters/CursorParam'
-        - $ref: '#/components/parameters/LimitParam'
-      responses:
-        '200': { description: Video page, content: { application/json: { schema: { $ref: '../data/json-schemas/video-page.json' } } } }
-  /videos:
-    get:
-      summary: Search videos
-      operationId: listVideos
-      tags: [Registry]
-      parameters:
-        - $ref: '#/components/parameters/CursorParam'
-        - $ref: '#/components/parameters/LimitParam'
-        - name: categoryId
-          in: query
-          schema: { type: string }
-        - name: q
-          in: query
-          schema: { type: string, maxLength: 120 }
-        - name: length
-          in: query
-          schema: { type: string, enum: [SHORT, MEDIUM, LONG] }
-        - name: date
-          in: query
-          schema: { type: string, enum: [LAST_24_HOURS, LAST_7_DAYS, LAST_30_DAYS, ANYTIME] }
-        - name: sort
-          in: query
-          schema: { type: string, enum: [RECENT, POPULAR] }
-      responses:
-        '200': { description: Video page, content: { application/json: { schema: { $ref: '../data/json-schemas/video-page.json' } } } }
-  /videos/{id}:
-    parameters:
-      - $ref: '#/components/parameters/IdPathParam'
-    get:
-      summary: Video detail
-      operationId: getVideo
-      tags: [Registry]
-      responses:
-        '200': { description: Video detail, content: { application/json: { schema: { $ref: '../data/json-schemas/video-detail.json' } } } }
-  /next-up:
-    get:
-      summary: Up-next recommendations
-      operationId: getNextUp
-      tags: [Registry]
-      parameters:
-        - name: videoId
-          in: query
+        - name: id
+          in: path
           required: true
-          schema: { type: string }
+          schema:
+            type: string
       responses:
-        '200': { description: Next up list, content: { application/json: { schema: { $ref: '../data/json-schemas/video-page.json' } } } }
-  /moderation/proposals:
+        '204':
+          description: Category deleted
+
+  # ============================================================================
+  # CHANNELS (Admin/Moderator)
+  # ============================================================================
+
+  /admin/channels:
+    get:
+      summary: List channels with optional status filter
+      operationId: listChannels
+      tags: [Channels]
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            default: approved
+      responses:
+        '200':
+          description: Channel list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Channel'
     post:
-      summary: Submit moderation proposal
-      operationId: createProposal
-      tags: [Moderation]
+      summary: Submit channel for approval
+      description: Admins auto-approve, moderators submit as pending
+      operationId: createChannel
+      tags: [Channels]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '../data/json-schemas/moderation-proposal-create-request.json'
+              $ref: '#/components/schemas/Channel'
       responses:
-        '201': { description: Created, content: { application/json: { schema: { $ref: '../data/json-schemas/moderation-proposal-response.json' } } } }
+        '201':
+          description: Channel created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Channel'
+
+  /admin/channels/category/{categoryId}:
     get:
-      summary: List moderation proposals
-      operationId: listProposals
-      tags: [Moderation]
+      summary: Get channels by category
+      operationId: getChannelsByCategory
+      tags: [Channels]
       parameters:
-        - $ref: '#/components/parameters/CursorParam'
-        - $ref: '#/components/parameters/LimitParam'
+        - name: categoryId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Channels in category
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Channel'
+
+  /admin/channels/{id}:
+    get:
+      summary: Get channel by ID
+      operationId: getChannel
+      tags: [Channels]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Channel
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Channel'
+    delete:
+      summary: Delete channel
+      operationId: deleteChannel
+      tags: [Channels]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Channel deleted
+
+  /admin/channels/{id}/approve:
+    put:
+      summary: Approve channel
+      operationId: approveChannel
+      tags: [Channels]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Channel approved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Channel'
+
+  /admin/channels/{id}/reject:
+    put:
+      summary: Reject channel
+      operationId: rejectChannel
+      tags: [Channels]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Channel rejected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Channel'
+
+  /admin/channels/{id}/exclusions:
+    get:
+      summary: Get channel exclusions
+      operationId: getChannelExclusions
+      tags: [Channels]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Exclusions
+          content:
+            application/json:
+              schema:
+                type: object
+    put:
+      summary: Update channel exclusions (bulk)
+      operationId: updateChannelExclusions
+      tags: [Channels]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Exclusions updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Channel'
+
+  /admin/channels/{id}/exclusions/{type}/{youtubeId}:
+    post:
+      summary: Add single exclusion to channel
+      operationId: addChannelExclusion
+      tags: [Channels]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: type
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [video, playlist, livestream, short, post]
+        - name: youtubeId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Exclusion added
+    delete:
+      summary: Remove single exclusion from channel
+      operationId: removeChannelExclusion
+      tags: [Channels]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: type
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [video, playlist, livestream, short, post]
+        - name: youtubeId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Exclusion removed
+
+  # ============================================================================
+  # REGISTRY (Admin/Moderator - Internal Workflow API)
+  # ============================================================================
+
+  /admin/registry/channels:
+    get:
+      summary: List all channels in registry
+      operationId: registryListChannels
+      tags: [Registry]
+      responses:
+        '200':
+          description: Channels
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Channel'
+    post:
+      summary: Add channel to registry
+      operationId: registryAddChannel
+      tags: [Registry]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Channel'
+      responses:
+        '201':
+          description: Channel added
+        '409':
+          description: Channel already exists
+
+  /admin/registry/channels/status/{status}:
+    get:
+      summary: Get channels by status
+      operationId: registryGetChannelsByStatus
+      tags: [Registry]
+      parameters:
         - name: status
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [PENDING, APPROVED, REJECTED]
+      responses:
+        '200':
+          description: Channels
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Channel'
+
+  /admin/registry/channels/{id}:
+    get:
+      summary: Get channel by ID
+      operationId: registryGetChannel
+      tags: [Registry]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Channel
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Channel'
+    put:
+      summary: Update channel in registry
+      operationId: registryUpdateChannel
+      tags: [Registry]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Channel'
+      responses:
+        '200':
+          description: Channel updated
+    delete:
+      summary: Delete channel from registry
+      operationId: registryDeleteChannel
+      tags: [Registry]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Channel deleted
+
+  /admin/registry/channels/{id}/toggle:
+    patch:
+      summary: Toggle channel APPROVED/PENDING status
+      operationId: registryToggleChannel
+      tags: [Registry]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Status toggled
+
+  /admin/registry/playlists:
+    get:
+      summary: List all playlists in registry
+      operationId: registryListPlaylists
+      tags: [Registry]
+      responses:
+        '200':
+          description: Playlists
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Playlist'
+    post:
+      summary: Add playlist to registry
+      operationId: registryAddPlaylist
+      tags: [Registry]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Playlist'
+      responses:
+        '201':
+          description: Playlist added
+        '409':
+          description: Playlist already exists
+
+  /admin/registry/playlists/status/{status}:
+    get:
+      summary: Get playlists by status
+      operationId: registryGetPlaylistsByStatus
+      tags: [Registry]
+      parameters:
+        - name: status
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [PENDING, APPROVED, REJECTED]
+      responses:
+        '200':
+          description: Playlists
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Playlist'
+
+  /admin/registry/playlists/{id}:
+    get:
+      summary: Get playlist by ID
+      operationId: registryGetPlaylist
+      tags: [Registry]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Playlist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Playlist'
+    put:
+      summary: Update playlist in registry
+      operationId: registryUpdatePlaylist
+      tags: [Registry]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Playlist'
+      responses:
+        '200':
+          description: Playlist updated
+    delete:
+      summary: Delete playlist from registry
+      operationId: registryDeletePlaylist
+      tags: [Registry]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Playlist deleted
+
+  /admin/registry/playlists/{id}/toggle:
+    patch:
+      summary: Toggle playlist APPROVED/PENDING status
+      operationId: registryTogglePlaylist
+      tags: [Registry]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Status toggled
+
+  /admin/registry/playlists/{id}/exclusions:
+    get:
+      summary: Get playlist exclusions (excluded video IDs)
+      operationId: getPlaylistExclusions
+      tags: [Registry]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Excluded video IDs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+
+  /admin/registry/playlists/{id}/exclusions/{videoId}:
+    post:
+      summary: Add video exclusion to playlist
+      operationId: addPlaylistExclusion
+      tags: [Registry]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: videoId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Exclusion added
+    delete:
+      summary: Remove video exclusion from playlist
+      operationId: removePlaylistExclusion
+      tags: [Registry]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: videoId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Exclusion removed
+
+  /admin/registry/videos:
+    get:
+      summary: List all videos in registry
+      operationId: registryListVideos
+      tags: [Registry]
+      responses:
+        '200':
+          description: Videos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Video'
+    post:
+      summary: Add video to registry
+      operationId: registryAddVideo
+      tags: [Registry]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Video'
+      responses:
+        '201':
+          description: Video added
+        '409':
+          description: Video already exists
+
+  /admin/registry/videos/status/{status}:
+    get:
+      summary: Get videos by status
+      operationId: registryGetVideosByStatus
+      tags: [Registry]
+      parameters:
+        - name: status
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [PENDING, APPROVED, REJECTED]
+      responses:
+        '200':
+          description: Videos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Video'
+
+  /admin/registry/videos/{id}:
+    get:
+      summary: Get video by ID
+      operationId: registryGetVideo
+      tags: [Registry]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Video
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Video'
+    put:
+      summary: Update video in registry
+      operationId: registryUpdateVideo
+      tags: [Registry]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Video'
+      responses:
+        '200':
+          description: Video updated
+    delete:
+      summary: Delete video from registry
+      operationId: registryDeleteVideo
+      tags: [Registry]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Video deleted
+
+  /admin/registry/videos/{id}/toggle:
+    patch:
+      summary: Toggle video APPROVED/PENDING status
+      operationId: registryToggleVideo
+      tags: [Registry]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Status toggled
+
+  # ============================================================================
+  # YOUTUBE INTEGRATION (Admin/Moderator)
+  # ============================================================================
+
+  /admin/youtube/search/unified:
+    get:
+      summary: Unified search - mixed results (single API call)
+      operationId: youtubeSearchUnified
+      tags: [YouTube]
+      parameters:
+        - name: query
           in: query
-          schema: { type: string, enum: [PENDING, APPROVED, REJECTED] }
+          required: true
+          schema:
+            type: string
       responses:
-        '200': { description: Proposal page, content: { application/json: { schema: { $ref: '../data/json-schemas/moderation-proposal-page.json' } } } }
-  /moderation/proposals/{id}/approve:
-    post:
-      summary: Approve proposal
-      operationId: approveProposal
-      tags: [Moderation]
+        '200':
+          description: Mixed search results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /admin/youtube/search/all:
+    get:
+      summary: Search all content types with pagination
+      operationId: youtubeSearchAll
+      tags: [YouTube]
       parameters:
-        - $ref: '#/components/parameters/IdPathParam'
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: pageToken
+          in: query
+          schema:
+            type: string
       responses:
-        '200': { description: Approved, content: { application/json: { schema: { $ref: '../data/json-schemas/moderation-proposal-response.json' } } } }
-  /moderation/proposals/{id}/reject:
-    post:
-      summary: Reject proposal
-      operationId: rejectProposal
-      tags: [Moderation]
+        '200':
+          description: Paginated search results
+
+  /admin/youtube/search/channels:
+    get:
+      summary: Search for channels
+      operationId: youtubeSearchChannels
+      tags: [YouTube]
       parameters:
-        - $ref: '#/components/parameters/IdPathParam'
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Channel search results
+
+  /admin/youtube/search/playlists:
+    get:
+      summary: Search for playlists
+      operationId: youtubeSearchPlaylists
+      tags: [YouTube]
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Playlist search results
+
+  /admin/youtube/search/videos:
+    get:
+      summary: Search for videos
+      operationId: youtubeSearchVideos
+      tags: [YouTube]
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Video search results
+
+  /admin/youtube/check-existing:
+    post:
+      summary: Check which YouTube IDs already exist in registry
+      operationId: youtubeCheckExisting
+      tags: [YouTube]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                channelIds:
+                  type: array
+                  items:
+                    type: string
+                playlistIds:
+                  type: array
+                  items:
+                    type: string
+                videoIds:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Existing content IDs
+
+  /admin/youtube/channels/{channelId}:
+    get:
+      summary: Get channel details from YouTube
+      operationId: youtubeGetChannel
+      tags: [YouTube]
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: YouTube channel
+
+  /admin/youtube/channels/{channelId}/videos:
+    get:
+      summary: Get videos from YouTube channel
+      operationId: youtubeGetChannelVideos
+      tags: [YouTube]
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: pageToken
+          in: query
+          schema:
+            type: string
+        - name: q
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Channel videos
+
+  /admin/youtube/channels/{channelId}/playlists:
+    get:
+      summary: Get playlists from YouTube channel
+      operationId: youtubeGetChannelPlaylists
+      tags: [YouTube]
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: pageToken
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Channel playlists
+
+  /admin/youtube/playlists/{playlistId}:
+    get:
+      summary: Get playlist details from YouTube
+      operationId: youtubeGetPlaylist
+      tags: [YouTube]
+      parameters:
+        - name: playlistId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: YouTube playlist
+
+  /admin/youtube/playlists/{playlistId}/videos:
+    get:
+      summary: Get videos in YouTube playlist
+      operationId: youtubeGetPlaylistVideos
+      tags: [YouTube]
+      parameters:
+        - name: playlistId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: pageToken
+          in: query
+          schema:
+            type: string
+        - name: q
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Playlist videos
+
+  /admin/youtube/videos/{videoId}:
+    get:
+      summary: Get video details from YouTube
+      operationId: youtubeGetVideo
+      tags: [YouTube]
+      parameters:
+        - name: videoId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: YouTube video
+
+  # ============================================================================
+  # USER MANAGEMENT (Admin Only)
+  # ============================================================================
+
+  /admin/users:
+    get:
+      summary: List all users
+      operationId: listUsers
+      tags: [Users]
+      responses:
+        '200':
+          description: User list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+    post:
+      summary: Create new user
+      operationId: createUser
+      tags: [Users]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, displayName, role]
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+                displayName:
+                  type: string
+                role:
+                  type: string
+                  enum: [admin, moderator]
+      responses:
+        '201':
+          description: User created
+
+  /admin/users/{uid}:
+    get:
+      summary: Get user by Firebase UID
+      operationId: getUser
+      tags: [Users]
+      parameters:
+        - name: uid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: User
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+    delete:
+      summary: Delete user
+      operationId: deleteUser
+      tags: [Users]
+      parameters:
+        - name: uid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: User deleted
+
+  /admin/users/role/{role}:
+    get:
+      summary: Get users by role
+      operationId: getUsersByRole
+      tags: [Users]
+      parameters:
+        - name: role
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [admin, moderator]
+      responses:
+        '200':
+          description: Users with role
+
+  /admin/users/{uid}/role:
+    put:
+      summary: Update user role
+      operationId: updateUserRole
+      tags: [Users]
+      parameters:
+        - name: uid
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role:
+                  type: string
+                  enum: [admin, moderator]
+      responses:
+        '200':
+          description: Role updated
+
+  /admin/users/{uid}/status:
+    put:
+      summary: Update user status (activate/deactivate)
+      operationId: updateUserStatus
+      tags: [Users]
+      parameters:
+        - name: uid
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [active, inactive]
+      responses:
+        '200':
+          description: Status updated
+
+  /admin/users/{uid}/reset-password:
+    post:
+      summary: Send password reset email
+      operationId: resetUserPassword
+      tags: [Users]
+      parameters:
+        - name: uid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Reset email sent
+
+  # ============================================================================
+  # AUDIT LOGS (Admin Only)
+  # ============================================================================
+
+  /admin/audit:
+    get:
+      summary: Get recent audit logs
+      operationId: listAuditLogs
+      tags: [Audit]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+      responses:
+        '200':
+          description: Audit logs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AuditLog'
+
+  /admin/audit/actor/{actorUid}:
+    get:
+      summary: Get audit logs by actor
+      operationId: getAuditLogsByActor
+      tags: [Audit]
+      parameters:
+        - name: actorUid
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+      responses:
+        '200':
+          description: Audit logs
+
+  /admin/audit/entity-type/{entityType}:
+    get:
+      summary: Get audit logs by entity type
+      operationId: getAuditLogsByEntityType
+      tags: [Audit]
+      parameters:
+        - name: entityType
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+      responses:
+        '200':
+          description: Audit logs
+
+  /admin/audit/action/{action}:
+    get:
+      summary: Get audit logs by action
+      operationId: getAuditLogsByAction
+      tags: [Audit]
+      parameters:
+        - name: action
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+      responses:
+        '200':
+          description: Audit logs
+
+  # ============================================================================
+  # DASHBOARD (Admin/Moderator)
+  # ============================================================================
+
+  /admin/dashboard:
+    get:
+      summary: Get dashboard metrics
+      operationId: getDashboardMetrics
+      tags: [Dashboard]
+      parameters:
+        - name: timeframe
+          in: query
+          schema:
+            type: string
+            enum: [LAST_24_HOURS, LAST_7_DAYS, LAST_30_DAYS]
+            default: LAST_7_DAYS
+      responses:
+        '200':
+          description: Dashboard metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                  meta:
+                    type: object
+
+  /admin/dashboard/stats/by-category:
+    get:
+      summary: Get statistics by category
+      operationId: getCategoryStats
+      tags: [Dashboard]
+      responses:
+        '200':
+          description: Category statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: object
+
+  # ============================================================================
+  # APPROVALS (Admin/Moderator)
+  # ============================================================================
+
+  /admin/approvals/pending:
+    get:
+      summary: List pending approvals
+      operationId: listPendingApprovals
+      tags: [Approvals]
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [CHANNEL, PLAYLIST]
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: cursor
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Pending approvals
+
+  /admin/approvals/{id}/approve:
+    post:
+      summary: Approve pending item
+      operationId: approvePendingItem
+      tags: [Approvals]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       requestBody:
         required: false
         content:
           application/json:
             schema:
-              $ref: '../data/json-schemas/moderation-proposal-reject-request.json'
+              type: object
+              properties:
+                reviewNotes:
+                  type: string
+                categoryOverride:
+                  type: string
       responses:
-        '200': { description: Rejected, content: { application/json: { schema: { $ref: '../data/json-schemas/moderation-proposal-response.json' } } } }
-  /exclusions:
-    get:
-      summary: List exclusions
-      operationId: listExclusions
-      tags: [Admin]
+        '200':
+          description: Item approved
+
+  /admin/approvals/{id}/reject:
+    post:
+      summary: Reject pending item
+      operationId: rejectPendingItem
+      tags: [Approvals]
       parameters:
-        - $ref: '#/components/parameters/CursorParam'
-        - $ref: '#/components/parameters/LimitParam'
-        - name: parentType
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                reviewNotes:
+                  type: string
+      responses:
+        '200':
+          description: Item rejected
+
+  # ============================================================================
+  # PLAYER (Public)
+  # ============================================================================
+
+  /player/next-up/{videoId}:
+    get:
+      summary: Get next-up video recommendations
+      operationId: getNextUp
+      tags: [Player]
+      security: []
+      parameters:
+        - name: videoId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: userId
           in: query
-          required: false
-          schema: { type: string, enum: [CHANNEL, PLAYLIST] }
-        - name: excludeType
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Recommended videos
+
+  # ============================================================================
+  # DOWNLOADS (Public/User)
+  # ============================================================================
+
+  /downloads/policy/{videoId}:
+    get:
+      summary: Check download policy for video
+      operationId: getDownloadPolicy
+      tags: [Downloads]
+      security: []
+      parameters:
+        - name: videoId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Download policy
+
+  /downloads/token/{videoId}:
+    post:
+      summary: Generate download token
+      operationId: generateDownloadToken
+      tags: [Downloads]
+      security: []
+      parameters:
+        - name: videoId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [eulaAccepted]
+              properties:
+                eulaAccepted:
+                  type: boolean
+      responses:
+        '200':
+          description: Download token
+
+  /downloads/manifest/{videoId}:
+    get:
+      summary: Get download manifest
+      operationId: getDownloadManifest
+      tags: [Downloads]
+      security: []
+      parameters:
+        - name: videoId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: token
           in: query
-          required: false
-          schema: { type: string, enum: [PLAYLIST, VIDEO] }
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Download manifest
+
+  /downloads/analytics/download-started:
+    post:
+      summary: Track download started event
+      operationId: trackDownloadStarted
+      tags: [Downloads]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Event tracked
+
+  /downloads/analytics/download-completed:
+    post:
+      summary: Track download completed event
+      operationId: trackDownloadCompleted
+      tags: [Downloads]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Event tracked
+
+  /downloads/analytics/download-failed:
+    post:
+      summary: Track download failed event
+      operationId: trackDownloadFailed
+      tags: [Downloads]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Event tracked
+
+  # ============================================================================
+  # IMPORT/EXPORT (Admin Only)
+  # ============================================================================
+
+  /admin/import-export/export:
+    get:
+      summary: Export all content as JSON (full format)
+      operationId: exportAll
+      tags: [Import/Export]
+      parameters:
+        - name: includeCategories
+          in: query
+          schema:
+            type: boolean
+            default: true
+        - name: includeChannels
+          in: query
+          schema:
+            type: boolean
+            default: true
+        - name: includePlaylists
+          in: query
+          schema:
+            type: boolean
+            default: true
+        - name: includeVideos
+          in: query
+          schema:
+            type: boolean
+            default: true
+        - name: excludeUnavailableVideos
+          in: query
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: JSON file download
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /admin/import-export/export/categories:
+    get:
+      summary: Export only categories
+      operationId: exportCategories
+      tags: [Import/Export]
+      responses:
+        '200':
+          description: JSON file download
+
+  /admin/import-export/export/channels:
+    get:
+      summary: Export only channels
+      operationId: exportChannels
+      tags: [Import/Export]
+      responses:
+        '200':
+          description: JSON file download
+
+  /admin/import-export/export/playlists:
+    get:
+      summary: Export only playlists
+      operationId: exportPlaylists
+      tags: [Import/Export]
+      responses:
+        '200':
+          description: JSON file download
+
+  /admin/import-export/export/videos:
+    get:
+      summary: Export only videos
+      operationId: exportVideos
+      tags: [Import/Export]
+      parameters:
+        - name: excludeUnavailableVideos
+          in: query
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: JSON file download
+
+  /admin/import-export/import:
+    post:
+      summary: Import content from JSON file (full format)
+      operationId: importContent
+      tags: [Import/Export]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                mergeStrategy:
+                  type: string
+                  enum: [SKIP, OVERWRITE, MERGE]
+                  default: SKIP
+      responses:
+        '200':
+          description: Import results
+
+  /admin/import-export/import/validate:
+    post:
+      summary: Validate import file without importing
+      operationId: validateImport
+      tags: [Import/Export]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Validation results
+
+  /admin/import-export/export/simple:
+    get:
+      summary: Export in simple format (ID-to-title-categories map)
+      operationId: exportSimple
+      tags: [Import/Export]
+      parameters:
+        - name: includeChannels
+          in: query
+          schema:
+            type: boolean
+            default: true
+        - name: includePlaylists
+          in: query
+          schema:
+            type: boolean
+            default: true
+        - name: includeVideos
+          in: query
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: JSON file download (simple format)
+
+  /admin/import-export/import/simple:
+    post:
+      summary: Import from simple format
+      operationId: importSimple
+      tags: [Import/Export]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                defaultStatus:
+                  type: string
+                  enum: [APPROVED, PENDING]
+                  default: APPROVED
+      responses:
+        '200':
+          description: Import results
+
+  /admin/import-export/import/simple/validate:
+    post:
+      summary: Validate simple format import (dry-run)
+      operationId: validateSimpleImport
+      tags: [Import/Export]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Validation results
+
+  # ============================================================================
+  # VIDEO VALIDATION (Admin/Moderator)
+  # ============================================================================
+
+  /admin/videos/validate:
+    post:
+      summary: Manually trigger video validation
+      operationId: validateVideos
+      tags: [Validation]
+      parameters:
+        - name: maxVideos
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+      responses:
+        '200':
+          description: Validation started
+
+  /admin/videos/validation-status/{runId}:
+    get:
+      summary: Get validation run status by ID
+      operationId: getValidationStatus
+      tags: [Validation]
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Validation run
+
+  /admin/videos/validation-history:
+    get:
+      summary: Get validation history
+      operationId: getValidationHistory
+      tags: [Validation]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        '200':
+          description: Validation runs
+
+  /admin/videos/validation-latest:
+    get:
+      summary: Get latest validation run
+      operationId: getLatestValidation
+      tags: [Validation]
+      responses:
+        '200':
+          description: Latest validation run
+
+  # ============================================================================
+  # CONTENT LIBRARY (Admin/Moderator)
+  # ============================================================================
+
+  /admin/content:
+    get:
+      summary: Get all content with filtering
+      operationId: listContent
+      tags: [Content Library]
+      parameters:
+        - name: types
+          in: query
+          description: Comma-separated content types
+          schema:
+            type: string
+            example: channel,playlist,video
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [all, approved, pending, rejected]
+            default: all
+        - name: category
+          in: query
+          schema:
+            type: string
         - name: search
           in: query
-          required: false
-          schema: { type: string, maxLength: 120 }
+          schema:
+            type: string
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [newest, oldest]
+            default: newest
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
       responses:
         '200':
-          description: Cursor paginated list of manual exclusions.
-          content:
-            application/json:
-              schema: { $ref: '../data/json-schemas/exclusion-page.json' }
+          description: Content library page
+
+  /admin/content/bulk/approve:
     post:
-      summary: Create exclusion
-      operationId: createExclusion
-      tags: [Moderation]
+      summary: Bulk approve content items
+      operationId: bulkApprove
+      tags: [Content Library]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '../data/json-schemas/exclusion-create-request.json'
-      responses:
-        '201': { description: Created, content: { application/json: { schema: { $ref: '../data/json-schemas/exclusion-response.json' } } } }
-  /exclusions/{id}:
-    patch:
-      summary: Update exclusion
-      operationId: updateExclusion
-      tags: [Moderation]
-      parameters:
-        - $ref: '#/components/parameters/IdPathParam'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '../data/json-schemas/exclusion-update-request.json'
-      responses:
-        '200': { description: Updated, content: { application/json: { schema: { $ref: '../data/json-schemas/exclusion-response.json' } } } }
-    delete:
-      summary: Delete exclusion
-      operationId: deleteExclusion
-      tags: [Moderation]
-      parameters:
-        - $ref: '#/components/parameters/IdPathParam'
-      responses:
-        '204': { description: Deleted }
-  /admin/search:
-    get:
-      summary: Search YouTube via server-side API
-      operationId: adminSearch
-      tags: [Admin]
-      parameters:
-        - name: q
-          in: query
-          required: false
-          schema: { type: string, maxLength: 120 }
-        - name: categoryId
-          in: query
-          required: false
-          description: Optional category slug used to limit results across channels, playlists, and videos.
-          schema: { type: string }
-        - name: videoLength
-          in: query
-          required: false
-          description: Constrains video matches to short/medium/long buckets aligned with YouTube duration groupings.
-          schema:
-            type: string
-            enum: [SHORT, MEDIUM, LONG]
-        - name: videoDateRange
-          in: query
-          required: false
-          description: Filters video matches to a recency window relative to the current time.
-          schema:
-            type: string
-            enum: [LAST_24_HOURS, LAST_7_DAYS, LAST_30_DAYS]
-        - name: videoSort
-          in: query
-          required: false
-          description: Sort clause applied to the blended results before slicing to `maxResults`.
-          schema:
-            type: string
-            enum: [RECENT, POPULAR]
-        - name: maxResults
-          in: query
-          schema: { type: integer, minimum: 1, maximum: 25, default: 10 }
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required: [type, id]
+                    properties:
+                      type:
+                        type: string
+                        enum: [channel, playlist, video]
+                      id:
+                        type: string
       responses:
         '200':
-          description: Blended search results grouped by resource type with include/exclude metadata for each entry.
-          content:
-            application/json:
-              schema: { $ref: '../data/json-schemas/admin-search-response.json' }
-  /admin/audit:
-    get:
-      summary: List audit logs
-      operationId: listAudit
-      tags: [Admin]
-      parameters:
-        - $ref: '#/components/parameters/CursorParam'
-        - $ref: '#/components/parameters/LimitParam'
+          description: Bulk action results
+
+  /admin/content/bulk/reject:
+    post:
+      summary: Bulk reject content items
+      operationId: bulkReject
+      tags: [Content Library]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required: [type, id]
+                    properties:
+                      type:
+                        type: string
+                        enum: [channel, playlist, video]
+                      id:
+                        type: string
       responses:
-        '200': { description: Audit page, content: { application/json: { schema: { $ref: '../data/json-schemas/audit-page.json' } } } }
+        '200':
+          description: Bulk action results
+
+  /admin/content/bulk/delete:
+    post:
+      summary: Bulk delete content items
+      operationId: bulkDelete
+      tags: [Content Library]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required: [type, id]
+                    properties:
+                      type:
+                        type: string
+                        enum: [channel, playlist, video]
+                      id:
+                        type: string
+      responses:
+        '200':
+          description: Bulk action results
+
+  /admin/content/bulk/assign-categories:
+    post:
+      summary: Bulk assign categories to content items
+      operationId: bulkAssignCategories
+      tags: [Content Library]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items, categoryIds]
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required: [type, id]
+                    properties:
+                      type:
+                        type: string
+                        enum: [channel, playlist, video]
+                      id:
+                        type: string
+                categoryIds:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Bulk action results
+
+# ==============================================================================
+# COMPONENT SCHEMAS
+# ==============================================================================
+
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+      description: Firebase Authentication JWT token
+
   schemas:
-    CursorPagination:
-      $ref: '../data/json-schemas/cursor-page-info.json'
-  parameters:
-    CursorParam:
-      name: cursor
-      in: query
-      required: false
-      description: Opaque base64 cursor provided in previous response.
-      schema:
-        type: string
-        maxLength: 512
-    LimitParam:
-      name: limit
-      in: query
-      required: false
-      schema:
-        type: integer
-        minimum: 1
-        maximum: 100
-        default: 20
-    IdPathParam:
-      name: id
-      in: path
-      required: true
-      schema:
-        type: string
-    CategoryIdQuery:
-      name: categoryId
-      in: query
-      required: false
-      schema:
-        type: string
-    DashboardTimeframeParam:
-      name: timeframe
-      in: query
-      required: false
-      description: Optional window to compare metrics against (defaults to LAST_24_HOURS).
-      schema:
-        type: string
-        enum: [LAST_24_HOURS, LAST_7_DAYS, LAST_30_DAYS]
+    Category:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+          nullable: true
+        parentId:
+          type: string
+          nullable: true
+        hasSubcategories:
+          type: boolean
+          default: false
+        icon:
+          type: string
+          nullable: true
+          description: Emoji or icon identifier
+
+    Channel:
+      type: object
+      required: [id, youtubeId, title]
+      properties:
+        id:
+          type: string
+        youtubeId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        thumbnailUrl:
+          type: string
+        subscriberCount:
+          type: integer
+        categoryIds:
+          type: array
+          items:
+            type: string
+        approved:
+          type: boolean
+        pending:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Playlist:
+      type: object
+      required: [id, youtubeId, title]
+      properties:
+        id:
+          type: string
+        youtubeId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        thumbnailUrl:
+          type: string
+        itemCount:
+          type: integer
+        categoryIds:
+          type: array
+          items:
+            type: string
+        approved:
+          type: boolean
+        pending:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Video:
+      type: object
+      required: [id, youtubeId, title]
+      properties:
+        id:
+          type: string
+        youtubeId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        thumbnailUrl:
+          type: string
+        durationMinutes:
+          type: integer
+        uploadedDaysAgo:
+          type: integer
+        viewCount:
+          type: integer
+          format: int64
+        categoryIds:
+          type: array
+          items:
+            type: string
+        approved:
+          type: boolean
+        pending:
+          type: boolean
+        available:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    VideoDto:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        category:
+          type: string
+        durationMinutes:
+          type: integer
+        uploadedDaysAgo:
+          type: integer
+        description:
+          type: string
+        thumbnailUrl:
+          type: string
+        viewCount:
+          type: integer
+          format: int64
+
+    ChannelDto:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        category:
+          type: string
+        subscribers:
+          type: integer
+        description:
+          type: string
+        thumbnailUrl:
+          type: string
+        videoCount:
+          type: integer
+        categories:
+          type: array
+          items:
+            type: string
+
+    PlaylistDto:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        category:
+          type: string
+        itemCount:
+          type: integer
+        description:
+          type: string
+        thumbnailUrl:
+          type: string
+
+    ChannelDetail:
+      type: object
+      properties:
+        channel:
+          $ref: '#/components/schemas/ChannelDto'
+        playlists:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlaylistDto'
+
+    PlaylistDetail:
+      type: object
+      properties:
+        playlist:
+          $ref: '#/components/schemas/PlaylistDto'
+        videos:
+          type: array
+          items:
+            $ref: '#/components/schemas/VideoDto'
+
+    User:
+      type: object
+      properties:
+        uid:
+          type: string
+        email:
+          type: string
+        displayName:
+          type: string
+        role:
+          type: string
+          enum: [admin, moderator]
+        status:
+          type: string
+          enum: [active, inactive]
+        createdAt:
+          type: string
+          format: date-time
+
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: string
+        actorUid:
+          type: string
+        actorEmail:
+          type: string
+        action:
+          type: string
+        entityType:
+          type: string
+        entityId:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+
   responses:
     UnauthorizedError:
-      description: Authentication failed
+      description: Authentication required or token invalid
       content:
         application/json:
           schema:
-            $ref: '../data/json-schemas/error-response.json'
+            type: object
+            properties:
+              error:
+                type: string
+              message:
+                type: string
+
     ForbiddenError:
-      description: Authenticated principal lacks permission for resource.
+      description: Insufficient permissions
       content:
         application/json:
           schema:
-            $ref: '../data/json-schemas/error-response.json'
+            type: object
+            properties:
+              error:
+                type: string
+              message:
+                type: string
