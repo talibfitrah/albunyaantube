@@ -68,16 +68,20 @@ children's ability to learn Islam independently.
 ## In Scope
 
 **Content Curation**:
-- Admin search of YouTube via NewpipeExtractor (https://github.com/TeamNewPipe/NewPipeExtractor)
+- Admin search of YouTube via NewPipeExtractor (https://github.com/TeamNewPipe/NewPipeExtractor)
+  - **Fallback (Out of Scope for MVP)**: FreeTube (https://github.com/FreeTubeApp/FreeTube) or Invidious (https://github.com/iv-org/invidious) when NewPipe breaks
+  - **Note**: Never fallback to official YouTube API
 - Three-stage approval workflow: submission → pending → approved/rejected
 - Category assignment (hierarchical: parent/child structure, max 2 levels)
 - Granular exclusions (specific videos/playlists within approved channels and specific videos within approved playlists)
+- Live stream support: channels/playlists include active/upcoming/archived streams; individual live videos can be added for approval; status automatically updates when stream ends (detected via NewpipeExtractor)
 - Audit trail of all moderation decisions with actor, timestamp, reason
 
 **Mobile Experience (Android)**:
 - Browse approved content by category, channel, playlist, video
 - Video player with quality selection (144p-1080p), audio-only mode, captions
-- Offline downloads with storage quota (500MB default), 30-day expiry
+- Live stream playback: "LIVE" badge on active streams, disabled seek bar, auto-transition to VOD when ended
+- Offline downloads with quality selector (144p-1080p), separate audio/video stream merging for HD (>480p), storage quota (500MB default), 30-day expiry
 - Search across approved content
 - Multi-language support: English, Arabic (RTL), Dutch
 
@@ -91,7 +95,7 @@ children's ability to learn Islam independently.
 - Audit log with filtering by actor, action, date range
 
 **Technical Requirements**:
-- Role-based access control (ADMIN, MODERATOR roles)
+- Role-based access control (ADMIN: full permissions including direct approval and user management; MODERATOR: can submit content for admin review, view dashboard metrics)
 - NoSQL document database with composite indexes
 - Response caching (5-minute TTL) with cache stampede protection
 - Cursor-based pagination for infinite scroll
@@ -107,7 +111,6 @@ children's ability to learn Islam independently.
 - Community content suggestions from end-users
 - Video uploads (YouTube-only sourcing)
 - Premium features (playlists, bookmarks, watch history)
-- Live streaming support
 - Automated moderation via ML/AI
 - Social features (comments, likes, shares within app)
 - Cloud storage integration (app-private storage only)
@@ -123,25 +126,37 @@ children's ability to learn Islam independently.
 
 ## User Stories & Acceptance Criteria
 
-### Story 1: Admin Searches and Adds Channel for Approval
+### Story 1: Admin Searches and Directly Approves Content
 **As an** administrator
-**I want to** search YouTube and submit channels for approval
-**So that** moderators can review and publish safe Islamic content
+**I want to** search YouTube and directly approve content
+**So that** it immediately appears in the mobile app for users
 
 **Acceptance Criteria**:
 1. Search returns blended results (channels/playlists/videos) within 2s
 2. Results cached for 1 hour; subsequent searches hit cache
-3. "Add for Approval" opens category assignment modal requiring ≥1 category
-4. Submission creates document with status="pending", submittedBy=actor,
-   submittedAt=timestamp
-5. Item appears in moderator's pending queue immediately after submission
-6. Audit log records submission with actor UID, entity ID, timestamp
+3. "Add & Approve" button opens category assignment modal requiring ≥1 category
+4. Approval creates document with status="approved", approvedBy=admin UID,
+   approvedAt=timestamp
+5. Content visible in mobile app within 60 seconds (cache refresh)
+6. Audit log records approval with actor UID, entity ID, timestamp, assigned categories
 
-### Story 2: Moderator Approves Channel with Exclusions
+### Story 1B: Moderator Submits Content for Admin Review
 **As a** moderator
+**I want to** submit content for admin approval
+**So that** admins can make final decisions on content selection
+
+**Acceptance Criteria**:
+1. Search returns blended results (channels/playlists/videos) within 2s
+2. "Submit for Review" button opens category assignment modal requiring ≥1 category
+3. Submission creates document with status="pending", submittedBy=moderator UID,
+   submittedAt=timestamp
+4. Item appears in admin's pending queue immediately after submission
+5. Audit log records submission with actor UID, entity ID, timestamp
+
+### Story 2: Admin Approves Channel with Exclusions
+**As an** administrator
 **I want to** review pending channels and exclude specific videos
-**So that** channels with mostly good content can be approved despite isolated
-inappropriate items
+**So that** channels with mostly good content can be approved despite isolated inappropriate items
 
 **Acceptance Criteria**:
 1. Pending queue displays items sorted oldest-first (FIFO) with filters for
@@ -149,7 +164,7 @@ inappropriate items
 2. Channel detail modal shows recent 50 videos with exclude checkboxes
 3. Exclusion requires reason from dropdown (Contains Music, Theological Issue,
    Duplicate, Other)
-4. Approve action updates status="approved", approvedBy=moderator UID,
+4. Approve action updates status="approved", approvedBy=admin UID,
    approvedAt=timestamp
 5. Excluded items stored in excludedItems array; hidden from mobile API
 6. Audit log records approval decision with categories, exclusions, optional
@@ -162,31 +177,49 @@ inappropriate items
 **So that** my children can watch Islamic content unsupervised
 
 **Acceptance Criteria**:
-1. Home feed returns 3 latest items per category within 3s on cold start
+1. Home feed returns 20 latest items per type within 3s on cold start
 2. Category filter persists across tabs during session
 3. Video tap loads player screen; playback starts within 1.2s (p50)
 4. Player has no autoplay to next video; replay button shown on completion
 5. Zero advertisements during playback or in browse UI
-6. Quality selector displays all available qualities (144p-1080p), sorted low
+6. Quality selector displays all available qualities (144p-4k), sorted low
    to high
 7. Audio-only toggle switches stream without restarting playback
 
-### Story 4: Student Downloads Playlist Offline
+### Story 4: Student Downloads Single Video Offline
+**As a** student of knowledge
+**I want to** download individual videos for offline viewing
+**So that** I can watch specific lectures without internet connection
+
+**Acceptance Criteria**:
+1. Video detail screen shows "Download" icon/button
+2. Tap opens quality selector modal showing available qualities (144p, 360p, 720p, 1080p, 4k) with estimated file sizes
+3. User selects quality; app checks storage quota availability
+4. If quota exceeded, shows "Manage Downloads" prompt with option to delete old downloads
+5. For qualities >360p: downloads video and audio streams separately, then merges using FFmpeg or similar (following NewPipe implementation: https://github.com/TeamNewPipe/NewPipe/blob/f836f5e75dcf80e4ca8c7e525114c57f425952e9/app/src/main/java/us/shandian/giga/service/DownloadManagerService.java#L59)
+6. WorkManager queues download with foreground notification showing progress (percentage, speed, ETA)
+7. Download can be paused/resumed/cancelled from notification or Downloads tab
+8. Downloaded indicator appears on video thumbnail after completion
+9. Tap downloaded video opens player in offline mode; no network required
+10. Downloads expire after 30 days; user notified 7 days before expiry
+
+### Story 5: Student Downloads Playlist Offline
 **As a** student of knowledge
 **I want to** download entire playlists for offline study
 **So that** I can listen during commute without mobile data
 
 **Acceptance Criteria**:
-1. Playlist detail shows "Download" button; tap opens EULA modal
-2. EULA acceptance required; rejection blocks download with explanation
+1. Playlist detail shows "Download" button with available quality selector (144p, 360p, 720p, 1080p, 4k)
+2. User selects preferred download quality; app shows estimated storage requirement
 3. Storage check warns if quota exceeded; prompts deletion of old downloads
-4. WorkManager enqueues download with foreground notification showing progress
-5. Notification shows "Downloading 1/30" with cancel action
-6. Downloads tab displays aggregated progress (30% across playlist)
-7. Completed downloads expire after 30 days; user notified 7 days prior
-8. Offline playback works without network; maintains watch position
+4. For qualities >360p: downloads video and audio streams separately, then merges (following NewPipe implementation: https://github.com/TeamNewPipe/NewPipe/blob/f836f5e75dcf80e4ca8c7e525114c57f425952e9/app/src/main/java/us/shandian/giga/service/DownloadManagerService.java#L59)
+5. WorkManager enqueues download with foreground notification showing progress
+6. Notification shows "Downloading 1/30" with cancel action
+7. Downloads tab displays aggregated progress (30% across playlist)
+8. Completed downloads expire after 30 days; user notified 7 days prior
+9. Offline playback works without network; maintains watch position
 
-### Story 5: Admin Views Dashboard Metrics
+### Story 6: Admin Views Dashboard Metrics
 **As an** administrator
 **I want to** see real-time platform metrics
 **So that** I can monitor content growth and moderation queue health
@@ -208,51 +241,48 @@ inappropriate items
 
 ### Flow 1: First-Time Mobile User
 1. User launches app; splash screen displays ≥1.5s during data load
-2. Onboarding carousel presents 3 pages: Welcome, Features, Language Selection
-3. User selects locale (en/ar/nl); choice persists in app-private storage
-4. Main shell loads with Home tab active; categories populated from backend
-5. User taps "Quran Recitation" category chip
-6. Filtered video grid displays approved content in that category
-7. User taps video thumbnail
-8. Player screen loads in fullscreen; video starts within 1.2s
-9. User watches to completion; replay button appears (no autoplay)
-10. Back navigation returns to filtered grid; filter state preserved
+2. Onboarding carousel presents 3 pages: Browse, Listen in background, Download for offline
+3. Main shell loads with Home tab active showing:
+   - Category filter chip at top
+   - Three horizontal scrollable sections: Channels (20 latest), Playlists (20 latest), Videos (20 latest by published date)
+   - Each section has "See All" link to navigate to dedicated tab
+4. User taps category filter chip
+5. Categories screen opens showing all top-level categories; categories with subcategories display next arrow indicator
+6. User taps "Quran Recitation" category (or subcategory if applicable)
+7. Navigation returns to Home tab, now filtered to show only "Quran Recitation" content
+8. User taps video thumbnail from Videos horizontal list
+9. Player screen loads; video starts within 1.2s
+10. User watches to completion; replay button appears (no autoplay)
+11. Back navigation returns to filtered Home tab; filter state preserved
 
-### Flow 2: Admin Approves New Channel
+### Flow 2: Admin Approves New Channel Directly
 1. Admin logs into dashboard with email/password (Firebase Auth)
 2. Navigates to Content Search; enters "Islamic lecture" in search box
 3. Search returns 20 YouTube results (channels, playlists, videos) within 2s
 4. Admin filters by "Channels only"; finds channel with 100K subscribers
 5. Clicks "Preview" to open YouTube in new tab; verifies channel authenticity
-6. Returns to dashboard; clicks "Add for Approval"
+6. Returns to dashboard; clicks "Add & Approve"
 7. Category assignment modal opens; admin selects "Hadith" and "Seerah"
-8. Adds submission note: "Recommended by community"
-9. Clicks Submit; confirmation toast appears
-10. Channel appears in Pending Approvals queue with status="pending"
-11. Moderator (different user) reviews channel in pending queue
-12. Opens channel detail modal; views recent 50 videos
-13. Identifies 2 videos with background music; checks exclude boxes
-14. Adds exclusion reason: "Contains Music"
-15. Clicks "Approve Channel"
-16. Channel status updates to "approved"; excluded videos stored in array
-17. Audit log records approval with moderator UID, categories, exclusions
-18. Mobile app receives approved channel in next API fetch (<60s)
+8. Opens channel detail modal; views recent 50 videos
+9. Identifies 2 videos with background music; checks exclude boxes
+10. Adds exclusion reason: "Contains Music"
+11. Clicks "Approve Channel"
+12. Channel status set to "approved"; excluded videos stored in array
+13. Audit log records approval with admin UID, categories, exclusions
+14. Mobile app receives approved channel in next API fetch (<60s)
 
-### Flow 3: Moderator Reviews Pending Queue
+### Flow 3: Moderator Submits Content for Admin Review
 1. Moderator logs into dashboard
-2. Navigates to Pending Approvals; sees 5 pending items sorted oldest-first
-3. Applies filter: "Type=Channel", "Category=Quran Recitation"
-4. Queue filters to 2 matching channels
-5. Clicks first channel row to open detail modal
-6. Reviews Info tab: channel description, subscriber count, total videos
-7. Switches to Videos tab; scans thumbnails for inappropriate content
-8. Finds 1 video with music; checks "Exclude" checkbox
-9. Exclusion dropdown appears; selects "Contains Music", adds note
-10. Returns to Info tab; clicks "Approve"
-11. Confirmation modal asks "Approve channel with 1 exclusion?"
-12. Moderator confirms; success toast appears
-13. Queue updates to show 1 pending item remaining
-14. Audit log entry created with timestamp, actor, entity, decision
+2. Navigates to Content Search; enters "Sheikh Ahmad Tafsir"
+3. Search returns channels/playlists/videos within 2s
+4. Moderator finds relevant channel; clicks "Preview" to verify
+5. Returns to dashboard; clicks "Submit for Review"
+6. Category assignment modal opens; selects "Tafsir" category
+7. Adds submission note: "Popular channel, needs admin verification"
+8. Clicks Submit; confirmation toast appears
+9. Channel appears in Admin's pending queue with status="pending"
+10. Admin reviews and approves/rejects using Flow 2 process
+11. Audit log records both submission (moderator) and approval (admin)
 
 ---
 
@@ -277,29 +307,27 @@ inappropriate items
 - Bundle size < 500KB gzipped (initial load)
 
 ### Security & Privacy
-**Authentication**:
-- JWT-based authentication with custom claims for role enforcement
-- Token expiry: 15 minutes (access), refresh tokens rotate on use
-- Rate limiting: 5 failed login attempts per 15 minutes trigger lockout
 
-**Authorization**:
-- Role-based access control: ADMIN (full access), MODERATOR (approve/reject
-  only, cannot manage users)
-- Method-level enforcement via security annotations
-- Firestore security rules mirror backend role checks
+**MVP (Minimal Required)**:
+- Firebase Authentication for admin dashboard login (email/password)
+- Role-based access control: ADMIN and MODERATOR roles via Firebase custom claims
+- HTTPS/TLS for all connections (production only, localhost HTTP acceptable for dev)
+- Admin passwords managed by Firebase Auth (automatic bcrypt hashing)
+- Mobile app: public access only, no user accounts or authentication required
+- Downloaded videos stored in app-private directory (Android OS-level encryption)
+- Basic input validation: reject empty/null required fields
 
-**Data Protection**:
-- TLS 1.2+ for all connections; HSTS enabled
-- Downloaded videos stored in app-private directory with OS-level encryption
-- No personal data collected from mobile users (public access, no accounts)
-- Admin passwords hashed with Argon2id
-- Audit logs retained 7 years in immutable storage
-
-**API Security**:
-- Rate limiting: 60 req/min (write), 600 req/min (read) per IP
-- CSRF protection via double-submit cookie pattern
-- Input validation: JSON schema validation for all POST/PUT payloads
-- Signed URLs for download manifests (5-minute expiry)
+**Deferred to Later Phases**:
+- Advanced rate limiting (abuse protection)
+- Token refresh rotation
+- Account lockout after failed login attempts
+- CSRF protection (double-submit cookies)
+- Comprehensive JSON schema validation
+- Firestore security rules hardening
+- Audit log immutable storage
+- Signed download URLs
+- HSTS headers
+- Argon2id password hashing (Firebase default is sufficient for MVP)
 
 ### Accessibility
 - WCAG 2.1 AA compliance: color contrast ≥ 4.5:1 (text), ≥ 3:1 (UI)
@@ -326,64 +354,79 @@ inappropriate items
 - Error messages, empty states, accessibility labels localized
 
 ### Reliability
-**Uptime Target**: 99.5% (43 hours downtime/year max)
+**Uptime Target**: 99.9% (43 hours downtime/year max)
 
-**Error Handling**:
-- Retry with exponential backoff (max 3 attempts) for network failures
-- Circuit breaker for external APIs (YouTube, Firebase) with fallback to cached
-  data
-- Graceful degradation: mobile app shows deterministic fake data when backend
-  unreachable
+**Error Handling (MVP - Minimal)**:
+- Basic retry logic: 2 retries with 1-second delay for network failures
+- Try-catch blocks with user-friendly error messages
+- Mobile app: show "Unable to connect" message when backend unreachable
 
-**Backup & Recovery**:
-- Firestore automatic daily backups with 35-day retention
-- Audit logs exported daily to immutable object storage
-- Recovery Time Objective (RTO): 4 hours
-- Recovery Point Objective (RPO): 24 hours
+**Error Handling (Deferred to Later)**:
+- Exponential backoff retry strategies
+- Circuit breaker patterns for external APIs
+- Graceful degradation with cached/fallback data
+- Deterministic fake data for offline development
 
-**Monitoring**:
-- Prometheus metrics: API latency, error rate, cache hit ratio
-- Grafana dashboards with 5-minute granularity
-- Alerts: latency > 200ms for 3 intervals, cache hit < 60%, error rate > 1%
-- Mobile crash-free rate ≥ 99%, ANR rate ≤ 0.5% (Firebase Crashlytics)
+**Backup & Recovery (Out of Scope for MVP)**:
+- Firestore has built-in replication (no manual backups needed for MVP)
+- Manual data export via Firebase Console if needed
+- **Deferred to v1.1+**:
+  - Automated daily backups with retention policies
+  - Audit log exports to immutable storage
+  - Formal RTO/RPO targets
+  - Disaster recovery procedures
+
+**Monitoring (Out of Scope for MVP)**:
+- MVP: Manual testing and basic Firebase Console monitoring only
+- **Deferred to v1.1+**:
+  - Prometheus metrics collection
+  - Grafana dashboards
+  - Automated alerting (latency, error rates)
+  - APM tools (Application Performance Monitoring)
+  - Firebase Crashlytics integration for mobile crash tracking
 
 ---
 
 ## Risks & Open Questions
 
 **High-Priority Risks**:
-1. **YouTube Terms of Service Compliance**: Verify that curated playback via
-   NewPipe extractor complies with YouTube ToS; consult legal counsel pre-launch
-   - Mitigation: Use official YouTube API where possible; fallback to extractor
-     only for stream resolution
 
-2. **Content Moderation Scalability**: Manual review doesn't scale beyond 5,000
+
+1. **Content Moderation Scalability**: Manual review doesn't scale beyond 5,000
    videos
    - Mitigation: Implement auto-approval rules for trusted channels in v1.1;
      recruit volunteer moderators
 
-3. **Download Storage Quota Enforcement**: Users may circumvent 500MB quota via
+2. **Download Storage Quota Enforcement**: Users may circumvent 500MB quota via
    app reinstall
    - Mitigation: Track downloads server-side by device ID; enforce global quota
      in v1.1
 
-4. **Arabic Translation Quality**: Machine-translated Islamic content may
+3. **Arabic Translation Quality**: Machine-translated Islamic content may
    contain theological inaccuracies
    - Mitigation: Engage Islamic scholars for Arabic translation review;
      community feedback mechanism
 
 **Medium-Priority Risks**:
 5. **NewPipe Extractor Breakage**: YouTube UI changes break extractor library
-   - Mitigation: Monitor extractor GitHub repo; maintain fallback to official
-     API where possible; display user-friendly errors
+   - Mitigation (Out of Scope for MVP): Monitor NewPipe GitHub repo; implement
+     fallback to FreeTube (https://github.com/FreeTubeApp/FreeTube) or Invidious
+     (https://github.com/iv-org/invidious) extractors when NewPipe breaks
+   - MVP approach: Display user-friendly errors; manually update NewPipe library
+     when breakage occurs
+   - **Never fallback to official YouTube API** (preserves privacy, avoids vendor lock-in)
 
 6. **Firebase Costs**: Firestore read/write costs may exceed budget at scale
-   - Mitigation: Aggressive caching (5-minute TTL); monitor quota usage;
-     migrate to self-hosted database if costs exceed $500/month
+   - Mitigation: Aggressive caching (5-minute TTL); monitor quota usage via
+     Firebase Console
+   - **Migration Path (Out of Scope for MVP)**: Migrate to Supabase
+     (https://supabase.com) if Firebase costs exceed $500/month
+   - Supabase offers: PostgreSQL (vs NoSQL), better pricing at scale, row-level
+     security, self-hosting option
 
 **Open Questions**:
-- Should moderators be able to approve in bulk (e.g., all videos from trusted
-  channel)? → Defer to v1.1 based on moderator feedback
+- Should admins be able to approve in bulk (e.g., all videos from trusted
+  channel)? → Defer to v1.1 based on admin feedback
 - What happens to approved content if the YouTube source is deleted/private? →
   Backend marks as inactive; mobile API filters automatically
 - Should mobile users be able to suggest content for review? → Out of scope for
@@ -395,7 +438,7 @@ inappropriate items
 
 **Content Quality** (Measured monthly):
 - Inappropriate content incidents < 0.1% of catalog
-- Moderator approval time < 48 hours for 95% of pending submissions
+- Admin approval time < 48 hours for 95% of pending submissions (from moderators)
 - Content freshness: ≥ 20% of catalog refreshed each month
 
 **User Engagement** (Measured weekly):
@@ -413,7 +456,7 @@ inappropriate items
 
 **Operational Efficiency** (Measured monthly):
 - Admin onboarding time < 2 hours
-- Moderator productivity ≥ 50 approvals per day
+- Admin productivity ≥ 50 approvals per day
 - Support ticket resolution < 24 hours
 
 **Growth Targets** (6-month roadmap):
@@ -428,19 +471,20 @@ inappropriate items
 ### MVP (Months 1-3): Core Curation & Playback
 **Must-Have Features**:
 - Admin authentication with ADMIN/MODERATOR roles
-- YouTube content search via official API
-- Approval workflow: submission → pending → approved/rejected
+- YouTube content search via NewPipeExtractor (primary extractor)
+  - **Note**: FreeTube/Invidious fallback system deferred to v1.1
+- Approval workflow: ADMIN direct approval, MODERATOR submission for review
 - Category management (hierarchical, max 2 levels)
 - Exclusions (videos/playlists within channels)
-- Android app: browse by category, video playback, quality selection
+- Android app: browse by category, video playback, quality selection, live stream support
 - Offline downloads with 500MB quota, 30-day expiry
 - Multi-language: English, Arabic (RTL), Dutch
-- Audit logging of all moderation actions
-- Metrics dashboard: pending queue, content totals, moderator activity
+- Audit logging of all approval actions
+- Metrics dashboard: pending queue, content totals, admin activity
 
 **Launch Criteria**:
 - 500+ approved videos across 20 categories
-- 3+ trained moderators
+- 2+ trained admins
 - Zero P0 bugs
 - Performance budgets met (API < 200ms p95, mobile < 2.5s cold start)
 - WCAG AA compliance verified
@@ -449,12 +493,12 @@ inappropriate items
 **MVP Backlog** (defer if time-constrained):
 - Bulk import/export (JSON format)
 - Advanced search filters (video length, publish date)
-- Email notifications for moderators
+- Email notifications for admins (pending queue alerts)
 
 ### v1.1 (Months 4-6): Optimization & Scale
 **Next Features**:
 - Auto-approval rules for trusted channels (skip manual review)
-- Bulk approval actions for moderators
+- Bulk approval actions for admins
 - Content suggestions from mobile users (submission form)
 - Advanced analytics: watch time, completion rates per category
 - Admin-managed settings persistence (locale, notifications)
@@ -471,10 +515,15 @@ inappropriate items
 - Volunteer moderator onboarding program
 - Community-driven category suggestions
 - Automated content freshness checks (detect deleted YouTube videos)
+- **Extractor Resilience**: Implement fallback system for FreeTube/Invidious when NewPipe breaks
 
 ### Future (v1.2+): Platform Expansion
 - iOS application (Swift/SwiftUI)
-- Web viewer (public content browsing without mobile app)
+- Desktop application (public content browsing without mobile app)
+- Smart TV platforms:
+  - Samsung TV (Tizen OS)
+  - LG TV (webOS)
+  - Google TV / Android TV
 - Parental controls: profiles, watch time limits
 - Advanced recommendations engine (ML-based)
 - Multi-device sync (watch history, bookmarks)
