@@ -195,8 +195,9 @@ All use Firestore SDK directly (no Spring Data JPA):
 - **Audio-only option**: Download audio stream only
 - **Stream merging**: Separate audio/video for HD (>480p) following NewPipe implementation
 - **WorkManager**: Foreground notifications with progress, pause/resume/cancel
-- **Storage**: App-private directory, 500MB default quota, 30-day expiry
+- **Storage**: App-private directory, 30-day expiry, device storage managed by Android OS
 - **Playlist downloads**: Bulk download with aggregated progress
+- **Storage info**: Shows estimated file size and available device storage before download
 
 ### Live Stream Support
 - **"LIVE" badge**: Visual indicator on active streams

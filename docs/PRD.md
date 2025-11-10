@@ -90,7 +90,7 @@ children's ability to learn Islam independently.
   - UpNext queue with backend recommendations API integration
   - Share functionality (external apps via intent chooser)
 - Live stream playback: "LIVE" badge on active streams, disabled seek bar, auto-transition to VOD when ended
-- Offline downloads with quality selector (144p-1080p), separate audio/video stream merging for HD (>480p), storage quota (500MB default), 30-day expiry, audio-only download option
+- Offline downloads with quality selector (144p-1080p), separate audio/video stream merging for HD (>480p), 30-day expiry, audio-only download option, device storage management
 - Search across approved content with persistent search history (max 10 items, delete individual entries)
 - Safe mode toggle for family-friendly content filtering
 - Multi-language support: English, Arabic (RTL), Dutch
@@ -243,14 +243,14 @@ children's ability to learn Islam independently.
 **Acceptance Criteria**:
 1. Video detail screen shows "Download" icon/button
 2. Tap opens quality selector modal showing available qualities (144p, 360p, 720p, 1080p, 4k) with estimated file sizes
-3. User selects quality; app checks storage quota availability
-4. If quota exceeded, shows "Manage Downloads" prompt with option to delete old downloads
-5. For qualities >360p: downloads video and audio streams separately, then merges using FFmpeg or similar (following NewPipe implementation: https://github.com/TeamNewPipe/NewPipe/blob/f836f5e75dcf80e4ca8c7e525114c57f425952e9/app/src/main/java/us/shandian/giga/service/DownloadManagerService.java#L59)
-6. WorkManager queues download with foreground notification showing progress (percentage, speed, ETA)
-7. Download can be paused/resumed/cancelled from notification or Downloads tab
-8. Downloaded indicator appears on video thumbnail after completion
-9. Tap downloaded video opens player in offline mode; no network required
-10. Downloads expire after 30 days; user notified 7 days before expiry
+3. User selects quality; app shows estimated file size and available device storage
+4. For qualities >360p: downloads video and audio streams separately, then merges using FFmpeg or similar (following NewPipe implementation: https://github.com/TeamNewPipe/NewPipe/blob/f836f5e75dcf80e4ca8c7e525114c57f425952e9/app/src/main/java/us/shandian/giga/service/DownloadManagerService.java#L59)
+5. WorkManager queues download with foreground notification showing progress (percentage, speed, ETA)
+6. Download can be paused/resumed/cancelled from notification or Downloads tab
+7. Downloaded indicator appears on video thumbnail after completion
+8. Tap downloaded video opens player in offline mode; no network required
+9. Downloads expire after 30 days; user notified 7 days before expiry
+10. If device storage is critically low during download, Android OS will handle warning/cancellation (system behavior)
 
 ### Story 5: Student Downloads Playlist Offline
 **As a** student of knowledge
@@ -259,14 +259,14 @@ children's ability to learn Islam independently.
 
 **Acceptance Criteria**:
 1. Playlist detail shows "Download" button with available quality selector (144p, 360p, 720p, 1080p, 4k)
-2. User selects preferred download quality; app shows estimated storage requirement
-3. Storage check warns if quota exceeded; prompts deletion of old downloads
-4. For qualities >360p: downloads video and audio streams separately, then merges (following NewPipe implementation: https://github.com/TeamNewPipe/NewPipe/blob/f836f5e75dcf80e4ca8c7e525114c57f425952e9/app/src/main/java/us/shandian/giga/service/DownloadManagerService.java#L59)
-5. WorkManager enqueues download with foreground notification showing progress
-6. Notification shows "Downloading 1/30" with cancel action
-7. Downloads tab displays aggregated progress (30% across playlist)
-8. Completed downloads expire after 30 days; user notified 7 days prior
-9. Offline playback works without network; maintains watch position
+2. User selects preferred download quality; app shows estimated total storage requirement and available device storage
+3. For qualities >360p: downloads video and audio streams separately, then merges (following NewPipe implementation: https://github.com/TeamNewPipe/NewPipe/blob/f836f5e75dcf80e4ca8c7e525114c57f425952e9/app/src/main/java/us/shandian/giga/service/DownloadManagerService.java#L59)
+4. WorkManager enqueues download with foreground notification showing progress
+5. Notification shows "Downloading 1/30" with cancel action
+6. Downloads tab displays aggregated progress (30% across playlist)
+7. Completed downloads expire after 30 days; user notified 7 days prior
+8. Offline playback works without network; maintains watch position
+9. If device storage becomes critically low during download, Android OS handles warnings (system behavior)
 
 ### Story 6: Admin Views Dashboard Metrics
 **As an** administrator
@@ -446,10 +446,9 @@ children's ability to learn Islam independently.
    - Mitigation: Implement auto-approval rules for trusted channels in v1.1;
      recruit volunteer moderators
 
-2. **Download Storage Quota Enforcement**: Users may circumvent 500MB quota via
-   app reinstall
-   - Mitigation: Track downloads server-side by device ID; enforce global quota
-     in v1.1
+2. **Download Storage Abuse**: Users may download excessive content, impacting backend bandwidth
+   - Mitigation: Monitor download patterns; implement reasonable rate limits (e.g., max 10 concurrent downloads) in v1.1 if abuse detected
+   - Note: No artificial storage quota - user's device storage is the natural limit
 
 3. **Arabic Translation Quality**: Machine-translated Islamic content may
    contain theological inaccuracies
@@ -534,7 +533,7 @@ children's ability to learn Islam independently.
   - Chromecast support, UpNext recommendations
   - External sharing, search history
   - Live stream support
-- Offline downloads with 500MB quota, 30-day expiry, audio-only option
+- Offline downloads with 30-day expiry, audio-only option, device storage management
 - Multi-language: English, Arabic (RTL), Dutch
 - Audit logging of all approval actions
 - Metrics dashboard with trend analysis: pending queue, content totals, admin activity, validation status

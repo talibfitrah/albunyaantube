@@ -169,12 +169,13 @@ app:
 #### MVP Scope
 - **Backend Check**: `DownloadService` verifies video is approved before issuing download token
 - **Token Expiration**: Download tokens expire after 24 hours
-- **Storage Quota**: Android app enforces 500MB default quota (oldest files pruned)
+- **Storage Management**: Android app shows available device storage; Android OS manages low storage warnings
 - **EULA Acceptance**: Android app requires user acceptance before first download (DataStore flag)
+- **Note**: No artificial storage quota - user's device storage is the natural limit
 
 #### Deferred to v1.1+
 - **Signed URLs**: Pre-signed URLs with expiration (e.g., AWS S3 presigned URLs)
-- **Device Tracking**: Track downloads per device ID, enforce global quota server-side
+- **Rate Limiting**: Max concurrent downloads per device (e.g., 10) to prevent bandwidth abuse
 
 ---
 
@@ -221,14 +222,15 @@ app:
 
 **Deferred**: Firestore Security Rules hardening (deny direct client access, enforce schema)
 
-### Scenario 5: Download Quota Bypass
-**Threat**: User reinstalls app to reset 500MB quota
+### Scenario 5: Download Bandwidth Abuse
+**Threat**: User downloads excessive content, impacting backend bandwidth
 
 **MVP Mitigation**:
-- App-local quota enforcement (DataStore tracking)
-- Manual cleanup if storage full
+- Device storage is natural limit (Android OS manages low storage)
+- 30-day expiry automatically cleans up old downloads
+- Estimated file sizes shown before download (user self-regulation)
 
-**Deferred**: Server-side device ID tracking, global quota enforced by backend
+**Deferred**: Server-side rate limiting (max 10 concurrent downloads per device) if abuse detected
 
 ---
 
