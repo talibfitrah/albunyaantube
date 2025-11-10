@@ -196,12 +196,12 @@ firebase emulators:start --only firestore,auth --import=firebase-data
 
 **Required for Local Dev**:
 ```bash
-# Copy template and add your keys
+# Copy template and configure Firebase
 cp .env.example .env
 
 # Then edit .env with:
 FIREBASE_PROJECT_ID=albunyaan-tube  # Usually local/testing project
-YOUTUBE_API_KEY=your_youtube_api_key_here
+# Note: No YouTube API key required - uses NewPipeExtractor
 ```
 
 **Setup Scripts**:
@@ -346,7 +346,7 @@ Model (Firestore @DocumentId annotations)
 - `DownloadController`: Video download management - `/api/downloads`
 
 **Key Services**:
-- `YouTubeService`: YouTube Data API v3 integration (channel/playlist/video search with caching)
+- `YouTubeService`: NewPipeExtractor integration for YouTube content discovery (channel/playlist/video search with caching, no API key required)
 - `PublicContentService`: Content for mobile app
 - `ApprovalService`: Approval workflow (auto-approval rules, pending queue)
 - `AuditLogService`: Audit event logging
@@ -687,13 +687,13 @@ Optional detailed explanation (wrapped at 72 chars)
 
 | File | Purpose | Key Contents |
 |------|---------|--------------|
-| `backend/build.gradle.kts` | Backend dependencies & build | Spring Boot, Firebase, YouTube API, Gradle plugins |
+| `backend/build.gradle.kts` | Backend dependencies & build | Spring Boot, Firebase, NewPipeExtractor, Gradle plugins |
 | `backend/src/main/resources/application.yml` | Spring configuration | Cache, security, Firebase paths, CORS origins |
 | `frontend/package.json` | Frontend dependencies | Vue, Vite, Pinia, Firebase, testing libs |
 | `frontend/vite.config.ts` | Vite bundler config | Code splitting, minification, dev server |
 | `frontend/tsconfig.json` | TypeScript config | @ alias for src/, strict mode |
-| `android/build.gradle.kts` | Android app build | SDK versions, dependencies, build flavors |
-| `.env.example` | Environment template | FIREBASE_PROJECT_ID, YOUTUBE_API_KEY |
+| `android/build.gradle.kts` | Android app build | SDK versions, dependencies, build flavors, NewPipeExtractor |
+| `.env.example` | Environment template | FIREBASE_PROJECT_ID (no API keys needed) |
 | `.github/workflows/` | CI/CD pipelines | Build, test, lint steps for each platform |
 
 ### Documentation Files (Simplified Structure)
@@ -949,7 +949,7 @@ buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:8080/\"")
 - [Pinia State Management](https://pinia.vuejs.org/)
 - [Firebase Admin SDK](https://firebase.google.com/docs/admin/setup)
 - [Firestore Documentation](https://firebase.google.com/docs/firestore)
-- [YouTube Data API v3](https://developers.google.com/youtube/v3)
+- [NewPipeExtractor](https://github.com/TeamNewPipe/NewPipeExtractor) - YouTube content extraction library
 - [Android Jetpack](https://developer.android.com/jetpack)
 - [Kotlin Coroutines](https://kotlinlang.org/docs/coroutines-overview.html)
 
