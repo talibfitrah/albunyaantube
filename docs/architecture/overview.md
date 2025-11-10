@@ -1,119 +1,409 @@
 # Solution Architecture Overview
 
-This document summarizes the end-to-end architecture for Albunyaan Tube. Detailed diagrams reside in [`docs/architecture/diagrams`](diagrams). API contracts are defined in [`../api/openapi-draft.yaml`](../api/openapi-draft.yaml). Security considerations are elaborated in [`../security/threat-model.md`](../security/threat-model.md).
+This document summarizes the end-to-end architecture for Albunyaan Tube, an ad-free, admin-curated YouTube client delivering safe Islamic content through native mobile apps and a web-based moderation dashboard.
 
-## C4 Summary
-- **Context**: See [`diagrams/context.md`](diagrams/context.md) for relationships among actors (Android client, Admin UI, Spring Boot backend, PostgreSQL, Redis, external NewPipeExtractor and YouTube).
-- **Container**: [`diagrams/container.md`](diagrams/container.md) describes deployment units (Android app, Admin SPA, Backend service, Databases, CDN).
-- **Component**: [`diagrams/backend-components.md`](diagrams/backend-components.md) details backend layers (API, Service, Repository, Integration).
-- **Sequence**: Interaction flows for moderation approvals in [`diagrams/moderation-sequence.md`](diagrams/moderation-sequence.md) and channel tab retrieval in [`diagrams/channel-tabs-sequence.md`](diagrams/channel-tabs-sequence.md).
+## Related Documentation
+- **C4 Diagrams**: [`diagrams/`](diagrams/) - Context and component diagrams
+- **API Specification**: [`api-specification.yaml`](api-specification.yaml) - OpenAPI REST API spec
+- **Security**: [`security.md`](security.md) - Threat model and security controls
+- **PRD**: [`../PRD.md`](../PRD.md) - Product requirements document
+
+---
+
+## System Overview
+
+**Albunyaan Tube** is a 3-tier architecture:
+1. **Android Mobile App** (Kotlin + Jetpack) - Public content consumption
+2. **Admin Web Dashboard** (Vue 3 + TypeScript) - Content curation and moderation
+3. **Spring Boot Backend** (Java 17) - REST API + Firebase Firestore
+
+**Key Principles**:
+- **Privacy-first**: Never use official YouTube API in mobile app (NewPipeExtractor only)
+- **Human moderation**: All content manually approved by admins before public visibility
+- **Multilingual**: English, Arabic (RTL), Dutch across all platforms
+- **Offline-first**: Android app supports downloads with 500MB quota
+- **No user accounts**: Mobile app is public access only (admin dashboard requires Firebase Auth)
+
+---
 
 ## Backend Architecture
-- **Language/Framework**: Java 17, Spring Boot 3 with Web, Security, Validation modules.
-- **Database**: Firebase Firestore (NoSQL document database) for all persistent data. Collections: users, categories, channels, playlists, videos, moderationProposals, activityLogs. Hierarchical category structure using `parentCategoryId` field for parent-child relationships.
-- **Authentication**: Firebase Authentication with custom claims for role-based access control (RBAC). Spring Security integration validates Firebase ID tokens via `FirebaseAuthFilter`. Roles: ADMIN and MODERATOR enforced through Spring Security method-level annotations.
-- **Integration**:
-  - NewPipeExtractor ships with the Android client to resolve metadata and stream URLs at runtime for allow-listed IDs.
-  - YouTube Data API v3 used in admin backend for content search, channel/playlist expansion, and preview metadata. No remote metadata is persisted in Firestore.
-- **API Style**: REST with JSON; localized responses based on `Accept-Language` with fallback to English. Metadata fields returned by read APIs combine Albunyaan overrides with runtime extractor payloads provided by clients when available.
-- **Caching Strategy**: Redis caches popular list queries keyed by locale + category + cursor. Time-to-live 5 minutes with cache stampede protection (locking). Downloadable assets served via signed URLs; consider CDN for thumbnails.
-- **Security Architecture**:
-  - Firebase tokens (JWT) verified on each request via Firebase Admin SDK
-  - Custom claims (`role: admin|moderator`) control access to endpoints
-  - RBAC enforced through Spring Security with `@PreAuthorize` annotations
-  - Rate limiting via Redis sliding window
-  - See [`../security/threat-model.md`](../security/threat-model.md#controls) for detailed controls
-- **Observability**: Structured logging (JSON), distributed tracing with OpenTelemetry, metrics exported to Prometheus. Error taxonomy defined in [`../testing/test-strategy.md`](../testing/test-strategy.md#error-taxonomy).
 
-## Domain Model (Firestore Collections)
-Documents stored in Firestore collections:
+### Technology Stack
+- **Framework**: Spring Boot 3.2.5, Java 17
+- **Database**: Firebase Firestore (NoSQL document database)
+- **Authentication**: Firebase Authentication with custom claims (ADMIN, MODERATOR roles)
+- **Caching**:
+  - **Dev**: Caffeine (in-memory, 1-hour TTL)
+  - **Prod (Optional)**: Redis (5-minute TTL, commented out in application.yml)
+- **External APIs**:
+  - **NewPipeExtractor** (https://github.com/TeamNewPipe/NewPipeExtractor) - Extract YouTube metadata without official API
+  - **YouTube Data API v3** - Admin search only (requires API key in environment)
 
-### users/{uid}
-- uid: Firebase UID (document ID)
-- email, displayName
-- role: "admin" | "moderator" (mirrored in Firebase custom claims)
-- status: "active" | "inactive"
-- createdAt, updatedAt, lastLoginAt
+### Controllers (14 Total)
+1. **PublicContentController** - Mobile app API (`/api/v1/*`)
+2. **ApprovalController** - Approval workflow (`/api/admin/approvals`)
+3. **CategoryController** - Category CRUD (`/api/admin/categories`)
+4. **ChannelController** - Channel management (`/api/admin/channels`)
+5. **ContentLibraryController** - Content library (`/api/admin/content`)
+6. **RegistryController** - Internal workflow for adding to pending queue (`/api/admin/registry`)
+7. **YouTubeSearchController** - YouTube search (`/api/admin/youtube`)
+8. **VideoValidationController** - Validate video availability (`/api/admin/validation`)
+9. **ImportExportController** - Bulk operations (`/api/admin/import`, `/api/admin/export`)
+10. **DashboardController** - Metrics (`/api/admin/dashboard`)
+11. **AuditLogController** - Audit trail (`/api/admin/audit`)
+12. **UserController** - User management (`/api/admin/users`)
+13. **DownloadController** - Download tokens (`/api/downloads`)
+14. **PlayerController** - Recommendations (`/api/player`)
 
-### categories/{id}
-- name: string (default language)
-- localizedNames: {locale: name} map
-- parentCategoryId: string | null (hierarchical structure)
-- icon: URL to category icon
-- displayOrder: integer for sorting
-- createdAt, updatedAt, createdBy, updatedBy
+### Services (13 Total)
+- **PublicContentService** - Mobile app content queries
+- **ApprovalService** - Approval workflow logic
+- **YouTubeService** - YouTube API integration with caching
+- **VideoValidationService** - Detect unavailable YouTube videos
+- **ImportExportService**, **SimpleImportService**, **SimpleExportService** - Bulk operations
+- **DownloadService**, **DownloadTokenService** - Download management
+- **PlayerService** - UpNext recommendations
+- **AuditLogService** - Immutable audit trail
+- **AuthService** - Firebase Auth wrapper
+- **CategoryMappingService** - Category hierarchy utilities
 
-### channels/{id}
-- youtubeId: YouTube channel ID
-- categoryIds: array of category IDs
-- status: "pending" | "approved" | "rejected"
-- excludedItems: {videos[], liveStreams[], shorts[], playlists[], posts[]}
-- submittedBy, approvedBy, createdAt, updatedAt
+### Repositories (7 Total)
+All use Firestore SDK directly (no Spring Data JPA):
+- **CategoryRepository**, **ChannelRepository**, **PlaylistRepository**, **VideoRepository**
+- **UserRepository**, **AuditLogRepository**, **ValidationRunRepository**
 
-### playlists/{id}
-- youtubeId: YouTube playlist ID
-- categoryIds: array
-- status: "pending" | "approved" | "rejected"
-- excludedVideoIds: array of excluded video IDs
-- submittedBy, approvedBy, createdAt, updatedAt
+### Firestore Collections
 
-### videos/{id}
-- youtubeId: YouTube video ID
-- categoryIds: array
-- status: "pending" | "approved" | "rejected"
-- submittedBy, approvedBy, createdAt, updatedAt
+#### categories/{id}
+- **name**: Category name (English)
+- **nameAr**, **nameNl**: Arabic and Dutch translations
+- **parentCategoryId**: Parent ID for hierarchical structure (max 2 levels)
+- **topLevel**: Boolean flag for root-level categories
+- **displayOrder**: Integer for sorting
+- **createdAt**, **updatedAt**, **createdBy**, **updatedBy**: Audit fields
 
-See [FIREBASE_SETUP.md](../../backend/FIREBASE_SETUP.md) for Firestore security rules and indexes.
+#### channels/{id}
+- **youtubeId**: YouTube channel ID
+- **categoryIds**: Array of assigned categories
+- **pending**, **approved**: Boolean flags for approval workflow
+- **excludedVideoIds**, **excludedPlaylistIds**: Arrays of excluded items
+- **submittedBy**, **approvedBy**, **rejectedBy**: User IDs
+- **createdAt**, **updatedAt**: Timestamps
+
+#### playlists/{id}
+- **youtubeId**: YouTube playlist ID
+- **categoryIds**: Array of assigned categories
+- **pending**, **approved**: Boolean flags
+- **excludedVideoIds**: Array of excluded videos
+- **submittedBy**, **approvedBy**, **rejectedBy**: User IDs
+- **createdAt**, **updatedAt**: Timestamps
+
+#### videos/{id}
+- **youtubeId**: YouTube video ID
+- **categoryIds**: Array of assigned categories
+- **pending**, **approved**: Boolean flags
+- **submittedBy**, **approvedBy**, **rejectedBy**: User IDs
+- **createdAt**, **updatedAt**: Timestamps
+
+#### users/{uid}
+- **uid**: Firebase UID (document ID)
+- **email**, **displayName**: Profile
+- **role**: "ADMIN" | "MODERATOR" (mirrored in Firebase custom claims)
+- **createdAt**, **updatedAt**, **lastLoginAt**: Timestamps
+
+#### audit_logs/{id}
+- **action**: e.g., "APPROVE_CHANNEL", "REJECT_VIDEO"
+- **actorUid**: User who performed action
+- **entityType**: "CHANNEL" | "PLAYLIST" | "VIDEO" | "CATEGORY"
+- **entityId**: Affected document ID
+- **metadata**: Additional context (categories, reason, etc.)
+- **timestamp**: When action occurred
+
+#### validation_runs/{id}
+- **status**: "NEVER_RUN" | "RUNNING" | "COMPLETED" | "FAILED" | "ERROR"
+- **startedAt**, **completedAt**: Timestamps
+- **videosChecked**, **videosUnavailable**: Counts
+- **errors**: Array of error messages
+- **triggeredBy**: User ID
+
+### Security (MVP Scope)
+- **Authentication**: Firebase Authentication (email/password) for admin dashboard
+- **Authorization**: Custom claims (ADMIN, MODERATOR) validated via Spring Security `@PreAuthorize`
+- **Transport**: HTTPS/TLS for production (localhost HTTP acceptable for dev)
+- **Mobile**: Public access only, no authentication required
+- **Downloads**: App-private storage with Android OS-level encryption
+
+**Deferred to v1.1+**:
+- Advanced rate limiting, token refresh rotation, CSRF protection
+- Comprehensive JSON schema validation, Firestore security rules hardening
+- Argon2id password hashing (Firebase default sufficient for MVP)
+- Audit log immutable storage, signed download URLs, HSTS headers
+
+### Observability (MVP Scope)
+- **Logging**: Console output with Spring Boot default formatting
+- **Metrics**: Spring Boot Actuator with Prometheus endpoint (`/actuator/prometheus`)
+- **Deferred to v1.1+**: Grafana dashboards, automated alerting, Firebase Crashlytics
+
+### Performance Budgets (PRD Requirements)
+- **API**: p95 latency < 200ms, payload ≤ 80KB per page (limit=20 items)
+- **Cache hit ratio**: ≥ 85% for list queries
+- **Database queries**: < 10ms for indexed queries
+
+---
 
 ## Android Architecture
-- **Layers**: Presentation (Jetpack ViewModel), Domain (use cases), Data (Repository → Retrofit/OkHttp for backend, Room for offline downloads metadata).
-- **Metadata Pipeline**: `RetrofitContentService` routes list payloads through `MetadataHydrator`, which invokes `NewPipeExtractorClient` (OkHttp-backed NewPipeExtractor + in-memory cache) to merge Albunyaan overrides with hydrated titles, thumbnails, and stats before Paging 3 caches persist them. Telemetry logs cache hits/misses + fetch latency, and failures fall back to existing fake data so list UX stays responsive while surfacing extractor regressions.
-- **Navigation (Phase 5 skeleton)**: Single-activity pattern with Navigation Component. `MainActivity` hosts `NavHostFragment` for `app_nav_graph.xml`, driving Splash → Onboarding → Main shell flow. Bottom navigation tabs (Home, Channels, Playlists, Videos) retain per-tab back stacks via `NavController` state saving. Deep links map to channel/playlist/video destinations and bypass onboarding once the DataStore flag `onboarding_completed` is set.
-- **Deep Links & Exclusions (Phase 7)**: Android intent filters handle `albunyaantube://channel/{id}` and `/playlist/{id}` URIs, routing into the detail fragments. Excluded items render a client-side banner and disable policy-gated CTAs until backend delivers full exclusion metadata.
-- **Playback (Phase 8 scaffold)**: `PlayerFragment` hosts ExoPlayer with an audio-only toggle, status bar, and an "Up Next" queue fed by `PlayerViewModel`. The ViewModel now owns queue state, applies exclusion filtering ahead of playback, resolves streams via `PlayerRepository` (NewPipeExtractor + cache) with telemetry/logging, and defaults to highest-available quality while supplying audio-only fallbacks. Event hooks cover start/complete/toggle/stream resolution outcomes until `/videos/{id}` + `/next-up` payloads land.
-- **Paging & Caching (Phase 6 foundation)**: `CursorPagingSource` bridges backend cursor pagination with Paging 3. `ContentPagingRepository` emits PagingData streams for Home/Channels/Playlists/Videos, coordinating Room-backed cache (RemoteMediator) with network fetches. Global filters (category/search) invalidate the pager via `Pager.refresh`. Cached pages expire using a 10-minute timeout aligning with backend Redis TTL. When the Retrofit client fails (offline, server error), a `FallbackContentService` surfaces deterministic fake data so UI states remain interactive during outages.
-- **Filter State (Phase 6)**: `FilterManager` holds shared filter state (category, length, date, sort) as a `StateFlow`. UI chips/dropdowns update it, triggering repository refresh; DataStore will persist selections for session continuity. Filter metadata mirrors admin registry semantics to keep cross-platform parity.
-- **List States & Metrics**: List views use `ListStateView` (error/empty/skeleton container) and `ListFooterView` (pagination + freshness). Repository layer emits cache freshness timestamps used by footer; analytics track retry taps and offline fallback activations.
-- **Playback Engine**: ExoPlayer integrated with MediaSession + Notification for background playback. Audio-only toggle selects audio stream variant from backend-provided manifest. PiP supported via Android 12 APIs. See Phase 8 plan in [`../testing/test-strategy.md`](../testing/test-strategy.md#player-reliability).
-- **Downloads**: WorkManager-powered queue (`DownloadWorker` + foreground notifications) manages offline requests via `DownloadRepository`, exposing pause/resume/cancel hooks. Streams resolve through NewPipe, download into app-private storage with a 500 MB quota (oldest files pruned), and emit analytics events for start/progress/completion/failure (see [`../security/threat-model.md`](../security/threat-model.md#policy-controls)). Download completions publish structured telemetry through a shared `TelemetryClient`, and UI surfaces (downloads list, player launcher) present stored file metadata (size, recency) sourced from `DownloadStorage`.
-- **Localization**: Locale switcher per [`../i18n/strategy.md`](../i18n/strategy.md#android-implementation); full RTL mirroring.
-- **Locale Switcher Skeleton**: `LocaleManager` (DataStore-backed) and locale settings fragment provide the in-app language chooser. Applying locales uses `AppCompatDelegate.setApplicationLocales` to avoid process restarts and ensures numeral shaping aligns with the chosen locale.
+
+### Technology Stack
+- **Language**: Kotlin
+- **Architecture**: MVVM (Model-View-ViewModel)
+- **UI**: Jetpack Compose + Material Design 3
+- **Navigation**: Navigation Component (single-activity pattern)
+- **Networking**: Retrofit + OkHttp
+- **Storage**: DataStore (preferences), app-private files (downloads)
+- **Video Player**: ExoPlayer + NewPipeExtractor
+- **Background Work**: WorkManager (downloads)
+
+### Key Screens (16 Total)
+- **Onboarding**: 3-page carousel (Browse, Listen in background, Download for offline)
+- **Main Shell**: Bottom navigation with 5 tabs
+  - Home (category filter + 3 horizontal lists: Channels, Playlists, Videos)
+  - Channels (vertical list)
+  - Playlists (vertical list)
+  - Videos (vertical list)
+  - More (Settings, Downloads, About)
+- **Detail Screens**: Channel, Playlist detail
+- **Player**: Full-screen video player
+- **Search**: Backend-integrated search
+- **Categories**: Category picker with hierarchical structure
+- **Downloads**: Manage offline downloads
+- **Settings**: Locale switcher, safe mode toggle
+
+### Video Player Features (ExoPlayer)
+- **Quality selection**: 144p-1080p with resolution info display
+- **Audio-only mode**: Toggle for audio stream only
+- **Subtitles**: Multi-language tracks, auto-generated detection, "Off" option
+- **Picture-in-Picture**: Android 8+ with auto aspect ratio
+- **Fullscreen**: Immersive UI (hides status/navigation bars)
+- **Gesture controls**: Swipe for brightness/volume, double-tap to seek ±10s
+- **Chromecast**: Cast button, device detection, metadata passthrough
+- **UpNext queue**: Backend recommendations API integration
+- **Share**: External apps via intent chooser
+
+### Offline Downloads
+- **Quality selector**: 144p-1080p, 4k if available
+- **Audio-only option**: Download audio stream only
+- **Stream merging**: Separate audio/video for HD (>480p) following NewPipe implementation
+- **WorkManager**: Foreground notifications with progress, pause/resume/cancel
+- **Storage**: App-private directory, 500MB default quota, 30-day expiry
+- **Playlist downloads**: Bulk download with aggregated progress
+
+### Live Stream Support
+- **"LIVE" badge**: Visual indicator on active streams
+- **Disabled seek bar**: During live playback
+- **Auto-transition**: Converts to VOD when stream ends (detected via NewPipeExtractor)
+
+### Localization
+- **Languages**: English, Arabic (RTL), Dutch
+- **Locale switcher**: Settings screen
+- **RTL mirroring**: Layout direction, directional icons, text alignment
+- **Locale-specific numerals**: Eastern Arabic for Arabic
+- **Date formats**: Gregorian calendar
+
+### Backend Integration
+- **Base URL**:
+  - Emulator: `http://10.0.2.2:8080/api`
+  - Device: `http://192.168.1.167:8080/api` (configured in app)
+- **API Client**: Retrofit with JSON payloads
+- **Authentication**: None (public content access)
+- **NewPipeExtractor**: Stream URL resolution (never official YouTube API)
+
+### Performance Budgets (PRD Requirements)
+- **Cold start**: < 2.5s on Pixel 4a (mid-range device, API 31)
+- **Frame time**: ≤ 11ms for 90% of frames during scroll
+- **Video playback start**: p50 < 1.2s from tap to first frame
+- **Memory usage**: Average < 150MB, peak < 250MB
+
+---
 
 ## Admin Frontend Architecture
-- Vue 3 + Vite + TypeScript, Pinia for state management, Vue Router for routing, vue-i18n for localization.
-- Modules: Auth shell, Registry management, Moderation queue, Users, Audit logs.
-- API client generated from OpenAPI via `openapi-typescript`. State stores align with pagination contract (cursor-based).
-- Search & Import workspace consumes blended `/admin/search` response, renders tri-state include/exclude toggles, and batches mutations to backend bulk endpoints.
-- Registry filter store centralizes search query, category, video length/date/sort preferences and fans updates out to all tabs with debounced API calls.
-- Security: JWT stored in HTTP-only cookies; CSRF tokens for state-changing operations.
 
-### Dashboard Metrics
-- `/admin/dashboard` aggregates counts for pending moderation proposals, total allow-listed categories, and active moderators.
-- Snapshot produced via SQL CTE using moderation proposal status + age filters (<48h SLA) and `users` table role flags; results cached in Redis (`admin:dashboard:<timeframe>`) for 60s with background refresh to keep load low.
-- Only `ADMIN` and `MODERATOR` roles may call the endpoint; backend enforces RBAC via method-level annotations and returns `403` on violation.
-- Response includes comparison against previous timeframe to power trend arrows; backend computes previous window in the same query to keep data consistent.
-- Observability: emit `admin.dashboard.generated` metric with latency + cache hit label, and log structured event carrying `timeframe`, counts, and `traceId` for auditing.
-- Failure plan: fall back to stale Redis value when database unavailable (flagged via `warnings[]` array) and surface toast in UI; stale data older than 15 minutes invalidates cache and triggers error.
+### Technology Stack
+- **Framework**: Vue 3 + Vite + TypeScript
+- **State Management**: Pinia
+- **Routing**: Vue Router
+- **Localization**: vue-i18n (English, Arabic RTL, Dutch)
+- **HTTP Client**: Axios
+- **UI**: Custom components with design tokens
+
+### Key Modules
+- **Authentication**: Firebase Auth (email/password login)
+- **Content Search**: YouTube search integration
+- **Pending Approvals**: Review and approve/reject submissions
+- **Content Library**: Manage all approved content with advanced filtering
+  - Dual layout (desktop sidebar + mobile bottom sheet)
+  - Multi-select with bulk actions (approve, delete, assign categories)
+  - Advanced filtering (type, status, category, date, search)
+  - Sort options (newest, oldest, alphabetical)
+  - Inline editing and exclusion management
+- **Exclusions Workspace**: Dedicated UI for managing excluded items
+  - Search and type filtering
+  - Bulk removal operations
+  - Parent context display (shows which channel/playlist)
+  - Reason tracking and audit trail
+- **Bulk Import/Export**:
+  - Full format: Complete JSON backup with merge strategies
+  - Simple format: JSON-like format with downloadable templates
+  - Selective export (categories, channels, playlists, videos)
+  - Option to exclude unavailable videos
+- **Video Validation**: Manual trigger to detect unavailable YouTube videos
+  - Validation history tracking with statistics
+  - Status tracking (NEVER_RUN, RUNNING, COMPLETED, FAILED, ERROR)
+  - Dashboard panel showing status and unavailable counts
+- **Dashboard Metrics**:
+  - Pending queue depth, content totals, moderator activity
+  - Comparison to previous timeframe with trend indicators
+  - Timeframe selector (Last 24h / Last 7 Days / Last 30 Days)
+  - Validation status panel with error counts
+- **Audit Logs**: Filter by actor, action, date range
+- **User Management**: Create/assign ADMIN/MODERATOR roles
+
+### Security
+- **Authentication**: Firebase JWT tokens in Authorization header
+- **RBAC**: ADMIN (full permissions), MODERATOR (submit for review only)
+- **CORS**: Allowed origins: `http://localhost:5173`, `http://127.0.1.1:5173`
+
+### Performance Budgets (PRD Requirements)
+- **Time to Interactive**: < 3s on desktop Chrome
+- **First Contentful Paint**: < 1.5s
+- **Bundle size**: < 500KB gzipped (initial load)
+
+---
+
+## Approval Workflow
+
+### User-Facing Screens
+1. **Content Search** - Search YouTube and add content for approval
+2. **Pending Approvals** - Review and approve/reject submissions
+3. **Content Library** - Manage all approved content
+
+### Backend Flow
+1. **Content Search**: Admin searches YouTube via `YouTubeSearchController`
+2. **Add for Approval**: Click "Add for Approval" → Opens `CategoryAssignmentModal`
+3. **Assign Categories**: Select one or more categories
+4. **Submit to Pending**: Content added via `RegistryController` with `pending=true`, `approved=false`
+5. **Pending Approvals**: Admin reviews items in Pending Approvals view
+6. **Approve/Reject**: Admin decision updates flags (`approved=true` or rejected)
+7. **Content Library**: Approved content appears in library for management
+8. **Public API**: Approved content (`approved=true`) served to Android app
+
+### Role Differences
+- **ADMIN**: Can directly approve content, manage users, access all features
+- **MODERATOR**: Can only submit content for admin review, view dashboard metrics
+
+**Note**: "Registry" is backend-only internal naming (`RegistryController`), not exposed in UI.
+
+---
 
 ## Data Flow
-1. Admin allow-lists content by storing Channel/Playlist/Video entries with categories and optional localized overrides.
-2. The admin console performs live previews by calling `/admin/search`, while persisted records retain only YouTube IDs and Albunyaan overrides; no remote metadata is stored server-side.
-3. Android client requests lists with cursor pagination; backend enforces category filters and 3-latest rule on home while returning only IDs and policy fields. The client resolves full metadata on-device via NewPipeExtractor, merging overrides when provided.
-4. Playback requests return signed stream manifests referencing YouTube sources; download requests ensure policy compliance without persisting media.
-5. Moderation proposals flow through dedicated endpoints with audit logging.
 
-## Performance & Scaling (Phase 10 hardening)
-- **Service Budgets**: Backend list endpoints must stay under 150 ms p95 and 80 KB payload at 200 RPS. Android cold start budget is 2.5 s on Pixel 4a, with frame time budget ≤11 ms for 90% of frames during endless scroll. Downloads must transition from enqueue → notification in <3 s.
-- **Caching Controls**: Redis keys follow `list:{locale}:{tab}:{cursor}` with a 5 minute TTL and 4 minute soft-expiry refresh to maintain ≥85% cache hit ratio. RemoteMediator entries in Room expire after 15 minutes (aligned with Redis) and purge when disk usage exceeds 80 MB. Coil image cache capped at 64 MB LRU.
-- **Monitoring & Alerting**: Prometheus scrapes Redis/server metrics feeding Grafana dashboards with SLO panels (latency, hit ratio). Gatling CI stage fails when latency/payload budgets regress. Android macrobenchmark + Baseline Profile tasks run weekly; Firebase Crashlytics/Performance dashboards gate release if crash-free <99% or ANR >0.5%. Alerts trigger when cache hit ratio <0.6 or latency budget breached for 3 consecutive intervals.
-- **Scalability Levers**: Database indexing on `ytId`, category relations, and `publishedAt` keeps pagination bounded. CDN-backed media (CloudFront-style) reduces cold-start bandwidth. Kubernetes HPA (future) scales pods on CPU and queue depth; circuit breakers fall back to stale cache when Redis down.
-- **Follow-up Backlog**: PERF-API-01 targets slow playlist hydration queries; PERF-ANDROID-01 tackles list diffing and image prefetch tuning. These backlog items ensure optimization debt is traceable post-hardening.
+1. **Admin curates content**: Searches YouTube, adds channels/playlists/videos with categories
+2. **Approval workflow**: Pending items reviewed by admins, assigned categories, approved/rejected
+3. **Mobile app fetches**: Android requests lists with filters (`/api/v1/content`), backend returns approved content only
+4. **Stream resolution**: Android uses NewPipeExtractor to resolve stream URLs (never official YouTube API)
+5. **Downloads**: Mobile requests download, backend issues token, Android downloads via WorkManager
+6. **Audit trail**: All approval actions logged to `audit_logs` collection
 
-## Deployment & Ops
-- CI/CD: GitHub Actions building backend (Gradle), admin (Vite), Android (Gradle). Automated tests with Testcontainers for backend integration.
-- Environments: dev, staging, prod with separate Redis namespaces and JWT signing keys stored in secrets manager.
+---
+
+## Deployment & Operations
+
+### Environments
+- **Dev**: Local development (Caffeine cache, localhost backend)
+- **Staging**: VPS deployment (optional Redis, production Firebase)
+- **Prod**: VPS deployment with HTTPS/TLS
+
+### CI/CD (GitHub Actions)
+- **Backend**: `./gradlew test build`
+- **Frontend**: `npm test && npm run build`
+- **Android**: `./gradlew test assembleDebug`
+
+### Monitoring (MVP)
+- **Backend**: Spring Boot Actuator health checks, Prometheus metrics endpoint
+- **Frontend**: Browser DevTools, Vue DevTools
+- **Android**: Logcat, Android Studio profiler
+- **Deferred to v1.1+**: Grafana dashboards, automated alerts, Firebase Crashlytics
+
+---
+
+## Performance & Scaling
+
+### Caching Strategy
+- **Backend**: Caffeine (dev) / Redis (prod optional) with 5-min TTL, cache stampede protection
+- **Cache keys**: YouTube search results (channels, playlists, videos)
+- **Target**: ≥85% cache hit ratio
+
+### Indexing (Firestore)
+- Composite indexes on: category + approval status, published date + status
+- Single-field indexes: `youtubeId`, `pending`, `approved`, `topLevel`
+
+### Scalability Levers (Future)
+- **CDN**: CloudFront for thumbnails (reduce cold-start bandwidth)
+- **Kubernetes HPA**: Scale pods on CPU and queue depth
+- **Circuit breakers**: Fall back to stale cache when Redis down
+- **Database sharding**: Firestore auto-scales, but consider Supabase migration if costs exceed $500/month
+
+---
+
+## Testing Strategy
+
+### Backend (JUnit 5)
+- **Unit tests**: Mock Firestore repositories
+- **Integration tests**: Firebase Emulator Suite
+- **Performance tests**: Gatling load testing (200 RPS, p95 < 200ms)
+
+### Frontend (Vitest + Playwright)
+- **Unit tests**: Component tests with `@testing-library/vue`
+- **E2E tests**: Playwright (approval workflow, category assignment)
+- **Timeout**: 300 seconds (5 minutes) enforced per AGENTS.md policy
+
+### Android
+- **Unit tests**: `./gradlew test` (JUnit, Mockito)
+- **Instrumentation tests**: `./gradlew connectedAndroidTest` (Espresso)
+- **Manual testing**: Device/emulator with real backend
+
+See [../status/TESTING_GUIDE.md](../status/TESTING_GUIDE.md) for detailed testing procedures.
+
+---
+
+## Known Limitations & Future Work
+
+### MVP Limitations
+- **iOS**: Android-only for MVP (iOS in v1.2+)
+- **User accounts**: Mobile app is public access only (no login, no profiles)
+- **Community suggestions**: No end-user content submission (admin-curated only)
+- **AI moderation**: Manual human review only (auto-approval rules in v1.1)
+- **Advanced analytics**: Basic event tracking only (watch time heatmaps deferred)
+- **Social features**: No comments, likes, in-app discussions
+
+### Future Enhancements (v1.1+)
+- **Extractor fallback**: FreeTube/Invidious when NewPipe breaks
+- **Auto-approval**: Trusted channels skip manual review
+- **Volunteer moderators**: Onboarding program for community moderators
+- **Advanced monitoring**: Grafana, alerting, Firebase Crashlytics
+- **Platform expansion**: iOS, Desktop, Smart TVs (Samsung, LG, Google TV)
+
+---
 
 ## Traceability
-- OpenAPI endpoints cross-referenced in [`../api/openapi-draft.yaml`](../api/openapi-draft.yaml).
-- Security decisions documented in [`../security/threat-model.md`](../security/threat-model.md).
-- Performance budgets and SLIs recorded in [`../testing/test-strategy.md`](../testing/test-strategy.md#performance-metrics).
+- **PRD**: [../PRD.md](../PRD.md) - Product requirements
+- **API Spec**: [api-specification.yaml](api-specification.yaml) - OpenAPI 3.1 contract
+- **Security**: [security.md](security.md) - Threat model
+- **C4 Diagrams**: [diagrams/](diagrams/) - Context, component diagrams
+- **Testing**: [../status/TESTING_GUIDE.md](../status/TESTING_GUIDE.md) - Test strategy
+- **Deployment**: [../status/DEPLOYMENT_GUIDE.md](../status/DEPLOYMENT_GUIDE.md) - Ops guide
+- **Android**: [../status/ANDROID_GUIDE.md](../status/ANDROID_GUIDE.md) - Android setup
+
+---
+
+**Last Updated**: November 10, 2025
+**Status**: ~60% complete - Backend & frontend working, Android ready for testing
