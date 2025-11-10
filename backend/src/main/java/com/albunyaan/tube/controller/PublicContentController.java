@@ -94,6 +94,17 @@ public class PublicContentController {
     }
 
     /**
+     * Get video details by ID.
+     *
+     * @param videoId YouTube video ID
+     * @return Video details including metadata and approval status
+     */
+    @GetMapping("/videos/{videoId}")
+    public ResponseEntity<?> getVideoDetails(@PathVariable String videoId) throws ExecutionException, InterruptedException {
+        return ResponseEntity.ok(contentService.getVideoDetails(videoId));
+    }
+
+    /**
      * Search across all content types.
      *
      * @param q Search query

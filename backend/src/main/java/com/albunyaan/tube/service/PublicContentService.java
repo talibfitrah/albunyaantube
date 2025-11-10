@@ -1,5 +1,6 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.config.CacheConfig;
 import com.albunyaan.tube.dto.CategoryDto;
 import com.albunyaan.tube.dto.ContentItemDto;
 import com.albunyaan.tube.dto.CursorPageDto;
@@ -13,6 +14,7 @@ import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import com.albunyaan.tube.repository.CategoryRepository;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -49,6 +51,7 @@ public class PublicContentService {
 
     /**
      * Get paginated content for Android app.
+     * BACKEND-PERF-01: Cached for 1 hour to improve response time
      *
      * @param type Content type (HOME, CHANNELS, PLAYLISTS, VIDEOS)
      * @param cursor Base64-encoded cursor for pagination
@@ -59,6 +62,8 @@ public class PublicContentService {
      * @param sort Sort option
      * @return Paginated content
      */
+    @Cacheable(value = CacheConfig.CACHE_PUBLIC_CONTENT,
+               key = "#type + '-' + #cursor + '-' + #limit + '-' + #category + '-' + #length + '-' + #date + '-' + #sort")
     public CursorPageDto<ContentItemDto> getContent(
             String type, String cursor, int limit,
             String category, String length, String date, String sort
@@ -106,10 +111,12 @@ public class PublicContentService {
     private List<ContentItemDto> getChannels(int limit, String category) throws ExecutionException, InterruptedException {
         List<Channel> channels;
 
+        // Use repository methods with limits for better performance
+        // This reduces data transfer from Firestore
         if (category != null && !category.isBlank()) {
-            channels = channelRepository.findByCategoryOrderBySubscribersDesc(category);
+            channels = channelRepository.findByCategoryOrderBySubscribersDesc(category, limit * 2);
         } else {
-            channels = channelRepository.findAllByOrderBySubscribersDesc();
+            channels = channelRepository.findAllByOrderBySubscribersDesc(limit * 2);
         }
 
         return channels.stream()
@@ -122,10 +129,12 @@ public class PublicContentService {
     private List<ContentItemDto> getPlaylists(int limit, String category) throws ExecutionException, InterruptedException {
         List<Playlist> playlists;
 
+        // Use repository methods with limits for better performance
+        // This reduces data transfer from Firestore
         if (category != null && !category.isBlank()) {
-            playlists = playlistRepository.findByCategoryOrderByItemCountDesc(category);
+            playlists = playlistRepository.findByCategoryOrderByItemCountDesc(category, limit * 2);
         } else {
-            playlists = playlistRepository.findAllByOrderByItemCountDesc();
+            playlists = playlistRepository.findAllByOrderByItemCountDesc(limit * 2);
         }
 
         return playlists.stream()
@@ -139,10 +148,13 @@ public class PublicContentService {
                                            String length, String date, String sort) throws ExecutionException, InterruptedException {
         List<Video> videos;
 
+        // Use repository methods with limits for better performance
+        // Fetch more than needed to account for filters
+        int fetchLimit = limit * 3; // 3x buffer for filters
         if (category != null && !category.isBlank()) {
-            videos = videoRepository.findByCategoryOrderByUploadedAtDesc(category);
+            videos = videoRepository.findByCategoryOrderByUploadedAtDesc(category, fetchLimit);
         } else {
-            videos = videoRepository.findAllByOrderByUploadedAtDesc();
+            videos = videoRepository.findAllByOrderByUploadedAtDesc(fetchLimit);
         }
 
         // Apply filters
@@ -212,6 +224,22 @@ public class PublicContentService {
     public Object getPlaylistDetails(String playlistId) throws ExecutionException, InterruptedException {
         return playlistRepository.findByYoutubeId(playlistId)
                 .orElseThrow(() -> new ResourceNotFoundException("Playlist", playlistId));
+    }
+
+    public Video getVideoDetails(String videoId) throws ExecutionException, InterruptedException {
+        Video video = videoRepository.findByYoutubeId(videoId)
+                .orElseThrow(() -> new ResourceNotFoundException("Video", videoId));
+
+        // Only return approved and available videos
+        if (!"APPROVED".equals(video.getStatus())) {
+            throw new ResourceNotFoundException("Video", videoId);
+        }
+
+        if (video.getValidationStatus() == ValidationStatus.UNAVAILABLE) {
+            throw new ResourceNotFoundException("Video", videoId);
+        }
+
+        return video;
     }
 
     public List<ContentItemDto> search(String query, String type, int limit) throws ExecutionException, InterruptedException {

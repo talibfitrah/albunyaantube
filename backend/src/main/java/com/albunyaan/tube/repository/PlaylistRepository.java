@@ -91,10 +91,31 @@ public class PlaylistRepository {
         return query.get().toObjects(Playlist.class);
     }
 
+    public List<Playlist> findByCategoryOrderByItemCountDesc(String category, int limit) throws ExecutionException, InterruptedException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereArrayContains("categoryIds", category)
+                .whereEqualTo("status", "APPROVED")
+                .orderBy("itemCount", Query.Direction.DESCENDING)
+                .limit(limit)
+                .get();
+
+        return query.get().toObjects(Playlist.class);
+    }
+
     public List<Playlist> findAllByOrderByItemCountDesc() throws ExecutionException, InterruptedException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereEqualTo("status", "APPROVED")
                 .orderBy("itemCount", Query.Direction.DESCENDING)
+                .get();
+
+        return query.get().toObjects(Playlist.class);
+    }
+
+    public List<Playlist> findAllByOrderByItemCountDesc(int limit) throws ExecutionException, InterruptedException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereEqualTo("status", "APPROVED")
+                .orderBy("itemCount", Query.Direction.DESCENDING)
+                .limit(limit)
                 .get();
 
         return query.get().toObjects(Playlist.class);

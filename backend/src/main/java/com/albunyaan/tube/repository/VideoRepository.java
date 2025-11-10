@@ -113,10 +113,31 @@ public class VideoRepository {
         return query.get().toObjects(Video.class);
     }
 
+    public List<Video> findByCategoryOrderByUploadedAtDesc(String category, int limit) throws ExecutionException, InterruptedException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereArrayContains("categoryIds", category)
+                .whereEqualTo("status", "APPROVED")
+                .orderBy("uploadedAt", Query.Direction.DESCENDING)
+                .limit(limit)
+                .get();
+
+        return query.get().toObjects(Video.class);
+    }
+
     public List<Video> findAllByOrderByUploadedAtDesc() throws ExecutionException, InterruptedException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereEqualTo("status", "APPROVED")
                 .orderBy("uploadedAt", Query.Direction.DESCENDING)
+                .get();
+
+        return query.get().toObjects(Video.class);
+    }
+
+    public List<Video> findAllByOrderByUploadedAtDesc(int limit) throws ExecutionException, InterruptedException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereEqualTo("status", "APPROVED")
+                .orderBy("uploadedAt", Query.Direction.DESCENDING)
+                .limit(limit)
                 .get();
 
         return query.get().toObjects(Video.class);

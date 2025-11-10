@@ -110,10 +110,31 @@ public class ChannelRepository {
         return query.get().toObjects(Channel.class);
     }
 
+    public List<Channel> findByCategoryOrderBySubscribersDesc(String category, int limit) throws ExecutionException, InterruptedException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereArrayContains("categoryIds", category)
+                .whereEqualTo("status", "APPROVED")
+                .orderBy("subscribers", Query.Direction.DESCENDING)
+                .limit(limit)
+                .get();
+
+        return query.get().toObjects(Channel.class);
+    }
+
     public List<Channel> findAllByOrderBySubscribersDesc() throws ExecutionException, InterruptedException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereEqualTo("status", "APPROVED")
                 .orderBy("subscribers", Query.Direction.DESCENDING)
+                .get();
+
+        return query.get().toObjects(Channel.class);
+    }
+
+    public List<Channel> findAllByOrderBySubscribersDesc(int limit) throws ExecutionException, InterruptedException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereEqualTo("status", "APPROVED")
+                .orderBy("subscribers", Query.Direction.DESCENDING)
+                .limit(limit)
                 .get();
 
         return query.get().toObjects(Channel.class);
