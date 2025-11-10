@@ -36,8 +36,9 @@ This document summarizes the end-to-end architecture for Albunyaan Tube, an ad-f
   - **Dev**: Caffeine (in-memory, 1-hour TTL)
   - **Prod (Optional)**: Redis (5-minute TTL, commented out in application.yml)
 - **External APIs**:
-  - **NewPipeExtractor** (https://github.com/TeamNewPipe/NewPipeExtractor) - Extract YouTube metadata without official API
-  - **YouTube Data API v3** - Admin search only (requires API key in environment)
+  - **NewPipeExtractor** (https://github.com/TeamNewPipe/NewPipeExtractor) - Extract YouTube metadata and search WITHOUT official API
+  - **Fallback (Deferred to v1.1+)**: FreeTube (https://github.com/FreeTubeApp/FreeTube) or Invidious (https://github.com/iv-org/invidious) when NewPipe breaks
+  - **Note**: NEVER use official YouTube Data API v3 (preserves privacy, no API keys, no tracking)
 
 ### Controllers (14 Total)
 1. **PublicContentController** - Mobile app API (`/api/v1/*`)

@@ -18,7 +18,6 @@ C4Context
     System_Ext(firestore, "Firebase Firestore", "NoSQL document database<br/>(categories, channels, videos)")
     System_Ext(firebaseAuth, "Firebase Authentication", "Admin authentication<br/>(email/password)")
     System_Ext(youtube, "YouTube", "Video content source<br/>(via NewPipeExtractor)")
-    System_Ext(youtubeApi, "YouTube Data API v3", "Admin content search<br/>(requires API key)")
 
     Rel(muslimUser, androidApp, "Watches videos", "HTTPS")
     Rel(adminUser, adminUi, "Curates content", "HTTPS + JWT")
@@ -28,9 +27,9 @@ C4Context
 
     Rel(backend, firestore, "Reads/writes documents", "Firebase Admin SDK")
     Rel(backend, firebaseAuth, "Validates JWT tokens", "Firebase Admin SDK")
-    Rel(backend, youtubeApi, "Searches content", "HTTP + API key")
+    Rel(backend, youtube, "Searches content", "NewPipeExtractor<br/>(no official API)")
 
-    Rel(androidApp, youtube, "Resolves stream URLs", "NewPipeExtractor<br/>(no official API)")
+    Rel(androidApp, youtube, "Resolves stream URLs", "NewPipeExtractor<br/>(on-device)")
 
     UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
 ```
@@ -72,24 +71,28 @@ C4Context
 - **Custom Claims**: `role: ADMIN|MODERATOR` checked by Spring Security
 - **SDK**: Firebase Admin SDK
 
-### Backend ↔ YouTube Data API v3
+### Backend ↔ YouTube (via NewPipeExtractor)
 - **Purpose**: Admin content search (channels, playlists, videos)
-- **Authentication**: API key in `YOUTUBE_API_KEY` environment variable
-- **Caching**: Results cached in Caffeine (dev) or Redis (prod optional) with 5-minute TTL
-- **Note**: Only used in admin dashboard, never in mobile app
+- **Library**: NewPipeExtractor (https://github.com/TeamNewPipe/NewPipeExtractor)
+- **Caching**: Search results cached in Caffeine (dev) or Redis (prod optional) with 5-minute TTL
+- **Privacy**: No official YouTube API = no tracking, no API key required, no Google account linking
+- **Fallback (Deferred to v1.1+)**: FreeTube or Invidious when NewPipe breaks
+- **Note**: NEVER fallback to official YouTube API
 
 ### Android App ↔ YouTube (via NewPipeExtractor)
-- **Purpose**: Resolve video stream URLs without official YouTube API
-- **Library**: NewPipeExtractor (https://github.com/TeamNewPipe/NewPipeExtractor)
+- **Purpose**: Resolve video stream URLs for playback
+- **Library**: NewPipeExtractor (on-device extraction)
 - **Privacy**: No official YouTube API = no tracking, no Google account linking
 - **Note**: Stream URLs extracted on-device, not via backend
 
 ## Excluded from Diagram (Out of Scope)
 
+- **YouTube Data API v3**: NEVER used (replaced by NewPipeExtractor for all YouTube interactions)
 - **Firebase Cloud Messaging**: Not in MVP (push notifications deferred to v1.1+)
 - **Redis Cache**: Optional production cache (commented out in application.yml)
 - **CDN**: Thumbnail caching deferred to v1.1+
 - **Secrets Manager**: AWS/GCP Secrets Manager deferred to v1.1+
+- **FreeTube/Invidious**: Fallback extractors deferred to v1.1+ (only when NewPipe breaks)
 
 ## Security Boundaries
 
@@ -103,9 +106,9 @@ C4Context
 - Backend → Firestore (authenticated SDK calls)
 
 ### Secrets (Environment Variables)
-- `YOUTUBE_API_KEY`: Backend → YouTube Data API v3
 - `FIREBASE_SERVICE_ACCOUNT_PATH`: Backend → Firebase Admin SDK
 - `DOWNLOAD_TOKEN_SECRET_KEY`: Backend download token generation
+- **Note**: No YouTube API key required (NewPipeExtractor is API-free)
 
 ---
 

@@ -38,13 +38,13 @@ Advanced security features are explicitly deferred per PRD section "Security & P
 1. **Approved Content Registry** - Channels, playlists, videos with approval metadata
 2. **Admin Accounts** - Firebase Authentication credentials (email/password)
 3. **Firebase Custom Claims** - ADMIN and MODERATOR role assignments
-4. **YouTube API Key** - Environment variable for admin dashboard searches
+4. **Firebase Service Account JSON** - Backend authentication to Firestore
 
 ### Important Assets (Medium Value)
 5. **Audit Logs** - Immutable record of all approval actions
 6. **Category Hierarchy** - Hierarchical category structure with translations
 7. **Exclusion Lists** - Excluded videos/playlists within approved channels
-8. **Firebase Service Account JSON** - Backend authentication to Firestore
+8. **Download Token Secret** - Backend secret for generating download tokens
 
 ### Low-Risk Assets
 9. **Downloaded Media** - App-private storage, user-specific
@@ -59,7 +59,7 @@ Advanced security features are explicitly deferred per PRD section "Security & P
 | **Spoofing** | Admin login, Firebase tokens | Unauthorized access to moderation | Firebase Authentication (bcrypt), JWT validation via Firebase Admin SDK | Token refresh rotation, device binding, Argon2id |
 | **Tampering** | Firestore documents, approval flags | Corruption of allow-list, unapproved content visible | Firebase custom claims for RBAC, Spring Security `@PreAuthorize`, basic input validation | JSON Schema validation, Firestore security rules, immutable audit logs |
 | **Repudiation** | Approval/rejection actions | Disputed moderation decisions | Audit logs record all actions (actorUid, timestamp, entityId) | Append-only audit table with retention policy, immutable storage (S3 Object Lock) |
-| **Information Disclosure** | YouTube API key, Firebase service account | API quota abuse, unauthorized data access | API key in environment variable (not in code), service account JSON not committed to git | Secrets Manager (AWS/GCP), quarterly key rotation, least-privilege IAM roles |
+| **Information Disclosure** | Firebase service account, download token secret | Unauthorized Firestore access, token forgery | Service account JSON not committed to git, secrets in environment variables | Secrets Manager (AWS/GCP), quarterly secret rotation, least-privilege IAM roles |
 | **Denial of Service** | API rate abuse, cache stampede | Service degradation, backend unavailable | Basic Spring Boot rate limiting, cache stampede protection (locking) | Redis sliding window rate limiter (60 req/min per user), circuit breakers, autoscaling |
 | **Elevation of Privilege** | JWT role claim manipulation | Gain ADMIN rights without authorization | JWT validated against Firebase (immutable), custom claims checked on every request | Redis token blacklist for revocation, periodic permission audits (monthly) |
 
@@ -190,15 +190,16 @@ app:
 
 **Deferred**: Periodic permission audits (monthly), automated alerts for suspicious activity
 
-### Scenario 2: YouTube API Key Leakage
-**Threat**: API key committed to git, exposed in GitHub repo
+### Scenario 2: Firebase Service Account Leakage
+**Threat**: Service account JSON committed to git, exposed in GitHub repo
 
 **MVP Mitigation**:
-- API key stored in environment variable (`YOUTUBE_API_KEY`), not in code
+- Service account JSON path in environment variable (`FIREBASE_SERVICE_ACCOUNT_PATH`), file not committed
 - `.gitignore` excludes `firebase-service-account.json`, `.env` files
 - GitHub secret scanning alerts (enabled by default for public repos)
+- **Note**: No YouTube API key exists (NewPipeExtractor is API-free)
 
-**Deferred**: Secrets Manager (AWS Secrets Manager or GCP Secret Manager), quarterly key rotation
+**Deferred**: Secrets Manager (AWS Secrets Manager or GCP Secret Manager), quarterly secret rotation
 
 ### Scenario 3: JWT Token Theft
 **Threat**: Attacker intercepts JWT token, impersonates admin
