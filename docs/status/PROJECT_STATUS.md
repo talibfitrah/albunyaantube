@@ -35,7 +35,7 @@
 1. **Authentication** - Firebase Auth with custom claims
 2. **User Management** - Full CRUD operations for admin/moderator users
 3. **Audit Logging** - Complete action tracking with filtering
-4. **YouTube API Integration** - Search channels/playlists/videos (requires login)
+4. **YouTube Integration via NewPipeExtractor** - Search channels/playlists/videos (no API key required)
 5. **Category Management** - Hierarchical structure (but has model warnings)
 6. **Android Infrastructure** - Navigation, Settings, Downloads framework
 7. **Admin UI** - All 17 views built and styled
@@ -84,7 +84,7 @@ WARNING: No setter/field for category found on class Playlist      ✅ fixed (20
   - Playlist exclusions (videos)
   - Infinite scroll with search functionality
 - **Bulk Import/Export** - ✅ COMPLETE (simple + full formats with YouTube validation)
-- **Settings** (System/Notifications/YouTube API) - ❌ no persistence
+- **Settings** (System/Notifications) - ❌ no persistence (YouTube API settings removed - not needed with NewPipeExtractor)
 - **Impact:** 1 admin view non-functional (Settings only)
 - **Next:** Implement Settings persistence endpoints
 
@@ -138,7 +138,7 @@ WARNING: No setter/field for category found on class Playlist      ✅ fixed (20
 - ✅ Activity Log - Timeline view
 - ✅ Profile Settings - User profile (partial)
 - ✅ Notifications Settings - Preferences (no backend)
-- ✅ YouTube API Settings - API key config (no backend)
+- ❌ YouTube API Settings - Removed (not needed with NewPipeExtractor)
 - ✅ System Settings - Global settings (no backend)
 - ✅ Registry Landing - Content tabs
 - ❌ Moderation Queue - Not implemented
@@ -330,7 +330,7 @@ WARNING: No setter/field for category found on class Playlist      ✅ fixed (20
 - Android app (Kotlin)
 - CI/CD pipelines (GitHub Actions)
 - Test frameworks (Vitest, Espresso, JUnit)
-- YouTube Data API v3 integration
+- NewPipeExtractor integration for YouTube content
 - NewPipe extractor for video streaming
 - ExoPlayer for playback
 - WorkManager for downloads

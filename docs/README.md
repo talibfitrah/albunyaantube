@@ -55,7 +55,8 @@ docs/
 | **[roadmap.md](plan/roadmap.md)** | Phased delivery plan (Phases 0-12) |
 | **[acceptance-criteria.md](plan/acceptance-criteria.md)** | Acceptance criteria with traceability |
 | **[risk-register.md](plan/risk-register.md)** | Project risks with likelihood/impact |
-| **[backlog/](plan/backlog/)** | Product backlog CSVs (stories, estimates) |
+
+**Note**: Plan directory structure is planned but not yet created. Current status tracked in [status/PROJECT_STATUS.md](status/PROJECT_STATUS.md).
 
 ---
 

@@ -115,14 +115,14 @@ Returns: Channel + Video results matching ALL criteria, paginated
   {"ytVideoId": "Title|Category1"}
 ]
 ```
-- Compact CSV-like format
-- YouTube ID validation
+- Compact JSON format
+- YouTube ID validation via NewPipeExtractor
 - Duplicate detection
 - Default approval status
 
 **Why Two Formats?**
-- Full: Complete data backup/restore
-- Simple: Quick bulk onboarding from spreadsheets
+- Full: Complete data backup/restore with all metadata
+- Simple: Quick bulk onboarding (JSON format, not CSV)
 
 **Advanced Features:**
 - Validates YouTube IDs still exist

@@ -237,7 +237,7 @@ app.security.cors.allowed-origins: http://localhost:5173
 spring.cache.type: caffeine (dev) or redis (prod)
 spring.jpa.hibernate.ddl-auto: validate
 firebase.credentials: path/to/service-account.json
-youtube.api.key: your-key-here
+# youtube.api.key not required - using NewPipeExtractor
 ```
 
 ---

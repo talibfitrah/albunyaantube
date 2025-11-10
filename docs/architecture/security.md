@@ -107,8 +107,8 @@ Advanced security features are explicitly deferred per PRD section "Security & P
 - **Downloaded Videos**: Android app-private storage with OS-level encryption (Android 10+)
 - **Secrets Management**:
   - Firebase service account JSON: `backend/src/main/resources/firebase-service-account.json` (not committed to git)
-  - YouTube API key: Environment variable `YOUTUBE_API_KEY`
   - Download token secret: Environment variable `DOWNLOAD_TOKEN_SECRET_KEY`
+  - **Note**: No YouTube API key required (using NewPipeExtractor)
 
 #### In Transit
 - **HTTPS/TLS**: All API calls encrypted in production
@@ -267,7 +267,7 @@ app:
 
 ### Eradication
 1. **Patch Vulnerability**: Deploy backend hotfix via VPS SSH
-2. **Rotate Secrets**: Generate new YouTube API key, update `YOUTUBE_API_KEY` environment variable
+2. **Rotate Secrets**: Rotate Firebase service account credentials, update `DOWNLOAD_TOKEN_SECRET_KEY` if compromised
 
 ### Recovery
 1. **Redeploy Backend**: `./gradlew bootJar && sudo systemctl restart albunyaan-backend`

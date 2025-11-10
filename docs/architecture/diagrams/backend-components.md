@@ -94,11 +94,11 @@ C4Component
 ### Services (13 Total)
 - **PublicContentService**: Mobile app content queries
 - **ApprovalService**: Approval workflow logic
-- **YouTubeService**: YouTube Data API v3 integration with caching
+- **YouTubeService**: NewPipeExtractor integration for YouTube content
 - **VideoValidationService**: Detect deleted/unavailable YouTube videos
-- **ImportExportService**: Full format import/export
-- **SimpleImportService**: Simple CSV-like import
-- **SimpleExportService**: Simple format export
+- **ImportExportService**: Full format import/export (JSON)
+- **SimpleImportService**: Simple JSON format import
+- **SimpleExportService**: Simple JSON format export
 - **DownloadService**: Download policy enforcement
 - **DownloadTokenService**: Token generation for secure downloads
 - **PlayerService**: UpNext recommendations algorithm
@@ -130,8 +130,7 @@ All use Firestore SDK directly (no Spring Data JPA):
 - **No password storage**: Firebase handles authentication
 
 ### External Integrations
-- **NewPipeExtractor**: Extract video stream URLs without official YouTube API
-- **YouTube Data API v3**: Search channels/playlists/videos (with caching)
+- **NewPipeExtractor**: Used for all YouTube interactions (search, metadata, stream extraction) - no official YouTube API
 - **Firebase Admin SDK**: Authentication, Firestore, Cloud Storage
 
 ### Notes
@@ -139,4 +138,4 @@ All use Firestore SDK directly (no Spring Data JPA):
   - `RegistryController` is backend-only internal naming
 - **Audit Trail**: All approval actions logged to `audit_logs` collection (immutable)
 - **Video Validation**: Manual trigger + history tracking for detecting unavailable videos
-- **Bulk Operations**: Dual formats (full JSON + simple CSV) for import/export
+- **Bulk Operations**: Dual JSON formats (full + simple) for import/export

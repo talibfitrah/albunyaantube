@@ -25,7 +25,7 @@ Complete guide for deploying Albunyaan Tube to VPS and production environments.
 - SSH access to VPS
 - Java 17 (for building)
 - Firebase service account JSON file
-- YouTube Data API v3 key
+- No YouTube API key required (uses NewPipeExtractor)
 
 **VPS Server**:
 - Ubuntu 20.04+ or Debian 11+
@@ -121,7 +121,7 @@ On VPS, create `/opt/albunyaan/.env`:
 ```bash
 GOOGLE_APPLICATION_CREDENTIALS=/opt/albunyaan/firebase-service-account.json
 FIREBASE_PROJECT_ID=albunyaan-tube
-YOUTUBE_API_KEY=YOUR_YOUTUBE_API_KEY_HERE
+# YOUTUBE_API_KEY not required - using NewPipeExtractor instead
 FIREBASE_SERVICE_ACCOUNT_PATH=/opt/albunyaan/firebase-service-account.json
 ```
 
@@ -288,7 +288,7 @@ sudo netstat -tulpn | grep 8080
 
 - [ ] Firebase project created and configured
 - [ ] Service account JSON downloaded
-- [ ] YouTube API key obtained and tested
+- [x] No YouTube API key required (using NewPipeExtractor)
 - [ ] VPS provisioned with required specs
 - [ ] SSH access to VPS configured
 - [ ] Domain name configured (for HTTPS)

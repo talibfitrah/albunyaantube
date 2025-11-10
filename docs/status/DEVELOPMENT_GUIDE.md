@@ -37,7 +37,7 @@ cd albunyaantube
 
 # 3. Configure environment
 cp .env.example .env
-nano .env  # Add your YOUTUBE_API_KEY
+nano .env  # Configure Firebase credentials (no YouTube API key needed)
 
 # 4. Validate setup
 ./scripts/validate-env.sh
@@ -368,7 +368,7 @@ cd backend
 ./gradlew clean bootJar
 java -jar build/libs/*-SNAPSHOT.jar \
   --spring.profiles.active=prod \
-  --youtube.api.key=$YOUTUBE_API_KEY
+  # No YouTube API key needed - using NewPipeExtractor
 ```
 
 ### Frontend Deployment
