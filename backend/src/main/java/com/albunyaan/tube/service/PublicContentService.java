@@ -67,7 +67,7 @@ public class PublicContentService {
     public CursorPageDto<ContentItemDto> getContent(
             String type, String cursor, int limit,
             String category, String length, String date, String sort
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         List<ContentItemDto> items = new ArrayList<>();
 
         switch (type.toUpperCase()) {
@@ -93,7 +93,7 @@ public class PublicContentService {
         return new CursorPageDto<>(items, nextCursor);
     }
 
-    private List<ContentItemDto> getMixedContent(int limit, String category) throws ExecutionException, InterruptedException {
+    private List<ContentItemDto> getMixedContent(int limit, String category) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         List<ContentItemDto> mixed = new ArrayList<>();
 
         // Get mix of channels, playlists, and videos (roughly 1:2:3 ratio)
@@ -108,7 +108,7 @@ public class PublicContentService {
         return mixed;
     }
 
-    private List<ContentItemDto> getChannels(int limit, String category) throws ExecutionException, InterruptedException {
+    private List<ContentItemDto> getChannels(int limit, String category) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         List<Channel> channels;
 
         // Use repository methods with limits for better performance
@@ -126,7 +126,7 @@ public class PublicContentService {
                 .collect(Collectors.toList());
     }
 
-    private List<ContentItemDto> getPlaylists(int limit, String category) throws ExecutionException, InterruptedException {
+    private List<ContentItemDto> getPlaylists(int limit, String category) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         List<Playlist> playlists;
 
         // Use repository methods with limits for better performance
@@ -145,7 +145,7 @@ public class PublicContentService {
     }
 
     private List<ContentItemDto> getVideos(int limit, String category,
-                                           String length, String date, String sort) throws ExecutionException, InterruptedException {
+                                           String length, String date, String sort) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         List<Video> videos;
 
         // Use repository methods with limits for better performance
@@ -201,7 +201,7 @@ public class PublicContentService {
                 .collect(Collectors.toList());
     }
 
-    public List<CategoryDto> getCategories() throws ExecutionException, InterruptedException {
+    public List<CategoryDto> getCategories() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         return categoryRepository.findAll().stream()
                 .map(this::toCategoryDto)
                 .collect(Collectors.toList());
@@ -216,17 +216,17 @@ public class PublicContentService {
         );
     }
 
-    public Object getChannelDetails(String channelId) throws ExecutionException, InterruptedException {
+    public Object getChannelDetails(String channelId) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         return channelRepository.findByYoutubeId(channelId)
                 .orElseThrow(() -> new ResourceNotFoundException("Channel", channelId));
     }
 
-    public Object getPlaylistDetails(String playlistId) throws ExecutionException, InterruptedException {
+    public Object getPlaylistDetails(String playlistId) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         return playlistRepository.findByYoutubeId(playlistId)
                 .orElseThrow(() -> new ResourceNotFoundException("Playlist", playlistId));
     }
 
-    public Video getVideoDetails(String videoId) throws ExecutionException, InterruptedException {
+    public Video getVideoDetails(String videoId) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         Video video = videoRepository.findByYoutubeId(videoId)
                 .orElseThrow(() -> new ResourceNotFoundException("Video", videoId));
 
@@ -242,7 +242,7 @@ public class PublicContentService {
         return video;
     }
 
-    public List<ContentItemDto> search(String query, String type, int limit) throws ExecutionException, InterruptedException {
+    public List<ContentItemDto> search(String query, String type, int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         List<ContentItemDto> results = new ArrayList<>();
 
         if (type == null) {
@@ -270,7 +270,7 @@ public class PublicContentService {
         return results;
     }
 
-    private List<ContentItemDto> searchChannels(String query, int limit) throws ExecutionException, InterruptedException {
+    private List<ContentItemDto> searchChannels(String query, int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         return channelRepository.searchByName(query).stream()
                 .filter(this::isApproved)
                 .limit(limit)
@@ -278,7 +278,7 @@ public class PublicContentService {
                 .collect(Collectors.toList());
     }
 
-    private List<ContentItemDto> searchPlaylists(String query, int limit) throws ExecutionException, InterruptedException {
+    private List<ContentItemDto> searchPlaylists(String query, int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         return playlistRepository.searchByTitle(query).stream()
                 .filter(this::isApproved)
                 .limit(limit)
@@ -286,7 +286,7 @@ public class PublicContentService {
                 .collect(Collectors.toList());
     }
 
-    private List<ContentItemDto> searchVideos(String query, int limit) throws ExecutionException, InterruptedException {
+    private List<ContentItemDto> searchVideos(String query, int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         return videoRepository.searchByTitle(query).stream()
                 .filter(this::isApproved)
                 .filter(this::isAvailable)

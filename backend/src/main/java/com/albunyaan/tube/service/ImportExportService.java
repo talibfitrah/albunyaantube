@@ -79,7 +79,7 @@ public class ImportExportService {
             boolean includeVideos,
             boolean excludeUnavailableVideos,
             String exportedBy
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
 
         List<Category> categories = includeCategories ? categoryRepository.findAll() : null;
         List<Channel> channels = includeChannels ? channelRepository.findAll() : null;
@@ -120,7 +120,7 @@ public class ImportExportService {
     /**
      * Import content from JSON with specified merge strategy
      */
-    public ImportResponse importAll(ImportRequest request) throws ExecutionException, InterruptedException {
+    public ImportResponse importAll(ImportRequest request) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         ImportResponse.ImportCounts counts = new ImportResponse.ImportCounts();
         ImportResponse response = ImportResponse.success(counts);
 

@@ -1,5 +1,6 @@
 package com.albunyaan.tube.repository;
 
+import com.albunyaan.tube.config.FirestoreTimeoutProperties;
 import com.albunyaan.tube.model.User;
 import com.google.api.core.ApiFuture;
 import com.google.cloud.firestore.AggregateQuery;
@@ -20,15 +21,20 @@ import java.util.concurrent.TimeoutException;
 
 /**
  * FIREBASE-MIGRATE-03: User Repository (Firestore)
+ *
+ * All Firestore operations use configurable, operation-specific timeouts to prevent
+ * indefinite blocking and thread pool exhaustion in case of network issues or Firestore unavailability.
  */
 @Repository
 public class UserRepository {
 
     private static final String COLLECTION_NAME = "users";
     private final Firestore firestore;
+    private final FirestoreTimeoutProperties timeoutProperties;
 
-    public UserRepository(Firestore firestore) {
+    public UserRepository(Firestore firestore, FirestoreTimeoutProperties timeoutProperties) {
         this.firestore = firestore;
+        this.timeoutProperties = timeoutProperties;
     }
 
     private CollectionReference getCollection() {
@@ -43,14 +49,14 @@ public class UserRepository {
                 .document(user.getUid())
                 .set(user);
 
-        result.get(5, TimeUnit.SECONDS);
+        result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
         return user;
     }
 
     public Optional<User> findByUid(String uid) throws ExecutionException, InterruptedException, TimeoutException {
         DocumentReference docRef = getCollection().document(uid);
         // Single document reads: use shorter timeout (2 seconds)
-        User user = docRef.get().get(2, TimeUnit.SECONDS).toObject(User.class);
+        User user = docRef.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS).toObject(User.class);
         return Optional.ofNullable(user);
     }
 
@@ -60,7 +66,7 @@ public class UserRepository {
                 .limit(1)
                 .get();
 
-        List<User> users = query.get(5, TimeUnit.SECONDS).toObjects(User.class);
+        List<User> users = query.get(timeoutProperties.getRead(), TimeUnit.SECONDS).toObjects(User.class);
         return users.isEmpty() ? Optional.empty() : Optional.of(users.get(0));
     }
 
@@ -73,7 +79,7 @@ public class UserRepository {
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .get();
 
-        return query.get(5, TimeUnit.SECONDS).toObjects(User.class);
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(User.class);
     }
 
     /**
@@ -88,7 +94,7 @@ public class UserRepository {
                 .offset(offset)
                 .get();
 
-        return query.get(5, TimeUnit.SECONDS).toObjects(User.class);
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(User.class);
     }
 
     /**
@@ -102,7 +108,7 @@ public class UserRepository {
                 .orderBy("displayName", Query.Direction.ASCENDING)
                 .get();
 
-        return query.get(5, TimeUnit.SECONDS).toObjects(User.class);
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(User.class);
     }
 
     /**
@@ -119,18 +125,18 @@ public class UserRepository {
                 .offset(offset)
                 .get();
 
-        return query.get(5, TimeUnit.SECONDS).toObjects(User.class);
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(User.class);
     }
 
     public void deleteByUid(String uid) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<WriteResult> result = getCollection().document(uid).delete();
-        result.get(5, TimeUnit.SECONDS);
+        result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
     }
 
     public boolean existsByUid(String uid) throws ExecutionException, InterruptedException, TimeoutException {
         DocumentReference docRef = getCollection().document(uid);
         // Single document reads: use shorter timeout (2 seconds)
-        return docRef.get().get(2, TimeUnit.SECONDS).exists();
+        return docRef.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS).exists();
     }
 
     /**
@@ -138,7 +144,7 @@ public class UserRepository {
      */
     public long countAll() throws ExecutionException, InterruptedException, TimeoutException {
         AggregateQuery countQuery = getCollection().count();
-        AggregateQuerySnapshot snapshot = countQuery.get().get(5, TimeUnit.SECONDS);
+        AggregateQuerySnapshot snapshot = countQuery.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
         return snapshot.getCount();
     }
 
@@ -154,8 +160,8 @@ public class UserRepository {
                 .whereEqualTo("role", "MODERATOR")
                 .count();
 
-        long adminCount = adminCountQuery.get().get(5, TimeUnit.SECONDS).getCount();
-        long modCount = modCountQuery.get().get(5, TimeUnit.SECONDS).getCount();
+        long adminCount = adminCountQuery.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).getCount();
+        long modCount = modCountQuery.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).getCount();
 
         return adminCount + modCount;
     }

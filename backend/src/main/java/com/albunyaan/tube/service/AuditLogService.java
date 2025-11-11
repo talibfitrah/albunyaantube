@@ -50,7 +50,7 @@ public class AuditLogService {
 
             auditLogRepository.save(auditLog);
             logger.debug("Audit log created: {} on {} by {}", action, entityType, actor.getUid());
-        } catch (ExecutionException | InterruptedException e) {
+        } catch (ExecutionException | InterruptedException | java.util.concurrent.TimeoutException e) {
             logger.error("Failed to create audit log: {} on {} by {}", action, entityType, actor.getUid(), e);
         }
     }
@@ -65,7 +65,7 @@ public class AuditLogService {
             auditLog.setActorDisplayName(actorDescription);
             auditLogRepository.save(auditLog);
             logger.debug("System audit log created: {} on {}", action, entityType);
-        } catch (ExecutionException | InterruptedException e) {
+        } catch (ExecutionException | InterruptedException | java.util.concurrent.TimeoutException e) {
             logger.error("Failed to create system audit log: {} on {}", action, entityType, e);
         }
     }
@@ -83,7 +83,7 @@ public class AuditLogService {
             }
             auditLogRepository.save(auditLog);
             logger.debug("Approval audit log created: {} {} by {}", entityType, entityId, actorUid);
-        } catch (ExecutionException | InterruptedException e) {
+        } catch (ExecutionException | InterruptedException | java.util.concurrent.TimeoutException e) {
             logger.error("Failed to create approval audit log: {} {} by {}", entityType, entityId, actorUid, e);
         }
     }
@@ -101,7 +101,7 @@ public class AuditLogService {
             }
             auditLogRepository.save(auditLog);
             logger.debug("Rejection audit log created: {} {} by {}", entityType, entityId, actorUid);
-        } catch (ExecutionException | InterruptedException e) {
+        } catch (ExecutionException | InterruptedException | java.util.concurrent.TimeoutException e) {
             logger.error("Failed to create rejection audit log: {} {} by {}", entityType, entityId, actorUid, e);
         }
     }

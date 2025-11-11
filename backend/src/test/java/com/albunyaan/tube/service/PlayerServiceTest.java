@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
@@ -94,7 +95,11 @@ class PlayerServiceTest {
     void getNextUpRecommendations_shouldReturnSameCategoryVideos() throws Exception {
         // Arrange
         when(videoRepository.findByYoutubeId("YT-current")).thenReturn(Optional.of(currentVideo));
-        when(videoRepository.findAll()).thenReturn(sampleVideos);
+        // Stub the correct repository method that's actually called
+        when(videoRepository.findByCategoryIdWithLimit(eq("cat-tafsir"), anyInt()))
+                .thenReturn(Arrays.asList(sampleVideos.get(1), sampleVideos.get(2))); // Same category videos
+        when(videoRepository.findByChannelIdAndStatus(eq("CH-123"), eq("APPROVED"), anyInt()))
+                .thenReturn(Arrays.asList(sampleVideos.get(3))); // Same channel video
 
         // Act
         NextUpDto result = playerService.getNextUpRecommendations("YT-current", "user-123");
@@ -112,7 +117,9 @@ class PlayerServiceTest {
     void getNextUpRecommendations_shouldExcludeCurrentVideo() throws Exception {
         // Arrange
         when(videoRepository.findByYoutubeId("YT-current")).thenReturn(Optional.of(currentVideo));
-        when(videoRepository.findAll()).thenReturn(sampleVideos);
+        // Return current video in category results to verify it gets filtered out
+        when(videoRepository.findByCategoryIdWithLimit(eq("cat-tafsir"), anyInt()))
+                .thenReturn(Arrays.asList(currentVideo, sampleVideos.get(1), sampleVideos.get(2)));
 
         // Act
         NextUpDto result = playerService.getNextUpRecommendations("YT-current", "user-123");
@@ -125,7 +132,9 @@ class PlayerServiceTest {
     void getNextUpRecommendations_shouldExcludePendingVideos() throws Exception {
         // Arrange
         when(videoRepository.findByYoutubeId("YT-current")).thenReturn(Optional.of(currentVideo));
-        when(videoRepository.findAll()).thenReturn(sampleVideos);
+        // Note: findByCategoryIdWithLimit only returns APPROVED videos, so pending is already filtered by repo
+        when(videoRepository.findByCategoryIdWithLimit(eq("cat-tafsir"), anyInt()))
+                .thenReturn(Arrays.asList(sampleVideos.get(1), sampleVideos.get(2))); // Only approved videos
 
         // Act
         NextUpDto result = playerService.getNextUpRecommendations("YT-current", "user-123");
@@ -137,14 +146,13 @@ class PlayerServiceTest {
     @Test
     void getNextUpRecommendations_shouldIncludeSameChannelVideos_whenNotEnoughCategoryVideos() throws Exception {
         // Arrange - only 1 same-category video
-        List<Video> limitedVideos = Arrays.asList(
-                currentVideo,
-                sampleVideos.get(1), // Same category
-                sampleVideos.get(3)  // Same channel, different category
-        );
-        
         when(videoRepository.findByYoutubeId("YT-current")).thenReturn(Optional.of(currentVideo));
-        when(videoRepository.findAll()).thenReturn(limitedVideos);
+        // Return only 1 video from category
+        when(videoRepository.findByCategoryIdWithLimit(eq("cat-tafsir"), anyInt()))
+                .thenReturn(Arrays.asList(sampleVideos.get(1))); // Only 1 same category video
+        // Return additional video from same channel
+        when(videoRepository.findByChannelIdAndStatus(eq("CH-123"), eq("APPROVED"), anyInt()))
+                .thenReturn(Arrays.asList(sampleVideos.get(3))); // Same channel video
 
         // Act
         NextUpDto result = playerService.getNextUpRecommendations("YT-current", "user-123");
@@ -173,7 +181,11 @@ class PlayerServiceTest {
     void getNextUpRecommendations_shouldReturnEmpty_whenNoRecommendations() throws Exception {
         // Arrange
         when(videoRepository.findByYoutubeId("YT-current")).thenReturn(Optional.of(currentVideo));
-        when(videoRepository.findAll()).thenReturn(Arrays.asList(currentVideo)); // Only current video
+        // Return no videos from category or channel
+        when(videoRepository.findByCategoryIdWithLimit(eq("cat-tafsir"), anyInt()))
+                .thenReturn(Arrays.asList()); // No category videos
+        when(videoRepository.findByChannelIdAndStatus(eq("CH-123"), eq("APPROVED"), anyInt()))
+                .thenReturn(Arrays.asList()); // No channel videos
 
         // Act
         NextUpDto result = playerService.getNextUpRecommendations("YT-current", "user-123");
@@ -187,7 +199,8 @@ class PlayerServiceTest {
     void getNextUpRecommendations_shouldSetCorrectVideoItemFields() throws Exception {
         // Arrange
         when(videoRepository.findByYoutubeId("YT-current")).thenReturn(Optional.of(currentVideo));
-        when(videoRepository.findAll()).thenReturn(sampleVideos);
+        when(videoRepository.findByCategoryIdWithLimit(eq("cat-tafsir"), anyInt()))
+                .thenReturn(Arrays.asList(sampleVideos.get(1)));
 
         // Act
         NextUpDto result = playerService.getNextUpRecommendations("YT-current", "user-123");
@@ -214,9 +227,9 @@ class PlayerServiceTest {
         videoWithoutChannel.setDurationSeconds(120);
         videoWithoutChannel.setThumbnailUrl("https://example.com/thumb.jpg");
 
-        List<Video> videos = Arrays.asList(currentVideo, videoWithoutChannel);
         when(videoRepository.findByYoutubeId("YT-current")).thenReturn(Optional.of(currentVideo));
-        when(videoRepository.findAll()).thenReturn(videos);
+        when(videoRepository.findByCategoryIdWithLimit(eq("cat-tafsir"), anyInt()))
+                .thenReturn(Arrays.asList(videoWithoutChannel));
 
         // Act
         NextUpDto result = playerService.getNextUpRecommendations("YT-current", "user-123");
@@ -226,7 +239,7 @@ class PlayerServiceTest {
                 .filter(v -> v.getId().equals("YT-no-channel"))
                 .findFirst()
                 .orElse(null);
-        
+
         assertNotNull(item);
         assertEquals("Unknown", item.getChannelName());
     }
@@ -243,9 +256,9 @@ class PlayerServiceTest {
         videoWithoutDuration.setDurationSeconds(null); // NULL duration
         videoWithoutDuration.setThumbnailUrl("https://example.com/thumb.jpg");
 
-        List<Video> videos = Arrays.asList(currentVideo, videoWithoutDuration);
         when(videoRepository.findByYoutubeId("YT-current")).thenReturn(Optional.of(currentVideo));
-        when(videoRepository.findAll()).thenReturn(videos);
+        when(videoRepository.findByCategoryIdWithLimit(eq("cat-tafsir"), anyInt()))
+                .thenReturn(Arrays.asList(videoWithoutDuration));
 
         // Act
         NextUpDto result = playerService.getNextUpRecommendations("YT-current", "user-123");
@@ -255,7 +268,7 @@ class PlayerServiceTest {
                 .filter(v -> v.getId().equals("YT-no-duration"))
                 .findFirst()
                 .orElse(null);
-        
+
         assertNotNull(item);
         assertEquals(0, item.getDurationSeconds());
     }

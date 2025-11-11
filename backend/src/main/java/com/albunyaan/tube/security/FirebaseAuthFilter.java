@@ -51,12 +51,12 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
         String requestURI = request.getRequestURI();
         String authHeader = request.getHeader(AUTHORIZATION_HEADER);
 
-        logger.info("→ Request: {} {}", request.getMethod(), requestURI);
-        logger.info("  Auth header present: {}", authHeader != null);
+        logger.debug("→ Request: {} {}", request.getMethod(), requestURI);
+        logger.debug("  Auth header present: {}", authHeader != null);
 
         if (authHeader != null && authHeader.startsWith(BEARER_PREFIX)) {
             String token = authHeader.substring(BEARER_PREFIX.length());
-            logger.info("  Token length: {}", token.length());
+            logger.debug("  Token length: {}", token.length());
 
             try {
                 FirebaseToken decodedToken = firebaseAuth.verifyIdToken(token);
@@ -98,11 +98,11 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        // Skip filter for public endpoints
+        // Skip filter for public endpoints only
+        // Actuator endpoints are now protected and require ADMIN role (see SecurityConfig)
         String path = request.getRequestURI();
         return path.startsWith("/api/public/") ||
                path.startsWith("/api/v1/") ||  // Mobile app public APIs
-               path.startsWith("/actuator/") ||
                path.equals("/api/auth/login");
     }
 }

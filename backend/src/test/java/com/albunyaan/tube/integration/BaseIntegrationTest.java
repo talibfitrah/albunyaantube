@@ -38,13 +38,13 @@ public abstract class BaseIntegrationTest {
     }
 
     @BeforeEach
-    public void setUpFirestore() throws ExecutionException, InterruptedException {
+    public void setUpFirestore() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Clear all test collections before each test
         FirestoreTestHelper.clearCollections(firestore, getCollectionsToClean());
     }
 
     @AfterEach
-    public void tearDownFirestore() throws ExecutionException, InterruptedException {
+    public void tearDownFirestore() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Clear all test collections after each test
         FirestoreTestHelper.clearCollections(firestore, getCollectionsToClean());
     }
@@ -52,7 +52,7 @@ public abstract class BaseIntegrationTest {
     /**
      * Helper method to count documents in a collection.
      */
-    protected int countDocuments(String collectionName) throws ExecutionException, InterruptedException {
+    protected int countDocuments(String collectionName) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         return FirestoreTestHelper.countDocuments(firestore, collectionName);
     }
 
@@ -60,7 +60,7 @@ public abstract class BaseIntegrationTest {
      * Helper method to check if a document exists.
      */
     protected boolean documentExists(String collectionName, String documentId)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         return FirestoreTestHelper.documentExists(firestore, collectionName, documentId);
     }
 }

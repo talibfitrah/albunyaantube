@@ -101,7 +101,7 @@ public class ApprovalService {
      * Approve a pending item
      */
     public ApprovalResponseDto approve(String id, ApprovalRequestDto request, String actorUid, String actorDisplayName)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
 
         // Try to find as channel first
         Optional<Channel> channelOpt = channelRepository.findById(id);
@@ -122,7 +122,7 @@ public class ApprovalService {
      * Reject a pending item
      */
     public ApprovalResponseDto reject(String id, RejectionRequestDto request, String actorUid, String actorDisplayName)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
 
         // Try to find as channel first
         Optional<Channel> channelOpt = channelRepository.findById(id);
@@ -280,7 +280,7 @@ public class ApprovalService {
 
     private ApprovalResponseDto approveChannel(Channel channel, ApprovalRequestDto request,
                                                String actorUid, String actorDisplayName)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
 
         // Update status
         channel.setStatus("APPROVED");
@@ -314,7 +314,7 @@ public class ApprovalService {
 
     private ApprovalResponseDto approvePlaylist(Playlist playlist, ApprovalRequestDto request,
                                                 String actorUid, String actorDisplayName)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
 
         // Update status
         playlist.setStatus("APPROVED");
@@ -348,7 +348,7 @@ public class ApprovalService {
 
     private ApprovalResponseDto rejectChannel(Channel channel, RejectionRequestDto request,
                                               String actorUid, String actorDisplayName)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
 
         // Update status
         channel.setStatus("REJECTED");
@@ -380,7 +380,7 @@ public class ApprovalService {
 
     private ApprovalResponseDto rejectPlaylist(Playlist playlist, RejectionRequestDto request,
                                                String actorUid, String actorDisplayName)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
 
         // Update status
         playlist.setStatus("REJECTED");

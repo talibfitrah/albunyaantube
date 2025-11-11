@@ -34,7 +34,7 @@ public class PlayerService {
      * 3. Only return APPROVED videos
      */
     public NextUpDto getNextUpRecommendations(String videoId, String userId)
-            throws java.util.concurrent.ExecutionException, InterruptedException {
+            throws java.util.concurrent.ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Get current video to determine category and channel
         Optional<Video> currentVideoOpt = videoRepository.findByYoutubeId(videoId);
         

@@ -50,7 +50,9 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus,caches,httptrace
+        # Limit exposed endpoints for security (httptrace removed - obsolete in Boot 3)
+        # All endpoints now require ADMIN role (see SecurityConfig)
+        include: health,info,metrics,prometheus,caches
       base-path: /actuator
   endpoint:
     health:
@@ -86,6 +88,13 @@ app:
     # Firestore settings
     firestore:
       database-id: ${FIRESTORE_DATABASE_ID:(default)}
+      # Operation-specific timeouts (in seconds)
+      timeout:
+        read: ${FIRESTORE_READ_TIMEOUT:5}           # Single document reads
+        write: ${FIRESTORE_WRITE_TIMEOUT:10}        # Document writes/updates
+        bulk-query: ${FIRESTORE_BULK_QUERY_TIMEOUT:30}  # Collection queries, findAll, search
+      # Default maximum results for unbounded queries
+      default-max-results: ${FIRESTORE_DEFAULT_MAX_RESULTS:1000}
   newpipe:
     # NewPipeExtractor configuration (no API key required)
     # Cache TTL for stream URLs (30 minutes, similar to Android implementation)

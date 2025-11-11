@@ -46,22 +46,31 @@ public class RegistryController {
 
     /**
      * Get all channels in registry
+     *
+     * @param limit Maximum number of channels to return (default: 100)
      */
     @GetMapping("/channels")
     @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
-    public ResponseEntity<List<Channel>> getAllChannels() throws ExecutionException, InterruptedException {
-        List<Channel> channels = channelRepository.findAll();
+    public ResponseEntity<List<Channel>> getAllChannels(
+            @RequestParam(defaultValue = "100") int limit
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        List<Channel> channels = channelRepository.findAll(limit);
         return ResponseEntity.ok(channels);
     }
 
     /**
      * Get channels by status
+     *
+     * @param status Channel status (APPROVED, PENDING, REJECTED)
+     * @param limit Maximum number of channels to return (default: 100)
      */
     @GetMapping("/channels/status/{status}")
     @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
-    public ResponseEntity<List<Channel>> getChannelsByStatus(@PathVariable String status)
-            throws ExecutionException, InterruptedException {
-        List<Channel> channels = channelRepository.findByStatus(status.toUpperCase());
+    public ResponseEntity<List<Channel>> getChannelsByStatus(
+            @PathVariable String status,
+            @RequestParam(defaultValue = "100") int limit
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        List<Channel> channels = channelRepository.findByStatus(status.toUpperCase(), limit);
         return ResponseEntity.ok(channels);
     }
 
@@ -71,7 +80,7 @@ public class RegistryController {
     @GetMapping("/channels/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
     public ResponseEntity<Channel> getChannelById(@PathVariable String id)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         return channelRepository.findById(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
@@ -85,7 +94,7 @@ public class RegistryController {
     public ResponseEntity<Channel> addChannel(
             @RequestBody Channel channel,
             @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Check if channel already exists by youtubeId
         if (channel.getYoutubeId() != null) {
             var existing = channelRepository.findByYoutubeId(channel.getYoutubeId());
@@ -122,7 +131,7 @@ public class RegistryController {
             @PathVariable String id,
             @RequestBody Channel channel,
             @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         Channel existing = channelRepository.findById(id).orElse(null);
         if (existing == null) {
             return ResponseEntity.notFound().build();
@@ -151,7 +160,7 @@ public class RegistryController {
     public ResponseEntity<Channel> toggleChannelStatus(
             @PathVariable String id,
             @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         Channel channel = channelRepository.findById(id).orElse(null);
         if (channel == null) {
             return ResponseEntity.notFound().build();
@@ -178,7 +187,7 @@ public class RegistryController {
     public ResponseEntity<Void> deleteChannel(
             @PathVariable String id,
             @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         if (!channelRepository.findById(id).isPresent()) {
             return ResponseEntity.notFound().build();
         }
@@ -190,22 +199,31 @@ public class RegistryController {
 
     /**
      * Get all playlists in registry
+     *
+     * @param limit Maximum number of playlists to return (default: 100)
      */
     @GetMapping("/playlists")
     @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
-    public ResponseEntity<List<Playlist>> getAllPlaylists() throws ExecutionException, InterruptedException {
-        List<Playlist> playlists = playlistRepository.findAll();
+    public ResponseEntity<List<Playlist>> getAllPlaylists(
+            @RequestParam(defaultValue = "100") int limit
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        List<Playlist> playlists = playlistRepository.findAll(limit);
         return ResponseEntity.ok(playlists);
     }
 
     /**
      * Get playlists by status
+     *
+     * @param status Playlist status (APPROVED, PENDING, REJECTED)
+     * @param limit Maximum number of playlists to return (default: 100)
      */
     @GetMapping("/playlists/status/{status}")
     @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
-    public ResponseEntity<List<Playlist>> getPlaylistsByStatus(@PathVariable String status)
-            throws ExecutionException, InterruptedException {
-        List<Playlist> playlists = playlistRepository.findByStatus(status.toUpperCase());
+    public ResponseEntity<List<Playlist>> getPlaylistsByStatus(
+            @PathVariable String status,
+            @RequestParam(defaultValue = "100") int limit
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        List<Playlist> playlists = playlistRepository.findByStatus(status.toUpperCase(), limit);
         return ResponseEntity.ok(playlists);
     }
 
@@ -215,7 +233,7 @@ public class RegistryController {
     @GetMapping("/playlists/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
     public ResponseEntity<Playlist> getPlaylistById(@PathVariable String id)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         return playlistRepository.findById(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
@@ -229,7 +247,7 @@ public class RegistryController {
     public ResponseEntity<Playlist> addPlaylist(
             @RequestBody Playlist playlist,
             @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Check if playlist already exists by youtubeId
         if (playlist.getYoutubeId() != null) {
             var existing = playlistRepository.findByYoutubeId(playlist.getYoutubeId());
@@ -266,7 +284,7 @@ public class RegistryController {
             @PathVariable String id,
             @RequestBody Playlist playlist,
             @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         Playlist existing = playlistRepository.findById(id).orElse(null);
         if (existing == null) {
             return ResponseEntity.notFound().build();
@@ -294,7 +312,7 @@ public class RegistryController {
     public ResponseEntity<Playlist> togglePlaylistStatus(
             @PathVariable String id,
             @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         Playlist playlist = playlistRepository.findById(id).orElse(null);
         if (playlist == null) {
             return ResponseEntity.notFound().build();
@@ -321,7 +339,7 @@ public class RegistryController {
     public ResponseEntity<Void> deletePlaylist(
             @PathVariable String id,
             @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         if (!playlistRepository.findById(id).isPresent()) {
             return ResponseEntity.notFound().build();
         }
@@ -337,7 +355,7 @@ public class RegistryController {
     @GetMapping("/playlists/{id}/exclusions")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<String>> getPlaylistExclusions(@PathVariable String id)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         Playlist playlist = playlistRepository.findById(id).orElse(null);
         if (playlist == null) {
             return ResponseEntity.notFound().build();
@@ -360,7 +378,7 @@ public class RegistryController {
             @PathVariable String id,
             @PathVariable String videoId,
             @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Validate video ID format (basic validation)
         if (videoId == null || videoId.trim().isEmpty()) {
             return ResponseEntity.badRequest().build();
@@ -398,7 +416,7 @@ public class RegistryController {
             @PathVariable String id,
             @PathVariable String videoId,
             @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         Playlist playlist = playlistRepository.findById(id).orElse(null);
         if (playlist == null) {
             return ResponseEntity.notFound().build();
@@ -425,22 +443,31 @@ public class RegistryController {
 
     /**
      * Get all videos in registry
+     *
+     * @param limit Maximum number of videos to return (default: 100)
      */
     @GetMapping("/videos")
     @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
-    public ResponseEntity<List<Video>> getAllVideos() throws ExecutionException, InterruptedException {
-        List<Video> videos = videoRepository.findAll();
+    public ResponseEntity<List<Video>> getAllVideos(
+            @RequestParam(defaultValue = "100") int limit
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        List<Video> videos = videoRepository.findAll(limit);
         return ResponseEntity.ok(videos);
     }
 
     /**
      * Get videos by status
+     *
+     * @param status Video status (APPROVED, PENDING, REJECTED)
+     * @param limit Maximum number of videos to return (default: 100)
      */
     @GetMapping("/videos/status/{status}")
     @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
-    public ResponseEntity<List<Video>> getVideosByStatus(@PathVariable String status)
-            throws ExecutionException, InterruptedException {
-        List<Video> videos = videoRepository.findByStatus(status.toUpperCase());
+    public ResponseEntity<List<Video>> getVideosByStatus(
+            @PathVariable String status,
+            @RequestParam(defaultValue = "100") int limit
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        List<Video> videos = videoRepository.findByStatus(status.toUpperCase(), limit);
         return ResponseEntity.ok(videos);
     }
 
@@ -450,7 +477,7 @@ public class RegistryController {
     @GetMapping("/videos/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
     public ResponseEntity<Video> getVideoById(@PathVariable String id)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         return videoRepository.findById(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
@@ -464,7 +491,7 @@ public class RegistryController {
     public ResponseEntity<Video> addVideo(
             @RequestBody Video video,
             @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Check if video already exists by youtubeId
         if (video.getYoutubeId() != null) {
             var existing = videoRepository.findByYoutubeId(video.getYoutubeId());
@@ -501,7 +528,7 @@ public class RegistryController {
             @PathVariable String id,
             @RequestBody Video video,
             @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         Video existing = videoRepository.findById(id).orElse(null);
         if (existing == null) {
             return ResponseEntity.notFound().build();
@@ -529,7 +556,7 @@ public class RegistryController {
     public ResponseEntity<Video> toggleVideoStatus(
             @PathVariable String id,
             @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         Video video = videoRepository.findById(id).orElse(null);
         if (video == null) {
             return ResponseEntity.notFound().build();
@@ -556,7 +583,7 @@ public class RegistryController {
     public ResponseEntity<Void> deleteVideo(
             @PathVariable String id,
             @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         if (!videoRepository.findById(id).isPresent()) {
             return ResponseEntity.notFound().build();
         }

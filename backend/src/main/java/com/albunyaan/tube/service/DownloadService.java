@@ -22,7 +22,7 @@ public class DownloadService {
         this.firestore = firestore;
     }
 
-    public DownloadPolicyDto checkDownloadPolicy(String videoId) throws ExecutionException, InterruptedException {
+    public DownloadPolicyDto checkDownloadPolicy(String videoId) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         Video video = videoRepository.findByYoutubeId(videoId).orElse(null);
         if (video == null) {
             return DownloadPolicyDto.denied("Video not found in registry");
@@ -34,7 +34,7 @@ public class DownloadService {
     }
 
     public DownloadTokenDto generateDownloadToken(String videoId, String userId, boolean eulaAccepted)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         DownloadPolicyDto policy = checkDownloadPolicy(videoId);
         if (!policy.isAllowed()) {
             throw new IllegalStateException("Download not allowed: " + policy.getReason());
@@ -48,7 +48,7 @@ public class DownloadService {
     }
 
     public DownloadManifestDto getDownloadManifest(String videoId, String token)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         if (!tokenService.validateToken(token, videoId)) {
             throw new IllegalStateException("Invalid or expired download token");
         }

@@ -31,7 +31,7 @@ public class PlayerController {
     public ResponseEntity<NextUpDto> getNextUp(
             @PathVariable String videoId,
             @RequestParam(required = false) String userId)
-            throws java.util.concurrent.ExecutionException, InterruptedException {
+            throws java.util.concurrent.ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
 
         NextUpDto nextUp = playerService.getNextUpRecommendations(videoId, userId);
         return ResponseEntity.ok(nextUp);

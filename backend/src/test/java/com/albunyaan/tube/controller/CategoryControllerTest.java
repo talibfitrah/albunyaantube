@@ -60,7 +60,7 @@ class CategoryControllerTest {
     }
 
     @Test
-    void getAllCategories_shouldReturnAllCategories() throws ExecutionException, InterruptedException {
+    void getAllCategories_shouldReturnAllCategories() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         List<Category> categories = Arrays.asList(parentCategory, subCategory);
         when(categoryRepository.findAll()).thenReturn(categories);
@@ -75,7 +75,7 @@ class CategoryControllerTest {
     }
 
     @Test
-    void getTopLevelCategories_shouldReturnOnlyTopLevel() throws ExecutionException, InterruptedException {
+    void getTopLevelCategories_shouldReturnOnlyTopLevel() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         List<Category> topLevelCategories = Arrays.asList(parentCategory);
         when(categoryRepository.findTopLevel()).thenReturn(topLevelCategories);
@@ -90,7 +90,7 @@ class CategoryControllerTest {
     }
 
     @Test
-    void getSubcategories_shouldReturnChildCategories() throws ExecutionException, InterruptedException {
+    void getSubcategories_shouldReturnChildCategories() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         List<Category> subcategories = Arrays.asList(subCategory);
         when(categoryRepository.findByParentId("quran")).thenReturn(subcategories);
@@ -105,7 +105,7 @@ class CategoryControllerTest {
     }
 
     @Test
-    void getCategoryById_shouldReturnCategory_whenExists() throws ExecutionException, InterruptedException {
+    void getCategoryById_shouldReturnCategory_whenExists() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         when(categoryRepository.findById("quran")).thenReturn(Optional.of(parentCategory));
 
@@ -118,7 +118,7 @@ class CategoryControllerTest {
     }
 
     @Test
-    void getCategoryById_shouldReturn404_whenNotFound() throws ExecutionException, InterruptedException {
+    void getCategoryById_shouldReturn404_whenNotFound() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         when(categoryRepository.findById("nonexistent")).thenReturn(Optional.empty());
 
@@ -130,7 +130,7 @@ class CategoryControllerTest {
     }
 
     @Test
-    void createCategory_shouldCreateTopLevelCategory() throws ExecutionException, InterruptedException {
+    void createCategory_shouldCreateTopLevelCategory() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         Category newCategory = new Category("Hadith", null);
         when(categoryRepository.save(any(Category.class))).thenReturn(newCategory);
@@ -147,7 +147,7 @@ class CategoryControllerTest {
     }
 
     @Test
-    void createCategory_shouldCreateSubcategory_whenParentExists() throws ExecutionException, InterruptedException {
+    void createCategory_shouldCreateSubcategory_whenParentExists() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         Category newSubCategory = new Category("Tafsir", "quran");
         when(categoryRepository.existsById("quran")).thenReturn(true);
@@ -164,7 +164,7 @@ class CategoryControllerTest {
     }
 
     @Test
-    void createCategory_shouldReturnBadRequest_whenParentDoesNotExist() throws ExecutionException, InterruptedException {
+    void createCategory_shouldReturnBadRequest_whenParentDoesNotExist() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         Category newSubCategory = new Category("Tafsir", "nonexistent");
         when(categoryRepository.existsById("nonexistent")).thenReturn(false);
@@ -178,7 +178,7 @@ class CategoryControllerTest {
     }
 
     @Test
-    void updateCategory_shouldUpdateExistingCategory() throws ExecutionException, InterruptedException {
+    void updateCategory_shouldUpdateExistingCategory() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         Category updates = new Category("Updated Name", null);
         updates.setDisplayOrder(5);
@@ -197,7 +197,7 @@ class CategoryControllerTest {
     }
 
     @Test
-    void updateCategory_shouldReturn404_whenCategoryNotFound() throws ExecutionException, InterruptedException {
+    void updateCategory_shouldReturn404_whenCategoryNotFound() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         Category updates = new Category("Updated Name", null);
         when(categoryRepository.findById("nonexistent")).thenReturn(Optional.empty());
@@ -211,7 +211,7 @@ class CategoryControllerTest {
     }
 
     @Test
-    void deleteCategory_shouldDeleteCategory_whenNoSubcategories() throws ExecutionException, InterruptedException {
+    void deleteCategory_shouldDeleteCategory_whenNoSubcategories() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         when(categoryRepository.existsById("quran")).thenReturn(true);
         when(categoryRepository.findByParentId("quran")).thenReturn(Collections.emptyList());
@@ -226,7 +226,7 @@ class CategoryControllerTest {
     }
 
     @Test
-    void deleteCategory_shouldReturnConflict_whenHasSubcategories() throws ExecutionException, InterruptedException {
+    void deleteCategory_shouldReturnConflict_whenHasSubcategories() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         when(categoryRepository.existsById("quran")).thenReturn(true);
         when(categoryRepository.findByParentId("quran")).thenReturn(Arrays.asList(subCategory));
@@ -240,7 +240,7 @@ class CategoryControllerTest {
     }
 
     @Test
-    void deleteCategory_shouldReturn404_whenCategoryNotFound() throws ExecutionException, InterruptedException {
+    void deleteCategory_shouldReturn404_whenCategoryNotFound() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         when(categoryRepository.existsById("nonexistent")).thenReturn(false);
 

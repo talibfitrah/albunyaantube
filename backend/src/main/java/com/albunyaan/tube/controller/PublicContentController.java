@@ -48,7 +48,7 @@ public class PublicContentController {
             @RequestParam(required = false) String length,
             @RequestParam(required = false) String date,
             @RequestParam(required = false) String sort
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Validate and cap limit
         int validLimit = Math.min(Math.max(limit, 1), 50);
 
@@ -67,7 +67,7 @@ public class PublicContentController {
      */
     @GetMapping("/categories")
     @Cacheable(value = CacheConfig.CACHE_CATEGORY_TREE, key = "'public-categories'")
-    public ResponseEntity<List<CategoryDto>> getCategories() throws ExecutionException, InterruptedException {
+    public ResponseEntity<List<CategoryDto>> getCategories() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         return ResponseEntity.ok(contentService.getCategories());
     }
 
@@ -78,7 +78,7 @@ public class PublicContentController {
      * @return Channel details with playlists
      */
     @GetMapping("/channels/{channelId}")
-    public ResponseEntity<?> getChannelDetails(@PathVariable String channelId) throws ExecutionException, InterruptedException {
+    public ResponseEntity<?> getChannelDetails(@PathVariable String channelId) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         return ResponseEntity.ok(contentService.getChannelDetails(channelId));
     }
 
@@ -89,7 +89,7 @@ public class PublicContentController {
      * @return Playlist details with videos
      */
     @GetMapping("/playlists/{playlistId}")
-    public ResponseEntity<?> getPlaylistDetails(@PathVariable String playlistId) throws ExecutionException, InterruptedException {
+    public ResponseEntity<?> getPlaylistDetails(@PathVariable String playlistId) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         return ResponseEntity.ok(contentService.getPlaylistDetails(playlistId));
     }
 
@@ -100,7 +100,7 @@ public class PublicContentController {
      * @return Video details including metadata and approval status
      */
     @GetMapping("/videos/{videoId}")
-    public ResponseEntity<?> getVideoDetails(@PathVariable String videoId) throws ExecutionException, InterruptedException {
+    public ResponseEntity<?> getVideoDetails(@PathVariable String videoId) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         return ResponseEntity.ok(contentService.getVideoDetails(videoId));
     }
 
@@ -117,7 +117,7 @@ public class PublicContentController {
             @RequestParam String q,
             @RequestParam(required = false) String type,
             @RequestParam(required = false, defaultValue = "20") int limit
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         int validLimit = Math.min(Math.max(limit, 1), 50);
         return ResponseEntity.ok(contentService.search(q, type, validLimit));
     }

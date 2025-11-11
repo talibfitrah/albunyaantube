@@ -19,6 +19,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
 /**
@@ -166,7 +167,7 @@ public class VideoValidationService {
     /**
      * Get standalone videos for validation (oldest first, not yet validated or last validated > 1 day ago)
      */
-    private List<Video> getStandaloneVideosForValidation(Integer maxVideos) throws ExecutionException, InterruptedException {
+    private List<Video> getStandaloneVideosForValidation(Integer maxVideos) throws ExecutionException, InterruptedException, TimeoutException {
         // Get all approved videos
         List<Video> allVideos = videoRepository.findByStatus("APPROVED");
 
@@ -282,21 +283,21 @@ public class VideoValidationService {
     /**
      * Get the latest validation run
      */
-    public ValidationRun getLatestValidationRun() throws ExecutionException, InterruptedException {
+    public ValidationRun getLatestValidationRun() throws ExecutionException, InterruptedException, TimeoutException {
         return validationRunRepository.findLatest().orElse(null);
     }
 
     /**
      * Get validation run by ID
      */
-    public ValidationRun getValidationRunById(String id) throws ExecutionException, InterruptedException {
+    public ValidationRun getValidationRunById(String id) throws ExecutionException, InterruptedException, TimeoutException {
         return validationRunRepository.findById(id).orElse(null);
     }
 
     /**
      * Get validation history (last N runs)
      */
-    public List<ValidationRun> getValidationHistory(int limit) throws ExecutionException, InterruptedException {
+    public List<ValidationRun> getValidationHistory(int limit) throws ExecutionException, InterruptedException, TimeoutException {
         return validationRunRepository.findAll(limit);
     }
 }

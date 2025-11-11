@@ -41,7 +41,7 @@ public class CategoryController {
      */
     @GetMapping
     @Cacheable(value = CacheConfig.CACHE_CATEGORY_TREE, key = "'all'")
-    public ResponseEntity<List<Category>> getAllCategories() throws ExecutionException, InterruptedException {
+    public ResponseEntity<List<Category>> getAllCategories() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         List<Category> categories = categoryRepository.findAll();
         return ResponseEntity.ok(categories);
     }
@@ -52,7 +52,7 @@ public class CategoryController {
      */
     @GetMapping("/top-level")
     @Cacheable(value = CacheConfig.CACHE_CATEGORY_TREE, key = "'top-level'")
-    public ResponseEntity<List<Category>> getTopLevelCategories() throws ExecutionException, InterruptedException {
+    public ResponseEntity<List<Category>> getTopLevelCategories() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         List<Category> categories = categoryRepository.findTopLevel();
         return ResponseEntity.ok(categories);
     }
@@ -64,7 +64,7 @@ public class CategoryController {
     @GetMapping("/{parentId}/subcategories")
     @Cacheable(value = CacheConfig.CACHE_CATEGORIES, key = "#parentId + '-subcategories'")
     public ResponseEntity<List<Category>> getSubcategories(@PathVariable String parentId)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         List<Category> subcategories = categoryRepository.findByParentId(parentId);
         return ResponseEntity.ok(subcategories);
     }
@@ -76,7 +76,7 @@ public class CategoryController {
     @GetMapping("/{id}")
     @Cacheable(value = CacheConfig.CACHE_CATEGORIES, key = "#id")
     public ResponseEntity<Category> getCategoryById(@PathVariable String id)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         return categoryRepository.findById(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
@@ -92,7 +92,7 @@ public class CategoryController {
     public ResponseEntity<Category> createCategory(
             @RequestBody Category category,
             @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         category.setCreatedBy(user.getUid());
         category.setUpdatedBy(user.getUid());
 
@@ -120,7 +120,7 @@ public class CategoryController {
             @PathVariable String id,
             @RequestBody Category category,
             @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         Category existing = categoryRepository.findById(id).orElse(null);
         if (existing == null) {
             return ResponseEntity.notFound().build();
@@ -164,7 +164,7 @@ public class CategoryController {
     public ResponseEntity<Void> deleteCategory(
             @PathVariable String id,
             @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         if (!categoryRepository.existsById(id)) {
             return ResponseEntity.notFound().build();
         }
@@ -184,7 +184,7 @@ public class CategoryController {
      * Check if categoryId is a descendant of potentialAncestorId
      * Used to prevent circular references in category hierarchy
      */
-    private boolean isDescendant(String categoryId, String potentialAncestorId) throws ExecutionException, InterruptedException {
+    private boolean isDescendant(String categoryId, String potentialAncestorId) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         String currentId = potentialAncestorId;
 
         // Walk up the parent chain from potentialAncestorId

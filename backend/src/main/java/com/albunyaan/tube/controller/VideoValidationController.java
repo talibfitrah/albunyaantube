@@ -87,7 +87,7 @@ public class VideoValidationController {
 
             return ResponseEntity.ok(run);
 
-        } catch (ExecutionException | InterruptedException e) {
+        } catch (ExecutionException | InterruptedException | java.util.concurrent.TimeoutException e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
@@ -120,7 +120,7 @@ public class VideoValidationController {
 
             return ResponseEntity.ok(response);
 
-        } catch (ExecutionException | InterruptedException e) {
+        } catch (ExecutionException | InterruptedException | java.util.concurrent.TimeoutException e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
@@ -145,7 +145,7 @@ public class VideoValidationController {
 
             return ResponseEntity.ok(latest);
 
-        } catch (ExecutionException | InterruptedException e) {
+        } catch (ExecutionException | InterruptedException | java.util.concurrent.TimeoutException e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }

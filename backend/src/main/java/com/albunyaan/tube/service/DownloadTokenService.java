@@ -7,6 +7,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
+import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
 
@@ -63,13 +64,17 @@ public class DownloadTokenService {
             String userId = parts[1];
             long expiresAt = Long.parseLong(parts[2]);
             String signature = parts[3];
-            
+
             if (System.currentTimeMillis() > expiresAt) return false;
-            if (!tokenVideoId.equals(videoId)) return false;
-            
+
+            // Use constant-time comparison to prevent timing attacks
+            if (!constantTimeEquals(tokenVideoId, videoId)) return false;
+
             String payload = tokenVideoId + "|" + userId + "|" + expiresAt;
             String expectedSignature = generateSignature(payload);
-            return signature.equals(expectedSignature);
+
+            // Use constant-time comparison for HMAC signature validation
+            return constantTimeEquals(signature, expectedSignature);
         } catch (Exception e) {
             return false;
         }
@@ -104,6 +109,23 @@ public class DownloadTokenService {
         mac.init(secretKeySpec);
         byte[] hash = mac.doFinal(data.getBytes(StandardCharsets.UTF_8));
         return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
+    }
+
+    /**
+     * Constant-time string comparison to prevent timing attacks.
+     * Uses MessageDigest.isEqual() which performs constant-time comparison at the byte level.
+     *
+     * @param a First string to compare
+     * @param b Second string to compare
+     * @return true if strings are equal, false otherwise
+     */
+    private boolean constantTimeEquals(String a, String b) {
+        if (a == null || b == null) {
+            return a == b; // Both null or one null
+        }
+        byte[] aBytes = a.getBytes(StandardCharsets.UTF_8);
+        byte[] bBytes = b.getBytes(StandardCharsets.UTF_8);
+        return MessageDigest.isEqual(aBytes, bBytes);
     }
 }
 

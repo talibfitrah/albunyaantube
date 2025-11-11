@@ -72,7 +72,7 @@ public class ImportExportController {
             @RequestParam(defaultValue = "true") boolean includeVideos,
             @RequestParam(defaultValue = "true") boolean excludeUnavailableVideos,
             @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws ExecutionException, InterruptedException, IOException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException, IOException {
 
         ExportResponse export = importExportService.exportAll(
             includeCategories,
@@ -102,7 +102,7 @@ public class ImportExportController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<byte[]> exportCategories(
             @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws ExecutionException, InterruptedException, IOException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException, IOException {
 
         ExportResponse export = importExportService.exportAll(
             true, false, false, false, true, user.getUid()
@@ -127,7 +127,7 @@ public class ImportExportController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<byte[]> exportChannels(
             @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws ExecutionException, InterruptedException, IOException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException, IOException {
 
         ExportResponse export = importExportService.exportAll(
             false, true, false, false, true, user.getUid()
@@ -152,7 +152,7 @@ public class ImportExportController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<byte[]> exportPlaylists(
             @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws ExecutionException, InterruptedException, IOException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException, IOException {
 
         ExportResponse export = importExportService.exportAll(
             false, false, true, false, true, user.getUid()
@@ -179,7 +179,7 @@ public class ImportExportController {
     public ResponseEntity<byte[]> exportVideos(
             @RequestParam(defaultValue = "true") boolean excludeUnavailableVideos,
             @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws ExecutionException, InterruptedException, IOException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException, IOException {
 
         ExportResponse export = importExportService.exportAll(
             false, false, false, true, excludeUnavailableVideos, user.getUid()
@@ -208,7 +208,7 @@ public class ImportExportController {
             @RequestParam("file") MultipartFile file,
             @RequestParam(defaultValue = "SKIP") String mergeStrategy,
             @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws IOException, ExecutionException, InterruptedException {
+    ) throws IOException, ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
 
         if (file.isEmpty()) {
             return ResponseEntity.badRequest().body(

@@ -1,5 +1,6 @@
 package com.albunyaan.tube.repository;
 
+import com.albunyaan.tube.config.FirestoreTimeoutProperties;
 import com.albunyaan.tube.model.Video;
 import com.google.api.core.ApiFuture;
 import com.google.cloud.firestore.CollectionReference;
@@ -13,25 +14,32 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * FIREBASE-MIGRATE-03: Video Repository (Firestore)
+ *
+ * All Firestore operations use configurable, operation-specific timeouts to prevent
+ * indefinite blocking and thread pool exhaustion in case of network issues or Firestore unavailability.
  */
 @Repository
 public class VideoRepository {
 
     private static final String COLLECTION_NAME = "videos";
     private final Firestore firestore;
+    private final FirestoreTimeoutProperties timeoutProperties;
 
-    public VideoRepository(Firestore firestore) {
+    public VideoRepository(Firestore firestore, FirestoreTimeoutProperties timeoutProperties) {
         this.firestore = firestore;
+        this.timeoutProperties = timeoutProperties;
     }
 
     private CollectionReference getCollection() {
         return firestore.collection(COLLECTION_NAME);
     }
 
-    public Video save(Video video) throws ExecutionException, InterruptedException {
+    public Video save(Video video) throws ExecutionException, InterruptedException, TimeoutException {
         video.touch();
 
         if (video.getId() == null) {
@@ -43,45 +51,55 @@ public class VideoRepository {
                 .document(video.getId())
                 .set(video);
 
-        result.get();
+        result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
         return video;
     }
 
-    public Optional<Video> findById(String id) throws ExecutionException, InterruptedException {
+    public Optional<Video> findById(String id) throws ExecutionException, InterruptedException, TimeoutException {
         DocumentReference docRef = getCollection().document(id);
-        Video video = docRef.get().get().toObject(Video.class);
+        Video video = docRef.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS).toObject(Video.class);
         return Optional.ofNullable(video);
     }
 
-    public Optional<Video> findByYoutubeId(String youtubeId) throws ExecutionException, InterruptedException {
+    public Optional<Video> findByYoutubeId(String youtubeId) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereEqualTo("youtubeId", youtubeId)
                 .limit(1)
                 .get();
 
-        List<Video> videos = query.get().toObjects(Video.class);
+        List<Video> videos = query.get(timeoutProperties.getRead(), TimeUnit.SECONDS).toObjects(Video.class);
         return videos.isEmpty() ? Optional.empty() : Optional.of(videos.get(0));
     }
 
-    public List<Video> findByStatus(String status) throws ExecutionException, InterruptedException {
+    public List<Video> findByStatus(String status) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereEqualTo("status", status)
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .get();
 
-        return query.get().toObjects(Video.class);
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
     }
 
-    public List<Video> findByCategoryId(String categoryId) throws ExecutionException, InterruptedException {
+    public List<Video> findByStatus(String status, int limit) throws ExecutionException, InterruptedException, TimeoutException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereEqualTo("status", status)
+                .orderBy("createdAt", Query.Direction.DESCENDING)
+                .limit(limit)
+                .get();
+
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
+    }
+
+    public List<Video> findByCategoryId(String categoryId) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereArrayContains("categoryIds", categoryId)
                 .whereEqualTo("status", "APPROVED")
                 .get();
 
-        return query.get().toObjects(Video.class);
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
     }
 
-    public List<Video> findByCategoryIdWithLimit(String categoryId, int limit) throws ExecutionException, InterruptedException {
+    public List<Video> findByCategoryIdWithLimit(String categoryId, int limit) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereArrayContains("categoryIds", categoryId)
                 .whereEqualTo("status", "APPROVED")
@@ -89,10 +107,10 @@ public class VideoRepository {
                 .limit(limit)
                 .get();
 
-        return query.get().toObjects(Video.class);
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
     }
 
-    public List<Video> findByChannelIdAndStatus(String channelId, String status, int limit) throws ExecutionException, InterruptedException {
+    public List<Video> findByChannelIdAndStatus(String channelId, String status, int limit) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereEqualTo("channelId", channelId)
                 .whereEqualTo("status", status)
@@ -100,20 +118,20 @@ public class VideoRepository {
                 .limit(limit)
                 .get();
 
-        return query.get().toObjects(Video.class);
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
     }
 
-    public List<Video> findByCategoryOrderByUploadedAtDesc(String category) throws ExecutionException, InterruptedException {
+    public List<Video> findByCategoryOrderByUploadedAtDesc(String category) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereArrayContains("categoryIds", category)
                 .whereEqualTo("status", "APPROVED")
                 .orderBy("uploadedAt", Query.Direction.DESCENDING)
                 .get();
 
-        return query.get().toObjects(Video.class);
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
     }
 
-    public List<Video> findByCategoryOrderByUploadedAtDesc(String category, int limit) throws ExecutionException, InterruptedException {
+    public List<Video> findByCategoryOrderByUploadedAtDesc(String category, int limit) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereArrayContains("categoryIds", category)
                 .whereEqualTo("status", "APPROVED")
@@ -121,29 +139,29 @@ public class VideoRepository {
                 .limit(limit)
                 .get();
 
-        return query.get().toObjects(Video.class);
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
     }
 
-    public List<Video> findAllByOrderByUploadedAtDesc() throws ExecutionException, InterruptedException {
+    public List<Video> findAllByOrderByUploadedAtDesc() throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereEqualTo("status", "APPROVED")
                 .orderBy("uploadedAt", Query.Direction.DESCENDING)
                 .get();
 
-        return query.get().toObjects(Video.class);
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
     }
 
-    public List<Video> findAllByOrderByUploadedAtDesc(int limit) throws ExecutionException, InterruptedException {
+    public List<Video> findAllByOrderByUploadedAtDesc(int limit) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereEqualTo("status", "APPROVED")
                 .orderBy("uploadedAt", Query.Direction.DESCENDING)
                 .limit(limit)
                 .get();
 
-        return query.get().toObjects(Video.class);
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
     }
 
-    public List<Video> searchByTitle(String query) throws ExecutionException, InterruptedException {
+    public List<Video> searchByTitle(String query) throws ExecutionException, InterruptedException, TimeoutException {
         // Firestore doesn't support full-text search, so we'll use prefix matching
         // For production, consider using Algolia or Elasticsearch
         // Note: Filtering by status removed from query to avoid composite index requirement
@@ -154,19 +172,42 @@ public class VideoRepository {
                 .endAt(query + "\uf8ff")
                 .get();
 
-        return querySnapshot.get().toObjects(Video.class);
+        return querySnapshot.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
     }
 
-    public void deleteById(String id) throws ExecutionException, InterruptedException {
+    public void deleteById(String id) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<WriteResult> result = getCollection().document(id).delete();
-        result.get();
+        result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
     }
 
-    public List<Video> findAll() throws ExecutionException, InterruptedException {
+    /**
+     * Find all videos with a safe default limit to prevent unbounded queries.
+     * Uses the configured default-max-results to prevent timeout and memory issues.
+     *
+     * @return List of videos (limited to default-max-results)
+     * @throws ExecutionException if the Firestore operation fails
+     * @throws InterruptedException if the thread is interrupted
+     * @throws TimeoutException if the operation exceeds the configured bulk query timeout
+     */
+    public List<Video> findAll() throws ExecutionException, InterruptedException, TimeoutException {
+        return findAll(timeoutProperties.getDefaultMaxResults());
+    }
+
+    /**
+     * Find all videos with a specific limit.
+     *
+     * @param limit Maximum number of results to return
+     * @return List of videos (up to limit)
+     * @throws ExecutionException if the Firestore operation fails
+     * @throws InterruptedException if the thread is interrupted
+     * @throws TimeoutException if the operation exceeds the configured bulk query timeout
+     */
+    public List<Video> findAll(int limit) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .orderBy("createdAt", Query.Direction.DESCENDING)
+                .limit(limit)
                 .get();
-        return query.get().toObjects(Video.class);
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
     }
 }
 

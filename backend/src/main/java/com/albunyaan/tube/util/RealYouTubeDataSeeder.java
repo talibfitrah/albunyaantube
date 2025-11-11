@@ -87,7 +87,7 @@ public class RealYouTubeDataSeeder implements CommandLineRunner {
                 channelsSeeded, playlistsSeeded, videosSeeded);
     }
 
-    private void ensureCategories() throws ExecutionException, InterruptedException {
+    private void ensureCategories() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         List<Category> existingCategories = categoryRepository.findAll();
         if (!existingCategories.isEmpty()) {
             log.info("✓ Categories already exist ({}), skipping", existingCategories.size());
@@ -129,7 +129,7 @@ public class RealYouTubeDataSeeder implements CommandLineRunner {
         return category;
     }
 
-    private int seedChannels(List<YouTubeDataParser.YouTubeChannel> channels) throws ExecutionException, InterruptedException {
+    private int seedChannels(List<YouTubeDataParser.YouTubeChannel> channels) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         int count = 0;
         for (YouTubeDataParser.YouTubeChannel ytChannel : channels) {
             String channelId = "channel_" + ytChannel.youtubeId;
@@ -176,7 +176,7 @@ public class RealYouTubeDataSeeder implements CommandLineRunner {
         return count;
     }
 
-    private int seedPlaylists(List<YouTubeDataParser.YouTubePlaylist> playlists) throws ExecutionException, InterruptedException {
+    private int seedPlaylists(List<YouTubeDataParser.YouTubePlaylist> playlists) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         int count = 0;
         for (YouTubeDataParser.YouTubePlaylist ytPlaylist : playlists) {
             String playlistId = "playlist_" + ytPlaylist.playlistId;
@@ -220,7 +220,7 @@ public class RealYouTubeDataSeeder implements CommandLineRunner {
         return count;
     }
 
-    private int seedVideos(List<YouTubeDataParser.YouTubeVideo> videos) throws ExecutionException, InterruptedException {
+    private int seedVideos(List<YouTubeDataParser.YouTubeVideo> videos) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         int count = 0;
         int daysAgo = 0;
         Random random = new Random();

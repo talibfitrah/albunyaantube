@@ -107,7 +107,7 @@ public class GlobalExceptionHandler {
         body.put("timestamp", LocalDateTime.now());
         body.put("status", HttpStatus.GATEWAY_TIMEOUT.value());
         body.put("error", "Gateway Timeout");
-        body.put("message", "The operation timed out");
+        body.put("message", "Request timed out. Please try again.");
         body.put("path", request.getDescription(false).replace("uri=", ""));
 
         return new ResponseEntity<>(body, HttpStatus.GATEWAY_TIMEOUT);

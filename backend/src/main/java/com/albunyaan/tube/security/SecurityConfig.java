@@ -1,6 +1,8 @@
 package com.albunyaan.tube.security;
 
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -31,6 +33,7 @@ import java.util.List;
 @EnableMethodSecurity(prePostEnabled = true)
 public class SecurityConfig {
 
+    private static final Logger logger = LoggerFactory.getLogger(SecurityConfig.class);
     private final FirebaseAuthFilter firebaseAuthFilter;
 
     public SecurityConfig(FirebaseAuthFilter firebaseAuthFilter) {
@@ -45,10 +48,12 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         // Public endpoints - ORDER MATTERS! Most specific first
-                        .requestMatchers("/actuator/**").permitAll()
                         .requestMatchers("/api/public/**").permitAll()
                         .requestMatchers("/api/v1/**").permitAll() // Public mobile app APIs (includes /api/v1/search)
                         .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
+
+                        // Actuator endpoints - ADMIN only for production security
+                        .requestMatchers("/actuator/**").hasRole("ADMIN")
 
                         // Admin-only endpoints
                         .requestMatchers("/api/admin/users/**").hasRole("ADMIN")
@@ -65,9 +70,10 @@ public class SecurityConfig {
                 )
                 .exceptionHandling(ex -> ex
                         .accessDeniedHandler((request, response, accessDeniedException) -> {
-                            System.err.println("❌ ACCESS DENIED to " + request.getRequestURI());
-                            System.err.println("   User: " + request.getUserPrincipal());
-                            System.err.println("   Exception: " + accessDeniedException.getMessage());
+                            logger.warn("Access denied to {} - User: {} - Exception: {}",
+                                    request.getRequestURI(),
+                                    request.getUserPrincipal(),
+                                    accessDeniedException.getMessage());
                             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
                             response.getWriter().write("{\"error\": \"Access denied\"}");
                             response.setContentType("application/json");
@@ -81,16 +87,17 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        // Allow web frontend
+        // Allow web frontend (localhost during development)
         configuration.setAllowedOrigins(List.of(
                 "http://localhost:5173",
                 "http://127.0.0.1:5173"
         ));
-        // Allow mobile apps (they don't send Origin header, so allow all)
-        configuration.setAllowedOriginPatterns(List.of("*"));
+        // NOTE: Mobile apps do NOT need CORS configuration
+        // CORS is a browser security feature and does not apply to native mobile apps.
+        // Mobile apps make direct HTTP requests without Origin headers.
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
-        configuration.setAllowCredentials(false); // Changed to false for mobile compatibility
+        configuration.setAllowCredentials(false);
         configuration.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

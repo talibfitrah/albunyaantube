@@ -25,7 +25,7 @@ class DownloadControllerTest {
     }
 
     @Test
-    void checkPolicy_shouldReturnPolicy() throws ExecutionException, InterruptedException {
+    void checkPolicy_shouldReturnPolicy() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         DownloadPolicyDto policy = DownloadPolicyDto.allowed();
         when(downloadService.checkDownloadPolicy("video-123")).thenReturn(policy);
         ResponseEntity<DownloadPolicyDto> response = downloadController.checkPolicy("video-123");
@@ -34,7 +34,7 @@ class DownloadControllerTest {
     }
 
     @Test
-    void generateToken_shouldReturnToken_whenEulaAccepted() throws ExecutionException, InterruptedException {
+    void generateToken_shouldReturnToken_whenEulaAccepted() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         Map<String, Boolean> request = new HashMap<>();
         request.put("eulaAccepted", true);
         DownloadTokenDto tokenDto = new DownloadTokenDto("token-abc", 1234567890L, "video-123");
@@ -45,7 +45,7 @@ class DownloadControllerTest {
     }
 
     @Test
-    void generateToken_shouldReturnForbidden_whenEulaNotAccepted() throws ExecutionException, InterruptedException {
+    void generateToken_shouldReturnForbidden_whenEulaNotAccepted() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         Map<String, Boolean> request = new HashMap<>();
         request.put("eulaAccepted", false);
         when(downloadService.generateDownloadToken(eq("video-123"), eq("user-123"), eq(false)))
@@ -55,7 +55,7 @@ class DownloadControllerTest {
     }
 
     @Test
-    void getManifest_shouldReturnManifest_whenTokenValid() throws ExecutionException, InterruptedException {
+    void getManifest_shouldReturnManifest_whenTokenValid() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         DownloadManifestDto manifest = new DownloadManifestDto("video-123", "Test Video", 1234567890L);
         manifest.getVideoStreams().add(new DownloadManifestDto.StreamOption("720p", "url", "mp4", 50000000L, 2500));
         when(downloadService.getDownloadManifest("video-123", "valid-token")).thenReturn(manifest);

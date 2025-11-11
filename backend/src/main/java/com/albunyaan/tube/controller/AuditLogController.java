@@ -32,7 +32,7 @@ public class AuditLogController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<AuditLog>> getAuditLogs(
             @RequestParam(defaultValue = "100") int limit
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         List<AuditLog> logs = auditLogRepository.findAll(limit);
         return ResponseEntity.ok(logs);
     }
@@ -45,7 +45,7 @@ public class AuditLogController {
     public ResponseEntity<List<AuditLog>> getAuditLogsByActor(
             @PathVariable String actorUid,
             @RequestParam(defaultValue = "100") int limit
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         List<AuditLog> logs = auditLogRepository.findByActor(actorUid, limit);
         return ResponseEntity.ok(logs);
     }
@@ -58,7 +58,7 @@ public class AuditLogController {
     public ResponseEntity<List<AuditLog>> getAuditLogsByEntityType(
             @PathVariable String entityType,
             @RequestParam(defaultValue = "100") int limit
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         List<AuditLog> logs = auditLogRepository.findByEntityType(entityType, limit);
         return ResponseEntity.ok(logs);
     }
@@ -71,7 +71,7 @@ public class AuditLogController {
     public ResponseEntity<List<AuditLog>> getAuditLogsByAction(
             @PathVariable String action,
             @RequestParam(defaultValue = "100") int limit
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         List<AuditLog> logs = auditLogRepository.findByAction(action, limit);
         return ResponseEntity.ok(logs);
     }

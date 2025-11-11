@@ -137,7 +137,7 @@ public class DashboardController {
     @GetMapping("/stats/by-category")
     @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
     public ResponseEntity<Map<String, CategoryStats>> getStatsByCategory()
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
 
         Map<String, CategoryStats> stats = new HashMap<>();
         List<Channel> allChannels = channelRepository.findAll();

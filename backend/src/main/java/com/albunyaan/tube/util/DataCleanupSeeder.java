@@ -43,7 +43,7 @@ public class DataCleanupSeeder implements CommandLineRunner {
         log.info("✅ Only real YouTube data remains");
     }
 
-    private int cleanupChannels() throws ExecutionException, InterruptedException {
+    private int cleanupChannels() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         log.info("Cleaning up channels...");
 
         // Get all channels
@@ -96,7 +96,7 @@ public class DataCleanupSeeder implements CommandLineRunner {
         return false;
     }
 
-    private int cleanupPlaylists() throws ExecutionException, InterruptedException {
+    private int cleanupPlaylists() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         log.info("Cleaning up playlists...");
 
         // Get all playlists
@@ -148,7 +148,7 @@ public class DataCleanupSeeder implements CommandLineRunner {
         return false;
     }
 
-    private int cleanupVideos() throws ExecutionException, InterruptedException {
+    private int cleanupVideos() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         log.info("Cleaning up videos...");
 
         // Get all videos

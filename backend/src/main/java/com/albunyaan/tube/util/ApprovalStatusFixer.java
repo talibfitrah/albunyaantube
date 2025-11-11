@@ -58,7 +58,7 @@ public class ApprovalStatusFixer implements CommandLineRunner {
                 channelsFixed, playlistsFixed, videosFixed);
     }
 
-    private int fixChannels() throws ExecutionException, InterruptedException {
+    private int fixChannels() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         List<Channel> channels = channelRepository.findAll();
         int count = 0;
 
@@ -115,7 +115,7 @@ public class ApprovalStatusFixer implements CommandLineRunner {
         return count;
     }
 
-    private int fixPlaylists() throws ExecutionException, InterruptedException {
+    private int fixPlaylists() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         List<Playlist> playlists = playlistRepository.findAll();
         int count = 0;
 
@@ -151,7 +151,7 @@ public class ApprovalStatusFixer implements CommandLineRunner {
         return count;
     }
 
-    private int fixVideos() throws ExecutionException, InterruptedException {
+    private int fixVideos() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         List<Video> videos = videoRepository.findAll();
         int count = 0;
 

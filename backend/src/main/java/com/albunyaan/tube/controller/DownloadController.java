@@ -23,14 +23,14 @@ public class DownloadController {
 
     @GetMapping("/policy/{videoId}")
     public ResponseEntity<DownloadPolicyDto> checkPolicy(@PathVariable String videoId)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         DownloadPolicyDto policy = downloadService.checkDownloadPolicy(videoId);
         return ResponseEntity.ok(policy);
     }
 
     @PostMapping("/token/{videoId}")
     public ResponseEntity<DownloadTokenDto> generateToken(@PathVariable String videoId, @RequestBody Map<String, Boolean> request,
-            @AuthenticationPrincipal FirebaseUserDetails user) throws ExecutionException, InterruptedException {
+            @AuthenticationPrincipal FirebaseUserDetails user) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         boolean eulaAccepted = request.getOrDefault("eulaAccepted", false);
         try {
             DownloadTokenDto token = downloadService.generateDownloadToken(videoId, user != null ? user.getUid() : "anonymous", eulaAccepted);
@@ -42,7 +42,7 @@ public class DownloadController {
 
     @GetMapping("/manifest/{videoId}")
     public ResponseEntity<DownloadManifestDto> getManifest(@PathVariable String videoId, @RequestParam String token)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         try {
             DownloadManifestDto manifest = downloadService.getDownloadManifest(videoId, token);
             return ResponseEntity.ok(manifest);

@@ -22,6 +22,7 @@ import java.util.concurrent.ExecutionException;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -74,38 +75,38 @@ class RegistryControllerTest {
     // ===== CHANNEL TESTS =====
 
     @Test
-    void getAllChannels_shouldReturnAllChannels() throws ExecutionException, InterruptedException {
+    void getAllChannels_shouldReturnAllChannels() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         List<Channel> channels = Arrays.asList(testChannel);
-        when(channelRepository.findAll()).thenReturn(channels);
+        when(channelRepository.findAll(anyInt())).thenReturn(channels);
 
         // Act
-        ResponseEntity<List<Channel>> response = registryController.getAllChannels();
+        ResponseEntity<List<Channel>> response = registryController.getAllChannels(100);
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals(1, response.getBody().size());
         assertEquals("Test Channel", response.getBody().get(0).getName());
-        verify(channelRepository).findAll();
+        verify(channelRepository).findAll(100);
     }
 
     @Test
-    void getChannelsByStatus_shouldReturnChannelsWithStatus() throws ExecutionException, InterruptedException {
+    void getChannelsByStatus_shouldReturnChannelsWithStatus() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         List<Channel> channels = Arrays.asList(testChannel);
-        when(channelRepository.findByStatus("APPROVED")).thenReturn(channels);
+        when(channelRepository.findByStatus(eq("APPROVED"), anyInt())).thenReturn(channels);
 
         // Act
-        ResponseEntity<List<Channel>> response = registryController.getChannelsByStatus("approved");
+        ResponseEntity<List<Channel>> response = registryController.getChannelsByStatus("approved", 100);
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals(1, response.getBody().size());
-        verify(channelRepository).findByStatus("APPROVED");
+        verify(channelRepository).findByStatus("APPROVED", 100);
     }
 
     @Test
-    void getChannelById_shouldReturnChannel_whenExists() throws ExecutionException, InterruptedException {
+    void getChannelById_shouldReturnChannel_whenExists() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         when(channelRepository.findById("channel-123")).thenReturn(Optional.of(testChannel));
 
@@ -118,7 +119,7 @@ class RegistryControllerTest {
     }
 
     @Test
-    void getChannelById_shouldReturn404_whenNotFound() throws ExecutionException, InterruptedException {
+    void getChannelById_shouldReturn404_whenNotFound() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         when(channelRepository.findById("nonexistent")).thenReturn(Optional.empty());
 
@@ -130,7 +131,7 @@ class RegistryControllerTest {
     }
 
     @Test
-    void addChannel_shouldAutoApprove_whenSubmittedByAdmin() throws ExecutionException, InterruptedException {
+    void addChannel_shouldAutoApprove_whenSubmittedByAdmin() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         Channel newChannel = new Channel("UC-new-channel");
         newChannel.setName("New Channel");
@@ -150,7 +151,7 @@ class RegistryControllerTest {
     }
 
     @Test
-    void addChannel_shouldPendApproval_whenSubmittedByModerator() throws ExecutionException, InterruptedException {
+    void addChannel_shouldPendApproval_whenSubmittedByModerator() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         Channel newChannel = new Channel("UC-new-channel");
         newChannel.setName("New Channel");
@@ -168,7 +169,7 @@ class RegistryControllerTest {
     }
 
     @Test
-    void addChannel_shouldReturnConflict_whenChannelAlreadyExists() throws ExecutionException, InterruptedException {
+    void addChannel_shouldReturnConflict_whenChannelAlreadyExists() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         when(channelRepository.findByYoutubeId("UC-test-channel")).thenReturn(Optional.of(testChannel));
 
@@ -181,7 +182,7 @@ class RegistryControllerTest {
     }
 
     @Test
-    void updateChannel_shouldUpdateExistingChannel() throws ExecutionException, InterruptedException {
+    void updateChannel_shouldUpdateExistingChannel() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         Channel updates = new Channel("UC-test-channel");
         updates.setName("Updated Name");
@@ -200,7 +201,7 @@ class RegistryControllerTest {
     }
 
     @Test
-    void toggleChannelStatus_shouldToggleFromApprovedToPending() throws ExecutionException, InterruptedException {
+    void toggleChannelStatus_shouldToggleFromApprovedToPending() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         testChannel.setStatus("APPROVED");
         when(channelRepository.findById("channel-123")).thenReturn(Optional.of(testChannel));
@@ -215,7 +216,7 @@ class RegistryControllerTest {
     }
 
     @Test
-    void toggleChannelStatus_shouldToggleFromPendingToApproved() throws ExecutionException, InterruptedException {
+    void toggleChannelStatus_shouldToggleFromPendingToApproved() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         testChannel.setStatus("PENDING");
         when(channelRepository.findById("channel-123")).thenReturn(Optional.of(testChannel));
@@ -231,7 +232,7 @@ class RegistryControllerTest {
     }
 
     @Test
-    void deleteChannel_shouldDeleteChannel_whenExists() throws ExecutionException, InterruptedException {
+    void deleteChannel_shouldDeleteChannel_whenExists() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         when(channelRepository.findById("channel-123")).thenReturn(Optional.of(testChannel));
 
@@ -247,13 +248,13 @@ class RegistryControllerTest {
     // ===== PLAYLIST TESTS =====
 
     @Test
-    void getAllPlaylists_shouldReturnAllPlaylists() throws ExecutionException, InterruptedException {
+    void getAllPlaylists_shouldReturnAllPlaylists() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         List<Playlist> playlists = Arrays.asList(testPlaylist);
-        when(playlistRepository.findAll()).thenReturn(playlists);
+        when(playlistRepository.findAll(anyInt())).thenReturn(playlists);
 
         // Act
-        ResponseEntity<List<Playlist>> response = registryController.getAllPlaylists();
+        ResponseEntity<List<Playlist>> response = registryController.getAllPlaylists(100);
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
@@ -262,22 +263,22 @@ class RegistryControllerTest {
     }
 
     @Test
-    void getPlaylistsByStatus_shouldReturnPlaylistsWithStatus() throws ExecutionException, InterruptedException {
+    void getPlaylistsByStatus_shouldReturnPlaylistsWithStatus() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         List<Playlist> playlists = Arrays.asList(testPlaylist);
-        when(playlistRepository.findByStatus("APPROVED")).thenReturn(playlists);
+        when(playlistRepository.findByStatus(eq("APPROVED"), anyInt())).thenReturn(playlists);
 
         // Act
-        ResponseEntity<List<Playlist>> response = registryController.getPlaylistsByStatus("approved");
+        ResponseEntity<List<Playlist>> response = registryController.getPlaylistsByStatus("approved", 100);
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals(1, response.getBody().size());
-        verify(playlistRepository).findByStatus("APPROVED");
+        verify(playlistRepository).findByStatus("APPROVED", 100);
     }
 
     @Test
-    void addPlaylist_shouldAutoApprove_whenSubmittedByAdmin() throws ExecutionException, InterruptedException {
+    void addPlaylist_shouldAutoApprove_whenSubmittedByAdmin() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         Playlist newPlaylist = new Playlist("PL-new-playlist");
         newPlaylist.setTitle("New Playlist");
@@ -295,7 +296,7 @@ class RegistryControllerTest {
     }
 
     @Test
-    void addPlaylist_shouldReturnConflict_whenPlaylistAlreadyExists() throws ExecutionException, InterruptedException {
+    void addPlaylist_shouldReturnConflict_whenPlaylistAlreadyExists() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         when(playlistRepository.findByYoutubeId("PL-test-playlist")).thenReturn(Optional.of(testPlaylist));
 
@@ -308,7 +309,7 @@ class RegistryControllerTest {
     }
 
     @Test
-    void updatePlaylist_shouldUpdateExistingPlaylist() throws ExecutionException, InterruptedException {
+    void updatePlaylist_shouldUpdateExistingPlaylist() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         Playlist updates = new Playlist("PL-test-playlist");
         updates.setTitle("Updated Title");
@@ -327,7 +328,7 @@ class RegistryControllerTest {
     }
 
     @Test
-    void togglePlaylistStatus_shouldToggleBetweenApprovedAndPending() throws ExecutionException, InterruptedException {
+    void togglePlaylistStatus_shouldToggleBetweenApprovedAndPending() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         testPlaylist.setStatus("APPROVED");
         when(playlistRepository.findById("playlist-123")).thenReturn(Optional.of(testPlaylist));
@@ -342,7 +343,7 @@ class RegistryControllerTest {
     }
 
     @Test
-    void deletePlaylist_shouldDeletePlaylist_whenExists() throws ExecutionException, InterruptedException {
+    void deletePlaylist_shouldDeletePlaylist_whenExists() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         when(playlistRepository.findById("playlist-123")).thenReturn(Optional.of(testPlaylist));
 

@@ -344,7 +344,7 @@ public class FirestoreDataSeeder implements CommandLineRunner {
         }
     }
 
-    private Map<String, Category> seedCategories() throws ExecutionException, InterruptedException {
+    private Map<String, Category> seedCategories() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         log.info("📂 Seeding categories ({} planned)...", CATEGORY_SEEDS.size());
         Map<String, Category> categories = new HashMap<>();
 
@@ -373,14 +373,14 @@ public class FirestoreDataSeeder implements CommandLineRunner {
         return categories;
     }
 
-    private void cleanupLegacySeedData() throws ExecutionException, InterruptedException {
+    private void cleanupLegacySeedData() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         removeLegacyCategories();
         removeLegacyChannels();
         removeLegacyPlaylists();
         removeLegacyVideos();
     }
 
-    private void removeLegacyCategories() throws ExecutionException, InterruptedException {
+    private void removeLegacyCategories() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         List<Category> existingCategories = categoryRepository.findAll();
         Set<String> targetIds = CATEGORY_SEEDS.stream()
                 .map(CategorySeed::id)
@@ -405,7 +405,7 @@ public class FirestoreDataSeeder implements CommandLineRunner {
         }
     }
 
-    private void removeLegacyChannels() throws ExecutionException, InterruptedException {
+    private void removeLegacyChannels() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         List<Channel> existingChannels = channelRepository.findAll();
         Set<String> targetIds = CHANNEL_SEEDS.stream()
                 .map(ChannelSeed::id)
@@ -430,7 +430,7 @@ public class FirestoreDataSeeder implements CommandLineRunner {
         }
     }
 
-    private void removeLegacyPlaylists() throws ExecutionException, InterruptedException {
+    private void removeLegacyPlaylists() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         List<Playlist> existingPlaylists = playlistRepository.findAll();
         Set<String> targetIds = PLAYLIST_SEEDS.stream()
                 .map(PlaylistSeed::id)
@@ -455,7 +455,7 @@ public class FirestoreDataSeeder implements CommandLineRunner {
         }
     }
 
-    private void removeLegacyVideos() throws ExecutionException, InterruptedException {
+    private void removeLegacyVideos() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         List<Video> existingVideos = videoRepository.findAll();
         Set<String> targetChannelIds = CHANNEL_SEEDS.stream()
                 .map(ChannelSeed::id)
@@ -481,7 +481,7 @@ public class FirestoreDataSeeder implements CommandLineRunner {
     }
 
     private Map<String, Channel> seedChannels(Map<String, Category> categories)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         log.info("📺 Seeding channels ({} planned)...", CHANNEL_SEEDS.size());
         Map<String, Channel> channels = new HashMap<>();
 
@@ -540,7 +540,7 @@ public class FirestoreDataSeeder implements CommandLineRunner {
     }
 
     private void seedPlaylists(Map<String, Category> categories, Map<String, Channel> channels)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         log.info("📋 Seeding playlists ({} planned)...", PLAYLIST_SEEDS.size());
 
         int approved = 0;
@@ -589,7 +589,7 @@ public class FirestoreDataSeeder implements CommandLineRunner {
     }
 
     private void seedVideos(Map<String, Category> categories, Map<String, Channel> channels)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         log.info("🎥 Seeding videos from {} channels...", CHANNEL_SEEDS.size());
 
         Map<String, ChannelSeed> channelSeedsById = CHANNEL_SEEDS.stream()

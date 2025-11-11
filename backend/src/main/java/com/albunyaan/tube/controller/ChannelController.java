@@ -39,7 +39,7 @@ public class ChannelController {
     @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
     public ResponseEntity<List<Channel>> getChannels(
             @RequestParam(required = false) String status
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         List<Channel> channels;
         if (status != null) {
             channels = channelRepository.findByStatus(status);
@@ -56,7 +56,7 @@ public class ChannelController {
     @GetMapping("/category/{categoryId}")
     @Cacheable(value = CacheConfig.CACHE_CHANNELS, key = "'category-' + #categoryId")
     public ResponseEntity<List<Channel>> getChannelsByCategory(@PathVariable String categoryId)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         List<Channel> channels = channelRepository.findByCategoryId(categoryId);
         return ResponseEntity.ok(channels);
     }
@@ -69,7 +69,7 @@ public class ChannelController {
     @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
     @Cacheable(value = CacheConfig.CACHE_CHANNELS, key = "#id")
     public ResponseEntity<Channel> getChannelById(@PathVariable String id)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         return channelRepository.findById(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
@@ -85,7 +85,7 @@ public class ChannelController {
     public ResponseEntity<Channel> createChannel(
             @RequestBody Channel channel,
             @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Check if channel already exists
         var existing = channelRepository.findByYoutubeId(channel.getYoutubeId());
         if (existing.isPresent()) {
@@ -116,7 +116,7 @@ public class ChannelController {
     public ResponseEntity<Channel> approveChannel(
             @PathVariable String id,
             @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         Channel channel = channelRepository.findById(id).orElse(null);
         if (channel == null) {
             return ResponseEntity.notFound().build();
@@ -136,7 +136,7 @@ public class ChannelController {
     @PreAuthorize("hasRole('ADMIN')")
     @CacheEvict(value = CacheConfig.CACHE_CHANNELS, allEntries = true)
     public ResponseEntity<Channel> rejectChannel(@PathVariable String id)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         Channel channel = channelRepository.findById(id).orElse(null);
         if (channel == null) {
             return ResponseEntity.notFound().build();
@@ -155,7 +155,7 @@ public class ChannelController {
     public ResponseEntity<Channel> updateExclusions(
             @PathVariable String id,
             @RequestBody Channel.ExcludedItems excludedItems
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         Channel channel = channelRepository.findById(id).orElse(null);
         if (channel == null) {
             return ResponseEntity.notFound().build();
@@ -172,7 +172,7 @@ public class ChannelController {
     @GetMapping("/{id}/exclusions")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Channel.ExcludedItems> getExclusions(@PathVariable String id)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         Channel channel = channelRepository.findById(id).orElse(null);
         if (channel == null) {
             return ResponseEntity.notFound().build();
@@ -196,7 +196,7 @@ public class ChannelController {
             @PathVariable String id,
             @PathVariable String type,
             @PathVariable String youtubeId
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Validate YouTube ID format (basic validation)
         if (youtubeId == null || youtubeId.trim().isEmpty()) {
             return ResponseEntity.badRequest().build();
@@ -269,7 +269,7 @@ public class ChannelController {
             @PathVariable String id,
             @PathVariable String type,
             @PathVariable String youtubeId
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         Channel channel = channelRepository.findById(id).orElse(null);
         if (channel == null) {
             return ResponseEntity.notFound().build();
@@ -317,7 +317,7 @@ public class ChannelController {
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> deleteChannel(@PathVariable String id)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         if (!channelRepository.findById(id).isPresent()) {
             return ResponseEntity.notFound().build();
         }

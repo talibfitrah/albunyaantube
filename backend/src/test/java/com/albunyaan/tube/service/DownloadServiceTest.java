@@ -32,7 +32,7 @@ class DownloadServiceTest {
     }
 
     @Test
-    void checkDownloadPolicy_shouldAllowDownload_whenVideoApproved() throws ExecutionException, InterruptedException {
+    void checkDownloadPolicy_shouldAllowDownload_whenVideoApproved() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         when(videoRepository.findByYoutubeId("YT-video-123")).thenReturn(Optional.of(approvedVideo));
         DownloadPolicyDto policy = downloadService.checkDownloadPolicy("YT-video-123");
         assertTrue(policy.isAllowed());
@@ -40,7 +40,7 @@ class DownloadServiceTest {
     }
 
     @Test
-    void checkDownloadPolicy_shouldDenyDownload_whenVideoNotFound() throws ExecutionException, InterruptedException {
+    void checkDownloadPolicy_shouldDenyDownload_whenVideoNotFound() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         when(videoRepository.findByYoutubeId("nonexistent")).thenReturn(Optional.empty());
         DownloadPolicyDto policy = downloadService.checkDownloadPolicy("nonexistent");
         assertFalse(policy.isAllowed());
@@ -48,7 +48,7 @@ class DownloadServiceTest {
     }
 
     @Test
-    void checkDownloadPolicy_shouldDenyDownload_whenVideoNotApproved() throws ExecutionException, InterruptedException {
+    void checkDownloadPolicy_shouldDenyDownload_whenVideoNotApproved() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         approvedVideo.setStatus("PENDING");
         when(videoRepository.findByYoutubeId("YT-video-123")).thenReturn(Optional.of(approvedVideo));
         DownloadPolicyDto policy = downloadService.checkDownloadPolicy("YT-video-123");
@@ -57,7 +57,7 @@ class DownloadServiceTest {
     }
 
     @Test
-    void generateDownloadToken_shouldGenerateToken_whenEulaAccepted() throws ExecutionException, InterruptedException {
+    void generateDownloadToken_shouldGenerateToken_whenEulaAccepted() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         when(videoRepository.findByYoutubeId("YT-video-123")).thenReturn(Optional.of(approvedVideo));
         when(tokenService.generateToken("YT-video-123", "user-123")).thenReturn("token-abc");
         when(tokenService.getExpirationTime("YT-video-123", "user-123")).thenReturn(1234567890L);
@@ -68,7 +68,7 @@ class DownloadServiceTest {
     }
 
     @Test
-    void generateDownloadToken_shouldThrowException_whenEulaNotAccepted() throws ExecutionException, InterruptedException {
+    void generateDownloadToken_shouldThrowException_whenEulaNotAccepted() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         when(videoRepository.findByYoutubeId("YT-video-123")).thenReturn(Optional.of(approvedVideo));
         IllegalStateException exception = assertThrows(IllegalStateException.class, () ->
                 downloadService.generateDownloadToken("YT-video-123", "user-123", false));
@@ -76,7 +76,7 @@ class DownloadServiceTest {
     }
 
     @Test
-    void getDownloadManifest_shouldReturnManifest_whenTokenValid() throws ExecutionException, InterruptedException {
+    void getDownloadManifest_shouldReturnManifest_whenTokenValid() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         when(tokenService.validateToken("valid-token", "YT-video-123")).thenReturn(true);
         when(videoRepository.findByYoutubeId("YT-video-123")).thenReturn(Optional.of(approvedVideo));
         when(tokenService.getExpirationTime(anyString(), anyString())).thenReturn(1234567890L);

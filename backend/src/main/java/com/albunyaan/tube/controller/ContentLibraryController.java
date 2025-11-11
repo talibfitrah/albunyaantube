@@ -80,7 +80,7 @@ public class ContentLibraryController {
             @RequestParam(defaultValue = "newest") String sort,
             @Min(0) @RequestParam(defaultValue = "0") int page,
             @Min(1) @RequestParam(defaultValue = "20") int size
-    ) throws ExecutionException, InterruptedException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
 
         log.info("Content Library request: types={}, status={}, category={}, search={}, sort={}, page={}, size={}",
                 types, status, category, search, sort, page, size);
@@ -165,7 +165,7 @@ public class ContentLibraryController {
                 .collect(Collectors.toSet());
     }
 
-    private List<Channel> fetchChannels(String status, String category) throws ExecutionException, InterruptedException {
+    private List<Channel> fetchChannels(String status, String category) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         if (category != null && !category.isBlank()) {
             return channelRepository.findByCategoryId(category);
         }
@@ -176,7 +176,7 @@ public class ContentLibraryController {
         return channelRepository.findByStatus(status.toUpperCase());
     }
 
-    private List<Playlist> fetchPlaylists(String status, String category) throws ExecutionException, InterruptedException {
+    private List<Playlist> fetchPlaylists(String status, String category) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         if (category != null && !category.isBlank()) {
             return playlistRepository.findByCategoryId(category);
         }
@@ -187,7 +187,7 @@ public class ContentLibraryController {
         return playlistRepository.findByStatus(status.toUpperCase());
     }
 
-    private List<Video> fetchVideos(String status, String category) throws ExecutionException, InterruptedException {
+    private List<Video> fetchVideos(String status, String category) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         if (category != null && !category.isBlank()) {
             return videoRepository.findByCategoryId(category);
         }
@@ -250,7 +250,7 @@ public class ContentLibraryController {
      */
     @FunctionalInterface
     private interface EntityModifier {
-        Object modifyEntity(BulkActionItem item) throws ExecutionException, InterruptedException;
+        Object modifyEntity(BulkActionItem item) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException;
     }
 
     /**
@@ -258,7 +258,7 @@ public class ContentLibraryController {
      */
     @FunctionalInterface
     private interface EntityDeleter {
-        boolean deleteEntity(BulkActionItem item) throws ExecutionException, InterruptedException;
+        boolean deleteEntity(BulkActionItem item) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException;
     }
 
     /**
@@ -406,7 +406,7 @@ public class ContentLibraryController {
     @PostMapping("/bulk/approve")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BulkActionResponse> bulkApprove(@Valid @RequestBody BulkActionRequest request)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
 
         // Early validation: check for null/empty items (redundant with @Valid but explicit)
         if (request == null || request.items == null || request.items.isEmpty()) {
@@ -484,7 +484,7 @@ public class ContentLibraryController {
     @PostMapping("/bulk/reject")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BulkActionResponse> bulkReject(@Valid @RequestBody BulkActionRequest request)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
 
         // Early validation: check for null/empty items
         if (request == null || request.items == null || request.items.isEmpty()) {
@@ -562,7 +562,7 @@ public class ContentLibraryController {
     @PostMapping("/bulk/delete")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BulkActionResponse> bulkDelete(@Valid @RequestBody BulkActionRequest request)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
 
         // Early validation: check for null/empty items
         if (request == null || request.items == null || request.items.isEmpty()) {
@@ -622,7 +622,7 @@ public class ContentLibraryController {
     @PostMapping("/bulk/assign-categories")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BulkActionResponse> bulkAssignCategories(@Valid @RequestBody BulkCategoryAssignmentRequest request)
-            throws ExecutionException, InterruptedException {
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
 
         // Early validation: check for null/empty items and categoryIds
         if (request == null || request.items == null || request.items.isEmpty()) {
