@@ -1,6 +1,10 @@
 /**
  * YouTube Service
  * Real backend API integration for YouTube search and content preview
+ *
+ * Backend uses NewPipeExtractor for YouTube content extraction (no API key required).
+ * All endpoints return the same data structures, but the backend implementation
+ * has been migrated from YouTube Data API v3 to NewPipeExtractor.
  */
 
 import apiClient from './api/client';
@@ -22,13 +26,14 @@ interface YouTubeSearchResponse {
 
 /**
  * Search YouTube for channels, playlists, or videos with pagination support
+ * Uses NewPipeExtractor on backend (no API quota limits)
  */
 export async function searchYouTube(
   query: string,
   type: 'all' | 'channels' | 'playlists' | 'videos' = 'all',
   pageToken?: string
 ): Promise<YouTubeSearchResponse> {
-  // Use unified search for 'all' - MUCH faster (single API call) with pagination
+  // Use unified search for 'all' - MUCH faster (single backend call) with pagination
   if (type === 'all') {
     const response = await apiClient.get<SearchPageResponse>('/api/admin/youtube/search/all', {
       params: { query, pageToken }
@@ -258,7 +263,7 @@ function parseDuration(duration: string): number {
   return hours * 3600 + minutes * 60 + seconds;
 }
 
-// Additional YouTube API functions for exclusions modals
+// Additional YouTube functions for exclusions modals (powered by NewPipeExtractor)
 
 export async function getChannelVideos(
   channelId: string,

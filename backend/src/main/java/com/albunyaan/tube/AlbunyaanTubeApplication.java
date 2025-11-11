@@ -12,8 +12,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  * - Spring Boot 3
  * - Firebase Firestore (database)
  * - Firebase Authentication (auth)
- * - YouTube Data API v3 (content search)
- * - Redis (caching)
+ * - NewPipeExtractor (YouTube content extraction - no API key required)
+ * - Redis/Caffeine (caching)
  */
 @SpringBootApplication
 @EnableCaching

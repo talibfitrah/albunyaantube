@@ -92,7 +92,7 @@ public class VideoValidationService {
                     .collect(Collectors.toList());
 
             // Batch validate against YouTube API
-            Map<String, com.google.api.services.youtube.model.Video> validVideos =
+            Map<String, org.schabi.newpipe.extractor.stream.StreamInfo> validVideos =
                     youtubeService.batchValidateVideos(youtubeIds);
 
             // Process results
@@ -243,7 +243,7 @@ public class VideoValidationService {
                     .collect(Collectors.toList());
 
             // Batch validate
-            Map<String, com.google.api.services.youtube.model.Video> validVideos =
+            Map<String, org.schabi.newpipe.extractor.stream.StreamInfo> validVideos =
                     youtubeService.batchValidateVideos(youtubeIds);
 
             // Process results

@@ -24,7 +24,6 @@ export const navRoutes: NavRoute[] = [
     children: [
       { labelKey: 'navigation.settingsProfile', route: { name: 'settings-profile' } },
       { labelKey: 'navigation.settingsNotifications', route: { name: 'settings-notifications' } },
-      { labelKey: 'navigation.settingsYouTubeAPI', route: { name: 'settings-youtube-api' } },
       { labelKey: 'navigation.settingsSystem', route: { name: 'settings-system' } }
     ]
   }

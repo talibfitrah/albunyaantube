@@ -19,7 +19,6 @@ const AuditLogView = () => import('@/views/AuditLogView.vue');
 const ActivityLogView = () => import('@/views/ActivityLogView.vue');
 const ProfileSettingsView = () => import('@/views/ProfileSettingsView.vue');
 const NotificationsSettingsView = () => import('@/views/NotificationsSettingsView.vue');
-const YouTubeAPISettingsView = () => import('@/views/YouTubeAPISettingsView.vue');
 const SystemSettingsView = () => import('@/views/SystemSettingsView.vue');
 
 const protectedChildRoutes = [
@@ -99,12 +98,6 @@ const protectedChildRoutes = [
     path: 'settings/notifications',
     name: 'settings-notifications',
     component: NotificationsSettingsView,
-    meta: { requiresAuth: true }
-  },
-  {
-    path: 'settings/youtube-api',
-    name: 'settings-youtube-api',
-    component: YouTubeAPISettingsView,
     meta: { requiresAuth: true }
   },
   {

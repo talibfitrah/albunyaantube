@@ -17,6 +17,8 @@ repositories {
     mavenCentral()
     // Required for Firebase and Google Cloud dependencies
     google()
+    // Required for NewPipeExtractor
+    maven { url = uri("https://jitpack.io") }
 }
 
 dependencies {
@@ -36,11 +38,11 @@ dependencies {
     // Firebase Admin SDK for Authentication and Firestore (replaces PostgreSQL)
     implementation("com.google.firebase:firebase-admin:9.2.0")
 
-    // YouTube Data API client
-    implementation("com.google.apis:google-api-services-youtube:v3-rev20240916-2.0.0")
-    implementation("com.google.api-client:google-api-client:2.2.0")
-    implementation("com.google.oauth-client:google-oauth-client-jetty:1.34.1")
-    implementation("com.google.http-client:google-http-client-jackson2:1.43.3")
+    // NewPipeExtractor for YouTube content extraction (no API key required)
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.8")
+
+    // OkHttp for NewPipe's HTTP client
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
 
@@ -58,5 +60,9 @@ tasks.test {
         events = setOf(TestLogEvent.FAILED, TestLogEvent.PASSED, TestLogEvent.SKIPPED)
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
     }
+}
+
+tasks.bootJar {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 

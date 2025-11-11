@@ -23,10 +23,13 @@ app:
         enabled: true
         host: localhost
         port: 8090
-  youtube:
-    # Mock API key for tests
-    api-key: test-api-key
-    application-name: Albunyaan Tube Test
+  newpipe:
+    # NewPipeExtractor configuration for tests
+    stream-cache-ttl-minutes: 30
+    http:
+      connect-timeout-seconds: 10
+      read-timeout-seconds: 10
+      user-agent: "AlbunyaanTube-Test/1.0"
   security:
     cors:
       allowed-origins: "http://localhost:5173"

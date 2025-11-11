@@ -3,7 +3,11 @@ package com.albunyaan.tube.controller;
 import com.albunyaan.tube.dto.EnrichedSearchResult;
 import com.albunyaan.tube.dto.SearchPageResponse;
 import com.albunyaan.tube.service.YouTubeService;
-import com.google.api.services.youtube.model.*;
+import org.schabi.newpipe.extractor.channel.ChannelInfo;
+import org.schabi.newpipe.extractor.playlist.PlaylistInfo;
+import org.schabi.newpipe.extractor.playlist.PlaylistInfoItem;
+import org.schabi.newpipe.extractor.stream.StreamInfo;
+import org.schabi.newpipe.extractor.stream.StreamInfoItem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -251,9 +255,9 @@ public class YouTubeSearchController {
      * Get channel details
      */
     @GetMapping("/channels/{channelId}")
-    public ResponseEntity<Channel> getChannelDetails(@PathVariable String channelId) {
+    public ResponseEntity<ChannelInfo> getChannelDetails(@PathVariable String channelId) {
         try {
-            Channel channel = youtubeService.getChannelDetails(channelId);
+            ChannelInfo channel = youtubeService.getChannelDetails(channelId);
             if (channel == null) {
                 return ResponseEntity.notFound().build();
             }
@@ -270,13 +274,13 @@ public class YouTubeSearchController {
      * @param q Optional search query to filter videos
      */
     @GetMapping("/channels/{channelId}/videos")
-    public ResponseEntity<List<SearchResult>> getChannelVideos(
+    public ResponseEntity<List<StreamInfoItem>> getChannelVideos(
             @PathVariable String channelId,
             @RequestParam(required = false) String pageToken,
             @RequestParam(required = false) String q
     ) {
         try {
-            List<SearchResult> videos = youtubeService.getChannelVideos(channelId, pageToken, q);
+            List<StreamInfoItem> videos = youtubeService.getChannelVideos(channelId, pageToken, q);
             return ResponseEntity.ok(videos);
         } catch (IOException e) {
             return ResponseEntity.status(500).build();
@@ -287,12 +291,12 @@ public class YouTubeSearchController {
      * Get playlists from a channel
      */
     @GetMapping("/channels/{channelId}/playlists")
-    public ResponseEntity<List<Playlist>> getChannelPlaylists(
+    public ResponseEntity<List<PlaylistInfoItem>> getChannelPlaylists(
             @PathVariable String channelId,
             @RequestParam(required = false) String pageToken
     ) {
         try {
-            List<Playlist> playlists = youtubeService.getChannelPlaylists(channelId, pageToken);
+            List<PlaylistInfoItem> playlists = youtubeService.getChannelPlaylists(channelId, pageToken);
             return ResponseEntity.ok(playlists);
         } catch (IOException e) {
             return ResponseEntity.status(500).build();
@@ -303,9 +307,9 @@ public class YouTubeSearchController {
      * Get playlist details
      */
     @GetMapping("/playlists/{playlistId}")
-    public ResponseEntity<Playlist> getPlaylistDetails(@PathVariable String playlistId) {
+    public ResponseEntity<PlaylistInfo> getPlaylistDetails(@PathVariable String playlistId) {
         try {
-            Playlist playlist = youtubeService.getPlaylistDetails(playlistId);
+            PlaylistInfo playlist = youtubeService.getPlaylistDetails(playlistId);
             if (playlist == null) {
                 return ResponseEntity.notFound().build();
             }
@@ -322,13 +326,13 @@ public class YouTubeSearchController {
      * @param q Optional search query to filter videos by title/description
      */
     @GetMapping("/playlists/{playlistId}/videos")
-    public ResponseEntity<List<PlaylistItem>> getPlaylistVideos(
+    public ResponseEntity<List<StreamInfoItem>> getPlaylistVideos(
             @PathVariable String playlistId,
             @RequestParam(required = false) String pageToken,
             @RequestParam(required = false) String q
     ) {
         try {
-            List<PlaylistItem> items = youtubeService.getPlaylistVideos(playlistId, pageToken, q);
+            List<StreamInfoItem> items = youtubeService.getPlaylistVideos(playlistId, pageToken, q);
             return ResponseEntity.ok(items);
         } catch (IOException e) {
             return ResponseEntity.status(500).build();
@@ -339,9 +343,9 @@ public class YouTubeSearchController {
      * Get video details
      */
     @GetMapping("/videos/{videoId}")
-    public ResponseEntity<Video> getVideoDetails(@PathVariable String videoId) {
+    public ResponseEntity<StreamInfo> getVideoDetails(@PathVariable String videoId) {
         try {
-            Video video = youtubeService.getVideoDetails(videoId);
+            StreamInfo video = youtubeService.getVideoDetails(videoId);
             if (video == null) {
                 return ResponseEntity.notFound().build();
             }

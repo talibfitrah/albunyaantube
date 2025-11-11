@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
@@ -26,6 +27,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Tests edge cases and error handling for video endpoints.
  */
 @WebMvcTest(PublicContentController.class)
+@AutoConfigureMockMvc(addFilters = false)
 public class PublicContentControllerTest {
 
     @Autowired
@@ -46,7 +48,7 @@ public class PublicContentControllerTest {
         testVideo.setThumbnailUrl("https://example.com/thumb.jpg");
         testVideo.setDurationSeconds(240);
         testVideo.setStatus("APPROVED");
-        testVideo.setValidationStatus(ValidationStatus.AVAILABLE);
+        testVideo.setValidationStatus(ValidationStatus.VALID);
     }
 
     @Test

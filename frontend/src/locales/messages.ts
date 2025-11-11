@@ -30,7 +30,6 @@ export const messages = {
       settings: 'Settings',
       settingsProfile: 'Profile',
       settingsNotifications: 'Notifications',
-      settingsYouTubeAPI: 'YouTube API',
       settingsSystem: 'System',
       home: 'Home',
       channels: 'Channels',
@@ -894,57 +893,6 @@ export const messages = {
           save: 'Save Preferences',
           saving: 'Saving...',
           cancel: 'Cancel'
-        }
-      },
-      youtubeApi: {
-        heading: 'YouTube API Settings',
-        description: 'Manage your YouTube Data API configuration and quota usage.',
-        loading: 'Loading API settings...',
-        successMessage: 'API settings saved successfully.',
-        testSuccess: 'API key is valid and working correctly.',
-        testFailure: 'API key validation failed. Please check your key and try again.',
-        sections: {
-          apiKey: 'API Key Configuration',
-          quota: 'Quota Usage',
-          documentation: 'Documentation & Resources'
-        },
-        fields: {
-          apiKey: 'YouTube Data API Key'
-        },
-        hints: {
-          apiKey: 'Your YouTube Data API v3 key from Google Cloud Console',
-          getApiKey: 'Get your API key from Google Cloud Console',
-          quota: 'Monitor your daily API quota usage and limits'
-        },
-        quota: {
-          used: 'Used',
-          limit: 'Daily Limit',
-          remaining: 'Remaining'
-        },
-        quotaResetIn: 'Resets in {hours}h {minutes}m',
-        warnings: {
-          quotaWarning: 'You are approaching your daily quota limit. Consider upgrading or reducing API calls.',
-          quotaCritical: 'You are critically close to your daily quota limit. API calls may fail soon.'
-        },
-        docs: {
-          getApiKey: 'Get API Key from Google Cloud',
-          apiDocs: 'YouTube Data API Documentation',
-          quotaDocs: 'Understanding Quota Costs'
-        },
-        errors: {
-          loadFailed: 'Failed to load API settings. Please try again.',
-          saveFailed: 'Failed to save API settings. Please try again.',
-          testFailed: 'Failed to test API connection. Please try again.',
-          apiKeyRequired: 'API key is required.',
-          apiKeyInvalid: 'API key appears to be invalid. Please check the format.'
-        },
-        actions: {
-          show: 'Show API key',
-          hide: 'Hide API key',
-          test: 'Test Connection',
-          testing: 'Testing...',
-          save: 'Save API Key',
-          saving: 'Saving...'
         }
       },
       system: {

@@ -8,9 +8,10 @@ import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
-import com.google.api.services.youtube.model.PlaylistSnippet;
-import com.google.api.services.youtube.model.VideoSnippet;
 import com.google.cloud.Timestamp;
+import org.schabi.newpipe.extractor.channel.ChannelInfo;
+import org.schabi.newpipe.extractor.playlist.PlaylistInfo;
+import org.schabi.newpipe.extractor.stream.StreamInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -164,8 +165,7 @@ public class SimpleImportService {
                 }
 
                 // 2. Validate YouTube ID still exists and fetch metadata
-                com.google.api.services.youtube.model.Channel ytChannel =
-                        youTubeService.validateAndFetchChannel(youtubeId);
+                ChannelInfo ytChannel = youTubeService.validateAndFetchChannel(youtubeId);
 
                 if (ytChannel == null) {
                     response.addResult(SimpleImportItemResult.failed(
@@ -184,25 +184,22 @@ public class SimpleImportService {
                 if (!validateOnly) {
                     Channel channel = new Channel(youtubeId);
 
-                    // Set metadata from YouTube
-                    if (ytChannel.getSnippet() != null) {
-                        channel.setName(ytChannel.getSnippet().getTitle());
-                        channel.setDescription(ytChannel.getSnippet().getDescription());
-
-                        if (ytChannel.getSnippet().getThumbnails() != null &&
-                            ytChannel.getSnippet().getThumbnails().getDefault() != null) {
-                            channel.setThumbnailUrl(ytChannel.getSnippet().getThumbnails().getDefault().getUrl());
-                        }
+                    // Set metadata from YouTube (NewPipe provides direct access)
+                    channel.setName(ytChannel.getName());
+                    if (ytChannel.getDescription() != null && !ytChannel.getDescription().isEmpty()) {
+                        channel.setDescription(ytChannel.getDescription());
                     }
 
-                    if (ytChannel.getStatistics() != null) {
-                        if (ytChannel.getStatistics().getSubscriberCount() != null) {
-                            channel.setSubscribers(ytChannel.getStatistics().getSubscriberCount().longValue());
-                        }
-                        if (ytChannel.getStatistics().getVideoCount() != null) {
-                            channel.setVideoCount(ytChannel.getStatistics().getVideoCount().intValue());
-                        }
+                    // Get best avatar from NewPipe (channels have avatars, not thumbnails)
+                    if (ytChannel.getAvatars() != null && !ytChannel.getAvatars().isEmpty()) {
+                        channel.setThumbnailUrl(ytChannel.getAvatars().get(0).getUrl());
                     }
+
+                    // Set statistics (NewPipe provides direct values)
+                    if (ytChannel.getSubscriberCount() >= 0) {
+                        channel.setSubscribers(ytChannel.getSubscriberCount());
+                    }
+                    // Note: Channel video count not available in ChannelInfo
 
                     // Set categories
                     channel.setCategoryIds(categoryIds);
@@ -228,7 +225,7 @@ public class SimpleImportService {
 
                 response.addResult(SimpleImportItemResult.success(
                         youtubeId,
-                        ytChannel.getSnippet() != null ? ytChannel.getSnippet().getTitle() : titleFromFile,
+                        ytChannel.getName() != null ? ytChannel.getName() : titleFromFile,
                         "CHANNEL"
                 ));
 
@@ -296,8 +293,7 @@ public class SimpleImportService {
                 }
 
                 // 2. Validate YouTube ID and fetch metadata
-                com.google.api.services.youtube.model.Playlist ytPlaylist =
-                        youTubeService.validateAndFetchPlaylist(youtubeId);
+                PlaylistInfo ytPlaylist = youTubeService.validateAndFetchPlaylist(youtubeId);
 
                 if (ytPlaylist == null) {
                     response.addResult(SimpleImportItemResult.failed(
@@ -316,21 +312,20 @@ public class SimpleImportService {
                 if (!validateOnly) {
                     Playlist playlist = new Playlist(youtubeId);
 
-                    // Set metadata from YouTube
-                    PlaylistSnippet snippet = ytPlaylist.getSnippet();
-                    if (snippet != null) {
-                        playlist.setTitle(snippet.getTitle());
-                        playlist.setDescription(snippet.getDescription());
-
-                        if (snippet.getThumbnails() != null &&
-                            snippet.getThumbnails().getDefault() != null) {
-                            playlist.setThumbnailUrl(snippet.getThumbnails().getDefault().getUrl());
-                        }
+                    // Set metadata from YouTube (NewPipe provides direct access)
+                    playlist.setTitle(ytPlaylist.getName());
+                    if (ytPlaylist.getDescription() != null) {
+                        playlist.setDescription(ytPlaylist.getDescription().getContent());
                     }
 
-                    if (ytPlaylist.getContentDetails() != null &&
-                        ytPlaylist.getContentDetails().getItemCount() != null) {
-                        playlist.setItemCount(ytPlaylist.getContentDetails().getItemCount().intValue());
+                    // Get best thumbnail from NewPipe
+                    if (ytPlaylist.getThumbnails() != null && !ytPlaylist.getThumbnails().isEmpty()) {
+                        playlist.setThumbnailUrl(ytPlaylist.getThumbnails().get(0).getUrl());
+                    }
+
+                    // Set item count (NewPipe provides direct value)
+                    if (ytPlaylist.getStreamCount() >= 0) {
+                        playlist.setItemCount((int) ytPlaylist.getStreamCount());
                     }
 
                     // Set categories
@@ -355,7 +350,7 @@ public class SimpleImportService {
 
                 response.addResult(SimpleImportItemResult.success(
                         youtubeId,
-                        ytPlaylist.getSnippet() != null ? ytPlaylist.getSnippet().getTitle() : titleFromFile,
+                        ytPlaylist.getName() != null ? ytPlaylist.getName() : titleFromFile,
                         "PLAYLIST"
                 ));
 
@@ -423,8 +418,7 @@ public class SimpleImportService {
                 }
 
                 // 2. Validate YouTube ID and fetch metadata
-                com.google.api.services.youtube.model.Video ytVideo =
-                        youTubeService.validateAndFetchVideo(youtubeId);
+                StreamInfo ytVideo = youTubeService.validateAndFetchVideo(youtubeId);
 
                 if (ytVideo == null) {
                     response.addResult(SimpleImportItemResult.failed(
@@ -443,44 +437,30 @@ public class SimpleImportService {
                 if (!validateOnly) {
                     Video video = new Video(youtubeId);
 
-                    // Set metadata from YouTube
-                    VideoSnippet snippet = ytVideo.getSnippet();
-                    if (snippet != null) {
-                        video.setTitle(snippet.getTitle());
-                        video.setDescription(snippet.getDescription());
-                        video.setChannelId(snippet.getChannelId());
-                        video.setChannelTitle(snippet.getChannelTitle());
+                    // Set metadata from YouTube (NewPipe provides direct access)
+                    video.setTitle(ytVideo.getName());
+                    if (ytVideo.getDescription() != null) {
+                        video.setDescription(ytVideo.getDescription().getContent());
+                    }
+                    video.setChannelId(extractYouTubeId(ytVideo.getUploaderUrl()));
+                    video.setChannelTitle(ytVideo.getUploaderName());
 
-                        if (snippet.getThumbnails() != null &&
-                            snippet.getThumbnails().getDefault() != null) {
-                            video.setThumbnailUrl(snippet.getThumbnails().getDefault().getUrl());
-                        }
+                    // Get best thumbnail from NewPipe
+                    if (ytVideo.getThumbnails() != null && !ytVideo.getThumbnails().isEmpty()) {
+                        video.setThumbnailUrl(ytVideo.getThumbnails().get(0).getUrl());
                     }
 
-                    if (ytVideo.getContentDetails() != null && ytVideo.getContentDetails().getDuration() != null) {
-                        // Convert ISO 8601 duration to seconds
-                        String durationString = ytVideo.getContentDetails().getDuration();
-                        try {
-                            if (durationString != null && !durationString.trim().isEmpty()) {
-                                Duration duration = Duration.parse(durationString);
-                                long durationSeconds = duration.toSeconds();
-                                video.setDurationSeconds((int) durationSeconds);
-                                logger.debug("Parsed video duration: {} -> {} seconds", durationString, durationSeconds);
-                            } else {
-                                video.setDurationSeconds(0);
-                            }
-                        } catch (DateTimeParseException e) {
-                            logger.warn("Failed to parse video duration '{}' for video {}: {}. Defaulting to 0.",
-                                    durationString, youtubeId, e.getMessage());
-                            video.setDurationSeconds(0);
-                        }
+                    // Set duration (NewPipe provides direct value in seconds)
+                    if (ytVideo.getDuration() >= 0) {
+                        video.setDurationSeconds((int) ytVideo.getDuration());
+                        logger.debug("Video duration: {} seconds", ytVideo.getDuration());
                     } else {
                         video.setDurationSeconds(0);
                     }
 
-                    if (ytVideo.getStatistics() != null &&
-                        ytVideo.getStatistics().getViewCount() != null) {
-                        video.setViewCount(ytVideo.getStatistics().getViewCount().longValue());
+                    // Set view count (NewPipe provides direct accessor)
+                    if (ytVideo.getViewCount() >= 0) {
+                        video.setViewCount(ytVideo.getViewCount());
                     }
 
                     // Set categories
@@ -505,7 +485,7 @@ public class SimpleImportService {
 
                 response.addResult(SimpleImportItemResult.success(
                         youtubeId,
-                        ytVideo.getSnippet() != null ? ytVideo.getSnippet().getTitle() : titleFromFile,
+                        ytVideo.getName() != null ? ytVideo.getName() : titleFromFile,
                         "VIDEO"
                 ));
 
@@ -538,6 +518,24 @@ public class SimpleImportService {
                 ));
             }
         }
+    }
+
+    /**
+     * Extract YouTube ID from URL
+     * e.g., "https://www.youtube.com/channel/UCxxxxxx" -> "UCxxxxxx"
+     */
+    private String extractYouTubeId(String url) {
+        if (url == null || url.isEmpty()) {
+            return null;
+        }
+        // Extract last segment from URL
+        String[] parts = url.split("/");
+        if (parts.length > 0) {
+            String lastPart = parts[parts.length - 1];
+            // Remove query parameters if present
+            return lastPart.split("\\?")[0];
+        }
+        return url;
     }
 }
 

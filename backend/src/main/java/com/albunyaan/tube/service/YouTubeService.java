@@ -2,127 +2,170 @@ package com.albunyaan.tube.service;
 
 import com.albunyaan.tube.dto.EnrichedSearchResult;
 import com.albunyaan.tube.dto.SearchPageResponse;
-import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
-import com.google.api.client.json.jackson2.JacksonFactory;
-import com.google.api.services.youtube.YouTube;
-import com.google.api.services.youtube.model.*;
+import org.schabi.newpipe.extractor.InfoItem;
+import org.schabi.newpipe.extractor.ListExtractor;
+import org.schabi.newpipe.extractor.NewPipe;
+import org.schabi.newpipe.extractor.Page;
+import org.schabi.newpipe.extractor.StreamingService;
+import org.schabi.newpipe.extractor.channel.ChannelInfo;
+import org.schabi.newpipe.extractor.channel.ChannelInfoItem;
+import org.schabi.newpipe.extractor.channel.tabs.ChannelTabExtractor;
+import org.schabi.newpipe.extractor.channel.tabs.ChannelTabInfo;
+import org.schabi.newpipe.extractor.exceptions.ExtractionException;
+import org.schabi.newpipe.extractor.linkhandler.ListLinkHandler;
+import org.schabi.newpipe.extractor.playlist.PlaylistInfo;
+import org.schabi.newpipe.extractor.playlist.PlaylistInfoItem;
+import org.schabi.newpipe.extractor.search.SearchExtractor;
+import org.schabi.newpipe.extractor.search.SearchInfo;
+import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeChannelLinkHandlerFactory;
+import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubePlaylistLinkHandlerFactory;
+import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeStreamLinkHandlerFactory;
+import org.schabi.newpipe.extractor.stream.StreamInfo;
+import org.schabi.newpipe.extractor.stream.StreamInfoItem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
+import jakarta.annotation.PreDestroy;
 import java.io.IOException;
-import java.security.GeneralSecurityException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
- * FIREBASE-MIGRATE-04: YouTube Data API Integration
- *
- * Provides search and metadata fetching from YouTube for admin interface.
- * Used for content preview and selection before adding to master list.
+ * NewPipeExtractor YouTube Integration
+ * <p>
+ * Provides search and metadata fetching from YouTube for admin interface
+ * using NewPipeExtractor (no API key required).
+ * <p>
+ * This service replaces the YouTube Data API v3 implementation with
+ * NewPipeExtractor, which scrapes YouTube content directly without
+ * quota limits or API key requirements.
  */
 @Service
 public class YouTubeService {
 
     private static final Logger logger = LoggerFactory.getLogger(YouTubeService.class);
-    private static final long MAX_RESULTS = 20L;
-    private static final int BATCH_SIZE = 50; // YouTube API allows up to 50 IDs per batch request
-    private static final ExecutorService executorService = Executors.newFixedThreadPool(3); // Thread pool for parallel requests
+    private static final int DEFAULT_SEARCH_RESULTS = 20;
+    private static final int BATCH_SIZE = 20; // Process in smaller batches for NewPipe
+    private static final ExecutorService executorService = Executors.newFixedThreadPool(3);
 
-    private final YouTube youtube;
-    private final String apiKey;
+    private final StreamingService youtube;
+    private final YoutubeChannelLinkHandlerFactory channelLinkHandlerFactory;
+    private final YoutubePlaylistLinkHandlerFactory playlistLinkHandlerFactory;
+    private final YoutubeStreamLinkHandlerFactory streamLinkHandlerFactory;
 
-    public YouTubeService(
-            @Value("${app.youtube.api-key}") String apiKey,
-            @Value("${app.youtube.application-name}") String applicationName
-    ) throws GeneralSecurityException, IOException {
-        this.apiKey = apiKey;
-        this.youtube = new YouTube.Builder(
-                GoogleNetHttpTransport.newTrustedTransport(),
-                JacksonFactory.getDefaultInstance(),
-                null
-        ).setApplicationName(applicationName).build();
+    @Autowired
+    public YouTubeService(@Qualifier("newPipeYouTubeService") StreamingService youTubeService) {
+        this.youtube = youTubeService;
+        this.channelLinkHandlerFactory = YoutubeChannelLinkHandlerFactory.getInstance();
+        this.playlistLinkHandlerFactory = YoutubePlaylistLinkHandlerFactory.getInstance();
+        this.streamLinkHandlerFactory = YoutubeStreamLinkHandlerFactory.getInstance();
+
+        logger.info("YouTubeService initialized with NewPipeExtractor");
+        logger.info("Service: {}, ID: {}", youtube.getServiceInfo().getName(), youtube.getServiceId());
     }
 
     /**
-     * Unified search for all content types with pagination - single API call, mixed results like YouTube
-     * MUCH faster than 3 separate calls! Supports infinite scroll with nextPageToken
+     * Shutdown the executor service when the bean is destroyed
+     */
+    @PreDestroy
+    public void shutdown() {
+        logger.info("Shutting down YouTubeService executor service...");
+        executorService.shutdown();
+
+        try {
+            // Wait for termination with a reasonable timeout (10 seconds)
+            if (!executorService.awaitTermination(10, TimeUnit.SECONDS)) {
+                logger.warn("Executor service did not terminate in time, forcing shutdown...");
+                executorService.shutdownNow();
+
+                // Wait a bit more after forceful shutdown
+                if (!executorService.awaitTermination(5, TimeUnit.SECONDS)) {
+                    logger.error("Executor service did not terminate even after forced shutdown");
+                }
+            } else {
+                logger.info("Executor service shut down successfully");
+            }
+        } catch (InterruptedException e) {
+            logger.error("Interrupted while waiting for executor service shutdown", e);
+            // Restore interrupt flag
+            Thread.currentThread().interrupt();
+            // Force shutdown
+            executorService.shutdownNow();
+        }
+    }
+
+    /**
+     * Unified search for all content types with pagination
+     * Returns mixed results (channels, playlists, videos) like YouTube's native search
      */
     public SearchPageResponse searchAllEnrichedPaged(String query, String pageToken) throws IOException {
-        if (apiKey == null || apiKey.isEmpty()) {
-            logger.warn("YouTube API key not configured");
-            return new SearchPageResponse(Collections.emptyList(), null, 0);
-        }
+        try {
+            logger.debug("Searching YouTube for: '{}' with pageToken: {}", query, pageToken);
 
-        // Single API call for all content types
-        YouTube.Search.List request = youtube.search().list(List.of("id", "snippet"));
-        request.setKey(apiKey);
-        request.setQ(query);
-        request.setType(List.of("video", "channel", "playlist"));
-        request.setMaxResults(50L);
-        request.setFields("items(id,snippet),nextPageToken,pageInfo/totalResults");
+            // Create search extractor
+            SearchExtractor extractor = youtube.getSearchExtractor(query);
 
-        if (pageToken != null && !pageToken.isEmpty()) {
-            request.setPageToken(pageToken);
-        }
+            // Fetch initial page
+            extractor.fetchPage();
 
-        SearchListResponse response = request.execute();
-        List<SearchResult> items = response.getItems();
+            List<InfoItem> allItems = new ArrayList<>(extractor.getInitialPage().getItems());
+            Page nextPage = extractor.getInitialPage().getNextPage();
 
-        if (items == null || items.isEmpty()) {
-            return new SearchPageResponse(Collections.emptyList(), null, 0);
-        }
-
-        // Separate by type for batch enrichment (but preserve order)
-        List<EnrichedSearchResult> channels = new ArrayList<>();
-        List<EnrichedSearchResult> playlists = new ArrayList<>();
-        List<EnrichedSearchResult> videos = new ArrayList<>();
-        List<EnrichedSearchResult> allResults = new ArrayList<>();
-
-        for (SearchResult item : items) {
-            EnrichedSearchResult result;
-            if (item.getId().getChannelId() != null) {
-                result = EnrichedSearchResult.fromSearchResult(item, "channel");
-                channels.add(result);
-            } else if (item.getId().getPlaylistId() != null) {
-                result = EnrichedSearchResult.fromSearchResult(item, "playlist");
-                playlists.add(result);
-            } else if (item.getId().getVideoId() != null) {
-                result = EnrichedSearchResult.fromSearchResult(item, "video");
-                videos.add(result);
-            } else {
-                continue;
+            // If pageToken provided, navigate to that page
+            if (pageToken != null && !pageToken.isEmpty()) {
+                // NewPipe uses Page objects for pagination
+                // We'll encode/decode pageToken as needed
+                try {
+                    Page requestedPage = decodePageToken(pageToken);
+                    if (requestedPage != null) {
+                        ListExtractor.InfoItemsPage<InfoItem> page = extractor.getPage(requestedPage);
+                        allItems = new ArrayList<>(page.getItems());
+                        nextPage = page.getNextPage();
+                    }
+                } catch (Exception e) {
+                    logger.warn("Failed to decode page token, using initial page: {}", e.getMessage());
+                }
             }
-            allResults.add(result);
+
+            // Convert to enriched results
+            List<EnrichedSearchResult> enrichedResults = new ArrayList<>();
+            for (InfoItem item : allItems) {
+                EnrichedSearchResult result = convertToEnrichedResult(item);
+                if (result != null) {
+                    enrichedResults.add(result);
+                }
+            }
+
+            // Encode next page token
+            String nextPageToken = nextPage != null ? encodePageToken(nextPage) : null;
+
+            logger.debug("Search returned {} results, nextPageToken: {}", enrichedResults.size(), nextPageToken != null ? "present" : "null");
+
+            return new SearchPageResponse(
+                    enrichedResults,
+                    nextPageToken,
+                    enrichedResults.size() // NewPipe doesn't provide total results
+            );
+
+        } catch (ExtractionException e) {
+            logger.error("NewPipe extraction failed for query '{}': {}", query, e.getMessage(), e);
+            throw new IOException("YouTube search failed: " + e.getMessage(), e);
         }
-
-        // Enrich with metadata
-        if (!channels.isEmpty()) enrichChannelData(channels);
-        if (!playlists.isEmpty()) enrichPlaylistData(playlists);
-        if (!videos.isEmpty()) enrichVideoData(videos);
-
-        // Return with pagination info
-        return new SearchPageResponse(
-            allResults,
-            response.getNextPageToken(),
-            response.getPageInfo() != null ? response.getPageInfo().getTotalResults() : 0
-        );
     }
 
     /**
-     * Unified search for all content types - single API call, mixed results like YouTube
-     * MUCH faster than 3 separate calls!
+     * Unified search for all content types (no pagination)
      * @deprecated Use searchAllEnrichedPaged for pagination support
      */
-    @Cacheable(value = "youtubeUnifiedSearch", key = "#query", unless = "#result == null || #result.isEmpty()")
+    @Cacheable(value = "newpipeSearchResults", key = "'all:' + #query", unless = "#result == null || #result.isEmpty()")
     public List<EnrichedSearchResult> searchAllEnriched(String query) throws IOException {
         SearchPageResponse response = searchAllEnrichedPaged(query, null);
         return response.getItems();
@@ -131,453 +174,548 @@ public class YouTubeService {
     /**
      * Search for channels by query with full statistics (with caching)
      */
-    @Cacheable(value = "youtubeChannelSearch", key = "#query", unless = "#result == null || #result.isEmpty()")
+    @Cacheable(value = "newpipeSearchResults", key = "'channel:' + #query", unless = "#result == null || #result.isEmpty()")
     public List<EnrichedSearchResult> searchChannelsEnriched(String query) throws IOException {
-        return searchEnriched(query, "channel");
+        return searchByType(query, Collections.singletonList(InfoItem.InfoType.CHANNEL));
     }
 
     /**
      * Search for playlists by query with full details (with caching)
      */
-    @Cacheable(value = "youtubePlaylistSearch", key = "#query", unless = "#result == null || #result.isEmpty()")
+    @Cacheable(value = "newpipeSearchResults", key = "'playlist:' + #query", unless = "#result == null || #result.isEmpty()")
     public List<EnrichedSearchResult> searchPlaylistsEnriched(String query) throws IOException {
-        return searchEnriched(query, "playlist");
+        return searchByType(query, Collections.singletonList(InfoItem.InfoType.PLAYLIST));
     }
 
     /**
      * Search for videos by query with full statistics (with caching)
      */
-    @Cacheable(value = "youtubeVideoSearch", key = "#query", unless = "#result == null || #result.isEmpty()")
+    @Cacheable(value = "newpipeSearchResults", key = "'video:' + #query", unless = "#result == null || #result.isEmpty()")
     public List<EnrichedSearchResult> searchVideosEnriched(String query) throws IOException {
-        return searchEnriched(query, "video");
+        return searchByType(query, Collections.singletonList(InfoItem.InfoType.STREAM));
     }
 
     /**
-     * Enriched search method that fetches full statistics
+     * Search by specific type(s)
      */
-    private List<EnrichedSearchResult> searchEnriched(String query, String type) throws IOException {
-        if (apiKey == null || apiKey.isEmpty()) {
-            logger.warn("YouTube API key not configured");
-            return Collections.emptyList();
-        }
-
+    private List<EnrichedSearchResult> searchByType(String query, List<InfoItem.InfoType> types) throws IOException {
         try {
-            // First, do the search
-            YouTube.Search.List search = youtube.search().list(List.of("snippet"));
-            search.setKey(apiKey);
-            search.setQ(query);
-            search.setType(List.of(type));
-            search.setMaxResults(MAX_RESULTS);
+            logger.debug("Searching YouTube for type {} with query: '{}'", types, query);
 
-            SearchListResponse response = search.execute();
-            List<SearchResult> results = response.getItems() != null ? response.getItems() : Collections.emptyList();
+            SearchExtractor extractor = youtube.getSearchExtractor(query);
+            extractor.fetchPage();
 
-            // Convert to enriched results
-            List<EnrichedSearchResult> enrichedResults = results.stream()
-                    .map(r -> EnrichedSearchResult.fromSearchResult(r, type))
-                    .collect(Collectors.toList());
+            List<InfoItem> items = extractor.getInitialPage().getItems();
+            List<EnrichedSearchResult> results = new ArrayList<>();
 
-            // Enrich with additional data based on type
-            if ("channel".equals(type)) {
-                enrichChannelData(enrichedResults);
-            } else if ("playlist".equals(type)) {
-                enrichPlaylistData(enrichedResults);
-            } else if ("video".equals(type)) {
-                enrichVideoData(enrichedResults);
+            // Filter by requested types
+            for (InfoItem item : items) {
+                if (types.contains(item.getInfoType())) {
+                    EnrichedSearchResult result = convertToEnrichedResult(item);
+                    if (result != null) {
+                        results.add(result);
+                        if (results.size() >= DEFAULT_SEARCH_RESULTS) {
+                            break;
+                        }
+                    }
+                }
             }
 
-            return enrichedResults;
-
-        } catch (IOException e) {
-            logger.error("YouTube search failed for query '{}': {}", query, e.getMessage());
-            throw e;
-        }
-    }
-
-    /**
-     * Generic search method
-     * For videos and channels, we need to make additional API calls to get statistics
-     */
-    private List<SearchResult> search(String query, String type) throws IOException {
-        if (apiKey == null || apiKey.isEmpty()) {
-            logger.warn("YouTube API key not configured");
-            return Collections.emptyList();
-        }
-
-        try {
-            YouTube.Search.List search = youtube.search().list(List.of("snippet"));
-            search.setKey(apiKey);
-            search.setQ(query);
-            search.setType(List.of(type));
-            search.setMaxResults(MAX_RESULTS);
-            search.setFields("items(id,snippet(title,description,thumbnails,channelId,channelTitle,publishedAt))");
-
-            SearchListResponse response = search.execute();
-            List<SearchResult> results = response.getItems() != null ? response.getItems() : Collections.emptyList();
-
-            // Enrich results with statistics based on type
-            if ("channel".equals(type)) {
-                enrichChannelResults(results);
-            } else if ("playlist".equals(type)) {
-                enrichPlaylistResults(results);
-            } else if ("video".equals(type)) {
-                enrichVideoResults(results);
-            }
-
+            logger.debug("Search returned {} results for type {}", results.size(), types);
             return results;
 
-        } catch (IOException e) {
-            logger.error("YouTube search failed for query '{}': {}", query, e.getMessage());
-            throw e;
+        } catch (ExtractionException e) {
+            logger.error("NewPipe search failed for query '{}': {}", query, e.getMessage(), e);
+            throw new IOException("YouTube search failed: " + e.getMessage(), e);
         }
     }
 
     /**
-     * Get channel details by channel ID
+     * Get channel details by channel ID or URL
      */
-    public Channel getChannelDetails(String channelId) throws IOException {
-        YouTube.Channels.List request = youtube.channels().list(List.of("snippet", "statistics", "contentDetails"));
-        request.setKey(apiKey);
-        request.setId(List.of(channelId));
+    @Cacheable(value = "newpipeChannelInfo", key = "#channelId", unless = "#result == null")
+    public ChannelInfo getChannelDetails(String channelId) throws IOException {
+        try {
+            logger.debug("Fetching channel details for: {}", channelId);
 
-        ChannelListResponse response = request.execute();
-        List<Channel> channels = response.getItems();
+            // Create URL from channel ID
+            String url = channelLinkHandlerFactory.getUrl(channelId);
+            ChannelInfo info = ChannelInfo.getInfo(youtube, url);
 
-        return channels != null && !channels.isEmpty() ? channels.get(0) : null;
+            logger.debug("Channel '{}' has {} subscribers",
+                    info.getName(), info.getSubscriberCount());
+
+            return info;
+
+        } catch (ExtractionException e) {
+            logger.error("Failed to fetch channel details for '{}': {}", channelId, e.getMessage());
+            throw new IOException("Channel fetch failed: " + e.getMessage(), e);
+        }
     }
 
     /**
-     * Get videos from a channel
+     * Get videos from a channel (with pagination)
      */
-    public List<SearchResult> getChannelVideos(String channelId, String pageToken) throws IOException {
+    public List<StreamInfoItem> getChannelVideos(String channelId, String pageToken) throws IOException {
         return getChannelVideos(channelId, pageToken, null);
     }
 
     /**
-     * Get videos from a channel with optional search query
-     * @param channelId The YouTube channel ID
-     * @param pageToken Pagination token (can be null)
-     * @param searchQuery Optional search query to filter videos (can be null)
+     * Get videos from a channel with optional search filter
      */
-    public List<SearchResult> getChannelVideos(String channelId, String pageToken, String searchQuery) throws IOException {
-        YouTube.Search.List request = youtube.search().list(List.of("snippet"));
-        request.setKey(apiKey);
-        request.setChannelId(channelId);
-        request.setType(List.of("video"));
-        request.setOrder("date");
-        request.setMaxResults(MAX_RESULTS);
+    public List<StreamInfoItem> getChannelVideos(String channelId, String pageToken, String searchQuery) throws IOException {
+        logger.debug("Fetching videos for channel: {}, pageToken: {}, search: {}", channelId, pageToken, searchQuery);
 
-        // Add search query if provided (YouTube API supports this natively)
-        if (searchQuery != null && !searchQuery.trim().isEmpty()) {
-            request.setQ(searchQuery.trim());
+        ChannelInfo channelInfo = getChannelDetails(channelId);
+        List<StreamInfoItem> videos = new ArrayList<>();
+
+        // Get videos tab from channel tabs
+        try {
+            // Find the videos tab (usually the first tab or labeled as "Videos")
+            ListLinkHandler videosTab = null;
+            for (ListLinkHandler tab : channelInfo.getTabs()) {
+                if (tab.getContentFilters().isEmpty() ||
+                    tab.getContentFilters().contains("videos") ||
+                    tab.getContentFilters().contains("uploads")) {
+                    videosTab = tab;
+                    break;
+                }
+            }
+
+            if (videosTab == null) {
+                logger.warn("No videos tab found for channel: {}", channelId);
+                return videos;
+            }
+
+            // Fetch the tab to get videos
+            ChannelTabExtractor tabExtractor = youtube.getChannelTabExtractor(videosTab);
+            tabExtractor.fetchPage();
+
+            // Start with the requested page or initial page
+            ListExtractor.InfoItemsPage<InfoItem> page;
+            if (pageToken != null && !pageToken.isEmpty()) {
+                Page requestedPage = decodePageToken(pageToken);
+                if (requestedPage != null) {
+                    page = tabExtractor.getPage(requestedPage);
+                } else {
+                    page = tabExtractor.getInitialPage();
+                }
+            } else {
+                page = tabExtractor.getInitialPage();
+            }
+
+            // Iterate through pages with early termination
+            boolean hasSearchQuery = searchQuery != null && !searchQuery.trim().isEmpty();
+            String lowerQuery = hasSearchQuery ? searchQuery.trim().toLowerCase() : null;
+
+            while (page != null && videos.size() < DEFAULT_SEARCH_RESULTS) {
+                // Process items from current page
+                for (InfoItem item : page.getItems()) {
+                    if (item instanceof StreamInfoItem) {
+                        StreamInfoItem streamItem = (StreamInfoItem) item;
+
+                        // Apply search filter if provided
+                        if (hasSearchQuery) {
+                            if (streamItem.getName().toLowerCase().contains(lowerQuery)) {
+                                videos.add(streamItem);
+                            }
+                        } else {
+                            videos.add(streamItem);
+                        }
+
+                        // Early termination when we have enough results
+                        if (videos.size() >= DEFAULT_SEARCH_RESULTS) {
+                            break;
+                        }
+                    }
+                }
+
+                // Stop if we have enough results
+                if (videos.size() >= DEFAULT_SEARCH_RESULTS) {
+                    break;
+                }
+
+                // Fetch next page if available
+                if (page.hasNextPage()) {
+                    try {
+                        page = tabExtractor.getPage(page.getNextPage());
+                    } catch (Exception e) {
+                        logger.warn("Failed to fetch next page of videos: {}", e.getMessage());
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+
+        } catch (Exception e) {
+            logger.warn("Failed to fetch channel videos: {}", e.getMessage());
         }
 
-        if (pageToken != null && !pageToken.isEmpty()) {
-            request.setPageToken(pageToken);
-        }
-
-        SearchListResponse response = request.execute();
-        return response.getItems() != null ? response.getItems() : Collections.emptyList();
+        logger.debug("Fetched {} videos from channel", videos.size());
+        return videos;
     }
 
     /**
      * Get playlists from a channel
      */
-    public List<Playlist> getChannelPlaylists(String channelId, String pageToken) throws IOException {
-        YouTube.Playlists.List request = youtube.playlists().list(List.of("snippet", "contentDetails"));
-        request.setKey(apiKey);
-        request.setChannelId(channelId);
-        request.setMaxResults(MAX_RESULTS);
+    public List<PlaylistInfoItem> getChannelPlaylists(String channelId, String pageToken) throws IOException {
+        logger.debug("Fetching playlists for channel: {}, pageToken: {}", channelId, pageToken);
 
-        if (pageToken != null && !pageToken.isEmpty()) {
-            request.setPageToken(pageToken);
+        ChannelInfo channelInfo = getChannelDetails(channelId);
+
+        if (channelInfo == null) {
+            logger.warn("Channel info is null for channel: {}", channelId);
+            return Collections.emptyList();
         }
 
-        PlaylistListResponse response = request.execute();
-        return response.getItems() != null ? response.getItems() : Collections.emptyList();
+        // Get channel tabs and find playlists tab
+        List<ListLinkHandler> tabs = channelInfo.getTabs();
+        List<PlaylistInfoItem> playlists = new ArrayList<>();
+
+        if (tabs == null || tabs.isEmpty()) {
+            logger.warn("No tabs found for channel: {}", channelId);
+            return playlists;
+        }
+
+        logger.debug("Channel has {} tabs available", tabs.size());
+
+        try {
+            // Find the playlists tab
+            ListLinkHandler playlistsTab = null;
+            for (ListLinkHandler tab : tabs) {
+                if (tab.getContentFilters().contains("playlists")) {
+                    playlistsTab = tab;
+                    break;
+                }
+            }
+
+            if (playlistsTab == null) {
+                logger.debug("No playlists tab found for channel: {}", channelId);
+                return playlists;
+            }
+
+            // Fetch the playlists tab
+            ChannelTabExtractor tabExtractor = youtube.getChannelTabExtractor(playlistsTab);
+            tabExtractor.fetchPage();
+
+            // Get initial page or requested page
+            ListExtractor.InfoItemsPage<InfoItem> page;
+            if (pageToken != null && !pageToken.isEmpty()) {
+                Page requestedPage = decodePageToken(pageToken);
+                if (requestedPage != null) {
+                    page = tabExtractor.getPage(requestedPage);
+                } else {
+                    page = tabExtractor.getInitialPage();
+                }
+            } else {
+                page = tabExtractor.getInitialPage();
+            }
+
+            // Extract playlist items from the page
+            for (InfoItem item : page.getItems()) {
+                if (item instanceof PlaylistInfoItem) {
+                    playlists.add((PlaylistInfoItem) item);
+                }
+            }
+
+            logger.debug("Fetched {} playlists from channel", playlists.size());
+
+        } catch (ExtractionException e) {
+            String errorMsg = "Failed to fetch playlists for channel " + channelId + ": " + e.getMessage();
+            logger.error(errorMsg, e);
+            throw new IOException(errorMsg, e);
+        } catch (Exception e) {
+            String errorMsg = "Unexpected error fetching playlists for channel " + channelId + ": " + e.getMessage();
+            logger.error(errorMsg, e);
+            throw new IOException(errorMsg, e);
+        }
+
+        return playlists;
     }
 
     /**
-     * Get playlist details and videos
+     * Get playlist details by playlist ID
      */
-    public Playlist getPlaylistDetails(String playlistId) throws IOException {
-        YouTube.Playlists.List request = youtube.playlists().list(List.of("snippet", "contentDetails"));
-        request.setKey(apiKey);
-        request.setId(List.of(playlistId));
+    @Cacheable(value = "newpipePlaylistInfo", key = "#playlistId", unless = "#result == null")
+    public PlaylistInfo getPlaylistDetails(String playlistId) throws IOException {
+        try {
+            logger.debug("Fetching playlist details for: {}", playlistId);
 
-        PlaylistListResponse response = request.execute();
-        List<Playlist> playlists = response.getItems();
+            String url = playlistLinkHandlerFactory.getUrl(playlistId);
+            PlaylistInfo info = PlaylistInfo.getInfo(youtube, url);
 
-        return playlists != null && !playlists.isEmpty() ? playlists.get(0) : null;
+            logger.debug("Playlist '{}' has {} videos", info.getName(), info.getStreamCount());
+            return info;
+
+        } catch (ExtractionException e) {
+            logger.error("Failed to fetch playlist details for '{}': {}", playlistId, e.getMessage());
+            throw new IOException("Playlist fetch failed: " + e.getMessage(), e);
+        }
     }
 
     /**
-     * Get videos in a playlist
+     * Get videos in a playlist (with pagination)
      */
-    public List<PlaylistItem> getPlaylistVideos(String playlistId, String pageToken) throws IOException {
+    public List<StreamInfoItem> getPlaylistVideos(String playlistId, String pageToken) throws IOException {
         return getPlaylistVideos(playlistId, pageToken, null);
     }
 
     /**
-     * Get videos in a playlist with optional search query (client-side filtering)
-     * Note: YouTube API doesn't support search within playlists, so we filter results client-side
-     * @param playlistId The YouTube playlist ID
-     * @param pageToken Pagination token (can be null)
-     * @param searchQuery Optional search query to filter videos by title/description (can be null)
+     * Get videos in a playlist with optional search filter
      */
-    public List<PlaylistItem> getPlaylistVideos(String playlistId, String pageToken, String searchQuery) throws IOException {
-        YouTube.PlaylistItems.List request = youtube.playlistItems().list(List.of("snippet", "contentDetails"));
-        request.setKey(apiKey);
-        request.setPlaylistId(playlistId);
-        request.setMaxResults(MAX_RESULTS);
+    public List<StreamInfoItem> getPlaylistVideos(String playlistId, String pageToken, String searchQuery) throws IOException {
+        logger.debug("Fetching videos for playlist: {}, pageToken: {}, search: {}", playlistId, pageToken, searchQuery);
 
-        if (pageToken != null && !pageToken.isEmpty()) {
-            request.setPageToken(pageToken);
+        PlaylistInfo playlistInfo = getPlaylistDetails(playlistId);
+        List<StreamInfoItem> videos = new ArrayList<>();
+
+        // Get initial items from playlist
+        List<StreamInfoItem> relatedItems = playlistInfo.getRelatedItems();
+        if (relatedItems != null) {
+            videos.addAll(relatedItems);
         }
 
-        PlaylistItemListResponse response = request.execute();
-        List<PlaylistItem> items = response.getItems() != null ? response.getItems() : Collections.emptyList();
+        // If pageToken provided, fetch that page
+        if (pageToken != null && !pageToken.isEmpty()) {
+            try {
+                Page requestedPage = decodePageToken(pageToken);
+                if (requestedPage != null) {
+                    String url = playlistLinkHandlerFactory.getUrl(playlistId);
+                    ListExtractor.InfoItemsPage<StreamInfoItem> page = PlaylistInfo.getMoreItems(youtube, url, requestedPage);
+                    videos = new ArrayList<>(page.getItems());
+                }
+            } catch (Exception e) {
+                logger.warn("Failed to fetch page, using initial items: {}", e.getMessage());
+            }
+        }
 
-        // If search query provided, filter results client-side
+        // Filter by search query if provided
         if (searchQuery != null && !searchQuery.trim().isEmpty()) {
             String lowerQuery = searchQuery.trim().toLowerCase();
-            return items.stream()
-                    .filter(item -> {
-                        if (item.getSnippet() == null) return false;
-                        String title = item.getSnippet().getTitle();
-                        String desc = item.getSnippet().getDescription();
-                        return (title != null && title.toLowerCase().contains(lowerQuery)) ||
-                               (desc != null && desc.toLowerCase().contains(lowerQuery));
-                    })
+            videos = videos.stream()
+                    .filter(v -> v.getName().toLowerCase().contains(lowerQuery))
                     .collect(Collectors.toList());
         }
 
-        return items;
+        logger.debug("Fetched {} videos from playlist", videos.size());
+        return videos.stream().limit(DEFAULT_SEARCH_RESULTS).collect(Collectors.toList());
     }
 
     /**
-     * Get video details
+     * Get video details by video ID
      */
-    public Video getVideoDetails(String videoId) throws IOException {
-        YouTube.Videos.List request = youtube.videos().list(List.of("snippet", "statistics", "contentDetails"));
-        request.setKey(apiKey);
-        request.setId(List.of(videoId));
+    @Cacheable(value = "newpipeVideoInfo", key = "#videoId", unless = "#result == null")
+    public StreamInfo getVideoDetails(String videoId) throws IOException {
+        try {
+            logger.debug("Fetching video details for: {}", videoId);
 
-        VideoListResponse response = request.execute();
-        List<Video> videos = response.getItems();
+            String url = streamLinkHandlerFactory.getUrl(videoId);
+            StreamInfo info = StreamInfo.getInfo(youtube, url);
 
-        return videos != null && !videos.isEmpty() ? videos.get(0) : null;
+            logger.debug("Video '{}' has {} views, duration: {}s",
+                    info.getName(), info.getViewCount(), info.getDuration());
+
+            return info;
+
+        } catch (ExtractionException e) {
+            logger.error("Failed to fetch video details for '{}': {}", videoId, e.getMessage());
+            throw new IOException("Video fetch failed: " + e.getMessage(), e);
+        }
     }
 
     /**
-     * Enrich channel data with statistics using batch processing
+     * Validate and fetch channel by YouTube ID
      */
-    private void enrichChannelData(List<EnrichedSearchResult> results) throws IOException {
-        if (results == null || results.isEmpty()) {
-            return;
+    @Cacheable(value = "newpipeChannelValidation", key = "#youtubeId", unless = "#result == null")
+    public ChannelInfo validateAndFetchChannel(String youtubeId) {
+        try {
+            return getChannelDetails(youtubeId);
+        } catch (IOException e) {
+            logger.warn("Channel validation failed for {}: {}", youtubeId, e.getMessage());
+            return null;
         }
-
-        List<String> channelIds = results.stream()
-                .map(EnrichedSearchResult::getId)
-                .filter(id -> id != null && !id.isEmpty())
-                .collect(Collectors.toList());
-
-        if (channelIds.isEmpty()) {
-            return;
-        }
-
-        // Process in batches for better performance
-        Map<String, Channel> channelMap = Collections.synchronizedMap(new java.util.HashMap<>());
-        List<List<String>> batches = partitionList(channelIds, BATCH_SIZE);
-
-        for (List<String> batch : batches) {
-            YouTube.Channels.List request = youtube.channels().list(List.of("statistics"));
-            request.setKey(apiKey);
-            request.setId(batch);
-            request.setFields("items(id,statistics(subscriberCount,videoCount))"); // Request only needed fields
-
-            ChannelListResponse response = request.execute();
-            List<Channel> channels = response.getItems();
-
-            if (channels != null) {
-                channels.stream()
-                    .filter(ch -> ch.getId() != null)
-                    .forEach(ch -> channelMap.put(ch.getId(), ch));
-            }
-        }
-
-        // Enrich results with fetched data
-        results.parallelStream().forEach(result -> {
-            Channel channel = channelMap.get(result.getId());
-            if (channel != null && channel.getStatistics() != null) {
-                result.setSubscriberCount(channel.getStatistics().getSubscriberCount() != null ?
-                        channel.getStatistics().getSubscriberCount().longValue() : 0L);
-                result.setVideoCount(channel.getStatistics().getVideoCount() != null ?
-                        channel.getStatistics().getVideoCount().longValue() : 0L);
-            }
-        });
     }
 
     /**
-     * Enrich playlist data with content details and video thumbnails using batch processing
+     * Validate and fetch playlist by YouTube ID
      */
-    private void enrichPlaylistData(List<EnrichedSearchResult> results) throws IOException {
-        if (results == null || results.isEmpty()) {
-            return;
+    @Cacheable(value = "newpipePlaylistValidation", key = "#youtubeId", unless = "#result == null")
+    public PlaylistInfo validateAndFetchPlaylist(String youtubeId) {
+        try {
+            return getPlaylistDetails(youtubeId);
+        } catch (IOException e) {
+            logger.warn("Playlist validation failed for {}: {}", youtubeId, e.getMessage());
+            return null;
         }
-
-        List<String> playlistIds = results.stream()
-                .map(EnrichedSearchResult::getId)
-                .filter(id -> id != null && !id.isEmpty())
-                .collect(Collectors.toList());
-
-        if (playlistIds.isEmpty()) {
-            return;
-        }
-
-        // Process in batches for better performance
-        Map<String, Playlist> playlistMap = Collections.synchronizedMap(new java.util.HashMap<>());
-        List<List<String>> batches = partitionList(playlistIds, BATCH_SIZE);
-
-        for (List<String> batch : batches) {
-            YouTube.Playlists.List request = youtube.playlists().list(List.of("contentDetails"));
-            request.setKey(apiKey);
-            request.setId(batch);
-            request.setFields("items(id,contentDetails/itemCount)"); // Request only needed fields
-
-            PlaylistListResponse response = request.execute();
-            List<Playlist> playlists = response.getItems();
-
-            if (playlists != null) {
-                playlists.stream()
-                    .filter(pl -> pl.getId() != null)
-                    .forEach(pl -> playlistMap.put(pl.getId(), pl));
-            }
-        }
-
-        // Enrich results with fetched data and video thumbnails
-        results.parallelStream().forEach(result -> {
-            Playlist playlist = playlistMap.get(result.getId());
-            if (playlist != null && playlist.getContentDetails() != null) {
-                result.setItemCount(playlist.getContentDetails().getItemCount() != null ?
-                        playlist.getContentDetails().getItemCount().longValue() : 0L);
-            }
-
-            // Fetch first 4 video thumbnails for playlist
-            try {
-                List<String> thumbnails = fetchPlaylistVideoThumbnails(result.getId(), 4);
-                result.setVideoThumbnails(thumbnails);
-            } catch (IOException e) {
-                logger.warn("Failed to fetch video thumbnails for playlist {}: {}", result.getId(), e.getMessage());
-                result.setVideoThumbnails(Collections.emptyList());
-            }
-        });
     }
 
     /**
-     * Fetch first N video thumbnails from a playlist
+     * Validate and fetch video by YouTube ID
      */
-    private List<String> fetchPlaylistVideoThumbnails(String playlistId, int count) throws IOException {
-        YouTube.PlaylistItems.List request = youtube.playlistItems().list(List.of("snippet"));
-        request.setKey(apiKey);
-        request.setPlaylistId(playlistId);
-        request.setMaxResults((long) count);
-        request.setFields("items(snippet/thumbnails)");
+    @Cacheable(value = "newpipeVideoValidation", key = "#youtubeId", unless = "#result == null")
+    public StreamInfo validateAndFetchVideo(String youtubeId) {
+        try {
+            return getVideoDetails(youtubeId);
+        } catch (IOException e) {
+            logger.warn("Video validation failed for {}: {}", youtubeId, e.getMessage());
+            return null;
+        }
+    }
 
-        PlaylistItemListResponse response = request.execute();
-        List<PlaylistItem> items = response.getItems();
-
-        if (items == null || items.isEmpty()) {
-            return Collections.emptyList();
+    /**
+     * Batch validate and fetch channels
+     * More efficient than individual calls when validating multiple channels
+     */
+    public Map<String, ChannelInfo> batchValidateChannels(List<String> youtubeIds) {
+        if (youtubeIds == null || youtubeIds.isEmpty()) {
+            return Collections.emptyMap();
         }
 
-        return items.stream()
-                .filter(item -> item.getSnippet() != null && item.getSnippet().getThumbnails() != null)
-                .map(item -> {
-                    ThumbnailDetails thumbnails = item.getSnippet().getThumbnails();
-                    if (thumbnails.getMedium() != null) {
-                        return thumbnails.getMedium().getUrl();
-                    } else if (thumbnails.getDefault() != null) {
-                        return thumbnails.getDefault().getUrl();
+        logger.debug("Batch validating {} channels", youtubeIds.size());
+
+        Map<String, ChannelInfo> channelMap = Collections.synchronizedMap(new HashMap<>());
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+
+        for (String channelId : youtubeIds) {
+            CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+                try {
+                    ChannelInfo info = getChannelDetails(channelId);
+                    if (info != null) {
+                        channelMap.put(channelId, info);
                     }
-                    return null;
-                })
-                .filter(url -> url != null)
-                .limit(count)
-                .collect(Collectors.toList());
-    }
-
-    /**
-     * Enrich video data with statistics and content details using batch processing
-     */
-    private void enrichVideoData(List<EnrichedSearchResult> results) throws IOException {
-        if (results == null || results.isEmpty()) {
-            return;
-        }
-
-        List<String> videoIds = results.stream()
-                .map(EnrichedSearchResult::getId)
-                .filter(id -> id != null && !id.isEmpty())
-                .collect(Collectors.toList());
-
-        if (videoIds.isEmpty()) {
-            return;
-        }
-
-        // Process in batches for better performance
-        Map<String, Video> videoMap = Collections.synchronizedMap(new java.util.HashMap<>());
-        List<List<String>> batches = partitionList(videoIds, BATCH_SIZE);
-
-        for (List<String> batch : batches) {
-            YouTube.Videos.List request = youtube.videos().list(List.of("statistics", "contentDetails"));
-            request.setKey(apiKey);
-            request.setId(batch);
-            request.setFields("items(id,statistics/viewCount,contentDetails/duration)"); // Request only needed fields
-
-            VideoListResponse response = request.execute();
-            List<Video> videos = response.getItems();
-
-            if (videos != null) {
-                videos.stream()
-                    .filter(v -> v.getId() != null)
-                    .forEach(v -> videoMap.put(v.getId(), v));
-            }
-        }
-
-        // Enrich results with fetched data
-        results.parallelStream().forEach(result -> {
-            Video video = videoMap.get(result.getId());
-            if (video != null) {
-                if (video.getStatistics() != null) {
-                    result.setViewCount(video.getStatistics().getViewCount() != null ?
-                            video.getStatistics().getViewCount().longValue() : 0L);
+                } catch (IOException e) {
+                    logger.warn("Failed to validate channel {}: {}", channelId, e.getMessage());
                 }
-                if (video.getContentDetails() != null) {
-                    result.setDuration(video.getContentDetails().getDuration());
+            }, executorService);
+            futures.add(future);
+        }
+
+        // Wait for all validations to complete
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
+        logger.debug("Batch validation completed: {}/{} channels found", channelMap.size(), youtubeIds.size());
+        return channelMap;
+    }
+
+    /**
+     * Batch validate and fetch playlists
+     */
+    public Map<String, PlaylistInfo> batchValidatePlaylists(List<String> youtubeIds) {
+        if (youtubeIds == null || youtubeIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        logger.debug("Batch validating {} playlists", youtubeIds.size());
+
+        Map<String, PlaylistInfo> playlistMap = Collections.synchronizedMap(new HashMap<>());
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+
+        for (String playlistId : youtubeIds) {
+            CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+                try {
+                    PlaylistInfo info = getPlaylistDetails(playlistId);
+                    if (info != null) {
+                        playlistMap.put(playlistId, info);
+                    }
+                } catch (IOException e) {
+                    logger.warn("Failed to validate playlist {}: {}", playlistId, e.getMessage());
                 }
+            }, executorService);
+            futures.add(future);
+        }
+
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
+        logger.debug("Batch validation completed: {}/{} playlists found", playlistMap.size(), youtubeIds.size());
+        return playlistMap;
+    }
+
+    /**
+     * Batch validate and fetch videos
+     */
+    public Map<String, StreamInfo> batchValidateVideos(List<String> youtubeIds) {
+        if (youtubeIds == null || youtubeIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        logger.debug("Batch validating {} videos", youtubeIds.size());
+
+        Map<String, StreamInfo> videoMap = Collections.synchronizedMap(new HashMap<>());
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+
+        for (String videoId : youtubeIds) {
+            CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+                try {
+                    StreamInfo info = getVideoDetails(videoId);
+                    if (info != null) {
+                        videoMap.put(videoId, info);
+                    }
+                } catch (IOException e) {
+                    logger.warn("Failed to validate video {}: {}", videoId, e.getMessage());
+                }
+            }, executorService);
+            futures.add(future);
+        }
+
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
+        logger.debug("Batch validation completed: {}/{} videos found", videoMap.size(), youtubeIds.size());
+        return videoMap;
+    }
+
+    // ==================== Helper Methods ====================
+
+    /**
+     * Convert NewPipe InfoItem to EnrichedSearchResult
+     */
+    private EnrichedSearchResult convertToEnrichedResult(InfoItem item) {
+        try {
+            if (item instanceof ChannelInfoItem) {
+                return EnrichedSearchResult.fromChannelInfoItem((ChannelInfoItem) item);
+            } else if (item instanceof PlaylistInfoItem) {
+                return EnrichedSearchResult.fromPlaylistInfoItem((PlaylistInfoItem) item);
+            } else if (item instanceof StreamInfoItem) {
+                return EnrichedSearchResult.fromStreamInfoItem((StreamInfoItem) item);
             }
-        });
+            return null;
+        } catch (Exception e) {
+            logger.warn("Failed to convert InfoItem to EnrichedSearchResult: {}", e.getMessage());
+            return null;
+        }
     }
 
     /**
-     * Enrich channel search results with statistics (old method for backward compatibility)
+     * Encode NewPipe Page object to string token
      */
-    private void enrichChannelResults(List<SearchResult> results) throws IOException {
-        // Keep for backward compatibility
+    private String encodePageToken(Page page) {
+        if (page == null) {
+            return null;
+        }
+        // Simple encoding: just use the page URL
+        // More sophisticated encoding could use Base64
+        try {
+            return page.getUrl();
+        } catch (Exception e) {
+            logger.warn("Failed to encode page token: {}", e.getMessage());
+            return null;
+        }
     }
 
     /**
-     * Enrich playlist search results with content details (old method for backward compatibility)
+     * Decode string token to NewPipe Page object
      */
-    private void enrichPlaylistResults(List<SearchResult> results) throws IOException {
-        // Keep for backward compatibility
-    }
-
-    /**
-     * Enrich video search results with statistics and content details (old method for backward compatibility)
-     */
-    private void enrichVideoResults(List<SearchResult> results) throws IOException {
-        // Keep for backward compatibility
+    private Page decodePageToken(String token) {
+        if (token == null || token.isEmpty()) {
+            return null;
+        }
+        try {
+            // Simple decoding: create Page from URL
+            return new Page(token);
+        } catch (Exception e) {
+            logger.warn("Failed to decode page token: {}", e.getMessage());
+            return null;
+        }
     }
 
     /**
@@ -590,155 +728,4 @@ public class YouTubeService {
         }
         return partitions;
     }
-
-    /**
-     * Validate and fetch channel by YouTube ID.
-     * Returns channel details if exists, null if not found (404) or deleted.
-     * Used for import validation to check if YouTube content still exists.
-     */
-    @Cacheable(value = "youtubeChannelValidation", key = "#youtubeId", unless = "#result == null")
-    public Channel validateAndFetchChannel(String youtubeId) {
-        try {
-            return getChannelDetails(youtubeId);
-        } catch (IOException e) {
-            logger.warn("Channel validation failed for {}: {}", youtubeId, e.getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * Validate and fetch playlist by YouTube ID.
-     * Returns playlist details if exists, null if not found (404) or deleted.
-     * Used for import validation to check if YouTube content still exists.
-     */
-    @Cacheable(value = "youtubePlaylistValidation", key = "#youtubeId", unless = "#result == null")
-    public Playlist validateAndFetchPlaylist(String youtubeId) {
-        try {
-            return getPlaylistDetails(youtubeId);
-        } catch (IOException e) {
-            logger.warn("Playlist validation failed for {}: {}", youtubeId, e.getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * Validate and fetch video by YouTube ID.
-     * Returns video details if exists, null if not found (404) or deleted.
-     * Used for import validation to check if YouTube content still exists.
-     */
-    @Cacheable(value = "youtubeVideoValidation", key = "#youtubeId", unless = "#result == null")
-    public Video validateAndFetchVideo(String youtubeId) {
-        try {
-            return getVideoDetails(youtubeId);
-        } catch (IOException e) {
-            logger.warn("Video validation failed for {}: {}", youtubeId, e.getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * Batch validate and fetch channels.
-     * More efficient than individual calls when validating multiple channels.
-     * Returns map of youtubeId -> Channel (only includes found channels).
-     */
-    public Map<String, Channel> batchValidateChannels(List<String> youtubeIds) {
-        if (youtubeIds == null || youtubeIds.isEmpty()) {
-            return Collections.emptyMap();
-        }
-
-        Map<String, Channel> channelMap = new java.util.HashMap<>();
-        List<List<String>> batches = partitionList(youtubeIds, BATCH_SIZE);
-
-        for (List<String> batch : batches) {
-            try {
-                YouTube.Channels.List request = youtube.channels().list(List.of("snippet", "statistics"));
-                request.setKey(apiKey);
-                request.setId(batch);
-
-                ChannelListResponse response = request.execute();
-                List<Channel> channels = response.getItems();
-
-                if (channels != null) {
-                    channels.stream()
-                        .filter(ch -> ch.getId() != null)
-                        .forEach(ch -> channelMap.put(ch.getId(), ch));
-                }
-            } catch (IOException e) {
-                logger.warn("Batch channel validation failed for batch: {}", e.getMessage());
-            }
-        }
-
-        return channelMap;
-    }
-
-    /**
-     * Batch validate and fetch playlists.
-     * More efficient than individual calls when validating multiple playlists.
-     * Returns map of youtubeId -> Playlist (only includes found playlists).
-     */
-    public Map<String, Playlist> batchValidatePlaylists(List<String> youtubeIds) {
-        if (youtubeIds == null || youtubeIds.isEmpty()) {
-            return Collections.emptyMap();
-        }
-
-        Map<String, Playlist> playlistMap = new java.util.HashMap<>();
-        List<List<String>> batches = partitionList(youtubeIds, BATCH_SIZE);
-
-        for (List<String> batch : batches) {
-            try {
-                YouTube.Playlists.List request = youtube.playlists().list(List.of("snippet", "contentDetails"));
-                request.setKey(apiKey);
-                request.setId(batch);
-
-                PlaylistListResponse response = request.execute();
-                List<Playlist> playlists = response.getItems();
-
-                if (playlists != null) {
-                    playlists.stream()
-                        .filter(pl -> pl.getId() != null)
-                        .forEach(pl -> playlistMap.put(pl.getId(), pl));
-                }
-            } catch (IOException e) {
-                logger.warn("Batch playlist validation failed for batch: {}", e.getMessage());
-            }
-        }
-
-        return playlistMap;
-    }
-
-    /**
-     * Batch validate and fetch videos.
-     * More efficient than individual calls when validating multiple videos.
-     * Returns map of youtubeId -> Video (only includes found videos).
-     */
-    public Map<String, Video> batchValidateVideos(List<String> youtubeIds) {
-        if (youtubeIds == null || youtubeIds.isEmpty()) {
-            return Collections.emptyMap();
-        }
-
-        Map<String, Video> videoMap = new java.util.HashMap<>();
-        List<List<String>> batches = partitionList(youtubeIds, BATCH_SIZE);
-
-        for (List<String> batch : batches) {
-            try {
-                YouTube.Videos.List request = youtube.videos().list(List.of("snippet", "statistics", "contentDetails"));
-                request.setKey(apiKey);
-                request.setId(batch);
-
-                VideoListResponse response = request.execute();
-                List<Video> videos = response.getItems();
-
-                if (videos != null) {
-                    videos.stream()
-                        .filter(v -> v.getId() != null)
-                        .forEach(v -> videoMap.put(v.getId(), v));
-                }
-            } catch (IOException e) {
-                logger.warn("Batch video validation failed for batch: {}", e.getMessage());
-            }
-        }
-
-        return videoMap;
-    }
 }
-
