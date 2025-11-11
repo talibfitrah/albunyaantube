@@ -70,7 +70,10 @@ cat docs/status/ANDROID_GUIDE.md
 - **Status**: ~60% complete - Backend & frontend working, Android ready for testing
 
 ### Critical Policy
-- **Test Timeout**: All tests must complete in 300 seconds (5 minutes) - see AGENTS.md
+- **Test Timeout**: All tests must complete in 300 seconds (5 minutes)
+  - Backend: Integration tests excluded by default (require Firebase emulator)
+  - Run `./gradlew test -Pintegration=true` to include integration tests
+  - Tests enforce 30-second timeout per test method to prevent hanging
 - **Internationalization**: English, Arabic (RTL), Dutch supported across all platforms
 - **Firebase**: Firestore (database), Auth (authentication), Cloud Storage (downloads)
 
@@ -90,8 +93,11 @@ cd backend
 # Run backend locally (starts on http://localhost:8080)
 ./gradlew bootRun
 
-# Run tests (JUnit 5)
+# Run tests (JUnit 5) - excludes integration tests by default
 ./gradlew test
+
+# Run ALL tests including integration tests (requires Firebase emulator)
+./gradlew test -Pintegration=true
 
 # Build JAR artifact
 ./gradlew bootJar

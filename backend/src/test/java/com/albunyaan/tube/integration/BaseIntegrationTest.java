@@ -4,6 +4,7 @@ import com.albunyaan.tube.util.FirestoreTestHelper;
 import com.google.cloud.firestore.Firestore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
@@ -14,9 +15,12 @@ import java.util.concurrent.ExecutionException;
  * BACKEND-TEST-01: Base Integration Test
  *
  * Base class for integration tests with Firestore setup/teardown.
+ * Tagged with @Tag("integration") to allow selective test execution.
+ * Run with: ./gradlew test -Pintegration=true
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
+@Tag("integration")
 public abstract class BaseIntegrationTest {
 
     @Autowired

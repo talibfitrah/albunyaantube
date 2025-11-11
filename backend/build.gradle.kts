@@ -1,4 +1,5 @@
 import org.gradle.api.tasks.testing.logging.TestLogEvent
+import java.time.Duration
 
 plugins {
     id("java")
@@ -55,11 +56,25 @@ gatling {
 }
 
 tasks.test {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        // AGENTS.md: Exclude integration tests by default (require Firebase emulator)
+        // Run with -Pintegration=true to include integration tests
+        if (!project.hasProperty("integration")) {
+            excludeTags("integration")
+        }
+    }
+
     testLogging {
         events = setOf(TestLogEvent.FAILED, TestLogEvent.PASSED, TestLogEvent.SKIPPED)
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
     }
+
+    // AGENTS.md: Enforce 300-second (5-minute) timeout for all tests
+    timeout.set(Duration.ofSeconds(300))
+
+    // Set test timeouts to prevent hanging
+    systemProperty("junit.jupiter.execution.timeout.default", "30s")
+    systemProperty("junit.jupiter.execution.timeout.testable.method.default", "30s")
 }
 
 tasks.bootJar {
