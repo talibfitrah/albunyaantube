@@ -73,7 +73,7 @@ cat docs/status/ANDROID_GUIDE.md
 - **Test Timeout**: All tests must complete in 300 seconds (5 minutes)
   - Backend: Integration tests excluded by default (require Firebase emulator)
   - Run `./gradlew test -Pintegration=true` to include integration tests
-  - Tests enforce 30-second timeout per test method to prevent hanging
+  - Enforce 30-second timeout per test method to prevent hanging
 - **Internationalization**: English, Arabic (RTL), Dutch supported across all platforms
 - **Firebase**: Firestore (database), Auth (authentication), Cloud Storage (downloads)
 
