@@ -1,5 +1,6 @@
 package com.albunyaan.tube.dto;
 
+import com.albunyaan.tube.util.YouTubeUrlUtils;
 import org.schabi.newpipe.extractor.Image;
 import org.schabi.newpipe.extractor.channel.ChannelInfoItem;
 import org.schabi.newpipe.extractor.playlist.PlaylistInfoItem;
@@ -43,7 +44,7 @@ public class EnrichedSearchResult {
     public static EnrichedSearchResult fromChannelInfoItem(ChannelInfoItem channel) {
         EnrichedSearchResult result = new EnrichedSearchResult();
         result.setType("channel");
-        result.setId(extractYouTubeId(channel.getUrl()));
+        result.setId(YouTubeUrlUtils.extractYouTubeId(channel.getUrl()));
         result.setTitle(channel.getName());
         result.setDescription(channel.getDescription());
         result.setThumbnailUrl(getBestThumbnailUrl(channel.getThumbnails()));
@@ -58,7 +59,7 @@ public class EnrichedSearchResult {
     public static EnrichedSearchResult fromPlaylistInfoItem(PlaylistInfoItem playlist) {
         EnrichedSearchResult result = new EnrichedSearchResult();
         result.setType("playlist");
-        result.setId(extractYouTubeId(playlist.getUrl()));
+        result.setId(YouTubeUrlUtils.extractYouTubeId(playlist.getUrl()));
         result.setTitle(playlist.getName());
         // Note: PlaylistInfoItem (from search results) does not provide description
         // Description is only available in PlaylistInfo (full playlist details)
@@ -76,11 +77,11 @@ public class EnrichedSearchResult {
     public static EnrichedSearchResult fromStreamInfoItem(StreamInfoItem stream) {
         EnrichedSearchResult result = new EnrichedSearchResult();
         result.setType("video");
-        result.setId(extractYouTubeId(stream.getUrl()));
+        result.setId(YouTubeUrlUtils.extractYouTubeId(stream.getUrl()));
         result.setTitle(stream.getName());
         result.setDescription("");
         result.setThumbnailUrl(getBestThumbnailUrl(stream.getThumbnails()));
-        result.setChannelId(extractYouTubeId(stream.getUploaderUrl()));
+        result.setChannelId(YouTubeUrlUtils.extractYouTubeId(stream.getUploaderUrl()));
         result.setChannelTitle(stream.getUploaderName());
         result.setViewCount(stream.getViewCount());
         result.setDuration(formatDuration(stream.getDuration()));
@@ -97,29 +98,6 @@ public class EnrichedSearchResult {
         }
 
         return result;
-    }
-
-    /**
-     * Extract YouTube ID from URL
-     * e.g., "https://www.youtube.com/channel/UCxxxxxx" -> "UCxxxxxx"
-     */
-    private static String extractYouTubeId(String url) {
-        if (url == null || url.isEmpty()) {
-            return null;
-        }
-        // Extract last segment from URL
-        String[] parts = url.split("/");
-        if (parts.length == 0) {
-            return null;
-        }
-        String lastPart = parts[parts.length - 1];
-        // Remove query parameters if present
-        String extractedId = lastPart.split("\\?")[0];
-        // Return null if extraction resulted in empty string
-        if (extractedId.isEmpty()) {
-            return null;
-        }
-        return extractedId;
     }
 
     /**

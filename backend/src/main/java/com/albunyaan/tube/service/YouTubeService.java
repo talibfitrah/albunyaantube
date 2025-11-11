@@ -2,6 +2,7 @@ package com.albunyaan.tube.service;
 
 import com.albunyaan.tube.dto.EnrichedSearchResult;
 import com.albunyaan.tube.dto.SearchPageResponse;
+import com.albunyaan.tube.util.YouTubeUrlUtils;
 import org.schabi.newpipe.extractor.InfoItem;
 import org.schabi.newpipe.extractor.ListExtractor;
 import org.schabi.newpipe.extractor.NewPipe;
@@ -728,7 +729,7 @@ public class YouTubeService {
         }
 
         com.albunyaan.tube.dto.ChannelDetailsDto dto = new com.albunyaan.tube.dto.ChannelDetailsDto();
-        dto.setId(extractYouTubeId(channel.getUrl()));
+        dto.setId(YouTubeUrlUtils.extractYouTubeId(channel.getUrl()));
         dto.setName(channel.getName());
         dto.setUrl(channel.getUrl());
         dto.setDescription(channel.getDescription());
@@ -758,7 +759,7 @@ public class YouTubeService {
         }
 
         com.albunyaan.tube.dto.PlaylistDetailsDto dto = new com.albunyaan.tube.dto.PlaylistDetailsDto();
-        dto.setId(extractYouTubeId(playlist.getUrl()));
+        dto.setId(YouTubeUrlUtils.extractYouTubeId(playlist.getUrl()));
         dto.setName(playlist.getName());
         dto.setUrl(playlist.getUrl());
         dto.setDescription(playlist.getDescription() != null ? playlist.getDescription().getContent() : "");
@@ -792,7 +793,7 @@ public class YouTubeService {
         }
 
         com.albunyaan.tube.dto.StreamDetailsDto dto = new com.albunyaan.tube.dto.StreamDetailsDto();
-        dto.setId(extractYouTubeId(stream.getUrl()));
+        dto.setId(YouTubeUrlUtils.extractYouTubeId(stream.getUrl()));
         dto.setName(stream.getName());
         dto.setUrl(stream.getUrl());
         dto.setDescription(stream.getDescription() != null ? stream.getDescription().getContent() : "");
@@ -833,7 +834,7 @@ public class YouTubeService {
         }
 
         com.albunyaan.tube.dto.StreamItemDto dto = new com.albunyaan.tube.dto.StreamItemDto();
-        dto.setId(extractYouTubeId(stream.getUrl()));
+        dto.setId(YouTubeUrlUtils.extractYouTubeId(stream.getUrl()));
         dto.setName(stream.getName());
         dto.setUrl(stream.getUrl());
         dto.setUploaderName(stream.getUploaderName());
@@ -869,7 +870,7 @@ public class YouTubeService {
         }
 
         com.albunyaan.tube.dto.PlaylistItemDto dto = new com.albunyaan.tube.dto.PlaylistItemDto();
-        dto.setId(extractYouTubeId(playlist.getUrl()));
+        dto.setId(YouTubeUrlUtils.extractYouTubeId(playlist.getUrl()));
         dto.setName(playlist.getName());
         dto.setUrl(playlist.getUrl());
         dto.setUploaderName(playlist.getUploaderName());
@@ -881,22 +882,5 @@ public class YouTubeService {
         }
 
         return dto;
-    }
-
-    /**
-     * Extract YouTube ID from URL
-     */
-    private String extractYouTubeId(String url) {
-        if (url == null || url.isEmpty()) {
-            return null;
-        }
-        // Extract last segment from URL
-        String[] parts = url.split("/");
-        if (parts.length > 0) {
-            String lastPart = parts[parts.length - 1];
-            // Remove query parameters if present
-            return lastPart.split("\\?")[0];
-        }
-        return null;
     }
 }

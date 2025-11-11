@@ -8,6 +8,7 @@ import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
+import com.albunyaan.tube.util.YouTubeUrlUtils;
 import com.google.cloud.Timestamp;
 import org.schabi.newpipe.extractor.channel.ChannelInfo;
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo;
@@ -442,7 +443,7 @@ public class SimpleImportService {
                     if (ytVideo.getDescription() != null && ytVideo.getDescription().getContent() != null) {
                         video.setDescription(ytVideo.getDescription().getContent());
                     }
-                    video.setChannelId(extractYouTubeId(ytVideo.getUploaderUrl()));
+                    video.setChannelId(YouTubeUrlUtils.extractYouTubeId(ytVideo.getUploaderUrl()));
                     video.setChannelTitle(ytVideo.getUploaderName());
 
                     // Get best thumbnail from NewPipe
@@ -518,24 +519,6 @@ public class SimpleImportService {
                 ));
             }
         }
-    }
-
-    /**
-     * Extract YouTube ID from URL
-     * e.g., "https://www.youtube.com/channel/UCxxxxxx" -> "UCxxxxxx"
-     */
-    private String extractYouTubeId(String url) {
-        if (url == null || url.isEmpty()) {
-            return null;
-        }
-        // Extract last segment from URL
-        String[] parts = url.split("/");
-        if (parts.length > 0) {
-            String lastPart = parts[parts.length - 1];
-            // Remove query parameters if present
-            return lastPart.split("\\?")[0];
-        }
-        return url;
     }
 }
 
