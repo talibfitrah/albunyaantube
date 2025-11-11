@@ -132,6 +132,11 @@ public class VideoValidationService {
                         logger.info("Video marked as unavailable - youtubeId: {}, title: {}",
                                 video.getYoutubeId(), video.getTitle());
                     }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    errorCount++;
+                    logger.error("Video validation interrupted for {}: {}", video.getYoutubeId(), e.getMessage(), e);
+                    break; // Exit loop when interrupted
                 } catch (Exception e) {
                     errorCount++;
                     logger.error("Error validating video {}: {}", video.getYoutubeId(), e.getMessage(), e);
@@ -150,6 +155,16 @@ public class VideoValidationService {
             logger.info("Video validation completed - checked: {}, unavailable: {}, errors: {}",
                     checkedCount, unavailableCount, errorCount);
 
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.error("Video validation interrupted", e);
+            validationRun.complete("FAILED");
+            validationRun.addDetail("errorMessage", "Validation interrupted: " + e.getMessage());
+            try {
+                validationRunRepository.save(validationRun);
+            } catch (Exception saveException) {
+                logger.error("Failed to save validation run after interruption", saveException);
+            }
         } catch (Exception e) {
             logger.error("Video validation failed", e);
             validationRun.complete("FAILED");
@@ -266,6 +281,16 @@ public class VideoValidationService {
             logger.info("Specific video validation completed - checked: {}, unavailable: {}",
                     checkedCount, unavailableCount);
 
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.error("Specific video validation interrupted", e);
+            validationRun.complete("FAILED");
+            validationRun.addDetail("errorMessage", "Validation interrupted: " + e.getMessage());
+            try {
+                validationRunRepository.save(validationRun);
+            } catch (Exception saveException) {
+                logger.error("Failed to save validation run after interruption", saveException);
+            }
         } catch (Exception e) {
             logger.error("Specific video validation failed", e);
             validationRun.complete("FAILED");
