@@ -109,12 +109,17 @@ public class EnrichedSearchResult {
         }
         // Extract last segment from URL
         String[] parts = url.split("/");
-        if (parts.length > 0) {
-            String lastPart = parts[parts.length - 1];
-            // Remove query parameters if present
-            return lastPart.split("\\?")[0];
+        if (parts.length == 0) {
+            return null;
         }
-        return url;
+        String lastPart = parts[parts.length - 1];
+        // Remove query parameters if present
+        String extractedId = lastPart.split("\\?")[0];
+        // Return null if extraction resulted in empty string
+        if (extractedId.isEmpty()) {
+            return null;
+        }
+        return extractedId;
     }
 
     /**

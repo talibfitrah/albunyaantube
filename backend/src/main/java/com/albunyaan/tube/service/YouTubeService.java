@@ -53,7 +53,6 @@ public class YouTubeService {
 
     private static final Logger logger = LoggerFactory.getLogger(YouTubeService.class);
     private static final int DEFAULT_SEARCH_RESULTS = 20;
-    private static final int BATCH_SIZE = 20; // Process in smaller batches for NewPipe
     private static final ExecutorService executorService = Executors.newFixedThreadPool(3);
 
     private final StreamingService youtube;
@@ -718,14 +717,186 @@ public class YouTubeService {
         }
     }
 
+    // ==================== DTO Mapping Methods ====================
+
     /**
-     * Utility method to partition a list into batches
+     * Map ChannelInfo to ChannelDetailsDto
      */
-    private <T> List<List<T>> partitionList(List<T> list, int batchSize) {
-        List<List<T>> partitions = new ArrayList<>();
-        for (int i = 0; i < list.size(); i += batchSize) {
-            partitions.add(list.subList(i, Math.min(i + batchSize, list.size())));
+    public com.albunyaan.tube.dto.ChannelDetailsDto mapToChannelDetailsDto(ChannelInfo channel) {
+        if (channel == null) {
+            return null;
         }
-        return partitions;
+
+        com.albunyaan.tube.dto.ChannelDetailsDto dto = new com.albunyaan.tube.dto.ChannelDetailsDto();
+        dto.setId(extractYouTubeId(channel.getUrl()));
+        dto.setName(channel.getName());
+        dto.setUrl(channel.getUrl());
+        dto.setDescription(channel.getDescription());
+        dto.setSubscriberCount(channel.getSubscriberCount());
+        dto.setStreamCount(null); // Not available in ChannelInfo
+        dto.setTags(channel.getTags());
+
+        // Handle avatars (channels have avatars, not thumbnails)
+        if (channel.getAvatars() != null && !channel.getAvatars().isEmpty()) {
+            dto.setThumbnailUrl(channel.getAvatars().get(0).getUrl());
+        }
+
+        // Handle banners
+        if (channel.getBanners() != null && !channel.getBanners().isEmpty()) {
+            dto.setBannerUrl(channel.getBanners().get(0).getUrl());
+        }
+
+        return dto;
+    }
+
+    /**
+     * Map PlaylistInfo to PlaylistDetailsDto
+     */
+    public com.albunyaan.tube.dto.PlaylistDetailsDto mapToPlaylistDetailsDto(PlaylistInfo playlist) {
+        if (playlist == null) {
+            return null;
+        }
+
+        com.albunyaan.tube.dto.PlaylistDetailsDto dto = new com.albunyaan.tube.dto.PlaylistDetailsDto();
+        dto.setId(extractYouTubeId(playlist.getUrl()));
+        dto.setName(playlist.getName());
+        dto.setUrl(playlist.getUrl());
+        dto.setDescription(playlist.getDescription() != null ? playlist.getDescription().getContent() : "");
+        dto.setUploaderName(playlist.getUploaderName());
+        dto.setUploaderUrl(playlist.getUploaderUrl());
+        dto.setStreamCount(playlist.getStreamCount());
+
+        // Handle thumbnail
+        if (playlist.getThumbnails() != null && !playlist.getThumbnails().isEmpty()) {
+            dto.setThumbnailUrl(playlist.getThumbnails().get(0).getUrl());
+        }
+
+        // Map related streams
+        if (playlist.getRelatedItems() != null) {
+            List<com.albunyaan.tube.dto.StreamItemDto> streamItems = playlist.getRelatedItems().stream()
+                    .map(this::mapToStreamItemDto)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+            dto.setRelatedStreams(streamItems);
+        }
+
+        return dto;
+    }
+
+    /**
+     * Map StreamInfo to StreamDetailsDto
+     */
+    public com.albunyaan.tube.dto.StreamDetailsDto mapToStreamDetailsDto(StreamInfo stream) {
+        if (stream == null) {
+            return null;
+        }
+
+        com.albunyaan.tube.dto.StreamDetailsDto dto = new com.albunyaan.tube.dto.StreamDetailsDto();
+        dto.setId(extractYouTubeId(stream.getUrl()));
+        dto.setName(stream.getName());
+        dto.setUrl(stream.getUrl());
+        dto.setDescription(stream.getDescription() != null ? stream.getDescription().getContent() : "");
+        dto.setUploaderName(stream.getUploaderName());
+        dto.setUploaderUrl(stream.getUploaderUrl());
+        dto.setViewCount(stream.getViewCount());
+        dto.setDuration(stream.getDuration());
+        dto.setLikeCount(stream.getLikeCount());
+        dto.setDislikeCount(stream.getDislikeCount());
+        dto.setCategory(stream.getCategory());
+        dto.setTags(stream.getTags());
+
+        // Handle thumbnail
+        if (stream.getThumbnails() != null && !stream.getThumbnails().isEmpty()) {
+            dto.setThumbnailUrl(stream.getThumbnails().get(0).getUrl());
+        }
+
+        // Format upload date
+        if (stream.getUploadDate() != null) {
+            try {
+                dto.setUploadDate(stream.getUploadDate()
+                        .offsetDateTime()
+                        .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+            } catch (Exception e) {
+                logger.warn("Failed to format upload date: {}", e.getMessage());
+            }
+        }
+
+        return dto;
+    }
+
+    /**
+     * Map StreamInfoItem to StreamItemDto
+     */
+    public com.albunyaan.tube.dto.StreamItemDto mapToStreamItemDto(StreamInfoItem stream) {
+        if (stream == null) {
+            return null;
+        }
+
+        com.albunyaan.tube.dto.StreamItemDto dto = new com.albunyaan.tube.dto.StreamItemDto();
+        dto.setId(extractYouTubeId(stream.getUrl()));
+        dto.setName(stream.getName());
+        dto.setUrl(stream.getUrl());
+        dto.setUploaderName(stream.getUploaderName());
+        dto.setUploaderUrl(stream.getUploaderUrl());
+        dto.setViewCount(stream.getViewCount());
+        dto.setDuration(stream.getDuration());
+
+        // Handle thumbnail
+        if (stream.getThumbnails() != null && !stream.getThumbnails().isEmpty()) {
+            dto.setThumbnailUrl(stream.getThumbnails().get(0).getUrl());
+        }
+
+        // Format upload date
+        if (stream.getUploadDate() != null) {
+            try {
+                dto.setUploadDate(stream.getUploadDate()
+                        .offsetDateTime()
+                        .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+            } catch (Exception e) {
+                logger.warn("Failed to format upload date: {}", e.getMessage());
+            }
+        }
+
+        return dto;
+    }
+
+    /**
+     * Map PlaylistInfoItem to PlaylistItemDto
+     */
+    public com.albunyaan.tube.dto.PlaylistItemDto mapToPlaylistItemDto(PlaylistInfoItem playlist) {
+        if (playlist == null) {
+            return null;
+        }
+
+        com.albunyaan.tube.dto.PlaylistItemDto dto = new com.albunyaan.tube.dto.PlaylistItemDto();
+        dto.setId(extractYouTubeId(playlist.getUrl()));
+        dto.setName(playlist.getName());
+        dto.setUrl(playlist.getUrl());
+        dto.setUploaderName(playlist.getUploaderName());
+        dto.setStreamCount(playlist.getStreamCount());
+
+        // Handle thumbnail
+        if (playlist.getThumbnails() != null && !playlist.getThumbnails().isEmpty()) {
+            dto.setThumbnailUrl(playlist.getThumbnails().get(0).getUrl());
+        }
+
+        return dto;
+    }
+
+    /**
+     * Extract YouTube ID from URL
+     */
+    private String extractYouTubeId(String url) {
+        if (url == null || url.isEmpty()) {
+            return null;
+        }
+        // Extract last segment from URL
+        String[] parts = url.split("/");
+        if (parts.length > 0) {
+            String lastPart = parts[parts.length - 1];
+            // Remove query parameters if present
+            return lastPart.split("\\?")[0];
+        }
+        return null;
     }
 }

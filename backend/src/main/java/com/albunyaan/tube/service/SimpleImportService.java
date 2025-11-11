@@ -439,7 +439,7 @@ public class SimpleImportService {
 
                     // Set metadata from YouTube (NewPipe provides direct access)
                     video.setTitle(ytVideo.getName());
-                    if (ytVideo.getDescription() != null) {
+                    if (ytVideo.getDescription() != null && ytVideo.getDescription().getContent() != null) {
                         video.setDescription(ytVideo.getDescription().getContent());
                     }
                     video.setChannelId(extractYouTubeId(ytVideo.getUploaderUrl()));

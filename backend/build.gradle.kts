@@ -63,6 +63,6 @@ tasks.test {
 }
 
 tasks.bootJar {
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    duplicatesStrategy = DuplicatesStrategy.WARN
 }
 
