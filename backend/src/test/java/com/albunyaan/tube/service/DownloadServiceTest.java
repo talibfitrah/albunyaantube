@@ -79,7 +79,7 @@ class DownloadServiceTest {
     void getDownloadManifest_shouldReturnManifest_whenTokenValid() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         when(tokenService.validateToken("valid-token", "YT-video-123")).thenReturn(true);
         when(videoRepository.findByYoutubeId("YT-video-123")).thenReturn(Optional.of(approvedVideo));
-        when(tokenService.getExpirationTime(anyString(), anyString())).thenReturn(1234567890L);
+        when(tokenService.getExpirationTimeFromToken("valid-token")).thenReturn(1234567890L);
         DownloadManifestDto manifest = downloadService.getDownloadManifest("YT-video-123", "valid-token");
         assertNotNull(manifest);
         assertEquals("YT-video-123", manifest.getVideoId());

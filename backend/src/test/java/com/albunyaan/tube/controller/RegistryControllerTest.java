@@ -135,6 +135,8 @@ class RegistryControllerTest {
         // Arrange
         Channel newChannel = new Channel("UC-new-channel");
         newChannel.setName("New Channel");
+        // Set status to null to trigger auto-approval logic for admins
+        newChannel.setStatus(null);
         when(channelRepository.findByYoutubeId("UC-new-channel")).thenReturn(Optional.empty());
         when(channelRepository.save(any(Channel.class))).thenReturn(newChannel);
 
@@ -282,6 +284,8 @@ class RegistryControllerTest {
         // Arrange
         Playlist newPlaylist = new Playlist("PL-new-playlist");
         newPlaylist.setTitle("New Playlist");
+        // Set status to null to trigger auto-approval logic for admins
+        newPlaylist.setStatus(null);
         when(playlistRepository.findByYoutubeId("PL-new-playlist")).thenReturn(Optional.empty());
         when(playlistRepository.save(any(Playlist.class))).thenReturn(newPlaylist);
 
