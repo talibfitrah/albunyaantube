@@ -1,6 +1,9 @@
 package com.albunyaan.tube.controller;
 
+import com.albunyaan.tube.dto.ChannelDetailsDto;
 import com.albunyaan.tube.dto.CursorPageDto;
+import com.albunyaan.tube.dto.PlaylistDetailsDto;
+import com.albunyaan.tube.exception.GlobalExceptionHandler;
 import com.albunyaan.tube.exception.ResourceNotFoundException;
 import com.albunyaan.tube.model.ValidationStatus;
 import com.albunyaan.tube.model.Video;
@@ -13,6 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -26,9 +30,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * Unit tests for PublicContentController.
  * Tests edge cases and error handling for video endpoints.
+ * FIXED: Import GlobalExceptionHandler to handle exceptions properly in tests
  */
 @WebMvcTest(PublicContentController.class)
 @AutoConfigureMockMvc(addFilters = false)
+@Import(GlobalExceptionHandler.class)
 public class PublicContentControllerTest {
 
     @Autowired
@@ -90,12 +96,13 @@ public class PublicContentControllerTest {
     @Test
     @DisplayName("GET /api/v1/videos/{videoId} - Invalid Video ID Format")
     void testGetVideoDetails_InvalidIdFormat() throws Exception {
-        // Given
-        when(contentService.getVideoDetails(anyString()))
-                .thenThrow(new ResourceNotFoundException("Video", ""));
+        // Given - use invalid YouTube ID format (contains invalid chars)
+        String invalidId = "invalid@#$%";
+        when(contentService.getVideoDetails(invalidId))
+                .thenThrow(new ResourceNotFoundException("Video", invalidId));
 
         // When & Then
-        mockMvc.perform(get("/api/v1/videos/{videoId}", "")
+        mockMvc.perform(get("/api/v1/videos/{videoId}", invalidId)
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isNotFound());
     }
@@ -227,13 +234,17 @@ public class PublicContentControllerTest {
     @DisplayName("GET /api/v1/channels/{channelId} - Success")
     void testGetChannelDetails_Success() throws Exception {
         // Given
+        ChannelDetailsDto channelDto = new ChannelDetailsDto();
+        channelDto.setId("test-channel");
+        channelDto.setName("Test Channel");
         when(contentService.getChannelDetails(anyString()))
-                .thenReturn(new Object());
+                .thenReturn(channelDto);
 
         // When & Then
         mockMvc.perform(get("/api/v1/channels/{channelId}", "test-channel")
                         .contentType(MediaType.APPLICATION_JSON))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value("test-channel"));
     }
 
     @Test
@@ -254,13 +265,17 @@ public class PublicContentControllerTest {
     @DisplayName("GET /api/v1/playlists/{playlistId} - Success")
     void testGetPlaylistDetails_Success() throws Exception {
         // Given
+        PlaylistDetailsDto playlistDto = new PlaylistDetailsDto();
+        playlistDto.setId("test-playlist");
+        playlistDto.setName("Test Playlist");
         when(contentService.getPlaylistDetails(anyString()))
-                .thenReturn(new Object());
+                .thenReturn(playlistDto);
 
         // When & Then
         mockMvc.perform(get("/api/v1/playlists/{playlistId}", "test-playlist")
                         .contentType(MediaType.APPLICATION_JSON))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value("test-playlist"));
     }
 
     @Test
