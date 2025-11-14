@@ -1,0 +1,1010 @@
+{
+"phases": [
+{
+"id": "phase-0",
+"title": "Stabilize Build and Dependencies",
+"duration_days": 3,
+"goal": "Resolve dependency conflicts, fix flaky tests, and ensure backend and Android builds are stable.",
+"tasks": [
+{
+"id": "P0-T1",
+"title": "Resolve dependency conflicts (Netty, Kotlin, NewPipeExtractor)",
+"description": "Audit and align dependency versions across backend and Android (including Netty transitive dependencies, Kotlin toolchains, and NewPipeExtractor 0.24.x) to eliminate classpath conflicts and runtime incompatibilities, then simplify build scripts by removing redundant exclusions and version overrides.",
+"complexity": "medium",
+"files_to_modify": [
+"backend/build.gradle.kts",
+"backend/settings.gradle.kts",
+"android/build.gradle.kts",
+"android/app/build.gradle.kts",
+"frontend/package.json",
+"frontend/vite.config.ts",
+"docs/status/DEVELOPMENT_GUIDE.md"
+],
+"validation_steps": [
+"Run ./mvnw clean install at repo root and confirm it completes without dependency resolution errors.",
+"Run cd backend && ./gradlew clean test and ensure no NoSuchMethodError or ClassNotFoundException related to Netty or Firebase.",
+"Run cd android && ./gradlew assembleDebug and verify there are no NewPipeExtractor linkage/runtime warnings in build output.",
+"Update DEVELOPMENT_GUIDE.md to match the final, working JDK, Kotlin, and Gradle versions."
+],
+"architectural_review": [
+"Confirm there is exactly one effective version of Netty on the backend classpath (inspect dependency tree).",
+"Confirm Android and backend both target consistent Java 17 toolchains without custom overrides in multiple places.",
+"Confirm NewPipeExtractor version is explicitly pinned and documented, with a short note on upgrade strategy and known compatibility constraints."
+],
+"blocked_by": [],
+"blocks": [
+"P0-T2",
+"P0-T3",
+"P1-T1",
+"P1-T2",
+"P2-T1",
+"P2-T2",
+"P2-T3",
+"P3-T1",
+"P4-T1"
+],
+"lines_to_delete": 200,
+"lines_to_add": 120
+},
+{
+"id": "P0-T2",
+"title": "Fix DownloadServiceTest and flaky backend tests",
+"description": "Stabilize DownloadServiceTest and any other flaky backend tests by removing timing-based assumptions, using the Firestore emulator deterministically, and deleting obsolete test helpers, so that the backend test suite passes reliably on CI and local machines.",
+"complexity": "medium",
+"files_to_modify": [
+"backend/src/test/java/com/albunyaan/tube/service/DownloadServiceTest.java",
+"backend/src/test/java/com/albunyaan/tube/service//*.java",
+"backend/src/test/resources/application-test.yml",
+"docs/status/TESTING_GUIDE.md"
+],
+"validation_steps": [
+"Run cd backend && ./gradlew clean test three times in a row and confirm all tests pass with stable timings.",
+"Ensure DownloadServiceTest uses explicit fixtures and emulator configuration instead of real Firebase or random timeouts.",
+"Update TESTING_GUIDE.md with instructions to run emulator-based tests and expected runtime, noting any long-running suites."
+],
+"architectural_review": [
+"Validate that DownloadServiceTest covers both allowed and denied download policies, without relying on external network.",
+"Check that no tests depend on real YouTube/NewPipe calls; NewPipe-related behavior must be mocked or isolated.",
+"Confirm that test utilities are shared (single reusable Firestore emulator setup) instead of copied per test class."
+],
+"blocked_by": [
+"P0-T1"
+],
+"blocks": [
+"P2-T4",
+"P4-T2"
+],
+"lines_to_delete": 180,
+"lines_to_add": 130
+},
+{
+"id": "P0-T3",
+"title": "Stabilize build scripts and CI pipeline",
+"description": "Simplify Gradle and npm build scripts by removing dead tasks, duplicated configuration, and outdated CI steps so that ./mvnw clean install and ./gradlew assembleDebug both succeed as the single source of truth for build health.",
+"complexity": "low",
+"files_to_modify": [
+".github/workflows/backend-ci.yml",
+".github/workflows/android-ci.yml",
+".github/workflows/frontend-ci.yml",
+"backend/build.gradle.kts",
+"android/build.gradle.kts",
+"frontend/package.json",
+"README.md"
+],
+"validation_steps": [
+"Trigger backend-ci, android-ci, and frontend-ci workflows and confirm they pass on the first run without manual retries.",
+"Run ./mvnw clean install locally and confirm it runs the same subset of Gradle/npm tasks that CI uses.",
+"Run cd android && ./gradlew assembleDebug and confirm the task is referenced in CI and docs as the canonical Android build."
+],
+"architectural_review": [
+"Review that each CI workflow has a single, clear build command per component (backend, frontend, android).",
+"Confirm that test timeouts (300s overall budget) are enforced in CI for backend and frontend as documented in CLAUDE.md.",
+"Ensure no legacy Maven/Gradle tasks remain referenced in workflows or docs."
+],
+"blocked_by": [
+"P0-T1"
+],
+"blocks": [
+"P1-T1",
+"P3-T1"
+],
+"lines_to_delete": 160,
+"lines_to_add": 100
+}
+]
+},
+{
+"id": "phase-1",
+"title": "API Contract Hardening and DTO Alignment",
+"duration_days": 4,
+"goal": "Make the REST API contracts explicit and consistent, generate shared DTOs for frontend and Android, and eliminate field aliasing and ad-hoc mappings.",
+"tasks": [
+{
+"id": "P1-T1",
+"title": "Regenerate OpenAPI spec from current controllers",
+"description": "Compare the existing OpenAPI specification with actual Spring controllers, update api-specification.yaml to reflect real endpoints and response shapes, and remove obsolete or undocumented paths to establish a single canonical API contract.",
+"complexity": "medium",
+"files_to_modify": [
+"docs/architecture/api-specification.yaml",
+"backend/src/main/java/com/albunyaan/tube/controller//.java",
+"docs/architecture/overview.md"
+],
+"validation_steps": [
+"Run an OpenAPI linter against docs/architecture/api-specification.yaml and fix any structural issues.",
+"For each controller method, confirm that HTTP method, path, query parameters, and response schema match the spec.",
+"Document any intentional deviations (such as admin-only fields) in overview.md under an API compatibility section."
+],
+"architectural_review": [
+"Ensure public /api/v1/** and admin /api/admin/** endpoints have explicit schemas and do not rely on implicit Jackson serialization of entities.",
+"Confirm CursorPageDto and other envelope types are defined once and reused across endpoints rather than re-described per route.",
+"Verify that error responses share a standard structure (status, code, message) and are captured in the spec."
+],
+"blocked_by": [
+"P0-T1",
+"P0-T3"
+],
+"blocks": [
+"P1-T2",
+"P1-T3",
+"P1-T4",
+"P2-T2",
+"P2-T3",
+"P5-T1"
+],
+"lines_to_delete": 220,
+"lines_to_add": 180
+},
+{
+"id": "P1-T2",
+"title": "Generate TypeScript and Kotlin DTOs from OpenAPI",
+"description": "Use the updated OpenAPI spec to generate strongly-typed DTOs for the Vue frontend and Android client, replace hand-maintained DTOs and models where possible, and centralize type definitions so all clients share consistent shapes.",
+"complexity": "high",
+"files_to_modify": [
+"frontend/src/types/**/.ts",
+"frontend/src/services//*.ts",
+"android/app/src/main/java/com/albunyaan/tube/data/model//.kt",
+"android/app/src/main/java/com/albunyaan/tube/data/source/**/.kt",
+"backend/build.gradle.kts",
+"docs/status/DEVELOPMENT_GUIDE.md"
+],
+"validation_steps": [
+"Introduce an automated OpenAPI-to-TypeScript generation step and verify TypeScript compiles without type errors in frontend.",
+"Introduce an automated OpenAPI-to-Kotlin generation step (or manual alignment) and verify Android builds without model-mismatch errors.",
+"Remove duplicate or obsolete DTO/model definitions that are no longer referenced after adopting generated types."
+],
+"architectural_review": [
+"Confirm that shared DTOs for content items, pagination, approvals, and downloads are identical across backend, frontend, and Android.",
+"Check that no client-side code accesses raw JSON properties not defined in the generated types.",
+"Review that generation is deterministic and wired into CI, so API changes cannot be merged without regenerating types."
+],
+"blocked_by": [
+"P1-T1"
+],
+"blocks": [
+"P1-T3",
+"P1-T4",
+"P3-T2",
+"P5-T2"
+],
+"lines_to_delete": 900,
+"lines_to_add": 650
+},
+{
+"id": "P1-T3",
+"title": "Remove field aliasing in frontend services",
+"description": "Refactor frontend service modules to consume the standardized DTOs and remove all field aliasing patterns such as item.subscriberCount || item.subscribers, ensuring each property is read from a single canonical field.",
+"complexity": "medium",
+"files_to_modify": [
+"frontend/src/services/approvalService.ts",
+"frontend/src/services/contentLibrary.ts",
+"frontend/src/services/dashboard.ts",
+"frontend/src/services//*.ts"
+],
+"validation_steps": [
+"Run rg \"\\|\\| item\\.\" frontend/src/services and confirm it returns zero matches.",
+"Run npm run build and npm test in frontend to ensure type-checks and unit tests pass after refactor.",
+"Verify that UI views still render expected values for approvals, content library, and dashboard using a seeded dataset."
+],
+"architectural_review": [
+"Confirm that each service maps backend DTOs to view models using a single, well-named transformation function rather than scattered inline mappings.",
+"Ensure no service relies on guessing multiple backend field names for the same concept (e.g., submittedAt vs createdAt).",
+"Review that optional fields (like thumbnails or counts) are handled explicitly via DTO nullability rather than defensive aliasing."
+],
+"blocked_by": [
+"P1-T2"
+],
+"blocks": [
+"P5-T2"
+],
+"lines_to_delete": 160,
+"lines_to_add": 70
+},
+{
+"id": "P1-T4",
+"title": "Standardize pagination DTOs across API",
+"description": "Update backend pagination responses to consistently use a single CursorPageDto shape (data plus cursor/pageInfo) for all list endpoints and adjust clients and spec accordingly, replacing special cases and custom page wrappers.",
+"complexity": "medium",
+"files_to_modify": [
+"backend/src/main/java/com/albunyaan/tube/dto/CursorPageDto.java",
+"backend/src/main/java/com/albunyaan/tube/controller//.java",
+"backend/src/main/java/com/albunyaan/tube/service/**/.java",
+"frontend/src/types/pagination.ts",
+"frontend/src/composables/useCursorPagination.ts",
+"docs/architecture/api-specification.yaml"
+],
+"validation_steps": [
+"Confirm all list endpoints documented in api-specification.yaml return CursorPageDto or an explicitly documented variant.",
+"Update frontend pagination utilities to consume CursorPageDto consistently and verify infinite scrolling still functions.",
+"Run backend tests validating that pagination metadata is present and correctly typed for all list endpoints."
+],
+"architectural_review": [
+"Verify that CursorPageDto includes only necessary fields (data, cursor, optional count) and no endpoint-specific fields.",
+"Ensure backend pagination behavior is clearly documented, including cursor semantics for Android and frontend clients.",
+"Confirm no controller returns raw lists where pagination is expected by product requirements."
+],
+"blocked_by": [
+"P1-T1",
+"P1-T2"
+],
+"blocks": [
+"P2-T2"
+],
+"lines_to_delete": 210,
+"lines_to_add": 160
+}
+]
+},
+{
+"id": "phase-2",
+"title": "Backend Data Access Cleanup and Pagination",
+"duration_days": 5,
+"goal": "Encapsulate Firestore usage behind repositories, decompose YouTube integration, and implement real cursor-based pagination that scales.",
+"tasks": [
+{
+"id": "P2-T1",
+"title": "Move ApprovalService Firestore access into ApprovalRepository",
+"description": "Introduce an ApprovalRepository (or extend existing repositories) to encapsulate Firestore queries used by ApprovalService, removing direct Firestore usage from business logic and centralizing query patterns for pending, approved, and rejected items.",
+"complexity": "medium",
+"files_to_modify": [
+"backend/src/main/java/com/albunyaan/tube/service/ApprovalService.java",
+"backend/src/main/java/com/albunyaan/tube/repository/ApprovalRepository.java",
+"backend/src/main/java/com/albunyaan/tube/repository//*.java",
+"backend/src/test/java/com/albunyaan/tube/service/ApprovalServiceTest.java"
+],
+"validation_steps": [
+"Run backend unit and integration tests for approval flows to ensure behavior matches existing semantics (same results, ordering, and filters).",
+"Verify that ApprovalService no longer injects Firestore directly and instead uses repository methods.",
+"Use Firestore emulator and test data to confirm pending-approvals pagination behaves as expected for various filters."
+],
+"architectural_review": [
+"Review ApprovalRepository to ensure it contains only data access concerns and no business rules.",
+"Confirm that Firestore collection names and field mappings are documented and used consistently across repositories.",
+"Validate that ApprovalService is now easier to mock in tests by replacing ApprovalRepository instead of Firestore."
+],
+"blocked_by": [
+"P0-T1",
+"P1-T1"
+],
+"blocks": [
+"P2-T2",
+"P4-T2"
+],
+"lines_to_delete": 220,
+"lines_to_add": 170
+},
+{
+"id": "P2-T2",
+"title": "Implement real DocumentSnapshot cursor pagination",
+"description": "Replace fake cursor logic (e.g., encodeCursor(limit)) in PublicContentService, ApprovalService, and related queries with proper Firestore DocumentSnapshot-based cursor pagination that orders on stable fields and returns opaque but deterministic cursors.",
+"complexity": "high",
+"files_to_modify": [
+"backend/src/main/java/com/albunyaan/tube/service/PublicContentService.java",
+"backend/src/main/java/com/albunyaan/tube/service/ApprovalService.java",
+"backend/src/main/java/com/albunyaan/tube/repository//.java",
+"backend/src/test/java/com/albunyaan/tube/service/PublicContentServicePaginationTest.java",
+"backend/src/test/java/com/albunyaan/tube/service/ApprovalServicePaginationTest.java"
+],
+"validation_steps": [
+"Seed Firestore emulator with at least 1000 items and verify that paginated endpoints can traverse the full dataset without timeouts or inconsistent ordering.",
+"Check that cursors are opaque (not exposing internal IDs) but stable enough to resume from a given page.",
+"Run performance measurements on pagination queries to ensure they stay within documented timeouts (read, bulk-query timeouts in application.yml)."
+],
+"architectural_review": [
+"Confirm that pagination order is well-defined (e.g., by createdAt or displayOrder) and documented for clients.",
+"Ensure that cursor encoding/decoding logic is centralized in a small helper rather than duplicated across services.",
+"Verify that pagination logic is resilient to deletions and insertions between page fetches, as much as Firestore allows."
+],
+"blocked_by": [
+"P1-T4",
+"P2-T1"
+],
+"blocks": [
+"P2-T4",
+"P3-T2"
+],
+"lines_to_delete": 260,
+"lines_to_add": 210
+},
+{
+"id": "P2-T3",
+"title": "Decompose YouTubeService into orchestrators and gateway",
+"description": "Split the large YouTubeService class into smaller components (SearchOrchestrator, ChannelOrchestrator, YouTubeGateway) that isolate NewPipeExtractor-specific code from higher-level workflows, reducing the god-object footprint and making failures easier to reason about.",
+"complexity": "high",
+"files_to_modify": [
+"backend/src/main/java/com/albunyaan/tube/service/YouTubeService.java",
+"backend/src/main/java/com/albunyaan/tube/service/SearchOrchestrator.java",
+"backend/src/main/java/com/albunyaan/tube/service/ChannelOrchestrator.java",
+"backend/src/main/java/com/albunyaan/tube/service/YouTubeGateway.java",
+"backend/src/test/java/com/albunyaan/tube/service/YouTubeServiceTest.java"
+],
+"validation_steps": [
+"Run all backend tests that touch YouTubeService and confirm identical behavior (same search results, pagination, and error cases).",
+"Spot-check search and channel-detail endpoints with the admin frontend to ensure there are no user-visible regressions.",
+"Verify that NewPipeExtractor usage (including its ExecutorService) is confined to YouTubeGateway and not leaked into orchestration classes."
+],
+"architectural_review": [
+"Ensure each new class has a single responsibility: gateway for external API calls, orchestrators for combining results and domain logic.",
+"Confirm YouTubeService no longer exceeds the target line count and primarily serves as a facade delegating to orchestrators.",
+"Review how NewPipe version-specific behavior is isolated so upgrades affect only YouTubeGateway and tests."
+],
+"blocked_by": [
+"P0-T1",
+"P1-T1"
+],
+"blocks": [
+"P4-T2",
+"P5-T4"
+],
+"lines_to_delete": 520,
+"lines_to_add": 320
+},
+{
+"id": "P2-T4",
+"title": "Add integration tests for large-scale pagination (1000+ items)",
+"description": "Create focused integration tests using the Firestore emulator that insert large datasets and exercise paginated endpoints end-to-end, validating response times, cursor correctness, and memory usage under realistic loads.",
+"complexity": "medium",
+"files_to_modify": [
+"backend/src/test/java/com/albunyaan/tube/integration/PaginationIntegrationTest.java",
+"backend/src/test/resources/application-test.yml",
+"docs/status/TESTING_GUIDE.md"
+],
+"validation_steps": [
+"Run the pagination integration tests and ensure they pass within the global 300s test budget.",
+"Verify that retrieving 1000+ items via multiple pages does not hit Firestore timeouts as configured in application.yml.",
+"Document the expected performance characteristics and dataset assumptions in TESTING_GUIDE.md for future regressions."
+],
+"architectural_review": [
+"Check that integration tests cover both public (/api/v1/content) and admin pagination paths where applicable.",
+"Ensure tests assert both ordering and cursor presence, not just item counts.",
+"Confirm that integration tests are idempotent and can be run in parallel with other tests without cross-contamination of emulator state."
+],
+"blocked_by": [
+"P0-T2",
+"P2-T2"
+],
+"blocks": [],
+"lines_to_delete": 120,
+"lines_to_add": 90
+}
+]
+},
+{
+"id": "phase-3",
+"title": "Android Dependency Injection Migration",
+"duration_days": 7,
+"goal": "Introduce Hilt-based DI on Android, migrate key components away from ServiceLocator, and ultimately remove the ServiceLocator anti-pattern.",
+"tasks": [
+{
+"id": "P3-T1",
+"title": "Introduce Hilt and base DI modules",
+"description": "Add Hilt to the Android app, create NetworkModule, DataModule, and DownloadModule for core dependencies (Retrofit, repositories, WorkManager-facing components), and start shrinking ServiceLocator by moving shared provisioning responsibilities into DI.",
+"complexity": "high",
+"files_to_modify": [
+"android/app/build.gradle.kts",
+"android/app/src/main/java/com/albunyaan/tube/AlBunyaanApplication.kt",
+"android/app/src/main/java/com/albunyaan/tube/di/NetworkModule.kt",
+"android/app/src/main/java/com/albunyaan/tube/di/DataModule.kt",
+"android/app/src/main/java/com/albunyaan/tube/di/DownloadModule.kt",
+"android/app/src/main/java/com/albunyaan/tube/ServiceLocator.kt",
+"docs/status/ANDROID_GUIDE.md"
+],
+"validation_steps": [
+"Run cd android && ./gradlew assembleDebug and verify Hilt code generation succeeds without component conflicts.",
+"Launch the app and verify that network calls and basic data loading still function using DI-provided Retrofit instances.",
+"Update ANDROID_GUIDE.md with DI setup steps and how new components should request dependencies."
+],
+"architectural_review": [
+"Ensure Application class is annotated correctly for Hilt and no custom initialization is left in ServiceLocator that should be in DI.",
+"Review DI modules for single responsibility (network vs data vs download) and minimal configuration duplication.",
+"Confirm ServiceLocator's responsibilities are clearly marked as legacy and reduced in scope after this task."
+],
+"blocked_by": [
+"P0-T1",
+"P0-T3"
+],
+"blocks": [
+"P3-T2",
+"P3-T3",
+"DECISION-HILT-KOIN"
+],
+"lines_to_delete": 220,
+"lines_to_add": 190
+},
+{
+"id": "P3-T2",
+"title": "Migrate HomeFragmentNew and related ViewModels to DI",
+"description": "Refactor HomeFragmentNew and its ViewModels to receive dependencies via Hilt constructor injection instead of calling ServiceLocator, simplifying initialization paths and making home feed behavior more testable.",
+"complexity": "medium",
+"files_to_modify": [
+"android/app/src/main/java/com/albunyaan/tube/ui/home/HomeFragmentNew.kt",
+"android/app/src/main/java/com/albunyaan/tube/ui/home/HomeViewModel.kt",
+"android/app/src/main/java/com/albunyaan/tube/ui/list/ContentListViewModel.kt",
+"android/app/src/main/java/com/albunyaan/tube/ServiceLocator.kt",
+"android/app/src/test/java/com/albunyaan/tube/ui/home/HomeViewModelTest.kt"
+],
+"validation_steps": [
+"Run home-related Android unit tests and verify they pass with DI-provided dependencies.",
+"Manually test the home screen (browsing, scroll, refresh) to ensure behavior is unchanged.",
+"Search for ServiceLocator usage in home and list packages and confirm no direct calls remain."
+],
+"architectural_review": [
+"Confirm ViewModels no longer reach into ServiceLocator and instead declare explicit constructor dependencies.",
+"Check that DI scopes (fragment vs activity vs singleton) are appropriate for data and player-related dependencies.",
+"Verify that home feature follows a clear MVVM pattern without hidden global state."
+],
+"blocked_by": [
+"P1-T2",
+"P2-T2",
+"P3-T1"
+],
+"blocks": [
+"P3-T4"
+],
+"lines_to_delete": 180,
+"lines_to_add": 130
+},
+{
+"id": "P3-T3",
+"title": "Migrate DownloadWorker and download components to DI and add 30-day expiry hook",
+"description": "Move DownloadWorker, DownloadRepository, DownloadScheduler, and related download components to use Hilt injection, add a DI-aware expiry hook for 30-day download TTL that will later be wired to WorkManager, and remove ServiceLocator dependencies from download code paths.",
+"complexity": "high",
+"files_to_modify": [
+"android/app/src/main/java/com/albunyaan/tube/download/DownloadWorker.kt",
+"android/app/src/main/java/com/albunyaan/tube/download/DownloadRepository.kt",
+"android/app/src/main/java/com/albunyaan/tube/download/DownloadScheduler.kt",
+"android/app/src/main/java/com/albunyaan/tube/ServiceLocator.kt",
+"android/app/src/test/java/com/albunyaan/tube/download/DownloadWorkerTest.kt"
+],
+"validation_steps": [
+"Run Android unit tests around DownloadWorker and ensure they pass with DI-based construction.",
+"Verify that downloads still start, progress, and complete correctly in a debug build (using existing backend behavior).",
+"Confirm that all download-related classes obtain dependencies via Hilt and have no direct calls to ServiceLocator."
+],
+"architectural_review": [
+"Confirm download code paths are now expressed through constructor-injected dependencies, making them test-friendly and explicit.",
+"Review where the 30-day expiry hook will plug into WorkManager, ensuring the design avoids duplicated timers or AlarmManager usage.",
+"Ensure no hard-coded contexts or global singletons remain in download components."
+],
+"blocked_by": [
+"P3-T1"
+],
+"blocks": [
+"P4-T3",
+"P3-T4"
+],
+"lines_to_delete": 210,
+"lines_to_add": 170
+},
+{
+"id": "P3-T4",
+"title": "Delete ServiceLocator and clean up legacy wiring",
+"description": "Remove ServiceLocator.kt and all remaining references across the Android app, ensuring all dependencies are obtained from Hilt and that tests are updated to use Hilt testing facilities instead of custom overrides.",
+"complexity": "medium",
+"files_to_modify": [
+"android/app/src/main/java/com/albunyaan/tube/ServiceLocator.kt",
+"android/app/src/main/java/com/albunyaan/tube/ui/**/.kt",
+"android/app/src/main/java/com/albunyaan/tube/player//*.kt",
+"android/app/src/test/java/com/albunyaan/tube//.kt",
+"CLAUDE.md"
+],
+"validation_steps": [
+"Run rg \"ServiceLocator\" android/app/src and confirm there are zero matches.",
+"Build and run the app, performing configuration changes (screen rotation, background/foreground) to confirm no leaks or crashes.",
+"Update CLAUDE.md and ANDROID_GUIDE.md to state that ServiceLocator is removed and DI via Hilt is mandatory."
+],
+"architectural_review": [
+"Verify that all former ServiceLocator responsibilities are covered by DI modules or well-scoped singletons.",
+"Confirm memory leak checks (using Android Studio profiler or LeakCanary, if present) show no DI-related leaks under rotation.",
+"Review that test code no longer depends on global overrides but instead uses DI-bound fakes or test modules."
+],
+"blocked_by": [
+"P3-T2",
+"P3-T3"
+],
+"blocks": [
+"CHECKPOINT-P3"
+],
+"lines_to_delete": 260,
+"lines_to_add": 20
+}
+]
+},
+{
+"id": "phase-4",
+"title": "Implement Real Download System with Expiry",
+"duration_days": 5,
+"goal": "Replace stubbed download behavior with a real, policy-compliant download system and enforce 30-day expiry for offline content.",
+"tasks": [
+{
+"id": "P4-T1",
+"title": "Align download domain model and PRD requirements",
+"description": "Review PRD download requirements, current DownloadService and Android download models, then simplify and align the domain model (policy, token, manifest, expiry) while pruning unused or contradictory fields and documenting the agreed behavior.",
+"complexity": "medium",
+"files_to_modify": [
+"backend/src/main/java/com/albunyaan/tube/dto/DownloadPolicyDto.java",
+"backend/src/main/java/com/albunyaan/tube/dto/DownloadTokenDto.java",
+"backend/src/main/java/com/albunyaan/tube/dto/DownloadManifestDto.java",
+"android/app/src/main/java/com/albunyaan/tube/download/DownloadModels.kt",
+"docs/PRD.md",
+"docs/architecture/overview.md"
+],
+"validation_steps": [
+"Confirm that all required PRD fields (policy decision, token expiry, 30-day TTL) are explicitly represented in DTOs.",
+"Ensure there are no unused fields remaining in download DTOs that are never set or read by clients.",
+"Update architecture docs to describe the final download and expiry behavior from backend and Android perspectives."
+],
+"architectural_review": [
+"Validate that the domain model differentiates clearly between policy check, token issuance, and manifest retrieval.",
+"Ensure that 30-day expiry semantics are clearly documented and not encoded in multiple places with differing rules.",
+"Confirm that backend and Android agree on units (seconds vs millis) and clock assumptions for expiry."
+],
+"blocked_by": [
+"P1-T1",
+"P1-T2",
+"P2-T1"
+],
+"blocks": [
+"P4-T2",
+"P4-T3"
+],
+"lines_to_delete": 140,
+"lines_to_add": 110
+},
+{
+"id": "P4-T2",
+"title": "Replace DownloadService stub with real stream integration",
+"description": "Refactor backend DownloadService to remove hardcoded example.com URLs and integrate with the decomposed YouTube gateway/orchestrators, emitting manifests that represent real stream options while simplifying or removing unused helper classes to keep the download subsystem small.",
+"complexity": "high",
+"files_to_modify": [
+"backend/src/main/java/com/albunyaan/tube/service/DownloadService.java",
+"backend/src/main/java/com/albunyaan/tube/service/YouTubeGateway.java",
+"backend/src/main/java/com/albunyaan/tube/controller/DownloadController.java",
+"backend/src/test/java/com/albunyaan/tube/service/DownloadServiceTest.java"
+],
+"validation_steps": [
+"Run backend tests for DownloadService and validate that manifests contain no example.com URLs and match expected structure.",
+"Use the admin or a simple curl script to request a download manifest and verify that options are plausible for the requested video.",
+"Confirm that DownloadService respects policy decisions (APPROVED status, EULA requirements) and fails safely when streams cannot be resolved."
+],
+"architectural_review": [
+"Ensure DownloadService depends on YouTubeGateway abstractions rather than directly on NewPipe classes.",
+"Review that the number of download-related classes is reduced in line with the download_service_files simplification target.",
+"Confirm error handling is consistent and surfaces meaningful messages without leaking internal implementation details."
+],
+"blocked_by": [
+"P0-T2",
+"P2-T1",
+"P2-T3",
+"P4-T1"
+],
+"blocks": [
+"P4-T3",
+"P5-T3"
+],
+"lines_to_delete": 260,
+"lines_to_add": 210
+},
+{
+"id": "P4-T3",
+"title": "Add WorkManager-backed 30-day expiry for downloads",
+"description": "Implement a WorkManager task in Android that periodically scans downloaded items, compares their age against the 30-day TTL, and deletes expired content, removing any ad-hoc expiry hacks and ensuring policy is enforced consistently.",
+"complexity": "medium",
+"files_to_modify": [
+"android/app/src/main/java/com/albunyaan/tube/download/DownloadRepository.kt",
+"android/app/src/main/java/com/albunyaan/tube/download/DownloadScheduler.kt",
+"android/app/src/main/java/com/albunyaan/tube/download/DownloadWorker.kt",
+"android/app/src/test/java/com/albunyaan/tube/download/DownloadExpiryTest.kt"
+],
+"validation_steps": [
+"Create test downloads with timestamps older and newer than 30 days and verify the expiry worker removes only the appropriate ones.",
+"Run the app on a physical device, schedule downloads, and manipulate device time (or use debug overrides) to validate expiry behavior.",
+"Ensure that expiry logic is idempotent and does not repeatedly re-schedule or leak WorkManager jobs."
+],
+"architectural_review": [
+"Confirm that download expiry is implemented in a single place and not duplicated across UI code or random helpers.",
+"Review how expiry interacts with backend tokens to avoid inconsistencies between local deletion and token validity.",
+"Ensure expiry implementation does not significantly impact startup or battery usage (use WorkManager best practices)."
+],
+"blocked_by": [
+"P3-T3",
+"P4-T1",
+"P4-T2"
+],
+"blocks": [
+"CHECKPOINT-P4"
+],
+"lines_to_delete": 190,
+"lines_to_add": 150
+},
+{
+"id": "P4-T4",
+"title": "Design FFmpeg merging strategy for higher qualities",
+"description": "Plan and implement a minimal FFmpeg-based merging path on Android for qualities above 480p, while pruning any over-engineered abstractions around stream merging and ensuring the feature can be disabled or simplified if it proves too heavy.",
+"complexity": "high",
+"files_to_modify": [
+"android/app/src/main/java/com/albunyaan/tube/player/QualityTrackSelector.kt",
+"android/app/src/main/java/com/albunyaan/tube/download/DownloadWorker.kt",
+"android/app/src/main/java/com/albunyaan/tube/download/DownloadModels.kt",
+"docs/status/ANDROID_GUIDE.md"
+],
+"validation_steps": [
+"Manually test downloads at 720p (or higher) on a physical device and verify merged files play without issues.",
+"Measure approximate download and merge time and confirm it stays within acceptable UX limits.",
+"Document FFmpeg assumptions, supported formats, and any known limitations in ANDROID_GUIDE.md."
+],
+"architectural_review": [
+"Ensure FFmpeg integration is encapsulated in a small, replaceable component and not spread throughout the codebase.",
+"Confirm that lower qualities (<= 480p) can bypass FFmpeg to keep the common path simple.",
+"Review error handling and fallback behavior when FFmpeg is unavailable or merging fails."
+],
+"blocked_by": [
+"P3-T3",
+"P4-T1"
+],
+"blocks": [
+"CHECKPOINT-P4"
+],
+"lines_to_delete": 170,
+"lines_to_add": 140
+}
+]
+},
+{
+"id": "phase-5",
+"title": "Frontend HTTP and Download Simplification",
+"duration_days": 3,
+"goal": "Unify frontend HTTP clients on Axios, simplify domain composables, and remove unnecessary download abstractions.",
+"tasks": [
+{
+"id": "P5-T1",
+"title": "Delete authorizedJsonFetch and unify on Axios apiClient",
+"description": "Remove the fetch-based authorizedJsonFetch helper and migrate all remaining callers to the Axios-based apiClient, consolidating authentication, error handling, and timeouts into a single HTTP stack.",
+"complexity": "medium",
+"files_to_modify": [
+"frontend/src/services/http.ts",
+"frontend/src/services/**/.ts",
+"frontend/src/views//*.vue",
+"frontend/src/composables//.ts"
+],
+"validation_steps": [
+"Search for authorizedJsonFetch references and confirm there are none remaining.",
+"Run npm run build and npm test to ensure no regressions in the admin dashboard.",
+"Smoke test key admin flows (login, approvals, content library, dashboard) to ensure HTTP interactions work correctly with apiClient."
+],
+"architectural_review": [
+"Verify that auth token handling and refresh logic exist in one place (apiClient interceptors) and are not reimplemented elsewhere.",
+"Confirm that all HTTP timeouts and base URLs are controlled centrally and documented.",
+"Ensure error messaging is consistent across the app and driven by apiClient behavior."
+],
+"blocked_by": [
+"P1-T1",
+"P1-T3"
+],
+"blocks": [
+"P5-T2"
+],
+"lines_to_delete": 210,
+"lines_to_add": 120
+},
+{
+"id": "P5-T2",
+"title": "Extract domain composables (useMetrics, useApprovals)",
+"description": "Move repeated metrics and approvals logic out of individual views into dedicated composables (useMetrics, useApprovals), simplifying views and keeping service modules small and focused on transport concerns.",
+"complexity": "medium",
+"files_to_modify": [
+"frontend/src/composables/useDashboardMetrics.ts",
+"frontend/src/composables/useApprovals.ts",
+"frontend/src/views/DashboardView.vue",
+"frontend/src/views/PendingApprovalsView.vue",
+"frontend/src/services/dashboard.ts",
+"frontend/src/services/approvalService.ts"
+],
+"validation_steps": [
+"Run npm run test and ensure metrics- and approvals-related tests pass using the new composables.",
+"Manually verify that dashboard cards and pending approvals still update correctly for different filters and timeframes.",
+"Check that service modules no longer contain view-specific transformation logic."
+],
+"architectural_review": [
+"Confirm composables adhere to single responsibility: domain behavior and state management, not raw HTTP wiring.",
+"Verify that views are mostly declarative and lean, delegating logic to composables.",
+"Review that composables accept DTOs defined by generated types and return view models with clear typing."
+],
+"blocked_by": [
+"P1-T2",
+"P1-T3",
+"P5-T1"
+],
+"blocks": [
+"P5-T4"
+],
+"lines_to_delete": 230,
+"lines_to_add": 170
+},
+{
+"id": "P5-T3",
+"title": "Delete HardcodedUrlProvider and StreamMergerStrategy abstractions",
+"description": "Remove HardcodedUrlProvider, StreamMergerStrategy, and related over-generalized abstractions around download URLs and merging, in favor of the simpler, real download system introduced earlier, and update all consumers accordingly.",
+"complexity": "medium",
+"files_to_modify": [
+"**/HardcodedUrlProvider.",
+"/StreamMergerStrategy.*",
+"frontend/src/services//.ts",
+"android/app/src/main/java/com/albunyaan/tube/download/**/.kt",
+"backend/src/main/java/com/albunyaan/tube/service//*.java"
+],
+"validation_steps": [
+"Search for HardcodedUrlProvider and StreamMergerStrategy in the repo and confirm there are no remaining references.",
+"Run all backend, frontend, and Android builds/tests to ensure that download and streaming flows still function.",
+"Verify that download-related configuration is now localized to the simplified download system and gateway classes."
+],
+"architectural_review": [
+"Ensure no new abstractions reintroduce the same complexity under different names.",
+"Confirm that remaining download code paths are easy to trace end-to-end, from user action to stream resolution.",
+"Validate that simplification is reflected in documentation (no references to removed abstractions)."
+],
+"blocked_by": [
+"P4-T2"
+],
+"blocks": [
+"P5-T4"
+],
+"lines_to_delete": 260,
+"lines_to_add": 130
+},
+{
+"id": "P5-T4",
+"title": "Enforce service module size and YouTubeService simplification",
+"description": "Enforce a soft limit of 100 lines per frontend service module by moving remaining transformation logic into composables or utils, and verify that the decomposed YouTubeService stays below 200 lines as a small facade over orchestrators.",
+"complexity": "low",
+"files_to_modify": [
+"frontend/src/services//.ts",
+"frontend/src/composables/**/.ts",
+"backend/src/main/java/com/albunyaan/tube/service/YouTubeService.java",
+"CLAUDE.md"
+],
+"validation_steps": [
+"Measure line counts for each frontend service module and confirm they are below 100 lines (excluding comments).",
+"Check YouTubeService.java line count and confirm it is below 200 lines after decomposition.",
+"Run full test suites for backend and frontend to ensure refactors did not introduce regressions."
+],
+"architectural_review": [
+"Review that services focus on IO and leave domain logic to composables and orchestrators.",
+"Confirm YouTubeService now clearly delegates to SearchOrchestrator, ChannelOrchestrator, and YouTubeGateway.",
+"Update CLAUDE.md with refreshed complexity targets and guidance for adding new services or orchestrators."
+],
+"blocked_by": [
+"P2-T3",
+"P5-T2",
+"P5-T3"
+],
+"blocks": [
+"CHECKPOINT-P5"
+],
+"lines_to_delete": 240,
+"lines_to_add": 150
+}
+]
+}
+],
+"human_decision_points": [
+{
+"id": "DECISION-DOWNLOAD-URL-STRATEGY",
+"title": "Choose download manifest strategy (pre-signed URLs vs stream tokens)",
+"description": "Decide whether DownloadService should issue direct pre-signed URLs for video/audio streams or return short-lived stream tokens that the client exchanges for URLs, balancing security (token-based) against performance and caching (pre-signed URLs).",
+"phase_id": "phase-4",
+"occurs_after_tasks": [
+"P2-T1",
+"P2-T2",
+"P4-T1"
+],
+"options": [
+"Pre-signed URLs: simpler client implementation, but more exposure of backend URL patterns and potentially larger attack surface if URLs are leaked.",
+"Stream tokens: more indirection and control on backend, easier to revoke or rotate, but increases request count and implementation complexity."
+],
+"impact": "This decision shapes DownloadService API design, affects how manifests are structured, and determines how much trust is placed in clients versus backend gateways.",
+"required_inputs": [
+"Security requirements from docs/architecture/security.md",
+"Expected traffic volume and download concurrency from PRD.md",
+"Ops constraints around CDN or storage integration"
+],
+"blocks_tasks": [
+"P4-T2",
+"P4-T3"
+]
+},
+{
+"id": "DECISION-HILT-KOIN",
+"title": "Finalize Android DI framework (Hilt vs Koin)",
+"description": "Confirm that Hilt is the long-term DI framework for the Android app, or choose Koin (or another alternative) based on team experience and tooling preferences before migrating the entire app away from ServiceLocator.",
+"phase_id": "phase-3",
+"occurs_after_tasks": [
+"P3-T1"
+],
+"options": [
+"Hilt: tightly integrated with AndroidX and Google tooling, more boilerplate but strong ecosystem support.",
+"Koin: lightweight, DSL-based configuration, easier to adopt but less deeply integrated with standard Android tooling."
+],
+"impact": "This decision determines how the remaining ViewModels, workers, and services are wired, and influences future onboarding, testing, and refactoring patterns.",
+"required_inputs": [
+"Team familiarity with Dagger/Hilt vs Koin",
+"Existing use of AndroidX and Jetpack libraries",
+"Constraints from current or planned CI and static analysis tools"
+],
+"blocks_tasks": [
+"P3-T2",
+"P3-T3",
+"P3-T4"
+]
+},
+{
+"id": "DECISION-FFMPEG-SCOPE",
+"title": "Scope of FFmpeg integration on Android",
+"description": "Decide whether FFmpeg-based merging is required for the initial production release or should be limited to specific quality tiers or environments, considering APK size, performance, and implementation complexity.",
+"phase_id": "phase-4",
+"occurs_after_tasks": [
+"P4-T1"
+],
+"options": [
+"Full FFmpeg support for high qualities at launch.",
+"Limited FFmpeg support behind a feature flag or only on specific device classes.",
+"Defer FFmpeg to a later release and support only qualities that do not require merging."
+],
+"impact": "This decision affects download UX at higher qualities, binary size, and the complexity of DownloadWorker and player integration.",
+"required_inputs": [
+"Target device performance profile and storage constraints",
+"User expectations around quality tiers from PRD.md",
+"Release timeline and capacity for QA on multiple device types"
+],
+"blocks_tasks": [
+"P4-T4"
+]
+}
+],
+"architectural_validation_checkpoints": [
+{
+"id": "CHECKPOINT-P0",
+"title": "Post-Phase-0 Build Stability",
+"description": "Backend and Android builds are stable; no flaky tests observed; CI passes on first run.",
+"phase_id": "phase-0",
+"depends_on_tasks": [
+"P0-T1",
+"P0-T2",
+"P0-T3"
+],
+"criteria": [
+"./mvnw clean install passes without dependency conflicts or transient failures.",
+"cd android && ./gradlew assembleDebug passes reliably on local and CI runs.",
+"No DownloadServiceTest or NewPipe-related flakes observed over multiple CI runs."
+]
+},
+{
+"id": "CHECKPOINT-P3",
+"title": "Post-Phase-3 Android DI and ServiceLocator Removal",
+"description": "ServiceLocator has been fully removed, DI is in place, and the app behaves correctly without leaks or hidden singletons.",
+"phase_id": "phase-3",
+"depends_on_tasks": [
+"P3-T1",
+"P3-T2",
+"P3-T3",
+"P3-T4"
+],
+"criteria": [
+"Search for ServiceLocator returns zero matches in the Android app codebase.",
+"App survives orientation changes and background/foreground transitions without memory leaks or crashes attributable to DI.",
+"Android integration tests for home, downloads, and player features all pass with DI-based wiring."
+]
+},
+{
+"id": "CHECKPOINT-P4",
+"title": "Post-Phase-4 Download System Readiness",
+"description": "Real download system is in place with 30-day expiry and FFmpeg behavior validated for required qualities.",
+"phase_id": "phase-4",
+"depends_on_tasks": [
+"P4-T1",
+"P4-T2",
+"P4-T3",
+"P4-T4"
+],
+"criteria": [
+"End-to-end downloads from admin-approved content work on a physical device, including manifest retrieval and offline playback.",
+"Downloads expire correctly after 30 days as per PRD requirements, with clear user-facing behavior when content expires.",
+"FFmpeg merging path (where enabled) has been validated on at least one representative device without stability issues."
+]
+},
+{
+"id": "CHECKPOINT-P5",
+"title": "Post-Phase-5 Frontend and YouTubeService Simplification",
+"description": "Frontend HTTP stack is unified, services are small and focused, and YouTubeService has been reduced to a thin facade.",
+"phase_id": "phase-5",
+"depends_on_tasks": [
+"P5-T1",
+"P5-T2",
+"P5-T3",
+"P5-T4"
+],
+"criteria": [
+"There is exactly one HTTP client stack in the frontend (Axios-based apiClient); authorizedJsonFetch is removed.",
+"Each frontend service file is under 100 lines of code (excluding comments), and YouTubeService.java is under 200 lines.",
+"Generated DTO types are enforced throughout frontend and Android projects with no remaining field aliasing."
+]
+}
+],
+"simplification_metric_targets": {
+"service_locator_lines": {
+"before": 200,
+"after": 0,
+"achieved_by_tasks": [
+"P3-T1",
+"P3-T2",
+"P3-T3",
+"P3-T4"
+]
+},
+"youtube_service_lines": {
+"before": 500,
+"after": 200,
+"achieved_by_tasks": [
+"P2-T3",
+"P5-T4"
+]
+},
+"frontend_http_clients": {
+"before": 2,
+"after": 1,
+"achieved_by_tasks": [
+"P5-T1"
+]
+},
+"download_service_files": {
+"before": 8,
+"after": 3,
+"achieved_by_tasks": [
+"P4-T1",
+"P4-T2",
+"P5-T3"
+]
+},
+"field_aliasing_occurrences": {
+"before": "N>0 (e.g., item.subscriberCount || item.subscribers)",
+"after": 0,
+"achieved_by_tasks": [
+"P1-T3"
+]
+},
+"network_security_cleartext_domains": {
+"before": "Includes production/VPS IPs",
+"after": "Only localhost and dev/test IPs",
+"achieved_by_tasks": [
+"P0-T1"
+]
+},
+"newpipe_integration_scopes": {
+"before": "Monolithic YouTubeService and version drift across backend and Android",
+"after": "Scoped YouTubeGateway with documented version and upgrade path",
+"achieved_by_tasks": [
+"P0-T1",
+"P2-T3"
+]
+}
+}
+}

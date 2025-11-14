@@ -5,6 +5,7 @@ import com.albunyaan.tube.exception.ResourceNotFoundException;
 import com.albunyaan.tube.model.ValidationStatus;
 import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.service.PublicContentService;
+import com.google.firebase.auth.FirebaseAuth;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
@@ -35,6 +36,9 @@ public class PublicContentControllerTest {
 
     @MockBean
     private PublicContentService contentService;
+
+    @MockBean
+    private FirebaseAuth firebaseAuth;
 
     private Video testVideo;
 
