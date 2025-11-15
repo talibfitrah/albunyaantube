@@ -77,7 +77,7 @@ class AuthServiceTest {
 
         verify(firebaseAuth).createUser(any(UserRecord.CreateRequest.class));
         verify(firebaseAuth).setCustomUserClaims(eq("test-uid"), argThat(claims ->
-                claims.get("role").equals("moderator")
+                claims.get("role").equals("MODERATOR")  // Role is converted to uppercase in implementation
         ));
         verify(userRepository).save(any(User.class));
     }
@@ -119,7 +119,7 @@ class AuthServiceTest {
         assertEquals("admin", updatedUser.getRole());
 
         verify(firebaseAuth).setCustomUserClaims(eq("test-uid"), argThat(claims ->
-                claims.get("role").equals("admin")
+                claims.get("role").equals("ADMIN")  // Role is converted to uppercase in implementation
         ));
         verify(userRepository).findByUid("test-uid");
         verify(userRepository).save(testUser);

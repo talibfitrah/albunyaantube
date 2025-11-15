@@ -1,5 +1,6 @@
 package com.albunyaan.tube.repository;
 
+import com.albunyaan.tube.config.FirestoreTimeoutProperties;
 import com.albunyaan.tube.model.User;
 import com.google.api.core.ApiFuture;
 import com.google.cloud.firestore.*;
@@ -13,11 +14,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.*;
 
 /**
@@ -29,6 +30,9 @@ class UserRepositoryTest {
 
     @Mock
     private Firestore firestore;
+
+    @Mock
+    private FirestoreTimeoutProperties timeoutProperties;
 
     @Mock
     private CollectionReference collectionReference;
@@ -66,6 +70,11 @@ class UserRepositoryTest {
 
         // Setup basic Firestore mocking
         when(firestore.collection("users")).thenReturn(collectionReference);
+
+        // Setup timeout properties mocking (lenient to avoid unnecessary stubbing warnings)
+        lenient().when(timeoutProperties.getRead()).thenReturn(2L);
+        lenient().when(timeoutProperties.getWrite()).thenReturn(5L);
+        lenient().when(timeoutProperties.getBulkQuery()).thenReturn(10L);
     }
 
     @Test
@@ -73,7 +82,7 @@ class UserRepositoryTest {
         // Arrange
         when(collectionReference.document("test-uid")).thenReturn(documentReference);
         when(documentReference.set(any(User.class))).thenReturn(writeResultFuture);
-        when(writeResultFuture.get()).thenReturn(mock(WriteResult.class));
+        when(writeResultFuture.get(anyLong(), any(TimeUnit.class))).thenReturn(mock(WriteResult.class));
 
         // Act
         User savedUser = userRepository.save(testUser);
@@ -92,7 +101,7 @@ class UserRepositoryTest {
         // Arrange
         when(collectionReference.document("test-uid")).thenReturn(documentReference);
         when(documentReference.get()).thenReturn(documentSnapshotFuture);
-        when(documentSnapshotFuture.get()).thenReturn(documentSnapshot);
+        when(documentSnapshotFuture.get(anyLong(), any(TimeUnit.class))).thenReturn(documentSnapshot);
         when(documentSnapshot.toObject(User.class)).thenReturn(testUser);
 
         // Act
@@ -112,7 +121,7 @@ class UserRepositoryTest {
         // Arrange
         when(collectionReference.document("nonexistent")).thenReturn(documentReference);
         when(documentReference.get()).thenReturn(documentSnapshotFuture);
-        when(documentSnapshotFuture.get()).thenReturn(documentSnapshot);
+        when(documentSnapshotFuture.get(anyLong(), any(TimeUnit.class))).thenReturn(documentSnapshot);
         when(documentSnapshot.toObject(User.class)).thenReturn(null);
 
         // Act
@@ -130,7 +139,7 @@ class UserRepositoryTest {
         when(collectionReference.whereEqualTo("email", "test@example.com")).thenReturn(query);
         when(query.limit(1)).thenReturn(query);
         when(query.get()).thenReturn(querySnapshotFuture);
-        when(querySnapshotFuture.get()).thenReturn(querySnapshot);
+        when(querySnapshotFuture.get(anyLong(), any(TimeUnit.class))).thenReturn(querySnapshot);
         when(querySnapshot.toObjects(User.class)).thenReturn(Arrays.asList(testUser));
 
         // Act
@@ -151,7 +160,7 @@ class UserRepositoryTest {
         when(collectionReference.whereEqualTo("email", "nonexistent@example.com")).thenReturn(query);
         when(query.limit(1)).thenReturn(query);
         when(query.get()).thenReturn(querySnapshotFuture);
-        when(querySnapshotFuture.get()).thenReturn(querySnapshot);
+        when(querySnapshotFuture.get(anyLong(), any(TimeUnit.class))).thenReturn(querySnapshot);
         when(querySnapshot.toObjects(User.class)).thenReturn(Arrays.asList());
 
         // Act
@@ -169,7 +178,7 @@ class UserRepositoryTest {
 
         when(collectionReference.orderBy("createdAt", Query.Direction.DESCENDING)).thenReturn(query);
         when(query.get()).thenReturn(querySnapshotFuture);
-        when(querySnapshotFuture.get()).thenReturn(querySnapshot);
+        when(querySnapshotFuture.get(anyLong(), any(TimeUnit.class))).thenReturn(querySnapshot);
         when(querySnapshot.toObjects(User.class)).thenReturn(users);
 
         // Act
@@ -194,7 +203,7 @@ class UserRepositoryTest {
         when(collectionReference.whereEqualTo("role", "admin")).thenReturn(query);
         when(query.orderBy("displayName", Query.Direction.ASCENDING)).thenReturn(query);
         when(query.get()).thenReturn(querySnapshotFuture);
-        when(querySnapshotFuture.get()).thenReturn(querySnapshot);
+        when(querySnapshotFuture.get(anyLong(), any(TimeUnit.class))).thenReturn(querySnapshot);
         when(querySnapshot.toObjects(User.class)).thenReturn(admins);
 
         // Act
@@ -214,7 +223,7 @@ class UserRepositoryTest {
         // Arrange
         when(collectionReference.document("test-uid")).thenReturn(documentReference);
         when(documentReference.delete()).thenReturn(writeResultFuture);
-        when(writeResultFuture.get()).thenReturn(mock(WriteResult.class));
+        when(writeResultFuture.get(anyLong(), any(TimeUnit.class))).thenReturn(mock(WriteResult.class));
 
         // Act
         userRepository.deleteByUid("test-uid");
@@ -222,7 +231,7 @@ class UserRepositoryTest {
         // Assert
         verify(collectionReference).document("test-uid");
         verify(documentReference).delete();
-        verify(writeResultFuture).get();
+        verify(writeResultFuture).get(anyLong(), any(TimeUnit.class));
     }
 
     @Test
@@ -230,7 +239,7 @@ class UserRepositoryTest {
         // Arrange
         when(collectionReference.document("test-uid")).thenReturn(documentReference);
         when(documentReference.get()).thenReturn(documentSnapshotFuture);
-        when(documentSnapshotFuture.get()).thenReturn(documentSnapshot);
+        when(documentSnapshotFuture.get(anyLong(), any(TimeUnit.class))).thenReturn(documentSnapshot);
         when(documentSnapshot.exists()).thenReturn(true);
 
         // Act
@@ -248,7 +257,7 @@ class UserRepositoryTest {
         // Arrange
         when(collectionReference.document("nonexistent")).thenReturn(documentReference);
         when(documentReference.get()).thenReturn(documentSnapshotFuture);
-        when(documentSnapshotFuture.get()).thenReturn(documentSnapshot);
+        when(documentSnapshotFuture.get(anyLong(), any(TimeUnit.class))).thenReturn(documentSnapshot);
         when(documentSnapshot.exists()).thenReturn(false);
 
         // Act
