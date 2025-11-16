@@ -13,7 +13,7 @@ jobs:
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 6  # 300s shell timeout + 1min buffer
     defaults:
       run:
         working-directory: backend
@@ -31,8 +31,8 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
-      - name: Run unit tests only (300s timeout, excludes integration tests)
-        run: timeout 300 ./gradlew clean build -Pintegration=false
+      - name: Run unit tests only (300s timeout, excludes integration tests by default)
+        run: timeout 300 ./gradlew clean build
 
       - name: Upload test reports
         if: failure()
@@ -47,7 +47,7 @@ jobs:
   integration-tests:
     name: Integration Tests (On-Demand)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10  # Generous timeout for npm install + emulator + 300s tests
     # Run only on manual trigger or nightly schedule
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     defaults:
@@ -67,14 +67,29 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
-      - name: Setup Firebase Emulator
+      - name: Setup Node.js for Firebase Emulator
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install and start Firebase Emulator
+        working-directory: backend
         run: |
-          npm install -g firebase-tools
-          # Note: Firebase emulator setup would go here
-          # firebase emulators:start --only firestore,auth &
+          npm install -g firebase-tools@13.0.2
+          firebase emulators:start --only firestore,auth --project demo-test &
+          # Wait for Firestore emulator to be ready on port 8090 (fail if not ready in 30s)
+          if ! timeout 30 bash -c 'until curl -s http://localhost:8090 > /dev/null; then sleep 1; done'; then
+            echo "ERROR: Firestore emulator failed to start on port 8090 within 30 seconds"
+            exit 1
+          fi
+          echo "✓ Firestore emulator ready on port 8090"
+          sleep 2
 
       - name: Run integration tests (300s timeout)
         run: timeout 300 ./gradlew test -Pintegration=true
+        env:
+          FIRESTORE_EMULATOR_HOST: localhost:8090
+          FIREBASE_AUTH_EMULATOR_HOST: localhost:9099
 
       - name: Upload test reports
         if: failure()

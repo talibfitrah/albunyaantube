@@ -13,11 +13,11 @@ This document defines the testing and build policies for AI agents and developer
 |----------|---------------------|------------|------------------|--------|
 | Backend | ✅ 300s (build.gradle.kts) | ✅ 300s | ✅ 30s (JUnit systemProperty) | COMPLETE |
 | Frontend | ✅ 300s (npm script) | ✅ 300s | ✅ 30s (vitest.config.ts) | COMPLETE |
-| Android | ❌ Not configured | ✅ 300s | ❌ Not configured | CI-ONLY |
+| Android | ✅ 300s (app/build.gradle.kts) | ✅ 300s | ❌ Not configured | COMPLETE |
 
 **Two-Layer Defense**:
-- Backend/Frontend: Gradle/npm timeout + CI timeout (belt-and-suspenders)
-- Android: CI timeout only (recommended to add Gradle-level timeout)
+- All platforms: Gradle/npm timeout + CI timeout (belt-and-suspenders)
+- Android per-test timeout: Recommended to add JUnit @Timeout or similar for consistency
 
 ---
 
@@ -93,23 +93,22 @@ export default defineConfig({
 ```
 
 #### Android (Gradle)
-**Status**: Currently enforced via CI timeout only. Gradle-level timeout recommended but not yet implemented.
+**Status**: ✅ IMPLEMENTED (android/app/build.gradle.kts:120-126)
 
-**Recommended** (to match backend's two-layer defense):
 ```kotlin
-// app/build.gradle.kts
+// app/build.gradle.kts (ALREADY IMPLEMENTED)
 android {
   testOptions {
-    unitTests {
-      all {
-        timeout = java.time.Duration.ofSeconds(300)  // 300 seconds
-      }
+    unitTests.all {
+      // Enforce 300s (5-minute) global test timeout per AGENTS.md policy
+      // Prevents hanging tests from blocking CI/CD
+      it.timeout = Duration.ofSeconds(300)
     }
   }
 }
 ```
 
-**Current**: Enforced only via CI `timeout 300 ./gradlew test` (see CI/CD section below)
+**Also enforced via CI**: `timeout 300 ./gradlew test` (belt-and-suspenders approach)
 
 #### CI/CD (GitHub Actions)
 ```yaml

@@ -1,6 +1,6 @@
 # Development Guide
 **Last Updated**: 2025-11-16
-**Status**: Active - Verified dependency versions and build procedures (P0-T1 completed)
+**Status**: Active - Verified dependency versions and build procedures (P0-T1 completed, Netty updated to 4.1.118.Final in additional fixes)
 
 ---
 
@@ -28,7 +28,7 @@ Spring Boot: 3.2.5
 Firebase Admin SDK: 9.2.0
 NewPipeExtractor: v0.24.8
 OkHttp: 4.12.0
-Netty: 4.1.109.Final (enforced via dependency constraints in build.gradle.kts)
+Netty: 4.1.118.Final (enforced via dependency constraints in build.gradle.kts, updated 2025-11-16 for CVE fixes)
 Kotlin (Gradle wrapper): 1.9.20
 Caffeine Cache: Latest (managed by Spring Boot BOM)
 ```
@@ -336,11 +336,11 @@ export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 
 #### Error: "NoSuchMethodError: io.netty.*"
 **Cause**: Netty version conflict
-**Status**: ✅ RESOLVED (Netty pinned to 4.1.109.Final via dependency constraints in `backend/build.gradle.kts`)
+**Status**: ✅ RESOLVED (Netty pinned to 4.1.118.Final via dependency constraints in `backend/build.gradle.kts`)
 **Verification**:
 ```bash
 ./gradlew dependencies --configuration runtimeClasspath | grep netty-common
-# Should show single version: 4.1.109.Final
+# Should show single version: 4.1.118.Final
 ```
 
 #### Error: "Firebase credentials not found"
