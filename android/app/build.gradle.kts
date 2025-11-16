@@ -1,5 +1,6 @@
 import java.util.Properties
 import java.io.FileInputStream
+import java.time.Duration
 
 plugins {
     id("com.android.application")
@@ -101,6 +102,14 @@ android {
     buildFeatures {
         buildConfig = true
         viewBinding = true
+    }
+
+    testOptions {
+        unitTests.all {
+            // Enforce 300s (5-minute) global test timeout per AGENTS.md policy
+            // Prevents hanging tests from blocking CI/CD
+            it.timeout = Duration.ofSeconds(300)
+        }
     }
 }
 
