@@ -152,6 +152,91 @@ All use Firestore SDK directly (no Spring Data JPA):
 
 ---
 
+## API Contract & Client Integration
+
+### OpenAPI Specification Status
+- **Version**: OpenAPI 3.0.3 (downgraded from 3.1.0 for wider tool compatibility)
+- **Validation**: ✅ Valid spec with 0 errors (134 warnings - acceptable)
+- **Endpoints**: 113+ endpoints across 14 controllers fully documented
+- **Schemas**: 60+ DTOs defined including models, requests, and responses
+
+### DTO Alignment Strategy
+
+**Dual-Pattern Response Architecture**:
+The API uses two response patterns depending on endpoint purpose:
+
+1. **Detail Endpoints** (Channel/Playlist/Video detail by ID):
+   - Return raw **model objects** with full Firestore fields
+   - Examples: `/v1/channels/{channelId}`, `/v1/playlists/{playlistId}`
+   - Schema names: `Channel`, `Playlist`, `Video`
+   - Purpose: Complete data for admin dashboard and deep linking
+
+2. **Public Content Listing** (Mobile app browsing):
+   - Returns unified **ContentItemDto** for simplified client consumption
+   - Examples: `/v1/content` (cursor-paginated)
+   - Polymorphic fields: `type` discriminator (CHANNEL/PLAYLIST/VIDEO)
+   - Purpose: Optimized payloads for infinite scroll
+
+**Field Name Conventions**:
+- Channels: Use `name` (not `title`), `subscribers` (not `subscriberCount`)
+- Playlists & Videos: Use `title`
+- Videos: Duration in `durationSeconds` (models) vs `durationMinutes` (ContentItemDto)
+- Timestamps: ISO 8601 format (`uploadedAt` field name in models)
+
+**Status Enum Migration**:
+- Models use `status` enum (APPROVED/PENDING/REJECTED/UNAVAILABLE)
+- Legacy boolean flags (`pending`, `approved`) remain for backwards compatibility
+- Clients should reference `status` field going forward
+
+**Metadata Patterns**:
+- Individual metadata fields: `createdAt`, `updatedAt`, `submittedBy`, `approvedBy`
+- Embedded approval metadata: `approvalMetadata` object (Channel/Playlist only)
+  - Contains: `reviewedBy`, `reviewerDisplayName`, `reviewedAt`, `reviewNotes`, `rejectionReason`
+
+### Pagination Standards
+
+**Cursor-Based Pagination**:
+- Response wrapper: `CursorPageDto<T>`
+- Structure: `{data: T[], pageInfo: {nextCursor: string|null}}`
+- Implemented on: `/v1/content` (mobile app listing)
+- Query params: `cursor` (opaque string), `limit` (1-50, default 20)
+
+**Non-Paginated Responses**:
+- `/v1/search`: Returns simple array `ContentItemDto[]` (limit-only, no cursor)
+- Rationale: Search is limited by relevance (top N results), not suitable for infinite scroll
+
+### Code Generation Approach
+
+**Planned Generator Setup** (Phase 1 - Task 2):
+1. **Frontend (TypeScript)**: `openapi-generator-cli` → `src/generated/api/`
+2. **Android (Kotlin)**: `openapi-generator-cli` → `app/src/main/kotlin/generated/`
+3. **CI Integration**: Pre-build step regenerates on spec changes
+4. **Migration Path**: Replace hand-rolled DTOs incrementally per module
+
+**Benefits**:
+- Single source of truth (api-specification.yaml)
+- Compile-time type safety across all 3 platforms
+- Automatic field mapping and validation
+- Reduces field aliasing bugs (e.g., `subscriberCount` vs `subscribers`)
+
+### Version Compatibility
+
+**Breaking Changes Policy** (v1.1+):
+- Major version bump (e.g., `/v2/...`) for incompatible changes
+- Deprecation warnings via `deprecated: true` in spec
+- 6-month support window for deprecated endpoints
+
+**Current Status**:
+- API version: `v1` (stable since Phase 0 completion)
+- Next breaking change target: v1.1 (auto-approval rules, extractor fallback)
+
+### Related Files
+- [api-specification.yaml](api-specification.yaml) - Complete OpenAPI spec
+- [endpoint-inventory.md](endpoint-inventory.md) - Controller-by-controller endpoint list
+- `backend/src/main/java/com/albunyaan/tube/dto/` - Backend DTO implementations
+
+---
+
 ## Android Architecture
 
 ### Technology Stack
@@ -408,7 +493,7 @@ See [../status/TESTING_GUIDE.md](../status/TESTING_GUIDE.md) for detailed testin
 
 ## Traceability
 - **PRD**: [../PRD.md](../PRD.md) - Product requirements
-- **API Spec**: [api-specification.yaml](api-specification.yaml) - OpenAPI 3.1 contract
+- **API Spec**: [api-specification.yaml](api-specification.yaml) - OpenAPI 3.0.3 contract (113+ endpoints, 60+ schemas)
 - **Security**: [security.md](security.md) - Threat model
 - **C4 Diagrams**: [diagrams/](diagrams/) - Context, component diagrams
 - **Testing**: [../status/TESTING_GUIDE.md](../status/TESTING_GUIDE.md) - Test strategy
@@ -417,5 +502,5 @@ See [../status/TESTING_GUIDE.md](../status/TESTING_GUIDE.md) for detailed testin
 
 ---
 
-**Last Updated**: November 10, 2025
+**Last Updated**: November 16, 2025
 **Status**: ~60% complete - Backend & frontend working, Android ready for testing

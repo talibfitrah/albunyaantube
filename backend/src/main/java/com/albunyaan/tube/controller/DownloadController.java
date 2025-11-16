@@ -3,6 +3,7 @@ package com.albunyaan.tube.controller;
 import com.albunyaan.tube.dto.DownloadManifestDto;
 import com.albunyaan.tube.dto.DownloadPolicyDto;
 import com.albunyaan.tube.dto.DownloadTokenDto;
+import com.albunyaan.tube.dto.ErrorResponse;
 import com.albunyaan.tube.security.FirebaseUserDetails;
 import com.albunyaan.tube.service.DownloadService;
 import org.springframework.http.HttpStatus;
@@ -29,25 +30,43 @@ public class DownloadController {
     }
 
     @PostMapping("/token/{videoId}")
-    public ResponseEntity<DownloadTokenDto> generateToken(@PathVariable String videoId, @RequestBody Map<String, Boolean> request,
+    public ResponseEntity<?> generateToken(@PathVariable String videoId, @RequestBody Map<String, Boolean> request,
             @AuthenticationPrincipal FirebaseUserDetails user) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        boolean eulaAccepted = request.getOrDefault("eulaAccepted", false);
+        // Validate request body
+        if (request == null || !request.containsKey("eulaAccepted")) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ErrorResponse("INVALID_REQUEST", "Missing required field: eulaAccepted"));
+        }
+
+        Boolean eulaAcceptedValue = request.get("eulaAccepted");
+        if (eulaAcceptedValue == null) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ErrorResponse("INVALID_REQUEST", "Field eulaAccepted cannot be null"));
+        }
+
+        if (!eulaAcceptedValue) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(new ErrorResponse("EULA_NOT_ACCEPTED", "EULA must be accepted to download content"));
+        }
+
         try {
-            DownloadTokenDto token = downloadService.generateDownloadToken(videoId, user != null ? user.getUid() : "anonymous", eulaAccepted);
+            DownloadTokenDto token = downloadService.generateDownloadToken(videoId, user != null ? user.getUid() : "anonymous", eulaAcceptedValue);
             return ResponseEntity.ok(token);
         } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(new ErrorResponse("POLICY_VIOLATION", e.getMessage()));
         }
     }
 
     @GetMapping("/manifest/{videoId}")
-    public ResponseEntity<DownloadManifestDto> getManifest(@PathVariable String videoId, @RequestParam String token)
+    public ResponseEntity<?> getManifest(@PathVariable String videoId, @RequestParam String token)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         try {
             DownloadManifestDto manifest = downloadService.getDownloadManifest(videoId, token);
             return ResponseEntity.ok(manifest);
         } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(new ErrorResponse("INVALID_TOKEN", e.getMessage()));
         }
     }
 
