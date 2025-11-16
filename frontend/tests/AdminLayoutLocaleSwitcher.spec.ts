@@ -16,11 +16,20 @@ function buildRouter() {
     history: createMemoryHistory(),
     routes: [
       { path: '/', name: 'dashboard', component: { template: '<div />' } },
-      { path: '/registry', name: 'registry', component: { template: '<div />' } },
+      { path: '/content-search', name: 'content-search', component: { template: '<div />' } },
+      { path: '/categories', name: 'categories', component: { template: '<div />' } },
+      { path: '/approvals', name: 'approvals', component: { template: '<div />' } },
+      { path: '/content-library', name: 'content-library', component: { template: '<div />' } },
       { path: '/exclusions', name: 'exclusions', component: { template: '<div />' } },
-      { path: '/moderation', name: 'moderation', component: { template: '<div />' } },
+      { path: '/bulk-import-export', name: 'bulk-import-export', component: { template: '<div />' } },
+      { path: '/video-validation', name: 'video-validation', component: { template: '<div />' } },
       { path: '/users', name: 'users', component: { template: '<div />' } },
-      { path: '/audit', name: 'audit', component: { template: '<div />' } }
+      { path: '/audit', name: 'audit', component: { template: '<div />' } },
+      { path: '/activity', name: 'activity', component: { template: '<div />' } },
+      { path: '/settings/profile', name: 'settings-profile', component: { template: '<div />' } },
+      { path: '/settings/notifications', name: 'settings-notifications', component: { template: '<div />' } },
+      { path: '/settings/system', name: 'settings-system', component: { template: '<div />' } },
+      { path: '/login', name: 'login', component: { template: '<div />' } }
     ]
   });
 }
@@ -53,7 +62,10 @@ describe('AdminLayout locale switcher', () => {
       }
     });
 
-    const select = await screen.findByLabelText(/interface language/i);
+    // Use getAllByLabelText since there are two locale switchers (mobile + desktop)
+    const selects = await screen.findAllByLabelText(/interface language/i);
+    // Check the first one (both should be identical)
+    const select = selects[0];
     const options = Array.from(select.querySelectorAll('option')).map((option) => option.textContent);
 
     expect(select).toHaveValue('en');
@@ -83,7 +95,9 @@ describe('AdminLayout locale switcher', () => {
       }
     });
 
-    const select = await screen.findByLabelText(/interface language/i);
+    // Use getAllByLabelText since there are two locale switchers (mobile + desktop)
+    const selects = await screen.findAllByLabelText(/interface language/i);
+    const select = selects[0];
     await fireEvent.update(select, 'ar');
 
     await waitFor(() => {

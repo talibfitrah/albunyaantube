@@ -24,6 +24,13 @@ const sampleResponse: DashboardMetricsResponse = {
       current: 6,
       previous: 6,
       trend: 'FLAT'
+    },
+    videoValidation: {
+      status: 'COMPLETED',
+      videosChecked: 120,
+      videosMarkedUnavailable: 3,
+      validationErrors: 0,
+      lastRunAt: '2024-10-10T11:00:00Z'
     }
   },
   meta: {
@@ -50,8 +57,9 @@ describe('useDashboardMetrics', () => {
     await metrics.refresh();
 
     expect(fetchDashboardMetricsMock).toHaveBeenCalledWith('LAST_24_HOURS');
-    expect(metrics.cards.value).toHaveLength(3);
+    expect(metrics.cards.value).toHaveLength(4);
     expect(metrics.cards.value[0].kind).toBe('comparison');
+    expect(metrics.cards.value[3].kind).toBe('validation');
     expect(metrics.lastUpdated.value).toBe('2024-10-10T12:00:00Z');
   });
 

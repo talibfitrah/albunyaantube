@@ -282,6 +282,13 @@ describe('PlaylistDetailModal', () => {
   });
 
   it('should disable action buttons when loading', async () => {
+    // Create a deferred promise to control when the API call resolves
+    let resolveExclusion: (value: void) => void;
+    const exclusionPromise = new Promise<void>((resolve) => {
+      resolveExclusion = resolve;
+    });
+    vi.mocked(addPlaylistExclusion).mockReturnValue(exclusionPromise);
+
     renderModal();
 
     await waitFor(() => {
@@ -295,7 +302,12 @@ describe('PlaylistDetailModal', () => {
     fireEvent.click(excludeButton);
 
     // Button should be disabled during API call
-    expect(excludeButton.disabled).toBe(true);
+    await waitFor(() => {
+      expect(excludeButton.disabled).toBe(true);
+    });
+
+    // Resolve the promise to complete the test
+    resolveExclusion!();
   });
 
   it('should reset state when modal closes and reopens', async () => {
@@ -329,6 +341,7 @@ describe('PlaylistDetailModal', () => {
 
     // Note: Actual pagination scrolling would require more complex testing with scroll simulation
     // This test verifies that the nextPageToken is captured from the API response
-    await expect(vi.mocked(getPlaylistVideos).mock.results[0].value).resolves.toHaveProperty('nextPageToken', 'token123');
+    const result = await vi.mocked(getPlaylistVideos).mock.results[0].value;
+    expect(result).toHaveProperty('nextPageToken', 'token123');
   });
 });

@@ -1,10 +1,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import axios from 'axios';
 import { apiClient } from '@/services/api/client';
 
-vi.mock('axios');
-vi.mock('@/stores/auth');
-vi.mock('@/utils/toast');
+// Mock only the auth store and toast, NOT axios
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: vi.fn(() => ({
+    idToken: null,
+    refreshToken: vi.fn(),
+    logout: vi.fn()
+  }))
+}));
+vi.mock('@/utils/toast', () => ({
+  toast: {
+    error: vi.fn()
+  }
+}));
 
 describe('API Client', () => {
   beforeEach(() => {
@@ -25,6 +34,8 @@ describe('API Client', () => {
 
   it('should have correct base URL', () => {
     expect(apiClient.defaults.baseURL).toBeDefined();
+    // Should be either env var or default
+    expect(apiClient.defaults.baseURL).toMatch(/^https?:\/\//);
   });
 
   it('should have correct default headers', () => {
@@ -37,16 +48,18 @@ describe('API Client', () => {
   });
 
   describe('Request Interceptor', () => {
-    it('should add Authorization header if token exists', () => {
-      // This would require more complex mocking of the auth store
-      // Skipping for now as it's implementation detail
+    it('should have request interceptor configured', () => {
       expect(apiClient.interceptors.request).toBeDefined();
+      // Verify interceptor handlers exist
+      expect(apiClient.interceptors.request.handlers.length).toBeGreaterThan(0);
     });
   });
 
   describe('Response Interceptor', () => {
-    it('should handle successful responses', () => {
+    it('should have response interceptor configured', () => {
       expect(apiClient.interceptors.response).toBeDefined();
+      // Verify interceptor handlers exist
+      expect(apiClient.interceptors.response.handlers.length).toBeGreaterThan(0);
     });
   });
 });

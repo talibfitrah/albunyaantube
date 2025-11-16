@@ -5,18 +5,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import UsersManagementView from '@/views/UsersManagementView.vue';
 import { messages } from '@/locales/messages';
 import {
-  fetchAdminUsersPage,
-  createAdminUser,
-  updateAdminUser,
-  deleteAdminUser
+  fetchUsersPage,
+  createUser,
+  updateUserRole,
+  updateUserStatus,
+  deleteUser
 } from '@/services/adminUsers';
 import type { AdminUser, AdminUsersPage } from '@/types/admin';
 
 vi.mock('@/services/adminUsers', () => ({
-  fetchAdminUsersPage: vi.fn(),
-  createAdminUser: vi.fn(),
-  updateAdminUser: vi.fn(),
-  deleteAdminUser: vi.fn()
+  fetchUsersPage: vi.fn(),
+  createUser: vi.fn(),
+  updateUserRole: vi.fn(),
+  updateUserStatus: vi.fn(),
+  deleteUser: vi.fn(),
+  sendPasswordReset: vi.fn()
 }));
 
 const i18n = createI18n({
@@ -48,8 +51,9 @@ function createPage(data: AdminUser[]): AdminUsersPage {
 const baseUser: AdminUser = {
   id: 'user-1',
   email: 'admin@example.com',
-  roles: ['ADMIN'],
+  role: 'ADMIN',
   status: 'ACTIVE',
+  displayName: 'Admin One',
   lastLoginAt: '2025-09-20T12:00:00Z',
   createdAt: '2025-09-10T08:00:00Z',
   updatedAt: '2025-09-10T08:00:00Z'
@@ -58,20 +62,37 @@ const baseUser: AdminUser = {
 const secondUser: AdminUser = {
   id: 'user-2',
   email: 'moderator@example.com',
-  roles: ['MODERATOR'],
+  role: 'MODERATOR',
   status: 'DISABLED',
+  displayName: 'Mod Two',
   lastLoginAt: null,
   createdAt: '2025-09-15T08:00:00Z',
   updatedAt: '2025-09-20T08:00:00Z'
 };
 
+const fetchUsersPageMock = fetchUsersPage as unknown as vi.Mock;
+const createUserMock = createUser as unknown as vi.Mock;
+const updateUserRoleMock = updateUserRole as unknown as vi.Mock;
+const updateUserStatusMock = updateUserStatus as unknown as vi.Mock;
+const deleteUserMock = deleteUser as unknown as vi.Mock;
+
 describe('UsersManagementView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (fetchAdminUsersPage as unknown as vi.Mock).mockResolvedValue(createPage([baseUser, secondUser]));
-    (createAdminUser as unknown as vi.Mock).mockResolvedValue({ ...baseUser, id: 'user-3', email: 'new@example.com' });
-    (updateAdminUser as unknown as vi.Mock).mockResolvedValue({ ...baseUser });
-    (deleteAdminUser as unknown as vi.Mock).mockResolvedValue(undefined);
+    fetchUsersPageMock.mockResolvedValue(createPage([baseUser, secondUser]));
+    createUserMock.mockResolvedValue({
+      id: 'user-3',
+      email: 'new@example.com',
+      role: 'ADMIN',
+      status: 'ACTIVE',
+      displayName: 'New Admin',
+      lastLoginAt: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+    updateUserRoleMock.mockResolvedValue(undefined);
+    updateUserStatusMock.mockResolvedValue(undefined);
+    deleteUserMock.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -89,15 +110,23 @@ describe('UsersManagementView', () => {
     const emailField = within(createDialog).getByLabelText(/work email/i);
     await fireEvent.update(emailField, 'new@example.com');
 
-    const moderatorCheckbox = within(createDialog).getByLabelText(/moderator/i);
-    await fireEvent.click(moderatorCheckbox);
+    const passwordField = within(createDialog).getByLabelText(/password/i);
+    await fireEvent.update(passwordField, 'secret1');
+
+    const displayNameField = within(createDialog).getByLabelText(/display name/i);
+    await fireEvent.update(displayNameField, 'New Admin');
+
+    const adminRadio = within(createDialog).getByLabelText(/administrator/i);
+    await fireEvent.click(adminRadio);
 
     await fireEvent.click(within(createDialog).getByRole('button', { name: /create user/i }));
 
     await waitFor(() => {
-      expect(createAdminUser).toHaveBeenCalledWith({
+      expect(createUser).toHaveBeenCalledWith({
         email: 'new@example.com',
-        roles: ['ADMIN', 'MODERATOR']
+        password: 'secret1',
+        displayName: 'New Admin',
+        role: 'ADMIN'
       });
     });
   });
@@ -109,10 +138,8 @@ describe('UsersManagementView', () => {
     await fireEvent.click(screen.getAllByRole('button', { name: /edit user/i })[0]);
 
     const editDialog = await screen.findByRole('dialog', { name: /edit admin@example.com/i });
-    const moderatorCheckbox = within(editDialog).getByLabelText(/moderator/i);
-    if (!(moderatorCheckbox as HTMLInputElement).checked) {
-      await fireEvent.click(moderatorCheckbox);
-    }
+    const moderatorRadio = within(editDialog).getByLabelText(/moderator/i);
+    await fireEvent.click(moderatorRadio);
 
     const disabledRadio = within(editDialog).getByLabelText(/disabled/i);
     await fireEvent.click(disabledRadio);
@@ -120,24 +147,19 @@ describe('UsersManagementView', () => {
     await fireEvent.click(within(editDialog).getByRole('button', { name: /save changes/i }));
 
     await waitFor(() => {
-      expect(updateAdminUser).toHaveBeenCalledWith('user-1', {
-        roles: ['ADMIN', 'MODERATOR'],
-        status: 'DISABLED'
-      });
+      expect(updateUserRole).toHaveBeenCalledWith('user-1', 'MODERATOR');
+      expect(updateUserStatus).toHaveBeenCalledWith('user-1', 'DISABLED');
     });
   });
 
   it('deactivates an active user', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     renderView();
     await screen.findByText('admin@example.com');
 
     await fireEvent.click(screen.getByRole('button', { name: /deactivate/i }));
 
     await waitFor(() => {
-      expect(deleteAdminUser).toHaveBeenCalledWith('user-1');
+      expect(updateUserStatus).toHaveBeenCalledWith('user-1', 'DISABLED');
     });
-
-    confirmSpy.mockRestore();
   });
 });

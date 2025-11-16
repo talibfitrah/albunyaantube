@@ -7,16 +7,16 @@ import ModerationQueueView from '@/views/ModerationQueueView.vue';
 import { messages } from '@/locales/messages';
 import type { ModerationProposal } from '@/types/moderation';
 import {
-  fetchModerationProposals,
-  approveModerationProposal,
-  rejectModerationProposal
+  fetchProposalsPage,
+  approveProposal,
+  rejectProposal
 } from '@/services/moderation';
 import { setAuditEventSink, type AuditEventDetail } from '@/services/audit';
 
 vi.mock('@/services/moderation', () => ({
-  fetchModerationProposals: vi.fn(),
-  approveModerationProposal: vi.fn(),
-  rejectModerationProposal: vi.fn()
+  fetchProposalsPage: vi.fn(),
+  approveProposal: vi.fn(),
+  rejectProposal: vi.fn()
 }));
 
 const baseProposal: ModerationProposal = {
@@ -70,14 +70,14 @@ function setupRender() {
 }
 
 describe('ModerationQueueView', () => {
-  let fetchMock: MockedFunction<typeof fetchModerationProposals>;
-  let approveMock: MockedFunction<typeof approveModerationProposal>;
-  let rejectMock: MockedFunction<typeof rejectModerationProposal>;
+  let fetchMock: MockedFunction<typeof fetchProposalsPage>;
+  let approveMock: MockedFunction<typeof approveProposal>;
+  let rejectMock: MockedFunction<typeof rejectProposal>;
 
   beforeEach(() => {
-    fetchMock = fetchModerationProposals as unknown as MockedFunction<typeof fetchModerationProposals>;
-    approveMock = approveModerationProposal as unknown as MockedFunction<typeof approveModerationProposal>;
-    rejectMock = rejectModerationProposal as unknown as MockedFunction<typeof rejectModerationProposal>;
+    fetchMock = fetchProposalsPage as unknown as MockedFunction<typeof fetchProposalsPage>;
+    approveMock = approveProposal as unknown as MockedFunction<typeof approveProposal>;
+    rejectMock = rejectProposal as unknown as MockedFunction<typeof rejectProposal>;
 
     fetchMock.mockResolvedValue(createPage([baseProposal]));
     approveMock.mockResolvedValue({ ...baseProposal, status: 'APPROVED' });

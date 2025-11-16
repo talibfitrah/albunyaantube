@@ -179,7 +179,7 @@ watch(() => props.open, (isOpen) => {
     error.value = null
     reset()
   }
-})
+}, { immediate: true })
 
 async function loadInitialData() {
   initialLoading.value = true

@@ -101,7 +101,37 @@ Every document references related artifacts to ensure consistency:
 - **Run**: `cd frontend && npm run dev` (starts on `http://localhost:5173`)
 - **Test**: `npm test` for Vitest unit tests (300s timeout enforced)
 
-## Development Workflow
+## Canonical Build Commands
+
+These are the single source of truth for local development and CI:
+
+```bash
+# Backend (Spring Boot + Gradle 8.5)
+cd backend && ./gradlew clean build
+
+# Frontend (Vue 3 + Vite + npm)
+cd frontend && npm run build
+
+# Android (Kotlin + Gradle 8.14)
+cd android && ./gradlew assembleDebug
+```
+
+**CI Alignment:**
+- Backend CI runs `./gradlew clean build` (includes tests)
+- Frontend CI runs `npm test` (300s timeout) then `npm run build`
+- Android CI runs `./gradlew assembleDebug`, `./gradlew test`, and `./gradlew lint`
+
+**Test Commands:**
+```bash
+# Backend tests (JUnit 5, 300s timeout enforced)
+cd backend && ./gradlew test
+
+# Frontend tests (Vitest, 300s timeout enforced)
+cd frontend && npm test
+
+# Android tests
+cd android && ./gradlew test
+```
 
 **Quick Start:**
 ```bash
@@ -122,18 +152,6 @@ npm run dev  # Runs on http://localhost:5173
 # 4. Build Android app (Terminal 3)
 cd android
 ./gradlew assembleDebug  # APK in app/build/outputs/apk/debug/
-```
-
-**Testing:**
-```bash
-# Backend tests
-cd backend && ./gradlew test
-
-# Frontend tests (300s timeout enforced)
-cd frontend && npm test
-
-# Android tests
-cd android && ./gradlew test
 ```
 
 **Documentation Updates:**

@@ -12,8 +12,6 @@ group = "com.albunyaan"
 version = "0.0.1-SNAPSHOT"
 java.sourceCompatibility = JavaVersion.VERSION_17
 
-defaultTasks("bootRun")
-
 repositories {
     mavenCentral()
     // Required for Firebase and Google Cloud dependencies
@@ -23,6 +21,18 @@ repositories {
 }
 
 dependencies {
+    // Dependency constraints - P0-T1: Enforce specific versions for transitive dependencies
+    constraints {
+        implementation("io.netty:netty-common:4.1.109.Final") {
+            because("Enforce Netty version from Firebase/Spring Boot to prevent version conflicts")
+        }
+        implementation("io.netty:netty-handler:4.1.109.Final")
+        implementation("io.netty:netty-transport:4.1.109.Final")
+        implementation("io.netty:netty-codec:4.1.109.Final")
+        implementation("io.netty:netty-buffer:4.1.109.Final")
+        implementation("io.netty:netty-resolver:4.1.109.Final")
+    }
+
     // Spring Boot starters
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-security")
@@ -80,4 +90,3 @@ tasks.test {
 tasks.bootJar {
     duplicatesStrategy = DuplicatesStrategy.WARN
 }
-
