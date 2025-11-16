@@ -12,6 +12,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: frontend
@@ -32,21 +33,18 @@ jobs:
 
       - name: Run linter
         run: npm run lint
-        continue-on-error: true
 
       - name: Run type check
         run: npm run type-check
-        continue-on-error: true
 
-      - name: Run tests
-        run: npm test -- --coverage
-        continue-on-error: true
+      - name: Run tests (with 300s timeout)
+        run: timeout 300 npm test -- --coverage
 
       - name: Build
         run: npm run build
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: frontend-dist
           path: frontend/dist/
@@ -54,7 +52,7 @@ jobs:
 
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: frontend/coverage/
