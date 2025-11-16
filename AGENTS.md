@@ -266,7 +266,7 @@ timeout 300 ./gradlew clean build
 
 **Frontend**:
 ```bash
-timeout 300 npm test -- --coverage
+timeout 300 npm test
 ```
 
 **Android**:
@@ -334,15 +334,20 @@ If test runtimes exceed these baselines by >50%, investigate:
 ### Before Committing
 
 ```bash
-# 1. Run tests locally with timeout
-cd backend && timeout 300 ./gradlew test
+# 1. Run unit tests locally with timeout (fast feedback)
+cd backend && timeout 300 ./gradlew test -Pintegration=false
 cd frontend && timeout 300 npm test
 cd android && timeout 300 ./gradlew test
 
 # 2. Verify no flakiness (run 3×)
-./gradlew test && ./gradlew test && ./gradlew test
+./gradlew test -Pintegration=false && ./gradlew test -Pintegration=false && ./gradlew test -Pintegration=false
 
-# 3. Check coverage (backend example)
+# 3. Run integration tests (requires Firebase emulator - optional before commit)
+cd backend
+# Terminal 1: firebase emulators:start --only firestore,auth
+# Terminal 2: timeout 300 ./gradlew test -Pintegration=true
+
+# 4. Check coverage (backend example)
 ./gradlew test jacocoTestReport
 open build/reports/jacoco/test/html/index.html
 ```

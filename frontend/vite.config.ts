@@ -87,6 +87,11 @@ export default defineConfig({
     setupFiles: ['./tests/setup.ts'],
     include: ['tests/**/*.spec.ts'],
     css: true,
-    exclude: ['tests/e2e/**']
+    exclude: ['tests/e2e/**'],
+    // Generate JUnit XML reports for CI artifact upload
+    reporters: ['default', 'junit'],
+    outputFile: {
+      junit: './test-results/junit.xml'
+    }
   }
 });

@@ -1,4 +1,5 @@
 name: Android CI
+# To regenerate dependency report: cd android && ./gradlew :app:dependencies > app/deps.txt
 
 on:
   pull_request:

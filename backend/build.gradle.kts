@@ -26,11 +26,21 @@ dependencies {
         implementation("io.netty:netty-common:4.1.109.Final") {
             because("Enforce Netty version from Firebase/Spring Boot to prevent version conflicts")
         }
-        implementation("io.netty:netty-handler:4.1.109.Final")
-        implementation("io.netty:netty-transport:4.1.109.Final")
-        implementation("io.netty:netty-codec:4.1.109.Final")
-        implementation("io.netty:netty-buffer:4.1.109.Final")
-        implementation("io.netty:netty-resolver:4.1.109.Final")
+        implementation("io.netty:netty-handler:4.1.109.Final") {
+            because("Enforce Netty version from Firebase/Spring Boot to prevent version conflicts")
+        }
+        implementation("io.netty:netty-transport:4.1.109.Final") {
+            because("Enforce Netty version from Firebase/Spring Boot to prevent version conflicts")
+        }
+        implementation("io.netty:netty-codec:4.1.109.Final") {
+            because("Enforce Netty version from Firebase/Spring Boot to prevent version conflicts")
+        }
+        implementation("io.netty:netty-buffer:4.1.109.Final") {
+            because("Enforce Netty version from Firebase/Spring Boot to prevent version conflicts")
+        }
+        implementation("io.netty:netty-resolver:4.1.109.Final") {
+            because("Enforce Netty version from Firebase/Spring Boot to prevent version conflicts")
+        }
     }
 
     // Spring Boot starters

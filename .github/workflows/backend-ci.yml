@@ -5,9 +5,13 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:  # Allow manual trigger for integration tests
+  schedule:
+    - cron: '0 2 * * *'  # Nightly at 2 AM UTC for integration tests
 
 jobs:
-  build:
+  unit-tests:
+    name: Unit Tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -27,14 +31,56 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
-      - name: Run backend build & tests (canonical with 300s timeout)
-        run: timeout 300 ./gradlew clean build
+      - name: Run unit tests only (300s timeout, excludes integration tests)
+        run: timeout 300 ./gradlew clean build -Pintegration=false
 
       - name: Upload test reports
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: backend-test-reports
+          name: backend-unit-test-reports
+          path: |
+            backend/build/reports/tests/
+            backend/build/test-results/
+          retention-days: 7
+
+  integration-tests:
+    name: Integration Tests (On-Demand)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Run only on manual trigger or nightly schedule
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Setup Firebase Emulator
+        run: |
+          npm install -g firebase-tools
+          # Note: Firebase emulator setup would go here
+          # firebase emulators:start --only firestore,auth &
+
+      - name: Run integration tests (300s timeout)
+        run: timeout 300 ./gradlew test -Pintegration=true
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-integration-test-reports
           path: |
             backend/build/reports/tests/
             backend/build/test-results/
