@@ -4,11 +4,11 @@ import { createI18n } from 'vue-i18n';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import AuditLogView from '@/views/AuditLogView.vue';
 import { messages } from '@/locales/messages';
-import { fetchAuditPage } from '@/services/adminAudit';
+import { fetchAuditLogPage } from '@/services/adminAudit';
 import type { AuditPage } from '@/types/admin';
 
 vi.mock('@/services/adminAudit', () => ({
-  fetchAuditPage: vi.fn()
+  fetchAuditLogPage: vi.fn()
 }));
 
 const i18n = createI18n({
@@ -30,23 +30,13 @@ function createPage(): AuditPage {
     data: [
       {
         id: 'audit-1',
-        actor: {
-          id: 'user-1',
-          email: 'admin@example.com',
-          roles: ['ADMIN'],
-          status: 'ACTIVE',
-          lastLoginAt: '2025-09-20T12:00:00Z',
-          createdAt: '2025-09-10T08:00:00Z',
-          updatedAt: '2025-09-10T08:00:00Z'
-        },
+        actorUid: 'admin@example.com',
+        actorDisplayName: 'Admin User',
         action: 'users:create',
-        entity: {
-          type: 'USER',
-          id: 'user-2',
-          slug: null
-        },
-        metadata: { email: 'moderator@example.com' },
-        createdAt: '2025-10-01T10:00:00Z'
+        entityType: 'USER',
+        entityId: 'user-2',
+        details: { email: 'moderator@example.com' },
+        timestamp: '2025-10-01T10:00:00Z'
       }
     ],
     pageInfo: {
@@ -61,7 +51,7 @@ function createPage(): AuditPage {
 describe('AuditLogView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (fetchAuditPage as unknown as vi.Mock).mockResolvedValue(createPage());
+    (fetchAuditLogPage as unknown as vi.Mock).mockResolvedValue(createPage());
   });
 
   it('renders audit entries and filters by actor', async () => {
@@ -76,7 +66,7 @@ describe('AuditLogView', () => {
     vi.runAllTimers();
 
     await waitFor(() => {
-      expect((fetchAuditPage as unknown as vi.Mock).mock.calls.at(-1)[0]).toMatchObject({
+      expect((fetchAuditLogPage as unknown as vi.Mock).mock.calls.at(-1)[0]).toMatchObject({
         actorId: 'moderator@example.com'
       });
     });

@@ -321,6 +321,13 @@ describe('ChannelDetailModal', () => {
   });
 
   it('should disable action buttons when loading', async () => {
+    // Create a deferred promise to control when the API call resolves
+    let resolveExclusion: (value: void) => void;
+    const exclusionPromise = new Promise<void>((resolve) => {
+      resolveExclusion = resolve;
+    });
+    vi.mocked(addChannelExclusion).mockReturnValue(exclusionPromise);
+
     renderModal();
 
     await waitFor(() => {
@@ -334,7 +341,12 @@ describe('ChannelDetailModal', () => {
     fireEvent.click(excludeButton);
 
     // Button should be disabled during API call
-    expect(excludeButton.disabled).toBe(true);
+    await waitFor(() => {
+      expect(excludeButton.disabled).toBe(true);
+    });
+
+    // Resolve the promise to complete the test
+    resolveExclusion!();
   });
 
   it('should reset state when modal closes and reopens', async () => {

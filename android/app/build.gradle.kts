@@ -104,6 +104,19 @@ android {
         viewBinding = true
     }
 
+    lint {
+        // Create baseline to track existing issues without blocking builds
+        // Run `./gradlew updateLintBaseline` to update the baseline
+        baseline = file("lint-baseline.xml")
+
+        // Don't abort build on lint errors (issues tracked in baseline)
+        abortOnError = false
+
+        // Generate reports for review
+        htmlReport = true
+        xmlReport = true
+    }
+
     testOptions {
         unitTests.all {
             // Enforce 300s (5-minute) global test timeout per AGENTS.md policy

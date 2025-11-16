@@ -16,7 +16,14 @@ const baseResponse: DashboardMetricsResponse = {
   data: {
     pendingModeration: { current: 12, previous: 10, trend: 'UP' },
     categories: { total: 48, newThisPeriod: 5, previousTotal: 43 },
-    moderators: { current: 6, previous: 7, trend: 'DOWN' }
+    moderators: { current: 6, previous: 7, trend: 'DOWN' },
+    videoValidation: {
+      status: 'COMPLETED',
+      videosChecked: 420,
+      videosMarkedUnavailable: 12,
+      validationErrors: 1,
+      lastRunAt: '2024-10-10T10:00:00Z'
+    }
   },
   meta: {
     generatedAt: '2024-10-10T12:00:00Z',

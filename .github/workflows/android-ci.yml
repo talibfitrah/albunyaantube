@@ -1,4 +1,5 @@
 name: Android CI
+# To regenerate dependency report: cd android && ./gradlew :app:dependencies > app/deps.txt
 
 on:
   pull_request:
@@ -12,6 +13,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: android
@@ -30,18 +32,18 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build with Gradle
-        run: ./gradlew assembleDebug --stacktrace
+      - name: Build debug APK (canonical)
+        run: ./gradlew assembleDebug
 
-      - name: Run unit tests
-        run: ./gradlew test --stacktrace
+      - name: Run unit tests (with 300s timeout)
+        run: timeout 300 ./gradlew test
 
       - name: Run lint checks
-        run: ./gradlew lint --stacktrace
+        run: ./gradlew lint
 
       - name: Upload build reports
         if: failure()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: build-reports
           path: |
@@ -49,7 +51,7 @@ jobs:
             android/app/build/test-results/
 
       - name: Upload APK
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: app-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
@@ -57,7 +59,7 @@ jobs:
 
       - name: Upload lint report
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: lint-report
           path: android/app/build/reports/lint-results-debug.html
@@ -70,7 +72,7 @@ jobs:
 
     steps:
       - name: Download test results
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: build-reports
         continue-on-error: true

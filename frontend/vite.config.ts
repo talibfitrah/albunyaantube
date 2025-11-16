@@ -87,6 +87,13 @@ export default defineConfig({
     setupFiles: ['./tests/setup.ts'],
     include: ['tests/**/*.spec.ts'],
     css: true,
-    exclude: ['tests/e2e/**']
+    exclude: ['tests/e2e/**'],
+    // AGENTS.md: Per-test timeout of 30 seconds
+    testTimeout: 30000,
+    // Generate JUnit XML reports for CI artifact upload
+    reporters: ['default', 'junit'],
+    outputFile: {
+      junit: './test-results/junit.xml'
+    }
   }
 });

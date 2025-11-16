@@ -13,7 +13,7 @@ P0-T1 claimed completion on 2025-11-16, but verification revealed **three signif
 
 1. ❌ **Backend test count overstated**: Docs claimed 149 tests, actual count is **144 tests**
 2. ❌ **Invalid build command**: Validation referenced `./mvnw` which **does not exist** in repo
-3. ⚠️  **Netty version not enforced**: Claimed "normalized to 4.1.109.Final" but **no constraint existed** in build.gradle.kts
+3. ⚠️  **Netty version not enforced**: Claimed "normalized to 4.1.109.Final" (updated to 4.1.118.Final in P0-T4) but **no constraint existed** in build.gradle.kts
 
 **Current Status**: All issues **FIXED** and verified. Repository now matches documentation.
 
@@ -76,10 +76,10 @@ BUILD SUCCESSFUL in 17s
 ### Finding 3: Netty Version Not Enforced
 
 **Issue**:
-- `docs/code_base_fixes.json` (line 57): claimed `"netty_version": "4.1.109.Final"`
-- `docs/status/DEVELOPMENT_GUIDE.md` (line 31): stated "normalized to 4.1.109.Final"
+- `docs/code_base_fixes.json` (line 57): claimed `"netty_version": "4.1.109.Final"` (P0-T1 initial, updated to 4.1.118.Final in P0-T4)
+- `docs/status/DEVELOPMENT_GUIDE.md` (line 31): stated "normalized to 4.1.109.Final" (P0-T1 initial, updated to 4.1.118.Final in P0-T4)
 - **Reality**: No version constraint existed in `backend/build.gradle.kts` (lines 23-50)
-- Netty 4.1.109.Final was **resolved transitively** from Firebase/Spring Boot dependencies
+- Netty 4.1.109.Final was **resolved transitively** from Firebase/Spring Boot dependencies (now explicitly constrained to 4.1.118.Final)
 
 **Evidence**:
 ```bash
@@ -95,16 +95,16 @@ Added explicit dependency constraints to `backend/build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    // Dependency constraints - P0-T1: Enforce specific versions
+    // Dependency constraints - P0-T1: Enforce specific versions (updated to 4.1.118.Final in P0-T4 for CVE fixes)
     constraints {
-        implementation("io.netty:netty-common:4.1.109.Final") {
-            because("Enforce Netty version from Firebase/Spring Boot to prevent version conflicts")
+        implementation("io.netty:netty-common:4.1.118.Final") {
+            because("Enforce Netty version from Firebase/Spring Boot to prevent version conflicts and CVEs in 4.1.109")
         }
-        implementation("io.netty:netty-handler:4.1.109.Final")
-        implementation("io.netty:netty-transport:4.1.109.Final")
-        implementation("io.netty:netty-codec:4.1.109.Final")
-        implementation("io.netty:netty-buffer:4.1.109.Final")
-        implementation("io.netty:netty-resolver:4.1.109.Final")
+        implementation("io.netty:netty-handler:4.1.118.Final")
+        implementation("io.netty:netty-transport:4.1.118.Final")
+        implementation("io.netty:netty-codec:4.1.118.Final")
+        implementation("io.netty:netty-buffer:4.1.118.Final")
+        implementation("io.netty:netty-resolver:4.1.118.Final")
     }
     // ... rest of dependencies
 }
@@ -112,9 +112,9 @@ dependencies {
 
 Updated documentation:
 ```markdown
-// docs/status/DEVELOPMENT_GUIDE.md line 31
+// docs/status/DEVELOPMENT_GUIDE.md line 31 (P0-T1 initial: 4.1.109.Final, P0-T4 updated: 4.1.118.Final)
 - Netty: 4.1.109.Final (normalized from Firebase/Spring WebFlux)
-+ Netty: 4.1.109.Final (enforced via dependency constraints in build.gradle.kts)
++ Netty: 4.1.118.Final (enforced via dependency constraints in build.gradle.kts, updated 2025-11-16 for CVE fixes)
 ```
 
 **Verification**:
@@ -138,7 +138,7 @@ Test Results: 144 passed, 0 failed, 0 skipped
 Artifacts: backend/build/libs/backend-0.0.1-SNAPSHOT.jar
 
 Dependencies:
-✓ Netty 4.1.109.Final (enforced via constraints)
+✓ Netty 4.1.118.Final (enforced via constraints, updated from 4.1.109.Final in P0-T4)
 ✓ NewPipeExtractor v0.24.8 (pinned)
 ✓ OkHttp 4.12.0 (pinned)
 ✓ Firebase Admin SDK 9.2.0 (pinned)
@@ -189,7 +189,7 @@ Dependencies:
    - Updated Netty description to reflect constraint enforcement
 
 3. `backend/build.gradle.kts`:
-   - Added dependency constraints block to enforce Netty 4.1.109.Final
+   - Added dependency constraints block to enforce Netty 4.1.109.Final (updated to 4.1.118.Final in P0-T4 for CVE fixes)
 
 **Files Created**:
 
@@ -211,7 +211,7 @@ Based on verified repo state, **P0-T2** (Fix flaky tests) should proceed with aw
 
 - Backend has **144 passing tests** (not 149)
 - No Maven wrapper exists; all commands use Gradle
-- Netty is now **explicitly constrained** to 4.1.109.Final
+- Netty is now **explicitly constrained** to 4.1.118.Final (P0-T1 initial: 4.1.109.Final, upgraded in P0-T4)
 
 ---
 

@@ -5,36 +5,18 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:  # Allow manual trigger for integration tests
+  schedule:
+    - cron: '0 2 * * *'  # Nightly at 2 AM UTC for integration tests
 
 jobs:
-  build:
+  unit-tests:
+    name: Unit Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 6  # 300s shell timeout + 1min buffer
     defaults:
       run:
         working-directory: backend
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_DB: albunyaan
-          POSTGRES_USER: albunyaan
-          POSTGRES_PASSWORD: changeme
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U albunyaan -d albunyaan"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -49,11 +31,72 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
-      - name: Run tests
+      - name: Run unit tests only (300s timeout, excludes integration tests by default)
+        run: timeout 300 ./gradlew clean build
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-unit-test-reports
+          path: |
+            backend/build/reports/tests/
+            backend/build/test-results/
+          retention-days: 7
+
+  integration-tests:
+    name: Integration Tests (On-Demand)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10  # Generous timeout for npm install + emulator + 300s tests
+    # Run only on manual trigger or nightly schedule
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Setup Node.js for Firebase Emulator
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install and start Firebase Emulator
+        working-directory: backend
+        run: |
+          npm install -g firebase-tools@13.0.2
+          firebase emulators:start --only firestore,auth --project demo-test &
+          # Wait for Firestore emulator to be ready on port 8090 (fail if not ready in 30s)
+          if ! timeout 30 bash -c 'until curl -s http://localhost:8090 > /dev/null; then sleep 1; done'; then
+            echo "ERROR: Firestore emulator failed to start on port 8090 within 30 seconds"
+            exit 1
+          fi
+          echo "✓ Firestore emulator ready on port 8090"
+          sleep 2
+
+      - name: Run integration tests (300s timeout)
+        run: timeout 300 ./gradlew test -Pintegration=true
         env:
-          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/albunyaan
-          SPRING_DATASOURCE_USERNAME: albunyaan
-          SPRING_DATASOURCE_PASSWORD: changeme
-          SPRING_DATA_REDIS_HOST: localhost
-          SPRING_DATA_REDIS_PORT: 6379
-        run: ./gradlew test
+          FIRESTORE_EMULATOR_HOST: localhost:8090
+          FIREBASE_AUTH_EMULATOR_HOST: localhost:9099
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-integration-test-reports
+          path: |
+            backend/build/reports/tests/
+            backend/build/test-results/
+          retention-days: 7

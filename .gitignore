@@ -52,6 +52,7 @@ frontend/dist/
 frontend/.cache/
 frontend/.eslintcache
 frontend/*.tsbuildinfo
+frontend/test-results/
 # Generated API clients (OpenAPI)
 frontend/src/api/generated/
 
@@ -93,6 +94,8 @@ backend/src/generated/
 /android/.navigation/
 /android/generated/
 /android/app/release/output-metadata.json
+# Generated dependency reports (regenerate with gradle :app:dependencies)
+/android/app/deps.txt
 # Keystores & signing (never commit real ones)
 **/*.jks
 **/*.keystore

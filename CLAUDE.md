@@ -6,9 +6,39 @@ This document provides essential information for AI assistants working in the Al
 
 ## 🎯 **WHERE TO START - CURRENT SESSION STATUS**
 
-**Date:** November 7, 2025
-**Status:** Documentation radically simplified, project ~60% complete
+**Date:** November 16, 2025
+**Status:** CI/CD alignment and documentation consistency improvements
 **Next Step:** Continue Android app testing and backend feature development
+
+### **Recent Updates (Nov 16, 2025):**
+
+1. **CI/CD and Documentation Alignment** ✅
+   - Removed `--coverage` from canonical frontend test command (aligned with CI workflow)
+   - Decision: Coverage collection is not configured in vitest, so removed from docs to prevent confusion
+   - Rationale: Keep documentation and CI consistent; coverage can be added later if needed
+
+2. **Integration Test Separation** ✅
+   - Backend CI now runs unit tests only by default (`-Pintegration=false`)
+   - Added separate on-demand/nightly job for integration tests
+   - Decision: Fast unit tests in every PR, integration tests on manual trigger or nightly schedule
+   - Rationale: Unit tests run in <10s, integration tests need Firebase emulator and take 30-60s
+
+3. **Frontend Test Artifacts** ✅
+   - Added JUnit XML reporter to vitest configuration
+   - CI now uploads test reports on failure to `frontend/test-results/`
+   - Decision: Use JUnit format for consistency with backend and Android
+   - Rationale: Standardized artifact format across all platforms for easier debugging
+
+4. **Android Dependency Report** ✅
+   - Removed `android/app/deps.txt` from repository (generated file)
+   - Added to .gitignore with comment explaining how to regenerate
+   - Decision: Generate dependency reports dynamically, not in source control
+   - Rationale: Keeps repository clean, prevents merge conflicts on generated files
+
+5. **Gradle Constraint Documentation** ✅
+   - Added `because(...)` clauses to all Netty version constraints
+   - Decision: Document all dependency version constraints consistently
+   - Rationale: Helps future developers understand why versions are pinned
 
 ### **Recent Updates (Nov 7, 2025):**
 

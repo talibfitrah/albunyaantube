@@ -20,12 +20,13 @@
 "frontend/vite.config.ts",
 "docs/status/DEVELOPMENT_GUIDE.md"
 ],
-"validation_steps": [
-"Run ./mvnw clean install at repo root and confirm it completes without dependency resolution errors.",
-"Run cd backend && ./gradlew clean test and ensure no NoSuchMethodError or ClassNotFoundException related to Netty or Firebase.",
-"Run cd android && ./gradlew assembleDebug and verify there are no NewPipeExtractor linkage/runtime warnings in build output.",
-"Update DEVELOPMENT_GUIDE.md to match the final, working JDK, Kotlin, and Gradle versions."
-],
+    "validation_steps": [
+    "From the repo root, run cd backend && ./gradlew clean build and confirm it completes without dependency resolution errors.",
+    "Run cd backend && ./gradlew clean test and ensure no NoSuchMethodError or ClassNotFoundException related to Netty or Firebase.",
+    "Run cd android && ./gradlew assembleDebug and verify there are no NewPipeExtractor linkage/runtime warnings in build output.",
+    "Update DEVELOPMENT_GUIDE.md to match the final, working JDK, Kotlin, and Gradle versions.",
+    "Record backend unit test count (expected: 144 tests, 0 failures) in the P0-T1 verification report."
+    ],
 "architectural_review": [
 "Confirm there is exactly one effective version of Netty on the backend classpath (inspect dependency tree).",
 "Confirm Android and backend both target consistent Java 17 toolchains without custom overrides in multiple places.",
@@ -80,7 +81,7 @@
 {
 "id": "P0-T3",
 "title": "Stabilize build scripts and CI pipeline",
-"description": "Simplify Gradle and npm build scripts by removing dead tasks, duplicated configuration, and outdated CI steps so that ./mvnw clean install and ./gradlew assembleDebug both succeed as the single source of truth for build health.",
+    "description": "Simplify Gradle and npm build scripts by removing dead tasks, duplicated configuration, and outdated CI steps so that backend ./gradlew clean build and android ./gradlew assembleDebug both succeed as the single source of truth for build health.",
 "complexity": "low",
 "files_to_modify": [
 ".github/workflows/backend-ci.yml",
@@ -91,11 +92,11 @@
 "frontend/package.json",
 "README.md"
 ],
-"validation_steps": [
-"Trigger backend-ci, android-ci, and frontend-ci workflows and confirm they pass on the first run without manual retries.",
-"Run ./mvnw clean install locally and confirm it runs the same subset of Gradle/npm tasks that CI uses.",
-"Run cd android && ./gradlew assembleDebug and confirm the task is referenced in CI and docs as the canonical Android build."
-],
+    "validation_steps": [
+    "Trigger backend-ci, android-ci, and frontend-ci workflows and confirm they pass on the first run without manual retries.",
+    "From the repo root, run cd backend && ./gradlew clean build and confirm it runs the same subset of Gradle/npm tasks that CI uses.",
+    "Run cd android && ./gradlew assembleDebug and confirm the task is referenced in CI and docs as the canonical Android build."
+    ],
 "architectural_review": [
 "Review that each CI workflow has a single, clear build command per component (backend, frontend, android).",
 "Confirm that test timeouts (300s overall budget) are enforced in CI for backend and frontend as documented in CLAUDE.md.",
@@ -891,11 +892,11 @@
 "P0-T2",
 "P0-T3"
 ],
-"criteria": [
-"./mvnw clean install passes without dependency conflicts or transient failures.",
-"cd android && ./gradlew assembleDebug passes reliably on local and CI runs.",
-"No DownloadServiceTest or NewPipe-related flakes observed over multiple CI runs."
-]
+    "criteria": [
+    "cd backend && ./gradlew clean build passes without dependency resolution errors.",
+    "cd android && ./gradlew assembleDebug passes reliably on local and CI runs.",
+    "No DownloadServiceTest or NewPipe-related flakes observed over multiple CI runs."
+    ]
 },
 {
 "id": "CHECKPOINT-P3",
