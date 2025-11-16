@@ -4,6 +4,12 @@ import com.albunyaan.tube.data.extractor.AudioTrack
 import com.albunyaan.tube.data.extractor.PlaybackSelection
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.VideoTrack
+import com.albunyaan.tube.data.filters.FilterState
+import com.albunyaan.tube.data.model.Category
+import com.albunyaan.tube.data.model.ContentItem
+import com.albunyaan.tube.data.model.ContentType
+import com.albunyaan.tube.data.model.CursorResponse
+import com.albunyaan.tube.data.source.ContentService
 import com.albunyaan.tube.download.DownloadEntry
 import com.albunyaan.tube.download.DownloadFileMetadata
 import com.albunyaan.tube.download.DownloadRequest
@@ -72,9 +78,32 @@ class PlayerViewModelTest {
         override fun cancel(requestId: String) {}
     }
 
+    private val contentService = object : ContentService {
+        override suspend fun fetchContent(
+            type: ContentType,
+            cursor: String?,
+            pageSize: Int,
+            filters: FilterState
+        ): CursorResponse {
+            return CursorResponse(data = emptyList(), pageInfo = null)
+        }
+
+        override suspend fun search(query: String, type: String?, limit: Int): List<ContentItem> {
+            return emptyList()
+        }
+
+        override suspend fun fetchCategories(): List<Category> {
+            return emptyList()
+        }
+
+        override suspend fun fetchSubcategories(parentId: String): List<Category> {
+            return emptyList()
+        }
+    }
+
     @Test
     fun `hydrateQueue picks first playable item and filters exclusions`() = scope.runTest {
-        val viewModel = PlayerViewModel(repository, downloadRepository, eulaManager, testDispatcher)
+        val viewModel = PlayerViewModel(repository, downloadRepository, eulaManager, contentService, testDispatcher)
         advanceUntilIdle()
         val state = viewModel.state.value
 
@@ -86,7 +115,7 @@ class PlayerViewModelTest {
 
     @Test
     fun `markCurrentComplete advances to next item and emits event`() = scope.runTest {
-        val viewModel = PlayerViewModel(repository, downloadRepository, eulaManager, testDispatcher)
+        val viewModel = PlayerViewModel(repository, downloadRepository, eulaManager, contentService, testDispatcher)
         advanceUntilIdle()
 
         val initialState = viewModel.state.value
@@ -108,7 +137,7 @@ class PlayerViewModelTest {
 
     @Test
     fun `playItem moves selection and re-queues previous current`() = scope.runTest {
-        val viewModel = PlayerViewModel(repository, downloadRepository, eulaManager, testDispatcher)
+        val viewModel = PlayerViewModel(repository, downloadRepository, eulaManager, contentService, testDispatcher)
         advanceUntilIdle()
 
         val initialCurrent = requireNotNull(viewModel.state.value.currentItem)
@@ -125,7 +154,7 @@ class PlayerViewModelTest {
 
     @Test
     fun `setAudioOnly ignores duplicate state`() = scope.runTest {
-        val viewModel = PlayerViewModel(repository, downloadRepository, eulaManager, testDispatcher)
+        val viewModel = PlayerViewModel(repository, downloadRepository, eulaManager, contentService, testDispatcher)
         advanceUntilIdle()
 
         viewModel.setAudioOnly(true)
@@ -139,7 +168,7 @@ class PlayerViewModelTest {
 
     @Test
     fun `downloads flow updates current download metadata`() = scope.runTest {
-        val viewModel = PlayerViewModel(repository, downloadRepository, eulaManager, testDispatcher)
+        val viewModel = PlayerViewModel(repository, downloadRepository, eulaManager, contentService, testDispatcher)
         advanceUntilIdle()
 
         val metadata = DownloadFileMetadata(2_048_000, System.currentTimeMillis(), "audio/mp4")
@@ -161,7 +190,7 @@ class PlayerViewModelTest {
 
     @Test
     fun `downloadCurrent returns false until EULA accepted`() = scope.runTest {
-        val viewModel = PlayerViewModel(repository, downloadRepository, eulaManager, testDispatcher)
+        val viewModel = PlayerViewModel(repository, downloadRepository, eulaManager, contentService, testDispatcher)
         advanceUntilIdle()
 
         val allowedBefore = viewModel.downloadCurrent()
