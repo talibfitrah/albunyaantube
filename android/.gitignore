@@ -1,0 +1,24 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# OpenAPI generated files - DO NOT EDIT
+# Regenerate with: cd backend && ./gradlew generateKotlinDtos
+app/src/main/java/com/albunyaan/tube/data/model/api/
+.openapi-generator/
+
+# Dependency report (generated on-demand)
+# Regenerate with: ./gradlew :app:dependencies > app/deps.txt
+app/deps.txt

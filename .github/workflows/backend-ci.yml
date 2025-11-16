@@ -31,6 +31,9 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
+      - name: Generate OpenAPI Kotlin DTOs
+        run: ./gradlew generateKotlinDtos
+
       - name: Run unit tests only (300s timeout, excludes integration tests by default)
         run: timeout 300 ./gradlew clean build
 

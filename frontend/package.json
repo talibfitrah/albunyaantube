@@ -5,10 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "predev": "npm run generate:api",
     "build": "vue-tsc --noEmit && vite build",
+    "prebuild": "npm run generate:api",
     "preview": "vite preview",
     "test": "timeout 300s vitest run",
-    "test:e2e": "npm run build && playwright test"
+    "pretest": "npm run generate:api",
+    "test:e2e": "npm run build && playwright test",
+    "generate:api": "openapi-typescript ../docs/architecture/api-specification.yaml -o src/generated/api/schema.ts"
   },
   "dependencies": {
     "axios": "^1.6.8",
@@ -29,6 +33,7 @@
     "@vitejs/plugin-vue": "^5.0.4",
     "@vue/test-utils": "^2.4.5",
     "jsdom": "^22.1.0",
+    "openapi-typescript": "^7.10.1",
     "terser": "^5.44.0",
     "typescript": "^5.4.2",
     "vite": "^5.2.0",

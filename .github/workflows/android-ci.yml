@@ -32,6 +32,12 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      - name: Generate OpenAPI Kotlin DTOs
+        working-directory: backend
+        run: |
+          chmod +x gradlew
+          ./gradlew generateKotlinDtos
+
       - name: Build debug APK (canonical)
         run: ./gradlew assembleDebug
 

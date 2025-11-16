@@ -6,9 +6,23 @@ This document provides essential information for AI assistants working in the Al
 
 ## 🎯 **WHERE TO START - CURRENT SESSION STATUS**
 
-**Date:** November 16, 2025
-**Status:** CI/CD alignment and documentation consistency improvements
-**Next Step:** Continue Android app testing and backend feature development
+**Date:** November 17, 2025
+**Status:** OpenAPI code generation implemented (P1-T2)
+**Next Step:** Migrate services to use generated DTOs
+
+### **Recent Updates (Nov 17, 2025):**
+
+1. **OpenAPI Code Generation (P1-T2)** ✅
+   - Implemented TypeScript DTO generation with `openapi-typescript`
+   - Implemented Kotlin DTO generation with `openapi-generator-cli`
+   - Created unified generation script: `./scripts/generate-openapi-dtos.sh`
+   - Integrated into CI pipelines (frontend, backend, Android)
+   - Output paths:
+     - TypeScript: `frontend/src/generated/api/schema.ts`
+     - Kotlin: `android/app/src/main/java/com/albunyaan/tube/data/model/api/`
+   - Decision: Single source of truth from `docs/architecture/api-specification.yaml`
+   - Rationale: Type safety, reduced duplication, automatic sync with API spec
+   - Migration guide: `frontend/src/types/API_MIGRATION_GUIDE.md`
 
 ### **Recent Updates (Nov 16, 2025):**
 

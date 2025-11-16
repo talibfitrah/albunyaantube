@@ -65,6 +65,47 @@ Vitest: 1.4.0
 
 ---
 
+## OpenAPI Code Generation (P1-T2)
+
+**As of P1-T2**, all client DTOs (TypeScript + Kotlin) are auto-generated from the OpenAPI specification.
+
+### Generating Client DTOs
+
+**Generate all platforms**:
+```bash
+./scripts/generate-openapi-dtos.sh
+```
+
+**Frontend TypeScript only**:
+```bash
+cd frontend
+npm run generate:api
+# Output: frontend/src/generated/api/schema.ts
+# Note: npm dev/test/build scripts auto-run this generation step
+```
+
+**Android Kotlin only**:
+```bash
+cd backend
+./gradlew generateKotlinDtos
+# Output: android/app/src/main/java/com/albunyaan/tube/data/model/api/models/
+```
+
+### Important Notes
+
+- **DO NOT** manually edit generated files
+- Regenerate DTOs after updating `docs/architecture/api-specification.yaml`
+- CI automatically regenerates DTOs before each build
+- Migration guide: `frontend/src/types/API_MIGRATION_GUIDE.md`
+
+### Tools Used
+
+- **TypeScript**: `openapi-typescript` (types-only generator)
+- **Kotlin**: `openapi-generator-cli` with Moshi serialization
+- **Source**: `docs/architecture/api-specification.yaml`
+
+---
+
 ## Quick Start
 
 ### 1. Clone Repository

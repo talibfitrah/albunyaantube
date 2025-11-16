@@ -6,6 +6,7 @@ plugins {
     id("org.springframework.boot") version "3.2.5"
     id("io.spring.dependency-management") version "1.1.4"
     id("io.gatling.gradle") version "3.10.3"
+    id("org.openapi.generator") version "7.10.0"
 }
 
 group = "com.albunyaan"
@@ -99,4 +100,62 @@ tasks.test {
 
 tasks.bootJar {
     duplicatesStrategy = DuplicatesStrategy.WARN
+}
+
+// ==============================================================================
+// OpenAPI Code Generation Tasks (P1-T2)
+// ==============================================================================
+
+// Task to generate Kotlin DTOs for Android
+tasks.register<org.openapitools.generator.gradle.plugin.tasks.GenerateTask>("generateKotlinDtos") {
+    group = "openapi"
+    description = "Generate Kotlin DTOs from OpenAPI spec for Android app"
+
+    inputSpec.set("${rootProject.projectDir}/../docs/architecture/api-specification.yaml")
+    outputDir.set("${rootProject.projectDir}/../android/.openapi-generator")
+    generatorName.set("kotlin")
+
+    // Generate models only (no HTTP client)
+    globalProperties.set(mapOf(
+        "models" to "",
+        "modelDocs" to "false"
+    ))
+
+    configOptions.set(mapOf(
+        "packageName" to "com.albunyaan.tube.data.model.api",
+        "modelPackage" to "com.albunyaan.tube.data.model.api",
+        "dateLibrary" to "java8",
+        "serializationLibrary" to "moshi",
+        "enumPropertyNaming" to "UPPERCASE",
+        "sourceFolder" to "src/main/kotlin"
+    ))
+
+    // Clean previous generation
+    doFirst {
+        delete("${rootProject.projectDir}/../android/.openapi-generator")
+        delete("${rootProject.projectDir}/../android/app/src/main/java/com/albunyaan/tube/data/model/api")
+    }
+
+    // Move generated files to correct location
+    doLast {
+        copy {
+            from("${rootProject.projectDir}/../android/.openapi-generator/src/main/kotlin/com/albunyaan/tube/data/model/api")
+            into("${rootProject.projectDir}/../android/app/src/main/java/com/albunyaan/tube/data/model/api")
+        }
+        delete("${rootProject.projectDir}/../android/.openapi-generator")
+    }
+}
+
+// Canonical task to generate all client DTOs (TypeScript + Kotlin)
+tasks.register("generateApiDtos") {
+    group = "openapi"
+    description = "Generate all client DTOs (TypeScript + Kotlin) from OpenAPI spec"
+
+    dependsOn("generateKotlinDtos")
+
+    // Frontend TypeScript generation is handled by npm script
+    doLast {
+        println("✅ Kotlin DTOs generated to: android/app/src/main/java/com/albunyaan/tube/data/model/api/models")
+        println("⚠️  Generate TypeScript DTOs with: cd frontend && npm run generate:api")
+    }
 }
