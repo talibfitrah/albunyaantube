@@ -24,31 +24,71 @@ export interface PendingApproval {
 }
 
 /**
+ * Parse formatted number string (e.g., "1.2K", "3.5M") back to numeric value
+ */
+function parseFormattedNumber(value: unknown): number {
+  if (typeof value === 'number') return value;
+  if (typeof value !== 'string') return 0;
+
+  const str = value.trim().toUpperCase();
+  if (!str) return 0;
+
+  // Handle K (thousands) and M (millions) suffixes
+  const match = str.match(/^([\d.]+)\s*([KM])?$/);
+  if (!match) return parseInt(str, 10) || 0;
+
+  const num = parseFloat(match[1]);
+  const suffix = match[2];
+
+  if (suffix === 'K') return Math.round(num * 1000);
+  if (suffix === 'M') return Math.round(num * 1000000);
+  return Math.round(num);
+}
+
+/**
  * Map API PendingApprovalDto to UI domain model
+ *
+ * Backend sends:
+ * - dto.category: single category name string
+ * - metadata.subscriberCount: formatted string (e.g., "1.2K")
+ * - metadata.videoCount: number
+ * - metadata.itemCount: number (for playlists)
  */
 function mapPendingApprovalToUi(dto: PendingApprovalDto): PendingApproval {
   const metadata = dto.metadata || {};
+  const contentType = (dto.type?.toLowerCase() as 'channel' | 'playlist' | 'video') || 'channel';
 
   // Helper to safely extract metadata values with type assertions
   const getString = (key: string): string => (metadata[key] as string | undefined) || '';
   const getNumber = (key: string): number => (metadata[key] as number | undefined) || 0;
-  const getArray = (key: string): string[] => (metadata[key] as string[] | undefined) || [];
 
-  // Check if categoryIds key exists in metadata, otherwise fall back to categories
-  // This preserves empty arrays when categoryIds exists but is empty
-  const categories = ('categoryIds' in metadata)
-    ? getArray('categoryIds')
-    : getArray('categories');
+  // Categories come from dto.category (single name), not metadata
+  // Backend sets dto.category as the first category name
+  const categories = dto.category ? [dto.category] : [];
+
+  // Type-specific field extraction
+  let subscriberCount: number | undefined;
+  let videoCount: number | undefined;
+
+  if (contentType === 'channel') {
+    // Backend sends subscriberCount as formatted string (e.g., "1.2K")
+    subscriberCount = parseFormattedNumber(metadata['subscriberCount']);
+    videoCount = getNumber('videoCount');
+  } else if (contentType === 'playlist') {
+    // Playlists use itemCount
+    videoCount = getNumber('itemCount');
+  }
+  // Videos don't have subscriberCount or videoCount metadata
 
   return {
     id: dto.id || '',
-    type: (dto.type?.toLowerCase() as 'channel' | 'playlist' | 'video') || 'channel',
+    type: contentType,
     title: dto.title || '',
     description: getString('description'),
     thumbnailUrl: getString('thumbnailUrl'),
-    channelTitle: getString('channelTitle') || getString('channelName'),
-    subscriberCount: getNumber('subscriberCount') || getNumber('subscribers'),
-    videoCount: getNumber('videoCount') || getNumber('itemCount'),
+    channelTitle: getString('channelTitle'),
+    subscriberCount,
+    videoCount,
     categories,
     submittedAt: dto.submittedAt || new Date().toISOString(),
     submittedBy: dto.submittedBy || ''
