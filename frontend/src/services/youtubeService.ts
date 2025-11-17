@@ -304,8 +304,17 @@ export async function getChannelVideos(
   pageToken?: string,
   searchQuery?: string
 ) {
+  // Warn if pagination is attempted (backend doesn't support it yet)
+  if (pageToken) {
+    console.warn(
+      '[getChannelVideos] Backend pagination is not supported yet. ' +
+      'The pageToken parameter will be ignored and all results will be returned. ' +
+      'Please update the backend to support pagination before using this feature.'
+    );
+  }
+
   const params: Record<string, string> = {};
-  if (pageToken) params.pageToken = pageToken;
+  // Do not send pageToken to backend as it's not supported
   if (searchQuery) params.q = searchQuery;
 
   const response = await apiClient.get<StreamItemDto[]>(
@@ -334,8 +343,17 @@ export async function getChannelPlaylists(
   channelId: string,
   pageToken?: string
 ) {
+  // Warn if pagination is attempted (backend doesn't support it yet)
+  if (pageToken) {
+    console.warn(
+      '[getChannelPlaylists] Backend pagination is not supported yet. ' +
+      'The pageToken parameter will be ignored and all results will be returned. ' +
+      'Please update the backend to support pagination before using this feature.'
+    );
+  }
+
   const params: Record<string, string> = {};
-  if (pageToken) params.pageToken = pageToken;
+  // Do not send pageToken to backend as it's not supported
 
   const response = await apiClient.get<PlaylistItemDto[]>(
     `/api/admin/youtube/channels/${channelId}/playlists`,
@@ -381,8 +399,17 @@ export async function getPlaylistVideos(
   pageToken?: string,
   searchQuery?: string
 ) {
+  // Warn if pagination is attempted (backend doesn't support it yet)
+  if (pageToken) {
+    console.warn(
+      '[getPlaylistVideos] Backend pagination is not supported yet. ' +
+      'The pageToken parameter will be ignored and all results will be returned. ' +
+      'Please update the backend to support pagination before using this feature.'
+    );
+  }
+
   const params: Record<string, string> = {};
-  if (pageToken) params.pageToken = pageToken;
+  // Do not send pageToken to backend as it's not supported
   if (searchQuery) params.q = searchQuery;
 
   const response = await apiClient.get<StreamItemDto[]>(

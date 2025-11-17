@@ -17,19 +17,47 @@ export interface AuditLogPageParams {
  * Map API AuditLog DTO to UI AuditEntry model
  */
 function mapAuditLogToEntry(log: AuditLog): AuditEntry {
-  if (!log.timestamp) {
-    console.error('Audit log missing timestamp:', log);
-    throw new Error('Audit log missing timestamp');
+  // Validate all required fields
+  const requiredFields = {
+    id: log.id,
+    actorUid: log.actorUid,
+    action: log.action,
+    entityType: log.entityType,
+    entityId: log.entityId,
+    timestamp: log.timestamp
+  };
+
+  const missingFields: string[] = [];
+  for (const [field, value] of Object.entries(requiredFields)) {
+    if (!value || (typeof value === 'string' && value.trim() === '')) {
+      missingFields.push(field);
+    }
+  }
+
+  if (missingFields.length > 0) {
+    const errorMsg = `Audit log missing required fields: ${missingFields.join(', ')}`;
+    console.error(errorMsg, log);
+    throw new Error(errorMsg);
+  }
+
+  // Safely handle metadata
+  let details: Record<string, unknown> = {};
+  if (log.metadata !== null && log.metadata !== undefined) {
+    if (typeof log.metadata === 'object' && !Array.isArray(log.metadata)) {
+      details = log.metadata as Record<string, unknown>;
+    } else {
+      console.warn('Audit log metadata is not an object, using empty object:', log);
+    }
   }
 
   return {
-    id: log.id || '',
-    actorUid: log.actorUid || '',
+    id: log.id,
+    actorUid: log.actorUid,
     actorDisplayName: log.actorEmail || '', // Use email as display name (can be enriched later)
-    action: log.action || '',
-    entityType: log.entityType || '',
-    entityId: log.entityId || '',
-    details: (log.metadata || {}) as Record<string, unknown>,
+    action: log.action,
+    entityType: log.entityType,
+    entityId: log.entityId,
+    details,
     timestamp: log.timestamp
   };
 }

@@ -34,6 +34,12 @@ function mapPendingApprovalToUi(dto: PendingApprovalDto): PendingApproval {
   const getNumber = (key: string): number => (metadata[key] as number | undefined) || 0;
   const getArray = (key: string): string[] => (metadata[key] as string[] | undefined) || [];
 
+  // Check if categoryIds key exists in metadata, otherwise fall back to categories
+  // This preserves empty arrays when categoryIds exists but is empty
+  const categories = ('categoryIds' in metadata)
+    ? getArray('categoryIds')
+    : getArray('categories');
+
   return {
     id: dto.id || '',
     type: (dto.type?.toLowerCase() as 'channel' | 'playlist' | 'video') || 'channel',
@@ -43,7 +49,7 @@ function mapPendingApprovalToUi(dto: PendingApprovalDto): PendingApproval {
     channelTitle: getString('channelTitle') || getString('channelName'),
     subscriberCount: getNumber('subscriberCount') || getNumber('subscribers'),
     videoCount: getNumber('videoCount') || getNumber('itemCount'),
-    categories: getArray('categoryIds') || getArray('categories'),
+    categories,
     submittedAt: dto.submittedAt || new Date().toISOString(),
     submittedBy: dto.submittedBy || ''
   };
