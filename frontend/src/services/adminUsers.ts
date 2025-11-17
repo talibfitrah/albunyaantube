@@ -6,44 +6,51 @@ import type {
   AdminUserStatus,
   AdminRole
 } from '@/types/admin';
+import type { User } from '@/types/api';
 
 // FIREBASE-MIGRATE-04: User management now implemented
 const USERS_BASE_PATH = '/api/admin/users';
 
+export interface UsersPageParams {
+  // Placeholder for future filtering/pagination params
+}
+
 // Transform frontend types to backend format
 function toBackendRole(role: AdminRole): string {
-  return role.toUpperCase();
+  return role.toLowerCase(); // API uses lowercase: 'admin', 'moderator'
 }
 
 function toBackendStatus(status: AdminUserStatus): string {
   return status === 'ACTIVE' ? 'active' : 'inactive';
 }
 
-function fromBackendStatus(status: string): AdminUserStatus {
+function fromBackendStatus(status?: string): AdminUserStatus {
   return status === 'active' ? 'ACTIVE' : 'DISABLED';
 }
 
-function fromBackendRole(role: string): AdminRole {
-  return role.toUpperCase() as AdminRole;
+function fromBackendRole(role?: string): AdminRole {
+  return (role?.toUpperCase() || 'MODERATOR') as AdminRole;
 }
 
-// Transform backend user to frontend format
-function transformUser(backendUser: any): AdminUser {
+/**
+ * Map API User DTO to UI AdminUser model
+ */
+function transformUser(apiUser: User): AdminUser {
   return {
-    id: backendUser.uid,
-    email: backendUser.email,
-    role: fromBackendRole(backendUser.role),
-    status: fromBackendStatus(backendUser.status),
-    displayName: backendUser.displayName,
-    lastLoginAt: backendUser.lastLoginAt,
-    createdAt: backendUser.createdAt,
-    updatedAt: backendUser.updatedAt
+    id: apiUser.uid || '',
+    email: apiUser.email || '',
+    role: fromBackendRole(apiUser.role),
+    status: fromBackendStatus(apiUser.status),
+    displayName: apiUser.displayName,
+    lastLoginAt: null, // Not in API schema, would need backend enhancement
+    createdAt: apiUser.createdAt || new Date().toISOString(),
+    updatedAt: apiUser.createdAt || new Date().toISOString() // Use createdAt as fallback
   };
 }
 
-export async function fetchUsersPage(params: any = {}): Promise<CursorPage<AdminUser>> {
+export async function fetchUsersPage(params: UsersPageParams = {}): Promise<CursorPage<AdminUser>> {
   // Backend returns array, not paginated response
-  const users = await authorizedJsonFetch<any[]>(USERS_BASE_PATH);
+  const users = await authorizedJsonFetch<User[]>(USERS_BASE_PATH);
 
   return {
     data: users.map(transformUser),
@@ -63,7 +70,7 @@ export async function createUser(payload: AdminUserCreatePayload): Promise<Admin
     role: toBackendRole(payload.role)
   };
 
-  const result = await authorizedJsonFetch<any>(USERS_BASE_PATH, {
+  const result = await authorizedJsonFetch<User>(USERS_BASE_PATH, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'

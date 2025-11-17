@@ -39,19 +39,20 @@ class DownloadControllerTest {
         request.put("eulaAccepted", true);
         DownloadTokenDto tokenDto = new DownloadTokenDto("token-abc", 1234567890L, "video-123");
         when(downloadService.generateDownloadToken(eq("video-123"), eq("user-123"), eq(true))).thenReturn(tokenDto);
-        ResponseEntity<DownloadTokenDto> response = downloadController.generateToken("video-123", request, testUser);
+        ResponseEntity<?> response = downloadController.generateToken("video-123", request, testUser);
         assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertEquals("token-abc", response.getBody().getToken());
+        assertNotNull(response.getBody());
+        assertTrue(response.getBody() instanceof DownloadTokenDto);
+        assertEquals("token-abc", ((DownloadTokenDto) response.getBody()).getToken());
     }
 
     @Test
     void generateToken_shouldReturnForbidden_whenEulaNotAccepted() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         Map<String, Boolean> request = new HashMap<>();
         request.put("eulaAccepted", false);
-        when(downloadService.generateDownloadToken(eq("video-123"), eq("user-123"), eq(false)))
-                .thenThrow(new IllegalStateException("EULA acceptance required"));
-        ResponseEntity<DownloadTokenDto> response = downloadController.generateToken("video-123", request, testUser);
+        ResponseEntity<?> response = downloadController.generateToken("video-123", request, testUser);
         assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+        assertTrue(response.getBody() instanceof ErrorResponse);
     }
 
     @Test
@@ -59,9 +60,11 @@ class DownloadControllerTest {
         DownloadManifestDto manifest = new DownloadManifestDto("video-123", "Test Video", 1234567890L);
         manifest.getVideoStreams().add(new DownloadManifestDto.StreamOption("720p", "url", "mp4", 50000000L, 2500));
         when(downloadService.getDownloadManifest("video-123", "valid-token")).thenReturn(manifest);
-        ResponseEntity<DownloadManifestDto> response = downloadController.getManifest("video-123", "valid-token");
+        ResponseEntity<?> response = downloadController.getManifest("video-123", "valid-token");
         assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertEquals("video-123", response.getBody().getVideoId());
+        assertNotNull(response.getBody());
+        assertTrue(response.getBody() instanceof DownloadManifestDto);
+        assertEquals("video-123", ((DownloadManifestDto) response.getBody()).getVideoId());
     }
 
     @Test

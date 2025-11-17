@@ -104,6 +104,56 @@ cd backend
 - **Kotlin**: `openapi-generator-cli` with Moshi serialization
 - **Source**: `docs/architecture/api-specification.yaml`
 
+### DTO Architecture Pattern
+
+**Rule**: OpenAPI DTOs are **transport types** only. UI/domain models stay separate and are fed via mappers.
+
+**Frontend** (TypeScript):
+- **Generated DTOs**: Import from `@/types/api` (re-exports `frontend/src/generated/api/schema.ts`)
+- **Domain Models**: Keep in `frontend/src/types/*.ts` for UI-specific shapes (e.g., enriched view models with computed fields)
+- **Mapping**: Create explicit mapper functions when DTO shape differs from UI needs
+- **Example**:
+  ```typescript
+  // Use generated DTO for API calls
+  import type { ContentItem } from '@/types/api'
+
+  // Map to view model if needed
+  interface ContentListItem {
+    ...ContentItem,
+    displayTitle: string  // computed field
+  }
+
+  function mapToViewModel(dto: ContentItem): ContentListItem {
+    return { ...dto, displayTitle: dto.title || 'Untitled' }
+  }
+  ```
+
+**Android** (Kotlin):
+- **Generated DTOs**: Under `com.albunyaan.tube.data.model.api.models/` (Moshi-annotated)
+- **Domain Models**: Keep in `com.albunyaan.tube.data.model/` (UI-layer classes like `ContentItem`, `Category`)
+- **Mapping**: Create extension functions in `data/model/mappers/ApiMappers.kt`
+- **Example**:
+  ```kotlin
+  // Use generated DTO for Retrofit
+  @GET("/api/v1/content")
+  suspend fun getContent(): CursorPageDto<ContentItemDto>
+
+  // Map to domain model
+  fun ContentItemDto.toDomain(): ContentItem = when (this) {
+    is ContentItemDto.VideoItem -> ContentItem.Video(...)
+    is ContentItemDto.ChannelItem -> ContentItem.Channel(...)
+    is ContentItemDto.PlaylistItem -> ContentItem.Playlist(...)
+  }
+  ```
+
+**Backend** (Java):
+- DTOs in `com.albunyaan.tube.dto/` are **manually maintained** and must match OpenAPI spec
+- When adding/changing endpoints:
+  1. Update controller method signature
+  2. Update matching DTO in `backend/src/main/java/com/albunyaan/tube/dto/`
+  3. Update `docs/architecture/api-specification.yaml` with matching schema
+  4. Regenerate client DTOs: `./scripts/generate-openapi-dtos.sh`
+
 ---
 
 ## Quick Start

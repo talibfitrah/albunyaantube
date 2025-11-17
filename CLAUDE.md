@@ -118,6 +118,10 @@ cat docs/status/ANDROID_GUIDE.md
   - Backend: Integration tests excluded by default (require Firebase emulator)
   - Run `./gradlew test -Pintegration=true` to include integration tests
   - Enforce 30-second timeout per test method to prevent hanging
+- **Documentation Files**: **DO NOT** create documentation files (.md, .txt, .rst, etc.) unless:
+  - User explicitly requests it, OR
+  - Strongly suggested and user gives approval first
+  - Exception: Updating existing documentation files is allowed when needed
 - **Internationalization**: English, Arabic (RTL), Dutch supported across all platforms
 - **Firebase**: Firestore (database), Auth (authentication), Cloud Storage (downloads)
 

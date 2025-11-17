@@ -23,13 +23,13 @@ describe('ApprovalService', () => {
         {
           id: 'pl-1',
           type: 'PLAYLIST',
-          name: 'Test Playlist',
+          title: 'Test Playlist',
           submittedAt: '2024-01-02T00:00:00Z',
           submittedBy: 'moderator@example.com'
         }
       ];
 
-      vi.mocked(apiClient.get).mockResolvedValueOnce({ data: { data: mockApprovals } });
+      vi.mocked(apiClient.get).mockResolvedValueOnce({ data: mockApprovals });
 
       const result = await getPendingApprovals();
 
@@ -42,7 +42,7 @@ describe('ApprovalService', () => {
     });
 
     it('should filter by type: channels only', async () => {
-      vi.mocked(apiClient.get).mockResolvedValueOnce({ data: { data: [] } });
+      vi.mocked(apiClient.get).mockResolvedValueOnce({ data: [] });
 
       await getPendingApprovals({ type: 'channels' });
 
@@ -52,7 +52,7 @@ describe('ApprovalService', () => {
     });
 
     it('should filter by type: playlists only', async () => {
-      vi.mocked(apiClient.get).mockResolvedValueOnce({ data: { data: [] } });
+      vi.mocked(apiClient.get).mockResolvedValueOnce({ data: [] });
 
       await getPendingApprovals({ type: 'playlists' });
 
@@ -62,7 +62,7 @@ describe('ApprovalService', () => {
     });
 
     it('should pass the category filter to the API', async () => {
-      vi.mocked(apiClient.get).mockResolvedValueOnce({ data: { data: [] } });
+      vi.mocked(apiClient.get).mockResolvedValueOnce({ data: [] });
 
       await getPendingApprovals({ category: 'cat-1' });
 
@@ -73,11 +73,11 @@ describe('ApprovalService', () => {
 
     it('should sort results by newest first', async () => {
       const mockApprovals = [
-        { id: 'ch-1', type: 'CHANNEL', submittedAt: '2024-01-01T00:00:00Z' },
-        { id: 'ch-2', type: 'CHANNEL', submittedAt: '2024-01-02T00:00:00Z' }
+        { id: 'ch-1', type: 'CHANNEL', title: 'Channel 1', submittedAt: '2024-01-01T00:00:00Z', submittedBy: 'user1' },
+        { id: 'ch-2', type: 'CHANNEL', title: 'Channel 2', submittedAt: '2024-01-02T00:00:00Z', submittedBy: 'user2' }
       ];
 
-      vi.mocked(apiClient.get).mockResolvedValueOnce({ data: { data: mockApprovals } });
+      vi.mocked(apiClient.get).mockResolvedValueOnce({ data: mockApprovals });
 
       const result = await getPendingApprovals({ sort: 'newest' });
 
@@ -118,14 +118,15 @@ describe('ApprovalService', () => {
       });
     });
 
-    it('should reject a playlist with review notes', async () => {
+    it('should reject a playlist with reason (reviewNotes not in schema)', async () => {
       vi.mocked(apiClient.post).mockResolvedValueOnce({ data: {} });
 
+      // reviewNotes parameter is kept for backward compatibility but not sent to API
       await rejectItem('pl-1', 'playlist', 'LOW_QUALITY', 'Too few videos');
 
       expect(apiClient.post).toHaveBeenCalledWith('/api/admin/approvals/pl-1/reject', {
-        reason: 'LOW_QUALITY',
-        reviewNotes: 'Too few videos'
+        reason: 'LOW_QUALITY'
+        // reviewNotes is NOT in RejectionRequestDto schema
       });
     });
   });

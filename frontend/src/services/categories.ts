@@ -1,18 +1,5 @@
 import { authorizedJsonFetch } from '@/services/http';
-
-// FIREBASE-MIGRATE: Updated to match new backend Category model
-interface CategoryResponse {
-  id: string;
-  name: string;  // Simple string, not localized map
-  parentCategoryId: string | null;
-  icon: string | null;
-  displayOrder: number | null;
-  localizedNames: Record<string, string> | null;
-  createdAt: string;
-  updatedAt: string;
-  createdBy: string;
-  updatedBy: string;
-}
+import type { Category } from '@/types/api';
 
 export interface CategoryOption {
   id: string;
@@ -23,7 +10,7 @@ export interface CategoryOption {
 
 export async function fetchAllCategories(limit = 100): Promise<CategoryOption[]> {
   // FIREBASE-MIGRATE: Updated endpoint from /api/v1/admins/categories to /api/admin/categories
-  const categories = await authorizedJsonFetch<CategoryResponse[]>(
+  const categories = await authorizedJsonFetch<Category[]>(
     `/api/admin/categories`
   );
 
@@ -31,7 +18,7 @@ export async function fetchAllCategories(limit = 100): Promise<CategoryOption[]>
   return buildHierarchy(categories);
 }
 
-function buildHierarchy(categories: CategoryResponse[]): CategoryOption[] {
+function buildHierarchy(categories: Category[]): CategoryOption[] {
   const categoryMap = new Map<string, CategoryOption>();
   const rootCategories: CategoryOption[] = [];
 
@@ -61,7 +48,7 @@ function buildHierarchy(categories: CategoryResponse[]): CategoryOption[] {
   return rootCategories;
 }
 
-function resolveLabel(category: CategoryResponse): string {
+function resolveLabel(category: Category): string {
   // Try localized names first
   if (category.localizedNames) {
     if (category.localizedNames.en) {

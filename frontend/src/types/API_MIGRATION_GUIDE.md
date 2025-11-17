@@ -6,9 +6,13 @@ This guide explains how to migrate from hand-rolled types to generated OpenAPI t
 
 As of P1-T2, all API DTOs are auto-generated from `docs/architecture/api-specification.yaml`.
 
+**Architecture Pattern**: OpenAPI DTOs are **transport types only**. UI/domain models stay separate and are fed via mappers.
+
 **DO NOT** manually edit:
 - `frontend/src/generated/api/schema.ts` (regenerated via `npm run generate:api`)
 - `android/app/src/main/java/com/albunyaan/tube/data/model/api/` (regenerated via `./gradlew generateKotlinDtos`)
+
+**DO** create mapper functions when API DTOs differ from UI needs.
 
 ## Frontend Migration Pattern
 

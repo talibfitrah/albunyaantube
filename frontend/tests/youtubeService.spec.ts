@@ -18,11 +18,10 @@ describe('YouTubeService', () => {
       const mockChannels = [
         {
           id: 'channel-1',
-          snippet: {
-            title: 'Test Channel',
-            thumbnails: { default: { url: 'https://example.com/thumb.jpg' } }
-          },
-          statistics: { subscriberCount: '1000' }
+          type: 'channel',
+          title: 'Test Channel',
+          thumbnailUrl: 'https://example.com/thumb.jpg',
+          subscriberCount: 1000
         }
       ];
 
@@ -45,12 +44,12 @@ describe('YouTubeService', () => {
       const mockPlaylists = [
         {
           id: 'playlist-1',
-          snippet: {
-            title: 'Test Playlist',
-            thumbnails: { default: { url: 'https://example.com/thumb.jpg' } },
-            channelId: 'channel-1'
-          },
-          contentDetails: { itemCount: '10' }
+          type: 'playlist',
+          title: 'Test Playlist',
+          thumbnailUrl: 'https://example.com/thumb.jpg',
+          itemCount: 10,
+          channelId: 'channel-1',
+          channelTitle: 'Owner Channel'
         }
       ];
 
@@ -66,13 +65,15 @@ describe('YouTubeService', () => {
     it('should search for videos', async () => {
       const mockVideos = [
         {
-          id: { videoId: 'video-1' },
-          snippet: {
-            title: 'Test Video',
-            thumbnails: { default: { url: 'https://example.com/thumb.jpg' } },
-            publishedAt: '2024-01-01T00:00:00Z',
-            channelId: 'channel-1'
-          }
+          id: 'video-1',
+          type: 'video',
+          title: 'Test Video',
+          thumbnailUrl: 'https://example.com/thumb.jpg',
+          publishedAt: '2024-01-01T00:00:00Z',
+          channelId: 'channel-1',
+          channelTitle: 'Owner Channel',
+          duration: 'PT4M13S',
+          viewCount: 5000
         }
       ];
 

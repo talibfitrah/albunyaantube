@@ -1065,7 +1065,7 @@ paths:
               schema:
                 type: array
                 items:
-                  type: object
+                  $ref: '#/components/schemas/EnrichedSearchResult'
 
   /admin/youtube/search/all:
     get:
@@ -1085,6 +1085,10 @@ paths:
       responses:
         '200':
           description: Paginated search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchPageResponse'
 
   /admin/youtube/search/channels:
     get:
@@ -1100,6 +1104,12 @@ paths:
       responses:
         '200':
           description: Channel search results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EnrichedSearchResult'
 
   /admin/youtube/search/playlists:
     get:
@@ -1115,6 +1125,12 @@ paths:
       responses:
         '200':
           description: Playlist search results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EnrichedSearchResult'
 
   /admin/youtube/search/videos:
     get:
@@ -1130,6 +1146,12 @@ paths:
       responses:
         '200':
           description: Video search results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EnrichedSearchResult'
 
   /admin/youtube/check-existing:
     post:
@@ -1141,23 +1163,14 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                channelIds:
-                  type: array
-                  items:
-                    type: string
-                playlistIds:
-                  type: array
-                  items:
-                    type: string
-                videoIds:
-                  type: array
-                  items:
-                    type: string
+              $ref: '#/components/schemas/ExistingContentRequest'
       responses:
         '200':
           description: Existing content IDs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExistingContentResponse'
 
   /admin/youtube/channels/{channelId}:
     get:
@@ -1173,6 +1186,10 @@ paths:
       responses:
         '200':
           description: YouTube channel
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelDetailsDto'
 
   /admin/youtube/channels/{channelId}/videos:
     get:
@@ -1196,6 +1213,12 @@ paths:
       responses:
         '200':
           description: Channel videos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StreamItemDto'
 
   /admin/youtube/channels/{channelId}/playlists:
     get:
@@ -1215,6 +1238,12 @@ paths:
       responses:
         '200':
           description: Channel playlists
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PlaylistItemDto'
 
   /admin/youtube/playlists/{playlistId}:
     get:
@@ -1230,6 +1259,10 @@ paths:
       responses:
         '200':
           description: YouTube playlist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaylistDetailsDto'
 
   /admin/youtube/playlists/{playlistId}/videos:
     get:
@@ -1253,6 +1286,12 @@ paths:
       responses:
         '200':
           description: Playlist videos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StreamItemDto'
 
   /admin/youtube/videos/{videoId}:
     get:
@@ -1268,6 +1307,10 @@ paths:
       responses:
         '200':
           description: YouTube video
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StreamDetailsDto'
 
   # ============================================================================
   # USER MANAGEMENT (Admin Only)
@@ -1778,7 +1821,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
+              $ref: '#/components/schemas/DownloadStartedEvent'
       responses:
         '201':
           description: Event tracked
@@ -1794,7 +1837,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
+              $ref: '#/components/schemas/DownloadCompletedEvent'
       responses:
         '201':
           description: Event tracked
@@ -1810,7 +1853,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
+              $ref: '#/components/schemas/DownloadFailedEvent'
       responses:
         '201':
           description: Event tracked
@@ -2122,6 +2165,10 @@ paths:
       responses:
         '200':
           description: Content library page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContentLibraryResponse'
 
   /admin/content/bulk/approve:
     post:
@@ -3039,6 +3086,64 @@ components:
         requiresEula:
           type: boolean
           description: Whether EULA acceptance is required
+
+    DownloadStartedEvent:
+      type: object
+      description: Event data for tracking download started
+      required:
+        - videoId
+        - quality
+      properties:
+        videoId:
+          type: string
+          description: YouTube video ID
+        quality:
+          type: string
+          description: Selected quality (e.g., "720p", "1080p")
+        deviceType:
+          type: string
+          description: Device type (e.g., "mobile", "tablet", "desktop")
+          default: unknown
+
+    DownloadCompletedEvent:
+      type: object
+      description: Event data for tracking download completed
+      required:
+        - videoId
+        - quality
+      properties:
+        videoId:
+          type: string
+          description: YouTube video ID
+        quality:
+          type: string
+          description: Selected quality (e.g., "720p", "1080p")
+        fileSize:
+          type: integer
+          format: int64
+          description: Downloaded file size in bytes
+          nullable: true
+        deviceType:
+          type: string
+          description: Device type (e.g., "mobile", "tablet", "desktop")
+          default: unknown
+
+    DownloadFailedEvent:
+      type: object
+      description: Event data for tracking download failed
+      required:
+        - videoId
+      properties:
+        videoId:
+          type: string
+          description: YouTube video ID
+        errorReason:
+          type: string
+          description: Reason for download failure
+        deviceType:
+          type: string
+          description: Device type (e.g., "mobile", "tablet", "desktop")
+          default: unknown
 
     # Pagination & Player DTOs
     CursorPageDto:

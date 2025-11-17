@@ -1,9 +1,15 @@
 package com.albunyaan.tube.data.source.api
 
+import com.albunyaan.tube.data.model.api.models.Category
+import com.albunyaan.tube.data.model.api.models.ContentItemDto
+import com.albunyaan.tube.data.model.api.models.PageInfo
 import com.squareup.moshi.JsonClass
 import retrofit2.http.GET
 import retrofit2.http.Query
 
+/**
+ * Retrofit API interface using generated OpenAPI DTOs
+ */
 interface ContentApi {
     @GET("api/v1/content")
     suspend fun fetchContent(
@@ -14,57 +20,25 @@ interface ContentApi {
         @Query("length") length: String?,
         @Query("date") date: String?,
         @Query("sort") sort: String?
-    ): CursorPageDto
+    ): CursorPage
 
     @GET("api/v1/categories")
-    suspend fun fetchCategories(): List<CategoryDto>
+    suspend fun fetchCategories(): List<Category>
 
     @GET("api/v1/search")
     suspend fun search(
         @Query("q") query: String,
         @Query("type") type: String?,
         @Query("limit") limit: Int
-    ): SearchResponseDto
+    ): List<ContentItemDto>
 }
 
+/**
+ * Response wrapper for cursor-based pagination with ContentItemDto items
+ * Adapts the generated CursorPageDto to work with our specific use case
+ */
 @JsonClass(generateAdapter = true)
-data class CursorPageDto(
-    val data: List<ContentDto>,
-    val pageInfo: PageInfoDto
-)
-
-@JsonClass(generateAdapter = true)
-data class PageInfoDto(
-    val nextCursor: String?
-)
-
-@JsonClass(generateAdapter = true)
-data class ContentDto(
-    val id: String,
-    val title: String? = null,
-    val name: String? = null,
-    val category: String? = null,
-    val durationMinutes: Int? = null,
-    val uploadedDaysAgo: Int? = null,
-    val description: String? = null,
-    val subscribers: Int? = null,
-    val itemCount: Int? = null,
-    val type: String? = null,
-    val thumbnailUrl: String? = null,
-    val viewCount: Long? = null,
-    val videoCount: Int? = null
-)
-
-@JsonClass(generateAdapter = true)
-data class CategoryDto(
-    val id: String,
-    val name: String,
-    val slug: String,
-    val parentId: String? = null
-)
-
-@JsonClass(generateAdapter = true)
-data class SearchResponseDto(
-    val results: List<ContentDto>,
-    val total: Int? = null
+data class CursorPage(
+    val data: List<ContentItemDto>,
+    val pageInfo: PageInfo
 )

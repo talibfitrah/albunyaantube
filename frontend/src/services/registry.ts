@@ -6,10 +6,25 @@ import type {
   PlaylistSummary,
   VideoSummary
 } from '@/types/registry';
+import type { Channel } from '@/types/api';
 
 interface PaginationParams {
   cursor?: string | null;
   limit?: number;
+}
+
+/**
+ * Map API Channel DTO to UI ChannelSummary model
+ */
+function mapChannelToSummary(channel: Channel): ChannelSummary {
+  return {
+    id: channel.id,
+    ytId: channel.youtubeId,
+    name: channel.name,
+    avatarUrl: channel.thumbnailUrl || null,
+    subscriberCount: channel.subscribers || 0,
+    categories: [] // CategoryTag mapping would require category lookup
+  };
 }
 
 export interface ChannelListParams extends PaginationParams {
@@ -57,13 +72,13 @@ export async function fetchChannelsPage(params: ChannelListParams = {}): Promise
   if (params.categoryId) {
     endpoint = `${CHANNELS_BASE_PATH}/category/${params.categoryId}`;
   }
-  
+
   // Backend returns array, not paginated response
   // TODO: Add pagination support in backend
-  const channels = await authorizedJsonFetch<any[]>(endpoint);
-  
+  const channels = await authorizedJsonFetch<Channel[]>(endpoint);
+
   return {
-    data: channels,
+    data: channels.map(mapChannelToSummary),
     pageInfo: {
       cursor: null,
       nextCursor: null,

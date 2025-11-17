@@ -205,19 +205,35 @@ The API uses two response patterns depending on endpoint purpose:
 - `/v1/search`: Returns simple array `ContentItemDto[]` (limit-only, no cursor)
 - Rationale: Search is limited by relevance (top N results), not suitable for infinite scroll
 
-### Code Generation Approach
+### Code Generation & Type Safety
 
-**Planned Generator Setup** (Phase 1 - Task 2):
-1. **Frontend (TypeScript)**: `openapi-generator-cli` → `src/generated/api/`
-2. **Android (Kotlin)**: `openapi-generator-cli` → `app/src/main/kotlin/generated/`
-3. **CI Integration**: Pre-build step regenerates on spec changes
-4. **Migration Path**: Replace hand-rolled DTOs incrementally per module
+**Status**: ✅ Infrastructure complete (P1-T2, November 2025)
+
+**Generator Setup**:
+1. **Frontend (TypeScript)**: `openapi-typescript` → `frontend/src/generated/api/schema.ts`
+   - Re-exported via `frontend/src/types/api.ts` for clean imports
+   - Auto-generated on `npm run dev`, `npm test`, `npm run build`
+2. **Android (Kotlin)**: `openapi-generator-cli` (Moshi) → `android/app/src/main/java/com/albunyaan/tube/data/model/api/models/`
+   - Generated via `./gradlew generateKotlinDtos`
+3. **CI Integration**: ✅ All 3 platform workflows regenerate DTOs pre-build
+4. **Unified Script**: `./scripts/generate-openapi-dtos.sh` regenerates all platforms
+
+**Architecture Pattern** (Transport Types vs Domain Models):
+- **Generated DTOs**: Transport types for API serialization only
+- **Frontend**: Domain/view models in `src/types/*.ts`, mappers for UI-specific needs
+- **Android**: Domain models in `data/model/`, mappers in `data/model/mappers/ApiMappers.kt`
+- **Backend**: DTOs in `com.albunyaan.tube.dto/` manually maintained to match spec
+
+**Migration Path**: Incrementally replace hand-rolled types service-by-service:
+- See [API_MIGRATION_GUIDE.md](../../frontend/src/types/API_MIGRATION_GUIDE.md) for patterns
+- See [DEVELOPMENT_GUIDE.md](../status/DEVELOPMENT_GUIDE.md) for DTO workflow
 
 **Benefits**:
 - Single source of truth (api-specification.yaml)
 - Compile-time type safety across all 3 platforms
 - Automatic field mapping and validation
 - Reduces field aliasing bugs (e.g., `subscriberCount` vs `subscribers`)
+- Spec-first development enforces contract alignment
 
 ### Version Compatibility
 
