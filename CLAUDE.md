@@ -7,12 +7,17 @@ This document provides essential information for AI assistants working in the Al
 ## 🎯 **WHERE TO START - CURRENT SESSION STATUS**
 
 **Date:** November 17, 2025
-**Status:** OpenAPI code generation implemented (P1-T2)
-**Next Step:** Migrate services to use generated DTOs
+**Status:** Field aliasing removed in frontend services (P1-T3)
+**Next Step:** Standardize pagination DTOs across API and clients (P1-T4)
 
 ### **Recent Updates (Nov 17, 2025):**
 
-1. **OpenAPI Code Generation (P1-T2)** ✅
+1. **Frontend Field Aliasing Removal (P1-T3)** ✅
+   - Refactored frontend services to consume canonical OpenAPI-generated DTO fields only (no `a || b` aliasing)
+   - `approvalService.ts`: parses formatted subscriber counts, maps playlist `itemCount` to UI `videoCount`, pulls categories from `dto.category`
+   - Validation: `npm run build` and `npm test` (150 passed, 4 skipped) with regenerated OpenAPI types
+
+2. **OpenAPI Code Generation (P1-T2)** ✅
    - Implemented TypeScript DTO generation with `openapi-typescript`
    - Implemented Kotlin DTO generation with `openapi-generator-cli`
    - Created unified generation script: `./scripts/generate-openapi-dtos.sh`
