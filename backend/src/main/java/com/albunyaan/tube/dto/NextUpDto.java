@@ -1,39 +1,87 @@
 package com.albunyaan.tube.dto;
 
+import com.fasterxml.jackson.annotation.JsonGetter;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonSetter;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
  * BACKEND-DL-02: Next-Up Recommendation Response DTO
+ *
+ * Standardized to match CursorPageDto pattern with data[] and pageInfo.
  */
 public class NextUpDto {
 
-    private List<VideoItem> items;
-    private String nextCursor;
+    private List<VideoItem> data;
+
+    @JsonProperty("pageInfo")
+    private CursorPageDto.PageInfo pageInfo;
 
     public NextUpDto() {
-        this.items = new ArrayList<>();
+        this.data = new ArrayList<>();
+        this.pageInfo = new CursorPageDto.PageInfo(null);
     }
 
-    public NextUpDto(List<VideoItem> items, String nextCursor) {
-        this.items = items;
-        this.nextCursor = nextCursor;
+    public NextUpDto(List<VideoItem> data, String nextCursor) {
+        this.data = data;
+        this.pageInfo = new CursorPageDto.PageInfo(nextCursor);
     }
 
+    public List<VideoItem> getData() {
+        return data;
+    }
+
+    public void setData(List<VideoItem> data) {
+        this.data = data;
+    }
+
+    public CursorPageDto.PageInfo getPageInfo() {
+        return pageInfo;
+    }
+
+    public void setPageInfo(CursorPageDto.PageInfo pageInfo) {
+        this.pageInfo = pageInfo;
+    }
+
+    /**
+     * @deprecated Use getData() instead. Included for backward compatibility.
+     */
+    @Deprecated
+    @JsonGetter("items")
     public List<VideoItem> getItems() {
-        return items;
+        return data;
     }
 
+    /**
+     * @deprecated Use setData() instead
+     */
+    @Deprecated
+    @JsonSetter("items")
     public void setItems(List<VideoItem> items) {
-        this.items = items;
+        this.data = items;
     }
 
+    /**
+     * @deprecated Use getPageInfo().getNextCursor() instead. Included for backward compatibility.
+     */
+    @Deprecated
+    @JsonGetter("nextCursor")
     public String getNextCursor() {
-        return nextCursor;
+        return pageInfo != null ? pageInfo.getNextCursor() : null;
     }
 
+    /**
+     * @deprecated Use setPageInfo() instead
+     */
+    @Deprecated
+    @JsonSetter("nextCursor")
     public void setNextCursor(String nextCursor) {
-        this.nextCursor = nextCursor;
+        if (this.pageInfo == null) {
+            this.pageInfo = new CursorPageDto.PageInfo(nextCursor);
+        } else {
+            this.pageInfo.setNextCursor(nextCursor);
+        }
     }
 
     /**

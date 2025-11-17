@@ -7,6 +7,7 @@
 import apiClient from './api/client';
 import { toast } from '@/utils/toast';
 import type { PendingApprovalDto, ApprovalRequestDto, RejectionRequestDto } from '@/types/api';
+import type { CursorPage } from '@/types/pagination';
 
 // UI-specific domain model (extends API DTO with UI-specific fields)
 export interface PendingApproval {
@@ -114,8 +115,8 @@ export async function getPendingApprovals(filters?: {
   if (filters?.category) params.category = filters.category;
   params.limit = 100; // Get all for now
 
-  const response = await apiClient.get<PendingApprovalDto[]>('/api/admin/approvals/pending', { params });
-  const data = response.data;
+  const response = await apiClient.get<CursorPage<PendingApprovalDto>>('/api/admin/approvals/pending', { params });
+  const data = response.data.data;
 
   // Map API DTOs to UI domain models
   const approvals: PendingApproval[] = data.map(mapPendingApprovalToUi);

@@ -5,6 +5,15 @@ import java.util.List;
 
 /**
  * Generic cursor-based pagination response for public API.
+ *
+ * Wire format:
+ * {
+ *   "data": [...],
+ *   "pageInfo": {
+ *     "nextCursor": "string|null",
+ *     "hasNext": boolean
+ *   }
+ * }
  */
 public class CursorPageDto<T> {
     private List<T> data;
@@ -38,12 +47,14 @@ public class CursorPageDto<T> {
 
     public static class PageInfo {
         private String nextCursor;
+        private boolean hasNext;
 
         public PageInfo() {
         }
 
         public PageInfo(String nextCursor) {
             this.nextCursor = nextCursor;
+            this.hasNext = nextCursor != null;
         }
 
         public String getNextCursor() {
@@ -52,6 +63,11 @@ public class CursorPageDto<T> {
 
         public void setNextCursor(String nextCursor) {
             this.nextCursor = nextCursor;
+            this.hasNext = nextCursor != null;
+        }
+
+        public boolean isHasNext() {
+            return hasNext;
         }
     }
 }

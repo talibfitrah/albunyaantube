@@ -130,15 +130,15 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                description: Cursor-paginated mixed content response
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/ContentItemDto'
-                  pageInfo:
-                    $ref: '#/components/schemas/PageInfo'
+                allOf:
+                  - $ref: '#/components/schemas/CursorPageDto'
+                  - type: object
+                    description: Cursor-paginated mixed content response
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/ContentItemDto'
 
   /v1/categories:
     get:
@@ -1629,6 +1629,18 @@ paths:
       responses:
         '200':
           description: Pending approvals
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CursorPageDto'
+                  - type: object
+                    description: Cursor-paginated pending approvals
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/PendingApprovalDto'
 
   /admin/approvals/{id}/approve:
     post:
@@ -1703,9 +1715,14 @@ paths:
           in: query
           schema:
             type: string
+          description: User ID for personalized recommendations (future use)
       responses:
         '200':
-          description: Recommended videos
+          description: Recommended videos (up to 10 items)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NextUpDto'
 
   # ============================================================================
   # DOWNLOADS (Public/User)
@@ -3160,24 +3177,29 @@ components:
 
     PageInfo:
       type: object
-      description: Pagination metadata
+      description: Pagination metadata for cursor-based pagination
+      required:
+        - hasNext
       properties:
         nextCursor:
           type: string
           nullable: true
           description: Cursor for fetching next page (null if last page)
+        hasNext:
+          type: boolean
+          description: Whether more pages are available
 
     NextUpDto:
       type: object
-      description: Next-up video recommendations
+      description: Next-up video recommendations (cursor-paginated)
       properties:
-        items:
+        data:
           type: array
           items:
             $ref: '#/components/schemas/VideoItem'
-        nextCursor:
-          type: string
-          nullable: true
+          description: Array of recommended videos
+        pageInfo:
+          $ref: '#/components/schemas/PageInfo'
 
     VideoItem:
       type: object

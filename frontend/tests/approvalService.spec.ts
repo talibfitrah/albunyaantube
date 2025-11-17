@@ -29,7 +29,12 @@ describe('ApprovalService', () => {
         }
       ];
 
-      vi.mocked(apiClient.get).mockResolvedValueOnce({ data: mockApprovals });
+      vi.mocked(apiClient.get).mockResolvedValueOnce({
+        data: {
+          data: mockApprovals,
+          pageInfo: { nextCursor: null, hasNext: false }
+        }
+      });
 
       const result = await getPendingApprovals();
 
@@ -42,7 +47,9 @@ describe('ApprovalService', () => {
     });
 
     it('should filter by type: channels only', async () => {
-      vi.mocked(apiClient.get).mockResolvedValueOnce({ data: [] });
+      vi.mocked(apiClient.get).mockResolvedValueOnce({
+        data: { data: [], pageInfo: { nextCursor: null, hasNext: false } }
+      });
 
       await getPendingApprovals({ type: 'channels' });
 
@@ -52,7 +59,9 @@ describe('ApprovalService', () => {
     });
 
     it('should filter by type: playlists only', async () => {
-      vi.mocked(apiClient.get).mockResolvedValueOnce({ data: [] });
+      vi.mocked(apiClient.get).mockResolvedValueOnce({
+        data: { data: [], pageInfo: { nextCursor: null, hasNext: false } }
+      });
 
       await getPendingApprovals({ type: 'playlists' });
 
@@ -62,7 +71,9 @@ describe('ApprovalService', () => {
     });
 
     it('should pass the category filter to the API', async () => {
-      vi.mocked(apiClient.get).mockResolvedValueOnce({ data: [] });
+      vi.mocked(apiClient.get).mockResolvedValueOnce({
+        data: { data: [], pageInfo: { nextCursor: null, hasNext: false } }
+      });
 
       await getPendingApprovals({ category: 'cat-1' });
 
@@ -77,7 +88,12 @@ describe('ApprovalService', () => {
         { id: 'ch-2', type: 'CHANNEL', title: 'Channel 2', submittedAt: '2024-01-02T00:00:00Z', submittedBy: 'user2' }
       ];
 
-      vi.mocked(apiClient.get).mockResolvedValueOnce({ data: mockApprovals });
+      vi.mocked(apiClient.get).mockResolvedValueOnce({
+        data: {
+          data: mockApprovals,
+          pageInfo: { nextCursor: null, hasNext: false }
+        }
+      });
 
       const result = await getPendingApprovals({ sort: 'newest' });
 
