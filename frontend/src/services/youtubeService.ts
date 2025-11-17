@@ -8,13 +8,18 @@
  */
 
 import apiClient from './api/client';
-import type { AdminSearchChannelResult, AdminSearchPlaylistResult, AdminSearchVideoResult, YouTubeEnrichedSearchResult } from '@/types/registry';
-
-interface SearchPageResponse {
-  items: YouTubeEnrichedSearchResult[];
-  nextPageToken?: string;
-  totalResults?: number;
-}
+import type { AdminSearchChannelResult, AdminSearchPlaylistResult, AdminSearchVideoResult } from '@/types/registry';
+import type {
+  EnrichedSearchResult,
+  SearchPageResponse,
+  StreamItemDto,
+  PlaylistItemDto,
+  PlaylistDetailsDto,
+  ChannelDetailsDto,
+  Channel,
+  Playlist,
+  Video
+} from '@/types/api';
 
 interface YouTubeSearchResponse {
   channels: AdminSearchChannelResult[];
@@ -40,9 +45,9 @@ export async function searchYouTube(
     });
 
     // Separate by type but preserve mixed order
-    const channels: any[] = [];
-    const playlists: any[] = [];
-    const videos: any[] = [];
+    const channels: EnrichedSearchResult[] = [];
+    const playlists: EnrichedSearchResult[] = [];
+    const videos: EnrichedSearchResult[] = [];
 
     response.data.items.forEach(item => {
       if (item.type === 'channel') channels.push(item);
@@ -59,9 +64,9 @@ export async function searchYouTube(
     };
   }
 
-  // Handle single-type responses
+  // Handle single-type responses with typed API calls
   const endpoint = `/api/admin/youtube/search/${type}`;
-  const response = await apiClient.get(endpoint, {
+  const response = await apiClient.get<EnrichedSearchResult[]>(endpoint, {
     params: { query }
   });
 
@@ -78,15 +83,50 @@ export async function searchYouTube(
  */
 export async function getChannelDetails(channelId: string) {
   const [channelResponse, videosResponse, playlistsResponse] = await Promise.all([
-    apiClient.get(`/api/admin/youtube/channels/${channelId}`),
-    apiClient.get(`/api/admin/youtube/channels/${channelId}/videos`),
-    apiClient.get(`/api/admin/youtube/channels/${channelId}/playlists`)
+    apiClient.get<ChannelDetailsDto>(`/api/admin/youtube/channels/${channelId}`),
+    apiClient.get<StreamItemDto[]>(`/api/admin/youtube/channels/${channelId}/videos`),
+    apiClient.get<PlaylistItemDto[]>(`/api/admin/youtube/channels/${channelId}/playlists`)
   ]);
 
+  // Map DTOs to EnrichedSearchResult shapes expected by transformers
+  const channelAsSearchResult: EnrichedSearchResult = {
+    id: channelResponse.data.id || '',
+    title: channelResponse.data.name || '',
+    thumbnailUrl: channelResponse.data.thumbnailUrl || '',
+    description: channelResponse.data.description || '',
+    subscriberCount: channelResponse.data.subscriberCount || 0,
+    videoCount: channelResponse.data.streamCount || 0,
+    type: 'channel'
+  };
+
+  const videosAsSearchResults: EnrichedSearchResult[] = videosResponse.data.map(video => ({
+    id: video.id || '',
+    title: video.name || '',
+    thumbnailUrl: video.thumbnailUrl || '',
+    description: '',
+    channelId: channelResponse.data.id || channelId, // Use parent channel ID
+    channelTitle: video.uploaderName || '',
+    viewCount: video.viewCount || 0,
+    duration: video.duration ? `PT${video.duration}S` : 'PT0S', // Convert to ISO-8601 format for parseDuration
+    publishedAt: video.uploadDate || '',
+    type: 'video'
+  }));
+
+  const playlistsAsSearchResults: EnrichedSearchResult[] = playlistsResponse.data.map(playlist => ({
+    id: playlist.id || '',
+    title: playlist.name || '',
+    thumbnailUrl: playlist.thumbnailUrl || '',
+    description: '',
+    channelId: channelResponse.data.id || channelId, // Use parent channel ID
+    channelTitle: playlist.uploaderName || '',
+    itemCount: playlist.streamCount || 0,
+    type: 'playlist'
+  }));
+
   return {
-    channel: transformChannelResult(channelResponse.data),
-    videos: transformVideoResults(videosResponse.data),
-    playlists: transformPlaylistResults(playlistsResponse.data)
+    channel: transformChannelResult(channelAsSearchResult),
+    videos: transformVideoResults(videosAsSearchResults),
+    playlists: transformPlaylistResults(playlistsAsSearchResults)
   };
 }
 
@@ -100,42 +140,45 @@ export async function addToPendingApprovals(
 ): Promise<void> {
   if (itemType === 'channel') {
     const channel = item as AdminSearchChannelResult;
-    const payload = {
+    const payload: Omit<Channel, 'id'> = {
       youtubeId: channel.ytId || channel.id,
-      name: channel.name,
-      description: '',
-      thumbnailUrl: channel.avatarUrl,
-      subscribers: channel.subscriberCount,
-      videoCount: 0,
+      name: channel.name || '',
+      description: null, // AdminSearchChannelResult doesn't include description
+      thumbnailUrl: channel.avatarUrl || null,
+      subscribers: channel.subscriberCount || null,
+      videoCount: null,
       categoryIds,
       status: 'PENDING'
     };
-    await apiClient.post('/api/admin/registry/channels', payload);
+    await apiClient.post<Channel>('/api/admin/registry/channels', payload);
   } else if (itemType === 'playlist') {
     const playlist = item as AdminSearchPlaylistResult;
-    const payload = {
+    const payload: Omit<Playlist, 'id'> = {
       youtubeId: playlist.ytId || playlist.id,
-      title: playlist.title,
-      description: '',
-      thumbnailUrl: playlist.thumbnailUrl,
-      itemCount: playlist.itemCount,
+      title: playlist.title || '',
+      description: null, // AdminSearchPlaylistResult doesn't include description
+      thumbnailUrl: playlist.thumbnailUrl || null,
+      itemCount: playlist.itemCount || null,
       categoryIds,
-      status: 'PENDING'
+      status: 'PENDING',
+      channelId: null
     };
-    await apiClient.post('/api/admin/registry/playlists', payload);
+    await apiClient.post<Playlist>('/api/admin/registry/playlists', payload);
   } else if (itemType === 'video') {
     const video = item as AdminSearchVideoResult;
-    const payload = {
+    const payload: Omit<Video, 'id'> = {
       youtubeId: video.ytId || video.id,
-      title: video.title,
-      description: '',
-      thumbnailUrl: video.thumbnailUrl,
-      durationSeconds: video.durationSeconds,
-      viewCount: video.viewCount,
+      title: video.title || '',
+      description: null, // AdminSearchVideoResult doesn't include description
+      thumbnailUrl: video.thumbnailUrl || null,
+      durationSeconds: video.durationSeconds || null,
+      viewCount: video.viewCount || null,
       categoryIds,
-      status: 'PENDING'
+      status: 'PENDING',
+      channelId: null
+      // Note: Video schema has no playlistId field
     };
-    await apiClient.post('/api/admin/registry/videos', payload);
+    await apiClient.post<Video>('/api/admin/registry/videos', payload);
   }
 }
 
@@ -156,17 +199,14 @@ export async function toggleIncludeState(
 }
 
 // Transform EnrichedSearchResult to AdminSearchChannelResult
-function transformChannelResult(channel: YouTubeEnrichedSearchResult | any): AdminSearchChannelResult {
-  // Handle both EnrichedSearchResult and legacy Google API format
-  const channelId = channel.id || (typeof channel.id === 'object' ? channel.id.channelId : channel.id);
-
+function transformChannelResult(channel: EnrichedSearchResult): AdminSearchChannelResult {
   return {
-    id: channelId,
-    ytId: channelId,
-    name: channel.title || channel.snippet?.title || '',
-    avatarUrl: channel.thumbnailUrl || channel.snippet?.thumbnails?.medium?.url || channel.snippet?.thumbnails?.default?.url || '',
-    subscriberCount: channel.subscriberCount || parseInt(channel.statistics?.subscriberCount || '0'),
-    publishedAt: channel.publishedAt || channel.snippet?.publishedAt,
+    id: channel.id || '',
+    ytId: channel.id || '',
+    name: channel.title || '',
+    avatarUrl: channel.thumbnailUrl || '',
+    subscriberCount: channel.subscriberCount || 0,
+    publishedAt: channel.publishedAt,
     categories: [],
     includeState: 'NOT_INCLUDED',
     excludedItemCounts: { videos: 0, playlists: 0 },
@@ -176,30 +216,25 @@ function transformChannelResult(channel: YouTubeEnrichedSearchResult | any): Adm
   };
 }
 
-function transformChannelResults(channels: any[]): AdminSearchChannelResult[] {
+function transformChannelResults(channels: EnrichedSearchResult[]): AdminSearchChannelResult[] {
   return channels.map(transformChannelResult);
 }
 
 // Transform EnrichedSearchResult to AdminSearchPlaylistResult
-function transformPlaylistResults(playlists: any[]): AdminSearchPlaylistResult[] {
+function transformPlaylistResults(playlists: EnrichedSearchResult[]): AdminSearchPlaylistResult[] {
   return playlists.map(playlist => {
-    // Handle both EnrichedSearchResult and legacy Google API format
-    const playlistId = playlist.id || (typeof playlist.id === 'object' ? playlist.id.playlistId : playlist.id);
-    const channelId = playlist.channelId || playlist.snippet?.channelId || '';
-    const channelTitle = playlist.channelTitle || playlist.snippet?.channelTitle || '';
-
     return {
-      id: playlistId,
-      ytId: playlistId,
-      title: playlist.title || playlist.snippet?.title || '',
-      thumbnailUrl: playlist.thumbnailUrl || playlist.snippet?.thumbnails?.medium?.url || playlist.snippet?.thumbnails?.default?.url || '',
+      id: playlist.id || '',
+      ytId: playlist.id || '',
+      title: playlist.title || '',
+      thumbnailUrl: playlist.thumbnailUrl || '',
       videoThumbnails: playlist.videoThumbnails || [],
-      itemCount: playlist.itemCount || parseInt(playlist.contentDetails?.itemCount || '0'),
-      publishedAt: playlist.publishedAt || playlist.snippet?.publishedAt,
+      itemCount: playlist.itemCount || 0,
+      publishedAt: playlist.publishedAt,
       owner: {
-        id: channelId,
-        ytId: channelId,
-        name: channelTitle,
+        id: playlist.channelId || '',
+        ytId: playlist.channelId || '',
+        name: playlist.channelTitle || '',
         avatarUrl: '',
         subscriberCount: 0,
         categories: []
@@ -207,7 +242,7 @@ function transformPlaylistResults(playlists: any[]): AdminSearchPlaylistResult[]
       categories: [],
       downloadable: true,
       includeState: 'NOT_INCLUDED',
-      parentChannelId: channelId,
+      parentChannelId: playlist.channelId || '',
       excludedVideoCount: 0,
       excludedVideoIds: [],
       bulkEligible: true
@@ -216,25 +251,20 @@ function transformPlaylistResults(playlists: any[]): AdminSearchPlaylistResult[]
 }
 
 // Transform EnrichedSearchResult to AdminSearchVideoResult
-function transformVideoResults(videos: any[]): AdminSearchVideoResult[] {
+function transformVideoResults(videos: EnrichedSearchResult[]): AdminSearchVideoResult[] {
   return videos.map(video => {
-    // Handle both EnrichedSearchResult and legacy Google API format
-    const videoId = video.id || (typeof video.id === 'object' ? video.id.videoId : video.id);
-    const channelId = video.channelId || video.snippet?.channelId || '';
-    const channelTitle = video.channelTitle || video.snippet?.channelTitle || '';
-
     return {
-      id: videoId,
-      ytId: videoId,
-      title: video.title || video.snippet?.title || '',
-      thumbnailUrl: video.thumbnailUrl || video.snippet?.thumbnails?.medium?.url || video.snippet?.thumbnails?.default?.url || '',
-      durationSeconds: video.duration ? parseDuration(video.duration) : parseDuration(video.contentDetails?.duration || ''),
-      publishedAt: video.publishedAt || video.snippet?.publishedAt || '',
-      viewCount: video.viewCount || parseInt(video.statistics?.viewCount || '0'),
+      id: video.id || '',
+      ytId: video.id || '',
+      title: video.title || '',
+      thumbnailUrl: video.thumbnailUrl || '',
+      durationSeconds: video.duration ? parseDuration(video.duration) : 0,
+      publishedAt: video.publishedAt || '',
+      viewCount: video.viewCount || 0,
       channel: {
-        id: channelId,
-        ytId: channelId,
-        name: channelTitle,
+        id: video.channelId || '',
+        ytId: video.channelId || '',
+        name: video.channelTitle || '',
         avatarUrl: '',
         subscriberCount: 0,
         categories: []
@@ -243,7 +273,7 @@ function transformVideoResults(videos: any[]): AdminSearchVideoResult[] {
       bookmarked: null,
       downloaded: null,
       includeState: 'NOT_INCLUDED',
-      parentChannelId: channelId,
+      parentChannelId: video.channelId || '',
       parentPlaylistIds: []
     };
   });
@@ -265,85 +295,110 @@ function parseDuration(duration: string): number {
 
 // Additional YouTube functions for exclusions modals (powered by NewPipeExtractor)
 
+/**
+ * Get videos from a YouTube channel
+ * Note: Backend currently returns flat array without pagination support (no nextPageToken)
+ */
 export async function getChannelVideos(
   channelId: string,
   pageToken?: string,
   searchQuery?: string
-): Promise<any> {
-  const params: any = {};
+) {
+  const params: Record<string, string> = {};
   if (pageToken) params.pageToken = pageToken;
   if (searchQuery) params.q = searchQuery;
 
-  const response = await apiClient.get(`/api/admin/youtube/channels/${channelId}/videos`, { params });
+  const response = await apiClient.get<StreamItemDto[]>(
+    `/api/admin/youtube/channels/${channelId}/videos`,
+    { params }
+  );
 
-  // Destructure items and nextPageToken from response.data
-  const { items = [], nextPageToken } = response.data;
+  const items = response.data;
 
   return {
-    items: items.map((item: any) => ({
-      id: item.id?.videoId || item.id,
-      title: item.snippet?.title || '',
-      thumbnailUrl: item.snippet?.thumbnails?.medium?.url || item.snippet?.thumbnails?.default?.url,
-      publishedAt: item.snippet?.publishedAt
+    items: items.map(item => ({
+      id: item.id || '',
+      title: item.name || '',
+      thumbnailUrl: item.thumbnailUrl || '',
+      publishedAt: item.uploadDate || ''
     })),
-    nextPageToken
+    nextPageToken: undefined // Pagination not supported by backend yet
   };
 }
 
+/**
+ * Get playlists from a YouTube channel
+ * Note: Backend currently returns flat array without pagination support (no nextPageToken)
+ */
 export async function getChannelPlaylists(
   channelId: string,
   pageToken?: string
-): Promise<any> {
-  const params: any = {};
+) {
+  const params: Record<string, string> = {};
   if (pageToken) params.pageToken = pageToken;
 
-  const response = await apiClient.get(`/api/admin/youtube/channels/${channelId}/playlists`, { params });
+  const response = await apiClient.get<PlaylistItemDto[]>(
+    `/api/admin/youtube/channels/${channelId}/playlists`,
+    { params }
+  );
 
-  // Destructure items and nextPageToken from response.data
-  const { items = [], nextPageToken } = response.data;
+  const items = response.data;
 
   return {
-    items: items.map((item: any) => ({
-      id: item.id,
-      title: item.snippet?.title || '',
-      thumbnailUrl: item.snippet?.thumbnails?.medium?.url || item.snippet?.thumbnails?.default?.url,
-      itemCount: item.contentDetails?.itemCount || 0
+    items: items.map(item => ({
+      id: item.id || '',
+      title: item.name || '',
+      thumbnailUrl: item.thumbnailUrl || '',
+      itemCount: item.streamCount || 0
     })),
-    nextPageToken
+    nextPageToken: undefined // Pagination not supported by backend yet
   };
 }
 
-export async function getPlaylistDetails(playlistId: string): Promise<any> {
-  const response = await apiClient.get(`/api/admin/youtube/playlists/${playlistId}`);
+/**
+ * Get playlist details from YouTube
+ */
+export async function getPlaylistDetails(playlistId: string) {
+  const response = await apiClient.get<PlaylistDetailsDto>(
+    `/api/admin/youtube/playlists/${playlistId}`
+  );
+
+  const data = response.data;
 
   return {
-    title: response.data.snippet?.title || '',
-    thumbnailUrl: response.data.snippet?.thumbnails?.medium?.url || response.data.snippet?.thumbnails?.default?.url,
-    itemCount: response.data.contentDetails?.itemCount || 0
+    title: data.name || '',
+    thumbnailUrl: data.thumbnailUrl || '',
+    itemCount: data.streamCount || 0
   };
 }
 
+/**
+ * Get videos in a YouTube playlist
+ * Note: Backend currently returns flat array without pagination support (no nextPageToken)
+ */
 export async function getPlaylistVideos(
   playlistId: string,
   pageToken?: string,
   searchQuery?: string
-): Promise<any> {
-  const params: any = {};
+) {
+  const params: Record<string, string> = {};
   if (pageToken) params.pageToken = pageToken;
   if (searchQuery) params.q = searchQuery;
 
-  const response = await apiClient.get(`/api/admin/youtube/playlists/${playlistId}/videos`, { params });
+  const response = await apiClient.get<StreamItemDto[]>(
+    `/api/admin/youtube/playlists/${playlistId}/videos`,
+    { params }
+  );
 
-  // Destructure items and nextPageToken from response.data
-  const { items = [], nextPageToken } = response.data;
+  const items = response.data;
 
   return {
-    items: items.map((item: any) => ({
-      id: item.id,
-      videoId: item.contentDetails?.videoId || item.snippet?.resourceId?.videoId,
-      title: item.snippet?.title || '',
-      thumbnailUrl: item.snippet?.thumbnails?.medium?.url || item.snippet?.thumbnails?.default?.url
+    items: items.map(item => ({
+      id: item.id || '',
+      videoId: item.id || '', // StreamItemDto uses 'id' for video ID
+      title: item.name || '',
+      thumbnailUrl: item.thumbnailUrl || ''
     })),
-    nextPageToken
+    nextPageToken: undefined // Pagination not supported by backend yet
   };
 }

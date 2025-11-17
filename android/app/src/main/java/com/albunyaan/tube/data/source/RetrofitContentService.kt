@@ -8,9 +8,10 @@ import com.albunyaan.tube.data.model.Category
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.model.CursorResponse
+import com.albunyaan.tube.data.model.mappers.toDomain
+import com.albunyaan.tube.data.model.mappers.toDomainContentItems
 import com.albunyaan.tube.data.extractor.MetadataHydrator
 import com.albunyaan.tube.data.source.api.ContentApi
-import com.albunyaan.tube.data.source.api.ContentDto
 import kotlinx.coroutines.CancellationException
 
 class RetrofitContentService(
@@ -33,42 +34,12 @@ class RetrofitContentService(
             date = filters.publishedDate.toQueryValue(),
             sort = filters.sortOption.toQueryValue()
         )
-        val baseItems = response.data.mapNotNull { it.toModel() }
+        // Use mapper to convert generated DTOs to domain models
+        val baseItems = response.data.toDomainContentItems()
         val hydratedItems = runCatching { metadataHydrator.hydrate(type, baseItems) }
             .onFailure { if (it is CancellationException) throw it }
             .getOrElse { baseItems }
         return CursorResponse(hydratedItems, CursorResponse.PageInfo(response.pageInfo.nextCursor))
-    }
-
-    private fun ContentDto.toModel(): ContentItem? {
-        return when (type?.uppercase()) {
-            "VIDEO" -> ContentItem.Video(
-                id = id,
-                title = title.orEmpty(),
-                category = category.orEmpty(),
-                durationMinutes = durationMinutes ?: 0,
-                uploadedDaysAgo = uploadedDaysAgo ?: 0,
-                description = description.orEmpty(),
-                thumbnailUrl = thumbnailUrl,
-                viewCount = viewCount
-            )
-            "CHANNEL" -> ContentItem.Channel(
-                id = id,
-                name = name ?: title.orEmpty(),
-                category = category.orEmpty(),
-                subscribers = subscribers ?: 0,
-                thumbnailUrl = thumbnailUrl,
-                videoCount = videoCount
-            )
-            "PLAYLIST" -> ContentItem.Playlist(
-                id = id,
-                title = title.orEmpty(),
-                category = category.orEmpty(),
-                itemCount = itemCount ?: 0,
-                thumbnailUrl = thumbnailUrl
-            )
-            else -> null
-        }
     }
 
     private fun VideoLength.toQueryValue(): String? = when (this) {
@@ -87,43 +58,33 @@ class RetrofitContentService(
 
     private fun SortOption.toQueryValue(): String? = when (this) {
         SortOption.DEFAULT -> null
-        SortOption.MOST_POPULAR -> "POPULAR"
+        SortOption.MOST_POPULAR -> "MOST_POPULAR"
         SortOption.NEWEST -> "NEWEST"
     }
 
     override suspend fun search(query: String, type: String?, limit: Int): List<ContentItem> {
-        val response = api.search(query, type, limit)
-        return response.results.mapNotNull { it.toModel() }
+        val dtos = api.search(query, type, limit)
+        // Use mapper to convert generated DTOs to domain models
+        return dtos.toDomainContentItems()
     }
 
     override suspend fun fetchCategories(): List<Category> {
         val response = api.fetchCategories()
         // Filter to only top-level categories (those without parentId)
-        val topLevelCategories = response.filter { it.parentId == null }
-        return topLevelCategories.map { categoryDto ->
+        val topLevelCategories = response.filter { it.parentCategoryId == null }
+        return topLevelCategories.map { apiCategory ->
             // Check if this category has any subcategories
-            val hasSubcategories = response.any { it.parentId == categoryDto.id }
-            Category(
-                id = categoryDto.id,
-                name = categoryDto.name,
-                slug = categoryDto.slug,
-                hasSubcategories = hasSubcategories
-            )
+            val hasSubcategories = response.any { it.parentCategoryId == apiCategory.id }
+            // Use mapper and update hasSubcategories (which is computed)
+            apiCategory.toDomain().copy(hasSubcategories = hasSubcategories)
         }
     }
 
     override suspend fun fetchSubcategories(parentId: String): List<Category> {
         val response = api.fetchCategories()
-        // Filter to only categories with matching parentId
+        // Filter to only categories with matching parentId and use mapper
         return response
-            .filter { it.parentId == parentId }
-            .map { categoryDto ->
-                Category(
-                    id = categoryDto.id,
-                    name = categoryDto.name,
-                    slug = categoryDto.slug,
-                    hasSubcategories = false // Subcategories don't have further children in current design
-                )
-            }
+            .filter { it.parentCategoryId == parentId }
+            .map { it.toDomain() }
     }
 }

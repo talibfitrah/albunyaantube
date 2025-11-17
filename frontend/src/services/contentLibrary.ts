@@ -1,20 +1,11 @@
 import { authorizedJsonFetch } from '@/services/http';
-
-export interface BulkActionItem {
-  type: string;
-  id: string;
-}
-
-export interface BulkActionResponse {
-  successCount: number;
-  errors: string[];
-}
+import type { BulkActionItem, BulkActionResponse } from '@/types/api';
 
 /**
  * Bulk approve content items
  */
 export async function bulkApprove(items: BulkActionItem[]): Promise<BulkActionResponse> {
-  return await authorizedJsonFetch('/admin/content/bulk/approve', {
+  return await authorizedJsonFetch('/api/admin/content/bulk/approve', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ items })
@@ -25,7 +16,7 @@ export async function bulkApprove(items: BulkActionItem[]): Promise<BulkActionRe
  * Bulk reject content items
  */
 export async function bulkReject(items: BulkActionItem[]): Promise<BulkActionResponse> {
-  return await authorizedJsonFetch('/admin/content/bulk/reject', {
+  return await authorizedJsonFetch('/api/admin/content/bulk/reject', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ items })
@@ -36,7 +27,7 @@ export async function bulkReject(items: BulkActionItem[]): Promise<BulkActionRes
  * Bulk delete content items
  */
 export async function bulkDelete(items: BulkActionItem[]): Promise<BulkActionResponse> {
-  return await authorizedJsonFetch('/admin/content/bulk/delete', {
+  return await authorizedJsonFetch('/api/admin/content/bulk/delete', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ items })
@@ -50,7 +41,7 @@ export async function bulkAssignCategories(
   items: BulkActionItem[],
   categoryIds: string[]
 ): Promise<BulkActionResponse> {
-  return await authorizedJsonFetch('/admin/content/bulk/assign-categories', {
+  return await authorizedJsonFetch('/api/admin/content/bulk/assign-categories', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ items, categoryIds })

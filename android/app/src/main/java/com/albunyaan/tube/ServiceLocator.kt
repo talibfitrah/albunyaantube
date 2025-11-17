@@ -28,6 +28,8 @@ import com.albunyaan.tube.data.source.FakeContentService
 import com.albunyaan.tube.data.source.FallbackContentService
 import com.albunyaan.tube.data.source.RetrofitContentService
 import com.albunyaan.tube.data.source.api.ContentApi
+import com.albunyaan.tube.data.source.api.DownloadApi
+import com.albunyaan.tube.data.source.RetrofitDownloadService
 import com.albunyaan.tube.player.DefaultPlayerRepository
 import com.albunyaan.tube.player.PlayerRepository
 import androidx.work.WorkManager
@@ -160,6 +162,8 @@ object ServiceLocator {
     }
 
     private val contentApi: ContentApi by lazy { retrofit.create(ContentApi::class.java) }
+    private val downloadApi: DownloadApi by lazy { retrofit.create(DownloadApi::class.java) }
+    private val downloadService: RetrofitDownloadService by lazy { RetrofitDownloadService(downloadApi) }
     private val workManager: WorkManager by lazy { WorkManager.getInstance(appContext) }
 
     fun init(context: Context) {
@@ -179,6 +183,8 @@ object ServiceLocator {
     fun providePlayerRepository(): PlayerRepository = playerRepository
 
     fun provideDownloadRepository(): DownloadRepository = overrideDownloadRepository ?: downloadRepository
+
+    fun provideDownloadService(): RetrofitDownloadService = downloadService
 
     fun provideExtractorMetricsReporter(): ExtractorMetricsReporter = overrideMetrics ?: extractorMetrics
 

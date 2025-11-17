@@ -33,6 +33,7 @@ class DownloadWorker(
 
     private val notifications = DownloadNotifications(appContext)
     private val storage = ServiceLocator.provideDownloadStorage()
+    private val downloadService by lazy { ServiceLocator.provideDownloadService() }
     private val repository: PlayerRepository by lazy { ServiceLocator.providePlayerRepository() }
     private val metrics: ExtractorMetricsReporter by lazy { ServiceLocator.provideExtractorMetricsReporter() }
     private val httpClient by lazy { OkHttpClient.Builder().build() }
@@ -47,6 +48,15 @@ class DownloadWorker(
 
         return runCatching {
             val mediaUrl = resolveTrack(videoId, audioOnly) ?: return@runCatching Result.failure()
+
+            // Track download started only after policy/token validation succeeds
+            runCatching {
+                downloadService.trackDownloadStarted(
+                    videoId = videoId,
+                    quality = if (audioOnly) "audio" else "video"
+                )
+            }
+
             val contentLength = fetchContentLength(mediaUrl)
             if (contentLength != null) {
                 storage.ensureSpace(contentLength)
@@ -57,6 +67,16 @@ class DownloadWorker(
                 val finalFile = storage.commit(downloadId, audioOnly, tempFile)
                 val mimeType = if (audioOnly) "audio/mp4" else "video/mp4"
                 notifications.notifyCompletion(downloadId, title)
+
+                // Track download completed
+                runCatching {
+                    downloadService.trackDownloadCompleted(
+                        videoId = videoId,
+                        quality = if (audioOnly) "audio" else "video",
+                        fileSize = finalFile.length()
+                    )
+                }
+
                 Result.success(
                     workDataOf(
                         KEY_FILE_PATH to finalFile.absolutePath,
@@ -69,15 +89,63 @@ class DownloadWorker(
             } catch (t: Throwable) {
                 storage.discardTemp(tempFile)
                 metrics.onDownloadFailed(downloadId, t)
+
+                // Track download failed
+                runCatching {
+                    downloadService.trackDownloadFailed(
+                        videoId = videoId,
+                        errorReason = t.message ?: "Unknown error"
+                    )
+                }
+
                 Result.retry()
             }
         }.getOrElse { throwable ->
             metrics.onDownloadFailed(downloadId, throwable)
+
+            // Track download failed
+            runCatching {
+                downloadService.trackDownloadFailed(
+                    videoId = videoId,
+                    errorReason = throwable.message ?: "Unknown error"
+                )
+            }
+
             Result.retry()
         }
     }
 
     private suspend fun resolveTrack(videoId: String, audioOnly: Boolean): String? {
+        return try {
+            // Check download policy first
+            val policy = downloadService.checkDownloadPolicy(videoId)
+            if (!policy.allowed) {
+                android.util.Log.w(TAG, "Download not allowed for $videoId: ${policy.reason}")
+                return null
+            }
+
+            // Generate download token (required for manifest endpoint)
+            val downloadToken = downloadService.generateDownloadToken(videoId, eulaAccepted = true)
+
+            // Get download manifest with stream URLs (requires token)
+            val manifest = downloadService.getDownloadManifest(videoId, downloadToken.token)
+
+            // Select best track
+            val url = if (audioOnly) manifest.audioUrl else manifest.videoUrl
+            if (url.isBlank()) {
+                android.util.Log.w(TAG, "No ${if (audioOnly) "audio" else "video"} URL in manifest for $videoId")
+                return null
+            }
+
+            url
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Failed to resolve track via backend API for $videoId", e)
+            // Fall back to extractor if backend fails
+            resolveTrackViaExtractor(videoId, audioOnly)
+        }
+    }
+
+    private suspend fun resolveTrackViaExtractor(videoId: String, audioOnly: Boolean): String? {
         val resolved = repository.resolveStreams(videoId) ?: return null
         val audioTrack = resolved.audioTracks.maxByOrNull { it.bitrate ?: 0 }
         val videoTrack = resolved.videoTracks.maxWithOrNull(
@@ -136,5 +204,9 @@ class DownloadWorker(
                 metrics.onDownloadProgress(downloadId, 100)
             }
         }
+    }
+
+    companion object {
+        private const val TAG = "DownloadWorker"
     }
 }

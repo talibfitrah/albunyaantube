@@ -6,7 +6,9 @@
 
 import apiClient from './api/client';
 import { toast } from '@/utils/toast';
+import type { PendingApprovalDto, ApprovalRequestDto, RejectionRequestDto } from '@/types/api';
 
+// UI-specific domain model (extends API DTO with UI-specific fields)
 export interface PendingApproval {
   id: string;
   type: 'channel' | 'playlist' | 'video';
@@ -19,6 +21,32 @@ export interface PendingApproval {
   categories: string[];
   submittedAt: string;
   submittedBy: string;
+}
+
+/**
+ * Map API PendingApprovalDto to UI domain model
+ */
+function mapPendingApprovalToUi(dto: PendingApprovalDto): PendingApproval {
+  const metadata = dto.metadata || {};
+
+  // Helper to safely extract metadata values with type assertions
+  const getString = (key: string): string => (metadata[key] as string | undefined) || '';
+  const getNumber = (key: string): number => (metadata[key] as number | undefined) || 0;
+  const getArray = (key: string): string[] => (metadata[key] as string[] | undefined) || [];
+
+  return {
+    id: dto.id || '',
+    type: (dto.type?.toLowerCase() as 'channel' | 'playlist' | 'video') || 'channel',
+    title: dto.title || '',
+    description: getString('description'),
+    thumbnailUrl: getString('thumbnailUrl'),
+    channelTitle: getString('channelTitle') || getString('channelName'),
+    subscriberCount: getNumber('subscriberCount') || getNumber('subscribers'),
+    videoCount: getNumber('videoCount') || getNumber('itemCount'),
+    categories: getArray('categoryIds') || getArray('categories'),
+    submittedAt: dto.submittedAt || new Date().toISOString(),
+    submittedBy: dto.submittedBy || ''
+  };
 }
 
 /**
@@ -35,27 +63,16 @@ export async function getPendingApprovals(filters?: {
   else if (filters?.type === 'playlists') typeParam = 'PLAYLIST';
   else if (filters?.type === 'videos') typeParam = 'VIDEO';
 
-  const params: any = {};
+  const params: Record<string, string | number> = {};
   if (typeParam) params.type = typeParam;
   if (filters?.category) params.category = filters.category;
   params.limit = 100; // Get all for now
 
-  const response = await apiClient.get('/api/admin/approvals/pending', { params });
-  const data = response.data.data || response.data; // Handle both CursorPageDto and direct array
+  const response = await apiClient.get<PendingApprovalDto[]>('/api/admin/approvals/pending', { params });
+  const data = response.data;
 
-  const approvals: PendingApproval[] = data.map((item: any) => ({
-    id: item.id,
-    type: item.type?.toLowerCase() || 'channel',
-    title: item.title || item.name || '',
-    description: item.description || '',
-    thumbnailUrl: item.thumbnailUrl || '',
-    channelTitle: item.channelTitle || item.channelName || '',
-    subscriberCount: item.subscriberCount || item.subscribers || 0,
-    videoCount: item.videoCount || item.itemCount || 0,
-    categories: item.categoryIds || item.categories || [],
-    submittedAt: item.submittedAt || item.createdAt || new Date().toISOString(),
-    submittedBy: item.submittedBy || ''
-  }));
+  // Map API DTOs to UI domain models
+  const approvals: PendingApproval[] = data.map(mapPendingApprovalToUi);
 
   // Apply sorting
   if (filters?.sort === 'newest') {
@@ -76,9 +93,10 @@ export async function approveItem(
   categoryOverride?: string,
   reviewNotes?: string
 ): Promise<void> {
-  const payload: any = {};
-  if (reviewNotes) payload.reviewNotes = reviewNotes;
-  if (categoryOverride) payload.categoryOverride = categoryOverride;
+  const payload: ApprovalRequestDto = {
+    reviewNotes,
+    categoryOverride
+  };
 
   await apiClient.post(`/api/admin/approvals/${itemId}/approve`, payload);
   toast.success(`${itemType.charAt(0).toUpperCase() + itemType.slice(1)} approved successfully`);
@@ -93,10 +111,10 @@ export async function rejectItem(
   reason: string,
   reviewNotes?: string
 ): Promise<void> {
-  const payload: any = {
+  // Note: reviewNotes param kept for backward compatibility but not in RejectionRequestDto schema
+  const payload: RejectionRequestDto = {
     reason: reason || 'OTHER'
   };
-  if (reviewNotes) payload.reviewNotes = reviewNotes;
 
   await apiClient.post(`/api/admin/approvals/${itemId}/reject`, payload);
   toast.success(`${itemType.charAt(0).toUpperCase() + itemType.slice(1)} rejected`);
