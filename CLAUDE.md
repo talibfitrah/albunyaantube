@@ -12,17 +12,17 @@ This document provides essential information for AI assistants working in the Al
 
 ### **Recent Updates (Nov 18, 2025):**
 
-1. **Phase 5 Code Review Fixes** ✅
+1. **Phase 5 Code Review Fixes** (Partial ✅)
    - **Service Layer Separation**: Refactored `approvalService.ts` to pure IO (68 lines, down from 168)
    - **Extracted Transformers**: Created `/frontend/src/utils/approvalTransformers.ts` with UI mapping logic
    - **Composable Integration**: Wired `useApprovals` composable into `PendingApprovalsView.vue`
    - **Test Coverage**: Added 13 tests for `useApprovals` composable
-   - **DTO Aliasing Removal**: Eliminated field aliasing patterns across services and views:
+   - **DTO Aliasing Removal** (frontend-side complete):
      - `cat.name || cat.label` → `cat.name`
      - `channel.ytId || channel.id` → `channel.ytId`
      - `selectedItemForModal.youtubeId || selectedItemForModal.id` → `selectedItemForModal.youtubeId`
    - **Reactivity Fix**: Fixed filter toggle buttons to use `setFilter()` with proper error handling
-   - **Backend API Note**: ContentLibraryView normalizes type-specific YouTube ID fields (`youtubeChannelId`, `youtubePlaylistId`, `youtubeVideoId`) to single `youtubeId` field; backend should standardize per API spec
+   - **Remaining Backend Work**: ContentLibraryView must normalize type-specific YouTube ID fields (`youtubeChannelId`, `youtubePlaylistId`, `youtubeVideoId`) to single `youtubeId` field because backend returns different field names per content type. Backend should standardize on `youtubeId` per API spec to complete aliasing removal.
    - Validation: `npm run build` and `npm test` (165 passed, 1 skipped)
 
 2. **Architectural Decisions (Phase 5)**:
