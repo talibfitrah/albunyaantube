@@ -6,7 +6,7 @@
 
     <fragment
         android:id="@+id/homeFragment"
-        android:name="com.albunyaan.tube.ui.home.HomeFragmentNew"
+        android:name="com.albunyaan.tube.ui.home.HomeFragment"
         android:label="Home">
         <action
             android:id="@+id/action_homeFragment_to_categoriesFragment"
@@ -19,7 +19,7 @@
 
     <fragment
         android:id="@+id/channelsFragment"
-        android:name="com.albunyaan.tube.ui.ChannelsFragmentNew"
+        android:name="com.albunyaan.tube.ui.ChannelsFragment"
         android:label="Channels">
         <action
             android:id="@+id/action_channelsFragment_to_channelDetailFragment"
@@ -28,7 +28,7 @@
 
     <fragment
         android:id="@+id/playlistsFragment"
-        android:name="com.albunyaan.tube.ui.PlaylistsFragmentNew"
+        android:name="com.albunyaan.tube.ui.PlaylistsFragment"
         android:label="Playlists">
         <action
             android:id="@+id/action_playlistsFragment_to_playlistDetailFragment"
@@ -37,7 +37,7 @@
 
     <fragment
         android:id="@+id/videosFragment"
-        android:name="com.albunyaan.tube.ui.VideosFragmentNew"
+        android:name="com.albunyaan.tube.ui.VideosFragment"
         android:label="Videos" />
 
     <fragment

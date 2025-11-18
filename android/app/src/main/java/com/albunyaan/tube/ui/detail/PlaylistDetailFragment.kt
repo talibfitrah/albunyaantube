@@ -11,14 +11,16 @@ import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.albunyaan.tube.R
-import com.albunyaan.tube.ServiceLocator
 import com.albunyaan.tube.databinding.FragmentPlaylistDetailBinding
 import com.albunyaan.tube.ui.adapters.VideoGridAdapter
 import com.albunyaan.tube.ui.utils.calculateGridSpanCount
 import com.albunyaan.tube.ui.utils.isTablet
 import com.google.android.material.chip.Chip
+import dagger.hilt.android.AndroidEntryPoint
+import dagger.hilt.android.lifecycle.withCreationCallback
 import kotlinx.coroutines.launch
 
+@AndroidEntryPoint
 class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
 
     private var binding: FragmentPlaylistDetailBinding? = null
@@ -37,12 +39,13 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
     }
     private val isExcluded: Boolean by lazy { arguments?.getBoolean("excluded", false) ?: false }
 
-    private val viewModel: PlaylistDetailViewModel by viewModels {
-        PlaylistDetailViewModel.Factory(
-            ServiceLocator.provideContentService(),
-            playlistId
-        )
-    }
+    private val viewModel: PlaylistDetailViewModel by viewModels(
+        extrasProducer = {
+            defaultViewModelCreationExtras.withCreationCallback<PlaylistDetailViewModel.Factory> { factory ->
+                factory.create(playlistId)
+            }
+        }
+    )
 
     private lateinit var videoAdapter: VideoGridAdapter
 

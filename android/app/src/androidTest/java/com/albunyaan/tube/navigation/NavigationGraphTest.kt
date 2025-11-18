@@ -1,76 +1,77 @@
 package com.albunyaan.tube.navigation
 
+import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withId
-import androidx.test.ext.junit.rules.ActivityScenarioRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
+import androidx.test.platform.app.InstrumentationRegistry
+import com.albunyaan.tube.HiltTestActivity
 import com.albunyaan.tube.R
-import com.albunyaan.tube.ui.MainActivity
+import com.albunyaan.tube.launchFragmentInHiltContainer
+import com.albunyaan.tube.ui.MainShellFragment
+import dagger.hilt.android.testing.HiltAndroidRule
+import dagger.hilt.android.testing.HiltAndroidTest
+import org.junit.After
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
  * Instrumentation tests for navigation functionality.
- * Tests that the app launches and navigation works correctly.
+ * Tests that MainShellFragment and its bottom navigation work correctly.
  */
+@HiltAndroidTest
 @RunWith(AndroidJUnit4::class)
 @LargeTest
 class NavigationGraphTest {
 
     @get:Rule
-    val activityRule = ActivityScenarioRule(MainActivity::class.java)
+    var hiltRule = HiltAndroidRule(this)
+
+    private var scenario: ActivityScenario<HiltTestActivity>? = null
+
+    @Before
+    fun setUp() {
+        hiltRule.inject()
+        scenario = launchFragmentInHiltContainer<MainShellFragment>(
+            themeResId = R.style.Theme_Albunyaan
+        )
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+    }
+
+    @After
+    fun tearDown() {
+        scenario?.close()
+        scenario = null
+    }
 
     @Test
-    fun mainActivity_launches() {
-        // Verify MainActivity launches successfully
-        // This test ensures the app starts without crashing
-        Thread.sleep(2000) // Wait for splash
+    fun mainShellFragment_launches() {
         onView(withId(R.id.mainBottomNav))
             .check(matches(isDisplayed()))
     }
 
     @Test
     fun bottomNavigation_navigatesToDownloads() {
-        activityRule.scenario.onActivity { activity ->
-            // Give time for splash to navigate to main shell
-            Thread.sleep(2000)
+        // Click downloads tab
+        onView(withId(R.id.downloadsFragment)).perform(click())
 
-            // Verify we can navigate to downloads tab
-            onView(withId(R.id.downloadsFragment)).perform(click())
-            Thread.sleep(500)
-
-            // Verify downloads fragment is displayed
-            onView(withId(R.id.downloadsRecyclerView))
-                .check(matches(isDisplayed()))
-        }
+        // Verify downloads fragment is displayed via its recycler view
+        onView(withId(R.id.downloadsRecyclerView))
+            .check(matches(isDisplayed()))
     }
 
     @Test
     fun bottomNavigation_allTabsClickable() {
-        activityRule.scenario.onActivity { activity ->
-            // Give time for splash to navigate to main shell
-            Thread.sleep(2000)
-
-            // Verify all bottom navigation items are clickable
-            onView(withId(R.id.homeFragment)).perform(click())
-            Thread.sleep(300)
-
-            onView(withId(R.id.channelsFragment)).perform(click())
-            Thread.sleep(300)
-
-            onView(withId(R.id.playlistsFragment)).perform(click())
-            Thread.sleep(300)
-
-            onView(withId(R.id.videosFragment)).perform(click())
-            Thread.sleep(300)
-
-            onView(withId(R.id.downloadsFragment)).perform(click())
-            Thread.sleep(300)
-        }
+        onView(withId(R.id.homeFragment)).perform(click())
+        onView(withId(R.id.channelsFragment)).perform(click())
+        onView(withId(R.id.playlistsFragment)).perform(click())
+        onView(withId(R.id.videosFragment)).perform(click())
+        onView(withId(R.id.downloadsFragment)).perform(click())
     }
 }

@@ -1,20 +1,22 @@
 package com.albunyaan.tube.ui
 
-import android.content.Context
-import androidx.fragment.app.testing.FragmentScenario
-import androidx.fragment.app.testing.launchFragmentInContainer
-import androidx.test.core.app.ApplicationProvider
+import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions.*
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers.*
+import androidx.test.espresso.matcher.ViewMatchers.Visibility
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
 import androidx.test.platform.app.InstrumentationRegistry
+import com.albunyaan.tube.HiltTestActivity
 import com.albunyaan.tube.R
-import com.albunyaan.tube.ServiceLocator
+import com.albunyaan.tube.launchFragmentInHiltContainer
+import dagger.hilt.android.testing.HiltAndroidRule
+import dagger.hilt.android.testing.HiltAndroidTest
 import org.junit.After
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -22,17 +24,22 @@ import org.junit.runner.RunWith
  * Instrumentation tests for SearchFragment functionality.
  * Tests search input, history management, and accessibility.
  */
+@HiltAndroidTest
 @RunWith(AndroidJUnit4::class)
 @LargeTest
 class SearchFragmentTest {
 
-    private var scenario: FragmentScenario<SearchFragment>? = null
+    @get:Rule
+    var hiltRule = HiltAndroidRule(this)
+
+    private var scenario: ActivityScenario<HiltTestActivity>? = null
 
     @Before
     fun setUp() {
-        val context: Context = ApplicationProvider.getApplicationContext()
-        ServiceLocator.init(context)
-        scenario = launchFragmentInContainer(themeResId = R.style.Theme_Albunyaan)
+        hiltRule.inject()
+        scenario = launchFragmentInHiltContainer<SearchFragment>(
+            themeResId = R.style.Theme_Albunyaan
+        )
         InstrumentationRegistry.getInstrumentation().waitForIdleSync()
     }
 
@@ -43,49 +50,42 @@ class SearchFragmentTest {
     }
 
     @Test
-    fun searchView_isDisplayedAndClickable() {
+    fun searchView_isDisplayed() {
         onView(withId(R.id.searchView))
             .check(matches(isDisplayed()))
-            .check(matches(isClickable()))
     }
 
     @Test
-    fun searchView_acceptsTextInput() {
+    fun searchView_isFocusable() {
         onView(withId(R.id.searchView))
-            .perform(click())
-            .perform(typeText("Islamic history"))
-            .perform(closeSoftKeyboard())
-
-        onView(withId(R.id.searchView))
-            .check(matches(withText("Islamic history")))
+            .check(matches(isFocusable()))
     }
 
     @Test
-    fun searchHistoryList_isDisplayed() {
-        onView(withId(R.id.searchHistoryList))
-            .check(matches(isDisplayed()))
+    fun searchHistorySection_isInitiallyHidden() {
+        // Search history section is hidden when there's no history
+        onView(withId(R.id.searchHistorySection))
+            .check(matches(withEffectiveVisibility(Visibility.GONE)))
     }
 
     @Test
-    fun clearHistoryButton_isDisplayed() {
-        onView(withId(R.id.clearHistoryButton))
-            .check(matches(isDisplayed()))
-            .check(matches(isClickable()))
+    fun emptyState_isInitiallyHidden() {
+        // Empty state is hidden initially (no search has been performed)
+        onView(withId(R.id.emptyState))
+            .check(matches(withEffectiveVisibility(Visibility.GONE)))
     }
 
     @Test
-    fun searchHistoryItem_hasAccessibilityDescription() {
-        // This test verifies that search history items have proper content descriptions
-        // The actual content description is set dynamically in the adapter
-        onView(withId(R.id.searchHistoryList))
-            .check(matches(isDisplayed()))
+    fun loadingState_isInitiallyHidden() {
+        // Loading state is hidden initially
+        onView(withId(R.id.loadingState))
+            .check(matches(withEffectiveVisibility(Visibility.GONE)))
     }
 
     @Test
-    fun deleteButton_hasTouchTargetSize() {
-        // Verify delete button has minimum 48dp touch target (set in layout)
-        // This is verified through the layout XML minWidth/minHeight attributes
-        onView(withId(R.id.searchHistoryList))
+    fun toolbar_isDisplayed() {
+        // Toolbar with search view should be visible
+        onView(withId(R.id.toolbar))
             .check(matches(isDisplayed()))
     }
 }

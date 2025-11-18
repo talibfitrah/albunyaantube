@@ -69,13 +69,26 @@ class DownloadControllerTest {
 
     @Test
     void trackDownloadStarted_shouldTrackEvent() {
-        Map<String, String> request = new HashMap<>();
-        request.put("videoId", "video-123");
-        request.put("quality", "720p");
-        request.put("deviceType", "mobile");
-        ResponseEntity<Void> response = downloadController.trackDownloadStarted(request, testUser);
+        DownloadStartedEventDto event = new DownloadStartedEventDto("video-123", "720p", "mobile");
+        ResponseEntity<Void> response = downloadController.trackDownloadStarted(event, testUser);
         assertEquals(HttpStatus.CREATED, response.getStatusCode());
         verify(downloadService).trackDownloadStarted("video-123", "user-123", "720p", "mobile");
+    }
+
+    @Test
+    void trackDownloadCompleted_shouldTrackEvent() {
+        DownloadCompletedEventDto event = new DownloadCompletedEventDto("video-123", "720p", 50000000L, "mobile");
+        ResponseEntity<Void> response = downloadController.trackDownloadCompleted(event, testUser);
+        assertEquals(HttpStatus.CREATED, response.getStatusCode());
+        verify(downloadService).trackDownloadCompleted("video-123", "user-123", "720p", 50000000L, "mobile");
+    }
+
+    @Test
+    void trackDownloadFailed_shouldTrackEvent() {
+        DownloadFailedEventDto event = new DownloadFailedEventDto("video-123", "Network error", "mobile");
+        ResponseEntity<Void> response = downloadController.trackDownloadFailed(event, testUser);
+        assertEquals(HttpStatus.CREATED, response.getStatusCode());
+        verify(downloadService).trackDownloadFailed("video-123", "user-123", "Network error", "mobile");
     }
 }
 

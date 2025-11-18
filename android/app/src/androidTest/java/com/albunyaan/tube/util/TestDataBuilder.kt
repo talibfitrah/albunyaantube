@@ -19,28 +19,22 @@ object TestDataBuilder {
     fun video(
         id: String = "test_video_${System.currentTimeMillis()}",
         title: String = "Test Video Title",
-        channelId: String = "test_channel",
-        channelName: String = "Test Channel",
-        thumbnailUrl: String = "https://example.com/thumb.jpg",
-        durationSeconds: Int = 600,
-        viewCount: Long = 1000,
-        uploadedAt: String = "2025-01-01T00:00:00Z",
+        category: String = "test_category",
+        durationMinutes: Int = 10,
+        uploadedDaysAgo: Int = 7,
         description: String = "Test video description",
-        categoryId: String = "test_category",
-        status: String = "APPROVED"
+        thumbnailUrl: String? = "https://example.com/thumb.jpg",
+        viewCount: Long? = 1000
     ): ContentItem.Video {
         return ContentItem.Video(
             id = id,
             title = title,
-            channelId = channelId,
-            channelName = channelName,
-            thumbnailUrl = thumbnailUrl,
-            durationSeconds = durationSeconds,
-            viewCount = viewCount,
-            uploadedAt = uploadedAt,
+            category = category,
+            durationMinutes = durationMinutes,
+            uploadedDaysAgo = uploadedDaysAgo,
             description = description,
-            categoryId = categoryId,
-            status = status
+            thumbnailUrl = thumbnailUrl,
+            viewCount = viewCount
         )
     }
 
@@ -50,22 +44,22 @@ object TestDataBuilder {
     fun channel(
         id: String = "test_channel_${System.currentTimeMillis()}",
         name: String = "Test Channel",
-        thumbnailUrl: String = "https://example.com/channel.jpg",
-        subscriberCount: Long = 10000,
-        videoCount: Int = 50,
-        description: String = "Test channel description",
-        categoryId: String = "test_category",
-        status: String = "APPROVED"
+        category: String = "test_category",
+        subscribers: Int = 10000,
+        description: String? = "Test channel description",
+        thumbnailUrl: String? = "https://example.com/channel.jpg",
+        videoCount: Int? = 50,
+        categories: List<String>? = null
     ): ContentItem.Channel {
         return ContentItem.Channel(
             id = id,
             name = name,
-            thumbnailUrl = thumbnailUrl,
-            subscriberCount = subscriberCount,
-            videoCount = videoCount,
+            category = category,
+            subscribers = subscribers,
             description = description,
-            categoryId = categoryId,
-            status = status
+            thumbnailUrl = thumbnailUrl,
+            videoCount = videoCount,
+            categories = categories
         )
     }
 
@@ -75,24 +69,18 @@ object TestDataBuilder {
     fun playlist(
         id: String = "test_playlist_${System.currentTimeMillis()}",
         title: String = "Test Playlist",
-        channelId: String = "test_channel",
-        channelName: String = "Test Channel",
-        thumbnailUrl: String = "https://example.com/playlist.jpg",
+        category: String = "test_category",
         itemCount: Int = 20,
-        description: String = "Test playlist description",
-        categoryId: String = "test_category",
-        status: String = "APPROVED"
+        description: String? = "Test playlist description",
+        thumbnailUrl: String? = "https://example.com/playlist.jpg"
     ): ContentItem.Playlist {
         return ContentItem.Playlist(
             id = id,
             title = title,
-            channelId = channelId,
-            channelName = channelName,
-            thumbnailUrl = thumbnailUrl,
+            category = category,
             itemCount = itemCount,
             description = description,
-            categoryId = categoryId,
-            status = status
+            thumbnailUrl = thumbnailUrl
         )
     }
 
@@ -102,16 +90,18 @@ object TestDataBuilder {
     fun category(
         id: String = "test_category_${System.currentTimeMillis()}",
         name: String = "Test Category",
-        description: String = "Test category description",
-        parentCategoryId: String? = null,
-        itemCount: Int = 100
+        slug: String? = null,
+        parentId: String? = null,
+        hasSubcategories: Boolean = false,
+        icon: String? = null
     ): Category {
         return Category(
             id = id,
             name = name,
-            description = description,
-            parentCategoryId = parentCategoryId,
-            itemCount = itemCount
+            slug = slug,
+            parentId = parentId,
+            hasSubcategories = hasSubcategories,
+            icon = icon
         )
     }
 
@@ -136,7 +126,7 @@ object TestDataBuilder {
             channel(
                 id = "channel_$i",
                 name = "Channel $i",
-                subscriberCount = (i * 10000).toLong()
+                subscribers = i * 10000
             )
         }
     }
@@ -165,39 +155,32 @@ object TestDataBuilder {
               "id": "channel1",
               "name": "Test Channel 1",
               "thumbnailUrl": "https://example.com/channel1.jpg",
-              "subscriberCount": 100000,
+              "subscribers": 100000,
               "videoCount": 50,
               "description": "First test channel",
-              "categoryId": "quran",
-              "status": "APPROVED"
+              "category": "quran"
             }
           ],
           "playlists": [
             {
               "id": "playlist1",
               "title": "Test Playlist 1",
-              "channelId": "channel1",
-              "channelName": "Test Channel 1",
               "thumbnailUrl": "https://example.com/playlist1.jpg",
               "itemCount": 20,
               "description": "First test playlist",
-              "categoryId": "quran",
-              "status": "APPROVED"
+              "category": "quran"
             }
           ],
           "videos": [
             {
               "id": "video1",
               "title": "Test Video 1",
-              "channelId": "channel1",
-              "channelName": "Test Channel 1",
               "thumbnailUrl": "https://example.com/video1.jpg",
-              "durationSeconds": 600,
+              "durationMinutes": 10,
+              "uploadedDaysAgo": 7,
               "viewCount": 5000,
-              "uploadedAt": "2025-01-01T00:00:00Z",
               "description": "First test video",
-              "categoryId": "quran",
-              "status": "APPROVED"
+              "category": "quran"
             }
           ]
         }
@@ -213,16 +196,18 @@ object TestDataBuilder {
           {
             "id": "quran",
             "name": "Quran",
-            "description": "Quran recitation and tafsir",
-            "parentCategoryId": null,
-            "itemCount": 100
+            "slug": "quran",
+            "parentId": null,
+            "hasSubcategories": true,
+            "icon": null
           },
           {
             "id": "hadith",
             "name": "Hadith",
-            "description": "Hadith studies",
-            "parentCategoryId": null,
-            "itemCount": 50
+            "slug": "hadith",
+            "parentId": null,
+            "hasSubcategories": false,
+            "icon": null
           }
         ]
         """.trimIndent()

@@ -2,7 +2,6 @@ package com.albunyaan.tube.ui.player
 
 import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.extractor.AudioTrack
@@ -21,6 +20,7 @@ import com.albunyaan.tube.player.PlayerRepository
 import com.albunyaan.tube.policy.EulaManager
 import com.google.android.exoplayer2.Player
 import com.google.android.exoplayer2.video.VideoSize
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -30,14 +30,21 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import javax.inject.Inject
+import javax.inject.Named
 
-class PlayerViewModel(
+/**
+ * P3-T4: PlayerViewModel with Hilt DI
+ */
+@HiltViewModel
+class PlayerViewModel @Inject constructor(
     private val repository: PlayerRepository,
     private val downloadRepository: DownloadRepository,
     private val eulaManager: EulaManager,
-    private val contentService: ContentService,
-    private val dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate
+    @Named("real") private val contentService: ContentService
 ) : ViewModel() {
+
+    private val dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate
 
     private val _state = MutableStateFlow(PlayerState())
     val state: StateFlow<PlayerState> = _state
@@ -353,21 +360,6 @@ class PlayerViewModel(
         _state.value = transform(_state.value)
     }
 
-    class Factory(
-        private val repository: PlayerRepository,
-        private val downloadRepository: DownloadRepository,
-        private val eulaManager: EulaManager,
-        private val contentService: ContentService,
-        private val dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate
-    ) : ViewModelProvider.Factory {
-        override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            if (modelClass.isAssignableFrom(PlayerViewModel::class.java)) {
-                @Suppress("UNCHECKED_CAST")
-                return PlayerViewModel(repository, downloadRepository, eulaManager, contentService, dispatcher) as T
-            }
-            throw IllegalArgumentException("Unknown ViewModel class")
-        }
-    }
 }
 
 data class PlayerState(

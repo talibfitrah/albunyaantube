@@ -19,7 +19,6 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.SimpleItemAnimator
 import com.albunyaan.tube.R
-import com.albunyaan.tube.ServiceLocator
 import com.albunyaan.tube.analytics.ErrorCategory
 import com.albunyaan.tube.analytics.ListMetricsReporter
 import com.albunyaan.tube.data.filters.FilterState
@@ -36,16 +35,31 @@ import androidx.core.content.ContextCompat
 import coil.ImageLoader
 import coil.request.CachePolicy
 import coil.request.ImageRequest
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.io.IOException
 import java.util.LinkedHashSet
 import kotlin.math.max
 import retrofit2.HttpException
+import javax.inject.Inject
 
+/**
+ * P3-T2: Abstract base fragment for content lists with Hilt DI
+ */
+@AndroidEntryPoint
 abstract class ContentListFragment : Fragment(R.layout.fragment_home) {
 
     protected abstract val contentType: ContentType
+
+    @Inject
+    lateinit var viewModelFactory: ContentListViewModel.Factory
+
+    @Inject
+    lateinit var imageLoader: ImageLoader
+
+    @Inject
+    lateinit var metricsReporter: ListMetricsReporter
 
     private var binding: FragmentHomeBinding? = null
     private lateinit var adapter: ContentAdapter
@@ -55,21 +69,16 @@ abstract class ContentListFragment : Fragment(R.layout.fragment_home) {
     private var dateChip: Chip? = null
     private var sortChip: Chip? = null
     private var clearChip: Chip? = null
-    private val metricsReporter: ListMetricsReporter = ServiceLocator.provideListMetricsReporter()
     private var lastMetricsSnapshot: MetricsSnapshot? = null
     private lateinit var thumbnailPrefetcher: ThumbnailPrefetcher
     private val viewModel: ContentListViewModel by viewModels {
-        ContentListViewModel.Factory(
-            ServiceLocator.provideFilterManager(),
-            ServiceLocator.provideContentRepository(),
-            contentType
-        )
+        ContentListViewModel.provideFactory(viewModelFactory, contentType)
     }
 
     override fun onAttach(context: Context) {
         super.onAttach(context)
-        val imageLoader = ServiceLocator.provideImageLoader()
-        val enableImages = ServiceLocator.isImageLoadingEnabled()
+        // Always enable images - configuration via BuildConfig removed in Hilt migration
+        val enableImages = true
         adapter = ContentAdapter(imageLoader, enableImages)
         val prefetchDistance = if (enableImages) PREFETCH_ITEM_COUNT else 0
         thumbnailPrefetcher = ThumbnailPrefetcher(context.applicationContext, imageLoader, prefetchDistance, PREFETCH_TRACK_LIMIT)

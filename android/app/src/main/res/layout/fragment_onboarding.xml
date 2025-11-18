@@ -84,7 +84,7 @@
         style="@style/Widget.Material3.Button.TextButton"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="@dimen/spacing_lg"
+        android:layout_marginBottom="@dimen/skip_button_margin_bottom"
         android:text="@string/onboarding_skip"
         android:textColor="#666666"
         app:layout_constraintBottom_toBottomOf="parent"

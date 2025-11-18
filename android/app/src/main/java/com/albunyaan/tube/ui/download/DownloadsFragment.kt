@@ -14,22 +14,22 @@ import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.R
-import com.albunyaan.tube.ServiceLocator
 import com.albunyaan.tube.databinding.FragmentDownloadsBinding
 import com.albunyaan.tube.download.DownloadEntry
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.io.File
 
+/**
+ * P3-T3: DownloadsFragment with Hilt DI
+ */
+@AndroidEntryPoint
 class DownloadsFragment : Fragment(R.layout.fragment_downloads) {
 
     private var binding: FragmentDownloadsBinding? = null
     private val adapter = DownloadsAdapter(::onPauseResumeClicked, ::onCancelClicked, ::onOpenClicked)
-    private val viewModel: DownloadViewModel by viewModels {
-        DownloadViewModel.Factory(
-            ServiceLocator.provideDownloadRepository()
-        )
-    }
+    private val viewModel: DownloadViewModel by viewModels()
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)

@@ -92,7 +92,44 @@ cd backend
 - `DownloadServiceTest` - Download policy and token logic
 - `CategoryModelTest` - Category hierarchy validation
 
-#### 2. Integration Tests (Optional)
+#### 2. Pagination Integration Tests (P2-T4)
+**Purpose**: Test cursor-based pagination at scale across all content types
+
+**Location**: `backend/src/test/java/com/albunyaan/tube/integration/PaginationIntegrationTest.java`
+
+**Execution**:
+```bash
+# Start Firebase emulators (Terminal 1)
+firebase emulators:start --only firestore
+
+# Run pagination tests (Terminal 2)
+cd backend
+./gradlew test --tests '*PaginationIntegrationTest*' -Pintegration=true
+```
+
+**Test Scenarios**:
+- **Public content pagination**: CHANNELS, PLAYLISTS, VIDEOS with various page sizes (3, 10, 20, 50)
+- **Pending approvals**: Mixed type pagination with category filters
+- **Edge cases**: Empty datasets, last page detection, small/large page sizes
+- **Ordering validation**: Monotonic order for subscribers, itemCount, uploadedAt
+- **Duplicate detection**: No duplicates across pages
+- **Concurrent reads**: Multiple traversals don't corrupt each other
+
+**Test Data Seeding**:
+- Uses deterministic IDs and timestamps (e.g., `channel-001`, `channel-002`)
+- Seeder methods in test class create 50-120 items per content type
+- Categories created in `@BeforeEach` for filtering tests
+
+**Expected Runtime**: ~60-90 seconds with Firestore emulator
+
+**What it validates**:
+1. Cursor encoding/decoding works correctly (opaque base64 tokens)
+2. `hasNext` accurately reflects remaining items
+3. Page boundaries are correct (no gaps, no duplicates)
+4. Ordering is maintained across page fetches
+5. Category filtering works with pagination
+
+#### 3. Integration Tests (Optional)
 **Purpose**: Test Firebase integration with emulator
 
 **Execution**:
@@ -391,6 +428,50 @@ cd android
 **Requirements**:
 - Android device or emulator running
 - ADB connection established
+
+#### 3. Hilt Test Isolation
+
+The Android app uses Hilt for dependency injection. Instrumentation tests are isolated from the real backend using `@TestInstallIn` modules.
+
+**Test Modules**:
+- `TestNetworkModule`: Replaces `NetworkModule` with fake API implementations
+  - `FakeContentApi`: Returns empty lists for content/categories/search
+  - `FakeDownloadApi`: Returns stub download policies/tokens/manifests
+
+**How to Write Isolated Tests**:
+
+```kotlin
+@HiltAndroidTest
+@UninstallModules(DownloadModule::class)  // Optional: if you need to replace specific modules
+@RunWith(AndroidJUnit4::class)
+class MyFragmentTest {
+
+    @get:Rule
+    var hiltRule = HiltAndroidRule(this)
+
+    // Override specific dependencies with @BindValue
+    @BindValue
+    @JvmField
+    val fakeRepository: MyRepository = FakeMyRepository()
+
+    @Before
+    fun setUp() {
+        hiltRule.inject()
+    }
+
+    @Test
+    fun myTest() {
+        // Test code using fake dependencies
+    }
+}
+```
+
+**Key Files**:
+- `androidTest/java/com/albunyaan/tube/di/TestNetworkModule.kt`
+- `androidTest/java/com/albunyaan/tube/HiltTestActivity.kt`
+- `androidTest/java/com/albunyaan/tube/HiltTestRunner.kt`
+
+**Note**: Tests automatically receive fake implementations without hitting the real backend. Use `@BindValue` to provide custom test doubles for specific test scenarios.
 
 ### Running Tests
 

@@ -1,17 +1,22 @@
 package com.albunyaan.tube.ui.download
 
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.albunyaan.tube.download.DownloadEntry
 import com.albunyaan.tube.download.DownloadRepository
+import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.File
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import javax.inject.Inject
 
-class DownloadViewModel(
+/**
+ * P3-T3: DownloadViewModel with Hilt DI
+ */
+@HiltViewModel
+class DownloadViewModel @Inject constructor(
     private val repository: DownloadRepository
 ) : ViewModel() {
 
@@ -26,16 +31,4 @@ class DownloadViewModel(
     fun cancel(id: String) = repository.cancel(id)
 
     fun fileFor(entry: DownloadEntry): File? = entry.filePath?.let { File(it) }
-
-    class Factory(
-        private val repository: DownloadRepository
-    ) : ViewModelProvider.Factory {
-        override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            if (modelClass.isAssignableFrom(DownloadViewModel::class.java)) {
-                @Suppress("UNCHECKED_CAST")
-                return DownloadViewModel(repository) as T
-            }
-            throw IllegalArgumentException("Unknown ViewModel class")
-        }
-    }
 }

@@ -1,19 +1,22 @@
 package com.albunyaan.tube.ui
 
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.albunyaan.tube.data.filters.FilterState
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.source.ContentService
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import javax.inject.Inject
+import javax.inject.Named
 
-class HomeViewModel(
-    private val contentService: ContentService
+@HiltViewModel
+class HomeViewModel @Inject constructor(
+    @Named("real") private val contentService: ContentService
 ) : ViewModel() {
 
     private val _homeContent = MutableStateFlow<HomeContentState>(HomeContentState.Loading)
@@ -71,15 +74,4 @@ class HomeViewModel(
         data class Error(val message: String) : HomeContentState()
     }
 
-    class Factory(
-        private val contentService: ContentService
-    ) : ViewModelProvider.Factory {
-        @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            if (modelClass.isAssignableFrom(HomeViewModel::class.java)) {
-                return HomeViewModel(contentService) as T
-            }
-            throw IllegalArgumentException("Unknown ViewModel class")
-        }
-    }
 }

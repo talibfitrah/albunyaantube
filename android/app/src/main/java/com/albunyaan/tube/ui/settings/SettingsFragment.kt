@@ -12,16 +12,22 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import com.albunyaan.tube.R
-import com.albunyaan.tube.ServiceLocator
 import com.albunyaan.tube.databinding.FragmentSettingsBinding
+import com.albunyaan.tube.download.DownloadStorage
 import com.albunyaan.tube.locale.LocaleManager
 import com.albunyaan.tube.preferences.SettingsPreferences
 import com.google.android.material.snackbar.Snackbar
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.io.File
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class SettingsFragment : Fragment(R.layout.fragment_settings) {
+
+    @Inject
+    lateinit var downloadStorage: DownloadStorage
 
     private var binding: FragmentSettingsBinding? = null
     private lateinit var preferences: SettingsPreferences
@@ -184,7 +190,6 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
             val storageQuotaProgress = view.findViewById<ProgressBar>(R.id.storageQuotaProgress)
 
             viewLifecycleOwner.lifecycleScope.launch {
-                val downloadStorage = ServiceLocator.provideDownloadStorage()
                 val downloadedBytes = downloadStorage.getCurrentDownloadSize()
                 val availableBytes = downloadStorage.getAvailableDeviceStorage()
                 val totalBytes = downloadStorage.getTotalDeviceStorage()

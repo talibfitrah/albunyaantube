@@ -2,20 +2,25 @@ package com.albunyaan.tube.ui.detail
 
 import android.util.Log
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.albunyaan.tube.data.filters.FilterState
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.source.ContentService
+import dagger.assisted.Assisted
+import dagger.assisted.AssistedFactory
+import dagger.assisted.AssistedInject
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import javax.inject.Named
 
-class PlaylistDetailViewModel(
-    private val contentService: ContentService,
-    private val playlistId: String
+@HiltViewModel(assistedFactory = PlaylistDetailViewModel.Factory::class)
+class PlaylistDetailViewModel @AssistedInject constructor(
+    @Named("real") private val contentService: ContentService,
+    @Assisted private val playlistId: String
 ) : ViewModel() {
 
     private val _playlistState = MutableStateFlow<PlaylistState>(PlaylistState.Loading)
@@ -105,17 +110,9 @@ class PlaylistDetailViewModel(
         data class Error(val message: String) : VideosState()
     }
 
-    class Factory(
-        private val contentService: ContentService,
-        private val playlistId: String
-    ) : ViewModelProvider.Factory {
-        @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            if (modelClass.isAssignableFrom(PlaylistDetailViewModel::class.java)) {
-                return PlaylistDetailViewModel(contentService, playlistId) as T
-            }
-            throw IllegalArgumentException("Unknown ViewModel class")
-        }
+    @AssistedFactory
+    interface Factory {
+        fun create(playlistId: String): PlaylistDetailViewModel
     }
 
     companion object {

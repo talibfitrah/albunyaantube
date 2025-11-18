@@ -10,7 +10,12 @@ import com.albunyaan.tube.R
 import com.albunyaan.tube.databinding.ActivityMainBinding
 import com.albunyaan.tube.locale.LocaleManager
 import com.albunyaan.tube.player.PlaybackService
+import dagger.hilt.android.AndroidEntryPoint
 
+/**
+ * P3-T2: Main activity with Hilt DI support
+ */
+@AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding

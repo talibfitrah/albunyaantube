@@ -7,15 +7,22 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.albunyaan.tube.R
-import com.albunyaan.tube.ServiceLocator
+import com.albunyaan.tube.data.source.ContentService
 import com.albunyaan.tube.databinding.FragmentSubcategoriesBinding
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+import javax.inject.Inject
+import javax.inject.Named
 
+@AndroidEntryPoint
 class SubcategoriesFragment : Fragment(R.layout.fragment_subcategories) {
 
     private var binding: FragmentSubcategoriesBinding? = null
     private lateinit var adapter: CategoryAdapter
-    private val contentService by lazy { ServiceLocator.provideContentService() }
+
+    @Inject
+    @Named("real")
+    lateinit var contentService: ContentService
 
     private val categoryId: String by lazy { requireArguments().getString(ARG_CATEGORY_ID).orEmpty() }
     private val categoryName: String by lazy { requireArguments().getString(ARG_CATEGORY_NAME).orEmpty() }

@@ -1,17 +1,23 @@
 package com.albunyaan.tube.ui
 
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.source.ContentService
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import javax.inject.Inject
+import javax.inject.Named
 
-class SearchViewModel(
-    private val contentService: ContentService
+/**
+ * P3-T4: SearchViewModel with Hilt DI
+ */
+@HiltViewModel
+class SearchViewModel @Inject constructor(
+    @Named("real") private val contentService: ContentService
 ) : ViewModel() {
 
     private val _searchResults = MutableStateFlow<SearchState>(SearchState.Empty)
@@ -53,17 +59,5 @@ class SearchViewModel(
         data class Success(val results: List<ContentItem>) : SearchState()
         data class NoResults(val query: String) : SearchState()
         data class Error(val message: String) : SearchState()
-    }
-
-    class Factory(
-        private val contentService: ContentService
-    ) : ViewModelProvider.Factory {
-        @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            if (modelClass.isAssignableFrom(SearchViewModel::class.java)) {
-                return SearchViewModel(contentService) as T
-            }
-            throw IllegalArgumentException("Unknown ViewModel class")
-        }
     }
 }

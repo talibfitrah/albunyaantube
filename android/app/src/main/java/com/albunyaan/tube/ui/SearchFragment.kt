@@ -14,13 +14,19 @@ import androidx.navigation.findNavController
 import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.albunyaan.tube.R
-import com.albunyaan.tube.ServiceLocator
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.databinding.FragmentSearchBinding
+import coil.ImageLoader
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
+/**
+ * P3-T4: SearchFragment with Hilt DI
+ */
+@AndroidEntryPoint
 class SearchFragment : Fragment(R.layout.fragment_search) {
 
     private var binding: FragmentSearchBinding? = null
@@ -28,9 +34,10 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
     private lateinit var searchHistoryAdapter: SearchHistoryAdapter
     private lateinit var searchResultsAdapter: SearchResultsAdapter
 
-    private val viewModel: SearchViewModel by viewModels {
-        SearchViewModel.Factory(ServiceLocator.provideContentService())
-    }
+    @Inject
+    lateinit var imageLoader: ImageLoader
+
+    private val viewModel: SearchViewModel by viewModels()
 
     private var searchJob: Job? = null
     private val searchHistory = mutableListOf<String>()
@@ -120,8 +127,8 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
 
     private fun setupResultsList() {
         searchResultsAdapter = SearchResultsAdapter(
-            imageLoader = ServiceLocator.provideImageLoader(),
-            enableImages = ServiceLocator.isImageLoadingEnabled(),
+            imageLoader = imageLoader,
+            enableImages = true, // Always enable images with Hilt DI
             onItemClick = { item -> handleItemClick(item) }
         )
 

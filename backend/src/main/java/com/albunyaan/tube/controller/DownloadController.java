@@ -1,11 +1,15 @@
 package com.albunyaan.tube.controller;
 
+import com.albunyaan.tube.dto.DownloadCompletedEventDto;
+import com.albunyaan.tube.dto.DownloadFailedEventDto;
 import com.albunyaan.tube.dto.DownloadManifestDto;
 import com.albunyaan.tube.dto.DownloadPolicyDto;
+import com.albunyaan.tube.dto.DownloadStartedEventDto;
 import com.albunyaan.tube.dto.DownloadTokenDto;
 import com.albunyaan.tube.dto.ErrorResponse;
 import com.albunyaan.tube.security.FirebaseUserDetails;
 import com.albunyaan.tube.service.DownloadService;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -70,34 +74,49 @@ public class DownloadController {
         }
     }
 
+    /**
+     * P4-T1: Track download started event with typed DTO
+     */
     @PostMapping("/analytics/download-started")
-    public ResponseEntity<Void> trackDownloadStarted(@RequestBody Map<String, String> request,
+    public ResponseEntity<Void> trackDownloadStarted(@Valid @RequestBody DownloadStartedEventDto event,
             @AuthenticationPrincipal FirebaseUserDetails user) {
-        String videoId = request.get("videoId");
-        String quality = request.get("quality");
-        String deviceType = request.getOrDefault("deviceType", "unknown");
-        downloadService.trackDownloadStarted(videoId, user != null ? user.getUid() : "anonymous", quality, deviceType);
+        downloadService.trackDownloadStarted(
+            event.getVideoId(),
+            user != null ? user.getUid() : "anonymous",
+            event.getQuality(),
+            event.getDeviceType()
+        );
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
 
+    /**
+     * P4-T1: Track download completed event with typed DTO
+     */
     @PostMapping("/analytics/download-completed")
-    public ResponseEntity<Void> trackDownloadCompleted(@RequestBody Map<String, Object> request,
+    public ResponseEntity<Void> trackDownloadCompleted(@Valid @RequestBody DownloadCompletedEventDto event,
             @AuthenticationPrincipal FirebaseUserDetails user) {
-        String videoId = (String) request.get("videoId");
-        String quality = (String) request.get("quality");
-        Long fileSize = request.get("fileSize") != null ? ((Number) request.get("fileSize")).longValue() : null;
-        String deviceType = (String) request.getOrDefault("deviceType", "unknown");
-        downloadService.trackDownloadCompleted(videoId, user != null ? user.getUid() : "anonymous", quality, fileSize, deviceType);
+        downloadService.trackDownloadCompleted(
+            event.getVideoId(),
+            user != null ? user.getUid() : "anonymous",
+            event.getQuality(),
+            event.getFileSize(),
+            event.getDeviceType()
+        );
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
 
+    /**
+     * P4-T1: Track download failed event with typed DTO
+     */
     @PostMapping("/analytics/download-failed")
-    public ResponseEntity<Void> trackDownloadFailed(@RequestBody Map<String, String> request,
+    public ResponseEntity<Void> trackDownloadFailed(@Valid @RequestBody DownloadFailedEventDto event,
             @AuthenticationPrincipal FirebaseUserDetails user) {
-        String videoId = request.get("videoId");
-        String errorReason = request.get("errorReason");
-        String deviceType = request.getOrDefault("deviceType", "unknown");
-        downloadService.trackDownloadFailed(videoId, user != null ? user.getUid() : "anonymous", errorReason, deviceType);
+        downloadService.trackDownloadFailed(
+            event.getVideoId(),
+            user != null ? user.getUid() : "anonymous",
+            event.getErrorReason(),
+            event.getDeviceType()
+        );
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
 }

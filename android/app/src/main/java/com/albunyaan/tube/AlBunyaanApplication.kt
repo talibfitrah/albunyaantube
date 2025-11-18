@@ -3,18 +3,32 @@ package com.albunyaan.tube
 import android.app.Application
 import android.content.ComponentCallbacks2
 import android.util.Log
+import androidx.hilt.work.HiltWorkerFactory
+import androidx.work.Configuration
+import dagger.hilt.android.HiltAndroidApp
+import javax.inject.Inject
 
-class AlBunyaanApplication : Application() {
+/**
+ * P3-T1: Hilt Application
+ *
+ * Main application class annotated with @HiltAndroidApp to enable Hilt DI.
+ * Implements Configuration.Provider for WorkManager with HiltWorkerFactory.
+ */
+@HiltAndroidApp
+class AlBunyaanApplication : Application(), Configuration.Provider {
+
+    @Inject
+    lateinit var workerFactory: HiltWorkerFactory
 
     override fun onCreate() {
         super.onCreate()
-
-        // Initialize ServiceLocator early for dependency injection
-        // This is lightweight since ServiceLocator uses lazy initialization
-        ServiceLocator.init(this)
-
-        Log.d(TAG, "Application initialized")
+        Log.d(TAG, "Application initialized with Hilt DI")
     }
+
+    override val workManagerConfiguration: Configuration
+        get() = Configuration.Builder()
+            .setWorkerFactory(workerFactory)
+            .build()
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)

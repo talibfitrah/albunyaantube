@@ -9,16 +9,23 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.albunyaan.tube.R
-import com.albunyaan.tube.ServiceLocator
 import com.albunyaan.tube.data.model.Category
+import com.albunyaan.tube.data.source.ContentService
 import com.albunyaan.tube.databinding.FragmentCategoriesBinding
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+import javax.inject.Inject
+import javax.inject.Named
 
+@AndroidEntryPoint
 class CategoriesFragment : Fragment(R.layout.fragment_categories) {
 
     private var binding: FragmentCategoriesBinding? = null
     private lateinit var adapter: CategoryAdapter
-    private val contentService by lazy { ServiceLocator.provideContentService() }
+
+    @Inject
+    @Named("real")
+    internal lateinit var contentService: ContentService
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

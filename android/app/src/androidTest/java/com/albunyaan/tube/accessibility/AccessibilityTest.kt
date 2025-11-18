@@ -3,18 +3,26 @@ package com.albunyaan.tube.accessibility
 import android.content.Context
 import android.view.View
 import android.view.accessibility.AccessibilityNodeInfo
+import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.UiController
 import androidx.test.espresso.ViewAction
+import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers.*
-import androidx.test.ext.junit.rules.ActivityScenarioRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
+import androidx.test.platform.app.InstrumentationRegistry
+import com.albunyaan.tube.HiltTestActivity
 import com.albunyaan.tube.R
-import com.albunyaan.tube.ui.MainActivity
+import com.albunyaan.tube.launchFragmentInHiltContainer
+import com.albunyaan.tube.ui.MainShellFragment
+import dagger.hilt.android.testing.HiltAndroidRule
+import dagger.hilt.android.testing.HiltAndroidTest
 import org.hamcrest.Matcher
+import org.junit.After
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -23,18 +31,33 @@ import org.junit.runner.RunWith
  * Instrumentation tests for accessibility compliance.
  * Verifies that UI elements meet Android accessibility guidelines.
  */
+@HiltAndroidTest
 @RunWith(AndroidJUnit4::class)
 @LargeTest
 class AccessibilityTest {
 
     @get:Rule
-    val activityRule = ActivityScenarioRule(MainActivity::class.java)
+    var hiltRule = HiltAndroidRule(this)
+
+    private var scenario: ActivityScenario<HiltTestActivity>? = null
+
+    @Before
+    fun setUp() {
+        hiltRule.inject()
+        scenario = launchFragmentInHiltContainer<MainShellFragment>(
+            themeResId = R.style.Theme_Albunyaan
+        )
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+    }
+
+    @After
+    fun tearDown() {
+        scenario?.close()
+        scenario = null
+    }
 
     @Test
     fun bottomNavigation_itemsHaveContentDescriptions() {
-        // Wait for splash to complete
-        Thread.sleep(2000)
-
         // Verify bottom nav items have accessibility labels
         onView(withId(R.id.homeFragment))
             .perform(verifyHasContentDescription())
@@ -48,9 +71,6 @@ class AccessibilityTest {
 
     @Test
     fun interactiveElements_haveTouchTargets() {
-        // Wait for splash to complete
-        Thread.sleep(2000)
-
         // Verify bottom nav items meet minimum 48dp touch target
         onView(withId(R.id.mainBottomNav))
             .perform(verifyChildrenHaveMinimumSize(48))
@@ -65,35 +85,31 @@ class AccessibilityTest {
 
     @Test
     fun contentDescriptions_existForImageButtons() {
-        activityRule.scenario.onActivity { activity ->
-            val context: Context = ApplicationProvider.getApplicationContext()
+        val context: Context = ApplicationProvider.getApplicationContext()
 
-            // Verify our accessibility strings exist
-            val cdVideoThumbnail = context.getString(R.string.cd_video_thumbnail)
-            val cdChannelAvatar = context.getString(R.string.cd_channel_avatar)
-            val cdDeleteHistory = context.getString(R.string.cd_delete_search_history)
+        // Verify our accessibility strings exist
+        val cdVideoThumbnail = context.getString(R.string.cd_video_thumbnail)
+        val cdChannelAvatar = context.getString(R.string.cd_channel_avatar)
+        val cdDeleteHistory = context.getString(R.string.cd_delete_search_history)
 
-            assertTrue("Content description strings exist",
-                cdVideoThumbnail.isNotEmpty() &&
-                cdChannelAvatar.isNotEmpty() &&
-                cdDeleteHistory.isNotEmpty()
-            )
-        }
+        assertTrue("Content description strings exist",
+            cdVideoThumbnail.isNotEmpty() &&
+            cdChannelAvatar.isNotEmpty() &&
+            cdDeleteHistory.isNotEmpty()
+        )
     }
 
     @Test
     fun screenReaderAnnouncements_existForItems() {
-        activityRule.scenario.onActivity { activity ->
-            val context: Context = ApplicationProvider.getApplicationContext()
+        val context: Context = ApplicationProvider.getApplicationContext()
 
-            // Verify our screen reader announcement strings exist
-            val a11yVideoItem = context.getString(R.string.a11y_video_item, "Test", "5 min", "metadata")
-            val a11ySearchHistory = context.getString(R.string.a11y_search_history, "query")
+        // Verify our screen reader announcement strings exist
+        val a11yVideoItem = context.getString(R.string.a11y_video_item, "Test", "5 min", "metadata")
+        val a11ySearchHistory = context.getString(R.string.a11y_search_history, "query")
 
-            assertTrue("Screen reader announcements exist",
-                a11yVideoItem.isNotEmpty() && a11ySearchHistory.isNotEmpty()
-            )
-        }
+        assertTrue("Screen reader announcements exist",
+            a11yVideoItem.isNotEmpty() && a11ySearchHistory.isNotEmpty()
+        )
     }
 
     // Helper to verify a view has a content description

@@ -10,13 +10,15 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.viewpager2.adapter.FragmentStateAdapter
 import com.albunyaan.tube.R
-import com.albunyaan.tube.ServiceLocator
 import com.albunyaan.tube.databinding.FragmentChannelDetailBinding
 import com.google.android.material.chip.Chip
 import com.google.android.material.tabs.TabLayoutMediator
+import dagger.hilt.android.AndroidEntryPoint
+import dagger.hilt.android.lifecycle.withCreationCallback
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
 
+@AndroidEntryPoint
 class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
 
     private var binding: FragmentChannelDetailBinding? = null
@@ -25,12 +27,13 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
     private val channelName: String? by lazy { arguments?.getString("channelName") }
     private val isExcluded: Boolean by lazy { arguments?.getBoolean("excluded", false) ?: false }
 
-    private val viewModel: ChannelDetailViewModel by viewModels {
-        ChannelDetailViewModel.Factory(
-            ServiceLocator.provideContentService(),
-            channelId
-        )
-    }
+    private val viewModel: ChannelDetailViewModel by viewModels(
+        extrasProducer = {
+            defaultViewModelCreationExtras.withCreationCallback<ChannelDetailViewModel.Factory> { factory ->
+                factory.create(channelId)
+            }
+        }
+    )
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)

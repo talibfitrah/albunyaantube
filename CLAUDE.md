@@ -497,6 +497,18 @@ Spring Boot backend
 - WorkManager for background downloads
 - Jetpack Navigation for fragment routing
 
+**Dependency Injection** (Hilt - MANDATORY):
+- All dependencies MUST be provided via Hilt modules
+- **DO NOT** use manual service locators or static factories
+- Previous `ServiceLocator` pattern has been removed and replaced with Hilt
+- Module organization:
+  - `NetworkModule`: Retrofit, OkHttpClient, API interfaces
+  - `DownloadModule`: Download repository, storage
+  - `AppModule`: Application-scoped dependencies
+- ViewModels use `@HiltViewModel` with `@Inject constructor()`
+- Fragments annotated with `@AndroidEntryPoint`
+- Test isolation via `@TestInstallIn` modules (see Testing section)
+
 **Screens** (16 total):
 - Onboarding (3-page carousel)
 - Main shell with tabs: Home, Channels, Playlists, Videos, More
@@ -656,6 +668,22 @@ Spring Boot backend
 - Unit tests: `src/test/`
 - Instrumentation tests: `src/androidTest/` (requires device/emulator)
 - MockWebServer for API mocking
+- **Hilt Test Isolation**:
+  - Use `@HiltAndroidTest` annotation on test classes
+  - `TestNetworkModule` (`@TestInstallIn`) replaces production `NetworkModule`
+  - Provides `FakeContentApi` and `FakeDownloadApi` returning empty/stub responses
+  - Override with `@BindValue` for custom test behavior
+  - Example:
+    ```kotlin
+    @HiltAndroidTest
+    @UninstallModules(SomeModule::class)
+    class MyFragmentTest {
+        @get:Rule var hiltRule = HiltAndroidRule(this)
+
+        @BindValue @JvmField
+        val customDep: MyDependency = FakeMyDependency()
+    }
+    ```
 
 ### Performance Optimization
 

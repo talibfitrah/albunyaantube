@@ -10,21 +10,20 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.albunyaan.tube.R
-import com.albunyaan.tube.ServiceLocator
 import com.albunyaan.tube.data.model.ContentItem
+import dagger.hilt.android.AndroidEntryPoint
 import com.albunyaan.tube.databinding.FragmentHomeNewBinding
 import com.albunyaan.tube.ui.adapters.HomeChannelAdapter
 import com.albunyaan.tube.ui.adapters.HomePlaylistAdapter
 import com.albunyaan.tube.ui.adapters.HomeVideoAdapter
 import kotlinx.coroutines.launch
 
+@AndroidEntryPoint
 class HomeFragment : Fragment(R.layout.fragment_home_new) {
 
     private var binding: FragmentHomeNewBinding? = null
 
-    private val viewModel: HomeViewModel by viewModels {
-        HomeViewModel.Factory(ServiceLocator.provideContentService())
-    }
+    private val viewModel: HomeViewModel by viewModels()
 
     private lateinit var channelAdapter: HomeChannelAdapter
     private lateinit var playlistAdapter: HomePlaylistAdapter

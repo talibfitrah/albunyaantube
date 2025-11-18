@@ -11,11 +11,8 @@ import androidx.benchmark.macro.junit4.MacrobenchmarkRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
 import androidx.test.platform.app.InstrumentationRegistry
-import com.albunyaan.tube.ServiceLocator
 import org.json.JSONArray
 import org.json.JSONObject
-import org.junit.After
-import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -27,17 +24,6 @@ class ColdStartBenchmark {
 
     @get:Rule
     val benchmarkRule = MacrobenchmarkRule()
-
-    @Before
-    fun disableImages() {
-        ServiceLocator.setImagesEnabledForTesting(false)
-    }
-
-    @After
-    fun resetImages() {
-        ServiceLocator.setImagesEnabledForTesting(null)
-        ServiceLocator.setImageLoaderForTesting(null)
-    }
 
     @Test
     @OptIn(ExperimentalMetricApi::class)

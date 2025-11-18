@@ -11,7 +11,9 @@ import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_MIME_TYPE
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_PROGRESS
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,6 +21,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 interface DownloadRepository {
     val downloads: StateFlow<List<DownloadEntry>>
@@ -44,8 +47,103 @@ class DefaultDownloadRepository(
     override val downloads: StateFlow<List<DownloadEntry>> = entries.asStateFlow()
 
     init {
+        // P3-T3: Clean up expired downloads (30-day retention policy)
+        cleanupExpiredDownloads()
         // Restore downloads from WorkManager on initialization
         restoreDownloadsFromWorkManager()
+    }
+
+    /**
+     * P3-T3: 30-day expiry hook - deletes downloads older than 30 days
+     */
+    private fun cleanupExpiredDownloads() {
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                val currentTime = System.currentTimeMillis()
+                // Add 1-hour grace period to handle clock skew or lastModified anomalies
+                val gracePeriodMillis = TimeUnit.HOURS.toMillis(1)
+                val expiryThresholdMillis = currentTime - TimeUnit.DAYS.toMillis(EXPIRY_DAYS) - gracePeriodMillis
+                val downloadFiles = storage.listAllDownloads()
+                var deletedCount = 0
+                var failedCount = 0
+                var skippedActiveCount = 0
+
+                for ((downloadId, file) in downloadFiles) {
+                    // Check if download is currently active in WorkManager
+                    val workId = workIds[downloadId]
+                    if (workId != null) {
+                        val workInfo = try {
+                            workManager.getWorkInfoById(workId).get()
+                        } catch (e: Exception) {
+                            null
+                        }
+
+                        if (workInfo != null && !workInfo.state.isFinished) {
+                            android.util.Log.d(
+                                "DownloadRepository",
+                                "Skipping deletion of $downloadId: download is still active (state: ${workInfo.state})"
+                            )
+                            skippedActiveCount++
+                            continue
+                        }
+                    }
+
+                    // Validate file age with secondary checks
+                    val lastModified = file.lastModified()
+                    if (lastModified <= 0) {
+                        // lastModified returned 0, indicating potential filesystem issue
+                        android.util.Log.w(
+                            "DownloadRepository",
+                            "Skipping deletion of $downloadId: file.lastModified() returned invalid value ($lastModified)"
+                        )
+                        continue
+                    }
+
+                    // Verify file still exists before attempting deletion
+                    if (!file.exists()) {
+                        android.util.Log.d(
+                            "DownloadRepository",
+                            "Skipping deletion of $downloadId: file no longer exists"
+                        )
+                        continue
+                    }
+
+                    if (lastModified < expiryThresholdMillis) {
+                        val audioOnly = file.name.endsWith(".m4a")
+                        val ageInDays = TimeUnit.MILLISECONDS.toDays(currentTime - lastModified)
+
+                        try {
+                            storage.delete(downloadId, audioOnly)
+                            deletedCount++
+                            android.util.Log.d(
+                                "DownloadRepository",
+                                "Deleted expired download: $downloadId (age: $ageInDays days, size: ${file.length()} bytes)"
+                            )
+                        } catch (e: Exception) {
+                            failedCount++
+                            android.util.Log.e(
+                                "DownloadRepository",
+                                "Failed to delete expired download: $downloadId (age: $ageInDays days)",
+                                e
+                            )
+                        }
+                    }
+                }
+
+                // Log summary of cleanup operation
+                if (deletedCount > 0 || failedCount > 0 || skippedActiveCount > 0) {
+                    android.util.Log.i(
+                        "DownloadRepository",
+                        "Cleanup completed: deleted=$deletedCount, failed=$failedCount, skipped_active=$skippedActiveCount (threshold: >${EXPIRY_DAYS} days)"
+                    )
+                }
+            }
+        }
+    }
+
+    companion object {
+        /** P3-T3: Downloads are automatically deleted after this many days */
+        const val EXPIRY_DAYS = 30L
     }
 
     private fun restoreDownloadsFromWorkManager() {

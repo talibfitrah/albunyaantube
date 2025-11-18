@@ -2,20 +2,25 @@ package com.albunyaan.tube.ui.detail
 
 import android.util.Log
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.albunyaan.tube.data.filters.FilterState
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.source.ContentService
+import dagger.assisted.Assisted
+import dagger.assisted.AssistedFactory
+import dagger.assisted.AssistedInject
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import javax.inject.Named
 
-class ChannelDetailViewModel(
-    private val contentService: ContentService,
-    private val channelId: String
+@HiltViewModel(assistedFactory = ChannelDetailViewModel.Factory::class)
+class ChannelDetailViewModel @AssistedInject constructor(
+    @Named("real") private val contentService: ContentService,
+    @Assisted private val channelId: String
 ) : ViewModel() {
 
     private val _channelState = MutableStateFlow<ChannelState>(ChannelState.Loading)
@@ -123,17 +128,9 @@ class ChannelDetailViewModel(
         data class Error(val message: String) : TabContentState()
     }
 
-    class Factory(
-        private val contentService: ContentService,
-        private val channelId: String
-    ) : ViewModelProvider.Factory {
-        @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            if (modelClass.isAssignableFrom(ChannelDetailViewModel::class.java)) {
-                return ChannelDetailViewModel(contentService, channelId) as T
-            }
-            throw IllegalArgumentException("Unknown ViewModel class")
-        }
+    @AssistedFactory
+    interface Factory {
+        fun create(channelId: String): ChannelDetailViewModel
     }
 
     companion object {

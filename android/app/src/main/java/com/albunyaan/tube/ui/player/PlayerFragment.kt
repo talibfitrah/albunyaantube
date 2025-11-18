@@ -25,8 +25,8 @@ import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.R
-import com.albunyaan.tube.ServiceLocator
 import com.albunyaan.tube.databinding.FragmentPlayerBinding
+import dagger.hilt.android.AndroidEntryPoint
 import com.albunyaan.tube.data.extractor.PlaybackSelection
 import com.albunyaan.tube.data.extractor.SubtitleTrack
 import com.albunyaan.tube.download.DownloadEntry
@@ -40,21 +40,17 @@ import kotlinx.coroutines.launch
 import java.io.File
 
 /**
+ * P3-T4: PlayerFragment with Hilt DI
+ *
  * Phase 8 scaffold for the playback screen. Hooks ExoPlayer with audio-only toggle state managed
  * by [PlayerViewModel]; real media sources will be supplied once backend wiring is available.
  */
+@AndroidEntryPoint
 class PlayerFragment : Fragment(R.layout.fragment_player) {
 
     private var binding: FragmentPlayerBinding? = null
     private var player: ExoPlayer? = null
-    private val viewModel: PlayerViewModel by viewModels {
-        PlayerViewModel.Factory(
-            ServiceLocator.providePlayerRepository(),
-            ServiceLocator.provideDownloadRepository(),
-            ServiceLocator.provideEulaManager(),
-            ServiceLocator.provideContentService()
-        )
-    }
+    private val viewModel: PlayerViewModel by viewModels()
     private val upNextAdapter = UpNextAdapter { item -> viewModel.playItem(item) }
     private var preparedStreamKey: Pair<String, Boolean>? = null
     private var preparedStreamUrl: String? = null // Track the actual URL to detect quality changes

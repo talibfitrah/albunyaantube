@@ -1,13 +1,13 @@
 package com.albunyaan.tube.download
 
 import android.content.Context
+import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
-import com.albunyaan.tube.ServiceLocator
 import com.albunyaan.tube.analytics.ExtractorMetricsReporter
-import com.albunyaan.tube.data.extractor.AudioTrack
 import com.albunyaan.tube.data.extractor.VideoTrack
+import com.albunyaan.tube.data.source.RetrofitDownloadService
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_AUDIO_ONLY
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_DOWNLOAD_ID
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_FILE_PATH
@@ -18,6 +18,8 @@ import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_PROGRESS
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_TITLE
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_VIDEO_ID
 import com.albunyaan.tube.player.PlayerRepository
+import dagger.assisted.Assisted
+import dagger.assisted.AssistedInject
 import java.io.File
 import java.io.IOException
 import kotlin.math.max
@@ -26,16 +28,20 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
-class DownloadWorker(
-    appContext: Context,
-    params: WorkerParameters
+/**
+ * P3-T3: DownloadWorker with Hilt DI
+ */
+@HiltWorker
+class DownloadWorker @AssistedInject constructor(
+    @Assisted appContext: Context,
+    @Assisted params: WorkerParameters,
+    private val storage: DownloadStorage,
+    private val downloadService: RetrofitDownloadService,
+    private val repository: PlayerRepository,
+    private val metrics: ExtractorMetricsReporter
 ) : CoroutineWorker(appContext, params) {
 
     private val notifications = DownloadNotifications(appContext)
-    private val storage = ServiceLocator.provideDownloadStorage()
-    private val downloadService by lazy { ServiceLocator.provideDownloadService() }
-    private val repository: PlayerRepository by lazy { ServiceLocator.providePlayerRepository() }
-    private val metrics: ExtractorMetricsReporter by lazy { ServiceLocator.provideExtractorMetricsReporter() }
     private val httpClient by lazy { OkHttpClient.Builder().build() }
 
     override suspend fun doWork(): Result {

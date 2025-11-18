@@ -13,15 +13,22 @@ import com.albunyaan.tube.data.filters.VideoLength
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.paging.ContentPagingRepository
+import dagger.assisted.Assisted
+import dagger.assisted.AssistedFactory
+import dagger.assisted.AssistedInject
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 
-class ContentListViewModel(
+/**
+ * P3-T2: ViewModel with assisted injection for content type parameter
+ */
+class ContentListViewModel @AssistedInject constructor(
     private val filterManager: FilterManager,
     private val repository: ContentPagingRepository,
-    private val contentType: ContentType
+    @Assisted private val contentType: ContentType
 ) : ViewModel() {
 
     val filterState: StateFlow<FilterState> = filterManager.state
@@ -52,17 +59,20 @@ class ContentListViewModel(
         }
     }
 
-    class Factory(
-        private val filterManager: FilterManager,
-        private val repository: ContentPagingRepository,
-        private val contentType: ContentType
-    ) : ViewModelProvider.Factory {
-        override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            if (modelClass.isAssignableFrom(ContentListViewModel::class.java)) {
-                @Suppress("UNCHECKED_CAST")
-                return ContentListViewModel(filterManager, repository, contentType) as T
+    @AssistedFactory
+    interface Factory {
+        fun create(contentType: ContentType): ContentListViewModel
+    }
+
+    companion object {
+        fun provideFactory(
+            assistedFactory: Factory,
+            contentType: ContentType
+        ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                return assistedFactory.create(contentType) as T
             }
-            throw IllegalArgumentException("Unknown ViewModel class")
         }
     }
 }
