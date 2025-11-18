@@ -439,7 +439,7 @@ interface ContentItem {
   categoryIds: string[];
   status: 'approved' | 'pending' | 'rejected';
   createdAt: Date;
-  youtubeId: string; // Always populated from backend's type-specific YouTube ID fields
+  youtubeId: string; // YouTube ID (channel/playlist/video ID)
 }
 
 interface Category {
