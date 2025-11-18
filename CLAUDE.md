@@ -6,23 +6,31 @@ This document provides essential information for AI assistants working in the Al
 
 ## 🎯 **WHERE TO START - CURRENT SESSION STATUS**
 
-**Date:** November 18, 2025
-**Status:** Phase 5 code review fixes complete (service layer refactoring)
+**Date:** November 19, 2025
+**Status:** Phase 5 code review fixes complete (aliasing removal complete)
 **Next Step:** Phase 6 or continue with pagination DTO standardization (P1-T4)
+
+### **Recent Updates (Nov 19, 2025):**
+
+1. **Backend Aliasing Fix** ✅
+   - Added `youtubeId` field to `ContentLibraryController.ContentItem` DTO
+   - Backend now returns standardized `youtubeId` for all content types (channels, playlists, videos)
+   - Frontend `ContentLibraryView` simplified to use `item.youtubeId || ''` (no type-specific field aliasing)
+   - Validation: Backend tests pass (all), Frontend tests pass (165 passed, 1 skipped)
 
 ### **Recent Updates (Nov 18, 2025):**
 
-1. **Phase 5 Code Review Fixes** (Partial ✅)
+1. **Phase 5 Code Review Fixes** ✅
    - **Service Layer Separation**: Refactored `approvalService.ts` to pure IO (68 lines, down from 168)
    - **Extracted Transformers**: Created `/frontend/src/utils/approvalTransformers.ts` with UI mapping logic
    - **Composable Integration**: Wired `useApprovals` composable into `PendingApprovalsView.vue`
    - **Test Coverage**: Added 13 tests for `useApprovals` composable
-   - **DTO Aliasing Removal** (frontend-side complete):
+   - **DTO Aliasing Removal** ✅:
      - `cat.name || cat.label` → `cat.name`
      - `channel.ytId || channel.id` → `channel.ytId`
      - `selectedItemForModal.youtubeId || selectedItemForModal.id` → `selectedItemForModal.youtubeId`
+     - Backend `ContentItem` now includes `youtubeId` field
    - **Reactivity Fix**: Fixed filter toggle buttons to use `setFilter()` with proper error handling
-   - **Remaining Backend Work**: ContentLibraryView must normalize type-specific YouTube ID fields (`youtubeChannelId`, `youtubePlaylistId`, `youtubeVideoId`) to single `youtubeId` field because backend returns different field names per content type. Backend should standardize on `youtubeId` per API spec to complete aliasing removal.
    - Validation: `npm run build` and `npm test` (165 passed, 1 skipped)
 
 2. **Architectural Decisions (Phase 5)**:

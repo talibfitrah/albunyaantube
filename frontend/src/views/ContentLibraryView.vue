@@ -763,9 +763,7 @@ async function loadContent() {
       createdAt: new Date(item.createdAt),
       description: item.description,
       count: item.count,
-      // Backend returns type-specific YouTube ID fields; normalize to single field
-      // TODO: Backend should standardize on 'youtubeId' per API spec
-      youtubeId: item.youtubeId || item.youtubeChannelId || item.youtubePlaylistId || item.youtubeVideoId || ''
+      youtubeId: item.youtubeId || ''
     }));
 
   } catch (err: any) {
