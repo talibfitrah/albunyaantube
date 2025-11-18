@@ -111,7 +111,7 @@ export async function getChannelDetails(channelId: string) {
     title: video.name || '',
     thumbnailUrl: video.thumbnailUrl || '',
     description: '',
-    channelId: channelResponse.data.id || channelId, // Use parent channel ID
+    channelId: channelResponse.data.id || '',
     channelTitle: video.uploaderName || '',
     viewCount: video.viewCount || 0,
     duration: video.duration ? `PT${video.duration}S` : 'PT0S', // Convert to ISO-8601 format for parseDuration
@@ -124,7 +124,7 @@ export async function getChannelDetails(channelId: string) {
     title: playlist.name || '',
     thumbnailUrl: playlist.thumbnailUrl || '',
     description: '',
-    channelId: channelResponse.data.id || channelId, // Use parent channel ID
+    channelId: channelResponse.data.id || '',
     channelTitle: playlist.uploaderName || '',
     itemCount: playlist.streamCount || 0,
     type: 'playlist'

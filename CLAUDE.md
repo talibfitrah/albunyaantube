@@ -17,7 +17,9 @@ This document provides essential information for AI assistants working in the Al
    - **Extracted Transformers**: Created `/frontend/src/utils/approvalTransformers.ts` with UI mapping logic
    - **Composable Integration**: Wired `useApprovals` composable into `PendingApprovalsView.vue`
    - **Test Coverage**: Added 13 tests for `useApprovals` composable
-   - **DTO Aliasing Removal**: Eliminated all `a || b` patterns in categoryService, youtubeService
+   - **DTO Aliasing Removal**: Eliminated field aliasing patterns (e.g., `cat.name || cat.label`, `channel.ytId || channel.id`)
+   - **Reactivity Fix**: Fixed filter toggle buttons to use `setFilter()` instead of reassigning refs
+   - Note: Null coalescing defaults (`item.id || ''`) remain for optional fields - this is defensive programming, not aliasing
    - Validation: `npm run build` and `npm test` (165 passed, 1 skipped)
 
 2. **Architectural Decisions (Phase 5)**:

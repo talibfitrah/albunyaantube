@@ -23,7 +23,7 @@
             :key="type.value"
             type="button"
             :class="['filter-tab', { active: contentType === type.value }]"
-            @click="contentType = type.value; handleFilterChange()"
+            @click="setContentType(type.value)"
           >
             {{ t(type.labelKey) }}
           </button>
@@ -189,7 +189,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { getAllCategories } from '@/services/categoryService';
-import { useApprovals } from '@/composables/useApprovals';
+import { useApprovals, type ContentTypeFilter } from '@/composables/useApprovals';
 import type { PendingApproval } from '@/utils/approvalTransformers';
 
 const { t } = useI18n();
@@ -205,9 +205,16 @@ const {
   sortFilter,
   totalPending,
   loadApprovals,
+  setFilter,
   approve,
   reject
 } = useApprovals();
+
+// Helper to set content type filter and reload
+function setContentType(value: ContentTypeFilter) {
+  setFilter('type', value);
+  loadApprovals();
+}
 
 // Category state (view-specific)
 const categories = ref<any[]>([]);
