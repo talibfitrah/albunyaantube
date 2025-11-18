@@ -1,6 +1,12 @@
 package com.albunyaan.tube.controller;
 
-import com.albunyaan.tube.dto.*;
+import com.albunyaan.tube.dto.ChannelDetailsDto;
+import com.albunyaan.tube.dto.EnrichedSearchResult;
+import com.albunyaan.tube.dto.PlaylistDetailsDto;
+import com.albunyaan.tube.dto.PlaylistItemDto;
+import com.albunyaan.tube.dto.SearchPageResponse;
+import com.albunyaan.tube.dto.StreamDetailsDto;
+import com.albunyaan.tube.dto.StreamItemDto;
 import com.albunyaan.tube.service.YouTubeService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,7 +16,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * FIREBASE-MIGRATE-04: YouTube Search Controller
@@ -252,11 +257,10 @@ public class YouTubeSearchController {
     @GetMapping("/channels/{channelId}")
     public ResponseEntity<ChannelDetailsDto> getChannelDetails(@PathVariable String channelId) {
         try {
-            var channel = youtubeService.getChannelDetails(channelId);
-            if (channel == null) {
+            ChannelDetailsDto dto = youtubeService.getChannelDetailsDto(channelId);
+            if (dto == null) {
                 return ResponseEntity.notFound().build();
             }
-            ChannelDetailsDto dto = youtubeService.mapToChannelDetailsDto(channel);
             return ResponseEntity.ok(dto);
         } catch (IOException e) {
             return ResponseEntity.status(500).build();
@@ -276,10 +280,7 @@ public class YouTubeSearchController {
             @RequestParam(required = false) String q
     ) {
         try {
-            var videos = youtubeService.getChannelVideos(channelId, pageToken, q);
-            List<StreamItemDto> dtos = videos.stream()
-                    .map(youtubeService::mapToStreamItemDto)
-                    .collect(Collectors.toList());
+            List<StreamItemDto> dtos = youtubeService.getChannelVideosDto(channelId, pageToken, q);
             return ResponseEntity.ok(dtos);
         } catch (IOException e) {
             return ResponseEntity.status(500).build();
@@ -295,10 +296,7 @@ public class YouTubeSearchController {
             @RequestParam(required = false) String pageToken
     ) {
         try {
-            var playlists = youtubeService.getChannelPlaylists(channelId, pageToken);
-            List<PlaylistItemDto> dtos = playlists.stream()
-                    .map(youtubeService::mapToPlaylistItemDto)
-                    .collect(Collectors.toList());
+            List<PlaylistItemDto> dtos = youtubeService.getChannelPlaylistsDto(channelId, pageToken);
             return ResponseEntity.ok(dtos);
         } catch (IOException e) {
             return ResponseEntity.status(500).build();
@@ -311,11 +309,10 @@ public class YouTubeSearchController {
     @GetMapping("/playlists/{playlistId}")
     public ResponseEntity<PlaylistDetailsDto> getPlaylistDetails(@PathVariable String playlistId) {
         try {
-            var playlist = youtubeService.getPlaylistDetails(playlistId);
-            if (playlist == null) {
+            PlaylistDetailsDto dto = youtubeService.getPlaylistDetailsDto(playlistId);
+            if (dto == null) {
                 return ResponseEntity.notFound().build();
             }
-            PlaylistDetailsDto dto = youtubeService.mapToPlaylistDetailsDto(playlist);
             return ResponseEntity.ok(dto);
         } catch (IOException e) {
             return ResponseEntity.status(500).build();
@@ -335,10 +332,7 @@ public class YouTubeSearchController {
             @RequestParam(required = false) String q
     ) {
         try {
-            var items = youtubeService.getPlaylistVideos(playlistId, pageToken, q);
-            List<StreamItemDto> dtos = items.stream()
-                    .map(youtubeService::mapToStreamItemDto)
-                    .collect(Collectors.toList());
+            List<StreamItemDto> dtos = youtubeService.getPlaylistVideosDto(playlistId, pageToken, q);
             return ResponseEntity.ok(dtos);
         } catch (IOException e) {
             return ResponseEntity.status(500).build();
@@ -351,11 +345,10 @@ public class YouTubeSearchController {
     @GetMapping("/videos/{videoId}")
     public ResponseEntity<StreamDetailsDto> getVideoDetails(@PathVariable String videoId) {
         try {
-            var video = youtubeService.getVideoDetails(videoId);
-            if (video == null) {
+            StreamDetailsDto dto = youtubeService.getVideoDetailsDto(videoId);
+            if (dto == null) {
                 return ResponseEntity.notFound().build();
             }
-            StreamDetailsDto dto = youtubeService.mapToStreamDetailsDto(video);
             return ResponseEntity.ok(dto);
         } catch (IOException e) {
             return ResponseEntity.status(500).build();

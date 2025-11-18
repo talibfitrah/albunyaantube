@@ -155,13 +155,15 @@ public List<StreamItemDto> getChannelVideosDto(String channelId, String pageToke
 // ... similar for all operations
 ```
 
-### Phase 3: Migrate Service Callers
+### Phase 3: Migrate Service Callers ✅ (Completed)
 
-Update services that consume NewPipe types:
+All production callers that previously referenced NewPipe types now exclusively consume DTOs:
 
-1. **VideoValidationService** - Update to use DTO methods
-2. **SimpleImportService** - Update to use DTO methods
-3. **Any other internal callers** - Audit and update
+1. **VideoValidationService** – uses `batchValidateVideosDto(...)` for validation runs (presence/absence semantics preserved).
+2. **SimpleImportService** – maps `ChannelDetailsDto`, `PlaylistDetailsDto`, and `StreamDetailsDto` onto Firestore models.
+3. **YouTubeSearchController** – serves DTOs directly from `YouTubeService` without manual mapping.
+
+Guardrail enforced: No new imports of `org.schabi.newpipe.*` are allowed outside `ChannelOrchestrator`, `YouTubeGateway`, and legacy-focused tests. Current production code complies with this restriction.
 
 ### Phase 4: Deprecate NewPipe-Returning Methods
 
@@ -179,10 +181,7 @@ public ChannelInfo getChannelDetails(String channelId) throws IOException { ... 
 
 1. Remove deprecated methods after confirming no callers
 2. Consider moving mapping logic to a dedicated `DtoMapper` class
-3. Add guardrail: NewPipe types should only appear in:
-   - `YouTubeGateway`
-   - `ChannelOrchestrator` (internal only)
-   - Tests
+3. Formalize/static-check the guardrail so only `YouTubeGateway`, `ChannelOrchestrator`, and service-layer tests reference NewPipe types
 
 ## Controller Status
 
