@@ -68,29 +68,23 @@ public class PublicContentService {
             String type, String cursor, int limit,
             String category, String length, String date, String sort
     ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        List<ContentItemDto> items = new ArrayList<>();
 
+        // For content types that support real cursor pagination
         switch (type.toUpperCase()) {
-            case "HOME":
-                items = getMixedContent(limit, category);
-                break;
             case "CHANNELS":
-                items = getChannels(limit, category);
-                break;
+                return getChannelsWithCursor(limit, category, cursor);
             case "PLAYLISTS":
-                items = getPlaylists(limit, category);
-                break;
+                return getPlaylistsWithCursor(limit, category, cursor);
             case "VIDEOS":
-                items = getVideos(limit, category, length, date, sort);
-                break;
+                return getVideosWithCursor(limit, category, cursor, length, date, sort);
+            case "HOME":
             default:
-                items = getMixedContent(limit, category);
+                // HOME type mixes content types, so cursor doesn't apply cleanly
+                // Use legacy approach for mixed content
+                List<ContentItemDto> items = getMixedContent(limit, category);
+                String nextCursor = items.size() >= limit ? encodeCursor(limit) : null;
+                return new CursorPageDto<>(items, nextCursor);
         }
-
-        // For now, return null cursor (simple pagination will be added later)
-        String nextCursor = items.size() >= limit ? encodeCursor(limit) : null;
-
-        return new CursorPageDto<>(items, nextCursor);
     }
 
     private List<ContentItemDto> getMixedContent(int limit, String category) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
@@ -126,6 +120,27 @@ public class PublicContentService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Get channels with real cursor-based pagination.
+     */
+    private CursorPageDto<ContentItemDto> getChannelsWithCursor(int limit, String category, String cursor)
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+
+        ChannelRepository.PaginatedResult<Channel> result;
+
+        if (category != null && !category.isBlank()) {
+            result = channelRepository.findApprovedByCategoryAndSubscribersDescWithCursor(category, limit, cursor);
+        } else {
+            result = channelRepository.findApprovedBySubscribersDescWithCursor(limit, cursor);
+        }
+
+        List<ContentItemDto> items = result.getItems().stream()
+                .map(this::toDto)
+                .collect(Collectors.toList());
+
+        return new CursorPageDto<>(items, result.getNextCursor());
+    }
+
     private List<ContentItemDto> getPlaylists(int limit, String category) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         List<Playlist> playlists;
 
@@ -142,6 +157,64 @@ public class PublicContentService {
                 .limit(limit)
                 .map(this::toDto)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Get playlists with real cursor-based pagination.
+     */
+    private CursorPageDto<ContentItemDto> getPlaylistsWithCursor(int limit, String category, String cursor)
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+
+        PlaylistRepository.PaginatedResult<Playlist> result;
+
+        if (category != null && !category.isBlank()) {
+            result = playlistRepository.findApprovedByCategoryAndItemCountDescWithCursor(category, limit, cursor);
+        } else {
+            result = playlistRepository.findApprovedByItemCountDescWithCursor(limit, cursor);
+        }
+
+        List<ContentItemDto> items = result.getItems().stream()
+                .map(this::toDto)
+                .collect(Collectors.toList());
+
+        return new CursorPageDto<>(items, result.getNextCursor());
+    }
+
+    /**
+     * Get videos with real cursor-based pagination.
+     * Note: When length/date/sort filters are applied, cursor pagination may be less efficient
+     * as filtering happens client-side after fetching.
+     */
+    private CursorPageDto<ContentItemDto> getVideosWithCursor(int limit, String category, String cursor,
+                                                              String length, String date, String sort)
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+
+        // For default case (no filters, newest first), use efficient cursor pagination
+        boolean hasFilters = (length != null && !length.isBlank()) ||
+                            (date != null && !date.isBlank()) ||
+                            (sort != null && !sort.isBlank() && !"NEWEST".equalsIgnoreCase(sort));
+
+        if (!hasFilters) {
+            VideoRepository.PaginatedResult<Video> result;
+
+            if (category != null && !category.isBlank()) {
+                result = videoRepository.findApprovedByCategoryAndUploadedAtDescWithCursor(category, limit, cursor);
+            } else {
+                result = videoRepository.findApprovedByUploadedAtDescWithCursor(limit, cursor);
+            }
+
+            List<ContentItemDto> items = result.getItems().stream()
+                    .filter(this::isAvailable)
+                    .map(this::toDto)
+                    .collect(Collectors.toList());
+
+            return new CursorPageDto<>(items, result.getNextCursor());
+        }
+
+        // Fall back to legacy approach when filters are applied
+        List<ContentItemDto> items = getVideos(limit, category, length, date, sort);
+        String nextCursor = items.size() >= limit ? encodeCursor(limit) : null;
+        return new CursorPageDto<>(items, nextCursor);
     }
 
     private List<ContentItemDto> getVideos(int limit, String category,

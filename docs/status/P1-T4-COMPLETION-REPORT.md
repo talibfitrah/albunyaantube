@@ -102,7 +102,133 @@ All cursor-paginated endpoints now return:
 | `frontend/tests/approvalService.spec.ts` | Modified |
 | `docs/architecture/api-specification.yaml` | Modified |
 
+---
+
+## Phase 2: Real Firestore Cursor Implementation (Nov 18, 2025)
+
+### Summary
+Implemented proper Firestore cursor-based pagination for public content API endpoints (CHANNELS, PLAYLISTS, VIDEOS), replacing the previous fake cursor implementation that generated but never consumed cursor tokens.
+
+### Additional Backend Changes
+
+#### CursorUtils Helper Class
+- **File:** `backend/src/main/java/com/albunyaan/tube/util/CursorUtils.java`
+- Centralized utility for encoding/decoding Firestore cursor tokens
+- URL-safe base64 encoding of JSON cursor data (document ID + ordering fields)
+- Full test coverage with 27 unit tests
+
+#### Repository Cursor-Aware Methods
+
+**ChannelRepository** (`backend/src/main/java/com/albunyaan/tube/repository/ChannelRepository.java`):
+- `findApprovedBySubscribersDescWithCursor(limit, cursor)`
+- `findApprovedByCategoryAndSubscribersDescWithCursor(category, limit, cursor)`
+
+**PlaylistRepository** (`backend/src/main/java/com/albunyaan/tube/repository/PlaylistRepository.java`):
+- `findApprovedByItemCountDescWithCursor(limit, cursor)`
+- `findApprovedByCategoryAndItemCountDescWithCursor(category, limit, cursor)`
+
+**VideoRepository** (`backend/src/main/java/com/albunyaan/tube/repository/VideoRepository.java`):
+- `findApprovedByUploadedAtDescWithCursor(limit, cursor)`
+- `findApprovedByCategoryAndUploadedAtDescWithCursor(category, limit, cursor)`
+
+All methods use `startAfter(documentSnapshot)` for proper Firestore cursor pagination and return `PaginatedResult<T>` with items, nextCursor, and hasNext flag.
+
+#### PublicContentService Updates
+- **File:** `backend/src/main/java/com/albunyaan/tube/service/PublicContentService.java`
+- New cursor-aware methods: `getChannelsWithCursor()`, `getPlaylistsWithCursor()`, `getVideosWithCursor()`
+- Main `getContent()` method routes to cursor-aware methods for CHANNELS, PLAYLISTS, VIDEOS
+- HOME type continues to use legacy approach (mixed content types)
+- Videos with filters (length/date/sort) fall back to legacy pagination
+
+### Ordering Fields
+
+| Content Type | Ordering Field | Direction |
+|-------------|---------------|-----------|
+| CHANNELS | subscribers | DESC |
+| PLAYLISTS | itemCount | DESC |
+| VIDEOS | uploadedAt | DESC |
+
+### Test Coverage Added
+- **File:** `backend/src/test/java/com/albunyaan/tube/util/CursorUtilsTest.java` (27 tests)
+- **File:** `backend/src/test/java/com/albunyaan/tube/service/PublicContentServicePaginationTest.java` (8 tests)
+- All 177 backend tests pass
+- All 150 frontend tests pass
+
+### What's NOT Changed
+1. **ApprovalService** - Already had working cursor pagination using document IDs
+2. **Audit logs** - Remains simple limit-based (admin-only, lower priority)
+3. **Search endpoint** - Returns list without pagination (prefix search limitation)
+4. **HOME content type** - Mixed content makes cursor pagination impractical
+5. **Videos with filters** - Falls back to legacy approach when length/date/sort applied
+
+---
+
+## Phase 3: ApprovalService CursorUtils Integration (Nov 18, 2025)
+
+### Summary
+Completed the P2-T2 requirement to wire proper CursorUtils-backed cursors into ApprovalService. Created ApprovalRepository with paginated query methods and refactored ApprovalService to use opaque, URL-safe cursor tokens instead of plain document IDs.
+
+### New Files Created
+
+#### ApprovalRepository
+- **File:** `backend/src/main/java/com/albunyaan/tube/repository/ApprovalRepository.java`
+- Centralized repository for approval-related queries with cursor-based pagination
+- Uses CursorUtils for opaque, URL-safe cursor tokens
+- Uses limit+1 pattern for accurate hasNext detection
+- Methods:
+  - `findPendingChannelsWithCursor(limit, cursor)`
+  - `findPendingChannelsByCategoryWithCursor(category, limit, cursor)`
+  - `findPendingPlaylistsWithCursor(limit, cursor)`
+  - `findPendingPlaylistsByCategoryWithCursor(category, limit, cursor)`
+
+#### ApprovalServicePaginationTest
+- **File:** `backend/src/test/java/com/albunyaan/tube/service/ApprovalServicePaginationTest.java`
+- 10 unit tests covering pagination behavior
+- Tests cursor passing, hasNext detection, category filtering, mixed-type queries, sorting
+
+### ApprovalService Refactoring
+
+**File:** `backend/src/main/java/com/albunyaan/tube/service/ApprovalService.java`
+
+Key changes:
+- Removed direct Firestore queries (old `queryPendingChannels()` and `queryPendingPlaylists()` methods)
+- Now uses ApprovalRepository for all pending approval queries
+- Uses CursorUtils for opaque cursor tokens instead of plain document IDs
+- Cursor tokens include type information (`CHANNEL` or `PLAYLIST`) for proper routing
+- Proper hasNext detection using repository results
+
+### Cursor Format
+
+ApprovalService cursors now use the standardized CursorUtils format:
+```json
+{
+  "id": "document-id",
+  "fields": {
+    "type": "CHANNEL|PLAYLIST",
+    "createdAt": 1700000000000
+  }
+}
+```
+
+This is base64-encoded to produce opaque, URL-safe tokens.
+
+### Test Coverage
+
+- **ApprovalServicePaginationTest**: 10 tests
+- **Total backend tests**: 187 tests (all passing)
+
+### Files Changed
+
+| File | Change Type |
+|------|-------------|
+| `backend/src/main/java/com/albunyaan/tube/repository/ApprovalRepository.java` | Created |
+| `backend/src/main/java/com/albunyaan/tube/service/ApprovalService.java` | Modified |
+| `backend/src/test/java/com/albunyaan/tube/service/ApprovalServicePaginationTest.java` | Created |
+
+---
+
 ## Next Steps
-- **P2-T2** (Real Firestore cursor pagination): Services now have a clear interface where `DocumentSnapshot`-based cursor logic can be plugged in without changing outward DTOs.
-- Optional: Extend CursorPageDto usage to audit history endpoints and `/v1/search` for consistent infinite scroll semantics.
-- Optional: UI smoke test pending approvals and next-up features to verify pagination works end-to-end.
+- Deploy to staging and test with real Firestore data
+- Monitor performance - cursor queries should be faster than offset-based
+- Verify Android client infinite scroll works correctly with new cursors
+- Consider extending cursor pagination to audit logs and search if needed

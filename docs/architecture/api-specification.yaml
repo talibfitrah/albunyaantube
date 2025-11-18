@@ -1606,24 +1606,41 @@ paths:
   /admin/approvals/pending:
     get:
       summary: List pending approvals
+      description: |
+        Returns pending approvals with cursor-based pagination.
+
+        **Cursor Behavior:**
+        - Single-type queries (type=CHANNEL or type=PLAYLIST): Uses standard cursor encoding with document ID and createdAt timestamp.
+        - Mixed-type queries (type omitted): Uses composite cursor that encodes separate positions for channels and playlists collections to ensure monotonic pagination across collections.
+
+        **Ordering:**
+        - Results are ordered by createdAt DESC, with document ID as secondary sort for deterministic ordering when timestamps collide.
+
+        **Cursor Format:**
+        - Cursors are opaque, URL-safe Base64 tokens. Clients should not parse or construct cursors—always use the `nextCursor` value from previous response.
       operationId: listPendingApprovals
       tags: [Approvals]
       parameters:
         - name: type
           in: query
+          description: Filter by content type. Omit to get both channels and playlists merged by timestamp.
           schema:
             type: string
             enum: [CHANNEL, PLAYLIST]
         - name: category
           in: query
+          description: Filter by category ID
           schema:
             type: string
         - name: limit
           in: query
+          description: Number of items per page (default 20)
           schema:
             type: integer
+            default: 20
         - name: cursor
           in: query
+          description: Opaque cursor token from previous response's pageInfo.nextCursor
           schema:
             type: string
       responses:

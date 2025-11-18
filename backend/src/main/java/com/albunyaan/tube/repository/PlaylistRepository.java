@@ -7,14 +7,18 @@ import com.google.cloud.firestore.CollectionReference;
 import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.Query;
+import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.google.cloud.firestore.QuerySnapshot;
 import com.google.cloud.firestore.WriteResult;
+import com.albunyaan.tube.util.CursorUtils;
 import org.springframework.stereotype.Repository;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * FIREBASE-MIGRATE-03: Playlist Repository (Firestore)
@@ -185,6 +189,141 @@ public class PlaylistRepository {
                 .limit(limit)
                 .get();
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
+    }
+
+    /**
+     * Find approved playlists ordered by item count with cursor-based pagination.
+     *
+     * @param limit Number of items to fetch
+     * @param cursor Encoded cursor string from previous page, or null for first page
+     * @return PaginatedResult containing playlists and next cursor
+     */
+    public PaginatedResult<Playlist> findApprovedByItemCountDescWithCursor(int limit, String cursor)
+            throws ExecutionException, InterruptedException, TimeoutException {
+
+        Query query = getCollection()
+                .whereEqualTo("status", "APPROVED")
+                .orderBy("itemCount", Query.Direction.DESCENDING)
+                .limit(limit + 1);
+
+        if (cursor != null && !cursor.isEmpty()) {
+            CursorUtils.CursorData cursorData = CursorUtils.decode(cursor);
+            if (cursorData != null) {
+                DocumentReference cursorDoc = getCollection().document(cursorData.getId());
+                var cursorSnapshot = cursorDoc.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS);
+                if (cursorSnapshot.exists()) {
+                    query = query.startAfter(cursorSnapshot);
+                } else {
+                    throw new IllegalArgumentException("Invalid cursor: playlist document '" + cursorData.getId() + "' not found");
+                }
+            }
+        }
+
+        QuerySnapshot snapshot = query.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
+        List<QueryDocumentSnapshot> docs = snapshot.getDocuments();
+
+        boolean hasNext = docs.size() > limit;
+        if (hasNext) {
+            docs = docs.subList(0, limit);
+        }
+
+        List<Playlist> playlists = new ArrayList<>();
+        String nextCursor = null;
+
+        for (int i = 0; i < docs.size(); i++) {
+            QueryDocumentSnapshot doc = docs.get(i);
+            Playlist playlist = doc.toObject(Playlist.class);
+            playlist.setId(doc.getId());
+            playlists.add(playlist);
+
+            if (i == docs.size() - 1 && hasNext) {
+                nextCursor = CursorUtils.encodeFromSnapshot(doc, "itemCount");
+            }
+        }
+
+        return new PaginatedResult<>(playlists, nextCursor, hasNext);
+    }
+
+    /**
+     * Find approved playlists by category ordered by item count with cursor-based pagination.
+     *
+     * @param category Category ID to filter by
+     * @param limit Number of items to fetch
+     * @param cursor Encoded cursor string from previous page, or null for first page
+     * @return PaginatedResult containing playlists and next cursor
+     */
+    public PaginatedResult<Playlist> findApprovedByCategoryAndItemCountDescWithCursor(String category, int limit, String cursor)
+            throws ExecutionException, InterruptedException, TimeoutException {
+
+        Query query = getCollection()
+                .whereArrayContains("categoryIds", category)
+                .whereEqualTo("status", "APPROVED")
+                .orderBy("itemCount", Query.Direction.DESCENDING)
+                .limit(limit + 1);
+
+        if (cursor != null && !cursor.isEmpty()) {
+            CursorUtils.CursorData cursorData = CursorUtils.decode(cursor);
+            if (cursorData != null) {
+                DocumentReference cursorDoc = getCollection().document(cursorData.getId());
+                var cursorSnapshot = cursorDoc.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS);
+                if (cursorSnapshot.exists()) {
+                    query = query.startAfter(cursorSnapshot);
+                } else {
+                    throw new IllegalArgumentException("Invalid cursor: playlist document '" + cursorData.getId() + "' not found");
+                }
+            }
+        }
+
+        QuerySnapshot snapshot = query.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
+        List<QueryDocumentSnapshot> docs = snapshot.getDocuments();
+
+        boolean hasNext = docs.size() > limit;
+        if (hasNext) {
+            docs = docs.subList(0, limit);
+        }
+
+        List<Playlist> playlists = new ArrayList<>();
+        String nextCursor = null;
+
+        for (int i = 0; i < docs.size(); i++) {
+            QueryDocumentSnapshot doc = docs.get(i);
+            Playlist playlist = doc.toObject(Playlist.class);
+            playlist.setId(doc.getId());
+            playlists.add(playlist);
+
+            if (i == docs.size() - 1 && hasNext) {
+                nextCursor = CursorUtils.encodeFromSnapshot(doc, "itemCount");
+            }
+        }
+
+        return new PaginatedResult<>(playlists, nextCursor, hasNext);
+    }
+
+    /**
+     * Generic paginated result wrapper.
+     */
+    public static class PaginatedResult<T> {
+        private final List<T> items;
+        private final String nextCursor;
+        private final boolean hasNext;
+
+        public PaginatedResult(List<T> items, String nextCursor, boolean hasNext) {
+            this.items = items;
+            this.nextCursor = nextCursor;
+            this.hasNext = hasNext;
+        }
+
+        public List<T> getItems() {
+            return items;
+        }
+
+        public String getNextCursor() {
+            return nextCursor;
+        }
+
+        public boolean hasNext() {
+            return hasNext;
+        }
     }
 }
 
