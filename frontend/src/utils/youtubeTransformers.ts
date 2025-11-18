@@ -7,19 +7,22 @@ import type { EnrichedSearchResult } from '@/types/api';
 import type { AdminSearchChannelResult, AdminSearchPlaylistResult, AdminSearchVideoResult } from '@/types/registry';
 
 /**
- * Parse ISO 8601 duration to seconds (e.g., "PT1H2M30S" -> 3750)
+ * Parse ISO 8601 duration to seconds (e.g., "PT1H2M30S" -> 3750, "P3DT4H" -> 273600)
+ * Supports full ISO 8601 period format including days and fractional seconds
  */
 export function parseDuration(duration: string): number {
   if (!duration) return 0;
 
-  const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  // Match ISO 8601 duration: P[nD][T[nH][nM][n.nS]]
+  const match = duration.match(/^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:([\d.]+)S)?)?$/);
   if (!match) return 0;
 
-  const hours = parseInt(match[1] || '0');
-  const minutes = parseInt(match[2] || '0');
-  const seconds = parseInt(match[3] || '0');
+  const days = parseInt(match[1] || '0');
+  const hours = parseInt(match[2] || '0');
+  const minutes = parseInt(match[3] || '0');
+  const seconds = parseFloat(match[4] || '0');
 
-  return hours * 3600 + minutes * 60 + seconds;
+  return days * 86400 + hours * 3600 + minutes * 60 + seconds;
 }
 
 /**
