@@ -165,8 +165,8 @@ All production callers that previously referenced NewPipe types now exclusively 
 
 Guardrail status: Imports of `org.schabi.newpipe.*` must remain confined to `YouTubeGateway`, `ChannelOrchestrator`, or clearly documented legacy seams. The following production files are **known exceptions** that still rely on NewPipe internals and therefore need follow-up refactors:
 
-1. `backend/src/main/java/com/albunyaan/tube/service/YouTubeService.java` (lines 10-14) – exposes legacy validation/search helpers that still surface `ChannelInfo`, `PlaylistInfo`, and `StreamInfo` for downstream callers.
-2. `backend/src/main/java/com/albunyaan/tube/dto/EnrichedSearchResult.java` (lines 4-7) – DTO factory helpers use `ChannelInfoItem`, `PlaylistInfoItem`, and `StreamInfoItem` directly when constructing enriched search payloads.
+1. `backend/src/main/java/com/albunyaan/tube/service/YouTubeService.java` (lines 10-14) – exposes legacy validation/search helpers that still surface `org.schabi.newpipe.extractor.channel.ChannelInfo`, `org.schabi.newpipe.extractor.playlist.PlaylistInfo`, `org.schabi.newpipe.extractor.playlist.PlaylistInfoItem`, `org.schabi.newpipe.extractor.stream.StreamInfo`, and `org.schabi.newpipe.extractor.stream.StreamInfoItem` for downstream callers.
+2. `backend/src/main/java/com/albunyaan/tube/dto/EnrichedSearchResult.java` (lines 4-7) – DTO factory helpers use `org.schabi.newpipe.extractor.Image`, `org.schabi.newpipe.extractor.channel.ChannelInfoItem`, `org.schabi.newpipe.extractor.playlist.PlaylistInfoItem`, and `org.schabi.newpipe.extractor.stream.StreamInfoItem` directly when constructing enriched search payloads.
 3. `backend/src/main/java/com/albunyaan/tube/config/NewPipeConfiguration.java` (lines 3-12) – bootstraps the shared NewPipe extractor beans, so it necessarily imports extractor primitives.
 4. `backend/src/main/java/com/albunyaan/tube/service/SearchOrchestrator.java` (lines 5-12) – still manipulates `InfoItem`/`SearchExtractor` objects while translating them into DTOs.
 
