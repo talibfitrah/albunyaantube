@@ -7,9 +7,11 @@ import com.albunyaan.tube.data.model.api.models.DownloadPolicyDto
 import com.albunyaan.tube.data.model.api.models.DownloadStartedEvent
 import com.albunyaan.tube.data.model.api.models.DownloadTokenDto
 import com.albunyaan.tube.data.model.api.models.DownloadTokenRequest
+import com.albunyaan.tube.data.model.api.models.StreamOption
 import com.albunyaan.tube.data.source.api.DownloadApi
 import com.albunyaan.tube.download.DownloadManifest
 import com.albunyaan.tube.download.DownloadPolicyResult
+import com.albunyaan.tube.download.SelectedStream
 
 /**
  * Retrofit-based implementation of download service using generated OpenAPI DTOs
@@ -50,10 +52,11 @@ class RetrofitDownloadService(
      *
      * @param videoId The video ID to get manifest for
      * @param token Download authorization token (required by backend)
+     * @param supportsMerging Whether client supports FFmpeg merging (for split streams)
      * @return Download manifest with video/audio streams
      */
-    suspend fun getDownloadManifest(videoId: String, token: String): DownloadManifest {
-        val dto = api.getDownloadManifest(videoId, token)
+    suspend fun getDownloadManifest(videoId: String, token: String, supportsMerging: Boolean = false): DownloadManifest {
+        val dto = api.getDownloadManifest(videoId, token, supportsMerging)
         return dto.toDomainManifest()
     }
 
@@ -142,7 +145,7 @@ private fun DownloadPolicyDto.toDomainPolicy(): DownloadPolicyResult {
 private fun DownloadTokenDto.toDomainToken(): DownloadToken {
     return DownloadToken(
         token = this.token ?: "",
-        expiresAt = this.expiresAt ?: 0L,
+        expiresAtMillis = this.expiresAtMillis ?: 0L,
         videoId = this.videoId ?: ""
     )
 }
@@ -150,20 +153,38 @@ private fun DownloadTokenDto.toDomainToken(): DownloadToken {
 /**
  * Map DownloadManifestDto to domain DownloadManifest
  *
- * Note: Backend provides multiple stream options per quality.
- * We select the best option (highest bitrate) for audio and video.
+ * Selects the best stream option based on bitrate (highest quality first).
+ * When supportsMerging=true was passed, backend includes split streams which are
+ * typically higher quality (>480p), so we simply pick highest bitrate.
  */
 private fun DownloadManifestDto.toDomainManifest(): DownloadManifest {
-    val bestVideo = this.videoStreams?.maxByOrNull { it.bitrate ?: 0 }
-    val bestAudio = this.audioStreams?.maxByOrNull { it.bitrate ?: 0 }
+    // Select best video stream by highest bitrate (split streams are higher quality when available)
+    val bestVideo = this.videoStreams
+        ?.sortedByDescending { it.bitrate ?: 0 }
+        ?.firstOrNull()
+        ?: throw IllegalStateException("No video streams available")
 
     return DownloadManifest(
         videoId = this.videoId ?: "",
-        audioUrl = bestAudio?.url ?: "",
-        videoUrl = bestVideo?.url ?: "",
-        audioSize = bestAudio?.fileSize ?: 0L,
-        videoSize = bestVideo?.fileSize ?: 0L,
-        expiresAt = this.expiresAt ?: 0L
+        selectedStream = bestVideo.toDomainStream(),
+        expiresAtMillis = this.expiresAtMillis ?: 0L
+    )
+}
+
+/**
+ * Map StreamOption DTO to domain SelectedStream
+ */
+private fun StreamOption.toDomainStream(): SelectedStream {
+    return SelectedStream(
+        id = this.id ?: "",
+        qualityLabel = this.qualityLabel ?: "",
+        mimeType = this.mimeType ?: "",
+        requiresMerging = this.requiresMerging ?: false,
+        progressiveUrl = this.progressiveUrl,
+        videoUrl = this.videoUrl,
+        audioUrl = this.audioUrl,
+        fileSize = this.fileSize ?: 0L,
+        bitrate = this.bitrate ?: 0
     )
 }
 
@@ -176,6 +197,7 @@ private fun DownloadManifestDto.toDomainManifest(): DownloadManifest {
  */
 data class DownloadToken(
     val token: String,
-    val expiresAt: Long,
+    /** Token expiration time in milliseconds since epoch (UTC) */
+    val expiresAtMillis: Long,
     val videoId: String
 )

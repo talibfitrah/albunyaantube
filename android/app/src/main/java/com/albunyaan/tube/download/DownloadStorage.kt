@@ -1,7 +1,9 @@
 package com.albunyaan.tube.download
 
 import android.content.Context
+import android.util.Log
 import java.io.File
+import java.util.Properties
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.max
 
@@ -10,6 +12,7 @@ class DownloadStorage(
 ) {
 
     private val rootDir: File = File(context.filesDir, "downloads").apply { mkdirs() }
+    private val metadataDir: File = File(rootDir, "metadata").apply { mkdirs() }
     private val currentSize = AtomicLong(calculateCommittedSize(rootDir))
 
     fun targetFile(downloadId: String, audioOnly: Boolean): File {
@@ -78,10 +81,65 @@ class DownloadStorage(
             throw IllegalStateException("Unable to locate committed download file for $downloadId")
         }
 
-        finalFile.setLastModified(System.currentTimeMillis())
+        val completedAt = System.currentTimeMillis()
+        finalFile.setLastModified(completedAt)
+
+        // Persist completion timestamp in metadata file (source of truth for expiry)
+        saveCompletionTimestamp(downloadId, completedAt)
+
         val addedBytes = max(finalFile.length(), tempLength)
         currentSize.addAndGet(addedBytes)
         return finalFile
+    }
+
+    /**
+     * Save completion timestamp to metadata file.
+     * This is the source of truth for download expiry, not file.lastModified().
+     */
+    private fun saveCompletionTimestamp(downloadId: String, completedAtMillis: Long) {
+        val metadataFile = File(metadataDir, "$downloadId.meta")
+        val props = Properties()
+        props.setProperty(META_KEY_COMPLETED_AT, completedAtMillis.toString())
+        runCatching {
+            metadataFile.outputStream().use { out ->
+                props.store(out, "Download metadata")
+            }
+        }.onFailure { e ->
+            Log.e(TAG, "Failed to save metadata for downloadId=$downloadId, " +
+                "metadataFile=${metadataFile.absolutePath}", e)
+        }
+    }
+
+    /**
+     * Get completion timestamp from metadata file.
+     * Falls back to file.lastModified() if metadata not found.
+     *
+     * @return Completion timestamp in millis, or null if download not found
+     */
+    fun getCompletionTimestamp(downloadId: String): Long? {
+        // Try metadata file first (source of truth)
+        val metadataFile = File(metadataDir, "$downloadId.meta")
+        if (metadataFile.exists()) {
+            runCatching {
+                val props = Properties()
+                metadataFile.inputStream().use { input ->
+                    props.load(input)
+                }
+                props.getProperty(META_KEY_COMPLETED_AT)?.toLongOrNull()
+            }.getOrNull()?.let { return it }
+        }
+
+        // Fall back to file.lastModified() for legacy downloads
+        val videoFile = targetFile(downloadId, audioOnly = false)
+        if (videoFile.exists() && videoFile.lastModified() > 0) {
+            return videoFile.lastModified()
+        }
+        val audioFile = targetFile(downloadId, audioOnly = true)
+        if (audioFile.exists() && audioFile.lastModified() > 0) {
+            return audioFile.lastModified()
+        }
+
+        return null
     }
 
     fun discardTemp(tempFile: File) {
@@ -98,6 +156,38 @@ class DownloadStorage(
                 currentSize.addAndGet(-size)
             }
         }
+    }
+
+    /**
+     * Delete a download by ID, trying both audio and video extensions.
+     * Also cleans up associated metadata file.
+     * Used by expiry worker when file type is unknown.
+     * @return true if any file was deleted
+     */
+    fun delete(downloadId: String): Boolean {
+        var deleted = false
+        // Try video first
+        val videoFile = targetFile(downloadId, audioOnly = false)
+        if (videoFile.exists()) {
+            val size = videoFile.length()
+            if (videoFile.delete()) {
+                currentSize.addAndGet(-size)
+                deleted = true
+            }
+        }
+        // Also try audio
+        val audioFile = targetFile(downloadId, audioOnly = true)
+        if (audioFile.exists()) {
+            val size = audioFile.length()
+            if (audioFile.delete()) {
+                currentSize.addAndGet(-size)
+                deleted = true
+            }
+        }
+        // Clean up metadata file
+        val metadataFile = File(metadataDir, "$downloadId.meta")
+        metadataFile.delete()
+        return deleted
     }
 
     fun metadataFor(downloadId: String, audioOnly: Boolean): DownloadFileMetadata? {
@@ -174,8 +264,10 @@ class DownloadStorage(
     }
 
     private companion object {
+        private const val TAG = "DownloadStorage"
         private const val AUDIO_MIME = "audio/mp4"
         private const val VIDEO_MIME = "video/mp4"
         private const val TEMP_SUFFIX = ".tmp"
+        private const val META_KEY_COMPLETED_AT = "completedAtMillis"
     }
 }

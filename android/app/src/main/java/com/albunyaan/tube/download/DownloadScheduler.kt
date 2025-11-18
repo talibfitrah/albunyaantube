@@ -2,11 +2,14 @@ package com.albunyaan.tube.download
 
 import androidx.work.Constraints
 import androidx.work.Data
+import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 
 class DownloadScheduler(
     private val workManager: WorkManager
@@ -38,7 +41,42 @@ class DownloadScheduler(
         workManager.cancelUniqueWork(requestId)
     }
 
+    /**
+     * P4-T3: Schedule periodic expiry cleanup worker.
+     *
+     * Runs once per day to delete downloads older than 30 days.
+     * Uses ExistingPeriodicWorkPolicy.KEEP to avoid re-scheduling if already queued.
+     */
+    fun scheduleExpiryCleanup() {
+        val constraints = Constraints.Builder()
+            .setRequiresBatteryNotLow(true)
+            .build()
+
+        val request = PeriodicWorkRequestBuilder<DownloadExpiryWorker>(
+            1, TimeUnit.DAYS
+        )
+            .setConstraints(constraints)
+            .addTag(TAG_EXPIRY_CLEANUP)
+            .build()
+
+        workManager.enqueueUniquePeriodicWork(
+            DownloadExpiryWorker.WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            request
+        )
+
+        android.util.Log.i("DownloadScheduler", "Scheduled periodic expiry cleanup (daily)")
+    }
+
+    /**
+     * Cancel the periodic expiry cleanup worker.
+     */
+    fun cancelExpiryCleanup() {
+        workManager.cancelUniqueWork(DownloadExpiryWorker.WORK_NAME)
+    }
+
     companion object {
+        private const val TAG_EXPIRY_CLEANUP = "com.albunyaan.tube.download.expiry"
         internal const val KEY_DOWNLOAD_ID = "download_id"
         internal const val KEY_VIDEO_ID = "video_id"
         internal const val KEY_TITLE = "title"

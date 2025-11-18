@@ -14,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 
@@ -53,25 +54,18 @@ public class DownloadController {
                 .body(new ErrorResponse("EULA_NOT_ACCEPTED", "EULA must be accepted to download content"));
         }
 
-        try {
-            DownloadTokenDto token = downloadService.generateDownloadToken(videoId, user != null ? user.getUid() : "anonymous", eulaAcceptedValue);
-            return ResponseEntity.ok(token);
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(new ErrorResponse("POLICY_VIOLATION", e.getMessage()));
-        }
+        DownloadTokenDto token = downloadService.generateDownloadToken(videoId, user != null ? user.getUid() : "anonymous", eulaAcceptedValue);
+        return ResponseEntity.ok(token);
     }
 
     @GetMapping("/manifest/{videoId}")
-    public ResponseEntity<?> getManifest(@PathVariable String videoId, @RequestParam String token)
+    public ResponseEntity<DownloadManifestDto> getManifest(
+            @PathVariable String videoId,
+            @RequestParam String token,
+            @RequestParam(defaultValue = "false") boolean supportsMerging)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        try {
-            DownloadManifestDto manifest = downloadService.getDownloadManifest(videoId, token);
-            return ResponseEntity.ok(manifest);
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(new ErrorResponse("INVALID_TOKEN", e.getMessage()));
-        }
+        DownloadManifestDto manifest = downloadService.getDownloadManifest(videoId, token, supportsMerging);
+        return ResponseEntity.ok(manifest);
     }
 
     /**

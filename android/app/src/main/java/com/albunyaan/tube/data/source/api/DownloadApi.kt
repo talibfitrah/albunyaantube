@@ -54,12 +54,14 @@ interface DownloadApi {
      *
      * @param videoId The video ID to get manifest for
      * @param token Download authorization token (required)
+     * @param supportsMerging Whether client supports FFmpeg merging (for split streams)
      * @return Download manifest with video/audio streams
      */
     @GET("downloads/manifest/{videoId}")
     suspend fun getDownloadManifest(
         @Path("videoId") videoId: String,
-        @retrofit2.http.Query("token") token: String
+        @retrofit2.http.Query("token") token: String,
+        @retrofit2.http.Query("supportsMerging") supportsMerging: Boolean = false
     ): DownloadManifestDto
 
     /**

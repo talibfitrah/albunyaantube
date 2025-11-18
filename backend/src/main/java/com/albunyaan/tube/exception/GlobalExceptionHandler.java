@@ -42,6 +42,60 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Handle InvalidTokenException (401)
+     */
+    @ExceptionHandler(InvalidTokenException.class)
+    public ResponseEntity<Object> handleInvalidTokenException(
+            InvalidTokenException ex, WebRequest request) {
+        logger.warn("Invalid token: {}", ex.getMessage());
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", HttpStatus.UNAUTHORIZED.value());
+        body.put("error", "Unauthorized");
+        body.put("message", ex.getMessage());
+        body.put("path", request.getDescription(false).replace("uri=", ""));
+
+        return new ResponseEntity<>(body, HttpStatus.UNAUTHORIZED);
+    }
+
+    /**
+     * Handle PolicyViolationException (403)
+     */
+    @ExceptionHandler(PolicyViolationException.class)
+    public ResponseEntity<Object> handlePolicyViolationException(
+            PolicyViolationException ex, WebRequest request) {
+        logger.warn("Policy violation: {}", ex.getMessage());
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", HttpStatus.FORBIDDEN.value());
+        body.put("error", "Forbidden");
+        body.put("message", ex.getMessage());
+        body.put("path", request.getDescription(false).replace("uri=", ""));
+
+        return new ResponseEntity<>(body, HttpStatus.FORBIDDEN);
+    }
+
+    /**
+     * Handle StreamExtractionException (502)
+     */
+    @ExceptionHandler(StreamExtractionException.class)
+    public ResponseEntity<Object> handleStreamExtractionException(
+            StreamExtractionException ex, WebRequest request) {
+        logger.error("Stream extraction failed: {}", ex.getMessage());
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", HttpStatus.BAD_GATEWAY.value());
+        body.put("error", "Bad Gateway");
+        body.put("message", ex.getMessage());
+        body.put("path", request.getDescription(false).replace("uri=", ""));
+
+        return new ResponseEntity<>(body, HttpStatus.BAD_GATEWAY);
+    }
+
+    /**
      * Handle IllegalArgumentException (400)
      */
     @ExceptionHandler(IllegalArgumentException.class)

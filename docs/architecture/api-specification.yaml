@@ -3055,10 +3055,10 @@ components:
         token:
           type: string
           description: JWT token for authorizing downloads
-        expiresAt:
+        expiresAtMillis:
           type: integer
           format: int64
-          description: Unix timestamp when token expires
+          description: Token expiration time in milliseconds since epoch (UTC)
         videoId:
           type: string
           description: Video ID this token is valid for
@@ -3071,10 +3071,10 @@ components:
           type: string
         title:
           type: string
-        expiresAt:
+        expiresAtMillis:
           type: integer
           format: int64
-          description: Unix timestamp when download URLs expire
+          description: Manifest expiration time in milliseconds since epoch (UTC). URLs become invalid after this.
         videoStreams:
           type: array
           items:
@@ -3088,17 +3088,36 @@ components:
 
     StreamOption:
       type: object
-      description: Stream quality option with download URL
+      description: |
+        Stream quality option for downloads.
+
+        For progressive streams (≤480p): progressiveUrl is non-null, requiresMerging is false.
+        For split streams (>480p): videoUrl and audioUrl are non-null, requiresMerging is true.
       properties:
-        quality:
+        id:
           type: string
-          description: Quality label (e.g., "720p", "1080p", "128kbps")
-        url:
+          description: Unique identifier for this stream option
+        qualityLabel:
           type: string
-          description: Direct download URL (time-limited)
-        format:
+          description: Quality label (e.g., "720p", "480p", "192kbps")
+        mimeType:
           type: string
-          description: Format/codec (e.g., "mp4", "webm", "m4a")
+          description: MIME type (e.g., "video/mp4", "audio/m4a")
+        requiresMerging:
+          type: boolean
+          description: True if separate audio+video URLs need FFmpeg merging
+        progressiveUrl:
+          type: string
+          nullable: true
+          description: Progressive stream URL (non-null when requiresMerging == false)
+        videoUrl:
+          type: string
+          nullable: true
+          description: Video-only stream URL (non-null when requiresMerging == true)
+        audioUrl:
+          type: string
+          nullable: true
+          description: Audio-only stream URL (non-null when requiresMerging == true)
         fileSize:
           type: integer
           format: int64

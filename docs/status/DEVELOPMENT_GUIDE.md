@@ -47,7 +47,29 @@ OkHttp: 4.12.0 (same as backend)
 ExoPlayer: 2.19.1
 Retrofit: 2.9.0
 Kotlinx Coroutines: 1.7.3
+FFmpeg-kit: 7.1.2 (min-gpl variant, community fork)
 ```
+
+### FFmpeg-kit for Audio/Video Merging (P4-T4)
+
+**Purpose**: When downloading videos >480p, audio and video are separate streams (DASH format). FFmpeg-kit merges them into a single MP4 file.
+
+**Important**: The original [arthenica/ffmpeg-kit](https://github.com/arthenica/ffmpeg-kit) was **archived in June 2025** and is no longer maintained. Use the community fork instead.
+
+**Dependencies** (`android/app/build.gradle.kts`):
+```kotlin
+// FFmpeg-kit for audio/video merging (min-gpl variant)
+// Using community fork since original arthenica/ffmpeg-kit was archived (June 2025)
+// https://central.sonatype.com/artifact/io.github.trongnhan136/ffmpeg-kit-min-gpl
+implementation("io.github.trongnhan136:ffmpeg-kit-min-gpl:7.1.2")
+
+// Required for R8/ProGuard compatibility with FFmpeg-kit
+implementation("com.arthenica:smart-exception-java:0.2.1")
+```
+
+**Usage**: See [FFmpegMerger.kt](../../android/app/src/main/java/com/albunyaan/tube/download/FFmpegMerger.kt) for implementation.
+
+**Note**: The `min-gpl` variant is used to minimize APK size while providing necessary codec support for YouTube stream merging.
 
 **Frontend** (`frontend/package.json`):
 ```json
@@ -533,6 +555,42 @@ cd android
 #### Warning: "Gradle 9.0 deprecation warnings"
 **Status**: Cosmetic (build succeeds)
 **Action**: Address in Phase 0 Task 3 (CI pipeline cleanup)
+
+---
+
+## Known Limitations
+
+### Downloads: No FFmpeg Merging for >480p Quality
+
+**Issue**: High-quality video downloads (>480p) require separate video and audio streams to be merged.
+
+**Status**: FFmpeg-kit library was discontinued and removed from Maven Central (June 2025).
+
+**Current Behavior**:
+- Downloads >480p quality will fall back to a progressive stream (≤480p) if available
+- If no progressive fallback is available, the download will fail
+- The app logs a warning: "FFmpeg not available, falling back to progressive stream"
+
+**To Enable Full Quality Downloads**:
+1. Download FFmpeg-kit AAR from https://github.com/arthenica/ffmpeg-kit/releases
+2. Place in `android/app/libs/`
+3. Uncomment in `build.gradle.kts`:
+   ```kotlin
+   implementation(files("libs/ffmpeg-kit-min-6.0-2.LTS.aar"))
+   implementation("com.arthenica:smart-exception-java:0.2.1")
+   ```
+   Note: Use `smart-exception-java` (not `smart-exception-java9`) for Android compatibility.
+4. Update `FFmpegMerger.kt` to uncomment the actual FFmpegKit implementation
+
+**⚠️ FFmpegKit Availability Note**: The original arthenica/ffmpeg-kit repository was archived in June 2025. The GitHub releases may become unavailable. Consider:
+- Mirroring the AAR files locally or in a private artifact repository
+- Exploring community forks (e.g., `io.github.AnyListen:ffmpeg-kit-full-gpl` or similar)
+- Building FFmpeg-kit from source if releases become unavailable
+
+**Related Files**:
+- `android/app/src/main/java/com/albunyaan/tube/download/FFmpegMerger.kt`
+- `android/app/src/main/java/com/albunyaan/tube/download/DownloadWorker.kt`
+- `android/app/build.gradle.kts`
 
 ---
 

@@ -69,13 +69,22 @@ class MockDownloadService {
      * In real implementation, this would call backend API
      */
     fun getDownloadManifest(videoId: String): DownloadManifest {
+        // Return a progressive stream (no merging required)
+        // Progressive streams only have progressiveUrl set; videoUrl and audioUrl must be null
         return DownloadManifest(
             videoId = videoId,
-            audioUrl = "mock://audio/$videoId",
-            videoUrl = "mock://video/$videoId",
-            audioSize = 5_000_000L,
-            videoSize = 25_000_000L,
-            expiresAt = System.currentTimeMillis() + 3600_000 // 1 hour
+            selectedStream = SelectedStream(
+                id = "mock-480p",
+                qualityLabel = "480p",
+                mimeType = "video/mp4",
+                requiresMerging = false,
+                progressiveUrl = "mock://video/$videoId",
+                videoUrl = null,
+                audioUrl = null,
+                fileSize = 25_000_000L,
+                bitrate = 1500
+            ),
+            expiresAtMillis = System.currentTimeMillis() + 3600_000 // 1 hour
         )
     }
 
@@ -115,15 +124,34 @@ data class DownloadProgress(
 )
 
 /**
- * Download manifest from backend
+ * Selected stream option from manifest for download.
+ *
+ * For progressive streams (≤480p): progressiveUrl is non-null, requiresMerging is false.
+ * For split streams (>480p): videoUrl and audioUrl are non-null, requiresMerging is true.
+ */
+data class SelectedStream(
+    val id: String,
+    val qualityLabel: String,
+    val mimeType: String,
+    val requiresMerging: Boolean,
+    /** Progressive stream URL (non-null when requiresMerging == false) */
+    val progressiveUrl: String?,
+    /** Video-only stream URL (non-null when requiresMerging == true) */
+    val videoUrl: String?,
+    /** Audio-only stream URL (non-null when requiresMerging == true) */
+    val audioUrl: String?,
+    val fileSize: Long,
+    val bitrate: Int
+)
+
+/**
+ * Download manifest from backend with selected stream option.
  */
 data class DownloadManifest(
     val videoId: String,
-    val audioUrl: String,
-    val videoUrl: String,
-    val audioSize: Long,
-    val videoSize: Long,
-    val expiresAt: Long
+    val selectedStream: SelectedStream,
+    /** Expiration time in milliseconds since epoch (UTC) */
+    val expiresAtMillis: Long
 )
 
 /**

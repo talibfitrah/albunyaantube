@@ -5,6 +5,7 @@ import android.content.ComponentCallbacks2
 import android.util.Log
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import com.albunyaan.tube.download.DownloadScheduler
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 
@@ -20,9 +21,16 @@ class AlBunyaanApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var workerFactory: HiltWorkerFactory
 
+    @Inject
+    lateinit var downloadScheduler: DownloadScheduler
+
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "Application initialized with Hilt DI")
+
+        // Schedule periodic download expiry cleanup (P4-T3)
+        downloadScheduler.scheduleExpiryCleanup()
+        Log.d(TAG, "Download expiry cleanup scheduled")
     }
 
     override val workManagerConfiguration: Configuration

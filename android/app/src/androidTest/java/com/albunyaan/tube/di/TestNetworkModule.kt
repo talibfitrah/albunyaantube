@@ -115,18 +115,20 @@ class FakeDownloadApi : DownloadApi {
     ): DownloadTokenDto {
         return DownloadTokenDto(
             token = "fake-token-${videoId}",
-            expiresAt = System.currentTimeMillis() + 3600000
+            expiresAtMillis = System.currentTimeMillis() + 3600000,
+            videoId = videoId
         )
     }
 
     override suspend fun getDownloadManifest(
         videoId: String,
-        token: String
+        token: String,
+        supportsMerging: Boolean
     ): DownloadManifestDto {
         return DownloadManifestDto(
             videoId = videoId,
             title = "Fake Video",
-            expiresAt = System.currentTimeMillis() + 3600000,
+            expiresAtMillis = System.currentTimeMillis() + 3600000,
             videoStreams = emptyList(),
             audioStreams = emptyList()
         )

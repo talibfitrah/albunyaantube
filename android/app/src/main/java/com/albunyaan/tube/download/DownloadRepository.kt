@@ -11,7 +11,6 @@ import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_MIME_TYPE
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_PROGRESS
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,6 +36,7 @@ class DefaultDownloadRepository(
     private val scheduler: DownloadScheduler,
     private val storage: DownloadStorage,
     private val metrics: ExtractorMetricsReporter,
+    private val expiryPolicy: DownloadExpiryPolicy,
     private val scope: CoroutineScope
 ) : DownloadRepository {
 
@@ -59,10 +59,7 @@ class DefaultDownloadRepository(
     private fun cleanupExpiredDownloads() {
         scope.launch {
             withContext(Dispatchers.IO) {
-                val currentTime = System.currentTimeMillis()
-                // Add 1-hour grace period to handle clock skew or lastModified anomalies
-                val gracePeriodMillis = TimeUnit.HOURS.toMillis(1)
-                val expiryThresholdMillis = currentTime - TimeUnit.DAYS.toMillis(EXPIRY_DAYS) - gracePeriodMillis
+                val cutoffMillis = expiryPolicy.cutoffMillis()
                 val downloadFiles = storage.listAllDownloads()
                 var deletedCount = 0
                 var failedCount = 0
@@ -88,13 +85,12 @@ class DefaultDownloadRepository(
                         }
                     }
 
-                    // Validate file age with secondary checks
-                    val lastModified = file.lastModified()
-                    if (lastModified <= 0) {
-                        // lastModified returned 0, indicating potential filesystem issue
+                    // Use stored completion timestamp (source of truth)
+                    val completedAt = storage.getCompletionTimestamp(downloadId)
+                    if (completedAt == null || completedAt <= 0) {
                         android.util.Log.w(
                             "DownloadRepository",
-                            "Skipping deletion of $downloadId: file.lastModified() returned invalid value ($lastModified)"
+                            "Skipping deletion of $downloadId: no valid completion timestamp"
                         )
                         continue
                     }
@@ -108,9 +104,9 @@ class DefaultDownloadRepository(
                         continue
                     }
 
-                    if (lastModified < expiryThresholdMillis) {
+                    if (completedAt < cutoffMillis) {
                         val audioOnly = file.name.endsWith(".m4a")
-                        val ageInDays = TimeUnit.MILLISECONDS.toDays(currentTime - lastModified)
+                        val ageInDays = expiryPolicy.ttlDays - expiryPolicy.daysUntilExpiry(completedAt)
 
                         try {
                             storage.delete(downloadId, audioOnly)
@@ -134,7 +130,7 @@ class DefaultDownloadRepository(
                 if (deletedCount > 0 || failedCount > 0 || skippedActiveCount > 0) {
                     android.util.Log.i(
                         "DownloadRepository",
-                        "Cleanup completed: deleted=$deletedCount, failed=$failedCount, skipped_active=$skippedActiveCount (threshold: >${EXPIRY_DAYS} days)"
+                        "Cleanup completed: deleted=$deletedCount, failed=$failedCount, skipped_active=$skippedActiveCount (threshold: >${expiryPolicy.ttlDays} days)"
                     )
                 }
             }
@@ -142,8 +138,7 @@ class DefaultDownloadRepository(
     }
 
     companion object {
-        /** P3-T3: Downloads are automatically deleted after this many days */
-        const val EXPIRY_DAYS = 30L
+        // Note: TTL is now defined in DownloadExpiryPolicy (single source of truth)
     }
 
     private fun restoreDownloadsFromWorkManager() {

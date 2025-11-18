@@ -51,6 +51,16 @@ class DownloadNotifications(private val context: Context) {
             .notify(NOTIFICATION_ID_BASE + downloadId.hashCode(), notification)
     }
 
+    /**
+     * Update progress notification (for use outside of foreground info).
+     */
+    fun updateProgress(downloadId: String, title: String, progress: Int) {
+        ensureChannel()
+        val notification = buildNotification(downloadId, title, progress)
+        NotificationManagerCompat.from(context)
+            .notify(NOTIFICATION_ID_BASE + downloadId.hashCode(), notification)
+    }
+
     private fun ensureChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager

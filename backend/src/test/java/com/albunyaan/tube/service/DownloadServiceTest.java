@@ -1,5 +1,6 @@
 package com.albunyaan.tube.service;
 import com.albunyaan.tube.dto.*;
+import com.albunyaan.tube.exception.PolicyViolationException;
 import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.VideoRepository;
 import com.google.cloud.firestore.*;
@@ -7,6 +8,13 @@ import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.*;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.schabi.newpipe.extractor.MediaFormat;
+import org.schabi.newpipe.extractor.stream.AudioStream;
+import org.schabi.newpipe.extractor.stream.StreamInfo;
+import org.schabi.newpipe.extractor.stream.VideoStream;
+import org.schabi.newpipe.extractor.stream.DeliveryMethod;
+import java.io.IOException;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import static org.junit.jupiter.api.Assertions.*;
@@ -17,6 +25,7 @@ import static org.mockito.Mockito.*;
 class DownloadServiceTest {
     @Mock private VideoRepository videoRepository;
     @Mock private DownloadTokenService tokenService;
+    @Mock private YouTubeGateway youtubeGateway;
     @Mock private Firestore firestore;
     @Mock private CollectionReference collectionReference;
     @InjectMocks private DownloadService downloadService;
@@ -70,20 +79,61 @@ class DownloadServiceTest {
     @Test
     void generateDownloadToken_shouldThrowException_whenEulaNotAccepted() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         when(videoRepository.findByYoutubeId("YT-video-123")).thenReturn(Optional.of(approvedVideo));
-        IllegalStateException exception = assertThrows(IllegalStateException.class, () ->
+        PolicyViolationException exception = assertThrows(PolicyViolationException.class, () ->
                 downloadService.generateDownloadToken("YT-video-123", "user-123", false));
         assertEquals("EULA acceptance required", exception.getMessage());
     }
 
     @Test
-    void getDownloadManifest_shouldReturnManifest_whenTokenValid() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+    void getDownloadManifest_shouldReturnManifest_whenTokenValid() throws Exception {
+        // Setup mocks
         when(tokenService.validateToken("valid-token", "YT-video-123")).thenReturn(true);
         when(videoRepository.findByYoutubeId("YT-video-123")).thenReturn(Optional.of(approvedVideo));
         when(tokenService.getExpirationTimeFromToken("valid-token")).thenReturn(1234567890L);
-        DownloadManifestDto manifest = downloadService.getDownloadManifest("YT-video-123", "valid-token");
+
+        // Create mock StreamInfo with video and audio streams
+        StreamInfo mockStreamInfo = mock(StreamInfo.class);
+        when(mockStreamInfo.getDuration()).thenReturn(300L); // 5 minutes
+
+        // Create mock video stream (progressive)
+        VideoStream videoStream = mock(VideoStream.class);
+        when(videoStream.getContent()).thenReturn("https://youtube.com/video/480p");
+        when(videoStream.getResolution()).thenReturn("480p");
+        when(videoStream.getFormat()).thenReturn(MediaFormat.MPEG_4);
+        when(videoStream.getBitrate()).thenReturn(1500000); // 1.5 Mbps
+        when(mockStreamInfo.getVideoStreams()).thenReturn(List.of(videoStream));
+        when(mockStreamInfo.getVideoOnlyStreams()).thenReturn(List.of());
+
+        // Create mock audio stream
+        AudioStream audioStream = mock(AudioStream.class);
+        when(audioStream.getContent()).thenReturn("https://youtube.com/audio/128k");
+        when(audioStream.getBitrate()).thenReturn(128000); // 128 kbps
+        when(audioStream.getFormat()).thenReturn(MediaFormat.M4A);
+        when(mockStreamInfo.getAudioStreams()).thenReturn(List.of(audioStream));
+
+        when(youtubeGateway.fetchStreamInfo("YT-video-123")).thenReturn(mockStreamInfo);
+
+        // Execute (supportsMerging=false for this test)
+        DownloadManifestDto manifest = downloadService.getDownloadManifest("YT-video-123", "valid-token", false);
+
+        // Verify
         assertNotNull(manifest);
         assertEquals("YT-video-123", manifest.getVideoId());
+        assertEquals(1234567890L, manifest.getExpiresAtMillis());
         assertFalse(manifest.getVideoStreams().isEmpty());
+        assertFalse(manifest.getAudioStreams().isEmpty());
+
+        // Verify stream structure
+        DownloadManifestDto.StreamOption firstVideoStream = manifest.getVideoStreams().get(0);
+        assertEquals("480p", firstVideoStream.getQualityLabel());
+        assertEquals("video/mp4", firstVideoStream.getMimeType());
+        assertFalse(firstVideoStream.isRequiresMerging());
+        assertNotNull(firstVideoStream.getProgressiveUrl());
+
+        // Verify audio stream
+        DownloadManifestDto.StreamOption firstAudioStream = manifest.getAudioStreams().get(0);
+        assertEquals("128kbps", firstAudioStream.getQualityLabel());
+        assertNotNull(firstAudioStream.getProgressiveUrl());
     }
 
     @Test

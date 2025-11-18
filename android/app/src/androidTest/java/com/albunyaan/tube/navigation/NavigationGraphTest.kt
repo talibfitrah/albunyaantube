@@ -61,8 +61,8 @@ class NavigationGraphTest {
         // Click downloads tab
         onView(withId(R.id.downloadsFragment)).perform(click())
 
-        // Verify downloads fragment is displayed via its recycler view
-        onView(withId(R.id.downloadsRecyclerView))
+        // Verify downloads fragment is displayed via empty state (shown when no downloads)
+        onView(withId(R.id.emptyDownloads))
             .check(matches(isDisplayed()))
     }
 

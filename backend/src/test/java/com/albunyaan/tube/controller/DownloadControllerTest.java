@@ -58,9 +58,10 @@ class DownloadControllerTest {
     @Test
     void getManifest_shouldReturnManifest_whenTokenValid() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         DownloadManifestDto manifest = new DownloadManifestDto("video-123", "Test Video", 1234567890L);
-        manifest.getVideoStreams().add(new DownloadManifestDto.StreamOption("720p", "url", "mp4", 50000000L, 2500));
-        when(downloadService.getDownloadManifest("video-123", "valid-token")).thenReturn(manifest);
-        ResponseEntity<?> response = downloadController.getManifest("video-123", "valid-token");
+        manifest.getVideoStreams().add(DownloadManifestDto.StreamOption.progressive(
+                "v720p", "720p", "video/mp4", "https://example.com/video", 50000000L, 2500));
+        when(downloadService.getDownloadManifest("video-123", "valid-token", false)).thenReturn(manifest);
+        ResponseEntity<?> response = downloadController.getManifest("video-123", "valid-token", false);
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertNotNull(response.getBody());
         assertTrue(response.getBody() instanceof DownloadManifestDto);

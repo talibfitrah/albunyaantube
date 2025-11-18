@@ -165,6 +165,12 @@ dependencies {
     implementation("com.google.android.gms:play-services-cast-framework:21.4.0")
     implementation("androidx.mediarouter:mediarouter:1.6.0")
 
+    // FFmpeg-kit for audio/video merging (min-gpl variant)
+    // Using community fork since original arthenica/ffmpeg-kit was archived (June 2025)
+    // https://central.sonatype.com/artifact/io.github.trongnhan136/ffmpeg-kit-min-gpl
+    implementation("io.github.trongnhan136:ffmpeg-kit-min-gpl:7.1.2")
+    implementation("com.arthenica:smart-exception-java:0.2.1")
+
     // Core library desugaring for Java 10+ APIs
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 

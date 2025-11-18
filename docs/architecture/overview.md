@@ -235,6 +235,54 @@ The API uses two response patterns depending on endpoint purpose:
 - Reduces field aliasing bugs (e.g., `subscriberCount` vs `subscribers`)
 - Spec-first development enforces contract alignment
 
+### Download Subsystem
+
+**Status**: ✅ Domain model aligned (P4-T1, November 2025)
+
+The download system enables offline video viewing with policy enforcement and stream expiry.
+
+**Architecture**:
+```
+Android Client → Backend API → YouTubeGateway (NewPipe)
+     ↓               ↓
+DownloadWorker   DownloadService + DownloadTokenService
+     ↓               ↓
+DownloadStorage  Firestore (download_events)
+```
+
+**Download Flow**:
+1. **Check Policy**: `GET /api/downloads/policy/{videoId}` → `DownloadPolicyDto`
+   - Verifies video is APPROVED, returns `allowed` + `requiresEula`
+2. **Generate Token**: `POST /api/downloads/token/{videoId}` → `DownloadTokenDto`
+   - Requires EULA acceptance, returns HMAC-signed token with expiry
+3. **Fetch Manifest**: `GET /api/downloads/manifest/{videoId}?token=...` → `DownloadManifestDto`
+   - Returns stream options with direct URLs from NewPipe
+4. **Download Content**: Client downloads via OkHttp, commits to `DownloadStorage`
+5. **Track Analytics**: `POST /api/downloads/analytics/download-{started|completed|failed}`
+
+**Stream Option Structure** (P4-T1):
+- **Progressive streams** (≤480p): `progressiveUrl` set, `requiresMerging = false`
+- **Split streams** (>480p): `videoUrl` + `audioUrl` set, `requiresMerging = true`
+- Client selects based on quality preference; merging handled by FFmpeg (P4-T4)
+
+**URL Strategy Decision**: Direct URLs from NewPipe
+- NewPipe URLs are inherently ephemeral (YouTube-controlled expiry)
+- Download token provides access control at manifest fetch time
+- Manifests and URLs are only valid for token's lifetime (configured in `DownloadTokenService`)
+- Clients must start downloads promptly after fetching manifest
+
+**Token Security**:
+- HMAC-SHA256 signing with constant-time comparison
+- Payload: `videoId|userId|expiresAtMillis|signature`
+- Minimum 32-character secret key (validated at startup)
+
+**Expiry Policy**:
+- Token TTL: Configured in `DownloadTokenService` (default 1 hour)
+- Content TTL: 30 days from `completedAtMillis` (enforced by Android `DownloadExpiryWorker`)
+- Single source of truth: `DownloadExpiryPolicy` class on Android
+
+**Time Units**: All expiry fields use `expiresAtMillis` (milliseconds since epoch, UTC)
+
 ### Version Compatibility
 
 **Breaking Changes Policy** (v1.1+):
