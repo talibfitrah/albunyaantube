@@ -1,5 +1,6 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.dto.StreamDetailsDto;
 import com.albunyaan.tube.model.SourceType;
 import com.albunyaan.tube.model.ValidationRun;
 import com.albunyaan.tube.model.ValidationStatus;
@@ -93,8 +94,8 @@ public class VideoValidationService {
                     .collect(Collectors.toList());
 
             // Batch validate against YouTube API
-            Map<String, org.schabi.newpipe.extractor.stream.StreamInfo> validVideos =
-                    youtubeService.batchValidateVideos(youtubeIds);
+            Map<String, StreamDetailsDto> validVideos =
+                    youtubeService.batchValidateVideosDto(youtubeIds);
 
             // Process results
             int checkedCount = 0;
@@ -259,8 +260,8 @@ public class VideoValidationService {
                     .collect(Collectors.toList());
 
             // Batch validate
-            Map<String, org.schabi.newpipe.extractor.stream.StreamInfo> validVideos =
-                    youtubeService.batchValidateVideos(youtubeIds);
+            Map<String, StreamDetailsDto> validVideos =
+                    youtubeService.batchValidateVideosDto(youtubeIds);
 
             // Process results
             int checkedCount = 0;

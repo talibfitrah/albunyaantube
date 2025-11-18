@@ -1,7 +1,10 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.dto.ChannelDetailsDto;
+import com.albunyaan.tube.dto.PlaylistDetailsDto;
 import com.albunyaan.tube.dto.SimpleImportItemResult;
 import com.albunyaan.tube.dto.SimpleImportResponse;
+import com.albunyaan.tube.dto.StreamDetailsDto;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
 import com.albunyaan.tube.model.Video;
@@ -10,9 +13,6 @@ import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import com.albunyaan.tube.util.YouTubeUrlUtils;
 import com.google.cloud.Timestamp;
-import org.schabi.newpipe.extractor.channel.ChannelInfo;
-import org.schabi.newpipe.extractor.playlist.PlaylistInfo;
-import org.schabi.newpipe.extractor.stream.StreamInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -166,7 +166,7 @@ public class SimpleImportService {
                 }
 
                 // 2. Validate YouTube ID still exists and fetch metadata
-                ChannelInfo ytChannel = youTubeService.validateAndFetchChannel(youtubeId);
+                ChannelDetailsDto ytChannel = youTubeService.validateAndFetchChannelDto(youtubeId);
 
                 if (ytChannel == null) {
                     response.addResult(SimpleImportItemResult.failed(
@@ -191,13 +191,11 @@ public class SimpleImportService {
                         channel.setDescription(ytChannel.getDescription());
                     }
 
-                    // Get best avatar from NewPipe (channels have avatars, not thumbnails)
-                    if (ytChannel.getAvatars() != null && !ytChannel.getAvatars().isEmpty()) {
-                        channel.setThumbnailUrl(ytChannel.getAvatars().get(0).getUrl());
+                    if (ytChannel.getThumbnailUrl() != null && !ytChannel.getThumbnailUrl().isEmpty()) {
+                        channel.setThumbnailUrl(ytChannel.getThumbnailUrl());
                     }
 
-                    // Set statistics (NewPipe provides direct values)
-                    if (ytChannel.getSubscriberCount() >= 0) {
+                    if (ytChannel.getSubscriberCount() != null && ytChannel.getSubscriberCount() >= 0) {
                         channel.setSubscribers(ytChannel.getSubscriberCount());
                     }
                     // Note: Channel video count not available in ChannelInfo
@@ -294,7 +292,7 @@ public class SimpleImportService {
                 }
 
                 // 2. Validate YouTube ID and fetch metadata
-                PlaylistInfo ytPlaylist = youTubeService.validateAndFetchPlaylist(youtubeId);
+                PlaylistDetailsDto ytPlaylist = youTubeService.validateAndFetchPlaylistDto(youtubeId);
 
                 if (ytPlaylist == null) {
                     response.addResult(SimpleImportItemResult.failed(
@@ -316,17 +314,15 @@ public class SimpleImportService {
                     // Set metadata from YouTube (NewPipe provides direct access)
                     playlist.setTitle(ytPlaylist.getName());
                     if (ytPlaylist.getDescription() != null) {
-                        playlist.setDescription(ytPlaylist.getDescription().getContent());
+                        playlist.setDescription(ytPlaylist.getDescription());
                     }
 
-                    // Get best thumbnail from NewPipe
-                    if (ytPlaylist.getThumbnails() != null && !ytPlaylist.getThumbnails().isEmpty()) {
-                        playlist.setThumbnailUrl(ytPlaylist.getThumbnails().get(0).getUrl());
+                    if (ytPlaylist.getThumbnailUrl() != null && !ytPlaylist.getThumbnailUrl().isEmpty()) {
+                        playlist.setThumbnailUrl(ytPlaylist.getThumbnailUrl());
                     }
 
-                    // Set item count (NewPipe provides direct value)
-                    if (ytPlaylist.getStreamCount() >= 0) {
-                        playlist.setItemCount((int) ytPlaylist.getStreamCount());
+                    if (ytPlaylist.getStreamCount() != null && ytPlaylist.getStreamCount() >= 0) {
+                        playlist.setItemCount(Math.toIntExact(ytPlaylist.getStreamCount()));
                     }
 
                     // Set categories
@@ -419,7 +415,7 @@ public class SimpleImportService {
                 }
 
                 // 2. Validate YouTube ID and fetch metadata
-                StreamInfo ytVideo = youTubeService.validateAndFetchVideo(youtubeId);
+                StreamDetailsDto ytVideo = youTubeService.validateAndFetchVideoDto(youtubeId);
 
                 if (ytVideo == null) {
                     response.addResult(SimpleImportItemResult.failed(
@@ -440,27 +436,24 @@ public class SimpleImportService {
 
                     // Set metadata from YouTube (NewPipe provides direct access)
                     video.setTitle(ytVideo.getName());
-                    if (ytVideo.getDescription() != null && ytVideo.getDescription().getContent() != null) {
-                        video.setDescription(ytVideo.getDescription().getContent());
+                    if (ytVideo.getDescription() != null && !ytVideo.getDescription().isEmpty()) {
+                        video.setDescription(ytVideo.getDescription());
                     }
                     video.setChannelId(YouTubeUrlUtils.extractYouTubeId(ytVideo.getUploaderUrl()));
                     video.setChannelTitle(ytVideo.getUploaderName());
 
-                    // Get best thumbnail from NewPipe
-                    if (ytVideo.getThumbnails() != null && !ytVideo.getThumbnails().isEmpty()) {
-                        video.setThumbnailUrl(ytVideo.getThumbnails().get(0).getUrl());
+                    if (ytVideo.getThumbnailUrl() != null && !ytVideo.getThumbnailUrl().isEmpty()) {
+                        video.setThumbnailUrl(ytVideo.getThumbnailUrl());
                     }
 
-                    // Set duration (NewPipe provides direct value in seconds)
-                    if (ytVideo.getDuration() >= 0) {
-                        video.setDurationSeconds((int) ytVideo.getDuration());
+                    if (ytVideo.getDuration() != null && ytVideo.getDuration() >= 0) {
+                        video.setDurationSeconds(ytVideo.getDuration().intValue());
                         logger.debug("Video duration: {} seconds", ytVideo.getDuration());
                     } else {
                         video.setDurationSeconds(0);
                     }
 
-                    // Set view count (NewPipe provides direct accessor)
-                    if (ytVideo.getViewCount() >= 0) {
+                    if (ytVideo.getViewCount() != null && ytVideo.getViewCount() >= 0) {
                         video.setViewCount(ytVideo.getViewCount());
                     }
 
