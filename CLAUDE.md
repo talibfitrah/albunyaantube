@@ -6,9 +6,25 @@ This document provides essential information for AI assistants working in the Al
 
 ## 🎯 **WHERE TO START - CURRENT SESSION STATUS**
 
-**Date:** November 17, 2025
-**Status:** Field aliasing removed in frontend services (P1-T3)
-**Next Step:** Standardize pagination DTOs across API and clients (P1-T4)
+**Date:** November 18, 2025
+**Status:** Phase 5 code review fixes complete (service layer refactoring)
+**Next Step:** Phase 6 or continue with pagination DTO standardization (P1-T4)
+
+### **Recent Updates (Nov 18, 2025):**
+
+1. **Phase 5 Code Review Fixes** ✅
+   - **Service Layer Separation**: Refactored `approvalService.ts` to pure IO (68 lines, down from 168)
+   - **Extracted Transformers**: Created `/frontend/src/utils/approvalTransformers.ts` with UI mapping logic
+   - **Composable Integration**: Wired `useApprovals` composable into `PendingApprovalsView.vue`
+   - **Test Coverage**: Added 13 tests for `useApprovals` composable
+   - **DTO Aliasing Removal**: Eliminated all `a || b` patterns in categoryService, youtubeService
+   - Validation: `npm run build` and `npm test` (165 passed, 1 skipped)
+
+2. **Architectural Decisions (Phase 5)**:
+   - **Services**: Pure IO only (API calls, return raw DTOs)
+   - **Utils/Transformers**: Pure functions for DTO → UI model mapping
+   - **Composables**: Domain logic, state management, side effects (toasts)
+   - **Views**: Consume composables, minimal logic
 
 ### **Recent Updates (Nov 17, 2025):**
 

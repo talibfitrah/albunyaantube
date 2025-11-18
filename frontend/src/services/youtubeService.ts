@@ -148,9 +148,9 @@ export async function addToPendingApprovals(
   if (itemType === 'channel') {
     const channel = item as AdminSearchChannelResult;
     const payload: Omit<Channel, 'id'> = {
-      youtubeId: channel.ytId || channel.id,
+      youtubeId: channel.ytId,
       name: channel.name || '',
-      description: null, // AdminSearchChannelResult doesn't include description
+      description: null,
       thumbnailUrl: channel.avatarUrl || null,
       subscribers: channel.subscriberCount || null,
       videoCount: null,
@@ -161,9 +161,9 @@ export async function addToPendingApprovals(
   } else if (itemType === 'playlist') {
     const playlist = item as AdminSearchPlaylistResult;
     const payload: Omit<Playlist, 'id'> = {
-      youtubeId: playlist.ytId || playlist.id,
+      youtubeId: playlist.ytId,
       title: playlist.title || '',
-      description: null, // AdminSearchPlaylistResult doesn't include description
+      description: null,
       thumbnailUrl: playlist.thumbnailUrl || null,
       itemCount: playlist.itemCount || null,
       categoryIds,
@@ -174,16 +174,15 @@ export async function addToPendingApprovals(
   } else if (itemType === 'video') {
     const video = item as AdminSearchVideoResult;
     const payload: Omit<Video, 'id'> = {
-      youtubeId: video.ytId || video.id,
+      youtubeId: video.ytId,
       title: video.title || '',
-      description: null, // AdminSearchVideoResult doesn't include description
+      description: null,
       thumbnailUrl: video.thumbnailUrl || null,
       durationSeconds: video.durationSeconds || null,
       viewCount: video.viewCount || null,
       categoryIds,
       status: 'PENDING',
       channelId: null
-      // Note: Video schema has no playlistId field
     };
     await apiClient.post<Video>('/api/admin/registry/videos', payload);
   }

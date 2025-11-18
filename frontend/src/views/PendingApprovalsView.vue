@@ -189,15 +189,27 @@
 import { ref, computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { getAllCategories } from '@/services/categoryService';
-import { getPendingApprovals, approveItem, rejectItem as rejectItemApi } from '@/services/approvalService';
+import { useApprovals } from '@/composables/useApprovals';
+import type { PendingApproval } from '@/utils/approvalTransformers';
 
 const { t } = useI18n();
 
-const contentType = ref<'all' | 'channels' | 'playlists' | 'videos'>('all');
-const categoryFilter = ref('');
-const sortFilter = ref('oldest');
+// Use the approvals composable for all approval-related state and actions
+const {
+  approvals,
+  isLoading,
+  error,
+  processingId,
+  contentType,
+  categoryFilter,
+  sortFilter,
+  totalPending,
+  loadApprovals,
+  approve,
+  reject
+} = useApprovals();
 
-const approvals = ref<any[]>([]);
+// Category state (view-specific)
 const categories = ref<any[]>([]);
 const flatCategories = computed(() => {
   const flattened: { id: string; label: string }[] = [];
@@ -230,12 +242,10 @@ const categoryNameMap = computed(() => {
   traverse(categories.value);
   return map;
 });
-const isLoading = ref(false);
-const error = ref<string | null>(null);
-const processingId = ref<string | null>(null);
 
+// Reject dialog state (view-specific UI)
 const showRejectDialog = ref(false);
-const rejectItem = ref<any | null>(null);
+const rejectItem = ref<PendingApproval | null>(null);
 const rejectReason = ref('');
 const isRejecting = ref(false);
 const rejectError = ref<string | null>(null);
@@ -247,8 +257,6 @@ const contentTypes = [
   { value: 'videos' as const, labelKey: 'approvals.types.videos' }
 ];
 
-const totalPending = computed(() => approvals.value.length);
-
 async function loadCategories() {
   try {
     const cats = await getAllCategories();
@@ -258,43 +266,19 @@ async function loadCategories() {
   }
 }
 
-async function loadApprovals() {
-  isLoading.value = true;
-  error.value = null;
-
-  try {
-    const items = await getPendingApprovals({
-      type: contentType.value,
-      category: categoryFilter.value || undefined,
-      sort: sortFilter.value as 'oldest' | 'newest'
-    });
-    approvals.value = items;
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : t('approvals.error');
-  } finally {
-    isLoading.value = false;
-  }
-}
-
 function handleFilterChange() {
   loadApprovals();
 }
 
-async function handleApprove(item: any) {
-  if (processingId.value) return;
-
-  processingId.value = item.id;
+async function handleApprove(item: PendingApproval) {
   try {
-    await approveItem(item.id, item.type);
-    await loadApprovals();
+    await approve(item);
   } catch (err) {
-    error.value = err instanceof Error ? err.message : t('approvals.approveError');
-  } finally {
-    processingId.value = null;
+    // Error already set in composable
   }
 }
 
-function openRejectDialog(item: any) {
+function openRejectDialog(item: PendingApproval) {
   rejectItem.value = item;
   rejectReason.value = '';
   rejectError.value = null;
@@ -318,9 +302,8 @@ async function handleReject() {
   rejectError.value = null;
 
   try {
-    await rejectItemApi(rejectItem.value!.id, rejectItem.value!.type, rejectReason.value);
+    await reject(rejectItem.value!, rejectReason.value);
     closeRejectDialog();
-    await loadApprovals();
   } catch (err) {
     rejectError.value = err instanceof Error ? err.message : t('approvals.rejectError');
   } finally {
