@@ -213,7 +213,9 @@ const {
 // Helper to set content type filter and reload
 function setContentType(value: ContentTypeFilter) {
   setFilter('type', value);
-  loadApprovals();
+  loadApprovals().catch(() => {
+    // Error is already captured in composable's error ref
+  });
 }
 
 // Category state (view-specific)
@@ -274,7 +276,9 @@ async function loadCategories() {
 }
 
 function handleFilterChange() {
-  loadApprovals();
+  loadApprovals().catch(() => {
+    // Error is already captured in composable's error ref
+  });
 }
 
 async function handleApprove(item: PendingApproval) {
@@ -333,7 +337,9 @@ function formatNumber(num: number): string {
 
 onMounted(() => {
   loadCategories();
-  loadApprovals();
+  loadApprovals().catch(() => {
+    // Error is already captured in composable's error ref
+  });
 });
 </script>
 

@@ -17,9 +17,12 @@ This document provides essential information for AI assistants working in the Al
    - **Extracted Transformers**: Created `/frontend/src/utils/approvalTransformers.ts` with UI mapping logic
    - **Composable Integration**: Wired `useApprovals` composable into `PendingApprovalsView.vue`
    - **Test Coverage**: Added 13 tests for `useApprovals` composable
-   - **DTO Aliasing Removal**: Eliminated field aliasing patterns (e.g., `cat.name || cat.label`, `channel.ytId || channel.id`)
-   - **Reactivity Fix**: Fixed filter toggle buttons to use `setFilter()` instead of reassigning refs
-   - Note: Null coalescing defaults (`item.id || ''`) remain for optional fields - this is defensive programming, not aliasing
+   - **DTO Aliasing Removal**: Eliminated field aliasing patterns across services and views:
+     - `cat.name || cat.label` → `cat.name`
+     - `channel.ytId || channel.id` → `channel.ytId`
+     - `selectedItemForModal.youtubeId || selectedItemForModal.id` → `selectedItemForModal.youtubeId`
+   - **Reactivity Fix**: Fixed filter toggle buttons to use `setFilter()` with proper error handling
+   - **Backend API Note**: ContentLibraryView normalizes type-specific YouTube ID fields (`youtubeChannelId`, `youtubePlaylistId`, `youtubeVideoId`) to single `youtubeId` field; backend should standardize per API spec
    - Validation: `npm run build` and `npm test` (165 passed, 1 skipped)
 
 2. **Architectural Decisions (Phase 5)**:

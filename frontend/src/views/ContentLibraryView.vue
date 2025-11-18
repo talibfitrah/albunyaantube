@@ -395,7 +395,7 @@
       v-if="selectedItemForModal && selectedItemForModal.type === 'channel'"
       :open="channelModalOpen"
       :channel-id="selectedItemForModal.id"
-      :channel-youtube-id="selectedItemForModal.youtubeId || selectedItemForModal.id"
+      :channel-youtube-id="selectedItemForModal.youtubeId"
       @close="channelModalOpen = false"
       @updated="handleModalUpdated"
     />
@@ -404,7 +404,7 @@
       v-if="selectedItemForModal && selectedItemForModal.type === 'playlist'"
       :open="playlistModalOpen"
       :playlist-id="selectedItemForModal.id"
-      :playlist-youtube-id="selectedItemForModal.youtubeId || selectedItemForModal.id"
+      :playlist-youtube-id="selectedItemForModal.youtubeId"
       @close="playlistModalOpen = false"
       @updated="handleModalUpdated"
     />
@@ -439,7 +439,7 @@ interface ContentItem {
   categoryIds: string[];
   status: 'approved' | 'pending' | 'rejected';
   createdAt: Date;
-  youtubeId?: string;
+  youtubeId: string; // Always populated from backend's type-specific YouTube ID fields
 }
 
 interface Category {
@@ -763,11 +763,9 @@ async function loadContent() {
       createdAt: new Date(item.createdAt),
       description: item.description,
       count: item.count,
-      youtubeId:
-        item.youtubeId ||
-        item.youtubeChannelId ||
-        item.youtubePlaylistId ||
-        item.youtubeVideoId
+      // Backend returns type-specific YouTube ID fields; normalize to single field
+      // TODO: Backend should standardize on 'youtubeId' per API spec
+      youtubeId: item.youtubeId || item.youtubeChannelId || item.youtubePlaylistId || item.youtubeVideoId || ''
     }));
 
   } catch (err: any) {
