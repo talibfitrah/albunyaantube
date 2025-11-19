@@ -755,7 +755,7 @@ async function loadContent() {
     // Update content with response data
     content.value = response.data.content.map((item: any) => {
       if (!item.youtubeId) {
-        console.warn(`[ContentLibrary] Missing youtubeId for ${item.type} ${item.id}`);
+        throw new Error(`[ContentLibrary] Missing youtubeId for ${item.type} ${item.id} - backend regression detected`);
       }
       return {
         id: item.id,
@@ -767,7 +767,7 @@ async function loadContent() {
         createdAt: new Date(item.createdAt),
         description: item.description,
         count: item.count,
-        youtubeId: item.youtubeId || ''
+        youtubeId: item.youtubeId
       };
     });
 
