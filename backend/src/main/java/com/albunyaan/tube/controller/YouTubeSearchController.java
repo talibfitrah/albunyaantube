@@ -53,8 +53,8 @@ public class YouTubeSearchController {
     @GetMapping("/search/unified")
     public ResponseEntity<List<EnrichedSearchResult>> searchUnified(@RequestParam String query) {
         try {
-            List<EnrichedSearchResult> results = youtubeService.searchAllEnriched(query);
-            return ResponseEntity.ok(results);
+            SearchPageResponse response = youtubeService.searchAllEnrichedPaged(query, null);
+            return ResponseEntity.ok(response.getItems());
         } catch (IOException e) {
             return ResponseEntity.status(500).build();
         }

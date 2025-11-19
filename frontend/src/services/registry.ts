@@ -21,8 +21,8 @@ function mapChannelToSummary(channel: Channel): ChannelSummary {
     id: channel.id,
     ytId: channel.youtubeId,
     name: channel.name,
-    avatarUrl: channel.thumbnailUrl || null,
-    subscriberCount: channel.subscribers || 0,
+    avatarUrl: channel.thumbnailUrl ?? null,
+    subscriberCount: channel.subscribers ?? null,
     categories: [] // CategoryTag mapping would require category lookup
   };
 }

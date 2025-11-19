@@ -3,7 +3,16 @@
  * Pure functions to transform API DTOs to UI models
  */
 
-import type { EnrichedSearchResult } from '@/types/api';
+import type {
+  EnrichedSearchResult,
+  StreamItemDto,
+  PlaylistItemDto,
+  PlaylistDetailsDto,
+  ChannelDetailsDto,
+  Channel,
+  Playlist,
+  Video
+} from '@/types/api';
 import type { AdminSearchChannelResult, AdminSearchPlaylistResult, AdminSearchVideoResult } from '@/types/registry';
 
 /**
@@ -109,4 +118,206 @@ export function transformVideoResults(videos: EnrichedSearchResult[]): AdminSear
     parentChannelId: video.channelId || '',
     parentPlaylistIds: []
   }));
+}
+
+// ============================================================================
+// DTO to EnrichedSearchResult Converters
+// Used to normalize various DTO types into the common search result format
+// ============================================================================
+
+/**
+ * Convert ChannelDetailsDto to EnrichedSearchResult
+ */
+export function channelDtoToSearchResult(dto: ChannelDetailsDto): EnrichedSearchResult {
+  return {
+    id: dto.id || '',
+    title: dto.name || '',
+    thumbnailUrl: dto.thumbnailUrl || '',
+    description: dto.description || '',
+    subscriberCount: dto.subscriberCount || 0,
+    videoCount: dto.streamCount || 0,
+    type: 'channel'
+  };
+}
+
+/**
+ * Convert StreamItemDto array to EnrichedSearchResult array (for videos)
+ */
+export function streamItemsToSearchResults(
+  items: StreamItemDto[],
+  channelId: string
+): EnrichedSearchResult[] {
+  return items.map(video => ({
+    id: video.id || '',
+    title: video.name || '',
+    thumbnailUrl: video.thumbnailUrl || '',
+    description: '',
+    channelId,
+    channelTitle: video.uploaderName || '',
+    viewCount: video.viewCount || 0,
+    duration: video.duration ? `PT${video.duration}S` : 'PT0S',
+    publishedAt: video.uploadDate || '',
+    type: 'video'
+  }));
+}
+
+/**
+ * Convert PlaylistItemDto array to EnrichedSearchResult array
+ */
+export function playlistItemsToSearchResults(
+  items: PlaylistItemDto[],
+  channelId: string
+): EnrichedSearchResult[] {
+  return items.map(playlist => ({
+    id: playlist.id || '',
+    title: playlist.name || '',
+    thumbnailUrl: playlist.thumbnailUrl || '',
+    description: '',
+    channelId,
+    channelTitle: playlist.uploaderName || '',
+    itemCount: playlist.streamCount || 0,
+    type: 'playlist'
+  }));
+}
+
+// ============================================================================
+// Simple Item Mappers
+// Convert DTOs to simplified UI models for lists
+// ============================================================================
+
+export interface SimpleVideoItem {
+  id: string;
+  title: string;
+  thumbnailUrl: string;
+  publishedAt: string;
+}
+
+export interface SimplePlaylistItem {
+  id: string;
+  title: string;
+  thumbnailUrl: string;
+  itemCount: number;
+}
+
+export interface PlaylistVideoItem {
+  id: string;
+  videoId: string;
+  title: string;
+  thumbnailUrl: string;
+}
+
+export interface PlaylistInfo {
+  title: string;
+  thumbnailUrl: string;
+  itemCount: number;
+}
+
+/**
+ * Map StreamItemDto array to simple video items
+ */
+export function mapStreamItemsToVideos(items: StreamItemDto[]): SimpleVideoItem[] {
+  return items.map(item => ({
+    id: item.id || '',
+    title: item.name || '',
+    thumbnailUrl: item.thumbnailUrl || '',
+    publishedAt: item.uploadDate || ''
+  }));
+}
+
+/**
+ * Map PlaylistItemDto array to simple playlist items
+ */
+export function mapPlaylistItemsToPlaylists(items: PlaylistItemDto[]): SimplePlaylistItem[] {
+  return items.map(item => ({
+    id: item.id || '',
+    title: item.name || '',
+    thumbnailUrl: item.thumbnailUrl || '',
+    itemCount: item.streamCount || 0
+  }));
+}
+
+/**
+ * Map StreamItemDto array to playlist video items
+ */
+export function mapStreamItemsToPlaylistVideos(items: StreamItemDto[]): PlaylistVideoItem[] {
+  return items.map(item => ({
+    id: item.id || '',
+    videoId: item.id || '',
+    title: item.name || '',
+    thumbnailUrl: item.thumbnailUrl || ''
+  }));
+}
+
+/**
+ * Map PlaylistDetailsDto to simple playlist info
+ */
+export function mapPlaylistDetailsToInfo(dto: PlaylistDetailsDto): PlaylistInfo {
+  return {
+    title: dto.name || '',
+    thumbnailUrl: dto.thumbnailUrl || '',
+    itemCount: dto.streamCount || 0
+  };
+}
+
+// ============================================================================
+// Payload Builders
+// Create API payloads from UI search results
+// ============================================================================
+
+/**
+ * Build channel payload for pending approval
+ */
+export function buildChannelPayload(
+  channel: AdminSearchChannelResult,
+  categoryIds: string[]
+): Omit<Channel, 'id'> {
+  return {
+    youtubeId: channel.ytId,
+    name: channel.name || '',
+    description: null,
+    thumbnailUrl: channel.avatarUrl || null,
+    subscribers: channel.subscriberCount || null,
+    videoCount: null,
+    categoryIds,
+    status: 'PENDING'
+  };
+}
+
+/**
+ * Build playlist payload for pending approval
+ */
+export function buildPlaylistPayload(
+  playlist: AdminSearchPlaylistResult,
+  categoryIds: string[]
+): Omit<Playlist, 'id'> {
+  return {
+    youtubeId: playlist.ytId,
+    title: playlist.title || '',
+    description: null,
+    thumbnailUrl: playlist.thumbnailUrl || null,
+    itemCount: playlist.itemCount || null,
+    categoryIds,
+    status: 'PENDING',
+    channelId: null
+  };
+}
+
+/**
+ * Build video payload for pending approval
+ */
+export function buildVideoPayload(
+  video: AdminSearchVideoResult,
+  categoryIds: string[]
+): Omit<Video, 'id'> {
+  return {
+    youtubeId: video.ytId,
+    title: video.title || '',
+    description: null,
+    thumbnailUrl: video.thumbnailUrl || null,
+    durationSeconds: video.durationSeconds || null,
+    viewCount: video.viewCount || null,
+    categoryIds,
+    status: 'PENDING',
+    channelId: null
+  };
 }
