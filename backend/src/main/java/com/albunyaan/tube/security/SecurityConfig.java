@@ -50,6 +50,7 @@ public class SecurityConfig {
                         // Public endpoints - ORDER MATTERS! Most specific first
                         .requestMatchers("/api/public/**").permitAll()
                         .requestMatchers("/api/v1/**").permitAll() // Public mobile app APIs (includes /api/v1/search)
+                        .requestMatchers("/api/downloads/**").permitAll() // Download policy, manifest, analytics
                         .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
 
                         // Actuator endpoints - ADMIN only for production security

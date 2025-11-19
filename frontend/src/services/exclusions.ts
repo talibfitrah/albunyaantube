@@ -1,4 +1,4 @@
-import { authorizedJsonFetch } from '@/services/http';
+import apiClient from './api/client';
 import type { CursorPage } from '@/types/pagination';
 
 // Types
@@ -24,10 +24,10 @@ export interface ExclusionResponse {
 // Channel Exclusions
 
 export async function fetchChannelExclusions(channelId: string): Promise<ChannelExclusions> {
-  const response = await authorizedJsonFetch<ChannelExclusions>(
+  const response = await apiClient.get<ChannelExclusions>(
     `/admin/channels/${channelId}/exclusions`
   );
-  return response;
+  return response.data;
 }
 
 export async function addChannelExclusion(
@@ -35,11 +35,10 @@ export async function addChannelExclusion(
   type: 'video' | 'playlist',
   youtubeId: string
 ): Promise<ChannelExclusions> {
-  const response = await authorizedJsonFetch<ChannelExclusions>(
-    `/admin/channels/${channelId}/exclusions/${type}/${youtubeId}`,
-    { method: 'POST' }
+  const response = await apiClient.post<ChannelExclusions>(
+    `/admin/channels/${channelId}/exclusions/${type}/${youtubeId}`
   );
-  return response;
+  return response.data;
 }
 
 export async function removeChannelExclusion(
@@ -47,42 +46,39 @@ export async function removeChannelExclusion(
   type: 'video' | 'playlist',
   youtubeId: string
 ): Promise<ChannelExclusions> {
-  const response = await authorizedJsonFetch<ChannelExclusions>(
-    `/admin/channels/${channelId}/exclusions/${type}/${youtubeId}`,
-    { method: 'DELETE' }
+  const response = await apiClient.delete<ChannelExclusions>(
+    `/admin/channels/${channelId}/exclusions/${type}/${youtubeId}`
   );
-  return response;
+  return response.data;
 }
 
 // Playlist Exclusions
 
 export async function fetchPlaylistExclusions(playlistId: string): Promise<string[]> {
-  const response = await authorizedJsonFetch<string[]>(
+  const response = await apiClient.get<string[]>(
     `/admin/playlists/${playlistId}/exclusions`
   );
-  return response;
+  return response.data;
 }
 
 export async function addPlaylistExclusion(
   playlistId: string,
   videoId: string
 ): Promise<string[]> {
-  const response = await authorizedJsonFetch<string[]>(
-    `/admin/playlists/${playlistId}/exclusions/${videoId}`,
-    { method: 'POST' }
+  const response = await apiClient.post<string[]>(
+    `/admin/playlists/${playlistId}/exclusions/${videoId}`
   );
-  return response;
+  return response.data;
 }
 
 export async function removePlaylistExclusion(
   playlistId: string,
   videoId: string
 ): Promise<string[]> {
-  const response = await authorizedJsonFetch<string[]>(
-    `/admin/playlists/${playlistId}/exclusions/${videoId}`,
-    { method: 'DELETE' }
+  const response = await apiClient.delete<string[]>(
+    `/admin/playlists/${playlistId}/exclusions/${videoId}`
   );
-  return response;
+  return response.data;
 }
 
 // Workspace Exclusions

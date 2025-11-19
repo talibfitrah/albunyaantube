@@ -2962,6 +2962,9 @@ components:
           enum: [channel, playlist, video]
         id:
           type: string
+        youtubeId:
+          type: string
+          description: YouTube ID (channel/playlist/video ID)
         title:
           type: string
         description:

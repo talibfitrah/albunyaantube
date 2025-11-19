@@ -395,7 +395,7 @@
       v-if="selectedItemForModal && selectedItemForModal.type === 'channel'"
       :open="channelModalOpen"
       :channel-id="selectedItemForModal.id"
-      :channel-youtube-id="selectedItemForModal.youtubeId || selectedItemForModal.id"
+      :channel-youtube-id="selectedItemForModal.youtubeId"
       @close="channelModalOpen = false"
       @updated="handleModalUpdated"
     />
@@ -404,7 +404,7 @@
       v-if="selectedItemForModal && selectedItemForModal.type === 'playlist'"
       :open="playlistModalOpen"
       :playlist-id="selectedItemForModal.id"
-      :playlist-youtube-id="selectedItemForModal.youtubeId || selectedItemForModal.id"
+      :playlist-youtube-id="selectedItemForModal.youtubeId"
       @close="playlistModalOpen = false"
       @updated="handleModalUpdated"
     />
@@ -439,7 +439,7 @@ interface ContentItem {
   categoryIds: string[];
   status: 'approved' | 'pending' | 'rejected';
   createdAt: Date;
-  youtubeId?: string;
+  youtubeId: string; // YouTube ID (channel/playlist/video ID)
 }
 
 interface Category {
@@ -753,22 +753,23 @@ async function loadContent() {
     const response = await apiClient.get('/api/admin/content', { params });
 
     // Update content with response data
-    content.value = response.data.content.map((item: any) => ({
-      id: item.id,
-      title: item.title,
-      type: item.type,
-      thumbnailUrl: item.thumbnailUrl,
-      categoryIds: item.categoryIds || [],
-      status: item.status?.toLowerCase() || 'pending',
-      createdAt: new Date(item.createdAt),
-      description: item.description,
-      count: item.count,
-      youtubeId:
-        item.youtubeId ||
-        item.youtubeChannelId ||
-        item.youtubePlaylistId ||
-        item.youtubeVideoId
-    }));
+    content.value = response.data.content.map((item: any) => {
+      if (!item.youtubeId) {
+        throw new Error(`[ContentLibrary] Missing youtubeId for ${item.type} ${item.id} - backend regression detected`);
+      }
+      return {
+        id: item.id,
+        title: item.title,
+        type: item.type,
+        thumbnailUrl: item.thumbnailUrl,
+        categoryIds: item.categoryIds || [],
+        status: item.status?.toLowerCase() || 'pending',
+        createdAt: new Date(item.createdAt),
+        description: item.description,
+        count: item.count,
+        youtubeId: item.youtubeId
+      };
+    });
 
   } catch (err: any) {
     console.error('Failed to load content:', err);

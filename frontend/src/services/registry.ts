@@ -1,4 +1,4 @@
-import { authorizedJsonFetch } from '@/services/http';
+import apiClient from './api/client';
 import type { CursorPage } from '@/types/pagination';
 import type {
   AdminSearchResponse,
@@ -21,8 +21,8 @@ function mapChannelToSummary(channel: Channel): ChannelSummary {
     id: channel.id,
     ytId: channel.youtubeId,
     name: channel.name,
-    avatarUrl: channel.thumbnailUrl || null,
-    subscriberCount: channel.subscribers || 0,
+    avatarUrl: channel.thumbnailUrl ?? null,
+    subscriberCount: channel.subscribers ?? null,
     categories: [] // CategoryTag mapping would require category lookup
   };
 }
@@ -55,17 +55,6 @@ export interface RegistrySearchParams {
 // FIREBASE-MIGRATE: Updated base path from /api/v1/admins/registry to /api/admin
 const CHANNELS_BASE_PATH = '/api/admin/channels';
 
-function buildQuery(params: Record<string, string | number | null | undefined>): string {
-  const searchParams = new URLSearchParams();
-  Object.entries(params).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== '') {
-      searchParams.set(key, String(value));
-    }
-  });
-  const query = searchParams.toString();
-  return query ? `?${query}` : '';
-}
-
 export async function fetchChannelsPage(params: ChannelListParams = {}): Promise<CursorPage<ChannelSummary>> {
   // FIREBASE-MIGRATE: Map to new endpoint
   let endpoint = CHANNELS_BASE_PATH;
@@ -75,10 +64,10 @@ export async function fetchChannelsPage(params: ChannelListParams = {}): Promise
 
   // Backend returns array, not paginated response
   // TODO: Add pagination support in backend
-  const channels = await authorizedJsonFetch<Channel[]>(endpoint);
+  const response = await apiClient.get<Channel[]>(endpoint);
 
   return {
-    data: channels.map(mapChannelToSummary),
+    data: response.data.map(mapChannelToSummary),
     pageInfo: {
       cursor: null,
       nextCursor: null,
@@ -130,13 +119,7 @@ export async function updateChannelExclusions(
   payload: { excludedPlaylistIds?: string[]; excludedVideoIds?: string[] }
 ): Promise<void> {
   // FIREBASE-MIGRATE: Updated endpoint
-  await authorizedJsonFetch<void>(`${CHANNELS_BASE_PATH}/${channelId}/exclusions`, {
-    method: 'PUT',  // Backend uses PUT not PATCH
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(payload)
-  });
+  await apiClient.put(`${CHANNELS_BASE_PATH}/${channelId}/exclusions`, payload);
 }
 
 export async function updatePlaylistExclusions(

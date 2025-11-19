@@ -8,7 +8,7 @@ export interface ChannelSummary {
   ytId: string;
   name: string | null;
   avatarUrl: string | null;
-  subscriberCount: number;
+  subscriberCount: number | null;
   categories: CategoryTag[];
 }
 
@@ -49,7 +49,7 @@ export interface AdminSearchChannelResult {
   ytId: string;
   name: string | null;
   avatarUrl: string | null;
-  subscriberCount: number;
+  subscriberCount: number | null;
   publishedAt?: string; // Channel created date
   categories: CategoryTag[];
   includeState: IncludeState;

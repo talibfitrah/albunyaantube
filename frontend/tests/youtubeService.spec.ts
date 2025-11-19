@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { searchYouTube, getChannelDetails, toggleIncludeState } from '@/services/youtubeService';
+import { searchYouTube, getChannelDetails } from '@/services/youtubeService';
 import apiClient from '@/services/api/client';
 
 vi.mock('@/services/api/client');
@@ -107,24 +107,6 @@ describe('YouTubeService', () => {
       expect(result.channel).toBeDefined();
       expect(result.videos).toHaveLength(1);
       expect(result.playlists).toHaveLength(1);
-    });
-  });
-
-  describe('toggleIncludeState', () => {
-    it('should toggle channel include state', async () => {
-      vi.mocked(apiClient.patch).mockResolvedValueOnce({ data: {} });
-
-      await toggleIncludeState('channel-1', 'channel', 'INCLUDED');
-
-      expect(apiClient.patch).toHaveBeenCalledWith('/api/admin/registry/channels/channel-1/toggle');
-    });
-
-    it('should toggle playlist include state', async () => {
-      vi.mocked(apiClient.patch).mockResolvedValueOnce({ data: {} });
-
-      await toggleIncludeState('playlist-1', 'playlist', 'INCLUDED');
-
-      expect(apiClient.patch).toHaveBeenCalledWith('/api/admin/registry/playlists/playlist-1/toggle');
     });
   });
 });

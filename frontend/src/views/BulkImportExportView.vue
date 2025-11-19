@@ -263,7 +263,8 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import importExportService, { type SimpleImportItemResult } from '@/services/importExportService'
+import * as importExportService from '@/services/importExportService'
+import type { SimpleImportItemResult } from '@/services/importExportService'
 
 const { t } = useI18n()
 

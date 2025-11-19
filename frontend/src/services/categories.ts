@@ -1,4 +1,4 @@
-import { authorizedJsonFetch } from '@/services/http';
+import apiClient from './api/client';
 import type { Category } from '@/types/api';
 
 export interface CategoryOption {
@@ -10,12 +10,10 @@ export interface CategoryOption {
 
 export async function fetchAllCategories(limit = 100): Promise<CategoryOption[]> {
   // FIREBASE-MIGRATE: Updated endpoint from /api/v1/admins/categories to /api/admin/categories
-  const categories = await authorizedJsonFetch<Category[]>(
-    `/api/admin/categories`
-  );
+  const response = await apiClient.get<Category[]>('/api/admin/categories');
 
   // Build hierarchical structure from flat list
-  return buildHierarchy(categories);
+  return buildHierarchy(response.data);
 }
 
 function buildHierarchy(categories: Category[]): CategoryOption[] {

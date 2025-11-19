@@ -16,12 +16,12 @@ import retrofit2.http.Path
  * Retrofit API interface for download management using generated OpenAPI DTOs
  *
  * Maps to backend endpoints:
- * - GET /downloads/policy/{videoId} - Check download policy
- * - POST /downloads/token/{videoId} - Generate download token
- * - GET /downloads/manifest/{videoId} - Get download manifest with stream URLs
- * - POST /downloads/analytics/download-started - Track download started
- * - POST /downloads/analytics/download-completed - Track download completed
- * - POST /downloads/analytics/download-failed - Track download failed
+ * - GET /api/downloads/policy/{videoId} - Check download policy
+ * - POST /api/downloads/token/{videoId} - Generate download token
+ * - GET /api/downloads/manifest/{videoId} - Get download manifest with stream URLs
+ * - POST /api/downloads/analytics/download-started - Track download started
+ * - POST /api/downloads/analytics/download-completed - Track download completed
+ * - POST /api/downloads/analytics/download-failed - Track download failed
  */
 interface DownloadApi {
 
@@ -31,7 +31,7 @@ interface DownloadApi {
      * @param videoId The video ID to check
      * @return Download policy with allowed status and reason
      */
-    @GET("downloads/policy/{videoId}")
+    @GET("api/downloads/policy/{videoId}")
     suspend fun getDownloadPolicy(
         @Path("videoId") videoId: String
     ): DownloadPolicyDto
@@ -43,7 +43,7 @@ interface DownloadApi {
      * @param request Token request with device info
      * @return Download token with JWT and expiration
      */
-    @POST("downloads/token/{videoId}")
+    @POST("api/downloads/token/{videoId}")
     suspend fun generateDownloadToken(
         @Path("videoId") videoId: String,
         @Body request: DownloadTokenRequest
@@ -57,7 +57,7 @@ interface DownloadApi {
      * @param supportsMerging Whether client supports FFmpeg merging (for split streams)
      * @return Download manifest with video/audio streams
      */
-    @GET("downloads/manifest/{videoId}")
+    @GET("api/downloads/manifest/{videoId}")
     suspend fun getDownloadManifest(
         @Path("videoId") videoId: String,
         @retrofit2.http.Query("token") token: String,
@@ -69,7 +69,7 @@ interface DownloadApi {
      *
      * @param event Download started event data
      */
-    @POST("downloads/analytics/download-started")
+    @POST("api/downloads/analytics/download-started")
     suspend fun trackDownloadStarted(
         @Body event: DownloadStartedEvent
     )
@@ -79,7 +79,7 @@ interface DownloadApi {
      *
      * @param event Download completed event data
      */
-    @POST("downloads/analytics/download-completed")
+    @POST("api/downloads/analytics/download-completed")
     suspend fun trackDownloadCompleted(
         @Body event: DownloadCompletedEvent
     )
@@ -89,7 +89,7 @@ interface DownloadApi {
      *
      * @param event Download failed event data
      */
-    @POST("downloads/analytics/download-failed")
+    @POST("api/downloads/analytics/download-failed")
     suspend fun trackDownloadFailed(
         @Body event: DownloadFailedEvent
     )

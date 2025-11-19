@@ -6,20 +6,12 @@
 import apiClient from './api/client';
 import { toast } from '@/utils/toast';
 
-export interface Category {
-  id: string;
-  name?: string; // Backend uses 'name'
-  label?: string; // Frontend uses 'label' (for compatibility)
-  parentCategoryId?: string | null;
-  parentId?: string | null; // Alias for parentCategoryId
-  icon?: string;
-  displayOrder?: number;
+import type { Category as ApiCategory } from '@/types/api';
+
+// Re-export API type with additional UI fields
+export interface Category extends ApiCategory {
+  label?: string; // UI display field (derived from name)
   subcategories?: Category[];
-  localizedNames?: Record<string, string>;
-  createdBy?: string;
-  updatedBy?: string;
-  createdAt?: string;
-  updatedAt?: string;
 }
 
 /**
@@ -33,12 +25,11 @@ export async function getAllCategories(): Promise<Category[]> {
   const categoryMap = new Map<string, Category>();
   const rootCategories: Category[] = [];
 
-  // First pass: create map and normalize field names
+  // First pass: create map and add UI fields
   categories.forEach(cat => {
-    const normalized = {
+    const normalized: Category = {
       ...cat,
-      label: cat.name || cat.label,
-      parentId: cat.parentCategoryId || cat.parentId,
+      label: cat.name, // UI display field
       subcategories: []
     };
     categoryMap.set(cat.id, normalized);
@@ -47,7 +38,7 @@ export async function getAllCategories(): Promise<Category[]> {
   // Second pass: build tree
   categories.forEach(cat => {
     const normalized = categoryMap.get(cat.id)!;
-    const parentId = cat.parentCategoryId || cat.parentId;
+    const parentId = cat.parentCategoryId;
 
     if (parentId) {
       const parent = categoryMap.get(parentId);

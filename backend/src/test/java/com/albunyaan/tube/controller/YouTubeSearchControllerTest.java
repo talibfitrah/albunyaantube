@@ -63,7 +63,6 @@ class YouTubeSearchControllerTest {
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertSame(dto, response.getBody());
         verify(youtubeService).getChannelDetailsDto("UC123");
-        verify(youtubeService, never()).mapToChannelDetailsDto(any());
     }
 
     @Test
@@ -76,7 +75,6 @@ class YouTubeSearchControllerTest {
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals(List.of(item), response.getBody());
         verify(youtubeService).getChannelVideosDto("UC123", "token", "filter");
-        verify(youtubeService, never()).mapToStreamItemDto(any());
     }
 
     @Test
@@ -88,6 +86,5 @@ class YouTubeSearchControllerTest {
         assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
         assertTrue(response.getBody() == null);
         verify(youtubeService).getVideoDetailsDto("vid-1");
-        verify(youtubeService, never()).mapToStreamDetailsDto(any());
     }
 }

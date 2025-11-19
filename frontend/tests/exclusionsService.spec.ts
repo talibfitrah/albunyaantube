@@ -1,9 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   fetchExclusionsPage,
-  createExclusion,
-  updateExclusion,
-  deleteExclusion,
   fetchChannelExclusions,
   addChannelExclusion,
   removeChannelExclusion,
@@ -11,147 +8,82 @@ import {
   addPlaylistExclusion,
   removePlaylistExclusion
 } from '@/services/exclusions';
-import type { ExclusionPage } from '@/types/exclusions';
+
+// Mock the apiClient module
+vi.mock('@/services/api/client', () => ({
+  default: {
+    get: vi.fn(),
+    post: vi.fn(),
+    put: vi.fn(),
+    delete: vi.fn(),
+    patch: vi.fn()
+  }
+}));
 
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
     session: { accessToken: 'abc123' },
+    idToken: 'test-token',
     refresh: vi.fn()
   })
 }));
 
-const originalFetch = global.fetch;
-
-const samplePage: ExclusionPage = {
-  data: [],
-  pageInfo: {
-    cursor: null,
-    nextCursor: null,
-    hasNext: false,
-    limit: 20
-  }
-};
+import apiClient from '@/services/api/client';
 
 describe('exclusions service', () => {
   beforeEach(() => {
-    global.fetch = vi.fn(async () =>
-      new Response(JSON.stringify(samplePage), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' }
-      })
-    );
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  afterAll(() => {
-    global.fetch = originalFetch;
-  });
-
   // Legacy tests - these functions are deprecated and replaced with channel/playlist specific functions
   it.skip('fetches exclusions with query parameters and auth header', async () => {
-    await fetchExclusionsPage({
-      cursor: 'CURSOR_TOKEN',
-      limit: 10,
-      parentType: 'CHANNEL',
-      excludeType: 'VIDEO',
-      search: 'halaqa'
-    });
-
-    expect(global.fetch).toHaveBeenCalledTimes(1);
-    const [url, init] = (global.fetch as vi.Mock).mock.calls[0] as [string, RequestInit];
-    expect(url).toBe(
-      'http://localhost:8080/api/v1/exclusions?cursor=CURSOR_TOKEN&limit=10&parentType=CHANNEL&excludeType=VIDEO&search=halaqa'
-    );
-    const headers = init.headers as Headers;
-    expect(headers.get('Authorization')).toBe('Bearer abc123');
-    expect(headers.get('Accept')).toBe('application/json');
-  });
-
-  it.skip('creates an exclusion with JSON body', async () => {
-    // createExclusion function no longer exists - use addChannelExclusion or addPlaylistExclusion
-  });
-
-  it.skip('updates exclusion reason via PATCH', async () => {
-    // updateExclusion function no longer exists
-  });
-
-  it.skip('deletes exclusion by id', async () => {
-    // deleteExclusion function no longer exists - use removeChannelExclusion or removePlaylistExclusion
+    // fetchExclusionsPage returns mock data for now
   });
 
   describe('Channel Exclusions', () => {
     it('fetches channel exclusions', async () => {
       const mockExclusions = {
         videos: ['video1', 'video2'],
-        playlists: ['playlist1'],
-        liveStreams: [],
-        shorts: [],
-        posts: []
+        playlists: ['playlist1']
       };
 
-      global.fetch = vi.fn(async () =>
-        new Response(JSON.stringify(mockExclusions), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' }
-        })
-      );
+      vi.mocked(apiClient.get).mockResolvedValueOnce({ data: mockExclusions });
 
       const result = await fetchChannelExclusions('channel-123');
 
-      expect(global.fetch).toHaveBeenCalledTimes(1);
-      const [url] = (global.fetch as vi.Mock).mock.calls[0] as [string, RequestInit];
-      expect(url).toBe('http://localhost:8080/admin/channels/channel-123/exclusions');
+      expect(apiClient.get).toHaveBeenCalledWith('/admin/channels/channel-123/exclusions');
       expect(result).toEqual(mockExclusions);
     });
 
     it('adds channel video exclusion', async () => {
       const mockUpdatedExclusions = {
         videos: ['video1', 'video2', 'video3'],
-        playlists: [],
-        liveStreams: [],
-        shorts: [],
-        posts: []
+        playlists: []
       };
 
-      global.fetch = vi.fn(async () =>
-        new Response(JSON.stringify(mockUpdatedExclusions), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' }
-        })
-      );
+      vi.mocked(apiClient.post).mockResolvedValueOnce({ data: mockUpdatedExclusions });
 
       const result = await addChannelExclusion('channel-123', 'video', 'video3');
 
-      const [url, init] = (global.fetch as vi.Mock).mock.calls[0] as [string, RequestInit];
-      expect(url).toBe('http://localhost:8080/admin/channels/channel-123/exclusions/video/video3');
-      expect(init.method).toBe('POST');
+      expect(apiClient.post).toHaveBeenCalledWith('/admin/channels/channel-123/exclusions/video/video3');
       expect(result).toEqual(mockUpdatedExclusions);
     });
 
     it('removes channel playlist exclusion', async () => {
       const mockUpdatedExclusions = {
         videos: [],
-        playlists: [],
-        liveStreams: [],
-        shorts: [],
-        posts: []
+        playlists: []
       };
 
-      global.fetch = vi.fn(async () =>
-        new Response(JSON.stringify(mockUpdatedExclusions), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' }
-        })
-      );
+      vi.mocked(apiClient.delete).mockResolvedValueOnce({ data: mockUpdatedExclusions });
 
       const result = await removeChannelExclusion('channel-123', 'playlist', 'playlist1');
 
-      const [url, init] = (global.fetch as vi.Mock).mock.calls[0] as [string, RequestInit];
-      expect(url).toBe('http://localhost:8080/admin/channels/channel-123/exclusions/playlist/playlist1');
-      expect(init.method).toBe('DELETE');
+      expect(apiClient.delete).toHaveBeenCalledWith('/admin/channels/channel-123/exclusions/playlist/playlist1');
       expect(result).toEqual(mockUpdatedExclusions);
     });
   });
@@ -160,55 +92,49 @@ describe('exclusions service', () => {
     it('fetches playlist exclusions', async () => {
       const mockExclusions = ['video1', 'video2'];
 
-      global.fetch = vi.fn(async () =>
-        new Response(JSON.stringify(mockExclusions), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' }
-        })
-      );
+      vi.mocked(apiClient.get).mockResolvedValueOnce({ data: mockExclusions });
 
       const result = await fetchPlaylistExclusions('playlist-123');
 
-      expect(global.fetch).toHaveBeenCalledTimes(1);
-      const [url] = (global.fetch as vi.Mock).mock.calls[0] as [string, RequestInit];
-      expect(url).toBe('http://localhost:8080/admin/playlists/playlist-123/exclusions');
+      expect(apiClient.get).toHaveBeenCalledWith('/admin/playlists/playlist-123/exclusions');
       expect(result).toEqual(mockExclusions);
     });
 
     it('adds playlist video exclusion', async () => {
       const mockUpdatedExclusions = ['video1', 'video2', 'video3'];
 
-      global.fetch = vi.fn(async () =>
-        new Response(JSON.stringify(mockUpdatedExclusions), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' }
-        })
-      );
+      vi.mocked(apiClient.post).mockResolvedValueOnce({ data: mockUpdatedExclusions });
 
       const result = await addPlaylistExclusion('playlist-123', 'video3');
 
-      const [url, init] = (global.fetch as vi.Mock).mock.calls[0] as [string, RequestInit];
-      expect(url).toBe('http://localhost:8080/admin/playlists/playlist-123/exclusions/video3');
-      expect(init.method).toBe('POST');
+      expect(apiClient.post).toHaveBeenCalledWith('/admin/playlists/playlist-123/exclusions/video3');
       expect(result).toEqual(mockUpdatedExclusions);
     });
 
     it('removes playlist video exclusion', async () => {
       const mockUpdatedExclusions = ['video2'];
 
-      global.fetch = vi.fn(async () =>
-        new Response(JSON.stringify(mockUpdatedExclusions), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' }
-        })
-      );
+      vi.mocked(apiClient.delete).mockResolvedValueOnce({ data: mockUpdatedExclusions });
 
       const result = await removePlaylistExclusion('playlist-123', 'video1');
 
-      const [url, init] = (global.fetch as vi.Mock).mock.calls[0] as [string, RequestInit];
-      expect(url).toBe('http://localhost:8080/admin/playlists/playlist-123/exclusions/video1');
-      expect(init.method).toBe('DELETE');
+      expect(apiClient.delete).toHaveBeenCalledWith('/admin/playlists/playlist-123/exclusions/video1');
       expect(result).toEqual(mockUpdatedExclusions);
+    });
+  });
+
+  describe('Workspace Exclusions', () => {
+    it('returns empty page for fetchExclusionsPage', async () => {
+      const result = await fetchExclusionsPage();
+
+      expect(result).toEqual({
+        data: [],
+        pageInfo: {
+          cursor: null,
+          nextCursor: null,
+          hasNext: false
+        }
+      });
     });
   });
 });

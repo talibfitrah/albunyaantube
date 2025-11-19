@@ -67,7 +67,7 @@ async function loadCategories() {
     // Map subcategories to children for consistency with component
     categories.value = fetchedCategories.map(cat => ({
       ...cat,
-      name: cat.name || cat.label || 'Unnamed Category',
+      name: cat.name || 'Unnamed Category',
       children: cat.subcategories || []
     })) as Category[];
   } catch (err) {

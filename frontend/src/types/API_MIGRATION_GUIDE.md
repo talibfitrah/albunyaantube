@@ -66,8 +66,8 @@ function toCategoryOption(cat: Category): CategoryOption {
 }
 
 export async function fetchAllCategories(): Promise<CategoryOption[]> {
-  const categories = await authorizedJsonFetch<Category[]>('/api/admin/categories')
-  return buildHierarchy(categories.map(toCategoryOption))
+  const response = await apiClient.get<Category[]>('/api/admin/categories')
+  return buildHierarchy(response.data.map(toCategoryOption))
 }
 ```
 
