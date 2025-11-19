@@ -753,18 +753,23 @@ async function loadContent() {
     const response = await apiClient.get('/api/admin/content', { params });
 
     // Update content with response data
-    content.value = response.data.content.map((item: any) => ({
-      id: item.id,
-      title: item.title,
-      type: item.type,
-      thumbnailUrl: item.thumbnailUrl,
-      categoryIds: item.categoryIds || [],
-      status: item.status?.toLowerCase() || 'pending',
-      createdAt: new Date(item.createdAt),
-      description: item.description,
-      count: item.count,
-      youtubeId: item.youtubeId || ''
-    }));
+    content.value = response.data.content.map((item: any) => {
+      if (!item.youtubeId) {
+        console.warn(`[ContentLibrary] Missing youtubeId for ${item.type} ${item.id}`);
+      }
+      return {
+        id: item.id,
+        title: item.title,
+        type: item.type,
+        thumbnailUrl: item.thumbnailUrl,
+        categoryIds: item.categoryIds || [],
+        status: item.status?.toLowerCase() || 'pending',
+        createdAt: new Date(item.createdAt),
+        description: item.description,
+        count: item.count,
+        youtubeId: item.youtubeId || ''
+      };
+    });
 
   } catch (err: any) {
     console.error('Failed to load content:', err);
