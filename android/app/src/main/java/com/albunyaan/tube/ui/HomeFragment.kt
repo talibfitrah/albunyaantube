@@ -3,6 +3,7 @@ package com.albunyaan.tube.ui
 import android.os.Bundle
 import android.util.Log
 import android.view.View
+import androidx.core.os.bundleOf
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
@@ -42,17 +43,31 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
     private fun setupAdapters() {
         channelAdapter = HomeChannelAdapter { channel ->
             Log.d(TAG, "Channel clicked: ${channel.name}")
-            // TODO: Navigate to channel detail
+            findNavController().navigate(
+                R.id.action_global_channelDetailFragment,
+                bundleOf("channelId" to channel.id, "channelName" to channel.name)
+            )
         }
 
         playlistAdapter = HomePlaylistAdapter { playlist ->
             Log.d(TAG, "Playlist clicked: ${playlist.title}")
-            // TODO: Navigate to playlist detail
+            findNavController().navigate(
+                R.id.action_global_playlistDetailFragment,
+                bundleOf(
+                    "playlistId" to playlist.id,
+                    "playlistTitle" to playlist.title,
+                    "playlistCategory" to playlist.category,
+                    "playlistCount" to playlist.itemCount
+                )
+            )
         }
 
         videoAdapter = HomeVideoAdapter { video ->
             Log.d(TAG, "Video clicked: ${video.title}")
-            // TODO: Navigate to video player
+            findNavController().navigate(
+                R.id.action_global_playerFragment,
+                bundleOf("videoId" to video.id)
+            )
         }
     }
 
@@ -79,8 +94,8 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
     private fun setupClickListeners(binding: FragmentHomeNewBinding) {
         // Category chip click listener
         binding.categoryChip.setOnClickListener {
-            // TODO: Show category selection dialog
             Log.d(TAG, "Category chip clicked")
+            findNavController().navigate(R.id.action_homeFragment_to_categoriesFragment)
         }
 
         // See All click listeners - navigate to respective tabs

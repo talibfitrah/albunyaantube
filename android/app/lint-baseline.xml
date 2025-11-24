@@ -1770,44 +1770,11 @@
 
     <issue
         id="UnusedResources"
-        message="The resource `R.layout.fragment_channels` appears to be unused"
-        errorLine1="&lt;FrameLayout xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;"
-        errorLine2="^">
-        <location
-            file="src/main/res/layout/fragment_channels.xml"
-            line="2"
-            column="1"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
         message="The resource `R.layout.fragment_locale_settings` appears to be unused"
         errorLine1="&lt;androidx.constraintlayout.widget.ConstraintLayout xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;"
         errorLine2="^">
         <location
             file="src/main/res/layout/fragment_locale_settings.xml"
-            line="2"
-            column="1"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.layout.fragment_playlists` appears to be unused"
-        errorLine1="&lt;FrameLayout xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;"
-        errorLine2="^">
-        <location
-            file="src/main/res/layout/fragment_playlists.xml"
-            line="2"
-            column="1"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.layout.fragment_videos` appears to be unused"
-        errorLine1="&lt;FrameLayout xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;"
-        errorLine2="^">
-        <location
-            file="src/main/res/layout/fragment_videos.xml"
             line="2"
             column="1"/>
     </issue>
@@ -3498,17 +3465,6 @@
 
     <issue
         id="HardcodedText"
-        message="Hardcoded string &quot;Channels placeholder&quot;, should use `@string` resource"
-        errorLine1="        android:text=&quot;Channels placeholder&quot;"
-        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/res/layout/fragment_channels.xml"
-            line="10"
-            column="9"/>
-    </issue>
-
-    <issue
-        id="HardcodedText"
         message="Hardcoded string &quot;Downloads&quot;, should use `@string` resource"
         errorLine1="                android:text=&quot;Downloads&quot;"
         errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~">
@@ -3795,17 +3751,6 @@
 
     <issue
         id="HardcodedText"
-        message="Hardcoded string &quot;Playlists placeholder&quot;, should use `@string` resource"
-        errorLine1="        android:text=&quot;Playlists placeholder&quot;"
-        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/res/layout/fragment_playlists.xml"
-            line="10"
-            column="9"/>
-    </issue>
-
-    <issue
-        id="HardcodedText"
         message="Hardcoded string &quot;Recent Searches&quot;, should use `@string` resource"
         errorLine1="                        android:text=&quot;Recent Searches&quot;"
         errorLine2="                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
@@ -3912,17 +3857,6 @@
             file="src/main/res/layout/fragment_settings.xml"
             line="201"
             column="17"/>
-    </issue>
-
-    <issue
-        id="HardcodedText"
-        message="Hardcoded string &quot;Videos placeholder&quot;, should use `@string` resource"
-        errorLine1="        android:text=&quot;Videos placeholder&quot;"
-        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/res/layout/fragment_videos.xml"
-            line="10"
-            column="9"/>
     </issue>
 
     <issue

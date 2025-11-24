@@ -542,9 +542,12 @@ private class ThumbnailPrefetcher(
         val adapter = adapter ?: return
         if (prefetchDistance <= 0) return
         if (start > endInclusive) return
-        if (adapter.itemCount == 0) return
+        val itemCount = adapter.itemCount
+        if (itemCount == 0) return
         val boundedStart = max(start, 0)
-        for (index in boundedStart..endInclusive) {
+        val boundedEnd = minOf(endInclusive, itemCount - 1)
+        if (boundedStart > boundedEnd) return
+        for (index in boundedStart..boundedEnd) {
             val item = adapter.peek(index) ?: continue
             val url = item.thumbnailUrl() ?: continue
             if (!prefetchedUrls.add(url)) continue
