@@ -10,10 +10,15 @@
           <button
             type="button"
             class="validate-button"
-            :disabled="isValidating"
+            :disabled="isValidating || retryCountdown > 0"
             @click="handleValidateAll"
           >
-            {{ isValidating ? t('archivedContent.validation.running') : t('archivedContent.validation.runAll') }}
+            <template v-if="retryCountdown > 0">
+              {{ t('archivedContent.validation.retryIn', { seconds: retryCountdown }) }}
+            </template>
+            <template v-else>
+              {{ isValidating ? t('archivedContent.validation.running') : t('archivedContent.validation.runAll') }}
+            </template>
           </button>
         </div>
       </div>
@@ -320,6 +325,10 @@ const pollingInterval = ref<ReturnType<typeof setInterval> | null>(null);
 const pollingErrorCount = ref(0);
 const MAX_POLLING_ERRORS = 5;
 
+// Backpressure state (503 Service Unavailable handling)
+const retryCountdown = ref(0);
+const retryCountdownInterval = ref<ReturnType<typeof setInterval> | null>(null);
+
 // Computed progress values
 const progressPercent = computed(() => validationRun.value?.progressPercent ?? 0);
 const currentPhase = computed(() => validationRun.value?.currentPhase ?? 'STARTING');
@@ -471,6 +480,30 @@ function stopPolling() {
   }
 }
 
+function startRetryCountdown(seconds: number) {
+  // Clear any existing countdown
+  stopRetryCountdown();
+
+  // Set initial countdown value
+  retryCountdown.value = seconds;
+
+  // Decrement every second
+  retryCountdownInterval.value = setInterval(() => {
+    retryCountdown.value--;
+    if (retryCountdown.value <= 0) {
+      stopRetryCountdown();
+    }
+  }, 1000);
+}
+
+function stopRetryCountdown() {
+  if (retryCountdownInterval.value) {
+    clearInterval(retryCountdownInterval.value);
+    retryCountdownInterval.value = null;
+  }
+  retryCountdown.value = 0;
+}
+
 async function pollValidationStatus(runId: string) {
   try {
     const status = await getValidationStatus(runId);
@@ -562,7 +595,19 @@ async function handleValidateAll() {
     }
   } catch (err) {
     isValidating.value = false;
-    errorMessage.value = t('archivedContent.validation.error');
+
+    // Check if it's a 503 Service Unavailable (system overloaded)
+    const axiosError = err as { response?: { status?: number; data?: { error?: string; retryAfter?: number } } };
+    if (axiosError?.response?.status === 503) {
+      const retryAfter = axiosError.response.data?.retryAfter || 60;
+      errorMessage.value = t('archivedContent.validation.systemOverloaded', { seconds: retryAfter });
+
+      // Start countdown timer to prevent button spam
+      startRetryCountdown(retryAfter);
+    } else {
+      errorMessage.value = t('archivedContent.validation.error');
+    }
+
     console.error('Failed to start validation:', err);
   }
 }
@@ -637,6 +682,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   stopPolling();
+  stopRetryCountdown();
 });
 </script>
 

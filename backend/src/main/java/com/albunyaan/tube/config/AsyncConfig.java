@@ -8,8 +8,10 @@ import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * FIREBASE-MIGRATE-04: Async Configuration
@@ -22,6 +24,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 public class AsyncConfig {
 
     private static final Logger logger = LoggerFactory.getLogger(AsyncConfig.class);
+    private static final LoggingCallerRunsPolicy rejectionHandler = new LoggingCallerRunsPolicy();
 
     /**
      * Dedicated executor for content validation tasks.
@@ -36,8 +39,8 @@ public class AsyncConfig {
      * - maxPoolSize=4: Cap concurrent validation runs (each does sequential I/O)
      * - queueCapacity=10: Buffer for burst requests; rejects if exceeded
      * - keepAlive=60s: Idle threads above core are reclaimed after 1 minute
-     * - rejectedExecutionHandler: CallerRunsPolicy - if queue is full, run in caller thread
-     *   This prevents silent task loss and provides backpressure to the caller
+     * - rejectedExecutionHandler: Custom handler that logs and throws exception
+     *   This prevents silent task loss and provides 503 response to users
      */
     @Bean(name = "validationExecutor")
     public Executor validationExecutor() {
@@ -50,40 +53,70 @@ public class AsyncConfig {
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(30);
 
-        // Use CallerRunsPolicy with logging to prevent silent task rejection
-        // When queue is full, the task runs in the calling thread (provides backpressure)
-        executor.setRejectedExecutionHandler(new LoggingCallerRunsPolicy());
+        // Use custom rejection handler that logs metrics and throws exception
+        executor.setRejectedExecutionHandler(rejectionHandler);
 
         executor.initialize();
         return executor;
     }
 
     /**
-     * Custom rejection handler that logs when tasks are rejected and then runs them
-     * in the caller's thread (CallerRunsPolicy behavior).
+     * Expose the rejection handler as a bean so its metrics can be monitored.
+     * Use this to track validation executor overload events.
+     */
+    @Bean(name = "validationRejectionHandler")
+    public LoggingCallerRunsPolicy validationRejectionHandler() {
+        return rejectionHandler;
+    }
+
+    /**
+     * Custom rejection handler that logs when tasks are rejected and throws an exception.
      *
      * This ensures:
-     * 1. Tasks are never silently lost
-     * 2. Administrators can monitor for capacity issues via logs
-     * 3. Backpressure is applied to callers when the system is overloaded
+     * 1. Tasks are never silently lost - caller is notified via exception
+     * 2. Administrators can monitor for capacity issues via logs and metrics
+     * 3. Controller can return 503 Service Unavailable to users when overloaded
+     * 4. Rejection count is tracked for monitoring
+     *
+     * Made public so metrics can be exposed via health/metrics endpoints.
      */
-    private static class LoggingCallerRunsPolicy implements RejectedExecutionHandler {
+    public static class LoggingCallerRunsPolicy implements RejectedExecutionHandler {
+        private final AtomicLong rejectionCount = new AtomicLong(0);
+
         @Override
         public void rejectedExecution(Runnable r, ThreadPoolExecutor executor) {
             if (!executor.isShutdown()) {
-                logger.warn("Validation executor queue full (capacity={}). Running task in caller thread. " +
-                           "Consider increasing queue capacity or throttling requests. " +
-                           "Active threads: {}, Pool size: {}, Queue size: {}",
-                        executor.getQueue().size() + executor.getQueue().remainingCapacity(),
-                        executor.getActiveCount(),
-                        executor.getPoolSize(),
-                        executor.getQueue().size());
+                long count = rejectionCount.incrementAndGet();
 
-                // Run in caller's thread (CallerRunsPolicy behavior)
-                r.run();
+                logger.warn("Validation executor queue full (capacity={}). Task REJECTED (total rejections: {}). " +
+                           "System is overloaded - consider increasing queue capacity or throttling requests. " +
+                           "Active threads: {}/{}, Queue size: {}/{}",
+                        executor.getQueue().size() + executor.getQueue().remainingCapacity(),
+                        count,
+                        executor.getActiveCount(),
+                        executor.getMaximumPoolSize(),
+                        executor.getQueue().size(),
+                        executor.getQueue().remainingCapacity() + executor.getQueue().size());
+
+                // Throw exception so controller can return 503 Service Unavailable
+                throw new RejectedExecutionException(
+                    "Validation system is currently overloaded. Please try again in a few minutes. " +
+                    "(Active validations: " + executor.getActiveCount() + "/" + executor.getMaximumPoolSize() + ", " +
+                    "Queue: " + executor.getQueue().size() + "/" +
+                    (executor.getQueue().size() + executor.getQueue().remainingCapacity()) + ")"
+                );
             } else {
                 logger.warn("Validation executor is shut down. Task rejected and discarded.");
+                throw new RejectedExecutionException("Validation system is shutting down. Please try again later.");
             }
+        }
+
+        /**
+         * Get the total number of rejected tasks since startup.
+         * Used for monitoring and alerting.
+         */
+        public long getRejectionCount() {
+            return rejectionCount.get();
         }
     }
 }

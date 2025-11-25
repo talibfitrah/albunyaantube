@@ -1,5 +1,6 @@
 package com.albunyaan.tube.controller;
 
+import com.albunyaan.tube.config.AsyncConfig;
 import com.albunyaan.tube.dto.ArchivedContentDto;
 import com.albunyaan.tube.dto.ArchivedCountsDto;
 import com.albunyaan.tube.dto.ContentActionRequestDto;
@@ -15,6 +16,7 @@ import com.albunyaan.tube.security.FirebaseUserDetails;
 import com.albunyaan.tube.service.ContentValidationService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -26,6 +28,8 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeoutException;
 
 /**
@@ -42,15 +46,21 @@ public class ContentValidationController {
     private final ContentValidationService contentValidationService;
     private final CategoryRepository categoryRepository;
     private final Executor validationExecutor;
+    private final AsyncConfig.LoggingCallerRunsPolicy rejectionHandler;
+
+    // Track currently running validations to prevent duplicates
+    private volatile boolean isValidationRunning = false;
 
     public ContentValidationController(
             ContentValidationService contentValidationService,
             CategoryRepository categoryRepository,
-            Executor validationExecutor
+            Executor validationExecutor,
+            AsyncConfig.LoggingCallerRunsPolicy rejectionHandler
     ) {
         this.contentValidationService = contentValidationService;
         this.categoryRepository = categoryRepository;
         this.validationExecutor = validationExecutor;
+        this.rejectionHandler = rejectionHandler;
     }
 
     // ==================== Validation Triggers ====================
@@ -66,6 +76,15 @@ public class ContentValidationController {
             @AuthenticationPrincipal FirebaseUserDetails user,
             @RequestParam(required = false) Integer maxItems
     ) {
+        // Prevent duplicate validations running concurrently
+        if (isValidationRunning) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of(
+                            "success", false,
+                            "error", "A validation is already running. Please wait for it to complete."
+                    ));
+        }
+
         if (maxItems != null && maxItems < 1) {
             return ResponseEntity.badRequest()
                     .body(Map.of("error", "maxItems must be at least 1 when provided"));
@@ -76,6 +95,8 @@ public class ContentValidationController {
         run.setCurrentPhase("STARTING");
 
         try {
+            // Mark validation as running
+            isValidationRunning = true;
             // Save initial run to get an ID
             run = contentValidationService.saveValidationRun(run);
             final String runId = run.getId();
@@ -85,29 +106,47 @@ public class ContentValidationController {
 
             // Run validation asynchronously on dedicated executor (not common fork-join pool)
             // This prevents blocking Firestore I/O from starving other async operations
-            CompletableFuture.runAsync(() -> {
-                try {
-                    contentValidationService.validateAllContentAsync(
-                            runId,
-                            "MANUAL",
-                            uid,
-                            email,
-                            finalMaxItems
-                    );
-                } catch (Exception e) {
-                    // Error handling is done inside the service
-                }
-            }, validationExecutor);
+            try {
+                CompletableFuture.runAsync(() -> {
+                    try {
+                        contentValidationService.validateAllContentAsync(
+                                runId,
+                                "MANUAL",
+                                uid,
+                                email,
+                                finalMaxItems
+                        );
+                    } catch (Exception e) {
+                        // Error handling is done inside the service
+                    } finally {
+                        // Always reset the flag when validation completes (success or failure)
+                        isValidationRunning = false;
+                    }
+                }, validationExecutor);
 
-            // Return immediately with the run ID
-            return ResponseEntity.accepted().body(Map.of(
-                    "success", true,
-                    "message", "Validation started",
-                    "runId", runId,
-                    "status", "RUNNING"
-            ));
+                // Return immediately with the run ID
+                return ResponseEntity.accepted().body(Map.of(
+                        "success", true,
+                        "message", "Validation started",
+                        "runId", runId,
+                        "status", "RUNNING"
+                ));
+
+            } catch (RejectedExecutionException e) {
+                // Executor queue is full - system is overloaded
+                // Reset flag since validation won't run
+                isValidationRunning = false;
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                        .body(Map.of(
+                                "success", false,
+                                "error", e.getMessage(),
+                                "retryAfter", 60 // Suggest retry after 60 seconds
+                        ));
+            }
 
         } catch (Exception e) {
+            // Reset flag on any error before async execution
+            isValidationRunning = false;
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of(
                             "success", false,
@@ -497,6 +536,55 @@ public class ContentValidationController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Action failed: " + e.getMessage()));
         }
+    }
+
+    // ==================== Metrics ====================
+
+    /**
+     * Get validation executor metrics.
+     * GET /api/admin/content-validation/metrics
+     *
+     * Returns metrics about the validation executor including rejection count,
+     * which can be used for monitoring and alerting on system overload.
+     */
+    @GetMapping("/metrics")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    public ResponseEntity<?> getValidationMetrics() {
+        long rejectionCount = rejectionHandler.getRejectionCount();
+
+        // Get actual executor metrics if available
+        Map<String, Object> executorMetrics;
+        if (validationExecutor instanceof ThreadPoolTaskExecutor) {
+            ThreadPoolTaskExecutor tpExecutor = (ThreadPoolTaskExecutor) validationExecutor;
+            ThreadPoolExecutor threadPool = tpExecutor.getThreadPoolExecutor();
+
+            executorMetrics = Map.of(
+                    "corePoolSize", tpExecutor.getCorePoolSize(),
+                    "maxPoolSize", tpExecutor.getMaxPoolSize(),
+                    "queueCapacity", tpExecutor.getQueueCapacity(),
+                    "activeCount", threadPool.getActiveCount(),
+                    "poolSize", threadPool.getPoolSize(),
+                    "queueSize", threadPool.getQueue().size(),
+                    "completedTaskCount", threadPool.getCompletedTaskCount()
+            );
+        } else {
+            // Fallback for non-ThreadPoolTaskExecutor (shouldn't happen in production)
+            executorMetrics = Map.of(
+                    "corePoolSize", 2,
+                    "maxPoolSize", 4,
+                    "queueCapacity", 10,
+                    "note", "Using default values - executor type not supported for dynamic metrics"
+            );
+        }
+
+        return ResponseEntity.ok(Map.of(
+                "executor", executorMetrics,
+                "rejections", Map.of(
+                        "total", rejectionCount,
+                        "description", "Total number of validation tasks rejected due to queue overflow since startup"
+                ),
+                "validationRunning", isValidationRunning
+        ));
     }
 
     // ==================== Validation History ====================
