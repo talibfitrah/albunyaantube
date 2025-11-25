@@ -39,6 +39,28 @@
       </div>
     </div>
 
+    <!-- Validation Progress Bar -->
+    <div v-if="isValidating && validationRun" class="progress-panel">
+      <div class="progress-header">
+        <span class="progress-title">{{ t('archivedContent.validation.inProgress') }}</span>
+        <span class="progress-phase">{{ progressPhaseLabel }}</span>
+      </div>
+      <div class="progress-bar-container">
+        <div
+          class="progress-bar-fill"
+          :style="{ width: `${progressPercent}%` }"
+          role="progressbar"
+          :aria-valuenow="progressPercent"
+          aria-valuemin="0"
+          aria-valuemax="100"
+        ></div>
+      </div>
+      <div class="progress-footer">
+        <span class="progress-percent">{{ progressPercent }}%</span>
+        <span class="progress-details">{{ progressDetails }}</span>
+      </div>
+    </div>
+
     <!-- Error Message -->
     <div v-if="errorMessage" class="error-panel" role="alert">
       <p>{{ errorMessage }}</p>
@@ -257,9 +279,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, watchEffect } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch, watchEffect } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { ArchivedContent, ArchivedCounts, ContentType } from '@/types/validation';
+import type { ArchivedContent, ArchivedCounts, ContentType, ValidationRun } from '@/types/validation';
 import {
   getArchivedCounts,
   getArchivedChannels,
@@ -267,7 +289,8 @@ import {
   getArchivedVideos,
   deleteArchivedContent,
   restoreArchivedContent,
-  validateAllContent
+  validateAllContent,
+  getValidationStatus
 } from '@/services/contentValidation';
 
 const { t } = useI18n();
@@ -290,6 +313,34 @@ const activeTab = ref<ContentType>('CHANNEL');
 const selectedIds = ref<string[]>([]);
 const showConfirmDialog = ref(false);
 const pendingAction = ref<{ action: 'delete' | 'restore'; items: ArchivedContent[] } | null>(null);
+
+// Validation progress state
+const validationRun = ref<ValidationRun | null>(null);
+const pollingInterval = ref<ReturnType<typeof setInterval> | null>(null);
+const pollingErrorCount = ref(0);
+const MAX_POLLING_ERRORS = 5;
+
+// Computed progress values
+const progressPercent = computed(() => validationRun.value?.progressPercent ?? 0);
+const currentPhase = computed(() => validationRun.value?.currentPhase ?? 'STARTING');
+const progressPhaseLabel = computed(() => {
+  switch (currentPhase.value) {
+    case 'STARTING': return t('archivedContent.validation.phases.starting');
+    case 'INITIALIZING': return t('archivedContent.validation.phases.initializing');
+    case 'CHANNELS': return t('archivedContent.validation.phases.channels');
+    case 'PLAYLISTS': return t('archivedContent.validation.phases.playlists');
+    case 'VIDEOS': return t('archivedContent.validation.phases.videos');
+    case 'COMPLETE': return t('archivedContent.validation.phases.complete');
+    default: return currentPhase.value;
+  }
+});
+const progressDetails = computed(() => {
+  if (!validationRun.value) return '';
+  const run = validationRun.value;
+  const checked = run.totalChecked ?? 0;
+  const total = run.totalToCheck ?? 0;
+  return `${checked} / ${total}`;
+});
 
 // Tabs configuration
 const tabs = computed(() => [
@@ -413,28 +464,106 @@ async function loadData() {
   }
 }
 
+function stopPolling() {
+  if (pollingInterval.value) {
+    clearInterval(pollingInterval.value);
+    pollingInterval.value = null;
+  }
+}
+
+async function pollValidationStatus(runId: string) {
+  try {
+    const status = await getValidationStatus(runId);
+    validationRun.value = status;
+    pollingErrorCount.value = 0; // Reset error count on success
+
+    if (status.status === 'COMPLETED' || status.status === 'FAILED') {
+      stopPolling();
+      isValidating.value = false;
+
+      if (status.status === 'COMPLETED') {
+        // Build success message
+        let message = t('archivedContent.validation.success', {
+          checked: status.totalChecked || 0,
+          archived: status.totalArchived || 0
+        });
+
+        // Add per-type breakdown
+        message += '\n' + t('archivedContent.validation.successDetails', {
+          channelsChecked: status.channelsChecked || 0,
+          channelsArchived: status.channelsArchived || 0,
+          playlistsChecked: status.playlistsChecked || 0,
+          playlistsArchived: status.playlistsArchived || 0,
+          videosChecked: status.videosChecked || 0,
+          videosArchived: status.videosArchived || 0
+        });
+
+        // Add error warning if there were transient errors
+        if (status.errorCount && status.errorCount > 0) {
+          message += '\n' + t('archivedContent.validation.successWithErrors', {
+            errorCount: status.errorCount
+          });
+        }
+
+        successMessage.value = message;
+        await loadData();
+        setTimeout(() => { successMessage.value = null; }, 8000);
+      } else {
+        errorMessage.value = t('archivedContent.validation.error');
+      }
+
+      // Clear validation run after a delay
+      setTimeout(() => { validationRun.value = null; }, 3000);
+    }
+  } catch (err: unknown) {
+    console.error('Failed to poll validation status:', err);
+    pollingErrorCount.value++;
+
+    // Check for fatal errors (404 = run not found, 410 = gone)
+    const axiosError = err as { response?: { status?: number } };
+    const httpStatus = axiosError?.response?.status;
+
+    if (httpStatus === 404 || httpStatus === 410) {
+      // Run not found - stop polling immediately
+      stopPolling();
+      isValidating.value = false;
+      errorMessage.value = t('archivedContent.validation.runNotFound');
+      validationRun.value = null;
+    } else if (pollingErrorCount.value >= MAX_POLLING_ERRORS) {
+      // Too many consecutive errors - stop polling
+      stopPolling();
+      isValidating.value = false;
+      errorMessage.value = t('archivedContent.validation.pollingFailed');
+      validationRun.value = null;
+    }
+    // Otherwise continue polling (transient error)
+  }
+}
+
 async function handleValidateAll() {
   isValidating.value = true;
   errorMessage.value = null;
   successMessage.value = null;
+  validationRun.value = null;
 
   try {
     const result = await validateAllContent();
-    if (result.success) {
-      successMessage.value = t('archivedContent.validation.success', {
-        checked: result.data.totalChecked || 0,
-        archived: result.data.totalArchived || 0
-      });
-      await loadData();
-      setTimeout(() => { successMessage.value = null; }, 5000);
+    if (result.success && result.runId) {
+      // Start polling for progress
+      pollingInterval.value = setInterval(() => {
+        pollValidationStatus(result.runId);
+      }, 1500); // Poll every 1.5 seconds
+
+      // Initial poll
+      await pollValidationStatus(result.runId);
     } else {
-      errorMessage.value = result.message || t('archivedContent.validation.error');
+      isValidating.value = false;
+      errorMessage.value = t('archivedContent.validation.error');
     }
   } catch (err) {
-    errorMessage.value = t('archivedContent.validation.error');
-    console.error('Validation failed:', err);
-  } finally {
     isValidating.value = false;
+    errorMessage.value = t('archivedContent.validation.error');
+    console.error('Failed to start validation:', err);
   }
 }
 
@@ -504,6 +633,10 @@ watch(activeTab, () => {
 
 onMounted(() => {
   loadData();
+});
+
+onUnmounted(() => {
+  stopPolling();
 });
 </script>
 
@@ -619,6 +752,65 @@ onMounted(() => {
   padding: 1.25rem;
   margin-bottom: 1.5rem;
   color: var(--color-text-primary);
+  white-space: pre-line; /* Preserve newlines in message */
+}
+
+/* Progress Panel */
+.progress-panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.progress-title {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.progress-phase {
+  font-size: 0.875rem;
+  color: var(--color-brand);
+  font-weight: 500;
+}
+
+.progress-bar-container {
+  height: 8px;
+  background: var(--color-surface-alt);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 0.75rem;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: var(--color-brand);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.progress-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.875rem;
+}
+
+.progress-percent {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.progress-details {
+  color: var(--color-text-secondary);
 }
 
 .retry-button {

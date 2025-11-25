@@ -93,6 +93,26 @@ public class ValidationRun {
     private int errorCount;
 
     /**
+     * Total channels to check (for progress calculation)
+     */
+    private int totalChannelsToCheck;
+
+    /**
+     * Total playlists to check (for progress calculation)
+     */
+    private int totalPlaylistsToCheck;
+
+    /**
+     * Total videos to check (for progress calculation)
+     */
+    private int totalVideosToCheck;
+
+    /**
+     * Current phase of validation: CHANNELS, PLAYLISTS, VIDEOS, COMPLETE
+     */
+    private String currentPhase;
+
+    /**
      * Additional details about the run (JSON-like map)
      * Can include: videoIds, error messages, configuration, etc.
      */
@@ -363,6 +383,57 @@ public class ValidationRun {
      */
     public void incrementError() {
         this.errorCount++;
+    }
+
+    // Progress tracking getters/setters
+
+    public int getTotalChannelsToCheck() {
+        return totalChannelsToCheck;
+    }
+
+    public void setTotalChannelsToCheck(int totalChannelsToCheck) {
+        this.totalChannelsToCheck = totalChannelsToCheck;
+    }
+
+    public int getTotalPlaylistsToCheck() {
+        return totalPlaylistsToCheck;
+    }
+
+    public void setTotalPlaylistsToCheck(int totalPlaylistsToCheck) {
+        this.totalPlaylistsToCheck = totalPlaylistsToCheck;
+    }
+
+    public int getTotalVideosToCheck() {
+        return totalVideosToCheck;
+    }
+
+    public void setTotalVideosToCheck(int totalVideosToCheck) {
+        this.totalVideosToCheck = totalVideosToCheck;
+    }
+
+    public String getCurrentPhase() {
+        return currentPhase;
+    }
+
+    public void setCurrentPhase(String currentPhase) {
+        this.currentPhase = currentPhase;
+    }
+
+    /**
+     * Get the total items to check across all types
+     */
+    public int getTotalToCheck() {
+        return totalChannelsToCheck + totalPlaylistsToCheck + totalVideosToCheck;
+    }
+
+    /**
+     * Calculate progress percentage (0-100)
+     */
+    public int getProgressPercent() {
+        int total = getTotalToCheck();
+        if (total == 0) return 0;
+        int checked = getTotalChecked();
+        return Math.min(100, (int) ((checked * 100.0) / total));
     }
 
     /**

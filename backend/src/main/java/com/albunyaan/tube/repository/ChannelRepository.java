@@ -99,6 +99,25 @@ public class ChannelRepository {
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
     }
 
+    /**
+     * Find channels by status ordered by lastValidatedAt ascending (oldest validated first).
+     * This prevents validation starvation by ensuring items that haven't been validated
+     * recently are prioritized over recently validated items.
+     *
+     * @param status The approval status to filter by
+     * @param limit Maximum number of results
+     * @return List of channels ordered by lastValidatedAt ascending (nulls first in memory sort)
+     */
+    public List<Channel> findByStatusOrderByLastValidatedAtAsc(String status, int limit) throws ExecutionException, InterruptedException, TimeoutException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereEqualTo("status", status)
+                .orderBy("lastValidatedAt", Query.Direction.ASCENDING)
+                .limit(limit)
+                .get();
+
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
+    }
+
     public List<Channel> findByCategoryId(String categoryId) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereArrayContains("categoryIds", categoryId)

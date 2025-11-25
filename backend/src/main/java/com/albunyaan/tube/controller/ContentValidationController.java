@@ -23,7 +23,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeoutException;
 
 /**
@@ -39,19 +41,23 @@ public class ContentValidationController {
 
     private final ContentValidationService contentValidationService;
     private final CategoryRepository categoryRepository;
+    private final Executor validationExecutor;
 
     public ContentValidationController(
             ContentValidationService contentValidationService,
-            CategoryRepository categoryRepository
+            CategoryRepository categoryRepository,
+            Executor validationExecutor
     ) {
         this.contentValidationService = contentValidationService;
         this.categoryRepository = categoryRepository;
+        this.validationExecutor = validationExecutor;
     }
 
     // ==================== Validation Triggers ====================
 
     /**
-     * Validate all content types (channels, playlists, videos).
+     * Start async validation of all content types (channels, playlists, videos).
+     * Returns immediately with the run ID for progress polling.
      * POST /api/admin/content-validation/validate/all
      */
     @PostMapping("/validate/all")
@@ -60,31 +66,76 @@ public class ContentValidationController {
             @AuthenticationPrincipal FirebaseUserDetails user,
             @RequestParam(required = false) Integer maxItems
     ) {
-        if (maxItems != null && (maxItems < 1 || maxItems > 3000)) {
+        if (maxItems != null && maxItems < 1) {
             return ResponseEntity.badRequest()
-                    .body(Map.of("error", "maxItems must be between 1 and 3000"));
+                    .body(Map.of("error", "maxItems must be at least 1 when provided"));
         }
 
-        try {
-            ValidationRun result = contentValidationService.validateAllContent(
-                    "MANUAL",
-                    user.getUid(),
-                    user.getEmail(),
-                    maxItems
-            );
+        // Create a preliminary validation run to get the ID
+        ValidationRun run = new ValidationRun("MANUAL", user.getUid(), user.getEmail());
+        run.setCurrentPhase("STARTING");
 
-            return ResponseEntity.ok(Map.of(
+        try {
+            // Save initial run to get an ID
+            run = contentValidationService.saveValidationRun(run);
+            final String runId = run.getId();
+            final Integer finalMaxItems = maxItems;
+            final String uid = user.getUid();
+            final String email = user.getEmail();
+
+            // Run validation asynchronously on dedicated executor (not common fork-join pool)
+            // This prevents blocking Firestore I/O from starving other async operations
+            CompletableFuture.runAsync(() -> {
+                try {
+                    contentValidationService.validateAllContentAsync(
+                            runId,
+                            "MANUAL",
+                            uid,
+                            email,
+                            finalMaxItems
+                    );
+                } catch (Exception e) {
+                    // Error handling is done inside the service
+                }
+            }, validationExecutor);
+
+            // Return immediately with the run ID
+            return ResponseEntity.accepted().body(Map.of(
                     "success", true,
-                    "message", "Content validation completed",
-                    "data", ValidationRunDto.fromModel(result)
+                    "message", "Validation started",
+                    "runId", runId,
+                    "status", "RUNNING"
             ));
 
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of(
                             "success", false,
-                            "error", "Validation failed: " + e.getMessage()
+                            "error", "Failed to start validation: " + e.getMessage()
                     ));
+        }
+    }
+
+    /**
+     * Get validation run status by ID (for progress polling).
+     * GET /api/admin/content-validation/status/{runId}
+     */
+    @GetMapping("/status/{runId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    public ResponseEntity<?> getValidationStatus(@PathVariable String runId) {
+        try {
+            ValidationRun run = contentValidationService.getValidationRunById(runId);
+
+            if (run == null) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Map.of("error", "Validation run not found: " + runId));
+            }
+
+            return ResponseEntity.ok(ValidationRunDto.fromModel(run));
+
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to get validation status: " + e.getMessage()));
         }
     }
 

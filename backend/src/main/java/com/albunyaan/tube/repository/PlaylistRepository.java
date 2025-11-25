@@ -96,6 +96,25 @@ public class PlaylistRepository {
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
     }
 
+    /**
+     * Find playlists by status ordered by lastValidatedAt ascending (oldest validated first).
+     * This prevents validation starvation by ensuring items that haven't been validated
+     * recently are prioritized over recently validated items.
+     *
+     * @param status The approval status to filter by
+     * @param limit Maximum number of results
+     * @return List of playlists ordered by lastValidatedAt ascending (nulls first in memory sort)
+     */
+    public List<Playlist> findByStatusOrderByLastValidatedAtAsc(String status, int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereEqualTo("status", status)
+                .orderBy("lastValidatedAt", Query.Direction.ASCENDING)
+                .limit(limit)
+                .get();
+
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
+    }
+
     public List<Playlist> findByCategoryId(String categoryId) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereArrayContains("categoryIds", categoryId)
@@ -355,8 +374,9 @@ public class PlaylistRepository {
      * @return List of approved playlists needing validation
      */
     public List<Playlist> findApprovedPlaylistsNeedingValidation(int limit) throws ExecutionException, InterruptedException, TimeoutException {
+        // Note: Playlists use lowercase "approved" status, unlike channels/videos which use "APPROVED"
         ApiFuture<QuerySnapshot> query = getCollection()
-                .whereEqualTo("status", "APPROVED")
+                .whereEqualTo("status", "approved")
                 .orderBy("lastValidatedAt", Query.Direction.ASCENDING)
                 .limit(limit)
                 .get();

@@ -1074,8 +1074,21 @@ export const messages = {
         runPlaylists: 'Validate Playlists',
         runVideos: 'Validate Videos',
         running: 'Running validation...',
+        inProgress: 'Validation in Progress',
         success: 'Validation completed: {checked} checked, {archived} archived',
-        error: 'Validation failed'
+        successDetails: 'Channels: {channelsChecked}/{channelsArchived} | Playlists: {playlistsChecked}/{playlistsArchived} | Videos: {videosChecked}/{videosArchived}',
+        successWithErrors: '{errorCount} item(s) had transient errors and will be retried later',
+        error: 'Validation failed',
+        runNotFound: 'Validation run not found. It may have expired.',
+        pollingFailed: 'Lost connection to validation status. Please refresh and try again.',
+        phases: {
+          starting: 'Starting...',
+          initializing: 'Initializing...',
+          channels: 'Validating Channels',
+          playlists: 'Validating Playlists',
+          videos: 'Validating Videos',
+          complete: 'Complete'
+        }
       },
       confirmDelete: {
         title: 'Confirm Deletion',
@@ -1992,8 +2005,21 @@ export const messages = {
         runPlaylists: 'التحقق من قوائم التشغيل',
         runVideos: 'التحقق من الفيديوهات',
         running: 'جارٍ التحقق...',
+        inProgress: 'التحقق قيد التنفيذ',
         success: 'اكتمل التحقق: {checked} تم الفحص، {archived} تم الأرشفة',
-        error: 'فشل التحقق'
+        successDetails: 'القنوات: {channelsChecked}/{channelsArchived} | قوائم التشغيل: {playlistsChecked}/{playlistsArchived} | الفيديوهات: {videosChecked}/{videosArchived}',
+        successWithErrors: '{errorCount} عنصر(عناصر) واجهت أخطاء مؤقتة وستتم إعادة المحاولة لاحقاً',
+        error: 'فشل التحقق',
+        runNotFound: 'لم يتم العثور على جلسة التحقق. قد تكون انتهت صلاحيتها.',
+        pollingFailed: 'انقطع الاتصال بحالة التحقق. يرجى تحديث الصفحة والمحاولة مرة أخرى.',
+        phases: {
+          starting: 'بدء التشغيل...',
+          initializing: 'جارٍ التهيئة...',
+          channels: 'التحقق من القنوات',
+          playlists: 'التحقق من قوائم التشغيل',
+          videos: 'التحقق من الفيديوهات',
+          complete: 'مكتمل'
+        }
       },
       confirmDelete: {
         title: 'تأكيد الحذف',
@@ -2908,8 +2934,21 @@ export const messages = {
         runPlaylists: 'Afspeellijsten valideren',
         runVideos: "Video's valideren",
         running: 'Validatie bezig...',
+        inProgress: 'Validatie in uitvoering',
         success: 'Validatie voltooid: {checked} gecontroleerd, {archived} gearchiveerd',
-        error: 'Validatie mislukt'
+        successDetails: "Kanalen: {channelsChecked}/{channelsArchived} | Afspeellijsten: {playlistsChecked}/{playlistsArchived} | Video's: {videosChecked}/{videosArchived}",
+        successWithErrors: '{errorCount} item(s) hadden tijdelijke fouten en worden later opnieuw geprobeerd',
+        error: 'Validatie mislukt',
+        runNotFound: 'Validatie-uitvoering niet gevonden. Mogelijk is deze verlopen.',
+        pollingFailed: 'Verbinding met validatiestatus verloren. Vernieuw de pagina en probeer opnieuw.',
+        phases: {
+          starting: 'Starten...',
+          initializing: 'Initialiseren...',
+          channels: 'Kanalen valideren',
+          playlists: 'Afspeellijsten valideren',
+          videos: "Video's valideren",
+          complete: 'Voltooid'
+        }
       },
       confirmDelete: {
         title: 'Verwijdering bevestigen',

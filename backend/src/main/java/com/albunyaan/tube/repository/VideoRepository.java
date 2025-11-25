@@ -77,19 +77,46 @@ public class VideoRepository {
         return videos.isEmpty() ? Optional.empty() : Optional.of(videos.get(0));
     }
 
+    /**
+     * Find videos by status.
+     * Note: Results are unordered to avoid requiring a composite Firestore index.
+     * Callers requiring ordering should sort results in memory.
+     */
     public List<Video> findByStatus(String status) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereEqualTo("status", status)
-                .orderBy("createdAt", Query.Direction.DESCENDING)
                 .get();
 
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
     }
 
+    /**
+     * Find videos by status with limit.
+     * Note: Results are unordered to avoid requiring a composite Firestore index.
+     * Callers requiring ordering should sort results in memory.
+     */
     public List<Video> findByStatus(String status, int limit) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereEqualTo("status", status)
-                .orderBy("createdAt", Query.Direction.DESCENDING)
+                .limit(limit)
+                .get();
+
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
+    }
+
+    /**
+     * Find videos by status ordered by lastValidatedAt ascending (oldest validated first).
+     * This prevents validation starvation by ensuring items that haven't been validated
+     * recently are prioritized over recently validated items.
+     *
+     * @param status The approval status to filter by
+     * @param limit Maximum number of results
+     * @return List of videos ordered by lastValidatedAt ascending (nulls first in memory sort)
+     */
+    public List<Video> findByStatusOrderByLastValidatedAtAsc(String status, int limit) throws ExecutionException, InterruptedException, TimeoutException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereEqualTo("status", status)
+                .orderBy("lastValidatedAt", Query.Direction.ASCENDING)
                 .limit(limit)
                 .get();
 

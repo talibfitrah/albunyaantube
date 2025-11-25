@@ -309,6 +309,117 @@ class ChannelOrchestratorTest {
     }
 
     @Nested
+    @DisplayName("Error Message Classification")
+    class ErrorMessageClassificationTests {
+
+        @Test
+        @DisplayName("Should identify channel not found messages")
+        void isNotFoundErrorMessage_channelNotFound() throws Exception {
+            // Arrange
+            when(gateway.runAsync(any())).thenAnswer(invocation -> {
+                Runnable runnable = invocation.getArgument(0);
+                runnable.run();
+                return CompletableFuture.completedFuture(null);
+            });
+
+            // Simulate "this channel does not exist" error
+            when(gateway.fetchChannelInfo("UC_notfound"))
+                    .thenThrow(new ExtractionException("this channel does not exist"));
+
+            // Act
+            var result = orchestrator.batchValidateChannelsDtoWithDetails(List.of("UC_notfound"));
+
+            // Assert - should be marked as notFound, not error
+            assertTrue(result.isNotFound("UC_notfound"), "Channel with 'does not exist' message should be marked notFound");
+            assertFalse(result.isError("UC_notfound"), "Channel with 'does not exist' message should NOT be marked error");
+        }
+
+        @Test
+        @DisplayName("Should identify video unavailable messages")
+        void isNotFoundErrorMessage_videoUnavailable() throws Exception {
+            // Arrange
+            when(gateway.runAsync(any())).thenAnswer(invocation -> {
+                Runnable runnable = invocation.getArgument(0);
+                runnable.run();
+                return CompletableFuture.completedFuture(null);
+            });
+
+            when(gateway.fetchStreamInfo("video_unavailable"))
+                    .thenThrow(new ExtractionException("this video is unavailable"));
+
+            // Act
+            var result = orchestrator.batchValidateVideosDtoWithDetails(List.of("video_unavailable"));
+
+            // Assert
+            assertTrue(result.isNotFound("video_unavailable"));
+        }
+
+        @Test
+        @DisplayName("Should identify account terminated messages")
+        void isNotFoundErrorMessage_accountTerminated() throws Exception {
+            // Arrange
+            when(gateway.runAsync(any())).thenAnswer(invocation -> {
+                Runnable runnable = invocation.getArgument(0);
+                runnable.run();
+                return CompletableFuture.completedFuture(null);
+            });
+
+            when(gateway.fetchChannelInfo("UC_terminated"))
+                    .thenThrow(new ExtractionException("account has been terminated"));
+
+            // Act
+            var result = orchestrator.batchValidateChannelsDtoWithDetails(List.of("UC_terminated"));
+
+            // Assert
+            assertTrue(result.isNotFound("UC_terminated"));
+        }
+
+        @Test
+        @DisplayName("Should NOT classify generic errors as notFound")
+        void isNotFoundErrorMessage_genericError_shouldBeError() throws Exception {
+            // Arrange
+            when(gateway.runAsync(any())).thenAnswer(invocation -> {
+                Runnable runnable = invocation.getArgument(0);
+                runnable.run();
+                return CompletableFuture.completedFuture(null);
+            });
+
+            // Generic network error - should be treated as transient
+            when(gateway.fetchChannelInfo("UC_network"))
+                    .thenThrow(new ExtractionException("Connection timed out"));
+
+            // Act
+            var result = orchestrator.batchValidateChannelsDtoWithDetails(List.of("UC_network"));
+
+            // Assert - should be marked as error, not notFound
+            assertTrue(result.isError("UC_network"), "Network error should be marked as error for retry");
+            assertFalse(result.isNotFound("UC_network"), "Network error should NOT be marked as notFound");
+        }
+
+        @Test
+        @DisplayName("Should NOT classify parser errors as notFound")
+        void isNotFoundErrorMessage_parserError_shouldBeError() throws Exception {
+            // Arrange
+            when(gateway.runAsync(any())).thenAnswer(invocation -> {
+                Runnable runnable = invocation.getArgument(0);
+                runnable.run();
+                return CompletableFuture.completedFuture(null);
+            });
+
+            // Parser error - could be temporary due to YouTube changes
+            when(gateway.fetchChannelInfo("UC_parser"))
+                    .thenThrow(new ExtractionException("Could not parse JSON response"));
+
+            // Act
+            var result = orchestrator.batchValidateChannelsDtoWithDetails(List.of("UC_parser"));
+
+            // Assert
+            assertTrue(result.isError("UC_parser"), "Parser error should be marked as error for retry");
+            assertFalse(result.isNotFound("UC_parser"), "Parser error should NOT be marked as notFound");
+        }
+    }
+
+    @Nested
     @DisplayName("DTO Mapping")
     class DtoMappingTests {
 

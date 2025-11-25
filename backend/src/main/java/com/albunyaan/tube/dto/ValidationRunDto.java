@@ -30,6 +30,14 @@ public class ValidationRunDto {
     private int totalArchived;
     private int errorCount;
 
+    // Progress tracking
+    private int totalChannelsToCheck;
+    private int totalPlaylistsToCheck;
+    private int totalVideosToCheck;
+    private int totalToCheck;
+    private int progressPercent;
+    private String currentPhase;
+
     // Timestamps (ISO 8601 strings for JSON serialization)
     private String startedAt;
     private String completedAt;
@@ -67,6 +75,14 @@ public class ValidationRunDto {
         int totalArchived = run.getChannelsMarkedArchived() + run.getPlaylistsMarkedArchived() + videosArchived;
         dto.setTotalArchived(totalArchived);
         dto.setErrorCount(run.getErrorCount());
+
+        // Progress tracking
+        dto.setTotalChannelsToCheck(run.getTotalChannelsToCheck());
+        dto.setTotalPlaylistsToCheck(run.getTotalPlaylistsToCheck());
+        dto.setTotalVideosToCheck(run.getTotalVideosToCheck());
+        dto.setTotalToCheck(run.getTotalToCheck());
+        dto.setProgressPercent(run.getProgressPercent());
+        dto.setCurrentPhase(run.getCurrentPhase());
 
         dto.setStartedAt(formatTimestamp(run.getStartedAt()));
         dto.setCompletedAt(formatTimestamp(run.getCompletedAt()));
@@ -222,5 +238,55 @@ public class ValidationRunDto {
 
     public void setDurationMs(Long durationMs) {
         this.durationMs = durationMs;
+    }
+
+    // Progress tracking getters/setters
+
+    public int getTotalChannelsToCheck() {
+        return totalChannelsToCheck;
+    }
+
+    public void setTotalChannelsToCheck(int totalChannelsToCheck) {
+        this.totalChannelsToCheck = totalChannelsToCheck;
+    }
+
+    public int getTotalPlaylistsToCheck() {
+        return totalPlaylistsToCheck;
+    }
+
+    public void setTotalPlaylistsToCheck(int totalPlaylistsToCheck) {
+        this.totalPlaylistsToCheck = totalPlaylistsToCheck;
+    }
+
+    public int getTotalVideosToCheck() {
+        return totalVideosToCheck;
+    }
+
+    public void setTotalVideosToCheck(int totalVideosToCheck) {
+        this.totalVideosToCheck = totalVideosToCheck;
+    }
+
+    public int getTotalToCheck() {
+        return totalToCheck;
+    }
+
+    public void setTotalToCheck(int totalToCheck) {
+        this.totalToCheck = totalToCheck;
+    }
+
+    public int getProgressPercent() {
+        return progressPercent;
+    }
+
+    public void setProgressPercent(int progressPercent) {
+        this.progressPercent = progressPercent;
+    }
+
+    public String getCurrentPhase() {
+        return currentPhase;
+    }
+
+    public void setCurrentPhase(String currentPhase) {
+        this.currentPhase = currentPhase;
     }
 }

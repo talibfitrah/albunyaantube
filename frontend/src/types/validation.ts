@@ -20,12 +20,29 @@ export interface ValidationRun {
   startedAt: string;
   completedAt?: string | null;
   durationMs?: number | null;
+  // Progress tracking fields
+  totalChannelsToCheck?: number;
+  totalPlaylistsToCheck?: number;
+  totalVideosToCheck?: number;
+  totalToCheck?: number;
+  progressPercent?: number;
+  currentPhase?: 'STARTING' | 'INITIALIZING' | 'CHANNELS' | 'PLAYLISTS' | 'VIDEOS' | 'COMPLETE';
 }
 
 export interface ValidationRunResponse {
   success: boolean;
   message: string;
   data: ValidationRun;
+}
+
+/**
+ * Response when starting async validation
+ */
+export interface AsyncValidationResponse {
+  success: boolean;
+  message: string;
+  runId: string;
+  status: 'RUNNING';
 }
 
 export interface TriggerValidationOptions {

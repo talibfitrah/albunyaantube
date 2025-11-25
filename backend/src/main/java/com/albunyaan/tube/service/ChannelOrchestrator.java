@@ -673,35 +673,68 @@ public class ChannelOrchestrator {
     // ==================== Error Message Classification ====================
 
     /**
-     * Checks if an error message indicates that content definitively doesn't exist on YouTube.
+     * Checks if an error message indicates that content DEFINITIVELY doesn't exist on YouTube.
+     *
+     * CONSERVATIVE: Only return true for messages that unambiguously mean "content is gone forever".
+     * When in doubt, return false to avoid incorrectly archiving valid content.
      *
      * YouTube returns specific error messages when content is deleted/unavailable.
      * NewPipeExtractor may wrap these in ParsingException instead of ContentNotAvailableException.
      *
+     * Note: ContentNotAvailableException and subclasses are caught separately and handled as notFound.
+     * This method is a fallback for ParsingException with clear "not found" messages.
+     *
      * @param message The error message to check
-     * @return true if the message indicates content doesn't exist
+     * @return true if the message UNAMBIGUOUSLY indicates content doesn't exist
      */
     private boolean isNotFoundErrorMessage(String message) {
-        if (message == null) {
+        if (message == null || message.isBlank()) {
             return false;
         }
         String lowerMessage = message.toLowerCase();
 
-        // YouTube's specific "not found" messages
-        return lowerMessage.contains("this channel does not exist") ||
-               lowerMessage.contains("this video is unavailable") ||
-               lowerMessage.contains("this video has been removed") ||
-               lowerMessage.contains("this video is no longer available") ||
-               lowerMessage.contains("this video isn't available anymore") ||
-               lowerMessage.contains("video unavailable") ||
-               lowerMessage.contains("this playlist does not exist") ||
-               lowerMessage.contains("the playlist does not exist") ||
-               lowerMessage.contains("playlist does not exist") ||
-               lowerMessage.contains("has been terminated") ||
-               lowerMessage.contains("account associated with this video has been terminated") ||
-               lowerMessage.contains("private video") ||
-               lowerMessage.contains("private playlist") ||
-               lowerMessage.contains("does not exist");
+        // Channel-specific definitive "not found" messages
+        if (lowerMessage.contains("this channel does not exist") ||
+            lowerMessage.contains("this channel is no longer available") ||
+            lowerMessage.contains("channel has been terminated")) {
+            logger.debug("Channel not found (message match): {}", message);
+            return true;
+        }
+
+        // Video-specific definitive "not found" messages
+        if (lowerMessage.contains("this video is unavailable") ||
+            lowerMessage.contains("this video has been removed") ||
+            lowerMessage.contains("this video is no longer available") ||
+            lowerMessage.contains("this video isn't available anymore") ||
+            lowerMessage.contains("video has been removed by the uploader") ||
+            lowerMessage.contains("this video is private")) {
+            logger.debug("Video not found (message match): {}", message);
+            return true;
+        }
+
+        // Playlist-specific definitive "not found" messages
+        if (lowerMessage.contains("this playlist does not exist") ||
+            lowerMessage.contains("the playlist does not exist") ||
+            lowerMessage.contains("playlist is private") ||
+            lowerMessage.contains("this playlist is no longer available")) {
+            logger.debug("Playlist not found (message match): {}", message);
+            return true;
+        }
+
+        // Account termination messages (applies to all content types)
+        if (lowerMessage.contains("account associated with this video has been terminated") ||
+            lowerMessage.contains("account has been terminated") ||
+            lowerMessage.contains("channel was terminated")) {
+            logger.debug("Content not found (account terminated): {}", message);
+            return true;
+        }
+
+        // CONSERVATIVE: Do NOT match generic phrases like "does not exist" alone
+        // as they could appear in unrelated error messages
+
+        // Log unmatched messages for analysis (helps identify new patterns)
+        logger.trace("Error message did NOT match 'not found' patterns: {}", message);
+        return false;
     }
 
     // ==================== DTO-First Methods ====================

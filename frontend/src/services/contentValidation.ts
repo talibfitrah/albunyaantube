@@ -9,6 +9,7 @@ import apiClient from './api/client';
 import type {
   ValidationRun,
   ValidationRunResponse,
+  AsyncValidationResponse,
   ArchivedContent,
   ArchivedCounts,
   ContentActionRequest,
@@ -23,17 +24,29 @@ const BASE_PATH = '/api/admin/content-validation';
 // ==================== Validation Triggers ====================
 
 /**
- * Validate all content types (channels, playlists, videos)
+ * Start async validation of all content types (channels, playlists, videos).
+ * Returns immediately with a run ID for polling progress.
  */
 export async function validateAllContent(
   options?: TriggerValidationOptions
-): Promise<ValidationRunResponse> {
+): Promise<AsyncValidationResponse> {
   const params = options?.maxItems ? { maxItems: options.maxItems } : {};
 
-  const response = await apiClient.post<ValidationRunResponse>(
+  const response = await apiClient.post<AsyncValidationResponse>(
     `${BASE_PATH}/validate/all`,
     null,
     { params }
+  );
+
+  return response.data;
+}
+
+/**
+ * Get validation run status by ID (for progress polling)
+ */
+export async function getValidationStatus(runId: string): Promise<ValidationRun> {
+  const response = await apiClient.get<ValidationRun>(
+    `${BASE_PATH}/status/${runId}`
   );
 
   return response.data;
@@ -227,6 +240,8 @@ export default {
   validateChannels,
   validatePlaylists,
   validateVideos,
+  // Validation status
+  getValidationStatus,
   // Archived content
   getArchivedCounts,
   getArchivedContent,
