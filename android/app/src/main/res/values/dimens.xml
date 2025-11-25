@@ -50,7 +50,11 @@
 
     <!-- Thumbnails -->
     <dimen name="thumbnail_height">180dp</dimen>
+    <dimen name="thumbnail_height_grid">100dp</dimen>
     <dimen name="playlist_thumbnail_size">80dp</dimen>
+
+    <!-- FAB positioning -->
+    <dimen name="fab_margin_bottom">80dp</dimen>
 
     <!-- Content Constraints -->
     <dimen name="content_max_width">9999dp</dimen>  <!-- no limit on phone -->

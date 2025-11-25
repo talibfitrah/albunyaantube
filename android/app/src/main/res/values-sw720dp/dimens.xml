@@ -17,6 +17,7 @@
 
     <!-- Thumbnails (further scaled up) -->
     <dimen name="thumbnail_height">320dp</dimen>  <!-- was 180dp on phone, 240dp on tablet -->
+    <dimen name="thumbnail_height_grid">180dp</dimen>  <!-- was 100dp on phone, 140dp on tablet -->
     <dimen name="playlist_thumbnail_size">160dp</dimen>  <!-- was 80dp on phone, 120dp on tablet -->
 
     <!-- Content -->

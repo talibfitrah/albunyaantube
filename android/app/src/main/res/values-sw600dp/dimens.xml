@@ -17,6 +17,7 @@
 
     <!-- Thumbnails (scaled up) -->
     <dimen name="thumbnail_height">240dp</dimen>  <!-- was 180dp -->
+    <dimen name="thumbnail_height_grid">140dp</dimen>  <!-- was 100dp -->
     <dimen name="playlist_thumbnail_size">120dp</dimen>  <!-- was 80dp -->
 
     <!-- Content -->
