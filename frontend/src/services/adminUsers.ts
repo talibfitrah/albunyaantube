@@ -1,4 +1,4 @@
-import { authorizedJsonFetch } from '@/services/http';
+import apiClient from './api/client';
 import type { CursorPage } from '@/types/pagination';
 import type {
   AdminUser,
@@ -50,10 +50,10 @@ function transformUser(apiUser: User): AdminUser {
 
 export async function fetchUsersPage(params: UsersPageParams = {}): Promise<CursorPage<AdminUser>> {
   // Backend returns array, not paginated response
-  const users = await authorizedJsonFetch<User[]>(USERS_BASE_PATH);
+  const response = await apiClient.get<User[]>(USERS_BASE_PATH);
 
   return {
-    data: users.map(transformUser),
+    data: response.data.map(transformUser),
     pageInfo: {
       cursor: null,
       nextCursor: null,
@@ -70,45 +70,22 @@ export async function createUser(payload: AdminUserCreatePayload): Promise<Admin
     role: toBackendRole(payload.role)
   };
 
-  const result = await authorizedJsonFetch<User>(USERS_BASE_PATH, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(backendPayload)
-  });
-
-  return transformUser(result);
+  const response = await apiClient.post<User>(USERS_BASE_PATH, backendPayload);
+  return transformUser(response.data);
 }
 
 export async function updateUserRole(userId: string, role: AdminRole): Promise<void> {
-  await authorizedJsonFetch<void>(`${USERS_BASE_PATH}/${userId}/role`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ role: toBackendRole(role) })
-  });
+  await apiClient.put(`${USERS_BASE_PATH}/${userId}/role`, { role: toBackendRole(role) });
 }
 
 export async function updateUserStatus(userId: string, status: AdminUserStatus): Promise<void> {
-  await authorizedJsonFetch<void>(`${USERS_BASE_PATH}/${userId}/status`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ status: toBackendStatus(status) })
-  });
+  await apiClient.put(`${USERS_BASE_PATH}/${userId}/status`, { status: toBackendStatus(status) });
 }
 
 export async function deleteUser(userId: string): Promise<void> {
-  await authorizedJsonFetch<void>(`${USERS_BASE_PATH}/${userId}`, {
-    method: 'DELETE'
-  });
+  await apiClient.delete(`${USERS_BASE_PATH}/${userId}`);
 }
 
 export async function sendPasswordReset(userId: string): Promise<void> {
-  await authorizedJsonFetch<void>(`${USERS_BASE_PATH}/${userId}/reset-password`, {
-    method: 'POST'
-  });
+  await apiClient.post(`${USERS_BASE_PATH}/${userId}/reset-password`);
 }

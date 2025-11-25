@@ -1,4 +1,3 @@
-import { authorizedJsonFetch } from '@/services/http';
 import type { CursorPage } from '@/types/pagination';
 
 // FIREBASE-MIGRATE: Moderation not implemented in Firebase backend yet

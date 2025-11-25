@@ -94,7 +94,7 @@ public class ContentLibraryController {
         if (contentTypes.contains("channel")) {
             List<Channel> channels = fetchChannels(status, category);
             for (Channel ch : channels) {
-                allContent.add(new ContentItem("channel", ch.getId(), ch.getName(),
+                allContent.add(new ContentItem("channel", ch.getId(), ch.getYoutubeId(), ch.getName(),
                         ch.getDescription(), ch.getThumbnailUrl(), ch.getStatus(), ch.getCategoryIds(),
                         ch.getCreatedAt() != null ? ch.getCreatedAt().toDate() : null,
                         ch.getSubscribers()));
@@ -104,7 +104,7 @@ public class ContentLibraryController {
         if (contentTypes.contains("playlist")) {
             List<Playlist> playlists = fetchPlaylists(status, category);
             for (Playlist pl : playlists) {
-                allContent.add(new ContentItem("playlist", pl.getId(), pl.getTitle(),
+                allContent.add(new ContentItem("playlist", pl.getId(), pl.getYoutubeId(), pl.getTitle(),
                         pl.getDescription(), pl.getThumbnailUrl(), pl.getStatus(), pl.getCategoryIds(),
                         pl.getCreatedAt() != null ? pl.getCreatedAt().toDate() : null,
                         pl.getItemCount() != null ? Long.valueOf(pl.getItemCount()) : null));
@@ -114,7 +114,7 @@ public class ContentLibraryController {
         if (contentTypes.contains("video")) {
             List<Video> videos = fetchVideos(status, category);
             for (Video v : videos) {
-                allContent.add(new ContentItem("video", v.getId(), v.getTitle(),
+                allContent.add(new ContentItem("video", v.getId(), v.getYoutubeId(), v.getTitle(),
                         v.getDescription(), v.getThumbnailUrl(), v.getStatus(), v.getCategoryIds(),
                         v.getCreatedAt() != null ? v.getCreatedAt().toDate() : null,
                         v.getViewCount()));
@@ -219,6 +219,7 @@ public class ContentLibraryController {
     public static class ContentItem {
         public String type;
         public String id;
+        public String youtubeId;
         public String title;
         public String description;
         public String thumbnailUrl;
@@ -227,10 +228,11 @@ public class ContentLibraryController {
         public Date createdAt;
         public Long count; // subscriber/video/view count depending on type
 
-        public ContentItem(String type, String id, String title, String description, String thumbnailUrl,
+        public ContentItem(String type, String id, String youtubeId, String title, String description, String thumbnailUrl,
                            String status, List<String> categoryIds, Date createdAt, Long count) {
             this.type = type;
             this.id = id;
+            this.youtubeId = youtubeId;
             this.title = title;
             this.description = description;
             this.thumbnailUrl = thumbnailUrl;

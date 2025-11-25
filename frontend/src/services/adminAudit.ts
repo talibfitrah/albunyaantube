@@ -1,4 +1,4 @@
-import { authorizedJsonFetch } from '@/services/http';
+import apiClient from './api/client';
 import type { CursorPage } from '@/types/pagination';
 import type { AuditEntry } from '@/types/admin';
 import type { AuditLog } from '@/types/api';
@@ -65,27 +65,28 @@ function mapAuditLogToEntry(log: AuditLog): AuditEntry {
 export async function fetchAuditLogPage(params: AuditLogPageParams = {}): Promise<CursorPage<AuditEntry>> {
   const limit = params.limit || 100;
 
-  // Build query string with all supported params
-  const queryParams = new URLSearchParams();
-  queryParams.append('limit', limit.toString());
+  // Build params object for axios
+  const queryParams: Record<string, string | number> = {
+    limit
+  };
 
   if (params.cursor) {
-    queryParams.append('cursor', params.cursor);
+    queryParams.cursor = params.cursor;
   }
 
   if (params.actorId) {
-    queryParams.append('actorId', params.actorId);
+    queryParams.actorId = params.actorId;
   }
 
   if (params.action) {
-    queryParams.append('action', params.action);
+    queryParams.action = params.action;
   }
 
   // Backend returns array, not paginated response
-  const logs = await authorizedJsonFetch<AuditLog[]>(`${AUDIT_BASE_PATH}?${queryParams}`);
+  const response = await apiClient.get<AuditLog[]>(AUDIT_BASE_PATH, { params: queryParams });
 
   return {
-    data: logs.map(mapAuditLogToEntry),
+    data: response.data.map(mapAuditLogToEntry),
     pageInfo: {
       cursor: null,
       nextCursor: null,
@@ -95,16 +96,22 @@ export async function fetchAuditLogPage(params: AuditLogPageParams = {}): Promis
 }
 
 export async function fetchAuditLogsByActor(actorUid: string, limit = 100): Promise<AuditEntry[]> {
-  const logs = await authorizedJsonFetch<AuditLog[]>(`${AUDIT_BASE_PATH}/actor/${actorUid}?limit=${limit}`);
-  return logs.map(mapAuditLogToEntry);
+  const response = await apiClient.get<AuditLog[]>(`${AUDIT_BASE_PATH}/actor/${actorUid}`, {
+    params: { limit }
+  });
+  return response.data.map(mapAuditLogToEntry);
 }
 
 export async function fetchAuditLogsByEntityType(entityType: string, limit = 100): Promise<AuditEntry[]> {
-  const logs = await authorizedJsonFetch<AuditLog[]>(`${AUDIT_BASE_PATH}/entity-type/${entityType}?limit=${limit}`);
-  return logs.map(mapAuditLogToEntry);
+  const response = await apiClient.get<AuditLog[]>(`${AUDIT_BASE_PATH}/entity-type/${entityType}`, {
+    params: { limit }
+  });
+  return response.data.map(mapAuditLogToEntry);
 }
 
 export async function fetchAuditLogsByAction(action: string, limit = 100): Promise<AuditEntry[]> {
-  const logs = await authorizedJsonFetch<AuditLog[]>(`${AUDIT_BASE_PATH}/action/${action}?limit=${limit}`);
-  return logs.map(mapAuditLogToEntry);
+  const response = await apiClient.get<AuditLog[]>(`${AUDIT_BASE_PATH}/action/${action}`, {
+    params: { limit }
+  });
+  return response.data.map(mapAuditLogToEntry);
 }

@@ -1,49 +1,32 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { getPendingApprovals, approveItem, rejectItem } from '@/services/approvalService';
+import { fetchPendingApprovals, approveItem, rejectItem } from '@/services/approvalService';
 import apiClient from '@/services/api/client';
 
 vi.mock('@/services/api/client');
-vi.mock('@/utils/toast');
 
 describe('ApprovalService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  describe('getPendingApprovals', () => {
+  describe('fetchPendingApprovals', () => {
     it('should fetch pending approvals from the canonical endpoint', async () => {
-      const mockApprovals = [
-        {
-          id: 'ch-1',
-          type: 'CHANNEL',
-          title: 'Test Channel',
-          submittedAt: '2024-01-01T00:00:00Z',
-          submittedBy: 'admin@example.com'
-        },
-        {
-          id: 'pl-1',
-          type: 'PLAYLIST',
-          title: 'Test Playlist',
-          submittedAt: '2024-01-02T00:00:00Z',
-          submittedBy: 'moderator@example.com'
-        }
-      ];
+      const mockResponse = {
+        data: [
+          { id: 'ch-1', type: 'CHANNEL', title: 'Test Channel' },
+          { id: 'pl-1', type: 'PLAYLIST', title: 'Test Playlist' }
+        ],
+        pageInfo: { nextCursor: null, hasNext: false }
+      };
 
-      vi.mocked(apiClient.get).mockResolvedValueOnce({
-        data: {
-          data: mockApprovals,
-          pageInfo: { nextCursor: null, hasNext: false }
-        }
-      });
+      vi.mocked(apiClient.get).mockResolvedValueOnce({ data: mockResponse });
 
-      const result = await getPendingApprovals();
+      const result = await fetchPendingApprovals();
 
       expect(apiClient.get).toHaveBeenCalledWith('/api/admin/approvals/pending', {
         params: { limit: 100 }
       });
-      expect(result).toHaveLength(2);
-      expect(result[0].type).toBe('channel');
-      expect(result[1].type).toBe('playlist');
+      expect(result).toEqual(mockResponse);
     });
 
     it('should filter by type: channels only', async () => {
@@ -51,7 +34,7 @@ describe('ApprovalService', () => {
         data: { data: [], pageInfo: { nextCursor: null, hasNext: false } }
       });
 
-      await getPendingApprovals({ type: 'channels' });
+      await fetchPendingApprovals({ type: 'channels' });
 
       expect(apiClient.get).toHaveBeenCalledWith('/api/admin/approvals/pending', {
         params: { limit: 100, type: 'CHANNEL' }
@@ -63,10 +46,22 @@ describe('ApprovalService', () => {
         data: { data: [], pageInfo: { nextCursor: null, hasNext: false } }
       });
 
-      await getPendingApprovals({ type: 'playlists' });
+      await fetchPendingApprovals({ type: 'playlists' });
 
       expect(apiClient.get).toHaveBeenCalledWith('/api/admin/approvals/pending', {
         params: { limit: 100, type: 'PLAYLIST' }
+      });
+    });
+
+    it('should filter by type: videos only', async () => {
+      vi.mocked(apiClient.get).mockResolvedValueOnce({
+        data: { data: [], pageInfo: { nextCursor: null, hasNext: false } }
+      });
+
+      await fetchPendingApprovals({ type: 'videos' });
+
+      expect(apiClient.get).toHaveBeenCalledWith('/api/admin/approvals/pending', {
+        params: { limit: 100, type: 'VIDEO' }
       });
     });
 
@@ -75,46 +70,42 @@ describe('ApprovalService', () => {
         data: { data: [], pageInfo: { nextCursor: null, hasNext: false } }
       });
 
-      await getPendingApprovals({ category: 'cat-1' });
+      await fetchPendingApprovals({ category: 'cat-1' });
 
       expect(apiClient.get).toHaveBeenCalledWith('/api/admin/approvals/pending', {
         params: { limit: 100, category: 'cat-1' }
       });
     });
 
-    it('should sort results by newest first', async () => {
-      const mockApprovals = [
-        { id: 'ch-1', type: 'CHANNEL', title: 'Channel 1', submittedAt: '2024-01-01T00:00:00Z', submittedBy: 'user1' },
-        { id: 'ch-2', type: 'CHANNEL', title: 'Channel 2', submittedAt: '2024-01-02T00:00:00Z', submittedBy: 'user2' }
-      ];
-
+    it('should respect custom limit', async () => {
       vi.mocked(apiClient.get).mockResolvedValueOnce({
-        data: {
-          data: mockApprovals,
-          pageInfo: { nextCursor: null, hasNext: false }
-        }
+        data: { data: [], pageInfo: { nextCursor: null, hasNext: false } }
       });
 
-      const result = await getPendingApprovals({ sort: 'newest' });
+      await fetchPendingApprovals({ limit: 50 });
 
-      expect(result[0].id).toBe('ch-2');
-      expect(result[1].id).toBe('ch-1');
+      expect(apiClient.get).toHaveBeenCalledWith('/api/admin/approvals/pending', {
+        params: { limit: 50 }
+      });
     });
   });
 
   describe('approveItem', () => {
-    it('should approve a channel', async () => {
+    it('should approve an item with empty payload', async () => {
       vi.mocked(apiClient.post).mockResolvedValueOnce({ data: {} });
 
-      await approveItem('ch-1', 'channel');
+      await approveItem('ch-1');
 
-      expect(apiClient.post).toHaveBeenCalledWith('/api/admin/approvals/ch-1/approve', {});
+      expect(apiClient.post).toHaveBeenCalledWith('/api/admin/approvals/ch-1/approve', {
+        categoryOverride: undefined,
+        reviewNotes: undefined
+      });
     });
 
-    it('should approve a playlist with overrides', async () => {
+    it('should approve an item with overrides', async () => {
       vi.mocked(apiClient.post).mockResolvedValueOnce({ data: {} });
 
-      await approveItem('pl-1', 'playlist', 'cat-1', 'looks good');
+      await approveItem('pl-1', 'cat-1', 'looks good');
 
       expect(apiClient.post).toHaveBeenCalledWith('/api/admin/approvals/pl-1/approve', {
         categoryOverride: 'cat-1',
@@ -124,25 +115,23 @@ describe('ApprovalService', () => {
   });
 
   describe('rejectItem', () => {
-    it('should reject a channel with reason', async () => {
+    it('should reject an item with reason', async () => {
       vi.mocked(apiClient.post).mockResolvedValueOnce({ data: {} });
 
-      await rejectItem('ch-1', 'channel', 'INAPPROPRIATE');
+      await rejectItem('ch-1', 'INAPPROPRIATE');
 
       expect(apiClient.post).toHaveBeenCalledWith('/api/admin/approvals/ch-1/reject', {
         reason: 'INAPPROPRIATE'
       });
     });
 
-    it('should reject a playlist with reason (reviewNotes not in schema)', async () => {
+    it('should default to OTHER when reason is empty', async () => {
       vi.mocked(apiClient.post).mockResolvedValueOnce({ data: {} });
 
-      // reviewNotes parameter is kept for backward compatibility but not sent to API
-      await rejectItem('pl-1', 'playlist', 'LOW_QUALITY', 'Too few videos');
+      await rejectItem('pl-1', '');
 
       expect(apiClient.post).toHaveBeenCalledWith('/api/admin/approvals/pl-1/reject', {
-        reason: 'LOW_QUALITY'
-        // reviewNotes is NOT in RejectionRequestDto schema
+        reason: 'OTHER'
       });
     });
   });

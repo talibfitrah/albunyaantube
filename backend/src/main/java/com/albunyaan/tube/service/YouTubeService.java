@@ -7,11 +7,6 @@ import com.albunyaan.tube.dto.PlaylistItemDto;
 import com.albunyaan.tube.dto.SearchPageResponse;
 import com.albunyaan.tube.dto.StreamDetailsDto;
 import com.albunyaan.tube.dto.StreamItemDto;
-import org.schabi.newpipe.extractor.channel.ChannelInfo;
-import org.schabi.newpipe.extractor.playlist.PlaylistInfo;
-import org.schabi.newpipe.extractor.playlist.PlaylistInfoItem;
-import org.schabi.newpipe.extractor.stream.StreamInfo;
-import org.schabi.newpipe.extractor.stream.StreamInfoItem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -24,7 +19,7 @@ import java.util.Map;
  * P2-T3: YouTubeService Facade
  * <p>
  * Thin facade that delegates to SearchOrchestrator and ChannelOrchestrator.
- * Maintains backward compatibility for existing controllers and services.
+ * All methods return DTOs to avoid NewPipe type coupling.
  * <p>
  * This class replaces the original 886-line monolithic service with delegation
  * to specialized orchestrators, improving maintainability and testability.
@@ -53,15 +48,6 @@ public class YouTubeService {
     }
 
     /**
-     * Unified search for all content types (no pagination)
-     * @deprecated Use searchAllEnrichedPaged for pagination support
-     */
-    @Deprecated
-    public List<EnrichedSearchResult> searchAllEnriched(String query) throws IOException {
-        return searchOrchestrator.searchAllEnriched(query);
-    }
-
-    /**
      * Search for channels by query with full statistics
      */
     public List<EnrichedSearchResult> searchChannelsEnriched(String query) throws IOException {
@@ -82,143 +68,7 @@ public class YouTubeService {
         return searchOrchestrator.searchVideosEnriched(query);
     }
 
-    // ==================== Channel Operations (Legacy - use DTO methods) ====================
-
-    /**
-     * Get channel details by channel ID or URL
-     * @deprecated Use {@link #getChannelDetailsDto(String)} instead to avoid NewPipe type coupling
-     */
-    @Deprecated
-    public ChannelInfo getChannelDetails(String channelId) throws IOException {
-        return channelOrchestrator.getChannelDetails(channelId);
-    }
-
-    /**
-     * Get videos from a channel (with pagination)
-     * @deprecated Use {@link #getChannelVideosDto(String, String)} instead to avoid NewPipe type coupling
-     */
-    @Deprecated
-    public List<StreamInfoItem> getChannelVideos(String channelId, String pageToken) throws IOException {
-        return channelOrchestrator.getChannelVideos(channelId, pageToken);
-    }
-
-    /**
-     * Get videos from a channel with optional search filter
-     * @deprecated Use {@link #getChannelVideosDto(String, String, String)} instead to avoid NewPipe type coupling
-     */
-    @Deprecated
-    public List<StreamInfoItem> getChannelVideos(String channelId, String pageToken, String searchQuery) throws IOException {
-        return channelOrchestrator.getChannelVideos(channelId, pageToken, searchQuery);
-    }
-
-    /**
-     * Get playlists from a channel
-     * @deprecated Use {@link #getChannelPlaylistsDto(String, String)} instead to avoid NewPipe type coupling
-     */
-    @Deprecated
-    public List<PlaylistInfoItem> getChannelPlaylists(String channelId, String pageToken) throws IOException {
-        return channelOrchestrator.getChannelPlaylists(channelId, pageToken);
-    }
-
-    // ==================== Playlist Operations (Legacy - use DTO methods) ====================
-
-    /**
-     * Get playlist details by playlist ID
-     * @deprecated Use {@link #getPlaylistDetailsDto(String)} instead to avoid NewPipe type coupling
-     */
-    @Deprecated
-    public PlaylistInfo getPlaylistDetails(String playlistId) throws IOException {
-        return channelOrchestrator.getPlaylistDetails(playlistId);
-    }
-
-    /**
-     * Get videos in a playlist (with pagination)
-     * @deprecated Use {@link #getPlaylistVideosDto(String, String)} instead to avoid NewPipe type coupling
-     */
-    @Deprecated
-    public List<StreamInfoItem> getPlaylistVideos(String playlistId, String pageToken) throws IOException {
-        return channelOrchestrator.getPlaylistVideos(playlistId, pageToken);
-    }
-
-    /**
-     * Get videos in a playlist with optional search filter
-     * @deprecated Use {@link #getPlaylistVideosDto(String, String, String)} instead to avoid NewPipe type coupling
-     */
-    @Deprecated
-    public List<StreamInfoItem> getPlaylistVideos(String playlistId, String pageToken, String searchQuery) throws IOException {
-        return channelOrchestrator.getPlaylistVideos(playlistId, pageToken, searchQuery);
-    }
-
-    // ==================== Video Operations (Legacy - use DTO methods) ====================
-
-    /**
-     * Get video details by video ID
-     * @deprecated Use {@link #getVideoDetailsDto(String)} instead to avoid NewPipe type coupling
-     */
-    @Deprecated
-    public StreamInfo getVideoDetails(String videoId) throws IOException {
-        return channelOrchestrator.getVideoDetails(videoId);
-    }
-
-    // ==================== Validation Operations (Legacy - use DTO methods) ====================
-
-    /**
-     * Validate and fetch channel by YouTube ID
-     * @deprecated Use {@link #validateAndFetchChannelDto(String)} instead to avoid NewPipe type coupling
-     */
-    @Deprecated
-    public ChannelInfo validateAndFetchChannel(String youtubeId) {
-        return channelOrchestrator.validateAndFetchChannel(youtubeId);
-    }
-
-    /**
-     * Validate and fetch playlist by YouTube ID
-     * @deprecated Use {@link #validateAndFetchPlaylistDto(String)} instead to avoid NewPipe type coupling
-     */
-    @Deprecated
-    public PlaylistInfo validateAndFetchPlaylist(String youtubeId) {
-        return channelOrchestrator.validateAndFetchPlaylist(youtubeId);
-    }
-
-    /**
-     * Validate and fetch video by YouTube ID
-     * @deprecated Use {@link #validateAndFetchVideoDto(String)} instead to avoid NewPipe type coupling
-     */
-    @Deprecated
-    public StreamInfo validateAndFetchVideo(String youtubeId) {
-        return channelOrchestrator.validateAndFetchVideo(youtubeId);
-    }
-
-    // ==================== Batch Validation (Legacy - use DTO methods) ====================
-
-    /**
-     * Batch validate and fetch channels
-     * @deprecated Use {@link #batchValidateChannelsDto(List)} instead to avoid NewPipe type coupling
-     */
-    @Deprecated
-    public Map<String, ChannelInfo> batchValidateChannels(List<String> youtubeIds) {
-        return channelOrchestrator.batchValidateChannels(youtubeIds);
-    }
-
-    /**
-     * Batch validate and fetch playlists
-     * @deprecated Use {@link #batchValidatePlaylistsDto(List)} instead to avoid NewPipe type coupling
-     */
-    @Deprecated
-    public Map<String, PlaylistInfo> batchValidatePlaylists(List<String> youtubeIds) {
-        return channelOrchestrator.batchValidatePlaylists(youtubeIds);
-    }
-
-    /**
-     * Batch validate and fetch videos
-     * @deprecated Use {@link #batchValidateVideosDto(List)} instead to avoid NewPipe type coupling
-     */
-    @Deprecated
-    public Map<String, StreamInfo> batchValidateVideos(List<String> youtubeIds) {
-        return channelOrchestrator.batchValidateVideos(youtubeIds);
-    }
-
-    // ==================== DTO-First Methods ====================
+    // ==================== Channel Operations ====================
 
     /**
      * Get channel details as DTO
@@ -248,6 +98,8 @@ public class YouTubeService {
         return channelOrchestrator.getChannelPlaylistsDto(channelId, pageToken);
     }
 
+    // ==================== Playlist Operations ====================
+
     /**
      * Get playlist details as DTO
      */
@@ -269,12 +121,16 @@ public class YouTubeService {
         return channelOrchestrator.getPlaylistVideosDto(playlistId, pageToken, searchQuery);
     }
 
+    // ==================== Video Operations ====================
+
     /**
      * Get video details as DTO
      */
     public StreamDetailsDto getVideoDetailsDto(String videoId) throws IOException {
         return channelOrchestrator.getVideoDetailsDto(videoId);
     }
+
+    // ==================== Validation Operations ====================
 
     /**
      * Validate and fetch channel as DTO
@@ -297,6 +153,8 @@ public class YouTubeService {
         return channelOrchestrator.validateAndFetchVideoDto(youtubeId);
     }
 
+    // ==================== Batch Validation ====================
+
     /**
      * Batch validate channels and return as DTOs
      */
@@ -316,42 +174,5 @@ public class YouTubeService {
      */
     public Map<String, StreamDetailsDto> batchValidateVideosDto(List<String> youtubeIds) {
         return channelOrchestrator.batchValidateVideosDto(youtubeIds);
-    }
-
-    // ==================== DTO Mapping Methods ====================
-
-    /**
-     * Map ChannelInfo to ChannelDetailsDto
-     */
-    public com.albunyaan.tube.dto.ChannelDetailsDto mapToChannelDetailsDto(ChannelInfo channel) {
-        return channelOrchestrator.mapToChannelDetailsDto(channel);
-    }
-
-    /**
-     * Map PlaylistInfo to PlaylistDetailsDto
-     */
-    public com.albunyaan.tube.dto.PlaylistDetailsDto mapToPlaylistDetailsDto(PlaylistInfo playlist) {
-        return channelOrchestrator.mapToPlaylistDetailsDto(playlist);
-    }
-
-    /**
-     * Map StreamInfo to StreamDetailsDto
-     */
-    public com.albunyaan.tube.dto.StreamDetailsDto mapToStreamDetailsDto(StreamInfo stream) {
-        return channelOrchestrator.mapToStreamDetailsDto(stream);
-    }
-
-    /**
-     * Map StreamInfoItem to StreamItemDto
-     */
-    public com.albunyaan.tube.dto.StreamItemDto mapToStreamItemDto(StreamInfoItem stream) {
-        return channelOrchestrator.mapToStreamItemDto(stream);
-    }
-
-    /**
-     * Map PlaylistInfoItem to PlaylistItemDto
-     */
-    public com.albunyaan.tube.dto.PlaylistItemDto mapToPlaylistItemDto(PlaylistInfoItem playlist) {
-        return channelOrchestrator.mapToPlaylistItemDto(playlist);
     }
 }
