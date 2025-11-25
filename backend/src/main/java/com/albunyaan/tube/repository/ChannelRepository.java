@@ -80,6 +80,13 @@ public class ChannelRepository {
         return channels.isEmpty() ? Optional.empty() : Optional.of(channels.get(0));
     }
 
+    /**
+     * Find channels by status, ordered by creation date descending (newest first).
+     * This method is used for UI display where newest items should appear first.
+     *
+     * For validation purposes, use findByStatusOrderByLastValidatedAtAsc() instead to prevent
+     * validation starvation.
+     */
     public List<Channel> findByStatus(String status) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereEqualTo("status", status)
@@ -89,6 +96,13 @@ public class ChannelRepository {
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
     }
 
+    /**
+     * Find channels by status with limit, ordered by creation date descending (newest first).
+     * This method is used for UI display where newest items should appear first.
+     *
+     * For validation purposes, use findByStatusOrderByLastValidatedAtAsc() instead to prevent
+     * validation starvation.
+     */
     public List<Channel> findByStatus(String status, int limit) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereEqualTo("status", status)
@@ -104,9 +118,12 @@ public class ChannelRepository {
      * This prevents validation starvation by ensuring items that haven't been validated
      * recently are prioritized over recently validated items.
      *
+     * Note: Requires Firestore composite index: status (ASC) + lastValidatedAt (ASC)
+     * Firestore automatically places null lastValidatedAt values first when ordering ascending.
+     *
      * @param status The approval status to filter by
      * @param limit Maximum number of results
-     * @return List of channels ordered by lastValidatedAt ascending (nulls first in memory sort)
+     * @return List of channels ordered by lastValidatedAt ascending (nulls first)
      */
     public List<Channel> findByStatusOrderByLastValidatedAtAsc(String status, int limit) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()

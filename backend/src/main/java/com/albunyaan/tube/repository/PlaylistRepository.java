@@ -101,9 +101,12 @@ public class PlaylistRepository {
      * This prevents validation starvation by ensuring items that haven't been validated
      * recently are prioritized over recently validated items.
      *
+     * Note: Requires Firestore composite index: status (ASC) + lastValidatedAt (ASC)
+     * Firestore automatically places null lastValidatedAt values first when ordering ascending.
+     *
      * @param status The approval status to filter by
      * @param limit Maximum number of results
-     * @return List of playlists ordered by lastValidatedAt ascending (nulls first in memory sort)
+     * @return List of playlists ordered by lastValidatedAt ascending (nulls first)
      */
     public List<Playlist> findByStatusOrderByLastValidatedAtAsc(String status, int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
