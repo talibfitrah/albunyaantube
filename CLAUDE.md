@@ -2,6 +2,10 @@
 
 This document provides essential information for AI assistants working in the Albunyaan Tube codebase. It covers the project architecture, development workflow, build commands, and key patterns to understand this multi-platform ad-free, admin-curated halal YouTube client.
 
+## Library Documentation
+
+@docs/library-guides/newpipe-extractor.md
+
 ---
 
 ## 🎯 **WHERE TO START - CURRENT SESSION STATUS**
