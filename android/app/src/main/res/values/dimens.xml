@@ -69,4 +69,30 @@
     <bool name="is_tablet">false</bool>
     <bool name="is_large_screen">false</bool>
     <bool name="use_two_pane_layout">false</bool>
+
+    <!-- Home Screen Design System -->
+    <dimen name="home_horizontal_margin">16dp</dimen>
+    <dimen name="home_vertical_section_spacing">24dp</dimen>
+    <dimen name="home_card_corner_radius">16dp</dimen>
+    <dimen name="home_thumbnail_corner_radius">12dp</dimen>
+    <dimen name="home_card_elevation">2dp</dimen>
+    <dimen name="home_category_pill_height">40dp</dimen>
+    <dimen name="home_category_pill_padding_horizontal">16dp</dimen>
+    <dimen name="home_category_pill_icon_size">20dp</dimen>
+    <dimen name="home_duration_chip_radius">4dp</dimen>
+    <dimen name="home_duration_chip_padding_horizontal">6dp</dimen>
+    <dimen name="home_duration_chip_padding_vertical">3dp</dimen>
+
+    <!-- Home Card Sizing (responsive) -->
+    <dimen name="home_channel_card_width">100dp</dimen>
+    <dimen name="home_channel_avatar_size">72dp</dimen>
+    <dimen name="home_playlist_card_width">220dp</dimen>
+    <dimen name="home_video_card_width">260dp</dimen>
+    <dimen name="home_card_spacing">12dp</dimen>
+
+    <!-- Typography sizes for home -->
+    <dimen name="home_section_title_size">20sp</dimen>
+    <dimen name="home_item_title_size">15sp</dimen>
+    <dimen name="home_item_meta_size">13sp</dimen>
+    <dimen name="home_see_all_size">14sp</dimen>
 </resources>

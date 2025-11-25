@@ -8,7 +8,7 @@ import androidx.recyclerview.widget.RecyclerView
 import coil.load
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.model.ContentItem
-import com.albunyaan.tube.databinding.ItemPlaylistBinding
+import com.albunyaan.tube.databinding.ItemHomePlaylistBinding
 
 /**
  * Horizontal adapter for displaying playlists in home screen sections
@@ -18,7 +18,7 @@ class HomePlaylistAdapter(
 ) : ListAdapter<ContentItem.Playlist, HomePlaylistAdapter.ViewHolder>(DIFF_CALLBACK) {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
-        val binding = ItemPlaylistBinding.inflate(
+        val binding = ItemHomePlaylistBinding.inflate(
             LayoutInflater.from(parent.context),
             parent,
             false
@@ -31,17 +31,24 @@ class HomePlaylistAdapter(
     }
 
     class ViewHolder(
-        private val binding: ItemPlaylistBinding,
+        private val binding: ItemHomePlaylistBinding,
         private val onPlaylistClick: (ContentItem.Playlist) -> Unit
     ) : RecyclerView.ViewHolder(binding.root) {
 
         fun bind(playlist: ContentItem.Playlist) {
             binding.playlistTitle.text = playlist.title
-            binding.playlistMeta.text = "${playlist.itemCount} items • ${playlist.category}"
+            binding.channelName.text = playlist.category
+
+            val videoCountText = binding.root.context.resources.getQuantityString(
+                R.plurals.video_count,
+                playlist.itemCount,
+                playlist.itemCount
+            )
+            binding.videoCount.text = videoCountText
 
             binding.playlistThumbnail.load(playlist.thumbnailUrl) {
-                placeholder(R.drawable.onboarding_icon_bg)
-                error(R.drawable.onboarding_icon_bg)
+                placeholder(R.drawable.home_thumbnail_bg)
+                error(R.drawable.home_thumbnail_bg)
             }
 
             binding.root.setOnClickListener {

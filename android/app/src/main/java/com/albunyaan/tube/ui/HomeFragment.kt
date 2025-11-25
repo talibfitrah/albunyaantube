@@ -92,9 +92,9 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
     }
 
     private fun setupClickListeners(binding: FragmentHomeNewBinding) {
-        // Category chip click listener
-        binding.categoryChip.setOnClickListener {
-            Log.d(TAG, "Category chip clicked")
+        // Category pill click listener
+        binding.categoryPillCard.setOnClickListener {
+            Log.d(TAG, "Category pill clicked")
             findNavController().navigate(R.id.action_homeFragment_to_categoriesFragment)
         }
 

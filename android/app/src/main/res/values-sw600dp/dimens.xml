@@ -15,10 +15,10 @@
     <dimen name="player_portrait_height">360dp</dimen>  <!-- was 240dp on phone -->
     <dimen name="player_controls_offset">64dp</dimen>
 
-    <!-- Thumbnails (scaled up) -->
-    <dimen name="thumbnail_height">240dp</dimen>  <!-- was 180dp -->
-    <dimen name="thumbnail_height_grid">140dp</dimen>  <!-- was 100dp -->
-    <dimen name="playlist_thumbnail_size">120dp</dimen>  <!-- was 80dp -->
+    <!-- Thumbnails (kept reasonable, not scaled up excessively) -->
+    <dimen name="thumbnail_height">200dp</dimen>  <!-- modest increase from 180dp -->
+    <dimen name="thumbnail_height_grid">120dp</dimen>  <!-- modest increase from 100dp -->
+    <dimen name="playlist_thumbnail_size">100dp</dimen>  <!-- modest increase from 80dp -->
 
     <!-- Content -->
     <dimen name="content_max_width">1200dp</dimen>  <!-- constrain content width -->
@@ -40,4 +40,13 @@
     <bool name="is_tablet">true</bool>
     <bool name="is_large_screen">true</bool>
     <bool name="use_two_pane_layout">true</bool>
+
+    <!-- Home Screen - Tablet (smaller cards, more visible at once) -->
+    <dimen name="home_horizontal_margin">24dp</dimen>
+    <dimen name="home_vertical_section_spacing">32dp</dimen>
+    <dimen name="home_channel_card_width">110dp</dimen>
+    <dimen name="home_channel_avatar_size">80dp</dimen>
+    <dimen name="home_playlist_card_width">240dp</dimen>  <!-- slightly larger than phone -->
+    <dimen name="home_video_card_width">280dp</dimen>  <!-- slightly larger than phone -->
+    <dimen name="home_card_spacing">16dp</dimen>
 </resources>

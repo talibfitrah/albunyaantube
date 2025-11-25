@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="@dimen/home_video_card_width"
+    android:layout_height="wrap_content"
+    android:layout_marginEnd="@dimen/home_card_spacing"
+    android:clickable="true"
+    android:focusable="true"
+    android:foreground="?attr/selectableItemBackground"
+    app:cardCornerRadius="@dimen/home_card_corner_radius"
+    app:cardBackgroundColor="@color/home_card_background"
+    app:cardElevation="@dimen/home_card_elevation">
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <!-- Video Thumbnail (16:9 ratio) -->
+        <ImageView
+            android:id="@+id/videoThumbnail"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:scaleType="centerCrop"
+            android:background="@drawable/home_thumbnail_bg"
+            android:contentDescription="@null"
+            android:importantForAccessibility="no"
+            app:layout_constraintDimensionRatio="16:9"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            tools:src="@drawable/thumbnail_placeholder"/>
+
+        <!-- Duration Overlay (Bottom-right) -->
+        <TextView
+            android:id="@+id/videoDuration"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_margin="@dimen/spacing_sm"
+            android:paddingStart="@dimen/home_duration_chip_padding_horizontal"
+            android:paddingEnd="@dimen/home_duration_chip_padding_horizontal"
+            android:paddingTop="@dimen/home_duration_chip_padding_vertical"
+            android:paddingBottom="@dimen/home_duration_chip_padding_vertical"
+            android:background="@drawable/home_duration_chip_bg"
+            android:textAppearance="@style/TextAppearance.Home.Duration"
+            app:layout_constraintEnd_toEndOf="@id/videoThumbnail"
+            app:layout_constraintBottom_toBottomOf="@id/videoThumbnail"
+            tools:text="10:30"/>
+
+        <!-- Content Container -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="@dimen/spacing_sm"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/videoThumbnail">
+
+            <!-- Video Title -->
+            <TextView
+                android:id="@+id/videoTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textAppearance="@style/TextAppearance.Home.ItemTitle"
+                android:maxLines="2"
+                android:ellipsize="end"
+                tools:text="The Essence of Faith"/>
+
+            <!-- Video Metadata (Channel + Views + Date) -->
+            <TextView
+                android:id="@+id/videoMeta"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_xs"
+                android:textAppearance="@style/TextAppearance.Home.ItemMeta"
+                android:maxLines="1"
+                android:ellipsize="end"
+                tools:text="100K views"/>
+
+        </LinearLayout>
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+</com.google.android.material.card.MaterialCardView>

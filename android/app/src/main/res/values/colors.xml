@@ -20,4 +20,14 @@
     <!-- Additional colors -->
     <color name="background_gray">#F5F5F5</color>
     <color name="icon_gray">#9E9E9E</color>
+
+    <!-- Home Screen Design System -->
+    <color name="home_surface_background">#F5F6F8</color>
+    <color name="home_card_background">#FFFFFF</color>
+    <color name="home_category_pill_bg">#E8F5F0</color>
+    <color name="home_text_primary">#1A1A1A</color>
+    <color name="home_text_secondary">#6B7280</color>
+    <color name="home_text_muted">#9CA3AF</color>
+    <color name="home_duration_bg">#CC000000</color>
+    <color name="home_video_count_bg">#CC275E4B</color>
 </resources>

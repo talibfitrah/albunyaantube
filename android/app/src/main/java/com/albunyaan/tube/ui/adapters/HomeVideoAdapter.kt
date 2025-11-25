@@ -8,8 +8,9 @@ import androidx.recyclerview.widget.RecyclerView
 import coil.load
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.model.ContentItem
-import com.albunyaan.tube.databinding.ItemVideoGridBinding
+import com.albunyaan.tube.databinding.ItemHomeVideoBinding
 import java.text.NumberFormat
+import java.util.Locale
 
 /**
  * Horizontal adapter for displaying videos in home screen sections
@@ -19,7 +20,7 @@ class HomeVideoAdapter(
 ) : ListAdapter<ContentItem.Video, HomeVideoAdapter.ViewHolder>(DIFF_CALLBACK) {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
-        val binding = ItemVideoGridBinding.inflate(
+        val binding = ItemHomeVideoBinding.inflate(
             LayoutInflater.from(parent.context),
             parent,
             false
@@ -32,7 +33,7 @@ class HomeVideoAdapter(
     }
 
     class ViewHolder(
-        private val binding: ItemVideoGridBinding,
+        private val binding: ItemHomeVideoBinding,
         private val onVideoClick: (ContentItem.Video) -> Unit
     ) : RecyclerView.ViewHolder(binding.root) {
 
@@ -40,20 +41,54 @@ class HomeVideoAdapter(
             binding.videoTitle.text = video.title
 
             val formattedViews = video.viewCount?.let {
-                NumberFormat.getInstance().format(it)
+                formatViewCount(it)
             } ?: "0"
+            val metaParts = mutableListOf<String>()
+            metaParts.add(binding.root.context.getString(R.string.video_views_format, formattedViews))
+            metaParts.add(formatUploadedAgo(video.uploadedDaysAgo))
+            if (video.category.isNotBlank()) {
+                metaParts.add(video.category)
+            }
+            binding.videoMeta.text = metaParts.joinToString(" • ")
 
-            binding.videoMeta.text = "$formattedViews views • ${video.category}"
-
-            binding.videoDuration.text = "${video.durationMinutes} min"
+            binding.videoDuration.text = formatDuration(video.durationMinutes)
 
             binding.videoThumbnail.load(video.thumbnailUrl) {
-                placeholder(R.drawable.onboarding_icon_bg)
-                error(R.drawable.onboarding_icon_bg)
+                placeholder(R.drawable.home_thumbnail_bg)
+                error(R.drawable.home_thumbnail_bg)
             }
 
             binding.root.setOnClickListener {
                 onVideoClick(video)
+            }
+        }
+
+        private fun formatViewCount(count: Long): String {
+            return when {
+                count >= 1_000_000 -> String.format(Locale.US, "%.1fM", count / 1_000_000.0)
+                count >= 1_000 -> String.format(Locale.US, "%.1fK", count / 1_000.0)
+                else -> NumberFormat.getInstance().format(count)
+            }
+        }
+
+        private fun formatUploadedAgo(days: Int): String {
+            val res = binding.root.context.resources
+            return if (days <= 0) {
+                res.getString(R.string.video_uploaded_today)
+            } else {
+                res.getQuantityString(R.plurals.video_uploaded_days_ago, days, days)
+            }
+        }
+
+        private fun formatDuration(minutes: Int): String {
+            val totalSeconds = minutes * 60
+            val hours = totalSeconds / 3600
+            val mins = (totalSeconds % 3600) / 60
+            val secs = totalSeconds % 60
+            return if (hours > 0) {
+                String.format(Locale.US, "%d:%02d:%02d", hours, mins, secs)
+            } else {
+                String.format(Locale.US, "%d:%02d", mins, secs)
             }
         }
     }

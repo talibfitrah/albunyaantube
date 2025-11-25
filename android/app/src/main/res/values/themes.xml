@@ -45,4 +45,10 @@
         <item name="labelVisibilityMode">labeled</item>
         <item name="android:minHeight">@dimen/bottom_nav_height</item>
     </style>
+
+    <!-- Circle Shape for Channel Avatars -->
+    <style name="ShapeAppearance.Albunyaan.Circle" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">50%</item>
+    </style>
 </resources>

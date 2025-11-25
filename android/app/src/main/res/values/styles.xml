@@ -17,4 +17,66 @@
         <item name="chipBackgroundColor">@color/primary_green</item>
         <item name="android:textColor">@android:color/white</item>
     </style>
+
+    <!-- Home Screen Typography -->
+    <style name="TextAppearance.Home.SectionTitle" parent="TextAppearance.Material3.TitleLarge">
+        <item name="android:textSize">@dimen/home_section_title_size</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/home_text_primary</item>
+        <item name="android:letterSpacing">-0.01</item>
+    </style>
+
+    <style name="TextAppearance.Home.ItemTitle" parent="TextAppearance.Material3.TitleMedium">
+        <item name="android:textSize">@dimen/home_item_title_size</item>
+        <item name="android:textStyle">normal</item>
+        <item name="fontFamily">sans-serif-medium</item>
+        <item name="android:textColor">@color/home_text_primary</item>
+        <item name="android:maxLines">2</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <style name="TextAppearance.Home.ItemMeta" parent="TextAppearance.Material3.BodySmall">
+        <item name="android:textSize">@dimen/home_item_meta_size</item>
+        <item name="android:textColor">@color/home_text_secondary</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <style name="TextAppearance.Home.SeeAll" parent="TextAppearance.Material3.LabelLarge">
+        <item name="android:textSize">@dimen/home_see_all_size</item>
+        <item name="android:textColor">@color/primary_green</item>
+        <item name="fontFamily">sans-serif-medium</item>
+    </style>
+
+    <style name="TextAppearance.Home.ChannelName" parent="TextAppearance.Material3.BodyMedium">
+        <item name="android:textSize">13sp</item>
+        <item name="android:textStyle">normal</item>
+        <item name="fontFamily">sans-serif-medium</item>
+        <item name="android:textColor">@color/home_text_primary</item>
+        <item name="android:maxLines">2</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:gravity">center</item>
+    </style>
+
+    <style name="TextAppearance.Home.Duration" parent="TextAppearance.Material3.LabelSmall">
+        <item name="android:textSize">11sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@android:color/white</item>
+    </style>
+
+    <!-- Home Category Pill -->
+    <style name="Widget.Albunyaan.CategoryPill" parent="Widget.Material3.CardView.Filled">
+        <item name="cardCornerRadius">999dp</item>
+        <item name="cardBackgroundColor">@color/home_category_pill_bg</item>
+        <item name="cardElevation">1dp</item>
+        <item name="android:minHeight">@dimen/home_category_pill_height</item>
+    </style>
+
+    <!-- Home Content Card -->
+    <style name="Widget.Albunyaan.HomeCard" parent="Widget.Material3.CardView.Filled">
+        <item name="cardCornerRadius">@dimen/home_card_corner_radius</item>
+        <item name="cardBackgroundColor">@color/home_card_background</item>
+        <item name="cardElevation">@dimen/home_card_elevation</item>
+        <item name="cardUseCompatPadding">true</item>
+    </style>
 </resources>

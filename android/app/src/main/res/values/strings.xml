@@ -192,4 +192,18 @@
     <string name="a11y_playlist_item">Playlist: %1$s, %2$d items</string>
     <string name="a11y_search_history">Recent search: %1$s</string>
     <string name="a11y_download_item">%1$s, %2$s, %3$d percent</string>
+
+    <!-- Video metadata -->
+    <string name="video_views_format">%s views</string>
+    <string name="video_uploaded_today">Today</string>
+    <plurals name="video_uploaded_days_ago">
+        <item quantity="one">%d day ago</item>
+        <item quantity="other">%d days ago</item>
+    </plurals>
+
+    <!-- Plurals -->
+    <plurals name="video_count">
+        <item quantity="one">%d video</item>
+        <item quantity="other">%d videos</item>
+    </plurals>
 </resources>

@@ -17,4 +17,14 @@
     <color name="filter_chip_default_text">#35C491</color>
     <color name="filter_chip_selected_bg">#35C491</color>
     <color name="filter_chip_selected_text">#0A1F18</color>
+
+    <!-- Home Screen Design System (dark) -->
+    <color name="home_surface_background">#0F1512</color>
+    <color name="home_card_background">#1A231F</color>
+    <color name="home_category_pill_bg">#12352B</color>
+    <color name="home_text_primary">#F1F5F9</color>
+    <color name="home_text_secondary">#9CB3A7</color>
+    <color name="home_text_muted">#74847C</color>
+    <color name="home_duration_bg">#CC000000</color>
+    <color name="home_video_count_bg">#CC35C491</color>
 </resources>
