@@ -196,6 +196,7 @@ function getNavIcon(labelKey: string): string {
     'navigation.contentLibrary': '📚',
     'navigation.exclusions': '🚫',
     'navigation.bulkImportExport': '📥',
+    'navigation.archivedContent': '📦',
     'navigation.users': '👥',
     'navigation.audit': '📋',
     'navigation.activity': '📝',

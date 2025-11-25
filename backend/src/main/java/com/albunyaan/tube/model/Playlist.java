@@ -64,6 +64,17 @@ public class Playlist {
      */
     private ApprovalMetadata approvalMetadata;
 
+    /**
+     * Validation status - whether the playlist still exists on YouTube
+     * Null if not yet validated
+     */
+    private ValidationStatus validationStatus;
+
+    /**
+     * Last time this playlist was validated against YouTube
+     */
+    private Timestamp lastValidatedAt;
+
     public Playlist() {
         this.categoryIds = new ArrayList<>();
         this.excludedVideoIds = new ArrayList<>();
@@ -206,6 +217,22 @@ public class Playlist {
     public Category getCategory() {
         // This returns null for now - will need to be populated by service layer
         return null;
+    }
+
+    public ValidationStatus getValidationStatus() {
+        return validationStatus;
+    }
+
+    public void setValidationStatus(ValidationStatus validationStatus) {
+        this.validationStatus = validationStatus;
+    }
+
+    public Timestamp getLastValidatedAt() {
+        return lastValidatedAt;
+    }
+
+    public void setLastValidatedAt(Timestamp lastValidatedAt) {
+        this.lastValidatedAt = lastValidatedAt;
     }
 }
 

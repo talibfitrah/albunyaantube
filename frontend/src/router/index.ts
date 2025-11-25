@@ -14,6 +14,7 @@ const ContentLibraryView = () => import('@/views/ContentLibraryView.vue');
 const ExclusionsWorkspaceView = () => import('@/views/ExclusionsWorkspaceView.vue');
 const BulkImportExportView = () => import('@/views/BulkImportExportView.vue');
 const VideoValidationView = () => import('@/views/VideoValidationView.vue');
+const ArchivedContentReviewView = () => import('@/views/ArchivedContentReviewView.vue');
 const UsersManagementView = () => import('@/views/UsersManagementView.vue');
 const AuditLogView = () => import('@/views/AuditLogView.vue');
 const ActivityLogView = () => import('@/views/ActivityLogView.vue');
@@ -68,6 +69,12 @@ const protectedChildRoutes = [
     path: 'video-validation',
     name: 'video-validation',
     component: VideoValidationView,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: 'archived-content',
+    name: 'archived-content',
+    component: ArchivedContentReviewView,
     meta: { requiresAuth: true }
   },
   {

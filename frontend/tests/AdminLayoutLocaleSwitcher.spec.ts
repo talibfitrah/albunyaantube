@@ -23,6 +23,7 @@ function buildRouter() {
       { path: '/exclusions', name: 'exclusions', component: { template: '<div />' } },
       { path: '/bulk-import-export', name: 'bulk-import-export', component: { template: '<div />' } },
       { path: '/video-validation', name: 'video-validation', component: { template: '<div />' } },
+      { path: '/archived-content', name: 'archived-content', component: { template: '<div />' } },
       { path: '/users', name: 'users', component: { template: '<div />' } },
       { path: '/audit', name: 'audit', component: { template: '<div />' } },
       { path: '/activity', name: 'activity', component: { template: '<div />' } },

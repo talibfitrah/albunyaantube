@@ -2,6 +2,7 @@ package com.albunyaan.tube.repository;
 
 import com.albunyaan.tube.config.FirestoreTimeoutProperties;
 import com.albunyaan.tube.model.Channel;
+import com.albunyaan.tube.model.ValidationStatus;
 import com.google.api.core.ApiFuture;
 import com.google.cloud.firestore.AggregateQuery;
 import com.google.cloud.firestore.AggregateQuerySnapshot;
@@ -310,6 +311,71 @@ public class ChannelRepository {
         }
 
         return new PaginatedResult<>(channels, nextCursor, hasNext);
+    }
+
+    // ==================== Validation Status Methods ====================
+
+    /**
+     * Find channels by validation status.
+     *
+     * @param status ValidationStatus to filter by
+     * @return List of channels with the specified validation status
+     */
+    public List<Channel> findByValidationStatus(ValidationStatus status) throws ExecutionException, InterruptedException, TimeoutException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereEqualTo("validationStatus", status.name())
+                .get();
+
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
+    }
+
+    /**
+     * Find channels by validation status with limit.
+     *
+     * @param status ValidationStatus to filter by
+     * @param limit Maximum number of results
+     * @return List of channels with the specified validation status
+     */
+    public List<Channel> findByValidationStatus(ValidationStatus status, int limit) throws ExecutionException, InterruptedException, TimeoutException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereEqualTo("validationStatus", status.name())
+                .limit(limit)
+                .get();
+
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
+    }
+
+    /**
+     * Count channels by validation status using server-side aggregation.
+     *
+     * @param status ValidationStatus to count
+     * @return Count of channels with the specified validation status
+     */
+    public long countByValidationStatus(ValidationStatus status) throws ExecutionException, InterruptedException, TimeoutException {
+        AggregateQuery countQuery = getCollection()
+                .whereEqualTo("validationStatus", status.name())
+                .count();
+        AggregateQuerySnapshot snapshot = countQuery.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
+        return snapshot.getCount();
+    }
+
+    /**
+     * Find approved channels that need validation (not yet validated or validated more than 24 hours ago).
+     * Note: Firestore doesn't support OR queries on different fields, so we fetch approved channels
+     * and filter in memory. For large datasets, consider using a scheduled job approach.
+     *
+     * @param limit Maximum number of results
+     * @return List of approved channels needing validation
+     */
+    public List<Channel> findApprovedChannelsNeedingValidation(int limit) throws ExecutionException, InterruptedException, TimeoutException {
+        // Get approved channels, filter those needing validation in service layer
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereEqualTo("status", "APPROVED")
+                .orderBy("lastValidatedAt", Query.Direction.ASCENDING)
+                .limit(limit)
+                .get();
+
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
     }
 
     /**

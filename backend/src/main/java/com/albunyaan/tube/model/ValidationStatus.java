@@ -1,23 +1,29 @@
 package com.albunyaan.tube.model;
 
 /**
- * Enum representing the validation status of a video.
- * Indicates whether the video still exists on YouTube.
+ * Enum representing the validation status of content (channels, playlists, videos).
+ * Indicates whether the content still exists on YouTube.
  */
 public enum ValidationStatus {
     /**
-     * Video exists and is accessible on YouTube
+     * Content exists and is accessible on YouTube
      */
     VALID,
 
     /**
-     * Video is no longer available on YouTube (deleted, private, etc.)
+     * Content is no longer available on YouTube (deleted, private, etc.)
      */
     UNAVAILABLE,
 
     /**
-     * Error occurred while validating the video
+     * Error occurred while validating the content
      */
-    ERROR
+    ERROR,
+
+    /**
+     * Content has been archived by admin (hidden from app, kept in database).
+     * Used when validation detects unavailable content - auto-archived for review.
+     */
+    ARCHIVED
 }
 

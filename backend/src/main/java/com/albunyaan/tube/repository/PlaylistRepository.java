@@ -2,7 +2,10 @@ package com.albunyaan.tube.repository;
 
 import com.albunyaan.tube.config.FirestoreTimeoutProperties;
 import com.albunyaan.tube.model.Playlist;
+import com.albunyaan.tube.model.ValidationStatus;
 import com.google.api.core.ApiFuture;
+import com.google.cloud.firestore.AggregateQuery;
+import com.google.cloud.firestore.AggregateQuerySnapshot;
 import com.google.cloud.firestore.CollectionReference;
 import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.Firestore;
@@ -299,6 +302,68 @@ public class PlaylistRepository {
         return new PaginatedResult<>(playlists, nextCursor, hasNext);
     }
 
+    // ==================== Validation Status Methods ====================
+
+    /**
+     * Find playlists by validation status.
+     *
+     * @param status ValidationStatus to filter by
+     * @return List of playlists with the specified validation status
+     */
+    public List<Playlist> findByValidationStatus(ValidationStatus status) throws ExecutionException, InterruptedException, TimeoutException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereEqualTo("validationStatus", status.name())
+                .get();
+
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
+    }
+
+    /**
+     * Find playlists by validation status with limit.
+     *
+     * @param status ValidationStatus to filter by
+     * @param limit Maximum number of results
+     * @return List of playlists with the specified validation status
+     */
+    public List<Playlist> findByValidationStatus(ValidationStatus status, int limit) throws ExecutionException, InterruptedException, TimeoutException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereEqualTo("validationStatus", status.name())
+                .limit(limit)
+                .get();
+
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
+    }
+
+    /**
+     * Count playlists by validation status using server-side aggregation.
+     *
+     * @param status ValidationStatus to count
+     * @return Count of playlists with the specified validation status
+     */
+    public long countByValidationStatus(ValidationStatus status) throws ExecutionException, InterruptedException, TimeoutException {
+        AggregateQuery countQuery = getCollection()
+                .whereEqualTo("validationStatus", status.name())
+                .count();
+        AggregateQuerySnapshot snapshot = countQuery.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
+        return snapshot.getCount();
+    }
+
+    /**
+     * Find approved playlists that need validation.
+     *
+     * @param limit Maximum number of results
+     * @return List of approved playlists needing validation
+     */
+    public List<Playlist> findApprovedPlaylistsNeedingValidation(int limit) throws ExecutionException, InterruptedException, TimeoutException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereEqualTo("status", "APPROVED")
+                .orderBy("lastValidatedAt", Query.Direction.ASCENDING)
+                .limit(limit)
+                .get();
+
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
+    }
+
     /**
      * Generic paginated result wrapper.
      */
@@ -326,4 +391,3 @@ public class PlaylistRepository {
         }
     }
 }
-

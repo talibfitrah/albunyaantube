@@ -115,6 +115,7 @@ public class PublicContentService {
 
         return channels.stream()
                 .filter(this::isApproved)
+                .filter(this::isAvailable)
                 .limit(limit)
                 .map(this::toDto)
                 .collect(Collectors.toList());
@@ -135,6 +136,7 @@ public class PublicContentService {
         }
 
         List<ContentItemDto> items = result.getItems().stream()
+                .filter(this::isAvailable)
                 .map(this::toDto)
                 .collect(Collectors.toList());
 
@@ -154,6 +156,7 @@ public class PublicContentService {
 
         return playlists.stream()
                 .filter(this::isApproved)
+                .filter(this::isAvailable)
                 .limit(limit)
                 .map(this::toDto)
                 .collect(Collectors.toList());
@@ -174,6 +177,7 @@ public class PublicContentService {
         }
 
         List<ContentItemDto> items = result.getItems().stream()
+                .filter(this::isAvailable)
                 .map(this::toDto)
                 .collect(Collectors.toList());
 
@@ -290,13 +294,37 @@ public class PublicContentService {
     }
 
     public Object getChannelDetails(String channelId) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        return channelRepository.findByYoutubeId(channelId)
+        Channel channel = channelRepository.findByYoutubeId(channelId)
                 .orElseThrow(() -> new ResourceNotFoundException("Channel", channelId));
+
+        // Only return approved channels
+        if (!"APPROVED".equals(channel.getStatus())) {
+            throw new ResourceNotFoundException("Channel", channelId);
+        }
+
+        // Exclude archived channels
+        if (channel.getValidationStatus() == ValidationStatus.ARCHIVED) {
+            throw new ResourceNotFoundException("Channel", channelId);
+        }
+
+        return channel;
     }
 
     public Object getPlaylistDetails(String playlistId) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        return playlistRepository.findByYoutubeId(playlistId)
+        Playlist playlist = playlistRepository.findByYoutubeId(playlistId)
                 .orElseThrow(() -> new ResourceNotFoundException("Playlist", playlistId));
+
+        // Only return approved playlists
+        if (!"APPROVED".equals(playlist.getStatus())) {
+            throw new ResourceNotFoundException("Playlist", playlistId);
+        }
+
+        // Exclude archived playlists
+        if (playlist.getValidationStatus() == ValidationStatus.ARCHIVED) {
+            throw new ResourceNotFoundException("Playlist", playlistId);
+        }
+
+        return playlist;
     }
 
     public Video getVideoDetails(String videoId) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
@@ -308,7 +336,9 @@ public class PublicContentService {
             throw new ResourceNotFoundException("Video", videoId);
         }
 
-        if (video.getValidationStatus() == ValidationStatus.UNAVAILABLE) {
+        // Exclude unavailable or archived videos
+        if (video.getValidationStatus() == ValidationStatus.UNAVAILABLE
+                || video.getValidationStatus() == ValidationStatus.ARCHIVED) {
             throw new ResourceNotFoundException("Video", videoId);
         }
 
@@ -346,6 +376,7 @@ public class PublicContentService {
     private List<ContentItemDto> searchChannels(String query, int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         return channelRepository.searchByName(query).stream()
                 .filter(this::isApproved)
+                .filter(this::isAvailable)
                 .limit(limit)
                 .map(this::toDto)
                 .collect(Collectors.toList());
@@ -354,6 +385,7 @@ public class PublicContentService {
     private List<ContentItemDto> searchPlaylists(String query, int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         return playlistRepository.searchByTitle(query).stream()
                 .filter(this::isApproved)
+                .filter(this::isAvailable)
                 .limit(limit)
                 .map(this::toDto)
                 .collect(Collectors.toList());
@@ -382,11 +414,30 @@ public class PublicContentService {
     }
 
     /**
-     * Check if video is available (not marked as UNAVAILABLE by validation)
+     * Check if video is available (not marked as UNAVAILABLE or ARCHIVED by validation)
      */
     private boolean isAvailable(Video video) {
         ValidationStatus validationStatus = video.getValidationStatus();
-        return validationStatus != ValidationStatus.UNAVAILABLE;
+        return validationStatus != ValidationStatus.UNAVAILABLE
+                && validationStatus != ValidationStatus.ARCHIVED;
+    }
+
+    /**
+     * Check if channel is available (not marked as UNAVAILABLE or ARCHIVED by validation)
+     */
+    private boolean isAvailable(Channel channel) {
+        ValidationStatus validationStatus = channel.getValidationStatus();
+        return validationStatus != ValidationStatus.UNAVAILABLE
+                && validationStatus != ValidationStatus.ARCHIVED;
+    }
+
+    /**
+     * Check if playlist is available (not marked as UNAVAILABLE or ARCHIVED by validation)
+     */
+    private boolean isAvailable(Playlist playlist) {
+        ValidationStatus validationStatus = playlist.getValidationStatus();
+        return validationStatus != ValidationStatus.UNAVAILABLE
+                && validationStatus != ValidationStatus.ARCHIVED;
     }
 
     private boolean matchesLengthFilter(Video video, String length) {

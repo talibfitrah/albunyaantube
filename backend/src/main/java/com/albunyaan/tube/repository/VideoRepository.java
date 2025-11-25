@@ -1,8 +1,11 @@
 package com.albunyaan.tube.repository;
 
 import com.albunyaan.tube.config.FirestoreTimeoutProperties;
+import com.albunyaan.tube.model.ValidationStatus;
 import com.albunyaan.tube.model.Video;
 import com.google.api.core.ApiFuture;
+import com.google.cloud.firestore.AggregateQuery;
+import com.google.cloud.firestore.AggregateQuerySnapshot;
 import com.google.cloud.firestore.CollectionReference;
 import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.Firestore;
@@ -321,6 +324,52 @@ public class VideoRepository {
         return new PaginatedResult<>(videos, nextCursor, hasNext);
     }
 
+    // ==================== Validation Status Methods ====================
+
+    /**
+     * Find videos by validation status.
+     *
+     * @param status ValidationStatus to filter by
+     * @return List of videos with the specified validation status
+     */
+    public List<Video> findByValidationStatus(ValidationStatus status) throws ExecutionException, InterruptedException, TimeoutException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereEqualTo("validationStatus", status.name())
+                .get();
+
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
+    }
+
+    /**
+     * Find videos by validation status with limit.
+     *
+     * @param status ValidationStatus to filter by
+     * @param limit Maximum number of results
+     * @return List of videos with the specified validation status
+     */
+    public List<Video> findByValidationStatus(ValidationStatus status, int limit) throws ExecutionException, InterruptedException, TimeoutException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereEqualTo("validationStatus", status.name())
+                .limit(limit)
+                .get();
+
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
+    }
+
+    /**
+     * Count videos by validation status using server-side aggregation.
+     *
+     * @param status ValidationStatus to count
+     * @return Count of videos with the specified validation status
+     */
+    public long countByValidationStatus(ValidationStatus status) throws ExecutionException, InterruptedException, TimeoutException {
+        AggregateQuery countQuery = getCollection()
+                .whereEqualTo("validationStatus", status.name())
+                .count();
+        AggregateQuerySnapshot snapshot = countQuery.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
+        return snapshot.getCount();
+    }
+
     /**
      * Generic paginated result wrapper.
      */
@@ -348,4 +397,3 @@ public class VideoRepository {
         }
     }
 }
-

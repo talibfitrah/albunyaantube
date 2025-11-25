@@ -73,6 +73,17 @@ public class Channel {
      */
     private ApprovalMetadata approvalMetadata;
 
+    /**
+     * Validation status - whether the channel still exists on YouTube
+     * Null if not yet validated
+     */
+    private ValidationStatus validationStatus;
+
+    /**
+     * Last time this channel was validated against YouTube
+     */
+    private Timestamp lastValidatedAt;
+
     public Channel() {
         this.categoryIds = new ArrayList<>();
         this.excludedItems = new ExcludedItems();
@@ -360,6 +371,22 @@ public class Channel {
     @Exclude
     public String getFirstCategoryId() {
         return categoryIds != null && !categoryIds.isEmpty() ? categoryIds.get(0) : null;
+    }
+
+    public ValidationStatus getValidationStatus() {
+        return validationStatus;
+    }
+
+    public void setValidationStatus(ValidationStatus validationStatus) {
+        this.validationStatus = validationStatus;
+    }
+
+    public Timestamp getLastValidatedAt() {
+        return lastValidatedAt;
+    }
+
+    public void setLastValidatedAt(Timestamp lastValidatedAt) {
+        this.lastValidatedAt = lastValidatedAt;
     }
 }
 

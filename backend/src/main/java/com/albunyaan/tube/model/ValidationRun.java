@@ -52,12 +52,38 @@ public class ValidationRun {
     private String status;
 
     /**
+     * Number of channels checked in this run
+     */
+    private int channelsChecked;
+
+    /**
+     * Number of channels marked as archived (unavailable on YouTube)
+     */
+    private int channelsMarkedArchived;
+
+    /**
+     * Number of playlists checked in this run
+     */
+    private int playlistsChecked;
+
+    /**
+     * Number of playlists marked as archived (unavailable on YouTube)
+     */
+    private int playlistsMarkedArchived;
+
+    /**
      * Number of videos checked in this run
      */
     private int videosChecked;
 
     /**
-     * Number of videos marked as unavailable
+     * Number of videos marked as archived (unavailable on YouTube)
+     */
+    private int videosMarkedArchived;
+
+    /**
+     * Legacy field for backward compatibility
+     * @deprecated Use videosMarkedArchived instead
      */
     private int videosMarkedUnavailable;
 
@@ -90,8 +116,13 @@ public class ValidationRun {
     public ValidationRun() {
         this.startedAt = Timestamp.now();
         this.status = STATUS_RUNNING;
+        this.channelsChecked = 0;
+        this.channelsMarkedArchived = 0;
+        this.playlistsChecked = 0;
+        this.playlistsMarkedArchived = 0;
         this.videosChecked = 0;
-        this.videosMarkedUnavailable = 0;
+        this.videosMarkedArchived = 0;
+        this.videosMarkedUnavailable = 0; // Legacy field
         this.errorCount = 0;
         this.details = new HashMap<>();
     }
@@ -149,6 +180,38 @@ public class ValidationRun {
         this.status = status;
     }
 
+    public int getChannelsChecked() {
+        return channelsChecked;
+    }
+
+    public void setChannelsChecked(int channelsChecked) {
+        this.channelsChecked = channelsChecked;
+    }
+
+    public int getChannelsMarkedArchived() {
+        return channelsMarkedArchived;
+    }
+
+    public void setChannelsMarkedArchived(int channelsMarkedArchived) {
+        this.channelsMarkedArchived = channelsMarkedArchived;
+    }
+
+    public int getPlaylistsChecked() {
+        return playlistsChecked;
+    }
+
+    public void setPlaylistsChecked(int playlistsChecked) {
+        this.playlistsChecked = playlistsChecked;
+    }
+
+    public int getPlaylistsMarkedArchived() {
+        return playlistsMarkedArchived;
+    }
+
+    public void setPlaylistsMarkedArchived(int playlistsMarkedArchived) {
+        this.playlistsMarkedArchived = playlistsMarkedArchived;
+    }
+
     public int getVideosChecked() {
         return videosChecked;
     }
@@ -157,10 +220,24 @@ public class ValidationRun {
         this.videosChecked = videosChecked;
     }
 
+    public int getVideosMarkedArchived() {
+        return videosMarkedArchived;
+    }
+
+    public void setVideosMarkedArchived(int videosMarkedArchived) {
+        this.videosMarkedArchived = videosMarkedArchived;
+    }
+
+    /**
+     * @deprecated Use getVideosMarkedArchived() instead
+     */
     public int getVideosMarkedUnavailable() {
         return videosMarkedUnavailable;
     }
 
+    /**
+     * @deprecated Use setVideosMarkedArchived() instead
+     */
     public void setVideosMarkedUnavailable(int videosMarkedUnavailable) {
         this.videosMarkedUnavailable = videosMarkedUnavailable;
     }
@@ -222,17 +299,63 @@ public class ValidationRun {
     }
 
     /**
-     * Increment the checked count
+     * Increment the channels checked count
+     */
+    public void incrementChannelsChecked() {
+        this.channelsChecked++;
+    }
+
+    /**
+     * Increment the channels archived count
+     */
+    public void incrementChannelsArchived() {
+        this.channelsMarkedArchived++;
+    }
+
+    /**
+     * Increment the playlists checked count
+     */
+    public void incrementPlaylistsChecked() {
+        this.playlistsChecked++;
+    }
+
+    /**
+     * Increment the playlists archived count
+     */
+    public void incrementPlaylistsArchived() {
+        this.playlistsMarkedArchived++;
+    }
+
+    /**
+     * Increment the videos checked count
+     * @deprecated Use incrementVideosChecked() for clarity
      */
     public void incrementChecked() {
         this.videosChecked++;
     }
 
     /**
+     * Increment the videos checked count
+     */
+    public void incrementVideosChecked() {
+        this.videosChecked++;
+    }
+
+    /**
+     * Increment the videos archived count
+     */
+    public void incrementVideosArchived() {
+        this.videosMarkedArchived++;
+        this.videosMarkedUnavailable++; // Keep legacy field in sync
+    }
+
+    /**
      * Increment the unavailable count
+     * @deprecated Use incrementVideosArchived() instead
      */
     public void incrementUnavailable() {
         this.videosMarkedUnavailable++;
+        this.videosMarkedArchived++; // Keep new field in sync
     }
 
     /**
@@ -240,6 +363,20 @@ public class ValidationRun {
      */
     public void incrementError() {
         this.errorCount++;
+    }
+
+    /**
+     * Get total content checked across all types
+     */
+    public int getTotalChecked() {
+        return channelsChecked + playlistsChecked + videosChecked;
+    }
+
+    /**
+     * Get total content archived across all types
+     */
+    public int getTotalArchived() {
+        return channelsMarkedArchived + playlistsMarkedArchived + videosMarkedArchived;
     }
 }
 

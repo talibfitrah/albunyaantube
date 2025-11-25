@@ -24,6 +24,7 @@ export const messages = {
       exclusions: 'Exclusions',
       bulkImportExport: 'Import/Export',
       videoValidation: 'Video Validation',
+      archivedContent: 'Archived Content',
       users: 'Users',
       audit: 'Audit log',
       activity: 'Activity log',
@@ -1031,6 +1032,71 @@ export const messages = {
         export: 'Export'
       }
     },
+    archivedContent: {
+      heading: 'Archived Content Review',
+      subtitle: 'Review and manage content that has been auto-archived due to YouTube unavailability',
+      counts: {
+        channels: '{count} channels',
+        playlists: '{count} playlists',
+        videos: '{count} videos',
+        total: '{count} total archived'
+      },
+      tabs: {
+        channels: 'Channels',
+        playlists: 'Playlists',
+        videos: 'Videos'
+      },
+      table: {
+        thumbnail: 'Thumbnail',
+        title: 'Title',
+        youtubeId: 'YouTube ID',
+        category: 'Category',
+        archivedAt: 'Archived At',
+        metadata: 'Details',
+        actions: 'Actions'
+      },
+      empty: {
+        title: 'No archived content',
+        description: 'Great news! There is no archived content to review.',
+        descriptionType: 'No archived {type} found.'
+      },
+      actions: {
+        restore: 'Restore',
+        delete: 'Delete',
+        restoreSelected: 'Restore Selected',
+        deleteSelected: 'Delete Selected',
+        selectAll: 'Select All',
+        deselectAll: 'Deselect All'
+      },
+      validation: {
+        runAll: 'Validate All Content',
+        runChannels: 'Validate Channels',
+        runPlaylists: 'Validate Playlists',
+        runVideos: 'Validate Videos',
+        running: 'Running validation...',
+        success: 'Validation completed: {checked} checked, {archived} archived',
+        error: 'Validation failed'
+      },
+      confirmDelete: {
+        title: 'Confirm Deletion',
+        message: 'Are you sure you want to permanently delete {count} item(s)? This action cannot be undone.',
+        confirm: 'Delete Permanently',
+        cancel: 'Cancel'
+      },
+      confirmRestore: {
+        title: 'Confirm Restore',
+        message: 'Are you sure you want to restore {count} item(s)? They will become visible in the app again.',
+        confirm: 'Restore',
+        cancel: 'Cancel'
+      },
+      toasts: {
+        deleteSuccess: '{count} item(s) deleted successfully',
+        deleteError: 'Failed to delete items',
+        restoreSuccess: '{count} item(s) restored successfully',
+        restoreError: 'Failed to restore items',
+        loadError: 'Failed to load archived content'
+      }
+    },
     bulkImportExport: {
       heading: 'Bulk Import/Export',
       subtitle: 'Import or export content in bulk using JSON files',
@@ -1124,6 +1190,7 @@ export const messages = {
       exclusions: 'الاستثناءات',
       bulkImportExport: 'استيراد/تصدير',
       videoValidation: 'التحقق من الفيديوهات',
+      archivedContent: 'المحتوى المؤرشف',
       users: 'المستخدمون',
       audit: 'سجل التدقيق',
       activity: 'سجل النشاط',
@@ -1883,6 +1950,71 @@ export const messages = {
         export: 'تصدير'
       }
     },
+    archivedContent: {
+      heading: 'مراجعة المحتوى المؤرشف',
+      subtitle: 'مراجعة وإدارة المحتوى الذي تم أرشفته تلقائيًا بسبب عدم توفره على يوتيوب',
+      counts: {
+        channels: '{count} قناة',
+        playlists: '{count} قائمة تشغيل',
+        videos: '{count} فيديو',
+        total: '{count} إجمالي المؤرشف'
+      },
+      tabs: {
+        channels: 'القنوات',
+        playlists: 'قوائم التشغيل',
+        videos: 'الفيديوهات'
+      },
+      table: {
+        thumbnail: 'الصورة المصغرة',
+        title: 'العنوان',
+        youtubeId: 'معرّف يوتيوب',
+        category: 'الفئة',
+        archivedAt: 'تاريخ الأرشفة',
+        metadata: 'التفاصيل',
+        actions: 'الإجراءات'
+      },
+      empty: {
+        title: 'لا يوجد محتوى مؤرشف',
+        description: 'أخبار جيدة! لا يوجد محتوى مؤرشف للمراجعة.',
+        descriptionType: 'لا يوجد {type} مؤرشف.'
+      },
+      actions: {
+        restore: 'استعادة',
+        delete: 'حذف',
+        restoreSelected: 'استعادة المحدد',
+        deleteSelected: 'حذف المحدد',
+        selectAll: 'تحديد الكل',
+        deselectAll: 'إلغاء تحديد الكل'
+      },
+      validation: {
+        runAll: 'التحقق من كل المحتوى',
+        runChannels: 'التحقق من القنوات',
+        runPlaylists: 'التحقق من قوائم التشغيل',
+        runVideos: 'التحقق من الفيديوهات',
+        running: 'جارٍ التحقق...',
+        success: 'اكتمل التحقق: {checked} تم الفحص، {archived} تم الأرشفة',
+        error: 'فشل التحقق'
+      },
+      confirmDelete: {
+        title: 'تأكيد الحذف',
+        message: 'هل أنت متأكد من رغبتك في حذف {count} عنصر(عناصر) بشكل دائم؟ لا يمكن التراجع عن هذا الإجراء.',
+        confirm: 'حذف نهائي',
+        cancel: 'إلغاء'
+      },
+      confirmRestore: {
+        title: 'تأكيد الاستعادة',
+        message: 'هل أنت متأكد من رغبتك في استعادة {count} عنصر(عناصر)؟ ستصبح مرئية في التطبيق مرة أخرى.',
+        confirm: 'استعادة',
+        cancel: 'إلغاء'
+      },
+      toasts: {
+        deleteSuccess: 'تم حذف {count} عنصر(عناصر) بنجاح',
+        deleteError: 'فشل حذف العناصر',
+        restoreSuccess: 'تم استعادة {count} عنصر(عناصر) بنجاح',
+        restoreError: 'فشل استعادة العناصر',
+        loadError: 'فشل تحميل المحتوى المؤرشف'
+      }
+    },
     bulkImportExport: {
       heading: 'الاستيراد/التصدير المجمّع',
       subtitle: 'استورد أو صدّر المحتوى بشكل مجمّع باستخدام ملفات JSON',
@@ -1976,6 +2108,7 @@ export const messages = {
       exclusions: 'Uitzonderingen',
       bulkImportExport: 'Importeren/Exporteren',
       videoValidation: 'Video Validatie',
+      archivedContent: 'Gearchiveerde Inhoud',
       users: 'Gebruikers',
       audit: 'Auditlogboek',
       activity: 'Activiteitenlogboek',
@@ -2731,6 +2864,71 @@ export const messages = {
         manual: 'Handmatig',
         import: 'Import',
         export: 'Export'
+      }
+    },
+    archivedContent: {
+      heading: 'Gearchiveerde Inhoud Beoordelen',
+      subtitle: 'Bekijk en beheer inhoud die automatisch is gearchiveerd vanwege onbeschikbaarheid op YouTube',
+      counts: {
+        channels: '{count} kanalen',
+        playlists: '{count} afspeellijsten',
+        videos: "{count} video's",
+        total: '{count} totaal gearchiveerd'
+      },
+      tabs: {
+        channels: 'Kanalen',
+        playlists: 'Afspeellijsten',
+        videos: "Video's"
+      },
+      table: {
+        thumbnail: 'Miniatuur',
+        title: 'Titel',
+        youtubeId: 'YouTube ID',
+        category: 'Categorie',
+        archivedAt: 'Gearchiveerd op',
+        metadata: 'Details',
+        actions: 'Acties'
+      },
+      empty: {
+        title: 'Geen gearchiveerde inhoud',
+        description: 'Goed nieuws! Er is geen gearchiveerde inhoud om te beoordelen.',
+        descriptionType: 'Geen gearchiveerde {type} gevonden.'
+      },
+      actions: {
+        restore: 'Herstellen',
+        delete: 'Verwijderen',
+        restoreSelected: 'Geselecteerde herstellen',
+        deleteSelected: 'Geselecteerde verwijderen',
+        selectAll: 'Alles selecteren',
+        deselectAll: 'Selectie opheffen'
+      },
+      validation: {
+        runAll: 'Alle inhoud valideren',
+        runChannels: 'Kanalen valideren',
+        runPlaylists: 'Afspeellijsten valideren',
+        runVideos: "Video's valideren",
+        running: 'Validatie bezig...',
+        success: 'Validatie voltooid: {checked} gecontroleerd, {archived} gearchiveerd',
+        error: 'Validatie mislukt'
+      },
+      confirmDelete: {
+        title: 'Verwijdering bevestigen',
+        message: 'Weet u zeker dat u {count} item(s) permanent wilt verwijderen? Dit kan niet ongedaan worden gemaakt.',
+        confirm: 'Permanent verwijderen',
+        cancel: 'Annuleren'
+      },
+      confirmRestore: {
+        title: 'Herstel bevestigen',
+        message: 'Weet u zeker dat u {count} item(s) wilt herstellen? Ze worden weer zichtbaar in de app.',
+        confirm: 'Herstellen',
+        cancel: 'Annuleren'
+      },
+      toasts: {
+        deleteSuccess: '{count} item(s) succesvol verwijderd',
+        deleteError: 'Items verwijderen mislukt',
+        restoreSuccess: '{count} item(s) succesvol hersteld',
+        restoreError: 'Items herstellen mislukt',
+        loadError: 'Gearchiveerde inhoud laden mislukt'
       }
     },
     bulkImportExport: {

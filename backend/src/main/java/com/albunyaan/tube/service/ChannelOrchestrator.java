@@ -1,5 +1,6 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.dto.BatchValidationResult;
 import com.albunyaan.tube.dto.ChannelDetailsDto;
 import com.albunyaan.tube.dto.PlaylistDetailsDto;
 import com.albunyaan.tube.dto.PlaylistItemDto;
@@ -11,6 +12,7 @@ import org.schabi.newpipe.extractor.ListExtractor;
 import org.schabi.newpipe.extractor.Page;
 import org.schabi.newpipe.extractor.channel.ChannelInfo;
 import org.schabi.newpipe.extractor.channel.tabs.ChannelTabExtractor;
+import org.schabi.newpipe.extractor.exceptions.ContentNotAvailableException;
 import org.schabi.newpipe.extractor.exceptions.ExtractionException;
 import org.schabi.newpipe.extractor.linkhandler.ListLinkHandler;
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo;
@@ -372,7 +374,9 @@ public class ChannelOrchestrator {
 
     /**
      * Batch validate and fetch channels
+     * @deprecated Use {@link #batchValidateChannelsWithDetails(List)} for proper error handling
      */
+    @Deprecated
     public Map<String, ChannelInfo> batchValidateChannels(List<String> youtubeIds) {
         if (youtubeIds == null || youtubeIds.isEmpty()) {
             return Collections.emptyMap();
@@ -404,8 +408,87 @@ public class ChannelOrchestrator {
     }
 
     /**
-     * Batch validate and fetch playlists
+     * Batch validate channels with detailed error categorization.
+     * Distinguishes between content that doesn't exist vs transient errors.
+     *
+     * Calls NewPipeExtractor directly to catch specific exception types:
+     * - ContentNotAvailableException (and subclasses) = content definitively doesn't exist
+     * - Other ExtractionException with "not found" message = content doesn't exist
+     * - Other ExtractionException = parsing/extraction error, may be transient
+     * - IOException = network error, definitely transient
+     *
+     * @param youtubeIds List of YouTube channel IDs to validate
+     * @return BatchValidationResult with valid, notFound, and error categories
      */
+    public BatchValidationResult<ChannelInfo> batchValidateChannelsWithDetails(List<String> youtubeIds) {
+        BatchValidationResult<ChannelInfo> result = new BatchValidationResult<>();
+
+        if (youtubeIds == null || youtubeIds.isEmpty()) {
+            return result;
+        }
+
+        logger.info("Batch validating {} channels with detailed error handling", youtubeIds.size());
+
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+
+        for (String channelId : youtubeIds) {
+            CompletableFuture<Void> future = gateway.runAsync(() -> {
+                try {
+                    // Call gateway directly to get the raw NewPipe exceptions
+                    ChannelInfo info = gateway.fetchChannelInfo(channelId);
+                    if (info != null) {
+                        result.addValid(channelId, info);
+                        logger.debug("Channel {} exists on YouTube: {}", channelId, info.getName());
+                    } else {
+                        // Null result without exception - should not happen, but treat as error
+                        logger.warn("Channel {} returned null info without exception", channelId);
+                        result.addError(channelId, "Null response from YouTube");
+                    }
+                } catch (ContentNotAvailableException e) {
+                    // This exception and its subclasses definitively mean content doesn't exist:
+                    // - AccountTerminatedException
+                    // - PrivateContentException
+                    // - AgeRestrictedContentException
+                    // - GeographicRestrictionException
+                    // - PaidContentException
+                    logger.info("Channel {} CONFIRMED not available (ContentNotAvailableException): {} ({})",
+                            channelId, e.getMessage(), e.getClass().getSimpleName());
+                    result.addNotFound(channelId);
+                } catch (ExtractionException e) {
+                    // Check if the error message indicates content doesn't exist
+                    // YouTube may return "This channel does not exist" which NewPipe wraps in ParsingException
+                    if (isNotFoundErrorMessage(e.getMessage())) {
+                        logger.info("Channel {} CONFIRMED not available (error message): {} ({})",
+                                channelId, e.getMessage(), e.getClass().getSimpleName());
+                        result.addNotFound(channelId);
+                    } else {
+                        // Other extraction errors - could be parsing issues, format changes, etc.
+                        // These are NOT definitive proof content doesn't exist, mark as error for retry
+                        logger.warn("Channel {} extraction error (will retry): {} ({})",
+                                channelId, e.getMessage(), e.getClass().getSimpleName());
+                        result.addError(channelId, e.getClass().getSimpleName() + ": " + e.getMessage());
+                    }
+                } catch (IOException e) {
+                    // Network errors - definitely transient, retry later
+                    logger.warn("Channel {} network error (will retry): {}", channelId, e.getMessage());
+                    result.addError(channelId, "Network error: " + e.getMessage());
+                }
+            });
+            futures.add(future);
+        }
+
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
+        logger.info("Channel batch validation completed: valid={}, notFound={}, errors={}",
+                result.getValidCount(), result.getNotFoundCount(), result.getErrorCount());
+        return result;
+    }
+
+    /**
+     * Batch validate and fetch playlists
+     * @deprecated Use {@link #batchValidatePlaylistsWithDetails(List)} for proper error handling
+     */
+    @Deprecated
     public Map<String, PlaylistInfo> batchValidatePlaylists(List<String> youtubeIds) {
         if (youtubeIds == null || youtubeIds.isEmpty()) {
             return Collections.emptyMap();
@@ -437,8 +520,68 @@ public class ChannelOrchestrator {
     }
 
     /**
-     * Batch validate and fetch videos
+     * Batch validate playlists with detailed error categorization.
+     * Distinguishes between content that doesn't exist vs transient errors.
+     *
+     * @param youtubeIds List of YouTube playlist IDs to validate
+     * @return BatchValidationResult with valid, notFound, and error categories
      */
+    public BatchValidationResult<PlaylistInfo> batchValidatePlaylistsWithDetails(List<String> youtubeIds) {
+        BatchValidationResult<PlaylistInfo> result = new BatchValidationResult<>();
+
+        if (youtubeIds == null || youtubeIds.isEmpty()) {
+            return result;
+        }
+
+        logger.info("Batch validating {} playlists with detailed error handling", youtubeIds.size());
+
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+
+        for (String playlistId : youtubeIds) {
+            CompletableFuture<Void> future = gateway.runAsync(() -> {
+                try {
+                    PlaylistInfo info = gateway.fetchPlaylistInfo(playlistId);
+                    if (info != null) {
+                        result.addValid(playlistId, info);
+                        logger.debug("Playlist {} exists on YouTube: {}", playlistId, info.getName());
+                    } else {
+                        logger.warn("Playlist {} returned null info without exception", playlistId);
+                        result.addError(playlistId, "Null response from YouTube");
+                    }
+                } catch (ContentNotAvailableException e) {
+                    logger.info("Playlist {} CONFIRMED not available (ContentNotAvailableException): {} ({})",
+                            playlistId, e.getMessage(), e.getClass().getSimpleName());
+                    result.addNotFound(playlistId);
+                } catch (ExtractionException e) {
+                    if (isNotFoundErrorMessage(e.getMessage())) {
+                        logger.info("Playlist {} CONFIRMED not available (error message): {} ({})",
+                                playlistId, e.getMessage(), e.getClass().getSimpleName());
+                        result.addNotFound(playlistId);
+                    } else {
+                        logger.warn("Playlist {} extraction error (will retry): {} ({})",
+                                playlistId, e.getMessage(), e.getClass().getSimpleName());
+                        result.addError(playlistId, e.getClass().getSimpleName() + ": " + e.getMessage());
+                    }
+                } catch (IOException e) {
+                    logger.warn("Playlist {} network error (will retry): {}", playlistId, e.getMessage());
+                    result.addError(playlistId, "Network error: " + e.getMessage());
+                }
+            });
+            futures.add(future);
+        }
+
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
+        logger.info("Playlist batch validation completed: valid={}, notFound={}, errors={}",
+                result.getValidCount(), result.getNotFoundCount(), result.getErrorCount());
+        return result;
+    }
+
+    /**
+     * Batch validate and fetch videos
+     * @deprecated Use {@link #batchValidateVideosWithDetails(List)} for proper error handling
+     */
+    @Deprecated
     public Map<String, StreamInfo> batchValidateVideos(List<String> youtubeIds) {
         if (youtubeIds == null || youtubeIds.isEmpty()) {
             return Collections.emptyMap();
@@ -467,6 +610,98 @@ public class ChannelOrchestrator {
 
         logger.debug("Batch validation completed: {}/{} videos found", videoMap.size(), youtubeIds.size());
         return videoMap;
+    }
+
+    /**
+     * Batch validate videos with detailed error categorization.
+     * Distinguishes between content that doesn't exist vs transient errors.
+     *
+     * @param youtubeIds List of YouTube video IDs to validate
+     * @return BatchValidationResult with valid, notFound, and error categories
+     */
+    public BatchValidationResult<StreamInfo> batchValidateVideosWithDetails(List<String> youtubeIds) {
+        BatchValidationResult<StreamInfo> result = new BatchValidationResult<>();
+
+        if (youtubeIds == null || youtubeIds.isEmpty()) {
+            return result;
+        }
+
+        logger.info("Batch validating {} videos with detailed error handling", youtubeIds.size());
+
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+
+        for (String videoId : youtubeIds) {
+            CompletableFuture<Void> future = gateway.runAsync(() -> {
+                try {
+                    StreamInfo info = gateway.fetchStreamInfo(videoId);
+                    if (info != null) {
+                        result.addValid(videoId, info);
+                        logger.debug("Video {} exists on YouTube: {}", videoId, info.getName());
+                    } else {
+                        logger.warn("Video {} returned null info without exception", videoId);
+                        result.addError(videoId, "Null response from YouTube");
+                    }
+                } catch (ContentNotAvailableException e) {
+                    logger.info("Video {} CONFIRMED not available (ContentNotAvailableException): {} ({})",
+                            videoId, e.getMessage(), e.getClass().getSimpleName());
+                    result.addNotFound(videoId);
+                } catch (ExtractionException e) {
+                    if (isNotFoundErrorMessage(e.getMessage())) {
+                        logger.info("Video {} CONFIRMED not available (error message): {} ({})",
+                                videoId, e.getMessage(), e.getClass().getSimpleName());
+                        result.addNotFound(videoId);
+                    } else {
+                        logger.warn("Video {} extraction error (will retry): {} ({})",
+                                videoId, e.getMessage(), e.getClass().getSimpleName());
+                        result.addError(videoId, e.getClass().getSimpleName() + ": " + e.getMessage());
+                    }
+                } catch (IOException e) {
+                    logger.warn("Video {} network error (will retry): {}", videoId, e.getMessage());
+                    result.addError(videoId, "Network error: " + e.getMessage());
+                }
+            });
+            futures.add(future);
+        }
+
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
+        logger.info("Video batch validation completed: valid={}, notFound={}, errors={}",
+                result.getValidCount(), result.getNotFoundCount(), result.getErrorCount());
+        return result;
+    }
+
+    // ==================== Error Message Classification ====================
+
+    /**
+     * Checks if an error message indicates that content definitively doesn't exist on YouTube.
+     *
+     * YouTube returns specific error messages when content is deleted/unavailable.
+     * NewPipeExtractor may wrap these in ParsingException instead of ContentNotAvailableException.
+     *
+     * @param message The error message to check
+     * @return true if the message indicates content doesn't exist
+     */
+    private boolean isNotFoundErrorMessage(String message) {
+        if (message == null) {
+            return false;
+        }
+        String lowerMessage = message.toLowerCase();
+
+        // YouTube's specific "not found" messages
+        return lowerMessage.contains("this channel does not exist") ||
+               lowerMessage.contains("this video is unavailable") ||
+               lowerMessage.contains("this video has been removed") ||
+               lowerMessage.contains("this video is no longer available") ||
+               lowerMessage.contains("this video isn't available anymore") ||
+               lowerMessage.contains("video unavailable") ||
+               lowerMessage.contains("this playlist does not exist") ||
+               lowerMessage.contains("the playlist does not exist") ||
+               lowerMessage.contains("playlist does not exist") ||
+               lowerMessage.contains("has been terminated") ||
+               lowerMessage.contains("account associated with this video has been terminated") ||
+               lowerMessage.contains("private video") ||
+               lowerMessage.contains("private playlist") ||
+               lowerMessage.contains("does not exist");
     }
 
     // ==================== DTO-First Methods ====================
@@ -571,7 +806,9 @@ public class ChannelOrchestrator {
 
     /**
      * Batch validate channels and return as DTOs
+     * @deprecated Use {@link #batchValidateChannelsDtoWithDetails(List)} for proper error handling
      */
+    @Deprecated
     public Map<String, ChannelDetailsDto> batchValidateChannelsDto(List<String> youtubeIds) {
         return batchValidateChannels(youtubeIds).entrySet().stream()
                 .collect(Collectors.toMap(
@@ -582,7 +819,9 @@ public class ChannelOrchestrator {
 
     /**
      * Batch validate playlists and return as DTOs
+     * @deprecated Use {@link #batchValidatePlaylistsDtoWithDetails(List)} for proper error handling
      */
+    @Deprecated
     public Map<String, PlaylistDetailsDto> batchValidatePlaylistsDto(List<String> youtubeIds) {
         return batchValidatePlaylists(youtubeIds).entrySet().stream()
                 .collect(Collectors.toMap(
@@ -593,13 +832,81 @@ public class ChannelOrchestrator {
 
     /**
      * Batch validate videos and return as DTOs
+     * @deprecated Use {@link #batchValidateVideosDtoWithDetails(List)} for proper error handling
      */
+    @Deprecated
     public Map<String, StreamDetailsDto> batchValidateVideosDto(List<String> youtubeIds) {
         return batchValidateVideos(youtubeIds).entrySet().stream()
                 .collect(Collectors.toMap(
                         Map.Entry::getKey,
                         e -> mapToStreamDetailsDto(e.getValue())
                 ));
+    }
+
+    /**
+     * Batch validate channels and return as DTOs with detailed error categorization.
+     * Properly distinguishes between content that doesn't exist vs transient errors.
+     *
+     * @param youtubeIds List of YouTube channel IDs to validate
+     * @return BatchValidationResult with valid DTOs, notFound IDs, and error IDs
+     */
+    public BatchValidationResult<ChannelDetailsDto> batchValidateChannelsDtoWithDetails(List<String> youtubeIds) {
+        BatchValidationResult<ChannelInfo> rawResult = batchValidateChannelsWithDetails(youtubeIds);
+        BatchValidationResult<ChannelDetailsDto> dtoResult = new BatchValidationResult<>();
+
+        // Convert valid entries to DTOs
+        rawResult.getValid().forEach((id, info) ->
+                dtoResult.addValid(id, mapToChannelDetailsDto(info)));
+
+        // Copy notFound and error sets
+        rawResult.getNotFound().forEach(dtoResult::addNotFound);
+        rawResult.getErrorMessages().forEach(dtoResult::addError);
+
+        return dtoResult;
+    }
+
+    /**
+     * Batch validate playlists and return as DTOs with detailed error categorization.
+     * Properly distinguishes between content that doesn't exist vs transient errors.
+     *
+     * @param youtubeIds List of YouTube playlist IDs to validate
+     * @return BatchValidationResult with valid DTOs, notFound IDs, and error IDs
+     */
+    public BatchValidationResult<PlaylistDetailsDto> batchValidatePlaylistsDtoWithDetails(List<String> youtubeIds) {
+        BatchValidationResult<PlaylistInfo> rawResult = batchValidatePlaylistsWithDetails(youtubeIds);
+        BatchValidationResult<PlaylistDetailsDto> dtoResult = new BatchValidationResult<>();
+
+        // Convert valid entries to DTOs
+        rawResult.getValid().forEach((id, info) ->
+                dtoResult.addValid(id, mapToPlaylistDetailsDto(info)));
+
+        // Copy notFound and error sets
+        rawResult.getNotFound().forEach(dtoResult::addNotFound);
+        rawResult.getErrorMessages().forEach(dtoResult::addError);
+
+        return dtoResult;
+    }
+
+    /**
+     * Batch validate videos and return as DTOs with detailed error categorization.
+     * Properly distinguishes between content that doesn't exist vs transient errors.
+     *
+     * @param youtubeIds List of YouTube video IDs to validate
+     * @return BatchValidationResult with valid DTOs, notFound IDs, and error IDs
+     */
+    public BatchValidationResult<StreamDetailsDto> batchValidateVideosDtoWithDetails(List<String> youtubeIds) {
+        BatchValidationResult<StreamInfo> rawResult = batchValidateVideosWithDetails(youtubeIds);
+        BatchValidationResult<StreamDetailsDto> dtoResult = new BatchValidationResult<>();
+
+        // Convert valid entries to DTOs
+        rawResult.getValid().forEach((id, info) ->
+                dtoResult.addValid(id, mapToStreamDetailsDto(info)));
+
+        // Copy notFound and error sets
+        rawResult.getNotFound().forEach(dtoResult::addNotFound);
+        rawResult.getErrorMessages().forEach(dtoResult::addError);
+
+        return dtoResult;
     }
 
     // ==================== DTO Mapping Methods ====================
@@ -758,4 +1065,5 @@ public class ChannelOrchestrator {
 
         return dto;
     }
+
 }

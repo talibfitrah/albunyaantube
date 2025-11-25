@@ -1,5 +1,6 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.dto.BatchValidationResult;
 import com.albunyaan.tube.dto.ChannelDetailsDto;
 import com.albunyaan.tube.dto.EnrichedSearchResult;
 import com.albunyaan.tube.dto.PlaylistDetailsDto;
@@ -299,23 +300,62 @@ public class YouTubeService {
 
     /**
      * Batch validate channels and return as DTOs
+     * @deprecated Use {@link #batchValidateChannelsDtoWithDetails(List)} for proper error handling
      */
+    @Deprecated
     public Map<String, ChannelDetailsDto> batchValidateChannelsDto(List<String> youtubeIds) {
         return channelOrchestrator.batchValidateChannelsDto(youtubeIds);
     }
 
     /**
      * Batch validate playlists and return as DTOs
+     * @deprecated Use {@link #batchValidatePlaylistsDtoWithDetails(List)} for proper error handling
      */
+    @Deprecated
     public Map<String, PlaylistDetailsDto> batchValidatePlaylistsDto(List<String> youtubeIds) {
         return channelOrchestrator.batchValidatePlaylistsDto(youtubeIds);
     }
 
     /**
      * Batch validate videos and return as DTOs
+     * @deprecated Use {@link #batchValidateVideosDtoWithDetails(List)} for proper error handling
      */
+    @Deprecated
     public Map<String, StreamDetailsDto> batchValidateVideosDto(List<String> youtubeIds) {
         return channelOrchestrator.batchValidateVideosDto(youtubeIds);
+    }
+
+    /**
+     * Batch validate channels and return as DTOs with detailed error categorization.
+     * Properly distinguishes between content that doesn't exist vs transient errors.
+     *
+     * @param youtubeIds List of YouTube channel IDs to validate
+     * @return BatchValidationResult with valid DTOs, notFound IDs, and error IDs
+     */
+    public BatchValidationResult<ChannelDetailsDto> batchValidateChannelsDtoWithDetails(List<String> youtubeIds) {
+        return channelOrchestrator.batchValidateChannelsDtoWithDetails(youtubeIds);
+    }
+
+    /**
+     * Batch validate playlists and return as DTOs with detailed error categorization.
+     * Properly distinguishes between content that doesn't exist vs transient errors.
+     *
+     * @param youtubeIds List of YouTube playlist IDs to validate
+     * @return BatchValidationResult with valid DTOs, notFound IDs, and error IDs
+     */
+    public BatchValidationResult<PlaylistDetailsDto> batchValidatePlaylistsDtoWithDetails(List<String> youtubeIds) {
+        return channelOrchestrator.batchValidatePlaylistsDtoWithDetails(youtubeIds);
+    }
+
+    /**
+     * Batch validate videos and return as DTOs with detailed error categorization.
+     * Properly distinguishes between content that doesn't exist vs transient errors.
+     *
+     * @param youtubeIds List of YouTube video IDs to validate
+     * @return BatchValidationResult with valid DTOs, notFound IDs, and error IDs
+     */
+    public BatchValidationResult<StreamDetailsDto> batchValidateVideosDtoWithDetails(List<String> youtubeIds) {
+        return channelOrchestrator.batchValidateVideosDtoWithDetails(youtubeIds);
     }
 
     // ==================== DTO Mapping Methods ====================
