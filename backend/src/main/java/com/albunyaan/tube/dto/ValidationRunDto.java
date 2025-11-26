@@ -5,6 +5,7 @@ import com.google.cloud.Timestamp;
 
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
+import java.util.Map;
 
 /**
  * Content Validation: Validation Run DTO
@@ -19,7 +20,7 @@ public class ValidationRunDto {
     private String triggeredBy;
     private String triggeredByDisplayName;
 
-    // Counts
+    // Validation counts (for TRIGGER_MANUAL and TRIGGER_SCHEDULED)
     private int channelsChecked;
     private int channelsArchived;
     private int playlistsChecked;
@@ -29,6 +30,20 @@ public class ValidationRunDto {
     private int totalChecked;
     private int totalArchived;
     private int errorCount;
+
+    // Import counts (for TRIGGER_IMPORT)
+    private int channelsImported;
+    private int channelsSkipped;
+    private int channelsValidationFailed;
+    private int channelsFailed;
+    private int playlistsImported;
+    private int playlistsSkipped;
+    private int playlistsValidationFailed;
+    private int playlistsFailed;
+    private int videosImported;
+    private int videosSkipped;
+    private int videosValidationFailed;
+    private int videosFailed;
 
     // Progress tracking
     private int totalChannelsToCheck;
@@ -42,6 +57,9 @@ public class ValidationRunDto {
     private String startedAt;
     private String completedAt;
     private Long durationMs;
+
+    // Details map (includes reasonCounts, failedItemIds, etc.)
+    private Map<String, Object> details;
 
     public ValidationRunDto() {
     }
@@ -76,6 +94,20 @@ public class ValidationRunDto {
         dto.setTotalArchived(totalArchived);
         dto.setErrorCount(run.getErrorCount());
 
+        // Import counts (for TRIGGER_IMPORT runs)
+        dto.setChannelsImported(run.getChannelsImported());
+        dto.setChannelsSkipped(run.getChannelsSkipped());
+        dto.setChannelsValidationFailed(run.getChannelsValidationFailed());
+        dto.setChannelsFailed(run.getChannelsFailed());
+        dto.setPlaylistsImported(run.getPlaylistsImported());
+        dto.setPlaylistsSkipped(run.getPlaylistsSkipped());
+        dto.setPlaylistsValidationFailed(run.getPlaylistsValidationFailed());
+        dto.setPlaylistsFailed(run.getPlaylistsFailed());
+        dto.setVideosImported(run.getVideosImported());
+        dto.setVideosSkipped(run.getVideosSkipped());
+        dto.setVideosValidationFailed(run.getVideosValidationFailed());
+        dto.setVideosFailed(run.getVideosFailed());
+
         // Progress tracking
         dto.setTotalChannelsToCheck(run.getTotalChannelsToCheck());
         dto.setTotalPlaylistsToCheck(run.getTotalPlaylistsToCheck());
@@ -87,6 +119,9 @@ public class ValidationRunDto {
         dto.setStartedAt(formatTimestamp(run.getStartedAt()));
         dto.setCompletedAt(formatTimestamp(run.getCompletedAt()));
         dto.setDurationMs(run.getDurationMs());
+
+        // Include details map (reasonCounts, failedItemIds, etc.)
+        dto.setDetails(run.getDetails());
 
         return dto;
     }
@@ -288,5 +323,111 @@ public class ValidationRunDto {
 
     public void setCurrentPhase(String currentPhase) {
         this.currentPhase = currentPhase;
+    }
+
+    // Import counts getters/setters
+
+    public int getChannelsImported() {
+        return channelsImported;
+    }
+
+    public void setChannelsImported(int channelsImported) {
+        this.channelsImported = channelsImported;
+    }
+
+    public int getChannelsSkipped() {
+        return channelsSkipped;
+    }
+
+    public void setChannelsSkipped(int channelsSkipped) {
+        this.channelsSkipped = channelsSkipped;
+    }
+
+    public int getChannelsValidationFailed() {
+        return channelsValidationFailed;
+    }
+
+    public void setChannelsValidationFailed(int channelsValidationFailed) {
+        this.channelsValidationFailed = channelsValidationFailed;
+    }
+
+    public int getChannelsFailed() {
+        return channelsFailed;
+    }
+
+    public void setChannelsFailed(int channelsFailed) {
+        this.channelsFailed = channelsFailed;
+    }
+
+    public int getPlaylistsImported() {
+        return playlistsImported;
+    }
+
+    public void setPlaylistsImported(int playlistsImported) {
+        this.playlistsImported = playlistsImported;
+    }
+
+    public int getPlaylistsSkipped() {
+        return playlistsSkipped;
+    }
+
+    public void setPlaylistsSkipped(int playlistsSkipped) {
+        this.playlistsSkipped = playlistsSkipped;
+    }
+
+    public int getPlaylistsValidationFailed() {
+        return playlistsValidationFailed;
+    }
+
+    public void setPlaylistsValidationFailed(int playlistsValidationFailed) {
+        this.playlistsValidationFailed = playlistsValidationFailed;
+    }
+
+    public int getPlaylistsFailed() {
+        return playlistsFailed;
+    }
+
+    public void setPlaylistsFailed(int playlistsFailed) {
+        this.playlistsFailed = playlistsFailed;
+    }
+
+    public int getVideosImported() {
+        return videosImported;
+    }
+
+    public void setVideosImported(int videosImported) {
+        this.videosImported = videosImported;
+    }
+
+    public int getVideosSkipped() {
+        return videosSkipped;
+    }
+
+    public void setVideosSkipped(int videosSkipped) {
+        this.videosSkipped = videosSkipped;
+    }
+
+    public int getVideosValidationFailed() {
+        return videosValidationFailed;
+    }
+
+    public void setVideosValidationFailed(int videosValidationFailed) {
+        this.videosValidationFailed = videosValidationFailed;
+    }
+
+    public int getVideosFailed() {
+        return videosFailed;
+    }
+
+    public void setVideosFailed(int videosFailed) {
+        this.videosFailed = videosFailed;
+    }
+
+    public Map<String, Object> getDetails() {
+        return details;
+    }
+
+    public void setDetails(Map<String, Object> details) {
+        this.details = details;
     }
 }

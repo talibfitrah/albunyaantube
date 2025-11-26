@@ -7,7 +7,7 @@ export interface ValidationRun {
   // Legacy video-only fields
   videosChecked: number;
   videosMarkedUnavailable: number;
-  // New comprehensive fields
+  // Validation fields (for SCHEDULED and MANUAL triggers)
   channelsChecked?: number;
   channelsArchived?: number;
   playlistsChecked?: number;
@@ -16,6 +16,19 @@ export interface ValidationRun {
   totalChecked?: number;
   totalArchived?: number;
   errorCount: number;
+  // Import fields (for IMPORT trigger)
+  channelsImported?: number;
+  channelsSkipped?: number;
+  channelsValidationFailed?: number;
+  channelsFailed?: number;
+  playlistsImported?: number;
+  playlistsSkipped?: number;
+  playlistsValidationFailed?: number;
+  playlistsFailed?: number;
+  videosImported?: number;
+  videosSkipped?: number;
+  videosValidationFailed?: number;
+  videosFailed?: number;
   details?: Record<string, any>;
   startedAt: string;
   completedAt?: string | null;

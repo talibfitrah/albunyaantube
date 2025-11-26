@@ -1,0 +1,546 @@
+================================================================================
+COMPREHENSIVE CODE REVIEW - FINAL ANALYSIS
+================================================================================
+Date: 2025-11-26
+Reviewer: CodeRabbit AI (Second Pass)
+Scope: ALL uncommitted changes + recent commits
+
+================================================================================
+EXECUTIVE SUMMARY
+================================================================================
+
+Total Files Changed: 14
+- Backend (Java): 7 files
+- Frontend (TypeScript/Vue): 4 files
+- Documentation: 2 files
+- Test Data: 2 files
+
+Critical Issues Found: 3 NEW
+High Priority Issues: 2 NEW
+Medium Priority Issues: 4 NEW
+
+Status: ⚠️  REQUIRES ADDITIONAL FIXES BEFORE DEPLOYMENT
+
+================================================================================
+NEW CRITICAL ISSUES FOUND (ChannelOrchestrator)
+================================================================================
+
+1. 🔴 BLOCKING ISSUE: Thread.sleep() in Production Code
+   -------------------------------------------------------------------------
+   Location: ChannelOrchestrator.java lines 500-535 (approx)
+
+   Problem: Using Thread.sleep() in a service method will BLOCK the calling
+   thread for potentially minutes at a time. For 777 channels with 100ms
+   delays, this is ~80 seconds of blocking.
+
+   Impact: CRITICAL
+   - If called from a web request, blocks Tomcat thread pool
+   - With default 200 threads, just 3 concurrent validations blocks 15% of capacity
+   - Can cause cascading failures and service unavailability
+   - Thread pool starvation under load
+
+   Code:
+   ```java
+   for (String channelId : youtubeIds) {
+       // ... validation logic ...
+       Thread.sleep(currentDelayMs);  // 🔴 BLOCKING CALL IN WEB THREAD!
+   }
+   ```
+
+   Why This Is Wrong:
+   - Sequential processing defeats the purpose of async architecture
+   - Blocks the executor thread that should be non-blocking
+   - Goes against Spring WebFlux/async patterns
+   - Makes import times unacceptably long
+
+   Correct Solution:
+   ```java
+   // Option 1: Use CompletableFuture with delayed execution
+   CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+       // validate
+   }).thenComposeAsync(result ->
+       CompletableFuture.runAsync(() -> {},
+           CompletableFuture.delayedExecutor(currentDelayMs, TimeUnit.MILLISECONDS))
+   );
+
+   // Option 2: Use ScheduledExecutorService
+   ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+   for (String channelId : youtubeIds) {
+       scheduler.schedule(() -> validate(channelId), delay, TimeUnit.MILLISECONDS);
+       delay += baseDelayMs;
+   }
+
+   // Option 3: Use Spring @Async with delay logic
+   // But NOT Thread.sleep() in production code!
+   ```
+
+   Recommendation: REVERT to parallel processing with proper rate limiting
+   using Resilience4j RateLimiter or Bucket4j, not Thread.sleep().
+
+2. 🔴 PERFORMANCE REGRESSION: O(n²) Time Complexity
+   -------------------------------------------------------------------------
+   Location: ChannelOrchestrator.java batchValidateChannelsWithDetails()
+
+   Problem: Changed from O(n) parallel to O(n) sequential + retries
+
+   Before (parallel):
+   - 777 channels validated in parallel → ~5-10 seconds total
+   - CompletableFuture.allOf() waits for all to complete
+
+   After (sequential with delays):
+   - 777 channels × 100ms base delay = 77.7 seconds minimum
+   - With retries (2 attempts): up to 155 seconds
+   - With adaptive backoff (up to 2000ms): could be 5+ minutes
+
+   Impact: CRITICAL
+   - Import time increased by 10-30x
+   - User experience severely degraded
+   - Timeout issues likely (frontend polling, browser limits)
+
+   Alternative Solutions:
+   1. Use rate-limited parallel processing (e.g., 10 concurrent with 100ms between batches)
+   2. Use token bucket algorithm (Bucket4j library)
+   3. Use Resilience4j RateLimiter with async execution
+
+   Example (Resilience4j):
+   ```java
+   RateLimiter rateLimiter = RateLimiter.of("youtube", RateLimiterConfig.custom()
+       .limitForPeriod(10)  // 10 requests
+       .limitRefreshPeriod(Duration.ofSeconds(1))  // per second
+       .timeoutDuration(Duration.ofMinutes(5))
+       .build());
+
+   CompletableFuture<Void> future = CompletableFuture.runAsync(
+       RateLimiter.decorateRunnable(rateLimiter, () -> validate(channelId))
+   );
+   ```
+
+3. 🔴 INCORRECT ERROR CLASSIFICATION: False Negatives
+   -------------------------------------------------------------------------
+   Location: ChannelOrchestrator.java lines 464-476 (approx)
+
+   Problem: Added logic to retry ContentNotAvailableException if message
+   doesn't match "not found" patterns. This is WRONG.
+
+   Code:
+   ```java
+   catch (ContentNotAvailableException e) {
+       if (isNotFoundErrorMessage(e.getMessage())) {
+           result.addNotFound(channelId);
+       } else {
+           // 🔴 WRONG: ContentNotAvailableException ALWAYS means not available!
+           result.addError(channelId, reason);  // Will retry
+       }
+   }
+   ```
+
+   Why This Is Wrong:
+   - ContentNotAvailableException is a DEFINITIVE exception from NewPipeExtractor
+   - Subclasses (AccountTerminatedException, PrivateContentException) mean
+     content DOES NOT EXIST or is PERMANENTLY UNAVAILABLE
+   - Retrying these is pointless and wastes time
+
+   Original Code Was Correct:
+   ```java
+   catch (ContentNotAvailableException e) {
+       // This exception definitively means content doesn't exist
+       result.addNotFound(channelId);  // ✅ CORRECT
+   }
+   ```
+
+   Impact: MEDIUM-HIGH
+   - Wasted retries on permanently unavailable content
+   - False hope that content might become available
+   - Longer validation times
+
+   Fix: Revert to original error classification logic.
+
+================================================================================
+HIGH PRIORITY ISSUES
+================================================================================
+
+4. ⚠️  REMOVED ASYNC EXECUTION (ChannelOrchestrator)
+   -------------------------------------------------------------------------
+   Problem: Removed `gateway.runAsync()` calls, making all validation synchronous
+
+   Before:
+   ```java
+   CompletableFuture<Void> future = gateway.runAsync(() -> {
+       ChannelInfo info = gateway.fetchChannelInfo(channelId);
+       // ... process ...
+   });
+   futures.add(future);
+   CompletableFuture.allOf(futures.toArray(...)).join();
+   ```
+
+   After:
+   ```java
+   for (String channelId : youtubeIds) {
+       ChannelInfo info = gateway.fetchChannelInfo(channelId);  // 🔴 BLOCKING!
+       Thread.sleep(currentDelayMs);  // 🔴 BLOCKING!
+   }
+   ```
+
+   Impact: Entire validation now blocks the calling thread
+
+   Recommendation: Keep async execution, add rate limiting at gateway level
+
+5. ⚠️  ADAPTIVE BACKOFF WITHOUT CEILING
+   -------------------------------------------------------------------------
+   Location: ChannelOrchestrator.java lines 467-469
+
+   Code:
+   ```java
+   consecutiveErrors++;
+   currentDelayMs = Math.min(baseDelayMs * (1L << Math.min(consecutiveErrors, 4)), 2000);
+   ```
+
+   Issue: Exponential backoff formula is complex and has edge cases
+
+   - consecutiveErrors=1: delay = min(100 * 2, 2000) = 200ms
+   - consecutiveErrors=2: delay = min(100 * 4, 2000) = 400ms
+   - consecutiveErrors=3: delay = min(100 * 8, 2000) = 800ms
+   - consecutiveErrors=4+: delay = min(100 * 16, 2000) = 1600ms (capped at 2000)
+
+   Problems:
+   - Bit shift is clever but hard to maintain
+   - No clear documentation of the progression
+   - Missing reset logic on success in some paths
+
+   Better Approach:
+   ```java
+   private long calculateBackoff(int consecutiveErrors, long baseDelayMs) {
+       // Simple exponential backoff: 100, 200, 400, 800, 1600, 2000 (max)
+       long delay = baseDelayMs * (long) Math.pow(2, Math.min(consecutiveErrors, 4));
+       return Math.min(delay, 2000);
+   }
+   ```
+
+================================================================================
+MEDIUM PRIORITY ISSUES
+================================================================================
+
+6. INCONSISTENT RETRY LOGIC
+   -------------------------------------------------------------------------
+   Location: ChannelOrchestrator.java
+
+   Problem: Channels have retry logic (maxAttemptsPerId = 2), but playlists
+   and videos don't (based on visible diff).
+
+   Impact: Inconsistent behavior across content types
+
+   Fix: Either add retries to all or remove from all (prefer remove given
+   the Thread.sleep() issue).
+
+7. MISSING INTERRUPT HANDLING
+   -------------------------------------------------------------------------
+   Location: ChannelOrchestrator.java lines 502-509
+
+   Code:
+   ```java
+   try {
+       Thread.sleep(currentDelayMs);
+   } catch (InterruptedException ie) {
+       logger.warn("Validation interrupted during delay");
+       Thread.currentThread().interrupt();  // ✅ Good!
+       break;  // ❓ What about cleanup?
+   }
+   ```
+
+   Issue: When interrupted, breaks out of loop but doesn't handle partial results
+
+   Fix: Add proper cleanup and return partial results:
+   ```java
+   catch (InterruptedException ie) {
+       logger.warn("Validation interrupted, returning partial results");
+       Thread.currentThread().interrupt();
+       break;  // Results collected so far will be returned
+   }
+   ```
+
+8. LOGGING NOISE
+   -------------------------------------------------------------------------
+   Location: ChannelOrchestrator.java
+
+   Problem: Changed many INFO logs to WARN, creating log spam
+
+   Before: `logger.info("Channel {} exists...")`
+   After: `logger.warn("Channel {} will retry if attempts left, delay: {}ms")`
+
+   Impact: Log files filled with warnings that aren't actionable
+
+   Fix: Use DEBUG for retry attempts, WARN only for actual problems:
+   ```java
+   logger.debug("Channel {} retrying (attempt {}/{}), delay: {}ms",
+                channelId, attempts, maxAttemptsPerId, currentDelayMs);
+   ```
+
+9. TEST STRICTNESS CHANGE
+   -------------------------------------------------------------------------
+   Location: ChannelOrchestratorTest.java
+
+   Added: `@MockitoSettings(strictness = Strictness.LENIENT)`
+
+   Problem: This DISABLES important mock verification warnings
+
+   Impact: Tests may pass even if mocks are incorrectly configured
+
+   Why It Was Added: Likely because sequential processing changed mock
+   call expectations
+
+   Fix: Update test expectations to match new behavior instead of
+   disabling verification
+
+================================================================================
+PREVIOUS FIXES VERIFICATION
+================================================================================
+
+✅ ImportExportController.java
+   - AtomicBoolean: CORRECT implementation
+   - File size validation: CORRECT
+   - Lock release on all paths: VERIFIED CORRECT
+
+✅ BulkImportExportView.vue
+   - TypeScript typing: CORRECT
+   - onUnmounted cleanup: VERIFIED CORRECT
+
+✅ ContentImportService.java
+   - PROGRESS_SAVE_INTERVAL = 1: Accepted (user decision)
+   - Sequential existence checks: Known optimization opportunity
+
+No regressions found in previous fixes.
+
+================================================================================
+ROOT CAUSE ANALYSIS: Why Thread.sleep() Was Added
+================================================================================
+
+Looking at the commit message/changes, the developer added Thread.sleep()
+to solve YouTube rate limiting issues. This is a COMMON MISTAKE.
+
+The Problem They Were Trying to Solve:
+- "YouTube blocks parallel/burst requests from NewPipeExtractor"
+- False 404 errors due to rate limiting
+
+Why Thread.sleep() Is The Wrong Solution:
+1. Blocks threads → resource exhaustion
+2. Doesn't actually prevent rate limiting (YouTube tracks per IP, not per thread)
+3. Makes system slow and unresponsive
+4. Defeats async architecture
+
+The Right Solutions:
+1. Use Resilience4j RateLimiter (non-blocking rate limiting)
+2. Use Semaphore to limit concurrent requests (still async)
+3. Add delays at the gateway level, not in business logic
+4. Use reactive programming (WebFlux) with controlled parallelism
+
+Example (Correct Approach):
+```java
+// In NewPipeGateway:
+private final Semaphore rateLimiter = new Semaphore(10); // Max 10 concurrent
+
+public CompletableFuture<ChannelInfo> fetchChannelInfo(String id) {
+    return CompletableFuture.supplyAsync(() -> {
+        try {
+            rateLimiter.acquire();  // Wait if limit reached
+            try {
+                return fetchFromNewPipe(id);
+            } finally {
+                // Release after 100ms to throttle
+                CompletableFuture.delayedExecutor(100, TimeUnit.MILLISECONDS)
+                    .execute(rateLimiter::release);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException(e);
+        }
+    }, asyncExecutor);
+}
+```
+
+================================================================================
+IMPACT ASSESSMENT
+================================================================================
+
+Before ChannelOrchestrator Changes:
+- ✅ Parallel validation: 777 channels in ~10 seconds
+- ✅ Non-blocking async execution
+- ✅ Fast import times
+- ❌ Potential YouTube rate limiting (claimed, but not proven)
+
+After ChannelOrchestrator Changes:
+- ❌ Sequential validation: 777 channels in ~80-300 seconds
+- ❌ Blocking execution with Thread.sleep()
+- ❌ Thread pool exhaustion risk
+- ❌ Severe performance regression
+- ✅ Theoretically prevents rate limiting (but breaks everything else)
+
+Net Result: The cure is worse than the disease.
+
+================================================================================
+RECOMMENDED ACTIONS
+================================================================================
+
+CRITICAL (Must Fix Before Deploy):
+
+1. REVERT ChannelOrchestrator changes
+   - Go back to parallel processing
+   - Remove Thread.sleep() calls
+   - Remove retry logic (or implement properly with async)
+
+2. IF rate limiting is a real problem (needs proof):
+   - Add Resilience4j dependency
+   - Implement RateLimiter at gateway level
+   - Use non-blocking rate limiting
+   - Keep parallel processing with controlled concurrency
+
+3. Fix error classification
+   - Revert ContentNotAvailableException handling to original
+   - Trust NewPipeExtractor exception types
+
+HIGH PRIORITY:
+
+4. Add proper monitoring
+   - Track YouTube API/scraping failures
+   - Measure actual rate limit hits (not assumed)
+   - Alert on validation time > threshold
+
+5. Update tests
+   - Remove @MockitoSettings(strictness = Strictness.LENIENT)
+   - Fix test expectations to match correct behavior
+
+6. Performance testing
+   - Benchmark validation with different concurrency levels
+   - Find optimal rate limiting parameters
+   - Test with real YouTube rate limits
+
+================================================================================
+PROOF OF RATE LIMITING NEEDED
+================================================================================
+
+Before implementing any rate limiting solution, we need evidence:
+
+1. Are there actual 429 (Too Many Requests) responses?
+2. Are there actual false 404s that succeed on retry?
+3. What is YouTube's actual rate limit for NewPipeExtractor?
+4. Does sequential processing actually fix the problem?
+
+Without this data, we're shooting in the dark and breaking working code.
+
+Recommendation:
+1. Deploy current code (with ImportExportController fixes only)
+2. Monitor for rate limit errors
+3. Only if problems occur, implement proper rate limiting
+4. Use battle-tested libraries (Resilience4j, Bucket4j)
+
+================================================================================
+CODE SAMPLE: Correct Rate Limiting Implementation
+================================================================================
+
+```java
+// Add to build.gradle.kts:
+implementation("io.github.resilience4j:resilience4j-ratelimiter:2.1.0")
+
+// In ChannelOrchestrator:
+private final RateLimiter youtubeRateLimiter;
+
+public ChannelOrchestrator(...) {
+    this.youtubeRateLimiter = RateLimiter.of("youtube", RateLimiterConfig.custom()
+        .limitForPeriod(10)  // 10 requests per period
+        .limitRefreshPeriod(Duration.ofSeconds(1))  // Every 1 second
+        .timeoutDuration(Duration.ofSeconds(30))  // Wait max 30s for permit
+        .build());
+}
+
+public BatchValidationResult<ChannelDetailsDto> batchValidateChannelsWithDetails(List<String> youtubeIds) {
+    // ... init result ...
+
+    List<CompletableFuture<Void>> futures = new ArrayList<>();
+
+    for (String channelId : youtubeIds) {
+        // Decorate the async call with rate limiter
+        Runnable rateLimitedFetch = RateLimiter.decorateRunnable(
+            youtubeRateLimiter,
+            () -> {
+                try {
+                    ChannelInfo info = gateway.fetchChannelInfo(channelId);
+                    if (info != null) {
+                        result.addValid(channelId, info);
+                    }
+                } catch (ContentNotAvailableException e) {
+                    result.addNotFound(channelId);
+                } catch (Exception e) {
+                    result.addError(channelId, e.getMessage());
+                }
+            }
+        );
+
+        // Execute asynchronously (non-blocking!)
+        CompletableFuture<Void> future = CompletableFuture.runAsync(
+            rateLimitedFetch,
+            asyncExecutor
+        );
+        futures.add(future);
+    }
+
+    // Wait for all (non-blocking if called from async context)
+    CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
+    return result;
+}
+```
+
+This approach:
+- ✅ Non-blocking (doesn't use Thread.sleep())
+- ✅ Rate limited (10 requests/second)
+- ✅ Parallel execution (up to thread pool size)
+- ✅ Battle-tested library (Resilience4j)
+- ✅ Configurable via application.yml
+- ✅ Production-ready
+
+================================================================================
+SUMMARY OF ALL ISSUES
+================================================================================
+
+CRITICAL (Block Deployment):
+1. Thread.sleep() in ChannelOrchestrator → thread pool exhaustion
+2. Sequential processing → 10-30x slower validation
+3. Wrong error classification → wasted retries
+
+HIGH PRIORITY:
+4. Removed async execution → blocking behavior
+5. Complex adaptive backoff → maintainability issues
+
+MEDIUM PRIORITY:
+6. Inconsistent retry logic across content types
+7. Missing interrupt cleanup
+8. Excessive logging noise
+9. Test strictness disabled
+
+TOTAL ISSUES: 9 (3 critical, 2 high, 4 medium)
+
+RECOMMENDATION: **DO NOT DEPLOY** ChannelOrchestrator changes.
+
+Either:
+A) REVERT ChannelOrchestrator.java to previous version, OR
+B) REIMPLEMENT rate limiting using Resilience4j (2-3 hours work)
+
+The ImportExportController fixes from earlier are GOOD and should be kept.
+
+================================================================================
+FILES REQUIRING FIXES
+================================================================================
+
+MUST FIX:
+- backend/src/main/java/com/albunyaan/tube/service/ChannelOrchestrator.java
+
+SHOULD FIX:
+- backend/src/test/java/com/albunyaan/tube/service/ChannelOrchestratorTest.java
+
+KEEP AS-IS (Already Fixed):
+- backend/src/main/java/com/albunyaan/tube/controller/ImportExportController.java
+- frontend/src/views/BulkImportExportView.vue
+- All other files
+
+================================================================================
+END OF REVIEW
+================================================================================

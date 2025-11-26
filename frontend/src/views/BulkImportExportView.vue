@@ -213,7 +213,17 @@
           {{ importSuccess }}
         </div>
 
-        <!-- Import Results Table -->
+        <!-- Async Import Progress (Simple Format Only) -->
+        <div v-if="importRun && selectedFormat === 'simple'" class="progress-section">
+          <ProgressPanel
+            :run="importRun"
+            :title="t('bulkImportExport.import.importProgress')"
+            mode="import"
+            @download-failed="handleDownloadFailedItems"
+          />
+        </div>
+
+        <!-- Import Results Table (Full Format or Legacy Sync Results) -->
         <div v-if="importResults.length > 0" class="results-section">
           <div class="results-header">
             <h3>{{ t('bulkImportExport.results.title') }}</h3>
@@ -261,9 +271,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import importExportService, { type SimpleImportItemResult } from '@/services/importExportService'
+import type { ValidationRun } from '@/types/validation'
+import ProgressPanel from '@/components/common/ProgressPanel.vue'
 
 const { t } = useI18n()
 
@@ -296,10 +308,37 @@ const importSuccess = ref('')
 const importResults = ref<SimpleImportItemResult[]>([])
 const fileInput = ref<HTMLInputElement | null>(null)
 
+// Async import state
+const importRunId = ref<string | null>(null)
+const importRun = ref<ValidationRun | null>(null)
+const isImportRunning = ref(false)
+let progressPollingInterval: ReturnType<typeof setInterval> | null = null
+
 // Computed
 const successCount = computed(() => importResults.value.filter(r => r.status === 'SUCCESS').length)
 const skippedCount = computed(() => importResults.value.filter(r => r.status === 'SKIPPED').length)
 const errorCount = computed(() => importResults.value.filter(r => r.status === 'FAILED').length)
+
+const totalImportedCount = computed(() => {
+  if (!importRun.value) return 0
+  return (
+    (importRun.value.channelsImported || 0) +
+    (importRun.value.playlistsImported || 0) +
+    (importRun.value.videosImported || 0)
+  )
+})
+
+const totalFailedCount = computed(() => {
+  if (!importRun.value) return 0
+  return (
+    (importRun.value.channelsFailed || 0) +
+    (importRun.value.channelsValidationFailed || 0) +
+    (importRun.value.playlistsFailed || 0) +
+    (importRun.value.playlistsValidationFailed || 0) +
+    (importRun.value.videosFailed || 0) +
+    (importRun.value.videosValidationFailed || 0)
+  )
+})
 
 // Methods
 function handleFileSelect(event: Event) {
@@ -405,28 +444,26 @@ async function handleImport() {
   importError.value = ''
   importSuccess.value = ''
   importResults.value = []
+  importRun.value = null
+  importRunId.value = null
   isImporting.value = true
 
   try {
-    let response
-
+    // Use async import for simple format (for large datasets)
     if (selectedFormat.value === 'simple') {
-      response = await importExportService.importSimple(
+      const response = await importExportService.importSimpleAsync(
         importForm.value.file,
         importForm.value.defaultStatus
       )
-      importResults.value = response.results
 
-      const { counts } = response
-      const totalImported = counts.channelsImported + counts.playlistsImported + counts.videosImported
-      const totalSkipped = counts.channelsSkipped + counts.playlistsSkipped + counts.videosSkipped
+      // Start tracking the import run
+      importRunId.value = response.runId
+      isImportRunning.value = true
+      startProgressPolling()
 
-      importSuccess.value = t('bulkImportExport.import.successSimple', {
-        imported: totalImported,
-        skipped: totalSkipped,
-        errors: counts.totalErrors
-      })
+      importSuccess.value = t('bulkImportExport.import.importStarted')
     } else {
+      // Use sync import for full format (backward compatibility)
       const fullResponse = await importExportService.importFull(
         importForm.value.file,
         importForm.value.mergeStrategy
@@ -461,11 +498,87 @@ async function handleImport() {
     importForm.value.file = null
   } catch (error: any) {
     console.error('Import failed:', error)
-    importError.value = error.response?.data?.message || t('bulkImportExport.import.error')
+
+    // Handle specific error responses
+    if (error.response?.status === 409) {
+      importError.value = t('bulkImportExport.import.importAlreadyRunning')
+    } else if (error.response?.status === 503) {
+      const retryAfter = error.response.headers['retry-after'] || '60'
+      importError.value = t('bulkImportExport.import.serverBusy', { retryAfter })
+    } else {
+      importError.value = error.response?.data?.error || error.response?.data?.message || t('bulkImportExport.import.error')
+    }
   } finally {
     isImporting.value = false
   }
 }
+
+function startProgressPolling() {
+  // Clear any existing interval
+  if (progressPollingInterval !== null) {
+    clearInterval(progressPollingInterval)
+  }
+
+  // Poll immediately
+  pollImportProgress()
+
+  // Then poll every 500ms for smoother progress updates
+  progressPollingInterval = window.setInterval(() => {
+    pollImportProgress()
+  }, 500)
+}
+
+async function pollImportProgress() {
+  if (!importRunId.value) return
+
+  try {
+    const response = await importExportService.getImportStatus(importRunId.value)
+    importRun.value = response.run
+
+    // If import is complete, stop polling
+    if (response.run.status === 'COMPLETED' || response.run.status === 'FAILED') {
+      stopProgressPolling()
+      isImportRunning.value = false
+
+      if (response.run.status === 'COMPLETED') {
+        importSuccess.value = t('bulkImportExport.import.importCompleted', {
+          imported: totalImportedCount.value,
+          failed: totalFailedCount.value
+        })
+      } else {
+        importError.value = t('bulkImportExport.import.importFailed')
+      }
+    }
+  } catch (error: any) {
+    console.error('Failed to poll import progress:', error)
+    // Don't stop polling on transient errors, just log them
+  }
+}
+
+function stopProgressPolling() {
+  if (progressPollingInterval !== null) {
+    clearInterval(progressPollingInterval)
+    progressPollingInterval = null
+  }
+}
+
+async function handleDownloadFailedItems() {
+  if (!importRunId.value) return
+
+  try {
+    const blob = await importExportService.downloadFailedItems(importRunId.value)
+    const filename = `albunyaan-import-failed-${new Date().toISOString().split('T')[0]}.json`
+    importExportService.downloadBlob(blob, filename)
+  } catch (error: any) {
+    console.error('Failed to download failed items:', error)
+    importError.value = t('bulkImportExport.import.downloadFailedError')
+  }
+}
+
+// Cleanup on unmount
+onUnmounted(() => {
+  stopProgressPolling()
+})
 </script>
 
 <style scoped>
@@ -796,5 +909,11 @@ async function handleImport() {
 
 .template-download {
   margin-bottom: 1.5rem;
+}
+
+.progress-section {
+  margin-top: 2rem;
+  border-top: 1px solid var(--color-border);
+  padding-top: 1.5rem;
 }
 </style>

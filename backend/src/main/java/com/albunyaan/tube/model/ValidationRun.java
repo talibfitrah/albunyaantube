@@ -92,6 +92,68 @@ public class ValidationRun {
      */
     private int errorCount;
 
+    // Import-specific counters (for TRIGGER_IMPORT runs)
+
+    /**
+     * Number of channels successfully imported
+     */
+    private int channelsImported;
+
+    /**
+     * Number of channels skipped (already exist in database)
+     */
+    private int channelsSkipped;
+
+    /**
+     * Number of channels that failed YouTube validation (not found/invalid)
+     */
+    private int channelsValidationFailed;
+
+    /**
+     * Number of channels that failed import (Firestore errors, etc.)
+     */
+    private int channelsFailed;
+
+    /**
+     * Number of playlists successfully imported
+     */
+    private int playlistsImported;
+
+    /**
+     * Number of playlists skipped (already exist in database)
+     */
+    private int playlistsSkipped;
+
+    /**
+     * Number of playlists that failed YouTube validation (not found/invalid)
+     */
+    private int playlistsValidationFailed;
+
+    /**
+     * Number of playlists that failed import (Firestore errors, etc.)
+     */
+    private int playlistsFailed;
+
+    /**
+     * Number of videos successfully imported
+     */
+    private int videosImported;
+
+    /**
+     * Number of videos skipped (already exist in database)
+     */
+    private int videosSkipped;
+
+    /**
+     * Number of videos that failed YouTube validation (not found/invalid)
+     */
+    private int videosValidationFailed;
+
+    /**
+     * Number of videos that failed import (Firestore errors, etc.)
+     */
+    private int videosFailed;
+
     /**
      * Total channels to check (for progress calculation)
      */
@@ -144,6 +206,19 @@ public class ValidationRun {
         this.videosMarkedArchived = 0;
         this.videosMarkedUnavailable = 0; // Legacy field
         this.errorCount = 0;
+        // Initialize import counters
+        this.channelsImported = 0;
+        this.channelsSkipped = 0;
+        this.channelsValidationFailed = 0;
+        this.channelsFailed = 0;
+        this.playlistsImported = 0;
+        this.playlistsSkipped = 0;
+        this.playlistsValidationFailed = 0;
+        this.playlistsFailed = 0;
+        this.videosImported = 0;
+        this.videosSkipped = 0;
+        this.videosValidationFailed = 0;
+        this.videosFailed = 0;
         this.details = new HashMap<>();
     }
 
@@ -270,6 +345,104 @@ public class ValidationRun {
         this.errorCount = errorCount;
     }
 
+    // Import counter getters/setters
+
+    public int getChannelsImported() {
+        return channelsImported;
+    }
+
+    public void setChannelsImported(int channelsImported) {
+        this.channelsImported = channelsImported;
+    }
+
+    public int getChannelsSkipped() {
+        return channelsSkipped;
+    }
+
+    public void setChannelsSkipped(int channelsSkipped) {
+        this.channelsSkipped = channelsSkipped;
+    }
+
+    public int getChannelsValidationFailed() {
+        return channelsValidationFailed;
+    }
+
+    public void setChannelsValidationFailed(int channelsValidationFailed) {
+        this.channelsValidationFailed = channelsValidationFailed;
+    }
+
+    public int getChannelsFailed() {
+        return channelsFailed;
+    }
+
+    public void setChannelsFailed(int channelsFailed) {
+        this.channelsFailed = channelsFailed;
+    }
+
+    public int getPlaylistsImported() {
+        return playlistsImported;
+    }
+
+    public void setPlaylistsImported(int playlistsImported) {
+        this.playlistsImported = playlistsImported;
+    }
+
+    public int getPlaylistsSkipped() {
+        return playlistsSkipped;
+    }
+
+    public void setPlaylistsSkipped(int playlistsSkipped) {
+        this.playlistsSkipped = playlistsSkipped;
+    }
+
+    public int getPlaylistsValidationFailed() {
+        return playlistsValidationFailed;
+    }
+
+    public void setPlaylistsValidationFailed(int playlistsValidationFailed) {
+        this.playlistsValidationFailed = playlistsValidationFailed;
+    }
+
+    public int getPlaylistsFailed() {
+        return playlistsFailed;
+    }
+
+    public void setPlaylistsFailed(int playlistsFailed) {
+        this.playlistsFailed = playlistsFailed;
+    }
+
+    public int getVideosImported() {
+        return videosImported;
+    }
+
+    public void setVideosImported(int videosImported) {
+        this.videosImported = videosImported;
+    }
+
+    public int getVideosSkipped() {
+        return videosSkipped;
+    }
+
+    public void setVideosSkipped(int videosSkipped) {
+        this.videosSkipped = videosSkipped;
+    }
+
+    public int getVideosValidationFailed() {
+        return videosValidationFailed;
+    }
+
+    public void setVideosValidationFailed(int videosValidationFailed) {
+        this.videosValidationFailed = videosValidationFailed;
+    }
+
+    public int getVideosFailed() {
+        return videosFailed;
+    }
+
+    public void setVideosFailed(int videosFailed) {
+        this.videosFailed = videosFailed;
+    }
+
     public Map<String, Object> getDetails() {
         return Collections.unmodifiableMap(details);
     }
@@ -385,6 +558,92 @@ public class ValidationRun {
         this.errorCount++;
     }
 
+    // Import counter increment methods
+
+    /**
+     * Increment the channels imported count
+     */
+    public void incrementChannelsImported() {
+        this.channelsImported++;
+    }
+
+    /**
+     * Increment the channels skipped count
+     */
+    public void incrementChannelsSkipped() {
+        this.channelsSkipped++;
+    }
+
+    /**
+     * Increment the channels validation failed count
+     */
+    public void incrementChannelsValidationFailed() {
+        this.channelsValidationFailed++;
+    }
+
+    /**
+     * Increment the channels failed count
+     */
+    public void incrementChannelsFailed() {
+        this.channelsFailed++;
+    }
+
+    /**
+     * Increment the playlists imported count
+     */
+    public void incrementPlaylistsImported() {
+        this.playlistsImported++;
+    }
+
+    /**
+     * Increment the playlists skipped count
+     */
+    public void incrementPlaylistsSkipped() {
+        this.playlistsSkipped++;
+    }
+
+    /**
+     * Increment the playlists validation failed count
+     */
+    public void incrementPlaylistsValidationFailed() {
+        this.playlistsValidationFailed++;
+    }
+
+    /**
+     * Increment the playlists failed count
+     */
+    public void incrementPlaylistsFailed() {
+        this.playlistsFailed++;
+    }
+
+    /**
+     * Increment the videos imported count
+     */
+    public void incrementVideosImported() {
+        this.videosImported++;
+    }
+
+    /**
+     * Increment the videos skipped count
+     */
+    public void incrementVideosSkipped() {
+        this.videosSkipped++;
+    }
+
+    /**
+     * Increment the videos validation failed count
+     */
+    public void incrementVideosValidationFailed() {
+        this.videosValidationFailed++;
+    }
+
+    /**
+     * Increment the videos failed count
+     */
+    public void incrementVideosFailed() {
+        this.videosFailed++;
+    }
+
     // Progress tracking getters/setters
 
     public int getTotalChannelsToCheck() {
@@ -448,6 +707,34 @@ public class ValidationRun {
      */
     public int getTotalArchived() {
         return channelsMarkedArchived + playlistsMarkedArchived + videosMarkedArchived;
+    }
+
+    /**
+     * Get total content imported across all types (for TRIGGER_IMPORT runs)
+     */
+    public int getTotalImported() {
+        return channelsImported + playlistsImported + videosImported;
+    }
+
+    /**
+     * Get total content skipped across all types (for TRIGGER_IMPORT runs)
+     */
+    public int getTotalSkipped() {
+        return channelsSkipped + playlistsSkipped + videosSkipped;
+    }
+
+    /**
+     * Get total content that failed YouTube validation across all types (for TRIGGER_IMPORT runs)
+     */
+    public int getTotalValidationFailed() {
+        return channelsValidationFailed + playlistsValidationFailed + videosValidationFailed;
+    }
+
+    /**
+     * Get total content that failed import across all types (for TRIGGER_IMPORT runs)
+     */
+    public int getTotalFailed() {
+        return channelsFailed + playlistsFailed + videosFailed;
     }
 }
 

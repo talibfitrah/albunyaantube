@@ -5,13 +5,21 @@ import com.albunyaan.tube.dto.ImportRequest;
 import com.albunyaan.tube.dto.ImportResponse;
 import com.albunyaan.tube.dto.SimpleExportResponse;
 import com.albunyaan.tube.dto.SimpleImportResponse;
+import com.albunyaan.tube.dto.ValidationRunDto;
+import com.albunyaan.tube.model.ValidationRun;
+import com.albunyaan.tube.repository.ValidationRunRepository;
 import com.albunyaan.tube.security.FirebaseUserDetails;
+import com.albunyaan.tube.service.ContentImportService;
 import com.albunyaan.tube.service.ImportExportService;
 import com.albunyaan.tube.service.SimpleExportService;
 import com.albunyaan.tube.service.SimpleImportService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -20,11 +28,16 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Controller for bulk import/export of content (channels, playlists, videos, categories).
@@ -38,18 +51,36 @@ import java.util.concurrent.TimeoutException;
 @RequestMapping("/api/admin/import-export")
 public class ImportExportController {
 
+    private static final Logger logger = LoggerFactory.getLogger(ImportExportController.class);
+
     private final ImportExportService importExportService;
     private final SimpleImportService simpleImportService;
     private final SimpleExportService simpleExportService;
+    private final ContentImportService contentImportService;
+    private final ValidationRunRepository validationRunRepository;
+    private final Executor validationExecutor;
+
+    /**
+     * Flag to prevent concurrent import runs.
+     * Only one async import can run at a time to prevent overwhelming the system.
+     * Uses AtomicBoolean for thread-safe atomic check-and-set operations.
+     */
+    private final AtomicBoolean isImportRunning = new AtomicBoolean(false);
 
     public ImportExportController(
             ImportExportService importExportService,
             SimpleImportService simpleImportService,
-            SimpleExportService simpleExportService
+            SimpleExportService simpleExportService,
+            ContentImportService contentImportService,
+            ValidationRunRepository validationRunRepository,
+            @Qualifier("validationExecutor") Executor validationExecutor
     ) {
         this.importExportService = importExportService;
         this.simpleImportService = simpleImportService;
         this.simpleExportService = simpleExportService;
+        this.contentImportService = contentImportService;
+        this.validationRunRepository = validationRunRepository;
+        this.validationExecutor = validationExecutor;
     }
 
     /**
@@ -411,6 +442,256 @@ public class ImportExportController {
         );
 
         return ResponseEntity.ok(validation);
+    }
+
+    // ============================================================
+    // Async Import Endpoints
+    // ============================================================
+
+    /**
+     * Import content from simple format asynchronously with YouTube validation.
+     * Returns immediately with a runId that can be used to poll for status.
+     * Prevents timeout errors for large imports by processing in background.
+     *
+     * @param file JSON file in simple format
+     * @param defaultStatus Default approval status (APPROVED or PENDING)
+     * @param user Current authenticated user
+     * @return 202 Accepted with runId for status polling
+     */
+    @PostMapping("/import/simple/async")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> importSimpleFormatAsync(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(defaultValue = "APPROVED") String defaultStatus,
+            @AuthenticationPrincipal FirebaseUserDetails user
+    ) throws IOException {
+
+        // Check if another import is already running (atomic check-and-set)
+        if (!isImportRunning.compareAndSet(false, true)) {
+            logger.warn("Import already running, rejecting new request from user {}", user.getUid());
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of(
+                            "success", false,
+                            "error", "An import is already running. Please wait for it to complete.",
+                            "status", "CONFLICT"
+                    ));
+        }
+
+        // Validate file
+        if (file.isEmpty()) {
+            isImportRunning.set(false);  // Release lock before returning
+            return ResponseEntity.badRequest().body(
+                    Map.of("success", false, "error", "File is empty")
+            );
+        }
+
+        // Validate file size (50MB limit to prevent DoS)
+        long maxFileSize = 50 * 1024 * 1024;  // 50MB
+        if (file.getSize() > maxFileSize) {
+            isImportRunning.set(false);  // Release lock before returning
+            logger.warn("Import file too large: {} bytes from user {}", file.getSize(), user.getUid());
+            return ResponseEntity.badRequest().body(
+                    Map.of("success", false, "error", "File too large. Maximum size: 50MB")
+            );
+        }
+
+        String originalFilename = file.getOriginalFilename();
+        if (originalFilename == null || !originalFilename.toLowerCase(Locale.ROOT).endsWith(".json")) {
+            isImportRunning.set(false);  // Release lock before returning
+            return ResponseEntity.badRequest().body(
+                    Map.of("success", false, "error", "Only JSON files are supported")
+            );
+        }
+
+        // Parse JSON file
+        String jsonContent = new String(file.getBytes());
+        ObjectMapper mapper = new ObjectMapper();
+        List<Map<String, String>> simpleData;
+        try {
+            simpleData = mapper.readValue(
+                    jsonContent,
+                    new TypeReference<List<Map<String, String>>>() {}
+            );
+        } catch (IOException e) {
+            isImportRunning.set(false);  // Release lock before returning
+            return ResponseEntity.badRequest().body(
+                    Map.of("success", false, "error", "Invalid JSON format: " + e.getMessage())
+            );
+        }
+
+        if (simpleData.size() != 3) {
+            isImportRunning.set(false);  // Release lock before returning
+            return ResponseEntity.badRequest().body(
+                    Map.of("success", false, "error", "Invalid format: expected array of 3 objects [channels, playlists, videos]")
+            );
+        }
+
+        // Create validation run to track progress
+        ValidationRun run = new ValidationRun(ValidationRun.TRIGGER_IMPORT, user.getUid(), user.getEmail());
+        run.setStatus(ValidationRun.STATUS_RUNNING);
+        run.setCurrentPhase("INITIALIZING");
+
+        try {
+            validationRunRepository.save(run);
+            logger.info("Created import run {} for user {}", run.getId(), user.getUid());
+        } catch (Exception e) {
+            isImportRunning.set(false);  // Release lock before returning
+            logger.error("Failed to save validation run", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+                    Map.of("success", false, "error", "Failed to create import run: " + e.getMessage())
+            );
+        }
+
+        final String runId = run.getId();
+
+        // Start async import
+        try {
+            CompletableFuture.runAsync(() -> {
+                try {
+                    contentImportService.importSimpleFormatAsync(
+                            run,
+                            simpleData,
+                            defaultStatus,
+                            user.getUid()
+                    );
+                } catch (Exception e) {
+                    logger.error("Import run {} failed with exception", runId, e);
+                } finally {
+                    isImportRunning.set(false);  // Always release lock
+                }
+            }, validationExecutor);
+
+            logger.info("Started async import run {}", runId);
+
+            return ResponseEntity.status(HttpStatus.ACCEPTED)
+                    .body(Map.of(
+                            "success", true,
+                            "runId", runId,
+                            "status", "RUNNING",
+                            "message", "Import started. Use /import/status/{runId} to check progress."
+                    ));
+
+        } catch (RejectedExecutionException e) {
+            isImportRunning.set(false);  // Release lock on rejection
+            logger.error("Import executor queue full, rejecting import request", e);
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .header("Retry-After", "60")
+                    .body(Map.of(
+                            "success", false,
+                            "error", "Import service is currently overloaded. Please try again in 60 seconds.",
+                            "status", "SERVICE_UNAVAILABLE"
+                    ));
+        }
+    }
+
+    /**
+     * Get status of an async import run.
+     * Poll this endpoint to track import progress.
+     *
+     * @param runId ValidationRun ID returned from /import/simple/async
+     * @param user Current authenticated user
+     * @return Import status with progress counters
+     */
+    @GetMapping("/import/status/{runId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> getImportStatus(
+            @PathVariable String runId,
+            @AuthenticationPrincipal FirebaseUserDetails user
+    ) {
+        try {
+            ValidationRun run = validationRunRepository.findById(runId).orElse(null);
+
+            if (run == null) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Map.of("success", false, "error", "Import run not found"));
+            }
+
+            // Convert to DTO for response
+            ValidationRunDto dto = ValidationRunDto.fromModel(run);
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "run", dto
+            ));
+
+        } catch (Exception e) {
+            logger.error("Failed to get import status for runId {}", runId, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("success", false, "error", "Failed to retrieve import status: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Download failed items from an import run as JSON.
+     * Only available after import completes.
+     *
+     * @param runId ValidationRun ID
+     * @param user Current authenticated user
+     * @return JSON file with failed item IDs and reasons
+     */
+    @GetMapping("/import/{runId}/failed-items")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> downloadFailedItems(
+            @PathVariable String runId,
+            @AuthenticationPrincipal FirebaseUserDetails user
+    ) {
+        try {
+            ValidationRun run = validationRunRepository.findById(runId).orElse(null);
+
+            if (run == null) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Map.of("success", false, "error", "Import run not found"));
+            }
+
+            if (!ValidationRun.STATUS_COMPLETED.equals(run.getStatus()) &&
+                    !ValidationRun.STATUS_FAILED.equals(run.getStatus())) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(Map.of("success", false, "error", "Import run is still in progress"));
+            }
+
+            // Extract failed items from details
+            Map<String, Object> details = run.getDetails();
+            @SuppressWarnings("unchecked")
+            List<String> failedItemIds = (List<String>) details.getOrDefault("failedItemIds", List.of());
+
+            // Convert to simple-format JSON: [{channels}, {playlists}, {videos}]
+            // Use placeholder "Retry Import|Global" for title|categories since we don't store original values
+            Map<String, String> channelsMap = new LinkedHashMap<>();
+            Map<String, String> playlistsMap = new LinkedHashMap<>();
+            Map<String, String> videosMap = new LinkedHashMap<>();
+
+            for (String prefixedId : failedItemIds) {
+                if (prefixedId.startsWith("channel:")) {
+                    String youtubeId = prefixedId.substring(8); // Remove "channel:" prefix
+                    channelsMap.put(youtubeId, "Retry Import|Global");
+                } else if (prefixedId.startsWith("playlist:")) {
+                    String youtubeId = prefixedId.substring(9); // Remove "playlist:" prefix
+                    playlistsMap.put(youtubeId, "Retry Import|Global");
+                } else if (prefixedId.startsWith("video:")) {
+                    String youtubeId = prefixedId.substring(6); // Remove "video:" prefix
+                    videosMap.put(youtubeId, "Retry Import|Global");
+                }
+            }
+
+            // Build simple-format array: [channels, playlists, videos]
+            List<Map<String, String>> simpleFormatData = List.of(channelsMap, playlistsMap, videosMap);
+
+            ObjectMapper mapper = new ObjectMapper();
+            String json = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(simpleFormatData);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.setContentDispositionFormData("attachment", "import-" + runId + "-failed-items.json");
+
+            return ResponseEntity.ok()
+                    .headers(headers)
+                    .body(json.getBytes());
+
+        } catch (Exception e) {
+            logger.error("Failed to download failed items for runId {}", runId, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("success", false, "error", "Failed to download failed items: " + e.getMessage()));
+        }
     }
 }
 

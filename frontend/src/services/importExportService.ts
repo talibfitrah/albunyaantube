@@ -1,4 +1,5 @@
 import api from './api/client'
+import type { ValidationRun } from '@/types/validation'
 
 export interface SimpleImportItemResult {
   youtubeId: string
@@ -52,6 +53,24 @@ export interface ImportResponse {
     error: string
   }>
   importedAt: string
+}
+
+/**
+ * Response when starting async import
+ */
+export interface AsyncImportResponse {
+  success: boolean
+  runId: string
+  status: 'RUNNING'
+  message: string
+}
+
+/**
+ * Import status response
+ */
+export interface ImportStatusResponse {
+  success: boolean
+  run: ValidationRun
 }
 
 /**
@@ -140,6 +159,70 @@ class ImportExportService {
         }
       }
     )
+
+    return response.data
+  }
+
+  // ============================================================
+  // Async Import (For Large Datasets)
+  // ============================================================
+
+  /**
+   * Import content from simple format asynchronously (for large datasets).
+   * Returns immediately with a runId for polling progress.
+   * Prevents timeout errors for large imports by processing in background.
+   *
+   * @param file JSON file in simple format
+   * @param defaultStatus Default approval status (APPROVED or PENDING)
+   * @returns Async import response with runId
+   */
+  async importSimpleAsync(
+    file: File,
+    defaultStatus: 'APPROVED' | 'PENDING' = 'APPROVED'
+  ): Promise<AsyncImportResponse> {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('defaultStatus', defaultStatus)
+
+    const response = await api.post<AsyncImportResponse>(
+      `${this.BASE_PATH}/import/simple/async`,
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      }
+    )
+
+    return response.data
+  }
+
+  /**
+   * Get status of an async import run.
+   * Poll this endpoint to track import progress.
+   *
+   * @param runId ValidationRun ID from importSimpleAsync
+   * @returns Import status with progress counters
+   */
+  async getImportStatus(runId: string): Promise<ImportStatusResponse> {
+    const response = await api.get<ImportStatusResponse>(
+      `${this.BASE_PATH}/import/status/${runId}`
+    )
+
+    return response.data
+  }
+
+  /**
+   * Download failed items from an import run as JSON.
+   * Only available after import completes.
+   *
+   * @param runId ValidationRun ID
+   * @returns Blob containing failed items JSON
+   */
+  async downloadFailedItems(runId: string): Promise<Blob> {
+    const response = await api.get(`${this.BASE_PATH}/import/${runId}/failed-items`, {
+      responseType: 'blob'
+    })
 
     return response.data
   }
