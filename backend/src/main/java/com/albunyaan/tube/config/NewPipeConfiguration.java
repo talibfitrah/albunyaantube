@@ -19,6 +19,7 @@ import org.springframework.context.annotation.Configuration;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Map;
 
 /**
@@ -52,6 +53,12 @@ public class NewPipeConfiguration {
     @Value("${app.newpipe.stream-cache-ttl-minutes:30}")
     private int streamCacheTtlMinutes;
 
+    @Value("${app.newpipe.http.log-body-chars:400}")
+    private int logBodyChars;
+
+    @Value("${app.newpipe.http.log-body-enabled:false}")
+    private boolean logBodyEnabled;
+
     private static final Localization DEFAULT_LOCALIZATION = Localization.fromLocale(Locale.US);
     private static final ContentCountry DEFAULT_CONTENT_COUNTRY = new ContentCountry("US");
 
@@ -76,6 +83,7 @@ public class NewPipeConfiguration {
     @Bean
     public Downloader newPipeDownloader(OkHttpClient okHttpClient) {
         logger.info("Creating NewPipe downloader with user-agent: {}", userAgent);
+        logger.info("HTTP body logging enabled: {} (max {} chars)", logBodyEnabled, logBodyChars);
 
         return new Downloader() {
             @Override
@@ -123,19 +131,68 @@ public class NewPipeConfiguration {
                 }
 
                 // Execute request
-                okhttp3.Response response = okHttpClient.newCall(builder.build()).execute();
-
                 try {
-                    String responseBody = response.body() != null ? response.body().string() : "";
-                    return new Response(
-                            response.code(),
-                            response.message(),
-                            response.headers().toMultimap(),
-                            responseBody,
-                            response.request().url().toString()
-                    );
-                } finally {
-                    response.close();
+                    okhttp3.Request okHttpRequest = builder.build();
+                    okhttp3.Response response = okHttpClient.newCall(okHttpRequest).execute();
+
+                    try {
+                        String responseBody = response.body() != null ? response.body().string() : "";
+
+                        // Debug logging for troubleshooting
+                        // Body logging is disabled by default in prod (app.newpipe.http.log-body-enabled)
+                        if (response.code() != 200) {
+                            if (logBodyEnabled) {
+                                // Verbose logging with body preview (dev/debug only)
+                                String bodyPreview = truncateBody(responseBody);
+                                logger.warn(
+                                        "NewPipe HTTP {} {} for {} {} (body chars: {}, retry-after: {}, rate-limit-remain: {}, rate-limit-limit: {}) body-preview: {}",
+                                        response.code(),
+                                        response.message(),
+                                        request.httpMethod(),
+                                        request.url(),
+                                        responseBody.length(),
+                                        headerValue(response, "Retry-After"),
+                                        headerValue(response, "X-RateLimit-Remaining"),
+                                        headerValue(response, "X-RateLimit-Limit"),
+                                        bodyPreview
+                                );
+
+                                // Log request payloads for resolve_url calls (common for channel validation)
+                                if (request.url().contains("resolve_url")) {
+                                    byte[] reqBody = request.dataToSend();
+                                    String reqBodyStr = reqBody != null ? new String(reqBody) : "(no body)";
+                                    logger.warn("resolve_url request payload (truncated): {}",
+                                            truncateBody(reqBodyStr));
+                                }
+                            } else {
+                                // Safe logging without body content (production default)
+                                logger.warn(
+                                        "NewPipe HTTP {} {} for {} {} (body chars: {}, retry-after: {}, rate-limit-remain: {}, rate-limit-limit: {})",
+                                        response.code(),
+                                        response.message(),
+                                        request.httpMethod(),
+                                        request.url(),
+                                        responseBody.length(),
+                                        headerValue(response, "Retry-After"),
+                                        headerValue(response, "X-RateLimit-Remaining"),
+                                        headerValue(response, "X-RateLimit-Limit")
+                                );
+                            }
+                        }
+
+                        return new Response(
+                                response.code(),
+                                response.message(),
+                                response.headers().toMultimap(),
+                                responseBody,
+                                response.request().url().toString()
+                        );
+                    } finally {
+                        response.close();
+                    }
+                } catch (IOException ioe) {
+                    logger.warn("NewPipe HTTP request failed for {} {}: {}", request.httpMethod(), request.url(), ioe.getMessage());
+                    throw ioe;
                 }
             }
 
@@ -143,6 +200,23 @@ public class NewPipeConfiguration {
                 String language = localization.getLanguageCode();
                 String country = localization.getCountryCode();
                 return country == null || country.isBlank() ? language : language + "-" + country;
+            }
+
+            private String truncateBody(String body) {
+                if (body == null) {
+                    return "(null)";
+                }
+                // Cap at 10KB to prevent excessive logging and disk space exhaustion
+                int limit = Math.min(Math.max(0, logBodyChars), 10000);
+                if (limit == 0 || body.length() <= limit) {
+                    return body;
+                }
+                int remaining = body.length() - limit;
+                return body.substring(0, limit) + "... (" + remaining + " more chars)";
+            }
+
+            private String headerValue(okhttp3.Response response, String key) {
+                return Objects.toString(response.header(key), "n/a");
             }
         };
     }

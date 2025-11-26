@@ -66,7 +66,7 @@ class YouTubeGatewayTest {
     @BeforeEach
     void setUp() {
         StreamingService youtube = ServiceList.YouTube;
-        gateway = new YouTubeGateway(youtube);
+        gateway = new YouTubeGateway(youtube, 3); // Use default pool size of 3
     }
 
     @Nested
@@ -127,14 +127,61 @@ class YouTubeGatewayTest {
     class UrlUtilityTests {
 
         @Test
-        @DisplayName("Should get channel URL from channel ID")
-        void getChannelUrl_validId() throws ExtractionException {
-            String channelId = "UCTest123";
+        @DisplayName("Should build channel URL with /channel/ format for UC IDs")
+        void getChannelUrl_channelId_usesChannelFormat() throws ExtractionException {
+            // UC prefix identifies official YouTube channel IDs
+            String channelId = "UCXuqSBlHAE6Xw-yeJA0Tunw";  // LinusTechTips
             String url = gateway.getChannelUrl(channelId);
 
             assertNotNull(url);
-            assertTrue(url.contains("youtube.com") || url.contains(channelId),
-                    "URL should contain channel identifier");
+            assertEquals("https://www.youtube.com/channel/UCXuqSBlHAE6Xw-yeJA0Tunw", url,
+                    "Channel IDs (UC*) must use /channel/ format, not /c/ format");
+        }
+
+        @Test
+        @DisplayName("Should handle short UC channel IDs")
+        void getChannelUrl_shortChannelId() throws ExtractionException {
+            String channelId = "UCTest";  // Minimum valid UC ID
+            String url = gateway.getChannelUrl(channelId);
+
+            assertNotNull(url);
+            assertEquals("https://www.youtube.com/channel/UCTest", url);
+        }
+
+        @Test
+        @DisplayName("Should handle null channel ID gracefully")
+        void getChannelUrl_null_doesNotThrow() throws ExtractionException {
+            // Null goes through factory fallback, which catches exceptions
+            // and returns a /channel/ URL with "null" appended
+            String url = gateway.getChannelUrl(null);
+
+            assertNotNull(url, "Should not throw, should return a URL");
+            assertTrue(url.contains("youtube.com"),
+                    "Should return a valid YouTube URL even for null input");
+        }
+
+        @Test
+        @DisplayName("Should handle non-UC ID (custom handle) via factory")
+        void getChannelUrl_customHandle() throws ExtractionException {
+            // IDs not starting with UC might be handles or custom URLs
+            String customId = "LinusTechTips";  // A handle
+            String url = gateway.getChannelUrl(customId);
+
+            assertNotNull(url);
+            // Factory may return different formats; just verify it's not null
+            assertTrue(url.contains("youtube.com"),
+                    "URL should be a valid YouTube URL");
+        }
+
+        @Test
+        @DisplayName("Should handle empty string channel ID")
+        void getChannelUrl_empty_fallsBackToChannelFormat() throws ExtractionException {
+            String url = gateway.getChannelUrl("");
+
+            assertNotNull(url);
+            // Empty doesn't start with UC, so falls back to factory, then to /channel/
+            assertTrue(url.contains("youtube.com"),
+                    "URL should be a valid YouTube URL");
         }
 
         @Test
@@ -181,7 +228,7 @@ class YouTubeGatewayTest {
         void shutdown_completesWithoutError() {
             // Create a separate gateway instance for shutdown test
             StreamingService youtube = ServiceList.YouTube;
-            YouTubeGateway testGateway = new YouTubeGateway(youtube);
+            YouTubeGateway testGateway = new YouTubeGateway(youtube, 3);
 
             // Should not throw
             assertDoesNotThrow(() -> testGateway.shutdown());

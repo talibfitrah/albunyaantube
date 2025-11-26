@@ -61,7 +61,10 @@ dependencies {
     implementation("com.google.firebase:firebase-admin:9.2.0")
 
     // NewPipeExtractor for YouTube content extraction (no API key required)
-    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.8")
+    // Pinned to specific commit for reproducible builds (dev-SNAPSHOT is non-deterministic)
+    // Commit from 2025-01-15: includes YouTube InnerTube API fixes
+    // To update: check https://github.com/TeamNewPipe/NewPipeExtractor/commits/dev
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:a0607b2c49e757d368e9dfac241792d42d575236")
 
     // OkHttp for NewPipe's HTTP client
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

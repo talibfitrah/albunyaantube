@@ -495,6 +495,63 @@ class ContentImportServiceTest {
         assertEquals(4, run.getChannelsImported());
     }
 
+    /**
+     * Test 8: Transient YouTube errors are retried once and marked as failed (not validation failed).
+     */
+    @Test
+    void importSimpleFormatAsync_retriesTransientYouTubeErrorsOnce() throws Exception {
+        Map<String, String> channelsMap = Map.of(
+                "UC1", "Channel 1|Global",
+                "UC2", "Channel 2|Global",
+                "UC3", "Channel 3|Global"
+        );
+        List<Map<String, String>> simpleData = List.of(
+                channelsMap,
+                Collections.emptyMap(),
+                Collections.emptyMap()
+        );
+
+        ValidationRun run = new ValidationRun(ValidationRun.TRIGGER_IMPORT, "test-user", "test@example.com");
+
+        when(channelRepository.findByYoutubeId(anyString())).thenReturn(Optional.empty());
+
+        BatchValidationResult<ChannelDetailsDto> firstResult = new BatchValidationResult<>();
+        firstResult.addValid("UC1", createChannelDto("UC1", "Channel 1"));
+        firstResult.addError("UC2", "Network timeout");
+        firstResult.addError("UC3", "429 Too Many Requests");
+
+        BatchValidationResult<ChannelDetailsDto> retryResult = new BatchValidationResult<>();
+        retryResult.addValid("UC2", createChannelDto("UC2", "Channel 2"));
+        retryResult.addError("UC3", "429 Too Many Requests (retry)");
+
+        when(youtubeService.batchValidateChannelsDtoWithDetails(anyList()))
+                .thenReturn(firstResult)
+                .thenReturn(retryResult);
+
+        when(categoryMappingService.mapCategoryNamesToIds(anyString())).thenReturn(List.of("cat-1"));
+        when(channelRepository.save(any(Channel.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.importSimpleFormatAsync(run, simpleData, "APPROVED", "test-user");
+
+        assertEquals(2, run.getChannelsImported());
+        assertEquals(0, run.getChannelsValidationFailed());
+        assertEquals(1, run.getChannelsFailed());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Integer> reasonCounts = (Map<String, Integer>) run.getDetails().get("reasonCounts");
+        assertNotNull(reasonCounts);
+        assertTrue(reasonCounts.containsKey("CHANNEL_YOUTUBE_ERROR: 429 Too Many Requests | retry: 429 Too Many Requests (retry)"));
+
+        @SuppressWarnings("unchecked")
+        List<String> failedItemIds = (List<String>) run.getDetails().get("failedItemIds");
+        assertNotNull(failedItemIds);
+        assertTrue(failedItemIds.contains("channel:UC3"));
+        assertFalse(failedItemIds.contains("channel:UC2"));
+
+        verify(youtubeService, times(2)).batchValidateChannelsDtoWithDetails(anyList());
+        verify(channelRepository, times(2)).save(any(Channel.class));
+    }
+
     // Helper methods to create DTOs
 
     private ChannelDetailsDto createChannelDto(String id, String name) {

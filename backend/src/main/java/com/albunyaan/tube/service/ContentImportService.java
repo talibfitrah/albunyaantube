@@ -19,6 +19,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.function.Function;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
@@ -46,6 +47,13 @@ public class ContentImportService {
      * With 500ms polling interval, this provides fluid progress bar animation.
      */
     private static final int PROGRESS_SAVE_INTERVAL = 1;
+    /**
+     * Delay between retry attempts in milliseconds.
+     * Used to avoid immediately re-hitting rate limits after transient errors.
+     * Note: This blocks the thread during import, which is acceptable for
+     * infrequent background import operations.
+     */
+    private static final long RETRY_DELAY_MS = 2000;
 
     private final YouTubeService youtubeService; // REUSE existing validation logic
     private final CategoryMappingService categoryMappingService;
@@ -213,8 +221,11 @@ public class ContentImportService {
             }
 
             // REUSE existing YouTubeService validation logic
-            BatchValidationResult<ChannelDetailsDto> validationResult =
-                    youtubeService.batchValidateChannelsDtoWithDetails(newIds);
+            BatchValidationResult<ChannelDetailsDto> validationResult = retryValidationErrors(
+                    youtubeService.batchValidateChannelsDtoWithDetails(newIds),
+                    ids -> youtubeService.batchValidateChannelsDtoWithDetails(ids),
+                    "channel"
+            );
 
             // Import valid channels
             for (Map.Entry<String, ChannelDetailsDto> entry : validationResult.getValid().entrySet()) {
@@ -283,11 +294,11 @@ public class ContentImportService {
                 failedItemIds.add("channel:" + notFoundId);
             }
 
-            // Mark errors as validation failed
+            // Mark transient errors as failed (retry already attempted once)
             for (String errorId : validationResult.getErrors()) {
                 String errorMsg = validationResult.getErrorMessages().get(errorId);
                 run.incrementChannelsChecked(); // Count as checked
-                run.incrementChannelsValidationFailed();
+                run.incrementChannelsFailed();
                 incrementReasonCount(reasonCounts, "CHANNEL_YOUTUBE_ERROR: " + errorMsg);
                 failedItemIds.add("channel:" + errorId);
             }
@@ -345,8 +356,11 @@ public class ContentImportService {
             }
 
             // REUSE existing validation logic
-            BatchValidationResult<PlaylistDetailsDto> validationResult =
-                    youtubeService.batchValidatePlaylistsDtoWithDetails(newIds);
+            BatchValidationResult<PlaylistDetailsDto> validationResult = retryValidationErrors(
+                    youtubeService.batchValidatePlaylistsDtoWithDetails(newIds),
+                    ids -> youtubeService.batchValidatePlaylistsDtoWithDetails(ids),
+                    "playlist"
+            );
 
             // Import valid playlists
             for (Map.Entry<String, PlaylistDetailsDto> entry : validationResult.getValid().entrySet()) {
@@ -411,10 +425,11 @@ public class ContentImportService {
                 failedItemIds.add("playlist:" + notFoundId);
             }
 
+            // Mark transient errors as failed (retry already attempted once)
             for (String errorId : validationResult.getErrors()) {
                 String errorMsg = validationResult.getErrorMessages().get(errorId);
                 run.incrementPlaylistsChecked(); // Count as checked
-                run.incrementPlaylistsValidationFailed();
+                run.incrementPlaylistsFailed();
                 incrementReasonCount(reasonCounts, "PLAYLIST_YOUTUBE_ERROR: " + errorMsg);
                 failedItemIds.add("playlist:" + errorId);
             }
@@ -471,8 +486,11 @@ public class ContentImportService {
             }
 
             // REUSE existing validation logic
-            BatchValidationResult<StreamDetailsDto> validationResult =
-                    youtubeService.batchValidateVideosDtoWithDetails(newIds);
+            BatchValidationResult<StreamDetailsDto> validationResult = retryValidationErrors(
+                    youtubeService.batchValidateVideosDtoWithDetails(newIds),
+                    ids -> youtubeService.batchValidateVideosDtoWithDetails(ids),
+                    "video"
+            );
 
             // Import valid videos
             for (Map.Entry<String, StreamDetailsDto> entry : validationResult.getValid().entrySet()) {
@@ -547,16 +565,96 @@ public class ContentImportService {
                 failedItemIds.add("video:" + notFoundId);
             }
 
+            // Mark transient errors as failed (retry already attempted once)
             for (String errorId : validationResult.getErrors()) {
                 String errorMsg = validationResult.getErrorMessages().get(errorId);
                 run.incrementVideosChecked(); // Count as checked
-                run.incrementVideosValidationFailed();
+                run.incrementVideosFailed();
                 incrementReasonCount(reasonCounts, "VIDEO_YOUTUBE_ERROR: " + errorMsg);
                 failedItemIds.add("video:" + errorId);
             }
 
             validationRunRepository.save(run);
         }
+    }
+
+    /**
+     * Retry YouTube validation once for items that failed with transient errors.
+     * If retry succeeds, the item is treated as valid/notFound accordingly.
+     * Remaining errors are marked as failed (not "validation failed") so users know to retry.
+     *
+     * Adds a 2-second delay before retry to respect rate limits.
+     */
+    private <T> BatchValidationResult<T> retryValidationErrors(
+            BatchValidationResult<T> initialResult,
+            Function<List<String>, BatchValidationResult<T>> retryFunction,
+            String contentType
+    ) {
+        if (initialResult == null || initialResult.getErrors().isEmpty()) {
+            return initialResult;
+        }
+
+        List<String> errorIds = new ArrayList<>(initialResult.getErrors());
+        logger.info("Retrying {} {}(s) after transient errors (with {}ms delay)", errorIds.size(), contentType, RETRY_DELAY_MS);
+
+        BatchValidationResult<T> mergedResult = new BatchValidationResult<>();
+        initialResult.getValid().forEach(mergedResult::addValid);
+        initialResult.getNotFound().forEach(mergedResult::addNotFound);
+
+        try {
+            // Add delay before retry to respect rate limits (CRITICAL: prevents immediate re-hit of rate limit)
+            // Note: This blocks the thread, which is acceptable for background import operations
+            try {
+                Thread.sleep(RETRY_DELAY_MS);
+                logger.debug("Retry delay of {}ms completed, proceeding with validation", RETRY_DELAY_MS);
+            } catch (InterruptedException ie) {
+                logger.warn("Retry delay interrupted, aborting retry for {}", contentType);
+                Thread.currentThread().interrupt();
+                // Return errors as-is without retry
+                for (String errorId : errorIds) {
+                    String msg = initialResult.getErrorMessages().get(errorId);
+                    mergedResult.addError(errorId, msg != null ? msg : "Retry interrupted");
+                }
+                return mergedResult;
+            }
+
+            BatchValidationResult<T> retryResult = retryFunction.apply(errorIds);
+
+            retryResult.getValid().forEach(mergedResult::addValid);
+            retryResult.getNotFound().forEach(mergedResult::addNotFound);
+
+            for (String errorId : errorIds) {
+                if (retryResult.isValid(errorId) || retryResult.isNotFound(errorId)) {
+                    continue;
+                }
+                String combinedMsg = combineErrorMessages(
+                        initialResult.getErrorMessages().get(errorId),
+                        retryResult.getErrorMessages().get(errorId)
+                );
+                mergedResult.addError(errorId, combinedMsg);
+            }
+        } catch (Exception e) {
+            logger.warn("Retry validation failed for {} {}(s): {}", errorIds.size(), contentType, e.getMessage());
+            for (String errorId : errorIds) {
+                String msg = initialResult.getErrorMessages().get(errorId);
+                mergedResult.addError(errorId, msg != null ? msg : "Retry failed: " + e.getMessage());
+            }
+        }
+
+        return mergedResult;
+    }
+
+    /**
+     * Combine original and retry error messages for clearer diagnostics.
+     */
+    private String combineErrorMessages(String first, String second) {
+        if (second != null && !second.isBlank() && (first == null || !second.equals(first))) {
+            if (first != null && !first.isBlank()) {
+                return first + " | retry: " + second;
+            }
+            return "retry: " + second;
+        }
+        return first != null && !first.isBlank() ? first : "Unknown error";
     }
 
     private void incrementReasonCount(Map<String, Integer> reasonCounts, String reason) {

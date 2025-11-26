@@ -6,6 +6,7 @@ import org.schabi.newpipe.extractor.StreamingService;
 import org.schabi.newpipe.extractor.channel.ChannelInfo;
 import org.schabi.newpipe.extractor.channel.tabs.ChannelTabExtractor;
 import org.schabi.newpipe.extractor.exceptions.ExtractionException;
+import org.schabi.newpipe.extractor.exceptions.ParsingException;
 import org.schabi.newpipe.extractor.linkhandler.ListLinkHandler;
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo;
 import org.schabi.newpipe.extractor.search.SearchExtractor;
@@ -18,6 +19,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PreDestroy;
@@ -48,7 +50,7 @@ import java.util.concurrent.TimeUnit;
 public class YouTubeGateway {
 
     private static final Logger logger = LoggerFactory.getLogger(YouTubeGateway.class);
-    private static final ExecutorService executorService = Executors.newFixedThreadPool(3);
+    private final ExecutorService executorService;
 
     private final StreamingService youtube;
     private final YoutubeChannelLinkHandlerFactory channelLinkHandlerFactory;
@@ -56,13 +58,16 @@ public class YouTubeGateway {
     private final YoutubeStreamLinkHandlerFactory streamLinkHandlerFactory;
 
     @Autowired
-    public YouTubeGateway(@Qualifier("newPipeYouTubeService") StreamingService youTubeService) {
+    public YouTubeGateway(
+            @Qualifier("newPipeYouTubeService") StreamingService youTubeService,
+            @Value("${app.newpipe.executor.pool-size:3}") int poolSize) {
         this.youtube = youTubeService;
+        this.executorService = Executors.newFixedThreadPool(poolSize);
         this.channelLinkHandlerFactory = YoutubeChannelLinkHandlerFactory.getInstance();
         this.playlistLinkHandlerFactory = YoutubePlaylistLinkHandlerFactory.getInstance();
         this.streamLinkHandlerFactory = YoutubeStreamLinkHandlerFactory.getInstance();
 
-        logger.info("YouTubeGateway initialized with NewPipeExtractor");
+        logger.info("YouTubeGateway initialized with NewPipeExtractor (executor pool size: {})", poolSize);
         logger.info("Service: {}, ID: {}", youtube.getServiceInfo().getName(), youtube.getServiceId());
     }
 
@@ -107,15 +112,41 @@ public class YouTubeGateway {
      * Fetch channel info by channel ID
      */
     public ChannelInfo fetchChannelInfo(String channelId) throws IOException, ExtractionException {
-        String url = channelLinkHandlerFactory.getUrl(channelId);
+        // Use /channel/ format directly instead of link handler factory
+        // The factory incorrectly generates /c/ URLs which return 404
+        String url = buildChannelUrl(channelId);
         return ChannelInfo.getInfo(youtube, url);
     }
 
     /**
      * Get channel URL from channel ID
+     *
+     * Note: We use /channel/ format directly because NewPipeExtractor's
+     * YoutubeChannelLinkHandlerFactory.getUrl() incorrectly generates /c/ URLs
+     * for channel IDs (UCxxxx), which YouTube's API rejects with 404.
      */
     public String getChannelUrl(String channelId) throws ExtractionException {
-        return channelLinkHandlerFactory.getUrl(channelId);
+        return buildChannelUrl(channelId);
+    }
+
+    /**
+     * Build channel URL using the correct format.
+     * Channel IDs (starting with UC) must use /channel/ format.
+     * Custom URLs (handles) use /c/ or /@.
+     */
+    private String buildChannelUrl(String channelId) {
+        // Channel IDs always start with UC
+        if (channelId != null && !channelId.isEmpty() && channelId.startsWith("UC")) {
+            return "https://www.youtube.com/channel/" + channelId;
+        }
+        // Fall back to factory for other formats (handles, custom URLs)
+        try {
+            return channelLinkHandlerFactory.getUrl(channelId);
+        } catch (ParsingException | IllegalArgumentException e) {
+            // Factory failed to parse - fall back to /channel/ format
+            logger.debug("Link handler factory failed for channelId '{}': {}", channelId, e.getMessage());
+            return "https://www.youtube.com/channel/" + (channelId != null ? channelId : "");
+        }
     }
 
     /**

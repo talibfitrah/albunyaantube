@@ -99,12 +99,19 @@ app:
     # NewPipeExtractor configuration (no API key required)
     # Cache TTL for stream URLs (30 minutes, similar to Android implementation)
     stream-cache-ttl-minutes: 30
+    # Executor service settings
+    executor:
+      pool-size: 3  # Thread pool size for batch operations
     # HTTP client settings
     http:
       connect-timeout-seconds: 30
       read-timeout-seconds: 30
       # User agent for NewPipe requests
       user-agent: "Mozilla/5.0 (Windows NT 10.0; rv:91.0) Gecko/20100101 Firefox/91.0"
+      # Body logging for debugging (disabled by default to avoid leaking data in prod)
+      # Set to true via env var for debugging: APP_NEWPIPE_HTTP_LOG_BODY_ENABLED=true
+      log-body-enabled: ${APP_NEWPIPE_HTTP_LOG_BODY_ENABLED:false}
+      log-body-chars: 400
   security:
     cors:
       allowed-origins: "http://localhost:5173,http://127.0.0.1:5173"
