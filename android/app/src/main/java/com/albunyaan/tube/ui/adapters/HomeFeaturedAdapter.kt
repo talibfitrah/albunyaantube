@@ -2,143 +2,195 @@ package com.albunyaan.tube.ui.adapters
 
 import android.view.LayoutInflater
 import android.view.ViewGroup
-import androidx.core.view.isVisible
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.model.ContentItem
-import com.albunyaan.tube.databinding.ItemHomeFeaturedBinding
+import com.albunyaan.tube.databinding.ItemHomeChannelBinding
+import com.albunyaan.tube.databinding.ItemHomePlaylistBinding
+import com.albunyaan.tube.databinding.ItemHomeVideoBinding
 import com.albunyaan.tube.util.ImageLoading.loadThumbnail
 import java.text.NumberFormat
 import java.util.Locale
 
 /**
  * Horizontal adapter for displaying mixed content types (videos, playlists, channels)
- * in the Featured section on the home screen. Each card displays a type badge to
- * indicate what type of content it represents.
+ * in the Featured section on the home screen. Each item uses the same layout as its
+ * corresponding section (channels use circular avatars, videos/playlists use cards).
  */
 class HomeFeaturedAdapter(
     private val onItemClick: (ContentItem) -> Unit
-) : ListAdapter<ContentItem, HomeFeaturedAdapter.ViewHolder>(DIFF_CALLBACK) {
+) : ListAdapter<ContentItem, RecyclerView.ViewHolder>(DIFF_CALLBACK) {
 
     var cardWidth: Int = 0
+    var channelCardWidth: Int = 0
 
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
-        val binding = ItemHomeFeaturedBinding.inflate(
-            LayoutInflater.from(parent.context),
-            parent,
-            false
-        )
-        return ViewHolder(binding, onItemClick, ::getItem)
-    }
-
-    override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-        if (cardWidth > 0) {
-            val params = holder.itemView.layoutParams
-            params.width = cardWidth
-            holder.itemView.layoutParams = params
+    override fun getItemViewType(position: Int): Int {
+        return when (getItem(position)) {
+            is ContentItem.Channel -> VIEW_TYPE_CHANNEL
+            is ContentItem.Playlist -> VIEW_TYPE_PLAYLIST
+            is ContentItem.Video -> VIEW_TYPE_VIDEO
         }
-        holder.bind(getItem(position))
     }
 
-    class ViewHolder(
-        private val binding: ItemHomeFeaturedBinding,
-        private val onItemClick: (ContentItem) -> Unit,
-        private val getItemAt: (Int) -> ContentItem
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+        val inflater = LayoutInflater.from(parent.context)
+        return when (viewType) {
+            VIEW_TYPE_CHANNEL -> {
+                val binding = ItemHomeChannelBinding.inflate(inflater, parent, false)
+                ChannelViewHolder(binding, onItemClick)
+            }
+            VIEW_TYPE_PLAYLIST -> {
+                val binding = ItemHomePlaylistBinding.inflate(inflater, parent, false)
+                PlaylistViewHolder(binding, onItemClick)
+            }
+            VIEW_TYPE_VIDEO -> {
+                val binding = ItemHomeVideoBinding.inflate(inflater, parent, false)
+                VideoViewHolder(binding, onItemClick)
+            }
+            else -> throw IllegalArgumentException("Unknown view type: $viewType")
+        }
+    }
+
+    override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+        val item = getItem(position)
+        when (holder) {
+            is ChannelViewHolder -> {
+                if (channelCardWidth > 0) {
+                    val params = holder.itemView.layoutParams
+                    params.width = channelCardWidth
+                    holder.itemView.layoutParams = params
+                }
+                holder.bind(item as ContentItem.Channel)
+            }
+            is PlaylistViewHolder -> {
+                if (cardWidth > 0) {
+                    val params = holder.itemView.layoutParams
+                    params.width = cardWidth
+                    holder.itemView.layoutParams = params
+                }
+                holder.bind(item as ContentItem.Playlist)
+            }
+            is VideoViewHolder -> {
+                if (cardWidth > 0) {
+                    val params = holder.itemView.layoutParams
+                    params.width = cardWidth
+                    holder.itemView.layoutParams = params
+                }
+                holder.bind(item as ContentItem.Video)
+            }
+        }
+    }
+
+    // ========== Channel ViewHolder ==========
+    class ChannelViewHolder(
+        private val binding: ItemHomeChannelBinding,
+        private val onItemClick: (ContentItem) -> Unit
     ) : RecyclerView.ViewHolder(binding.root) {
 
-        init {
+        fun bind(channel: ContentItem.Channel) {
+            binding.channelName.text = channel.name
+            val subscriberText = formatSubscriberCount(channel.subscribers)
+            binding.subscriberCount.text = subscriberText
+
+            binding.channelAvatar.loadThumbnail(channel)
+
+            binding.root.contentDescription = binding.root.context.getString(
+                R.string.a11y_channel_item,
+                channel.name,
+                subscriberText
+            )
+
             binding.root.setOnClickListener {
-                val position = bindingAdapterPosition
-                if (position != RecyclerView.NO_POSITION) {
-                    onItemClick(getItemAt(position))
-                }
+                onItemClick(channel)
             }
         }
 
-        fun bind(item: ContentItem) {
-            val context = binding.root.context
+        private fun formatSubscriberCount(count: Int): String {
+            val formatted = when {
+                count >= 1_000_000 -> String.format(Locale.US, "%.1fM", count / 1_000_000.0)
+                count >= 1_000 -> String.format(Locale.US, "%.1fK", count / 1_000.0)
+                else -> count.toString()
+            }
+            return binding.root.context.getString(R.string.channel_subscribers_format, formatted)
+        }
+    }
 
-            when (item) {
-                is ContentItem.Video -> {
-                    binding.featuredTitle.text = item.title
-                    binding.featuredMeta.text = buildVideoMeta(item)
-                    binding.typeBadge.text = context.getString(R.string.type_video)
-                    binding.typeBadge.isVisible = true
-                    binding.durationBadge.text = formatDuration(item.durationSeconds)
-                    binding.durationBadge.isVisible = true
-                    binding.featuredThumbnail.loadThumbnail(item)
+    // ========== Playlist ViewHolder ==========
+    class PlaylistViewHolder(
+        private val binding: ItemHomePlaylistBinding,
+        private val onItemClick: (ContentItem) -> Unit
+    ) : RecyclerView.ViewHolder(binding.root) {
 
-                    // Accessibility - only include views if available
-                    binding.root.contentDescription = buildVideoA11yDescription(item)
-                }
-                is ContentItem.Playlist -> {
-                    binding.featuredTitle.text = item.title
-                    binding.featuredMeta.text = context.resources.getQuantityString(
-                        R.plurals.video_count,
-                        item.itemCount,
-                        item.itemCount
-                    )
-                    binding.typeBadge.text = context.getString(R.string.type_playlist)
-                    binding.typeBadge.isVisible = true
-                    binding.durationBadge.isVisible = false
-                    binding.featuredThumbnail.loadThumbnail(item)
+        fun bind(playlist: ContentItem.Playlist) {
+            binding.playlistTitle.text = playlist.title
+            binding.channelName.text = playlist.category
 
-                    // Accessibility
-                    binding.root.contentDescription = context.getString(
-                        R.string.a11y_playlist_item,
-                        item.title,
-                        item.itemCount
-                    )
-                }
-                is ContentItem.Channel -> {
-                    binding.featuredTitle.text = item.name
-                    val subscriberText = formatSubscriberCount(item.subscribers)
-                    binding.featuredMeta.text = context.getString(R.string.channel_subscribers_format, subscriberText)
-                    binding.typeBadge.text = context.getString(R.string.type_channel)
-                    binding.typeBadge.isVisible = true
-                    binding.durationBadge.isVisible = false
-                    binding.featuredThumbnail.loadThumbnail(item)
+            val videoCountText = binding.root.context.resources.getQuantityString(
+                R.plurals.video_count,
+                playlist.itemCount,
+                playlist.itemCount
+            )
+            binding.videoCount.text = videoCountText
 
-                    // Accessibility
-                    binding.root.contentDescription = context.getString(
-                        R.string.a11y_channel_item,
-                        item.name,
-                        context.getString(R.string.channel_subscribers_format, subscriberText)
-                    )
-                }
+            binding.playlistThumbnail.loadThumbnail(playlist)
+
+            binding.root.contentDescription = binding.root.context.getString(
+                R.string.a11y_playlist_item,
+                playlist.title,
+                playlist.itemCount
+            )
+
+            binding.root.setOnClickListener {
+                onItemClick(playlist)
             }
         }
+    }
 
-        private fun buildVideoMeta(video: ContentItem.Video): String {
-            val context = binding.root.context
-            val parts = mutableListOf<String>()
-            video.viewCount?.let {
-                parts.add(context.getString(R.string.video_views_format, formatViewCount(it)))
-            }
-            parts.add(formatUploadedAgo(video.uploadedDaysAgo))
-            return parts.joinToString(" • ")
-        }
+    // ========== Video ViewHolder ==========
+    class VideoViewHolder(
+        private val binding: ItemHomeVideoBinding,
+        private val onItemClick: (ContentItem) -> Unit
+    ) : RecyclerView.ViewHolder(binding.root) {
 
-        private fun buildVideoA11yDescription(video: ContentItem.Video): String {
-            val context = binding.root.context
-            val parts = mutableListOf<String>()
-            parts.add(context.getString(R.string.type_video))
-            parts.add(video.title)
-            parts.add(context.getString(R.string.a11y_duration_format, formatDuration(video.durationSeconds)))
-            video.viewCount?.let {
-                parts.add(context.getString(R.string.video_views_format, formatViewCount(it)))
+        fun bind(video: ContentItem.Video) {
+            binding.videoTitle.text = video.title
+
+            val formattedViews = video.viewCount?.let { formatViewCount(it) } ?: "0"
+            val metaParts = mutableListOf<String>()
+            metaParts.add(binding.root.context.getString(R.string.video_views_format, formattedViews))
+            metaParts.add(formatUploadedAgo(video.uploadedDaysAgo))
+            if (video.category.isNotBlank()) {
+                metaParts.add(video.category)
             }
-            parts.add(formatUploadedAgo(video.uploadedDaysAgo))
-            return parts.joinToString(", ")
+            binding.videoMeta.text = metaParts.joinToString(" • ")
+
+            binding.videoDuration.text = formatDuration(video.durationSeconds)
+
+            binding.videoThumbnail.loadThumbnail(video)
+
+            val uploadedAgo = formatUploadedAgo(video.uploadedDaysAgo)
+            val viewsText = binding.root.context.getString(R.string.video_views_format, formattedViews)
+            val duration = formatDuration(video.durationSeconds)
+            binding.root.contentDescription = binding.root.context.getString(
+                R.string.a11y_video_item,
+                video.title,
+                duration,
+                viewsText,
+                uploadedAgo
+            )
+
+            binding.root.setOnClickListener {
+                onItemClick(video)
+            }
         }
 
         private fun formatViewCount(count: Long): String {
             return when {
                 count >= 1_000_000 -> String.format(Locale.US, "%.1fM", count / 1_000_000.0)
                 count >= 1_000 -> String.format(Locale.US, "%.1fK", count / 1_000.0)
-                else -> NumberFormat.getInstance(Locale.US).format(count)
+                else -> NumberFormat.getInstance().format(count)
             }
         }
 
@@ -161,17 +213,13 @@ class HomeFeaturedAdapter(
                 String.format(Locale.US, "%d:%02d", mins, secs)
             }
         }
-
-        private fun formatSubscriberCount(count: Int): String {
-            return when {
-                count >= 1_000_000 -> String.format(Locale.US, "%.1fM", count / 1_000_000.0)
-                count >= 1_000 -> String.format(Locale.US, "%.1fK", count / 1_000.0)
-                else -> NumberFormat.getInstance(Locale.US).format(count)
-            }
-        }
     }
 
     companion object {
+        private const val VIEW_TYPE_CHANNEL = 0
+        private const val VIEW_TYPE_PLAYLIST = 1
+        private const val VIEW_TYPE_VIDEO = 2
+
         private val DIFF_CALLBACK = object : DiffUtil.ItemCallback<ContentItem>() {
             override fun areItemsTheSame(
                 oldItem: ContentItem,

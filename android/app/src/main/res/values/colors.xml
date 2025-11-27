@@ -30,7 +30,6 @@
     <color name="home_text_muted">#9CA3AF</color>
     <color name="home_duration_bg">#CC000000</color>
     <color name="home_video_count_bg">#CC275E4B</color>
-    <color name="home_type_badge_bg">#CC275E4B</color>
 
     <!-- Shimmer for loading skeletons -->
     <color name="shimmer_background_color">#E0E0E0</color>

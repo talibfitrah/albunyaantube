@@ -52,10 +52,17 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
         val margin = resources.getDimensionPixelSize(R.dimen.home_horizontal_margin)
         val spacing = resources.getDimensionPixelSize(R.dimen.home_card_spacing)
 
-        // Featured section uses same card width as videos (wider cards for mixed content)
+        // Featured section uses different card widths based on content type
+        // Videos/playlists use wider cards, channels use narrower cards with circular avatars
         featuredAdapter.cardWidth = calculateCardWidth(
             screenWidth,
             resources.getInteger(R.integer.home_cards_visible_videos),
+            margin,
+            spacing
+        )
+        featuredAdapter.channelCardWidth = calculateCardWidth(
+            screenWidth,
+            resources.getInteger(R.integer.home_cards_visible_channels),
             margin,
             spacing
         )
