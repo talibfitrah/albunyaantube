@@ -9,6 +9,7 @@ import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.source.ContentService
 import com.albunyaan.tube.util.DeviceConfig
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,11 +32,21 @@ class HomeViewModel @Inject constructor(
     private val _videosState = MutableStateFlow<SectionState<ContentItem.Video>>(SectionState.Loading)
     val videosState: StateFlow<SectionState<ContentItem.Video>> = _videosState.asStateFlow()
 
+    // Track loading jobs to prevent race conditions on refresh
+    private var channelsJob: Job? = null
+    private var playlistsJob: Job? = null
+    private var videosJob: Job? = null
+
     init {
         loadHomeContent()
     }
 
     fun loadHomeContent() {
+        // Cancel any previous loading jobs to prevent race conditions
+        channelsJob?.cancel()
+        playlistsJob?.cancel()
+        videosJob?.cancel()
+
         // Fetch each content type independently with device-appropriate limits
         loadChannels()
         loadPlaylists()
@@ -43,7 +54,8 @@ class HomeViewModel @Inject constructor(
     }
 
     fun loadChannels() {
-        viewModelScope.launch {
+        channelsJob?.cancel()
+        channelsJob = viewModelScope.launch {
             _channelsState.value = SectionState.Loading
             try {
                 android.util.Log.d("HomeViewModel", "Fetching CHANNELS content...")
@@ -67,7 +79,8 @@ class HomeViewModel @Inject constructor(
     }
 
     fun loadPlaylists() {
-        viewModelScope.launch {
+        playlistsJob?.cancel()
+        playlistsJob = viewModelScope.launch {
             _playlistsState.value = SectionState.Loading
             try {
                 android.util.Log.d("HomeViewModel", "Fetching PLAYLISTS content...")
@@ -91,7 +104,8 @@ class HomeViewModel @Inject constructor(
     }
 
     fun loadVideos() {
-        viewModelScope.launch {
+        videosJob?.cancel()
+        videosJob = viewModelScope.launch {
             _videosState.value = SectionState.Loading
             try {
                 android.util.Log.d("HomeViewModel", "Fetching VIDEOS content...")

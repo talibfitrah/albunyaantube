@@ -104,7 +104,7 @@ class AccessibilityTest {
         val context: Context = ApplicationProvider.getApplicationContext()
 
         // Verify our screen reader announcement strings exist
-        val a11yVideoItem = context.getString(R.string.a11y_video_item, "Test", "5 min", "metadata")
+        val a11yVideoItem = context.getString(R.string.a11y_video_item, "Test", "5 min", "100 views", "2 days ago")
         val a11ySearchHistory = context.getString(R.string.a11y_search_history, "query")
 
         assertTrue("Screen reader announcements exist",
