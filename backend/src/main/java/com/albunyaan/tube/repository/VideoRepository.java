@@ -247,7 +247,8 @@ public class VideoRepository {
     }
 
     /**
-     * Find approved videos ordered by upload date with cursor-based pagination.
+     * Find approved and available videos ordered by upload date with cursor-based pagination.
+     * Over-fetches to account for filtering out UNAVAILABLE/ARCHIVED videos after the query.
      *
      * @param limit Number of items to fetch
      * @param cursor Encoded cursor string from previous page, or null for first page
@@ -256,10 +257,13 @@ public class VideoRepository {
     public PaginatedResult<Video> findApprovedByUploadedAtDescWithCursor(int limit, String cursor)
             throws ExecutionException, InterruptedException, TimeoutException {
 
+        // Over-fetch by 3x to account for filtering out UNAVAILABLE/ARCHIVED videos
+        // This ensures we consistently get enough items after filtering
+        int fetchLimit = limit * 3 + 1;
         Query query = getCollection()
                 .whereEqualTo("status", "APPROVED")
                 .orderBy("uploadedAt", Query.Direction.DESCENDING)
-                .limit(limit + 1);
+                .limit(fetchLimit);
 
         if (cursor != null && !cursor.isEmpty()) {
             CursorUtils.CursorData cursorData = CursorUtils.decode(cursor);
@@ -277,30 +281,47 @@ public class VideoRepository {
         QuerySnapshot snapshot = query.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
         List<QueryDocumentSnapshot> docs = snapshot.getDocuments();
 
-        boolean hasNext = docs.size() > limit;
-        if (hasNext) {
-            docs = docs.subList(0, limit);
-        }
+        // Filter out UNAVAILABLE and ARCHIVED videos after fetching
+        List<Video> availableVideos = new ArrayList<>();
+        QueryDocumentSnapshot lastIncludedDoc = null;
 
-        List<Video> videos = new ArrayList<>();
-        String nextCursor = null;
-
-        for (int i = 0; i < docs.size(); i++) {
-            QueryDocumentSnapshot doc = docs.get(i);
+        for (QueryDocumentSnapshot doc : docs) {
             Video video = doc.toObject(Video.class);
             video.setId(doc.getId());
-            videos.add(video);
 
-            if (i == docs.size() - 1 && hasNext) {
-                nextCursor = CursorUtils.encodeFromSnapshot(doc, "uploadedAt");
+            // Skip unavailable videos
+            ValidationStatus validationStatus = video.getValidationStatus();
+            if (validationStatus == ValidationStatus.UNAVAILABLE || validationStatus == ValidationStatus.ARCHIVED) {
+                continue;
             }
+
+            availableVideos.add(video);
+
+            // Stop once we have enough (overflow indicates hasNext)
+            if (availableVideos.size() > limit) {
+                break;
+            }
+
+            // Track cursor doc only for items that will be in final result
+            lastIncludedDoc = doc;
         }
 
-        return new PaginatedResult<>(videos, nextCursor, hasNext);
+        boolean hasNext = availableVideos.size() > limit;
+        if (hasNext) {
+            availableVideos = new ArrayList<>(availableVideos.subList(0, limit));
+        }
+
+        String nextCursor = null;
+        if (hasNext && lastIncludedDoc != null) {
+            nextCursor = CursorUtils.encodeFromSnapshot(lastIncludedDoc, "uploadedAt");
+        }
+
+        return new PaginatedResult<>(availableVideos, nextCursor, hasNext);
     }
 
     /**
-     * Find approved videos by category ordered by upload date with cursor-based pagination.
+     * Find approved and available videos by category ordered by upload date with cursor-based pagination.
+     * Over-fetches to account for filtering out UNAVAILABLE/ARCHIVED videos after the query.
      *
      * @param category Category ID to filter by
      * @param limit Number of items to fetch
@@ -310,11 +331,13 @@ public class VideoRepository {
     public PaginatedResult<Video> findApprovedByCategoryAndUploadedAtDescWithCursor(String category, int limit, String cursor)
             throws ExecutionException, InterruptedException, TimeoutException {
 
+        // Over-fetch by 3x to account for filtering out UNAVAILABLE/ARCHIVED videos
+        int fetchLimit = limit * 3 + 1;
         Query query = getCollection()
                 .whereArrayContains("categoryIds", category)
                 .whereEqualTo("status", "APPROVED")
                 .orderBy("uploadedAt", Query.Direction.DESCENDING)
-                .limit(limit + 1);
+                .limit(fetchLimit);
 
         if (cursor != null && !cursor.isEmpty()) {
             CursorUtils.CursorData cursorData = CursorUtils.decode(cursor);
@@ -332,26 +355,42 @@ public class VideoRepository {
         QuerySnapshot snapshot = query.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
         List<QueryDocumentSnapshot> docs = snapshot.getDocuments();
 
-        boolean hasNext = docs.size() > limit;
-        if (hasNext) {
-            docs = docs.subList(0, limit);
-        }
+        // Filter out UNAVAILABLE and ARCHIVED videos after fetching
+        List<Video> availableVideos = new ArrayList<>();
+        QueryDocumentSnapshot lastIncludedDoc = null;
 
-        List<Video> videos = new ArrayList<>();
-        String nextCursor = null;
-
-        for (int i = 0; i < docs.size(); i++) {
-            QueryDocumentSnapshot doc = docs.get(i);
+        for (QueryDocumentSnapshot doc : docs) {
             Video video = doc.toObject(Video.class);
             video.setId(doc.getId());
-            videos.add(video);
 
-            if (i == docs.size() - 1 && hasNext) {
-                nextCursor = CursorUtils.encodeFromSnapshot(doc, "uploadedAt");
+            // Skip unavailable videos
+            ValidationStatus validationStatus = video.getValidationStatus();
+            if (validationStatus == ValidationStatus.UNAVAILABLE || validationStatus == ValidationStatus.ARCHIVED) {
+                continue;
             }
+
+            availableVideos.add(video);
+
+            // Stop once we have enough (overflow indicates hasNext)
+            if (availableVideos.size() > limit) {
+                break;
+            }
+
+            // Track cursor doc only for items that will be in final result
+            lastIncludedDoc = doc;
         }
 
-        return new PaginatedResult<>(videos, nextCursor, hasNext);
+        boolean hasNext = availableVideos.size() > limit;
+        if (hasNext) {
+            availableVideos = new ArrayList<>(availableVideos.subList(0, limit));
+        }
+
+        String nextCursor = null;
+        if (hasNext && lastIncludedDoc != null) {
+            nextCursor = CursorUtils.encodeFromSnapshot(lastIncludedDoc, "uploadedAt");
+        }
+
+        return new PaginatedResult<>(availableVideos, nextCursor, hasNext);
     }
 
     // ==================== Validation Status Methods ====================
