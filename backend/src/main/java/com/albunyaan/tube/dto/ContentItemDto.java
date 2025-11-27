@@ -19,7 +19,7 @@ public class ContentItemDto {
     private String thumbnailUrl;
 
     // Video-specific
-    private Integer durationMinutes;
+    private Integer durationSeconds;
     private Integer uploadedDaysAgo;
     private Long viewCount;
 
@@ -64,14 +64,14 @@ public class ContentItemDto {
     }
 
     public static ContentItemDto video(String id, String title, String category,
-                                       Integer durationMinutes, Integer uploadedDaysAgo,
+                                       Integer durationSeconds, Integer uploadedDaysAgo,
                                        String description, String thumbnailUrl, Long viewCount) {
         ContentItemDto dto = new ContentItemDto();
         dto.id = id;
         dto.type = "VIDEO";
         dto.title = title;
         dto.category = category;
-        dto.durationMinutes = durationMinutes;
+        dto.durationSeconds = durationSeconds;
         dto.uploadedDaysAgo = uploadedDaysAgo;
         dto.description = description;
         dto.thumbnailUrl = thumbnailUrl;
@@ -136,12 +136,12 @@ public class ContentItemDto {
         this.thumbnailUrl = thumbnailUrl;
     }
 
-    public Integer getDurationMinutes() {
-        return durationMinutes;
+    public Integer getDurationSeconds() {
+        return durationSeconds;
     }
 
-    public void setDurationMinutes(Integer durationMinutes) {
-        this.durationMinutes = durationMinutes;
+    public void setDurationSeconds(Integer durationSeconds) {
+        this.durationSeconds = durationSeconds;
     }
 
     public Integer getUploadedDaysAgo() {

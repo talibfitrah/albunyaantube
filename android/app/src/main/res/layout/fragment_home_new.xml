@@ -120,6 +120,7 @@
 
         <!-- Channels Section -->
         <LinearLayout
+            android:id="@+id/channelsSection"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
@@ -160,24 +161,38 @@
 
             </androidx.constraintlayout.widget.ConstraintLayout>
 
+            <include
+                android:id="@+id/channelsSkeleton"
+                layout="@layout/home_section_skeleton"
+                android:visibility="gone" />
+
+            <include
+                android:id="@+id/channelsError"
+                layout="@layout/home_section_error"
+                android:visibility="gone" />
+
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/channelsRecyclerView"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/spacing_xs"
                 android:clipToPadding="false"
+                android:clipChildren="false"
                 android:paddingStart="@dimen/home_horizontal_margin"
                 android:paddingEnd="@dimen/home_horizontal_margin"
+                android:paddingBottom="@dimen/spacing_sm"
                 android:orientation="horizontal"/>
 
         </LinearLayout>
 
         <!-- Playlists Section -->
         <LinearLayout
+            android:id="@+id/playlistsSection"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:layout_marginTop="@dimen/home_vertical_section_spacing">
+            android:layout_marginTop="@dimen/home_vertical_section_spacing"
+            android:paddingBottom="@dimen/spacing_sm">
 
             <androidx.constraintlayout.widget.ConstraintLayout
                 android:layout_width="match_parent"
@@ -214,20 +229,33 @@
 
             </androidx.constraintlayout.widget.ConstraintLayout>
 
+            <include
+                android:id="@+id/playlistsSkeleton"
+                layout="@layout/home_section_skeleton"
+                android:visibility="gone" />
+
+            <include
+                android:id="@+id/playlistsError"
+                layout="@layout/home_section_error"
+                android:visibility="gone" />
+
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/playlistsRecyclerView"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/spacing_sm"
                 android:clipToPadding="false"
+                android:clipChildren="false"
                 android:paddingStart="@dimen/home_horizontal_margin"
                 android:paddingEnd="@dimen/home_horizontal_margin"
+                android:paddingBottom="@dimen/spacing_sm"
                 android:orientation="horizontal"/>
 
         </LinearLayout>
 
         <!-- Videos Section -->
         <LinearLayout
+            android:id="@+id/videosSection"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
@@ -269,14 +297,26 @@
 
             </androidx.constraintlayout.widget.ConstraintLayout>
 
+            <include
+                android:id="@+id/videosSkeleton"
+                layout="@layout/home_section_skeleton"
+                android:visibility="gone" />
+
+            <include
+                android:id="@+id/videosError"
+                layout="@layout/home_section_error"
+                android:visibility="gone" />
+
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/videosRecyclerView"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/spacing_sm"
                 android:clipToPadding="false"
+                android:clipChildren="false"
                 android:paddingStart="@dimen/home_horizontal_margin"
                 android:paddingEnd="@dimen/home_horizontal_margin"
+                android:paddingBottom="@dimen/spacing_sm"
                 android:orientation="horizontal"/>
 
         </LinearLayout>

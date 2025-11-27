@@ -233,7 +233,7 @@ class PlayerViewModel @Inject constructor(
                         id = video.id,
                         title = video.title,
                         channelName = "Albunyaan", // TODO: Add channel name to Video model
-                        durationSeconds = video.durationMinutes * 60,
+                        durationSeconds = video.durationSeconds,
                         streamId = video.id,
                         thumbnailUrl = video.thumbnailUrl,
                         description = video.description,

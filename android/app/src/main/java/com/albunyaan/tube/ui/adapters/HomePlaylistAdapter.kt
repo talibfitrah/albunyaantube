@@ -5,10 +5,10 @@ import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
-import coil.load
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.databinding.ItemHomePlaylistBinding
+import com.albunyaan.tube.util.ImageLoading.loadThumbnail
 
 /**
  * Horizontal adapter for displaying playlists in home screen sections
@@ -16,6 +16,8 @@ import com.albunyaan.tube.databinding.ItemHomePlaylistBinding
 class HomePlaylistAdapter(
     private val onPlaylistClick: (ContentItem.Playlist) -> Unit
 ) : ListAdapter<ContentItem.Playlist, HomePlaylistAdapter.ViewHolder>(DIFF_CALLBACK) {
+
+    var cardWidth: Int = 0
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
         val binding = ItemHomePlaylistBinding.inflate(
@@ -27,6 +29,11 @@ class HomePlaylistAdapter(
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
+        if (cardWidth > 0) {
+            val params = holder.itemView.layoutParams
+            params.width = cardWidth
+            holder.itemView.layoutParams = params
+        }
         holder.bind(getItem(position))
     }
 
@@ -46,10 +53,14 @@ class HomePlaylistAdapter(
             )
             binding.videoCount.text = videoCountText
 
-            binding.playlistThumbnail.load(playlist.thumbnailUrl) {
-                placeholder(R.drawable.home_thumbnail_bg)
-                error(R.drawable.home_thumbnail_bg)
-            }
+            binding.playlistThumbnail.loadThumbnail(playlist)
+
+            // Accessibility content description using localized string resource
+            binding.root.contentDescription = binding.root.context.getString(
+                R.string.a11y_playlist_item,
+                playlist.title,
+                playlist.itemCount
+            )
 
             binding.root.setOnClickListener {
                 onPlaylistClick(playlist)

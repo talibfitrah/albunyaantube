@@ -26,7 +26,7 @@ class FakeContentService : ContentService {
             id = "video-$index",
             title = "Daily inspiration #$index",
             category = category,
-            durationMinutes = duration,
+            durationSeconds = duration,
             uploadedDaysAgo = daysAgo,
             description = "Curated video about $category (uploaded $daysAgo days ago)."
         )
@@ -83,11 +83,12 @@ class FakeContentService : ContentService {
 
     private fun FilterState.matchesVideo(video: ContentItem.Video): Boolean {
         val categoryMatch = category?.let { video.category == it } ?: true
+        // Duration thresholds in seconds: 4 min = 240s, 20 min = 1200s
         val lengthMatch = when (videoLength) {
             VideoLength.ANY -> true
-            VideoLength.UNDER_FOUR_MIN -> video.durationMinutes < 4
-            VideoLength.FOUR_TO_TWENTY_MIN -> video.durationMinutes in 4..20
-            VideoLength.OVER_TWENTY_MIN -> video.durationMinutes > 20
+            VideoLength.UNDER_FOUR_MIN -> video.durationSeconds < 240
+            VideoLength.FOUR_TO_TWENTY_MIN -> video.durationSeconds in 240..1200
+            VideoLength.OVER_TWENTY_MIN -> video.durationSeconds > 1200
         }
         val publishedMatch = when (publishedDate) {
             PublishedDate.ANY -> true

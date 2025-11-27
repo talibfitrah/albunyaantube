@@ -5,7 +5,7 @@ sealed class ContentItem {
         val id: String,
         val title: String,
         val category: String,
-        val durationMinutes: Int,
+        val durationSeconds: Int,
         val uploadedDaysAgo: Int,
         val description: String,
         val thumbnailUrl: String? = null,

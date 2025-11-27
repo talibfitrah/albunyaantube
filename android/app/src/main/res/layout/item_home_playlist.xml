@@ -2,15 +2,13 @@
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
-    android:layout_width="@dimen/home_playlist_card_width"
+    style="@style/Widget.Albunyaan.MediaCard"
+    android:layout_width="wrap_content"
     android:layout_height="wrap_content"
     android:layout_marginEnd="@dimen/home_card_spacing"
     android:clickable="true"
     android:focusable="true"
-    android:foreground="?attr/selectableItemBackground"
-    app:cardCornerRadius="@dimen/home_card_corner_radius"
-    app:cardBackgroundColor="@color/home_card_background"
-    app:cardElevation="@dimen/home_card_elevation">
+    android:foreground="@drawable/card_focus_state">
 
     <androidx.constraintlayout.widget.ConstraintLayout
         android:layout_width="match_parent"
@@ -47,36 +45,39 @@
             app:layout_constraintBottom_toBottomOf="@id/playlistThumbnail"
             tools:text="10 videos"/>
 
-        <!-- Content Container -->
+        <!-- Content Container - Fixed height for consistent card sizes -->
         <LinearLayout
+            android:id="@+id/contentContainer"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="@dimen/home_card_content_height"
             android:orientation="vertical"
             android:padding="@dimen/spacing_sm"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintTop_toBottomOf="@id/playlistThumbnail">
 
-            <!-- Playlist Title -->
+            <!-- Playlist Title - Fixed height for 2 lines -->
             <TextView
                 android:id="@+id/playlistTitle"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="0dp"
+                android:layout_weight="1"
                 android:textAppearance="@style/TextAppearance.Home.ItemTitle"
                 android:maxLines="2"
                 android:ellipsize="end"
+                android:gravity="top"
                 tools:text="Quran Recitations"/>
 
-            <!-- Channel Name -->
+            <!-- Category Name - 2 lines max -->
             <TextView
                 android:id="@+id/channelName"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/spacing_xs"
                 android:textAppearance="@style/TextAppearance.Home.ItemMeta"
-                android:maxLines="1"
+                android:maxLines="2"
                 android:ellipsize="end"
-                tools:text="Albunyaan"/>
+                tools:text="General"/>
 
         </LinearLayout>
 

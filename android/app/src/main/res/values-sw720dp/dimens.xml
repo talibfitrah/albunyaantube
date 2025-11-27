@@ -54,4 +54,9 @@
     <dimen name="home_playlist_card_width">280dp</dimen>  <!-- show 3-4 at once -->
     <dimen name="home_video_card_width">320dp</dimen>  <!-- show 3-4 at once -->
     <dimen name="home_card_spacing">20dp</dimen>
+
+    <!-- Home Responsive Card Counts (Large Tablet/TV) -->
+    <integer name="home_cards_visible_channels">6</integer>
+    <integer name="home_cards_visible_playlists">5</integer>
+    <integer name="home_cards_visible_videos">5</integer>
 </resources>

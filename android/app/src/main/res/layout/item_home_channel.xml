@@ -1,16 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Channel items do NOT use cards - just avatar + text, no card background -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
-    android:layout_width="@dimen/home_channel_card_width"
+    android:layout_width="wrap_content"
     android:layout_height="wrap_content"
+    android:layout_marginEnd="@dimen/home_card_spacing"
     android:orientation="vertical"
     android:gravity="center_horizontal"
     android:paddingTop="@dimen/spacing_sm"
     android:paddingBottom="@dimen/spacing_sm"
-    android:background="?attr/selectableItemBackground"
+    android:paddingStart="@dimen/spacing_xs"
+    android:paddingEnd="@dimen/spacing_xs"
     android:clickable="true"
-    android:focusable="true">
+    android:focusable="true"
+    android:background="?attr/selectableItemBackground"
+    android:foreground="@drawable/card_focus_state">
 
     <!-- Channel Avatar (Circular) -->
     <com.google.android.material.imageview.ShapeableImageView
@@ -27,7 +32,7 @@
     <!-- Channel Name -->
     <TextView
         android:id="@+id/channelName"
-        android:layout_width="match_parent"
+        android:layout_width="@dimen/home_channel_card_width"
         android:layout_height="wrap_content"
         android:layout_marginTop="@dimen/spacing_sm"
         android:textAppearance="@style/TextAppearance.Home.ChannelName"
@@ -39,7 +44,7 @@
     <!-- Subscriber Count -->
     <TextView
         android:id="@+id/subscriberCount"
-        android:layout_width="match_parent"
+        android:layout_width="@dimen/home_channel_card_width"
         android:layout_height="wrap_content"
         android:layout_marginTop="@dimen/spacing_xs"
         android:textAppearance="@style/TextAppearance.Home.ItemMeta"

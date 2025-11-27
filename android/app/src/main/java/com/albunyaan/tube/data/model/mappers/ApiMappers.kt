@@ -38,7 +38,7 @@ fun ApiContentItem.toDomain(primaryCategory: String = "General"): DomainContentI
             id = this.id ?: return null,
             title = this.title ?: "",
             category = primaryCategory,
-            durationMinutes = 0, // Not available in ContentItem DTO
+            durationSeconds = 0, // Not available in ContentItem DTO
             uploadedDaysAgo = computeDaysAgo(this.createdAt),
             description = this.description ?: "",
             thumbnailUrl = this.thumbnailUrl,
@@ -76,7 +76,7 @@ fun ApiContentItemDto.toDomain(): DomainContentItem {
             id = this.id,
             title = this.title ?: "",
             category = this.category ?: "General",
-            durationMinutes = this.durationMinutes ?: 0,
+            durationSeconds = this.durationSeconds ?: 0,
             uploadedDaysAgo = this.uploadedDaysAgo ?: 0,
             description = this.description ?: "",
             thumbnailUrl = this.thumbnailUrl,

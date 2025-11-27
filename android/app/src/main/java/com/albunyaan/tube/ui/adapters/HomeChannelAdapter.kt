@@ -5,12 +5,11 @@ import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
-import coil.load
-import coil.transform.CircleCropTransformation
 import com.albunyaan.tube.R
 import java.util.Locale
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.databinding.ItemHomeChannelBinding
+import com.albunyaan.tube.util.ImageLoading.loadThumbnail
 
 /**
  * Horizontal adapter for displaying channels in home screen sections
@@ -18,6 +17,8 @@ import com.albunyaan.tube.databinding.ItemHomeChannelBinding
 class HomeChannelAdapter(
     private val onChannelClick: (ContentItem.Channel) -> Unit
 ) : ListAdapter<ContentItem.Channel, HomeChannelAdapter.ViewHolder>(DIFF_CALLBACK) {
+
+    var cardWidth: Int = 0
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
         val binding = ItemHomeChannelBinding.inflate(
@@ -29,6 +30,11 @@ class HomeChannelAdapter(
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
+        if (cardWidth > 0) {
+            holder.itemView.layoutParams?.apply {
+                width = cardWidth
+            }
+        }
         holder.bind(getItem(position))
     }
 
@@ -39,13 +45,17 @@ class HomeChannelAdapter(
 
         fun bind(channel: ContentItem.Channel) {
             binding.channelName.text = channel.name
-            binding.subscriberCount.text = formatSubscriberCount(channel.subscribers)
+            val subscriberText = formatSubscriberCount(channel.subscribers)
+            binding.subscriberCount.text = subscriberText
 
-            binding.channelAvatar.load(channel.thumbnailUrl) {
-                transformations(CircleCropTransformation())
-                placeholder(R.drawable.home_channel_avatar_bg)
-                error(R.drawable.home_channel_avatar_bg)
-            }
+            binding.channelAvatar.loadThumbnail(channel)
+
+            // Accessibility content description using localized string resource
+            binding.root.contentDescription = binding.root.context.getString(
+                R.string.a11y_channel_item,
+                channel.name,
+                subscriberText
+            )
 
             binding.root.setOnClickListener {
                 onChannelClick(channel)

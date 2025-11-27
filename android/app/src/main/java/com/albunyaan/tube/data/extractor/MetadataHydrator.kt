@@ -93,17 +93,17 @@ open class MetadataHydrator(
         if (metadata == null) return video
         val mergedTitle = if (video.title.isNotBlank()) video.title else metadata.title?.takeIf { it.isNotBlank() } ?: video.title
         val mergedDescription = if (video.description.isNotBlank()) video.description else metadata.description ?: video.description
-        val mergedDurationMinutes = if (video.durationMinutes > 0) {
-            video.durationMinutes
+        val mergedDurationSeconds = if (video.durationSeconds > 0) {
+            video.durationSeconds
         } else {
-            metadata.durationSeconds?.let { max(1, it / 60) } ?: video.durationMinutes
+            metadata.durationSeconds?.let { max(1, it) } ?: video.durationSeconds
         }
         val mergedViewCount = video.viewCount ?: metadata.viewCount
         val mergedThumbnail = video.thumbnailUrl ?: metadata.thumbnailUrl
         return video.copy(
             title = mergedTitle,
             description = mergedDescription,
-            durationMinutes = mergedDurationMinutes,
+            durationSeconds = mergedDurationSeconds,
             viewCount = mergedViewCount,
             thumbnailUrl = mergedThumbnail
         )

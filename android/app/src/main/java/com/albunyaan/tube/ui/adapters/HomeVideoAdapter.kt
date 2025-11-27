@@ -5,10 +5,10 @@ import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
-import coil.load
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.databinding.ItemHomeVideoBinding
+import com.albunyaan.tube.util.ImageLoading.loadThumbnail
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -18,6 +18,8 @@ import java.util.Locale
 class HomeVideoAdapter(
     private val onVideoClick: (ContentItem.Video) -> Unit
 ) : ListAdapter<ContentItem.Video, HomeVideoAdapter.ViewHolder>(DIFF_CALLBACK) {
+
+    var cardWidth: Int = 0
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
         val binding = ItemHomeVideoBinding.inflate(
@@ -29,6 +31,11 @@ class HomeVideoAdapter(
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
+        if (cardWidth > 0) {
+            val params = holder.itemView.layoutParams
+            params.width = cardWidth
+            holder.itemView.layoutParams = params
+        }
         holder.bind(getItem(position))
     }
 
@@ -51,12 +58,21 @@ class HomeVideoAdapter(
             }
             binding.videoMeta.text = metaParts.joinToString(" • ")
 
-            binding.videoDuration.text = formatDuration(video.durationMinutes)
+            binding.videoDuration.text = formatDuration(video.durationSeconds)
 
-            binding.videoThumbnail.load(video.thumbnailUrl) {
-                placeholder(R.drawable.home_thumbnail_bg)
-                error(R.drawable.home_thumbnail_bg)
-            }
+            binding.videoThumbnail.loadThumbnail(video)
+
+            // Accessibility content description using localized string resource
+            val uploadedAgo = formatUploadedAgo(video.uploadedDaysAgo)
+            val viewsText = binding.root.context.getString(R.string.video_views_format, formattedViews)
+            val duration = formatDuration(video.durationSeconds)
+            binding.root.contentDescription = binding.root.context.getString(
+                R.string.a11y_video_item,
+                video.title,
+                duration,
+                viewsText,
+                uploadedAgo
+            )
 
             binding.root.setOnClickListener {
                 onVideoClick(video)
@@ -80,8 +96,10 @@ class HomeVideoAdapter(
             }
         }
 
-        private fun formatDuration(minutes: Int): String {
-            val totalSeconds = minutes * 60
+        /**
+         * Format duration in seconds to HH:mm:ss (if >= 1 hour) or mm:ss (if < 1 hour)
+         */
+        private fun formatDuration(totalSeconds: Int): String {
             val hours = totalSeconds / 3600
             val mins = (totalSeconds % 3600) / 60
             val secs = totalSeconds % 60

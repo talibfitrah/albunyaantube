@@ -180,7 +180,7 @@ The API uses two response patterns depending on endpoint purpose:
 **Field Name Conventions**:
 - Channels: Use `name` (not `title`), `subscribers` (not `subscriberCount`)
 - Playlists & Videos: Use `title`
-- Videos: Duration in `durationSeconds` (models) vs `durationMinutes` (ContentItemDto)
+- Videos: Duration in `durationSeconds` (consistent across all models and DTOs)
 - Timestamps: ISO 8601 format (`uploadedAt` field name in models)
 
 **Status Enum Migration**:

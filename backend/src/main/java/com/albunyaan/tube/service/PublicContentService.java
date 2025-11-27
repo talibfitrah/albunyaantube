@@ -500,7 +500,7 @@ public class PublicContentService {
     }
 
     private ContentItemDto toDto(Video video) {
-        int durationMinutes = video.getDurationSeconds() != null ? video.getDurationSeconds() / 60 : 0;
+        int durationSeconds = video.getDurationSeconds() != null ? video.getDurationSeconds() : 0;
         LocalDateTime uploadedAt = video.getUploadedAt() != null ?
             video.getUploadedAt().toDate().toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime() :
             LocalDateTime.now();
@@ -514,7 +514,7 @@ public class PublicContentService {
                 video.getYoutubeId(),
                 video.getTitle(),
                 categoryName,
-                durationMinutes,
+                durationSeconds,
                 uploadedDaysAgo,
                 video.getDescription(),
                 video.getThumbnailUrl(),

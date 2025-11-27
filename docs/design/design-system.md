@@ -709,7 +709,7 @@ sealed class ContentItem {
         val id: String,
         val title: String,
         val category: String,
-        val durationMinutes: Int,
+        val durationSeconds: Int,
         val uploadedDaysAgo: Int,
         val description: String,
         val thumbnailUrl: String? = null,
@@ -774,7 +774,7 @@ enum class ContentType {
 - **Multiple Categories**: Channels support both single `category` (primary) and `categories` list
 - **Cursor Pagination**: `CursorResponse` with `nextCursor` for infinite scroll
 - **Hierarchical Categories**: `parentId` and `hasSubcategories` support category trees
-- **Relative Time**: Videos use `uploadedDaysAgo` and `durationMinutes` (not strings)
+- **Relative Time**: Videos use `uploadedDaysAgo` and `durationSeconds` (not strings)
 - **View Counts**: Videos support `viewCount` as nullable `Long`
 
 ---

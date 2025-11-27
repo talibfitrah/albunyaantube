@@ -89,10 +89,18 @@
     <dimen name="home_playlist_card_width">220dp</dimen>
     <dimen name="home_video_card_width">260dp</dimen>
     <dimen name="home_card_spacing">12dp</dimen>
+    <!-- Fixed height for card content area (2-line title + 2-line metadata) to ensure equal card heights -->
+    <!-- Calculation: 2-line title (15sp*2 ~40dp) + 2-line meta (13sp*2 ~36dp) + padding (16dp) + margin (4dp) = ~96dp, add buffer -->
+    <dimen name="home_card_content_height">100dp</dimen>
 
     <!-- Typography sizes for home -->
     <dimen name="home_section_title_size">20sp</dimen>
     <dimen name="home_item_title_size">15sp</dimen>
     <dimen name="home_item_meta_size">13sp</dimen>
     <dimen name="home_see_all_size">14sp</dimen>
+
+    <!-- Home Responsive Card Counts -->
+    <integer name="home_cards_visible_channels">3</integer>
+    <integer name="home_cards_visible_playlists">2</integer>
+    <integer name="home_cards_visible_videos">2</integer>
 </resources>

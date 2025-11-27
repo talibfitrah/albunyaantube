@@ -38,7 +38,7 @@
     <style name="TextAppearance.Home.ItemMeta" parent="TextAppearance.Material3.BodySmall">
         <item name="android:textSize">@dimen/home_item_meta_size</item>
         <item name="android:textColor">@color/home_text_secondary</item>
-        <item name="android:maxLines">1</item>
+        <item name="android:maxLines">2</item>
         <item name="android:ellipsize">end</item>
     </style>
 
@@ -78,5 +78,24 @@
         <item name="cardBackgroundColor">@color/home_card_background</item>
         <item name="cardElevation">@dimen/home_card_elevation</item>
         <item name="cardUseCompatPadding">true</item>
+    </style>
+
+    <!-- Base style for media cards -->
+    <style name="Widget.Albunyaan.MediaCard" parent="Widget.Material3.CardView.Filled">
+        <item name="cardCornerRadius">@dimen/home_card_corner_radius</item>
+        <item name="cardElevation">@dimen/home_card_elevation</item>
+        <item name="cardBackgroundColor">@color/home_card_background</item>
+        <item name="cardUseCompatPadding">false</item>
+        <item name="contentPadding">0dp</item>
+    </style>
+
+    <!-- Style for media card titles -->
+    <style name="Widget.Albunyaan.MediaCard.Title">
+        <item name="android:textAppearance">@style/TextAppearance.Home.ItemTitle</item>
+    </style>
+
+    <!-- Style for media card metadata -->
+    <style name="Widget.Albunyaan.MediaCard.Metadata">
+        <item name="android:textAppearance">@style/TextAppearance.Home.ItemMeta</item>
     </style>
 </resources>

@@ -164,6 +164,7 @@
     <string name="home_see_all_channels">See all channels</string>
     <string name="home_see_all_playlists">See all playlists</string>
     <string name="home_see_all_videos">See all videos</string>
+    <string name="home_retry_section">Retry loading section</string>
     
     <!-- Channel Detail -->
     <string name="channel_subscribers_format">%s subscribers</string>
@@ -187,7 +188,7 @@
     <string name="cd_category_chevron">View subcategories</string>
 
     <!-- Screen Reader Announcements -->
-    <string name="a11y_video_item">Video: %1$s, Duration: %2$s, %3$s</string>
+    <string name="a11y_video_item">Video: %1$s, Duration: %2$s, %3$s, %4$s</string>
     <string name="a11y_channel_item">Channel: %1$s, %2$s</string>
     <string name="a11y_playlist_item">Playlist: %1$s, %2$d items</string>
     <string name="a11y_search_history">Recent search: %1$s</string>

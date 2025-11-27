@@ -3394,10 +3394,10 @@ components:
           type: string
           nullable: true
         # Video-specific fields
-        durationMinutes:
+        durationSeconds:
           type: integer
           nullable: true
-          description: Video duration in minutes (videos only)
+          description: Video duration in seconds (videos only)
         uploadedDaysAgo:
           type: integer
           nullable: true

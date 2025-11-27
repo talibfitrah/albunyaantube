@@ -27,4 +27,12 @@
     <color name="home_text_muted">#74847C</color>
     <color name="home_duration_bg">#CC000000</color>
     <color name="home_video_count_bg">#CC35C491</color>
+
+    <!-- Icon colors (adaptive for light/dark) -->
+    <color name="ic_icon_default">#DEFFFFFF</color>
+
+    <!-- Home error state colors (dark mode) -->
+    <color name="home_error_bg">#3D2A1A</color>
+    <color name="home_error_text">#FFCC80</color>
+    <color name="home_error_icon">#FFB74D</color>
 </resources>

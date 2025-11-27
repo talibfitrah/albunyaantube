@@ -12,6 +12,7 @@ import com.albunyaan.tube.R
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.databinding.ItemContentBinding
 import java.text.NumberFormat
+import java.util.Locale
 
 class SearchResultsAdapter(
     private val imageLoader: ImageLoader,
@@ -40,7 +41,7 @@ class SearchResultsAdapter(
                 is ContentItem.Video -> {
                     binding.title.text = item.title
                     val viewSuffix = item.viewCount?.let { " • ${NumberFormat.getInstance().format(it)} views" } ?: ""
-                    binding.metadata.text = "${item.category} • ${item.durationMinutes} min$viewSuffix"
+                    binding.metadata.text = "${item.category} • ${formatDuration(item.durationSeconds)}$viewSuffix"
                     val description = item.description.takeIf { it.isNotBlank() }
                         ?: "Uploaded ${item.uploadedDaysAgo} days ago"
                     binding.description.text = description
@@ -69,6 +70,20 @@ class SearchResultsAdapter(
             bindThumbnail(thumbnailUrl)
 
             binding.root.setOnClickListener { clickListener(item) }
+        }
+
+        /**
+         * Format duration in seconds to HH:mm:ss (if >= 1 hour) or mm:ss (if < 1 hour)
+         */
+        private fun formatDuration(totalSeconds: Int): String {
+            val hours = totalSeconds / 3600
+            val mins = (totalSeconds % 3600) / 60
+            val secs = totalSeconds % 60
+            return if (hours > 0) {
+                String.format(Locale.US, "%d:%02d:%02d", hours, mins, secs)
+            } else {
+                String.format(Locale.US, "%d:%02d", mins, secs)
+            }
         }
 
         private fun bindThumbnail(url: String?) {
