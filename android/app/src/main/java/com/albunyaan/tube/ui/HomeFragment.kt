@@ -196,8 +196,8 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
         // See All click listeners - navigate to respective tabs/screens
         binding.featuredSeeAll.setOnClickListener {
             Log.d(TAG, "Featured See All clicked")
-            // Navigate to categories screen
-            findNavController().navigate(R.id.action_homeFragment_to_categoriesFragment)
+            // Navigate to featured list screen
+            findNavController().navigate(R.id.action_homeFragment_to_featuredListFragment)
         }
 
         binding.channelsSeeAll.setOnClickListener {
@@ -396,10 +396,18 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
     }
 
     private fun navigateToTab(destinationId: Int) {
-        val bottomNav = requireActivity().findViewById<com.google.android.material.bottomnavigation.BottomNavigationView>(
+        // HomeFragment is inside NavHostFragment which is inside MainShellFragment
+        // The NavigationBarView (BottomNav or NavigationRail) is in MainShellFragment's view
+        // parentFragment is the NavHostFragment, and its parentFragment is MainShellFragment
+        val mainShellFragment = parentFragment?.parentFragment
+        val navigationView = mainShellFragment?.view?.findViewById<com.google.android.material.navigation.NavigationBarView>(
             R.id.mainBottomNav
         )
-        bottomNav?.selectedItemId = destinationId
+        if (navigationView != null) {
+            navigationView.selectedItemId = destinationId
+        } else {
+            Log.e(TAG, "Could not find mainBottomNav - parentFragment: $parentFragment, mainShell: $mainShellFragment")
+        }
     }
 
     override fun onDestroyView() {

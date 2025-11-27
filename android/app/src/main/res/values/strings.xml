@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Albunyaan Tube</string>
+    <string name="navigate_back">Go back</string>
     <string name="filter_category">Category</string>
     <string name="filter_category_all">All categories</string>
     <string name="filter_length">Length</string>

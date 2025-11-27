@@ -15,6 +15,13 @@
             app:exitAnim="@anim/nav_default_exit_anim"
             app:popEnterAnim="@anim/nav_default_pop_enter_anim"
             app:popExitAnim="@anim/nav_default_pop_exit_anim"/>
+        <action
+            android:id="@+id/action_homeFragment_to_featuredListFragment"
+            app:destination="@id/featuredListFragment"
+            app:enterAnim="@anim/nav_default_enter_anim"
+            app:exitAnim="@anim/nav_default_exit_anim"
+            app:popEnterAnim="@anim/nav_default_pop_enter_anim"
+            app:popExitAnim="@anim/nav_default_pop_exit_anim"/>
     </fragment>
 
     <fragment
@@ -134,6 +141,11 @@
         android:id="@+id/searchFragment"
         android:name="com.albunyaan.tube.ui.SearchFragment"
         android:label="Search" />
+
+    <fragment
+        android:id="@+id/featuredListFragment"
+        android:name="com.albunyaan.tube.ui.FeaturedListFragment"
+        android:label="Featured" />
 
     <fragment
         android:id="@+id/playerFragment"

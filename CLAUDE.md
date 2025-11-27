@@ -133,6 +133,114 @@ cat docs/status/ANDROID_GUIDE.md
   - Exception: Updating existing documentation files is allowed when needed
 - **Internationalization**: English, Arabic (RTL), Dutch supported across all platforms
 - **Firebase**: Firestore (database), Auth (authentication), Cloud Storage (downloads)
+- **Design Consistency**: See "Multi-Device Design Workflow" section below for mandatory design rules
+
+---
+
+## Multi-Device Design Workflow (MANDATORY)
+
+This section defines the **professional UI/UX workflow** for maintaining design consistency across all device types (phone, tablet, TV). **All visual changes MUST follow this workflow.**
+
+### Core Principles
+
+1. **Device-Agnostic Design First**: When implementing any UI feature, consider ALL device form factors from the start
+2. **No Partial Implementations**: A feature is NOT complete until it works correctly on ALL supported devices
+3. **Consistent Visual Language**: Use the same design tokens (spacing, colors, typography) across all layouts
+
+### Design Token Standards (Android)
+
+Reference the existing design system in `docs/design/design-system.md` and use these dimension resources:
+
+| Token | Purpose | Reference |
+|-------|---------|-----------|
+| `@dimen/spacing_xs` | Extra small spacing (4dp) | Tight margins |
+| `@dimen/spacing_sm` | Small spacing (8dp) | Default padding |
+| `@dimen/spacing_md` | Medium spacing (16dp) | Section spacing |
+| `@dimen/spacing_lg` | Large spacing (24dp) | Major sections |
+| `@dimen/home_horizontal_margin` | Screen edge margin | Consistent across screens |
+| `@dimen/home_card_spacing` | Card gaps | Horizontal scroll items |
+
+### Layout Files by Device Type
+
+Android uses resource qualifiers for device-specific layouts:
+
+| Qualifier | Device Type | Screen Width |
+|-----------|-------------|--------------|
+| `layout/` | Default (phone) | < 600dp |
+| `layout-sw600dp/` | Tablet (7-10") | ≥ 600dp |
+| `layout-sw720dp/` | Large tablet/TV | ≥ 720dp |
+
+### Mandatory Workflow for Visual Changes
+
+**BEFORE making any visual change:**
+
+1. **Audit existing layouts**: Check if the component exists in multiple layout folders
+   ```bash
+   # Find all versions of a layout
+   find android/app/src/main/res -name "fragment_*.xml" | xargs ls -la
+   ```
+
+2. **Review design tokens**: Ensure you're using existing dimension/color resources, not hardcoded values
+
+3. **Check responsive behavior**: Verify how the component adapts to different screen sizes
+
+**WHEN implementing a new visual component:**
+
+1. **Create the default layout** in `layout/` folder (phone-first design)
+2. **Test on phone emulator** to verify base functionality
+3. **Create tablet/TV variants** if the component needs different arrangement:
+   - Copy to `layout-sw600dp/` and adapt for tablet
+   - Copy to `layout-sw720dp/` if TV-specific layout needed
+4. **Use same IDs** across all layout variants (binding compatibility)
+5. **Document in design files** if creating new patterns
+
+**AFTER making any visual change:**
+
+1. **Test on ALL device types**:
+   ```bash
+   # Phone (default)
+   adb -s emulator-5554 shell wm size  # Should show phone dimensions
+
+   # Tablet (if available)
+   adb -s emulator-5556 shell wm size  # Should show tablet dimensions
+   ```
+
+2. **Verify RTL support**: Test with Arabic locale
+3. **Update design documentation** if introducing new patterns
+
+### Text Alignment for RTL Support
+
+For proper RTL (Arabic) text support while maintaining consistent visual alignment:
+
+```xml
+<!-- CORRECT: Aligns to start, respects RTL -->
+android:textAlignment="viewStart"
+
+<!-- INCORRECT: Always aligns left, ignores RTL -->
+android:gravity="left"
+```
+
+Apply `android:textAlignment="viewStart"` to all text elements that should align consistently across LTR and RTL locales.
+
+### Checklist for Visual PRs
+
+Before submitting any PR with visual changes:
+
+- [ ] Tested on phone emulator (default layout)
+- [ ] Tested on tablet emulator (if layout-sw600dp exists)
+- [ ] Verified RTL text alignment with Arabic locale
+- [ ] Used design tokens (not hardcoded dp/sp values)
+- [ ] Created device-specific layouts where needed
+- [ ] Updated design documentation for new patterns
+- [ ] Screenshots attached for all device types
+
+### Common Mistakes to Avoid
+
+1. **Only testing on one device**: Always test phone AND tablet
+2. **Hardcoding dimensions**: Use `@dimen/` resources for consistency
+3. **Missing RTL support**: Use `textAlignment="viewStart"`, not `gravity="left"`
+4. **Inconsistent IDs**: Keep view IDs identical across layout variants
+5. **Forgetting navigation updates**: If adding screens, update ALL navigation graphs
 
 ---
 

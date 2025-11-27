@@ -1,6 +1,6 @@
 # Agents Policy - Testing and Build Standards
 
-**Last Updated**: November 16, 2025
+**Last Updated**: November 27, 2025
 **Status**: Active
 
 This document defines the testing and build policies for AI agents and developers working on the Albunyaan Tube project.
@@ -68,6 +68,59 @@ When responding, structure your review with clear headings such as:
 - Testing & Quality
 - UI/UX (if relevant)
 - Suggested Next Steps
+
+---
+
+## Multi-Device Design Consistency (MANDATORY)
+
+**All visual changes MUST be tested and verified on ALL supported device types.**
+
+### Device Support Matrix
+
+| Device Type | Layout Qualifier | Screen Width | Testing Required |
+|-------------|------------------|--------------|------------------|
+| Phone | `layout/` (default) | < 600dp | ✅ MANDATORY |
+| Tablet | `layout-sw600dp/` | ≥ 600dp | ✅ MANDATORY |
+| Large Tablet/TV | `layout-sw720dp/` | ≥ 720dp | ✅ If layout exists |
+
+### Design Workflow Requirements
+
+**1. Before ANY Visual Change:**
+- Audit all layout folders for existing variants of the component
+- Review design tokens in `@dimen/` and `@color/` resources
+- Check `docs/design/design-system.md` for existing patterns
+
+**2. During Implementation:**
+- Use design tokens (NOT hardcoded dp/sp values)
+- Apply `android:textAlignment="viewStart"` for RTL support
+- Create device-specific layouts if behavior differs by screen size
+- Maintain identical view IDs across all layout variants
+
+**3. After Implementation:**
+- Test on phone emulator (default layout)
+- Test on tablet emulator (if sw600dp layout exists)
+- Verify RTL support with Arabic locale
+- Update design documentation for new patterns
+
+### Code Review Checklist for Visual PRs
+
+AI agents reviewing visual changes MUST verify:
+
+- [ ] Component tested on ALL device types (phone, tablet, TV if applicable)
+- [ ] Design tokens used instead of hardcoded values
+- [ ] RTL support verified (`textAlignment="viewStart"` for text elements)
+- [ ] Layout variants created for different screen sizes if needed
+- [ ] View IDs consistent across all layout variants
+- [ ] Navigation graphs updated if new screens added
+- [ ] Design documentation updated for new patterns
+
+### Common Anti-Patterns to Flag
+
+1. **Partial device support**: Only implementing for one device type
+2. **Hardcoded dimensions**: Using `16dp` instead of `@dimen/spacing_md`
+3. **Missing RTL support**: Using `gravity="left"` instead of `textAlignment="viewStart"`
+4. **Inconsistent layouts**: Different view IDs in phone vs tablet layouts
+5. **Untested navigation**: New screens without testing on all devices
 
 ---
 

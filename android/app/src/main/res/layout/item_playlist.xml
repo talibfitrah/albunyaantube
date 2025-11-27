@@ -36,6 +36,7 @@
         android:textColor="@android:color/black"
         android:maxLines="2"
         android:ellipsize="end"
+        android:textAlignment="viewStart"
         app:layout_constraintStart_toEndOf="@id/playlistThumbnail"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toTopOf="@id/playlistThumbnail"

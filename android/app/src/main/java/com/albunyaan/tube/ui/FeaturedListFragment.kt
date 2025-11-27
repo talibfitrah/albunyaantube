@@ -1,0 +1,138 @@
+package com.albunyaan.tube.ui
+
+import android.os.Bundle
+import android.util.Log
+import android.view.View
+import androidx.core.os.bundleOf
+import androidx.core.view.isVisible
+import androidx.fragment.app.Fragment
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.navigation.fragment.findNavController
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.albunyaan.tube.R
+import com.albunyaan.tube.data.model.ContentItem
+import com.albunyaan.tube.databinding.FragmentFeaturedListBinding
+import com.albunyaan.tube.ui.adapters.FeaturedListAdapter
+import com.albunyaan.tube.ui.detail.ChannelDetailFragment
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
+
+@AndroidEntryPoint
+class FeaturedListFragment : Fragment(R.layout.fragment_featured_list) {
+
+    private var binding: FragmentFeaturedListBinding? = null
+
+    private val viewModel: HomeViewModel by viewModels()
+
+    private lateinit var adapter: FeaturedListAdapter
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        binding = FragmentFeaturedListBinding.bind(view)
+
+        setupToolbar()
+        setupRecyclerView()
+        setupRetryButton()
+        observeViewModel()
+
+        // Explicitly load featured content when fragment is first displayed
+        viewModel.loadFeatured()
+    }
+
+    private fun setupToolbar() {
+        binding?.toolbar?.setNavigationOnClickListener {
+            findNavController().navigateUp()
+        }
+    }
+
+    private fun setupRecyclerView() {
+        adapter = FeaturedListAdapter { item ->
+            when (item) {
+                is ContentItem.Video -> {
+                    Log.d(TAG, "Video clicked: ${item.id}")
+                    findNavController().navigate(
+                        R.id.action_global_playerFragment,
+                        bundleOf("videoId" to item.id)
+                    )
+                }
+                is ContentItem.Playlist -> {
+                    Log.d(TAG, "Playlist clicked: ${item.id}")
+                    findNavController().navigate(
+                        R.id.action_global_playlistDetailFragment,
+                        bundleOf(
+                            "playlistId" to item.id,
+                            "playlistTitle" to item.title,
+                            "playlistCategory" to item.category,
+                            "playlistCount" to item.itemCount
+                        )
+                    )
+                }
+                is ContentItem.Channel -> {
+                    Log.d(TAG, "Channel clicked: ${item.id}")
+                    findNavController().navigate(
+                        R.id.action_global_channelDetailFragment,
+                        bundleOf(
+                            ChannelDetailFragment.ARG_CHANNEL_ID to item.id,
+                            ChannelDetailFragment.ARG_CHANNEL_NAME to item.name
+                        )
+                    )
+                }
+            }
+        }
+
+        binding?.recyclerView?.apply {
+            // Use single column for consistent layout with mixed content types
+            layoutManager = LinearLayoutManager(requireContext())
+            adapter = this@FeaturedListFragment.adapter
+        }
+    }
+
+    private fun setupRetryButton() {
+        binding?.retryButton?.setOnClickListener {
+            viewModel.loadFeatured()
+        }
+    }
+
+    private fun observeViewModel() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.featuredState.collect { state ->
+                    when (state) {
+                        is HomeViewModel.SectionState.Loading -> {
+                            Log.d(TAG, "Loading featured content...")
+                            binding?.progressBar?.isVisible = true
+                            binding?.errorContainer?.isVisible = false
+                            binding?.recyclerView?.isVisible = false
+                        }
+                        is HomeViewModel.SectionState.Success -> {
+                            Log.d(TAG, "Featured content loaded: ${state.items.size} items")
+                            binding?.progressBar?.isVisible = false
+                            binding?.errorContainer?.isVisible = false
+                            binding?.recyclerView?.isVisible = true
+                            adapter.submitList(state.items)
+                        }
+                        is HomeViewModel.SectionState.Error -> {
+                            Log.e(TAG, "Error loading featured: ${state.message}")
+                            binding?.progressBar?.isVisible = false
+                            binding?.recyclerView?.isVisible = false
+                            binding?.errorContainer?.isVisible = true
+                            binding?.errorText?.text = state.message
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        binding = null
+    }
+
+    companion object {
+        private const val TAG = "FeaturedListFragment"
+    }
+}

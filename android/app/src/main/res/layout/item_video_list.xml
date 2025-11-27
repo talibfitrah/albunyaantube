@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:padding="@dimen/spacing_md"
+    android:background="?attr/selectableItemBackground"
+    android:clickable="true"
+    android:focusable="true">
+
+    <!-- Video Thumbnail (16:9 aspect ratio, rounded corners) -->
+    <FrameLayout
+        android:id="@+id/thumbnailContainer"
+        android:layout_width="@dimen/video_list_thumbnail_width"
+        android:layout_height="0dp"
+        app:layout_constraintDimensionRatio="16:9"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <ImageView
+            android:id="@+id/videoThumbnail"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="centerCrop"
+            android:background="@drawable/thumbnail_placeholder"
+            android:clipToOutline="true"
+            android:outlineProvider="background"
+            android:contentDescription="@null"
+            android:importantForAccessibility="no"
+            tools:src="@drawable/thumbnail_placeholder"/>
+
+        <!-- Duration Overlay (Bottom-right of thumbnail) -->
+        <TextView
+            android:id="@+id/videoDuration"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|end"
+            android:layout_margin="@dimen/spacing_xs"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp"
+            android:paddingTop="2dp"
+            android:paddingBottom="2dp"
+            android:background="@drawable/home_duration_chip_bg"
+            android:textColor="@color/onPrimary"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            tools:text="10:30"/>
+
+    </FrameLayout>
+
+    <!-- Video Title -->
+    <TextView
+        android:id="@+id/videoTitle"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/spacing_md"
+        android:layout_marginEnd="@dimen/spacing_sm"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:textColor="?android:attr/textColorPrimary"
+        android:maxLines="2"
+        android:ellipsize="end"
+        android:textAlignment="viewStart"
+        app:layout_constraintStart_toEndOf="@id/thumbnailContainer"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="@id/thumbnailContainer"
+        tools:text="The Essence of Faith"/>
+
+    <!-- Video Metadata (Views + Date) -->
+    <TextView
+        android:id="@+id/videoMeta"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/spacing_xs"
+        android:textSize="13sp"
+        android:textColor="?android:attr/textColorSecondary"
+        android:maxLines="1"
+        android:ellipsize="end"
+        app:layout_constraintStart_toStartOf="@id/videoTitle"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/videoTitle"
+        tools:text="100K views • 2 weeks ago"/>
+
+    <!-- Category Chip -->
+    <com.google.android.material.chip.ChipGroup
+        android:id="@+id/categoryChipsContainer"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/spacing_xs"
+        app:singleLine="true"
+        app:layout_constraintStart_toStartOf="@id/videoTitle"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/videoMeta"/>
+
+</androidx.constraintlayout.widget.ConstraintLayout>
