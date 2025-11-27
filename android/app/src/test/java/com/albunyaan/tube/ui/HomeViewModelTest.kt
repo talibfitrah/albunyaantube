@@ -32,11 +32,12 @@ import org.robolectric.annotation.Config
  * Unit tests for HomeViewModel per-section loading and error handling.
  *
  * Tests verify:
- * - Independent section loading (channels, playlists, videos)
+ * - Independent section loading (featured, channels, playlists, videos)
  * - Error isolation (one section failure doesn't affect others)
  * - Retry functionality for individual sections
  * - Video sorting by recency
  * - Defensive take(limit) behavior
+ * - Featured section mixed content handling
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -199,6 +200,110 @@ class HomeViewModelTest {
         assertEquals(10, (state as HomeViewModel.SectionState.Success).items.size)
     }
 
+    // Featured section tests
+
+    @Test
+    fun `loadFeatured emits Success with mixed content types`() = runTest {
+        // Featured can contain videos, playlists, and channels
+        val mixedContent: List<ContentItem> = listOf(
+            createVideo("v1", "Featured Video"),
+            createPlaylist("p1", "Featured Playlist"),
+            createChannel("c1", "Featured Channel")
+        )
+        fakeContentService.featuredResponse = CursorResponse(mixedContent, null)
+
+        viewModel = createViewModel()
+        advanceUntilIdle()
+
+        val state = viewModel.featuredState.value
+        assertTrue("Expected Success state", state is HomeViewModel.SectionState.Success)
+        val items = (state as HomeViewModel.SectionState.Success).items
+        assertEquals(3, items.size)
+        assertTrue("Should contain video", items.any { it is ContentItem.Video })
+        assertTrue("Should contain playlist", items.any { it is ContentItem.Playlist })
+        assertTrue("Should contain channel", items.any { it is ContentItem.Channel })
+    }
+
+    @Test
+    fun `loadFeatured passes Featured category ID in filters`() = runTest {
+        fakeContentService.featuredResponse = CursorResponse(emptyList(), null)
+
+        viewModel = createViewModel()
+        advanceUntilIdle()
+
+        val filters = fakeContentService.lastFeaturedFilters
+        assertEquals(
+            "Should use Featured category ID",
+            HomeViewModel.FEATURED_CATEGORY_ID,
+            filters?.category
+        )
+    }
+
+    @Test
+    fun `loadFeatured emits Error when service throws exception`() = runTest {
+        fakeContentService.featuredError = RuntimeException("Featured failed")
+
+        viewModel = createViewModel()
+        advanceUntilIdle()
+
+        val state = viewModel.featuredState.value
+        assertTrue("Expected Error state", state is HomeViewModel.SectionState.Error)
+        assertEquals("Featured failed", (state as HomeViewModel.SectionState.Error).message)
+    }
+
+    @Test
+    fun `Featured failure does not affect other sections`() = runTest {
+        // Featured fails, but channels, playlists, and videos succeed
+        fakeContentService.featuredError = RuntimeException("Featured failed")
+        fakeContentService.channelsResponse = CursorResponse(
+            listOf(createChannel("1", "Channel")), null
+        )
+        fakeContentService.playlistsResponse = CursorResponse(
+            listOf(createPlaylist("1", "Playlist")), null
+        )
+        fakeContentService.videosResponse = CursorResponse(
+            listOf(createVideo("1", "Video")), null
+        )
+
+        viewModel = createViewModel()
+        advanceUntilIdle()
+
+        // Featured should be in error state
+        assertTrue(viewModel.featuredState.value is HomeViewModel.SectionState.Error)
+
+        // Other sections should succeed
+        assertTrue(viewModel.channelsState.value is HomeViewModel.SectionState.Success)
+        assertTrue(viewModel.playlistsState.value is HomeViewModel.SectionState.Success)
+        assertTrue(viewModel.videosState.value is HomeViewModel.SectionState.Success)
+    }
+
+    @Test
+    fun `retry Featured loads only Featured section`() = runTest {
+        // Initially Featured fails
+        fakeContentService.featuredError = RuntimeException("Error")
+        fakeContentService.channelsResponse = CursorResponse(
+            listOf(createChannel("1", "Channel")), null
+        )
+
+        viewModel = createViewModel()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.featuredState.value is HomeViewModel.SectionState.Error)
+        assertTrue(viewModel.channelsState.value is HomeViewModel.SectionState.Success)
+
+        // Fix Featured and retry
+        fakeContentService.featuredError = null
+        fakeContentService.featuredResponse = CursorResponse(
+            listOf(createVideo("1", "Video")), null
+        )
+
+        viewModel.loadFeatured()
+        advanceUntilIdle()
+
+        // Featured should now succeed
+        assertTrue(viewModel.featuredState.value is HomeViewModel.SectionState.Success)
+    }
+
     // Helper functions to create test data
     private fun createChannel(id: String, name: String) = ContentItem.Channel(
         id = id,
@@ -234,6 +339,10 @@ class HomeViewModelTest {
      * Fake ContentService for testing that allows controlling responses per content type.
      */
     private class FakeContentService : ContentService {
+        var featuredResponse: CursorResponse? = CursorResponse(emptyList(), null)
+        var featuredError: Exception? = null
+        var lastFeaturedFilters: FilterState? = null
+
         var channelsResponse: CursorResponse? = CursorResponse(emptyList(), null)
         var channelsError: Exception? = null
 
@@ -262,8 +371,13 @@ class HomeViewModelTest {
                     videosError?.let { throw it }
                     videosResponse ?: CursorResponse(emptyList(), null)
                 }
+                ContentType.ALL -> {
+                    // Featured section uses ALL type with category filter
+                    lastFeaturedFilters = filters
+                    featuredError?.let { throw it }
+                    featuredResponse ?: CursorResponse(emptyList(), null)
+                }
                 ContentType.HOME -> {
-                    // HOME type would return mixed content, but we test per-type
                     CursorResponse(emptyList(), null)
                 }
             }

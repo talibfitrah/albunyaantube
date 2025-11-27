@@ -13,7 +13,7 @@ import retrofit2.http.Query
 interface ContentApi {
     @GET("api/v1/content")
     suspend fun fetchContent(
-        @Query("type") type: String,
+        @Query("type") type: String?,  // Nullable to support ALL content types
         @Query("cursor") cursor: String?,
         @Query("limit") limit: Int,
         @Query("category") category: String?,

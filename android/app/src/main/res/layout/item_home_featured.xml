@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    style="@style/Widget.Albunyaan.MediaCard"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginEnd="@dimen/home_card_spacing"
+    android:clickable="true"
+    android:focusable="true"
+    android:foreground="@drawable/card_focus_state">
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <!-- Thumbnail (16:9 ratio) -->
+        <ImageView
+            android:id="@+id/featuredThumbnail"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:scaleType="centerCrop"
+            android:background="@drawable/home_thumbnail_bg"
+            android:contentDescription="@null"
+            android:importantForAccessibility="no"
+            app:layout_constraintDimensionRatio="16:9"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            tools:src="@drawable/thumbnail_placeholder"/>
+
+        <!-- Type Badge (Bottom-left) - Shows Video/Playlist/Channel -->
+        <TextView
+            android:id="@+id/typeBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_margin="@dimen/spacing_sm"
+            android:paddingStart="@dimen/home_duration_chip_padding_horizontal"
+            android:paddingEnd="@dimen/home_duration_chip_padding_horizontal"
+            android:paddingTop="@dimen/home_duration_chip_padding_vertical"
+            android:paddingBottom="@dimen/home_duration_chip_padding_vertical"
+            android:background="@drawable/home_type_badge_bg"
+            android:textAppearance="@style/TextAppearance.Home.TypeBadge"
+            app:layout_constraintStart_toStartOf="@id/featuredThumbnail"
+            app:layout_constraintBottom_toBottomOf="@id/featuredThumbnail"
+            tools:text="Video"/>
+
+        <!-- Duration Overlay (Bottom-right) - Only visible for videos -->
+        <TextView
+            android:id="@+id/durationBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_margin="@dimen/spacing_sm"
+            android:paddingStart="@dimen/home_duration_chip_padding_horizontal"
+            android:paddingEnd="@dimen/home_duration_chip_padding_horizontal"
+            android:paddingTop="@dimen/home_duration_chip_padding_vertical"
+            android:paddingBottom="@dimen/home_duration_chip_padding_vertical"
+            android:background="@drawable/home_duration_chip_bg"
+            android:textAppearance="@style/TextAppearance.Home.Duration"
+            android:visibility="gone"
+            app:layout_constraintEnd_toEndOf="@id/featuredThumbnail"
+            app:layout_constraintBottom_toBottomOf="@id/featuredThumbnail"
+            tools:text="10:30"
+            tools:visibility="visible"/>
+
+        <!-- Content Container - Fixed height for consistent card sizes -->
+        <LinearLayout
+            android:id="@+id/contentContainer"
+            android:layout_width="0dp"
+            android:layout_height="@dimen/home_card_content_height"
+            android:orientation="vertical"
+            android:padding="@dimen/spacing_sm"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/featuredThumbnail">
+
+            <!-- Title - Fixed height for 2 lines -->
+            <TextView
+                android:id="@+id/featuredTitle"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:textAppearance="@style/TextAppearance.Home.ItemTitle"
+                android:maxLines="2"
+                android:ellipsize="end"
+                android:gravity="top"
+                tools:text="Featured Content Title"/>
+
+            <!-- Metadata (context-dependent) - 2 lines max -->
+            <TextView
+                android:id="@+id/featuredMeta"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_xs"
+                android:textAppearance="@style/TextAppearance.Home.ItemMeta"
+                android:maxLines="2"
+                android:ellipsize="end"
+                tools:text="100K views • 24 days ago"/>
+
+        </LinearLayout>
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+</com.google.android.material.card.MaterialCardView>

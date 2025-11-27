@@ -13,5 +13,6 @@ enum class ContentType {
     HOME,
     CHANNELS,
     PLAYLISTS,
-    VIDEOS
+    VIDEOS,
+    ALL  // Used for Featured section which shows mixed content types
 }

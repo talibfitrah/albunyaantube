@@ -62,6 +62,7 @@ class FakeContentService : ContentService {
             ContentType.HOME, ContentType.VIDEOS -> videos
             ContentType.CHANNELS -> channels
             ContentType.PLAYLISTS -> playlists
+            ContentType.ALL -> videos + channels + playlists  // Mixed content for Featured section
         }
 
         val filtered = sourceItems.filter { item ->

@@ -118,13 +118,80 @@
 
         </com.google.android.material.card.MaterialCardView>
 
+        <!-- Featured Section -->
+        <LinearLayout
+            android:id="@+id/featuredSection"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginTop="@dimen/spacing_sm">
+
+            <androidx.constraintlayout.widget.ConstraintLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingStart="@dimen/home_horizontal_margin"
+                android:paddingEnd="@dimen/home_horizontal_margin"
+                android:minHeight="@dimen/touch_target_min">
+
+                <TextView
+                    android:id="@+id/featuredTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/section_featured"
+                    android:textAppearance="@style/TextAppearance.Home.SectionTitle"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:layout_constraintBottom_toBottomOf="parent"/>
+
+                <TextView
+                    android:id="@+id/featuredSeeAll"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/see_all"
+                    android:textAppearance="@style/TextAppearance.Home.SeeAll"
+                    android:padding="@dimen/spacing_sm"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/home_see_all_featured"
+                    app:drawableEndCompat="@drawable/ic_chevron_right"
+                    android:drawablePadding="@dimen/spacing_xs"
+                    app:drawableTint="@color/primary_green"
+                    app:layout_constraintEnd_toEndOf="parent"
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:layout_constraintBottom_toBottomOf="parent"/>
+
+            </androidx.constraintlayout.widget.ConstraintLayout>
+
+            <include
+                android:id="@+id/featuredSkeleton"
+                layout="@layout/home_section_skeleton"
+                android:visibility="gone" />
+
+            <include
+                android:id="@+id/featuredError"
+                layout="@layout/home_section_error"
+                android:visibility="gone" />
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/featuredRecyclerView"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_xs"
+                android:clipToPadding="false"
+                android:clipChildren="false"
+                android:paddingStart="@dimen/home_horizontal_margin"
+                android:paddingEnd="@dimen/home_horizontal_margin"
+                android:paddingBottom="@dimen/spacing_sm"
+                android:orientation="horizontal"/>
+
+        </LinearLayout>
+
         <!-- Channels Section -->
         <LinearLayout
             android:id="@+id/channelsSection"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:layout_marginTop="@dimen/spacing_sm">
+            android:layout_marginTop="@dimen/home_vertical_section_spacing">
 
             <androidx.constraintlayout.widget.ConstraintLayout
                 android:layout_width="match_parent"

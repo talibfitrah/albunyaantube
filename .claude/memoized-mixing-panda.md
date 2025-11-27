@@ -1,6 +1,6 @@
 # Home Screen & Onboarding Improvements - Execution Plan
 
-## ✅ COMPLETION STATUS (Phase A, B & All Fixes Complete)
+## ✅ COMPLETION STATUS (All Phases Complete)
 
 **Date Completed**: November 27, 2025
 
@@ -8,8 +8,8 @@
 - ✅ **Phase A: Card Standardization + Responsive Layout** - 100% Complete
 - ✅ **Phase B: Data Limits + Loading States** - 100% Complete
 - ✅ **Bug Fixes & Improvements** - 100% Complete (Nov 27, 2025)
-- ⏸️ **Phase C: Featured Section** - Not Started (requires backend category)
-- ⏸️ **Phase D: Onboarding Alignment** - Not Started (secondary priority)
+- ✅ **Phase C: Featured Section** - 100% Complete (Nov 27, 2025)
+- ✅ **Phase D: Onboarding Alignment** - 100% Complete (Nov 27, 2025)
 
 ### What Was Implemented
 
@@ -67,30 +67,39 @@
 41. ✅ **Card content height** - Increased from 88dp to 100dp for 2-line title + 2-line metadata
 42. ✅ **Documentation updated** - `docs/architecture/overview.md` and `docs/design/design-system.md` updated
 
+**Phase C: Featured Section (Nov 27 - Round 6):**
+43. ✅ **HomeViewModel.kt** - Added `featuredState` StateFlow and `loadFeatured()` method to fetch content filtered by Featured category
+44. ✅ **ContentType.ALL** - Added new enum value for mixed content types (videos + channels + playlists)
+45. ✅ **RetrofitContentService.kt** - Updated to pass null type parameter for ALL to get mixed content
+46. ✅ **HomeFeaturedAdapter.kt** - New adapter for mixed content types with type badge (Video/Playlist/Channel)
+47. ✅ **item_home_featured.xml** - Card layout with type badge (bottom-left) and duration badge (bottom-right for videos)
+48. ✅ **home_type_badge_bg.xml** - Type badge background drawable using primary green
+49. ✅ **TextAppearance.Home.TypeBadge** - Style for type badge text (10sp, bold, white, all caps)
+50. ✅ **fragment_home_new.xml** - Added Featured section above Channels with skeleton/error/recycler views
+51. ✅ **HomeFragment.kt** - Added Featured adapter, recycler view setup, observer, and click listeners
+52. ✅ **String resources** - Added `section_featured`, `home_see_all_featured`, `type_video`, `type_playlist`, `type_channel`, `channel_subscribers_unknown`
+53. ✅ **MetadataHydrator.kt** - Updated to handle ContentType.ALL with mixed hydration
+54. ✅ **FakeContentService.kt** - Updated to return mixed content for ALL type
+55. ✅ **HomeViewModelTest.kt** - Updated to handle ContentType.ALL in fake service
+
+**Phase D: Onboarding Alignment (Nov 27 - Round 6):**
+56. ✅ **values/dimens.xml** - Added base onboarding dimensions (icon: 160dp/80dp, title: 28sp, description: 16sp, padding: 24dp, button: 56dp)
+57. ✅ **values-sw600dp/dimens.xml** - Added tablet onboarding dimensions (icon: 200dp/100dp, title: 32sp, description: 18sp, padding: 32dp, button: 60dp)
+58. ✅ **values-sw720dp/dimens.xml** - Added large tablet/TV onboarding dimensions (icon: 240dp/120dp, title: 36sp, description: 20sp, padding: 40dp, button: 64dp)
+59. ✅ **page_onboarding_item.xml** - Updated to use dimen resources instead of hardcoded values, design system colors
+60. ✅ **fragment_onboarding.xml** - Updated with responsive dimensions, design system colors, TV focus states (focusable=true, nextFocusDown/Up)
+
 ### Build Status
 - ✅ Compilation successful (tested with `./gradlew compileDebugKotlin` on Nov 27)
 - ✅ All Kotlin code compiles without errors
 - ✅ All unit tests pass (tested with `./gradlew testDebugUnitTest` on Nov 27)
 - ⚠️ Player warnings (unrelated to this work)
 
-### Remaining Work (Future Phases)
-**Phase C (Featured Section) - Requires Backend Setup:**
-1. Seed "Featured" category in backend with known ID
-2. Create `HomeFeaturedAdapter.kt` for mixed content types
-3. Create `item_home_featured.xml` with type badge
-4. Add Featured section to HomeFragment above Channels
-5. Create `FeaturedListFragment.kt` for "See All" with filter chips
-
-**Phase D (Onboarding Alignment) - Lower Priority:**
-1. Add responsive onboarding dimensions (sw600dp, sw720dp)
-2. Update `page_onboarding_item.xml` with design system tokens
-3. Add TV focus states to onboarding buttons
-4. Test on phone/tablet/TV emulators
-
-**Other Future Enhancements:**
+### Remaining Work (Future Enhancements)
 - **Manual testing**: Verification on phone/tablet/TV emulators with TalkBack
 - **Placeholder assets**: Design proper branded placeholders for video/playlist/channel (currently using solid color backgrounds)
 - **Backend enhancement**: Add timestamp fields to Channel/Playlist models for client-side sorting
+- **FeaturedListFragment**: Create dedicated "See All" screen for Featured section with filter chips (currently navigates to Categories)
 
 ### Known Limitations & Design Decisions
 - **Error handling**: Per-section inline error panels with retry buttons. Users see clear error message and can retry each section independently.

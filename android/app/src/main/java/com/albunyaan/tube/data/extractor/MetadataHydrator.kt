@@ -13,7 +13,7 @@ open class MetadataHydrator(
     open suspend fun hydrate(type: ContentType, items: List<ContentItem>): List<ContentItem> {
         if (items.isEmpty()) return items
         return when (type) {
-            ContentType.HOME -> hydrateMixed(items)
+            ContentType.HOME, ContentType.ALL -> hydrateMixed(items)
             ContentType.VIDEOS -> hydrateVideos(items)
             ContentType.CHANNELS -> hydrateChannels(items)
             ContentType.PLAYLISTS -> hydratePlaylists(items)

@@ -130,6 +130,7 @@
     <string name="offline_mode_limited">Some features are unavailable offline.</string>
 
     <!-- Home Screen Sections -->
+    <string name="section_featured">Featured</string>
     <string name="section_channels">Channels</string>
     <string name="section_playlists">Playlists</string>
     <string name="section_videos">Videos</string>
@@ -161,13 +162,21 @@
     <string name="player_action_settings">Player settings</string>
     <string name="player_action_cast">Cast to TV</string>
     <string name="home_select_category">Select content category</string>
+    <string name="home_see_all_featured">See all featured content</string>
     <string name="home_see_all_channels">See all channels</string>
     <string name="home_see_all_playlists">See all playlists</string>
     <string name="home_see_all_videos">See all videos</string>
     <string name="home_retry_section">Retry loading section</string>
     
+    <!-- Content Type Badges -->
+    <string name="type_video">Video</string>
+    <string name="type_playlist">Playlist</string>
+    <string name="type_channel">Channel</string>
+
     <!-- Channel Detail -->
     <string name="channel_subscribers_format">%s subscribers</string>
+    <!-- Shown when subscriber count is unavailable (displays as en-dash) -->
+    <string name="channel_subscribers_unknown">–</string>
     <string name="playlist_videos_title">Videos in this playlist</string>
 
     <!-- Additional Accessibility Descriptions -->
@@ -188,6 +197,7 @@
     <string name="cd_category_chevron">View subcategories</string>
 
     <!-- Screen Reader Announcements -->
+    <string name="a11y_duration_format">Duration: %s</string>
     <string name="a11y_video_item">Video: %1$s, Duration: %2$s, %3$s, %4$s</string>
     <string name="a11y_channel_item">Channel: %1$s, %2$s</string>
     <string name="a11y_playlist_item">Playlist: %1$s, %2$d items</string>

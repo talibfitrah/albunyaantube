@@ -64,6 +64,13 @@
         <item name="android:textColor">@android:color/white</item>
     </style>
 
+    <style name="TextAppearance.Home.TypeBadge" parent="TextAppearance.Material3.LabelSmall">
+        <item name="android:textSize">10sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@android:color/white</item>
+        <item name="android:textAllCaps">true</item>
+    </style>
+
     <!-- Home Category Pill -->
     <style name="Widget.Albunyaan.CategoryPill" parent="Widget.Material3.CardView.Filled">
         <item name="cardCornerRadius">999dp</item>

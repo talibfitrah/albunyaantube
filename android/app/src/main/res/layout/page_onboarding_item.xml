@@ -3,24 +3,46 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:padding="24dp">
+    android:paddingHorizontal="@dimen/spacing_lg"
+    android:clipToPadding="false"
+    android:clipChildren="false">
+
+    <!-- Guideline for top margin (space for status bar area) -->
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/topGuide"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        app:layout_constraintGuide_begin="24dp"/>
+
+    <!-- Guideline to create bottom margin for content (space for indicators overlay) -->
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/bottomGuide"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        app:layout_constraintGuide_end="80dp"/>
+
+    <!-- Content group: icon + title + description in a vertical chain -->
+    <!-- Chain is packed and centered vertically between guides -->
 
     <!-- Icon with circular background -->
     <FrameLayout
         android:id="@+id/iconContainer"
-        android:layout_width="160dp"
-        android:layout_height="160dp"
+        android:layout_width="@dimen/onboarding_icon_container_size"
+        android:layout_height="@dimen/onboarding_icon_container_size"
         android:background="@drawable/onboarding_icon_bg"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintTop_toTopOf="@id/topGuide"
+        app:layout_constraintBottom_toTopOf="@id/titleText"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintVertical_bias="0.3">
+        app:layout_constraintVertical_chainStyle="packed"
+        app:layout_constraintVertical_bias="0.35">
 
         <ImageView
             android:id="@+id/iconImage"
-            android:layout_width="80dp"
-            android:layout_height="80dp"
+            android:layout_width="@dimen/onboarding_icon_size"
+            android:layout_height="@dimen/onboarding_icon_size"
             android:layout_gravity="center"
             android:contentDescription="@string/onboarding_carousel_content"/>
     </FrameLayout>
@@ -30,28 +52,31 @@
         android:id="@+id/titleText"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:textSize="28sp"
-        android:textColor="#1A1A1A"
+        android:textSize="@dimen/onboarding_title_size"
+        android:textColor="@color/home_text_primary"
         android:textStyle="bold"
         android:gravity="center"
-        android:layout_marginTop="32dp"
+        android:layout_marginTop="@dimen/spacing_xl"
         app:layout_constraintTop_toBottomOf="@id/iconContainer"
+        app:layout_constraintBottom_toTopOf="@id/descriptionText"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"/>
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintWidth_max="@dimen/onboarding_content_max_width"/>
 
-    <!-- Description -->
+    <!-- Description - constrained to bottom guideline to leave room for indicators -->
     <TextView
         android:id="@+id/descriptionText"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:textSize="16sp"
-        android:textColor="#666666"
+        android:textSize="@dimen/onboarding_description_size"
+        android:textColor="@color/home_text_secondary"
         android:gravity="center"
         android:lineSpacingExtra="4dp"
-        android:layout_marginTop="16dp"
-        android:paddingHorizontal="16dp"
+        android:layout_marginTop="@dimen/spacing_md"
         app:layout_constraintTop_toBottomOf="@id/titleText"
+        app:layout_constraintBottom_toTopOf="@id/bottomGuide"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"/>
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintWidth_max="@dimen/onboarding_content_max_width"/>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

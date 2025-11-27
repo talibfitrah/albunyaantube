@@ -25,8 +25,14 @@ class RetrofitContentService(
         pageSize: Int,
         filters: FilterState
     ): CursorResponse {
+        // API Contract: GET /api/v1/content
+        // - When type parameter is omitted (null), the API returns mixed content
+        //   (channels, playlists, videos) suitable for home/featured sections.
+        // - Category filter applies regardless of type.
+        // See: docs/architecture/api-specification.yaml for the full contract.
+        val typeParam = if (type == ContentType.ALL) null else type.name
         val response = api.fetchContent(
-            type = type.name,
+            type = typeParam,
             cursor = cursor,
             limit = pageSize,
             category = filters.category,

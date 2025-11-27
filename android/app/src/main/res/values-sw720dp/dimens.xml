@@ -59,4 +59,13 @@
     <integer name="home_cards_visible_channels">6</integer>
     <integer name="home_cards_visible_playlists">5</integer>
     <integer name="home_cards_visible_videos">5</integer>
+
+    <!-- Onboarding (Large Tablet/TV) - smaller icon to leave room for text -->
+    <dimen name="onboarding_icon_container_size">180dp</dimen>
+    <dimen name="onboarding_icon_size">90dp</dimen>
+    <dimen name="onboarding_title_size">36sp</dimen>
+    <dimen name="onboarding_description_size">20sp</dimen>
+    <dimen name="onboarding_padding">40dp</dimen>
+    <dimen name="onboarding_button_height">64dp</dimen>
+    <dimen name="onboarding_button_corner_radius">32dp</dimen>
 </resources>

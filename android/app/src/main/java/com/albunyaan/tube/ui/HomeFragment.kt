@@ -15,6 +15,7 @@ import com.albunyaan.tube.data.model.ContentItem
 import dagger.hilt.android.AndroidEntryPoint
 import com.albunyaan.tube.databinding.FragmentHomeNewBinding
 import com.albunyaan.tube.ui.adapters.HomeChannelAdapter
+import com.albunyaan.tube.ui.adapters.HomeFeaturedAdapter
 import com.albunyaan.tube.ui.adapters.HomePlaylistAdapter
 import com.albunyaan.tube.ui.adapters.HomeVideoAdapter
 import kotlinx.coroutines.launch
@@ -26,6 +27,7 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
 
     private val viewModel: HomeViewModel by viewModels()
 
+    private lateinit var featuredAdapter: HomeFeaturedAdapter
     private lateinit var channelAdapter: HomeChannelAdapter
     private lateinit var playlistAdapter: HomePlaylistAdapter
     private lateinit var videoAdapter: HomeVideoAdapter
@@ -50,6 +52,13 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
         val margin = resources.getDimensionPixelSize(R.dimen.home_horizontal_margin)
         val spacing = resources.getDimensionPixelSize(R.dimen.home_card_spacing)
 
+        // Featured section uses same card width as videos (wider cards for mixed content)
+        featuredAdapter.cardWidth = calculateCardWidth(
+            screenWidth,
+            resources.getInteger(R.integer.home_cards_visible_videos),
+            margin,
+            spacing
+        )
         channelAdapter.cardWidth = calculateCardWidth(
             screenWidth,
             resources.getInteger(R.integer.home_cards_visible_channels),
@@ -70,6 +79,7 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
         )
 
         // Force rebind of any existing ViewHolders to apply the new cardWidth
+        featuredAdapter.notifyDataSetChanged()
         channelAdapter.notifyDataSetChanged()
         playlistAdapter.notifyDataSetChanged()
         videoAdapter.notifyDataSetChanged()
@@ -82,6 +92,37 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
     }
 
     private fun setupAdapters() {
+        featuredAdapter = HomeFeaturedAdapter { item ->
+            when (item) {
+                is ContentItem.Video -> {
+                    Log.d(TAG, "Featured video clicked: ${item.title}")
+                    findNavController().navigate(
+                        R.id.action_global_playerFragment,
+                        bundleOf("videoId" to item.id)
+                    )
+                }
+                is ContentItem.Playlist -> {
+                    Log.d(TAG, "Featured playlist clicked: ${item.title}")
+                    findNavController().navigate(
+                        R.id.action_global_playlistDetailFragment,
+                        bundleOf(
+                            "playlistId" to item.id,
+                            "playlistTitle" to item.title,
+                            "playlistCategory" to item.category,
+                            "playlistCount" to item.itemCount
+                        )
+                    )
+                }
+                is ContentItem.Channel -> {
+                    Log.d(TAG, "Featured channel clicked: ${item.name}")
+                    findNavController().navigate(
+                        R.id.action_global_channelDetailFragment,
+                        bundleOf("channelId" to item.id, "channelName" to item.name)
+                    )
+                }
+            }
+        }
+
         channelAdapter = HomeChannelAdapter { channel ->
             Log.d(TAG, "Channel clicked: ${channel.name}")
             findNavController().navigate(
@@ -113,6 +154,12 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
     }
 
     private fun setupRecyclerViews(binding: FragmentHomeNewBinding) {
+        binding.featuredRecyclerView.apply {
+            adapter = featuredAdapter
+            layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
+            setHasFixedSize(true)
+        }
+
         binding.channelsRecyclerView.apply {
             adapter = channelAdapter
             layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
@@ -139,7 +186,13 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
             findNavController().navigate(R.id.action_homeFragment_to_categoriesFragment)
         }
 
-        // See All click listeners - navigate to respective tabs
+        // See All click listeners - navigate to respective tabs/screens
+        binding.featuredSeeAll.setOnClickListener {
+            Log.d(TAG, "Featured See All clicked")
+            // Navigate to categories screen
+            findNavController().navigate(R.id.action_homeFragment_to_categoriesFragment)
+        }
+
         binding.channelsSeeAll.setOnClickListener {
             Log.d(TAG, "Channels See All clicked")
             navigateToTab(R.id.channelsFragment)
@@ -156,6 +209,11 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
         }
 
         // Retry button click listeners for error states
+        binding.featuredError.retryButton.setOnClickListener {
+            Log.d(TAG, "Retry featured clicked")
+            viewModel.loadFeatured()
+        }
+
         binding.channelsError.retryButton.setOnClickListener {
             Log.d(TAG, "Retry channels clicked")
             viewModel.loadChannels()
@@ -185,6 +243,42 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
     }
 
     private fun observeViewModel(binding: FragmentHomeNewBinding) {
+        // Observe featured section
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.featuredState.collect { state ->
+                when (state) {
+                    is HomeViewModel.SectionState.Loading -> {
+                        Log.d(TAG, "Loading featured...")
+                        binding.featuredSkeleton.root.isVisible = true
+                        binding.featuredError.root.isVisible = false
+                        binding.featuredRecyclerView.isVisible = false
+                        binding.featuredSection.isVisible = true
+                    }
+                    is HomeViewModel.SectionState.Success -> {
+                        Log.d(TAG, "Featured loaded: ${state.items.size}")
+                        binding.featuredSkeleton.root.isVisible = false
+                        binding.featuredError.root.isVisible = false
+                        featuredAdapter.submitList(state.items)
+
+                        if (state.items.isNotEmpty()) {
+                            binding.featuredSection.isVisible = true
+                            binding.featuredRecyclerView.isVisible = true
+                        } else {
+                            binding.featuredSection.isVisible = false
+                        }
+                    }
+                    is HomeViewModel.SectionState.Error -> {
+                        Log.e(TAG, "Error loading featured: ${state.message}")
+                        binding.featuredSkeleton.root.isVisible = false
+                        binding.featuredRecyclerView.isVisible = false
+                        binding.featuredError.root.isVisible = true
+                        binding.featuredSection.isVisible = true
+                        featuredAdapter.submitList(emptyList())
+                    }
+                }
+            }
+        }
+
         // Observe channels section
         viewLifecycleOwner.lifecycleScope.launch {
             viewModel.channelsState.collect { state ->

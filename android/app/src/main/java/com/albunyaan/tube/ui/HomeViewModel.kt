@@ -23,6 +23,10 @@ class HomeViewModel @Inject constructor(
     @Named("real") private val contentService: ContentService
 ) : AndroidViewModel(app) {
 
+    // Featured section shows mixed content types (channels, playlists, videos) from the Featured category
+    private val _featuredState = MutableStateFlow<SectionState<ContentItem>>(SectionState.Loading)
+    val featuredState: StateFlow<SectionState<ContentItem>> = _featuredState.asStateFlow()
+
     private val _channelsState = MutableStateFlow<SectionState<ContentItem.Channel>>(SectionState.Loading)
     val channelsState: StateFlow<SectionState<ContentItem.Channel>> = _channelsState.asStateFlow()
 
@@ -33,6 +37,7 @@ class HomeViewModel @Inject constructor(
     val videosState: StateFlow<SectionState<ContentItem.Video>> = _videosState.asStateFlow()
 
     // Track loading jobs to prevent race conditions on refresh
+    private var featuredJob: Job? = null
     private var channelsJob: Job? = null
     private var playlistsJob: Job? = null
     private var videosJob: Job? = null
@@ -43,14 +48,42 @@ class HomeViewModel @Inject constructor(
 
     fun loadHomeContent() {
         // Cancel any previous loading jobs to prevent race conditions
+        featuredJob?.cancel()
         channelsJob?.cancel()
         playlistsJob?.cancel()
         videosJob?.cancel()
 
         // Fetch each content type independently with device-appropriate limits
+        loadFeatured()
         loadChannels()
         loadPlaylists()
         loadVideos()
+    }
+
+    fun loadFeatured() {
+        featuredJob?.cancel()
+        featuredJob = viewModelScope.launch {
+            _featuredState.value = SectionState.Loading
+            try {
+                android.util.Log.d("HomeViewModel", "Fetching FEATURED content...")
+                val limit = DeviceConfig.getHomeDataLimit(app)
+                // Fetch all content types filtered by the Featured category
+                val response = contentService.fetchContent(
+                    type = ContentType.ALL,
+                    cursor = null,
+                    pageSize = limit,
+                    filters = FilterState(category = FEATURED_CATEGORY_ID)
+                )
+
+                // Defensive take(limit) in case backend ignores pageSize hint
+                val featured = response.data.take(limit)
+                android.util.Log.d("HomeViewModel", "Loaded ${featured.size} featured items")
+                _featuredState.value = SectionState.Success(featured)
+            } catch (e: Exception) {
+                android.util.Log.e("HomeViewModel", "Error loading featured", e)
+                _featuredState.value = SectionState.Error(e.message ?: "Unknown error")
+            }
+        }
     }
 
     fun loadChannels() {
@@ -137,4 +170,8 @@ class HomeViewModel @Inject constructor(
         data class Error(val message: String) : SectionState<Nothing>()
     }
 
+    companion object {
+        // Featured category ID - content assigned to this category appears in the Featured section
+        const val FEATURED_CATEGORY_ID = "itirf9pGpAvoBT5VSkEc"
+    }
 }
