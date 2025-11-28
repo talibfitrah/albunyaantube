@@ -66,7 +66,7 @@ object TestNetworkModule {
 class FakeContentApi : ContentApi {
 
     override suspend fun fetchContent(
-        type: String,
+        type: String?,
         cursor: String?,
         limit: Int,
         category: String?,

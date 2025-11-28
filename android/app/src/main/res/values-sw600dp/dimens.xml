@@ -63,4 +63,14 @@
     <dimen name="onboarding_padding">32dp</dimen>
     <dimen name="onboarding_button_height">60dp</dimen>
     <dimen name="onboarding_button_corner_radius">30dp</dimen>
+
+    <!-- Channel Detail Screen (Tablet) -->
+    <dimen name="channel_banner_height">220dp</dimen>
+    <dimen name="channel_avatar_size">96dp</dimen>
+    <dimen name="channel_avatar_stroke">4dp</dimen>
+    <dimen name="channel_header_overlap">48dp</dimen>
+    <dimen name="channel_header_horizontal_margin">32dp</dimen>
+
+    <!-- Channel Shorts Grid (Tablet) -->
+    <integer name="channel_shorts_span_count">4</integer>
 </resources>

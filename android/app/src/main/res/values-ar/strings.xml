@@ -23,7 +23,6 @@
     <string name="channel_tab_live">البث المباشر</string>
     <string name="channel_tab_shorts">المقاطع القصيرة</string>
     <string name="channel_tab_playlists">قوائم التشغيل</string>
-    <string name="channel_tab_posts">المنشورات</string>
     <string name="channel_detail_placeholder">تبويب %1$s لـ %2$s قريباً.</string>
     <string name="playlist_detail_title_placeholder">%1$s</string>
     <string name="playlist_detail_category">التصنيف: %1$s</string>

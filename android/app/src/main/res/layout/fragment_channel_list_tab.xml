@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Base list tab layout for Videos, Live, Playlists, Posts tabs -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!-- Main content with swipe to refresh -->
+    <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+        android:id="@+id/swipeRefresh"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/tabRecycler"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:paddingTop="@dimen/spacing_sm"
+            android:paddingBottom="@dimen/spacing_sm"
+            tools:listitem="@layout/item_video_list" />
+
+    </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+
+    <!-- Skeleton loading state -->
+    <LinearLayout
+        android:id="@+id/tabSkeletonContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:visibility="gone"
+        tools:visibility="visible">
+
+        <include layout="@layout/skeleton_content_item" />
+        <include layout="@layout/skeleton_content_item" />
+        <include layout="@layout/skeleton_content_item" />
+        <include layout="@layout/skeleton_content_item" />
+        <include layout="@layout/skeleton_content_item" />
+        <include layout="@layout/skeleton_content_item" />
+
+    </LinearLayout>
+
+    <!-- Empty state overlay -->
+    <include
+        android:id="@+id/tabEmptyState"
+        layout="@layout/empty_state"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
+    <!-- Error state overlay -->
+    <include
+        android:id="@+id/tabErrorState"
+        layout="@layout/error_state"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
+</FrameLayout>

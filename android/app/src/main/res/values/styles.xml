@@ -105,4 +105,44 @@
     <style name="Widget.Albunyaan.MediaCard.Metadata">
         <item name="android:textAppearance">@style/TextAppearance.Home.ItemMeta</item>
     </style>
+
+    <!-- Circle Image Shape Appearance (for ShapeableImageView avatars) -->
+    <style name="ShapeAppearance.Albunyaan.CircleImageView" parent="ShapeAppearance.MaterialComponents.SmallComponent">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">50%</item>
+    </style>
+
+    <!-- Channel Detail Typography -->
+    <style name="TextAppearance.Channel.Title" parent="TextAppearance.Material3.HeadlineSmall">
+        <item name="android:textSize">@dimen/text_headline</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">?attr/colorOnSurface</item>
+    </style>
+
+    <style name="TextAppearance.Channel.Subtitle" parent="TextAppearance.Material3.BodyMedium">
+        <item name="android:textSize">@dimen/text_body</item>
+        <item name="android:textColor">@color/primary_green</item>
+    </style>
+
+    <style name="TextAppearance.Channel.Summary" parent="TextAppearance.Material3.BodySmall">
+        <item name="android:textSize">@dimen/text_body</item>
+        <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
+    </style>
+
+    <!-- Live Badge -->
+    <style name="Widget.Albunyaan.LiveBadge" parent="">
+        <item name="android:textSize">10sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@android:color/white</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:paddingStart">6dp</item>
+        <item name="android:paddingEnd">6dp</item>
+        <item name="android:paddingTop">2dp</item>
+        <item name="android:paddingBottom">2dp</item>
+        <item name="android:background">@drawable/bg_live_badge</item>
+    </style>
+
+    <style name="Widget.Albunyaan.UpcomingBadge" parent="Widget.Albunyaan.LiveBadge">
+        <item name="android:background">@drawable/bg_upcoming_badge</item>
+    </style>
 </resources>

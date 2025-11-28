@@ -68,4 +68,20 @@
     <dimen name="onboarding_padding">40dp</dimen>
     <dimen name="onboarding_button_height">64dp</dimen>
     <dimen name="onboarding_button_corner_radius">32dp</dimen>
+
+    <!-- Channel Detail Screen (Large Tablet / TV) -->
+    <dimen name="channel_banner_height">280dp</dimen>
+    <dimen name="channel_avatar_size">112dp</dimen>
+    <dimen name="channel_avatar_stroke">4dp</dimen>
+    <dimen name="channel_header_overlap">56dp</dimen>
+    <dimen name="channel_header_horizontal_margin">48dp</dimen>
+
+    <!-- Typography sizes (larger for TV viewing distance) -->
+    <dimen name="text_headline">24sp</dimen>
+    <dimen name="text_subtitle">18sp</dimen>
+    <dimen name="text_body">16sp</dimen>
+    <dimen name="text_caption">14sp</dimen>
+
+    <!-- Channel Shorts Grid (TV) -->
+    <integer name="channel_shorts_span_count">5</integer>
 </resources>

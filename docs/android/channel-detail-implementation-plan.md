@@ -1,6 +1,6 @@
 # Channel Detail Screen – NewPipe Implementation Plan
 
-> Albunyaan Tube Android app – Channel Detail (Videos / Live / Shorts / Playlists / Posts / About)  
+> Albunyaan Tube Android app – Channel Detail (Videos / Live / Shorts / Playlists / About)
 > Scope: Native Android, NewPipeExtractor only (no backend calls for this screen)
 
 ---
@@ -11,13 +11,12 @@
 
 - **Host fragment**: `ChannelDetailFragment`
   - Owns toolbar, shared channel header, `TabLayout` + `ViewPager2`.
-  - Hosts six tab fragments via `ChannelDetailPagerAdapter`.
+  - Hosts five tab fragments via `ChannelDetailPagerAdapter`.
 - **Tabs (fragments)**:
   - `ChannelVideosTabFragment`
   - `ChannelLiveTabFragment`
   - `ChannelShortsTabFragment`
   - `ChannelPlaylistsTabFragment`
-  - `ChannelPostsTabFragment`
   - `ChannelAboutTabFragment`
   - All use the same `ChannelDetailViewModel` scoped to `ChannelDetailFragment`.
 - **Data source**:
@@ -55,9 +54,6 @@ Create channel‑specific domain models (Kotlin data classes) that map the raw N
 - `ChannelPlaylist`
   - Mirrors `ContentItem.Playlist`: id, title, item count, category, thumbnail.
 
-- `ChannelPost`
-  - `id`, `text`, `timestamp`, `imageUrl: String?`, `likeCount: Long?`, `commentCount: Long?`.
-
 - `ChannelPage<T>`
   - `items: List<T>`
   - `nextCursor: String?` (cursor/token/url returned by NewPipe)
@@ -75,7 +71,6 @@ interface ChannelDetailRepository {
     suspend fun getLiveStreams(channelId: String, cursor: String?): ChannelPage<ChannelLiveStream>
     suspend fun getShorts(channelId: String, cursor: String?): ChannelPage<ChannelShort>
     suspend fun getPlaylists(channelId: String, cursor: String?): ChannelPage<ChannelPlaylist>
-    suspend fun getPosts(channelId: String, cursor: String?): ChannelPage<ChannelPost>
 
     suspend fun getAbout(channelId: String, forceRefresh: Boolean = false): ChannelHeader
 }
@@ -84,9 +79,9 @@ interface ChannelDetailRepository {
 Implementation details:
 
 - Backed by `NewPipeExtractorClient`.
-- Uses NewPipe’s `ChannelInfo` + related list API to fetch:
+- Uses NewPipe's `ChannelInfo` + related list API to fetch:
   - Full channel metadata (header + about).
-  - Tab‑specific lists (videos, shorts, live, playlists, posts).
+  - Tab‑specific lists (videos, shorts, live, playlists).
 - Optional in‑memory per‑channel cache:
   - Cache header + first page per tab keyed by `channelId`.
   - TTL ~30 minutes (aligned with `STREAM_CACHE_TTL_MILLIS`).
@@ -140,7 +135,6 @@ val videosState: StateFlow<PaginatedState<ChannelVideo>>
 val liveState: StateFlow<PaginatedState<ChannelLiveStream>>
 val shortsState: StateFlow<PaginatedState<ChannelShort>>
 val playlistsState: StateFlow<PaginatedState<ChannelPlaylist>>
-val postsState: StateFlow<PaginatedState<ChannelPost>>
 val aboutState: StateFlow<HeaderState> // reuse header data for About tab
 ```
 
@@ -233,8 +227,8 @@ private data class TabPaginationController(
   - `TabLayout` `@id/tabLayout`
     - `app:tabMode="scrollable"`.
     - `app:tabSelectedTextColor="@color/primary_green"`.
-    - Six tabs with titles from string resources:
-      - Videos, Live, Shorts, Playlists, Posts, About.
+    - Five tabs with titles from string resources:
+      - Videos, Live, Shorts, Playlists, About.
   - `ViewPager2` `@id/viewPager`
     - `layout_height="0dp"` + `layout_weight="1"` to fill remaining space.
 
@@ -251,9 +245,29 @@ Create a separate layout file for tablets with **identical IDs**:
 - Increase paddings using `@dimen/spacing_xl`.
 - Ensure `textAlignment="viewStart"` for all text views and use `start` / `end` constraints only (no `left`/`right`), to fully support RTL.
 
-### 2.3 Tab Container Layouts
+### 2.3 Channel Header (Large Tablet / TV – `layout-sw720dp/fragment_channel_detail.xml`)
 
-#### Base list tab layout (Videos, Live, Playlists, Posts)
+Support the **third device tier** from the multi‑device matrix (large tablet / TV) with a dedicated layout, again using the **same view IDs**:
+
+- File: `layout-sw720dp/fragment_channel_detail.xml`.
+- Banner:
+  - Still 16:9 full width, but consider slightly increased height on TV for impact (via a dedicated dimen, e.g., `channel_banner_height_tv`).
+- Header content:
+  - Use a spacious horizontal `ConstraintLayout` or `GridLayout` beneath the banner:
+    - Avatar aligned to the **center‑start** (start in LTR, end in RTL).
+    - Channel name + subscribers stacked next to avatar.
+    - Summary + primary “General” button can form a second column, aligned toward the center to avoid extreme edges on large screens.
+  - Increase horizontal margins (e.g., `@dimen/spacing_xl` or a new `channel_detail_horizontal_margin_tv`) so content doesn’t hug edges on TV.
+- Tabs + content:
+  - `TabLayout` remains full‑width across the top of the content area; tab labels may use slightly larger text via a style override for better TV readability.
+  - `ViewPager2` fills remaining space; per‑tab fragments can choose denser layouts (e.g., more columns in Shorts grid) while keeping IDs consistent.
+- Accessibility & focus:
+  - Ensure all actionable elements (tabs, “General” button, list items) are focusable for D‑pad/remote navigation.
+  - Use existing design tokens and minimum touch target sizes as minimum focus target sizes.
+
+### 2.4 Tab Container Layouts
+
+#### Base list tab layout (Videos, Live, Playlists)
 
 Replace the placeholder `fragment_channel_detail_tab.xml` with a reusable list container:
 
@@ -268,7 +282,7 @@ Replace the placeholder `fragment_channel_detail_tab.xml` with a reusable list c
     - `<include layout="@layout/empty_state" android:id="@+id/tabEmptyState" android:visibility="gone" />`
     - `<include layout="@layout/error_state" android:id="@+id/tabErrorState" android:visibility="gone" />`
 
-This layout is shared by `ChannelVideosTabFragment`, `ChannelLiveTabFragment`, `ChannelPlaylistsTabFragment`, `ChannelPostsTabFragment`.
+This layout is shared by `ChannelVideosTabFragment`, `ChannelLiveTabFragment`, `ChannelPlaylistsTabFragment`.
 
 #### Shorts tab layout
 
@@ -306,7 +320,7 @@ Create `fragment_channel_about_tab.xml`:
 - Skeleton:
   - A vertical stack of shimmer lines at the top while `headerState` for About is still `Loading`.
 
-### 2.4 Item Layout Reuse & New Items
+### 2.5 Item Layout Reuse & New Items
 
 - **Videos tab**:
   - Reuse `res/layout/item_video_list.xml`.
@@ -326,22 +340,10 @@ Create `fragment_channel_about_tab.xml`:
     - Root `FrameLayout` with `ConstraintLayout` inside.
     - Thumbnail 9:16, full height of card.
     - Title overlay at top (2 lines).
-    - Views label at bottom (e.g., “13K views”).
+    - Views label at bottom (e.g., "13K views").
   - Skeleton: card with black rectangle shimmer and short text shimmer overlays.
 
-- **Posts tab**:
-  - New layout `item_channel_post.xml` inspired by YouTube Community posts:
-    - Header row:
-      - Avatar (small circle), channel name, `timeAgo`.
-    - Body:
-      - Multi-line text, `maxLines` collapsed with “...Read more” styling.
-    - Media (optional):
-      - Large image (16:9) beneath text.
-    - Footer:
-      - Row of icons (like, dislike, comment, share) with counts.
-  - Skeleton: simple vertical placeholders (avatar circle + 2–3 lines + full‑width image stub).
-
-### 2.5 RTL & Localization
+### 2.6 RTL & Localization
 
 - Use `android:textAlignment="viewStart"` on all text views instead of `center`/`left`.
 - Use `layout_marginStart` / `layout_marginEnd` and `app:layout_constraintStart_toStartOf`, etc., never `left`/`right`.
@@ -375,7 +377,7 @@ Create `fragment_channel_about_tab.xml`:
 
 ### 3.2 Tab State
 
-Per list tab (Videos, Live, Shorts, Playlists, Posts):
+Per list tab (Videos, Live, Shorts, Playlists):
 
 - `Idle`:
   - Tab not yet requested (e.g., user hasn’t visited).
@@ -494,7 +496,7 @@ Use JUnit 5 + Coroutines test (`runTest`):
 - Rate limiting:
   - Multiple rapid `loadNextPage` calls (within debounce window) yield **one** repository invocation.
 - Other tabs:
-  - Mirror tests for Live, Shorts, Playlists, Posts using dedicated fake repository responses.
+  - Mirror tests for Live, Shorts, Playlists using dedicated fake repository responses.
 
 ### 5.2 UI Tests (Espresso / Robolectric)
 
@@ -506,7 +508,7 @@ Use JUnit 5 + Coroutines test (`runTest`):
     - When `Success`, check banner, avatar, title, subscribers, summary show correctly.
     - When `Error`, verify error text is visible and skeleton is hidden.
   - Tabs:
-    - Verify tab titles order: Videos, Live, Shorts, Playlists, Posts, About.
+    - Verify tab titles order: Videos, Live, Shorts, Playlists, About.
     - Videos tab:
       - Shows `item_video_list` rows.
       - Rendering of title, meta, thumbnail.
@@ -516,9 +518,6 @@ Use JUnit 5 + Coroutines test (`runTest`):
     - Shorts tab:
       - RecyclerView uses grid with 2 columns.
       - Items use `item_channel_short` layout.
-    - Posts tab:
-      - Post layout matches header + text + image design.
-      - Long text truncated with “Read more”.
     - About tab:
       - Description, links, and “More info” rows rendered correctly.
 
@@ -530,6 +529,19 @@ Use JUnit 5 + Coroutines test (`runTest`):
     - Tab layout spans full width.
   - Shorts grid:
     - Column count > 2 (e.g., 4–5).
+
+**Large tablet / TV (`sw720dp`):**
+
+- Run tests with `sw720dp` qualifier (large tablet or TV target):
+  - Header:
+    - Banner height uses TV/large‑screen dimen.
+    - Avatar, title, subscribers, summary, and “General” button positioned according to the large‑screen layout (centered content, generous side margins).
+  - Tabs:
+    - Tab labels remain readable at TV distance (check text size).
+    - Focus navigation with D‑pad/keyboard moves predictably between tabs and list content.
+  - Content:
+    - Shorts grid uses higher column count (e.g., 5–6 on wide TV).
+    - Videos/Playlists lists remain legible and not overly dense.
 
 **RTL:**
 
@@ -545,7 +557,7 @@ Use JUnit 5 + Coroutines test (`runTest`):
   - For a known public channel ID:
     - `getChannelHeader` returns non‑null name + avatar + subscriber count.
     - `getVideos` returns first page with items and (if popular) a non‑null `nextCursor`.
-    - `getPlaylists`, `getShorts`, `getLiveStreams`, `getPosts` either return items or cleanly return empty lists when not supported.
+    - `getPlaylists`, `getShorts`, `getLiveStreams` either return items or cleanly return empty lists when not supported.
   - Simulate network/Extractor errors:
     - Ensure exceptions are mapped to `ErrorInitial` or `ErrorAppend` in the ViewModel.
 
@@ -558,8 +570,8 @@ Use JUnit 5 + Coroutines test (`runTest`):
 - Channels with:
   - No videos → Videos tab shows empty state.
   - No playlists → Playlists tab empty state.
-  - No shorts/posts → Respective tabs show empty states instead of errors.
-  - No description → About tab hides the Description section and shows a short “No description available” message.
+  - No shorts → Shorts tab shows empty state.
+  - No description → About tab hides the Description section and shows a short "No description available" message.
 
 ### 6.2 Extractor & Network Issues
 
@@ -595,28 +607,89 @@ Use JUnit 5 + Coroutines test (`runTest`):
 
 1. **Data layer**
    - Add `ChannelDetailRepository` and implementation backed by `NewPipeExtractorClient`.
-   - Implement channel feed extraction (videos, live, shorts, playlists, posts, about).
+   - Implement channel feed extraction (videos, live, shorts, playlists, about).
 2. **ViewModel**
    - Refactor `ChannelDetailViewModel` to use repository and new state models.
    - Add pagination controllers and rate limiting.
 3. **Fragments**
-   - Replace generic `ChannelDetailTabFragment` with six concrete tab fragments.
+   - Replace generic `ChannelDetailTabFragment` with five concrete tab fragments.
    - Wire each to the shared ViewModel and base tab layouts.
 4. **Layouts**
-   - Redesign `fragment_channel_detail.xml` + add `layout-sw600dp` variant.
+   - Redesign `fragment_channel_detail.xml` + add `layout-sw600dp` (tablet) and `layout-sw720dp` (large tablet / TV) variants, keeping all view IDs identical.
    - Replace `fragment_channel_detail_tab.xml` with reusable list tab layout.
    - Add `fragment_channel_shorts_tab.xml` and `fragment_channel_about_tab.xml`.
    - Add skeleton header + tab skeletons reusing `skeleton_content_item` and `home_section_skeleton` patterns.
 5. **Adapters & UI**
    - Reuse `item_video_list.xml` and `item_playlist.xml` with suitable adapters.
-   - Implement new adapters for Live, Shorts, Posts, and About.
+   - Implement new adapters for Live, Shorts, and About.
 6. **Navigation & State**
    - Confirm all navigation paths into `ChannelDetailFragment` pass the required args.
    - Persist selected tab + scroll positions across rotations.
 7. **Testing**
    - Add ViewModel unit tests for header + tab states, pagination, and rate limiting.
-   - Add UI tests for phone + tablet + RTL, covering skeletons, empty, and error states.
+   - Add UI tests for phone + tablet + TV + RTL, covering skeletons, empty, and error states.
    - Add integration tests (or strong fakes) for the NewPipe repository.
 
 This document should be treated as the authoritative implementation plan for the NewPipe‑backed Channel Detail screen. Any deviations during implementation should be reflected by updating this file.
 
+---
+
+## 8. Implementation Notes & Known Limitations
+
+### 8.1 Posts Tab (Community Posts) - REMOVED
+
+The Posts tab has been **fully removed** from the implementation because NewPipeExtractor does not support YouTube Community Posts extraction. The `ChannelTabs` class only supports:
+- VIDEOS, TRACKS, SHORTS, LIVESTREAMS, CHANNELS, PLAYLISTS, ALBUMS, LIKES
+
+There is no POSTS/COMMUNITY constant. Rather than showing an empty tab, the Posts tab was removed entirely to avoid user confusion.
+
+Reference: https://teamnewpipe.github.io/NewPipeExtractor/javadoc/org/schabi/newpipe/extractor/channel/tabs/ChannelTabs.html
+
+**Removed files:**
+- `ChannelPostsTabFragment.kt`
+- `ChannelPostsAdapter.kt`
+- `item_channel_post.xml`
+- `ChannelPost` data class
+- Repository `getPosts()` method
+- ViewModel `postsState` StateFlow
+
+**Tabs now supported:** Videos, Live, Shorts, Playlists, About (5 tabs total)
+
+### 8.2 About Tab Data Availability
+
+NewPipe's `ChannelInfo` provides:
+- ✅ Name, description, avatars, banners
+- ✅ Subscriber count
+- ✅ Verification status
+- ✅ Donation links (external URLs like Patreon, PayPal)
+- ✅ Tags
+- ❌ Location (not available from YouTube's public channel page)
+- ❌ Join date (not exposed by the channel extractor)
+- ❌ Total views (YouTube removed this from public channel pages)
+
+The About tab shows available data and hides rows for unavailable fields.
+
+### 8.3 NewPipe Initialization
+
+The `NewPipeChannelDetailRepository` injects `NewPipeExtractorClient` to ensure NewPipe is properly initialized with:
+- Shared OkHttpDownloader instance
+- US localization and content country
+- Metrics reporting integration
+
+This prevents issues when the repository is accessed before the player/stream resolver.
+
+### 8.4 Double Initial Load Prevention
+
+The Videos tab is pre-loaded by `ChannelDetailViewModel.loadHeader()`. The `BaseChannelListTabFragment` now loads tabs in `onResume()` only if state is `Idle`, preventing duplicate requests for the Videos tab while ensuring other tabs load when first viewed.
+
+### 8.5 Unit Test Coverage (Added)
+
+Unit tests for `ChannelDetailViewModel` cover:
+- Header loading (success, error, retry)
+- Videos tab pagination and rate limiting
+- Empty state handling for all tabs
+- Error handling (ErrorInitial, ErrorAppend)
+- Scroll-triggered pagination
+- Tab selection state
+
+Located at: `android/app/src/test/java/com/albunyaan/tube/ui/detail/ChannelDetailViewModelTest.kt`

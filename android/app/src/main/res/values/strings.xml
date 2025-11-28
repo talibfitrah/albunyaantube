@@ -24,7 +24,6 @@
     <string name="channel_tab_live">Live</string>
     <string name="channel_tab_shorts">Shorts</string>
     <string name="channel_tab_playlists">Playlists</string>
-    <string name="channel_tab_posts">Posts</string>
     <string name="channel_tab_about">About</string>
     <string name="channel_detail_placeholder">%1$s tab for %2$s coming soon.</string>
     <string name="playlist_detail_title_placeholder">%1$s</string>
@@ -180,6 +179,25 @@
     <string name="channel_subscribers_unknown">–</string>
     <string name="playlist_videos_title">Videos in this playlist</string>
 
+    <!-- Channel About Tab -->
+    <string name="channel_about_description">Description</string>
+    <string name="channel_about_no_description">No description available</string>
+    <string name="channel_about_links">Links</string>
+    <string name="channel_about_more_info">More info</string>
+    <string name="channel_verified">Verified</string>
+    <string name="channel_joined_date">Joined %s</string>
+    <string name="channel_total_views">%s total views</string>
+
+    <!-- Channel Tab Empty States -->
+    <string name="channel_videos_empty">This channel has no videos yet</string>
+    <string name="channel_live_empty">No live or upcoming streams</string>
+    <string name="channel_shorts_empty">No Shorts available</string>
+    <string name="channel_playlists_empty">No playlists available</string>
+
+    <!-- Live Badge -->
+    <string name="live_badge">LIVE</string>
+    <string name="upcoming_badge">UPCOMING</string>
+
     <!-- Additional Accessibility Descriptions -->
     <string name="cd_video_thumbnail">Video thumbnail</string>
     <string name="cd_channel_avatar">Channel avatar</string>
@@ -218,4 +236,10 @@
         <item quantity="one">%d video</item>
         <item quantity="other">%d videos</item>
     </plurals>
+
+    <!-- View Count Formatting (Shorts) -->
+    <string name="views_count_billions">%.1fB views</string>
+    <string name="views_count_millions">%.1fM views</string>
+    <string name="views_count_thousands">%.1fK views</string>
+    <string name="views_count">%d views</string>
 </resources>

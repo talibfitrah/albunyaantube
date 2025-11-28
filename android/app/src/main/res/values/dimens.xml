@@ -113,4 +113,21 @@
     <integer name="home_cards_visible_channels">3</integer>
     <integer name="home_cards_visible_playlists">2</integer>
     <integer name="home_cards_visible_videos">2</integer>
+
+    <!-- Channel Detail Screen -->
+    <dimen name="channel_banner_height">180dp</dimen>
+    <dimen name="channel_avatar_size">80dp</dimen>
+    <dimen name="channel_avatar_stroke">3dp</dimen>
+    <dimen name="channel_header_overlap">32dp</dimen>
+
+    <!-- Typography sizes -->
+    <dimen name="text_headline">20sp</dimen>
+    <dimen name="text_subtitle">16sp</dimen>
+    <dimen name="text_body">14sp</dimen>
+    <dimen name="text_caption">12sp</dimen>
+
+    <!-- Channel Shorts Grid -->
+    <integer name="channel_shorts_span_count">2</integer>
+    <integer name="channel_short_thumbnail_ratio_width">9</integer>
+    <integer name="channel_short_thumbnail_ratio_height">16</integer>
 </resources>

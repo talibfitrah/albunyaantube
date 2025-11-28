@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Item layout for Shorts in the Channel Shorts tab (9:16 vertical thumbnail) -->
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="@dimen/spacing_xs"
+    app:cardCornerRadius="@dimen/corner_radius_small"
+    app:cardElevation="2dp"
+    android:clickable="true"
+    android:focusable="true"
+    android:foreground="?attr/selectableItemBackground">
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <!-- 9:16 Thumbnail -->
+        <ImageView
+            android:id="@+id/shortThumbnail"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:scaleType="centerCrop"
+            android:background="@drawable/thumbnail_placeholder"
+            android:contentDescription="@null"
+            android:importantForAccessibility="no"
+            app:layout_constraintDimensionRatio="9:16"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            tools:src="@drawable/thumbnail_placeholder" />
+
+        <!-- Gradient overlay at bottom for text legibility -->
+        <View
+            android:id="@+id/gradientOverlay"
+            android:layout_width="0dp"
+            android:layout_height="80dp"
+            android:background="@drawable/banner_gradient_overlay"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintBottom_toBottomOf="@id/shortThumbnail" />
+
+        <!-- Title overlay at bottom -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="@dimen/spacing_sm"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintBottom_toBottomOf="@id/shortThumbnail">
+
+            <TextView
+                android:id="@+id/shortTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:textColor="@android:color/white"
+                android:maxLines="2"
+                android:ellipsize="end"
+                android:textAlignment="viewStart"
+                android:shadowColor="#80000000"
+                android:shadowRadius="4"
+                tools:text="Short video title here" />
+
+            <TextView
+                android:id="@+id/shortViews"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:textSize="11sp"
+                android:textColor="#CCFFFFFF"
+                android:maxLines="1"
+                android:textAlignment="viewStart"
+                tools:text="1.2M views" />
+
+        </LinearLayout>
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+</com.google.android.material.card.MaterialCardView>

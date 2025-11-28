@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Phone layout for Channel Detail screen -->
+<!-- Large Tablet / TV layout for Channel Detail screen (sw720dp) -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
@@ -15,6 +15,7 @@
         android:layout_height="?attr/actionBarSize"
         android:background="?attr/colorSurface"
         android:elevation="4dp"
+        android:focusable="true"
         app:navigationIcon="?attr/homeAsUpIndicator"
         app:title="@string/app_name"
         app:titleTextColor="?attr/colorOnSurface" />
@@ -38,14 +39,15 @@
                 android:id="@+id/exclusionBanner"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:padding="12dp"
+                android:padding="16dp"
                 android:background="@color/accent_red"
                 android:textColor="@android:color/white"
+                android:textSize="@dimen/text_body"
                 android:text="@string/detail_excluded_banner"
                 android:textAlignment="viewStart"
                 android:visibility="gone" />
 
-            <!-- Channel Banner Image -->
+            <!-- Channel Banner Image (larger for TV) -->
             <FrameLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content">
@@ -68,17 +70,17 @@
 
             </FrameLayout>
 
-            <!-- Channel Info Header (overlaps banner bottom) -->
+            <!-- Channel Info Header (TV: centered content with generous margins) -->
             <androidx.constraintlayout.widget.ConstraintLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="-32dp"
-                android:paddingStart="@dimen/spacing_md"
-                android:paddingEnd="@dimen/spacing_md"
-                android:paddingBottom="@dimen/spacing_md"
+                android:layout_marginTop="-56dp"
+                android:paddingStart="@dimen/channel_header_horizontal_margin"
+                android:paddingEnd="@dimen/channel_header_horizontal_margin"
+                android:paddingBottom="@dimen/spacing_xl"
                 android:clipToPadding="false">
 
-                <!-- Channel Avatar -->
+                <!-- Channel Avatar (larger for TV viewing distance) -->
                 <com.google.android.material.imageview.ShapeableImageView
                     android:id="@+id/channelAvatar"
                     android:layout_width="@dimen/channel_avatar_size"
@@ -86,27 +88,28 @@
                     android:scaleType="centerCrop"
                     android:background="@color/skeleton_background"
                     android:contentDescription="@string/cd_channel_avatar"
+                    android:focusable="true"
                     app:shapeAppearanceOverlay="@style/ShapeAppearance.Albunyaan.CircleImageView"
                     app:layout_constraintStart_toStartOf="parent"
                     app:layout_constraintTop_toTopOf="parent"
                     app:strokeColor="@android:color/white"
-                    app:strokeWidth="3dp"
+                    app:strokeWidth="@dimen/channel_avatar_stroke"
                     tools:src="@drawable/thumbnail_placeholder" />
 
-                <!-- Channel Name and Verified Badge Container -->
+                <!-- Channel Name and Verified Badge Container (TV) -->
                 <LinearLayout
                     android:id="@+id/channelNameContainer"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="@dimen/spacing_md"
-                    android:layout_marginTop="40dp"
+                    android:layout_marginStart="@dimen/spacing_xl"
+                    android:layout_marginTop="64dp"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     app:layout_constraintStart_toEndOf="@id/channelAvatar"
                     app:layout_constraintEnd_toEndOf="parent"
                     app:layout_constraintTop_toTopOf="@id/channelAvatar">
 
-                    <!-- Channel Name -->
+                    <!-- Channel Name (TV: larger text for viewing distance) -->
                     <TextView
                         android:id="@+id/channelNameText"
                         android:layout_width="0dp"
@@ -120,12 +123,12 @@
                         android:ellipsize="end"
                         tools:text="Mishary Rashid Alafasy" />
 
-                    <!-- Verified Badge -->
+                    <!-- Verified Badge (larger for TV) -->
                     <ImageView
                         android:id="@+id/verifiedBadge"
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:layout_marginStart="@dimen/spacing_xs"
+                        android:layout_width="28dp"
+                        android:layout_height="28dp"
+                        android:layout_marginStart="@dimen/spacing_sm"
                         android:src="@drawable/ic_verified"
                         android:contentDescription="@string/channel_verified"
                         android:visibility="gone"
@@ -134,13 +137,13 @@
 
                 </LinearLayout>
 
-                <!-- Subscriber Count -->
+                <!-- Subscriber Count (larger text) -->
                 <TextView
                     android:id="@+id/subscriberCountText"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/spacing_xs"
-                    android:textSize="14sp"
+                    android:layout_marginTop="@dimen/spacing_sm"
+                    android:textSize="@dimen/text_subtitle"
                     android:textColor="@color/primary_green"
                     android:textAlignment="viewStart"
                     app:layout_constraintStart_toStartOf="@id/channelNameContainer"
@@ -148,38 +151,40 @@
                     app:layout_constraintTop_toBottomOf="@id/channelNameContainer"
                     tools:text="11.7M subscribers" />
 
-                <!-- Channel Summary / Short Description -->
+                <!-- Channel Summary / Short Description (3 lines for more context) -->
                 <TextView
                     android:id="@+id/channelSummaryText"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/spacing_sm"
-                    android:textSize="14sp"
+                    android:layout_marginTop="@dimen/spacing_md"
+                    android:textSize="@dimen/text_body"
                     android:textColor="?attr/colorOnSurfaceVariant"
                     android:textAlignment="viewStart"
-                    android:maxLines="2"
+                    android:maxLines="3"
                     android:ellipsize="end"
                     android:visibility="gone"
                     app:layout_constraintStart_toStartOf="@id/channelNameContainer"
                     app:layout_constraintEnd_toEndOf="parent"
                     app:layout_constraintTop_toBottomOf="@id/subscriberCountText"
-                    tools:text="Quran reciter from Kuwait"
+                    tools:text="Quran reciter from Kuwait, known for beautiful recitations of the Holy Quran..."
                     tools:visibility="visible" />
 
             </androidx.constraintlayout.widget.ConstraintLayout>
 
-            <!-- Tabs -->
+            <!-- Tabs (larger tab padding for TV D-pad navigation) -->
             <com.google.android.material.tabs.TabLayout
                 android:id="@+id/tabLayout"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:minHeight="@dimen/touch_target_button"
                 android:background="?attr/colorSurface"
                 app:tabMode="fixed"
                 app:tabGravity="fill"
                 app:tabTextColor="?attr/colorOnSurfaceVariant"
                 app:tabSelectedTextColor="@color/primary_green"
                 app:tabIndicatorColor="@color/primary_green"
-                app:tabIndicatorFullWidth="false" />
+                app:tabIndicatorFullWidth="false"
+                app:tabMinWidth="@dimen/touch_target_min" />
 
             <!-- Tab Content (ViewPager) -->
             <androidx.viewpager2.widget.ViewPager2
@@ -210,10 +215,10 @@
             <androidx.constraintlayout.widget.ConstraintLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="-32dp"
-                android:paddingStart="@dimen/spacing_md"
-                android:paddingEnd="@dimen/spacing_md"
-                android:paddingBottom="@dimen/spacing_md">
+                android:layout_marginTop="-56dp"
+                android:paddingStart="@dimen/channel_header_horizontal_margin"
+                android:paddingEnd="@dimen/channel_header_horizontal_margin"
+                android:paddingBottom="@dimen/spacing_xl">
 
                 <!-- Avatar skeleton (circle) -->
                 <View
@@ -228,21 +233,21 @@
                 <View
                     android:id="@+id/skeletonName"
                     android:layout_width="0dp"
-                    android:layout_height="20dp"
-                    android:layout_marginStart="@dimen/spacing_md"
-                    android:layout_marginTop="40dp"
+                    android:layout_height="28dp"
+                    android:layout_marginStart="@dimen/spacing_xl"
+                    android:layout_marginTop="64dp"
                     android:background="@drawable/skeleton_shimmer"
                     app:layout_constraintStart_toEndOf="@id/skeletonAvatar"
                     app:layout_constraintEnd_toEndOf="parent"
                     app:layout_constraintTop_toTopOf="@id/skeletonAvatar"
-                    app:layout_constraintWidth_percent="0.7" />
+                    app:layout_constraintWidth_percent="0.4" />
 
                 <!-- Subscriber count skeleton -->
                 <View
                     android:id="@+id/skeletonSubscribers"
-                    android:layout_width="120dp"
-                    android:layout_height="14dp"
-                    android:layout_marginTop="@dimen/spacing_sm"
+                    android:layout_width="180dp"
+                    android:layout_height="20dp"
+                    android:layout_marginTop="@dimen/spacing_md"
                     android:background="@drawable/skeleton_shimmer"
                     app:layout_constraintStart_toStartOf="@id/skeletonName"
                     app:layout_constraintTop_toBottomOf="@id/skeletonName" />
@@ -251,46 +256,58 @@
                 <View
                     android:id="@+id/skeletonSummary"
                     android:layout_width="0dp"
-                    android:layout_height="14dp"
-                    android:layout_marginTop="@dimen/spacing_sm"
+                    android:layout_height="20dp"
+                    android:layout_marginTop="@dimen/spacing_md"
                     android:background="@drawable/skeleton_shimmer"
                     app:layout_constraintStart_toStartOf="@id/skeletonName"
                     app:layout_constraintEnd_toEndOf="parent"
                     app:layout_constraintTop_toBottomOf="@id/skeletonSubscribers"
-                    app:layout_constraintWidth_percent="0.5" />
+                    app:layout_constraintWidth_percent="0.35" />
 
             </androidx.constraintlayout.widget.ConstraintLayout>
 
-            <!-- Tab skeleton -->
+            <!-- Tab skeleton (larger for TV) -->
             <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="48dp"
+                android:layout_height="@dimen/touch_target_button"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:paddingStart="@dimen/spacing_md"
-                android:paddingEnd="@dimen/spacing_md">
+                android:paddingStart="@dimen/spacing_xl"
+                android:paddingEnd="@dimen/spacing_xl">
 
                 <View
-                    android:layout_width="60dp"
-                    android:layout_height="16dp"
-                    android:background="@drawable/skeleton_shimmer" />
-
-                <View
-                    android:layout_width="50dp"
-                    android:layout_height="16dp"
-                    android:layout_marginStart="@dimen/spacing_lg"
-                    android:background="@drawable/skeleton_shimmer" />
-
-                <View
-                    android:layout_width="55dp"
-                    android:layout_height="16dp"
-                    android:layout_marginStart="@dimen/spacing_lg"
+                    android:layout_width="80dp"
+                    android:layout_height="20dp"
                     android:background="@drawable/skeleton_shimmer" />
 
                 <View
                     android:layout_width="70dp"
-                    android:layout_height="16dp"
-                    android:layout_marginStart="@dimen/spacing_lg"
+                    android:layout_height="20dp"
+                    android:layout_marginStart="@dimen/spacing_xl"
+                    android:background="@drawable/skeleton_shimmer" />
+
+                <View
+                    android:layout_width="75dp"
+                    android:layout_height="20dp"
+                    android:layout_marginStart="@dimen/spacing_xl"
+                    android:background="@drawable/skeleton_shimmer" />
+
+                <View
+                    android:layout_width="90dp"
+                    android:layout_height="20dp"
+                    android:layout_marginStart="@dimen/spacing_xl"
+                    android:background="@drawable/skeleton_shimmer" />
+
+                <View
+                    android:layout_width="70dp"
+                    android:layout_height="20dp"
+                    android:layout_marginStart="@dimen/spacing_xl"
+                    android:background="@drawable/skeleton_shimmer" />
+
+                <View
+                    android:layout_width="70dp"
+                    android:layout_height="20dp"
+                    android:layout_marginStart="@dimen/spacing_xl"
                     android:background="@drawable/skeleton_shimmer" />
 
             </LinearLayout>

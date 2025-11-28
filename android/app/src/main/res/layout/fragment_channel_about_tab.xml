@@ -1,0 +1,341 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- About tab layout with channel description, links, and more info -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!-- Main scrollable content -->
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/aboutScrollView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:id="@+id/aboutContent"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="@dimen/spacing_md">
+
+            <!-- Description Section -->
+            <TextView
+                android:id="@+id/descriptionSectionTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/channel_about_description"
+                android:textAlignment="viewStart"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="@android:color/black" />
+
+            <TextView
+                android:id="@+id/descriptionText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_sm"
+                android:textAlignment="viewStart"
+                android:textSize="14sp"
+                android:textColor="@android:color/darker_gray"
+                android:lineSpacingMultiplier="1.3"
+                tools:text="This is the channel description. It can be quite long and span multiple lines with detailed information about the channel content and its purpose." />
+
+            <!-- No description message (shown when description is empty) -->
+            <TextView
+                android:id="@+id/noDescriptionText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_sm"
+                android:text="@string/channel_about_no_description"
+                android:textAlignment="viewStart"
+                android:textSize="14sp"
+                android:textColor="@android:color/darker_gray"
+                android:textStyle="italic"
+                android:visibility="gone" />
+
+            <!-- Divider -->
+            <View
+                android:id="@+id/descriptionDivider"
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="@dimen/spacing_lg"
+                android:layout_marginBottom="@dimen/spacing_lg"
+                android:background="@color/divider_light" />
+
+            <!-- Links Section -->
+            <TextView
+                android:id="@+id/linksSectionTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/channel_about_links"
+                android:textAlignment="viewStart"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="@android:color/black"
+                android:visibility="gone"
+                tools:visibility="visible" />
+
+            <LinearLayout
+                android:id="@+id/linksContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_sm"
+                android:orientation="vertical"
+                android:visibility="gone"
+                tools:visibility="visible" />
+
+            <!-- Links Divider -->
+            <View
+                android:id="@+id/linksDivider"
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="@dimen/spacing_lg"
+                android:layout_marginBottom="@dimen/spacing_lg"
+                android:background="@color/divider_light"
+                android:visibility="gone" />
+
+            <!-- More Info Section -->
+            <TextView
+                android:id="@+id/moreInfoSectionTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/channel_about_more_info"
+                android:textAlignment="viewStart"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="@android:color/black" />
+
+            <!-- Stats Container -->
+            <LinearLayout
+                android:id="@+id/statsContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_sm"
+                android:orientation="vertical">
+
+                <!-- Subscribers Row -->
+                <LinearLayout
+                    android:id="@+id/subscribersRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:paddingVertical="@dimen/spacing_sm"
+                    android:gravity="center_vertical">
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_people"
+                        android:importantForAccessibility="no"
+                        app:tint="@android:color/darker_gray" />
+
+                    <TextView
+                        android:id="@+id/subscribersLabel"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/spacing_md"
+                        android:textAlignment="viewStart"
+                        android:textSize="14sp"
+                        android:textColor="@android:color/darker_gray"
+                        tools:text="11.7M subscribers" />
+
+                </LinearLayout>
+
+                <!-- Total Views Row -->
+                <LinearLayout
+                    android:id="@+id/viewsRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:paddingVertical="@dimen/spacing_sm"
+                    android:gravity="center_vertical"
+                    android:visibility="gone"
+                    tools:visibility="visible">
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_visibility"
+                        android:importantForAccessibility="no"
+                        app:tint="@android:color/darker_gray" />
+
+                    <TextView
+                        android:id="@+id/viewsLabel"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/spacing_md"
+                        android:textAlignment="viewStart"
+                        android:textSize="14sp"
+                        android:textColor="@android:color/darker_gray"
+                        tools:text="4.8B total views" />
+
+                </LinearLayout>
+
+                <!-- Location Row -->
+                <LinearLayout
+                    android:id="@+id/locationRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:paddingVertical="@dimen/spacing_sm"
+                    android:gravity="center_vertical"
+                    android:visibility="gone"
+                    tools:visibility="visible">
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_location"
+                        android:importantForAccessibility="no"
+                        app:tint="@android:color/darker_gray" />
+
+                    <TextView
+                        android:id="@+id/locationLabel"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/spacing_md"
+                        android:textAlignment="viewStart"
+                        android:textSize="14sp"
+                        android:textColor="@android:color/darker_gray"
+                        tools:text="Kuwait" />
+
+                </LinearLayout>
+
+                <!-- Joined Date Row -->
+                <LinearLayout
+                    android:id="@+id/joinedRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:paddingVertical="@dimen/spacing_sm"
+                    android:gravity="center_vertical"
+                    android:visibility="gone"
+                    tools:visibility="visible">
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_calendar"
+                        android:importantForAccessibility="no"
+                        app:tint="@android:color/darker_gray" />
+
+                    <TextView
+                        android:id="@+id/joinedLabel"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/spacing_md"
+                        android:textAlignment="viewStart"
+                        android:textSize="14sp"
+                        android:textColor="@android:color/darker_gray"
+                        tools:text="Joined Aug 20, 2006" />
+
+                </LinearLayout>
+
+                <!-- Verified Badge Row -->
+                <LinearLayout
+                    android:id="@+id/verifiedRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:paddingVertical="@dimen/spacing_sm"
+                    android:gravity="center_vertical"
+                    android:visibility="gone"
+                    tools:visibility="visible">
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_verified"
+                        android:importantForAccessibility="no"
+                        app:tint="@color/primary_green" />
+
+                    <TextView
+                        android:id="@+id/verifiedLabel"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/spacing_md"
+                        android:text="@string/channel_verified"
+                        android:textAlignment="viewStart"
+                        android:textSize="14sp"
+                        android:textColor="@color/primary_green" />
+
+                </LinearLayout>
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+    </androidx.core.widget.NestedScrollView>
+
+    <!-- Skeleton loading state -->
+    <LinearLayout
+        android:id="@+id/aboutSkeleton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="@dimen/spacing_md"
+        android:visibility="gone"
+        tools:visibility="visible">
+
+        <!-- Section title skeleton -->
+        <View
+            android:layout_width="100dp"
+            android:layout_height="20dp"
+            android:background="@drawable/skeleton_shimmer" />
+
+        <!-- Description skeleton lines -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="14dp"
+            android:layout_marginTop="@dimen/spacing_md"
+            android:background="@drawable/skeleton_shimmer" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="14dp"
+            android:layout_marginTop="@dimen/spacing_xs"
+            android:background="@drawable/skeleton_shimmer" />
+
+        <View
+            android:layout_width="200dp"
+            android:layout_height="14dp"
+            android:layout_marginTop="@dimen/spacing_xs"
+            android:background="@drawable/skeleton_shimmer" />
+
+        <!-- More info skeleton -->
+        <View
+            android:layout_width="80dp"
+            android:layout_height="20dp"
+            android:layout_marginTop="@dimen/spacing_xl"
+            android:background="@drawable/skeleton_shimmer" />
+
+        <View
+            android:layout_width="150dp"
+            android:layout_height="14dp"
+            android:layout_marginTop="@dimen/spacing_md"
+            android:background="@drawable/skeleton_shimmer" />
+
+        <View
+            android:layout_width="120dp"
+            android:layout_height="14dp"
+            android:layout_marginTop="@dimen/spacing_sm"
+            android:background="@drawable/skeleton_shimmer" />
+
+    </LinearLayout>
+
+    <!-- Error state overlay -->
+    <include
+        android:id="@+id/aboutErrorState"
+        layout="@layout/error_state"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
+</FrameLayout>

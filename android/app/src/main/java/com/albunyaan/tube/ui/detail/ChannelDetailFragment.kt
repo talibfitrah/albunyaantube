@@ -9,23 +9,37 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.viewpager2.adapter.FragmentStateAdapter
+import coil.load
 import com.albunyaan.tube.R
+import com.albunyaan.tube.data.channel.ChannelHeader
+import com.albunyaan.tube.data.channel.ChannelTab
 import com.albunyaan.tube.databinding.FragmentChannelDetailBinding
-import com.google.android.material.chip.Chip
+import com.albunyaan.tube.ui.detail.tabs.ChannelAboutTabFragment
+import com.albunyaan.tube.ui.detail.tabs.ChannelLiveTabFragment
+import com.albunyaan.tube.ui.detail.tabs.ChannelPlaylistsTabFragment
+import com.albunyaan.tube.ui.detail.tabs.ChannelShortsTabFragment
+import com.albunyaan.tube.ui.detail.tabs.ChannelVideosTabFragment
 import com.google.android.material.tabs.TabLayoutMediator
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.lifecycle.withCreationCallback
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
 
+/**
+ * Fragment for displaying channel details with tabs for Videos, Live, Shorts, Playlists, and About.
+ * Uses NewPipeExtractor directly via ChannelDetailRepository (no backend API calls).
+ *
+ * Note: Posts/Community tab is not supported because NewPipeExtractor doesn't support
+ * YouTube Community Posts extraction.
+ */
 @AndroidEntryPoint
 class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
 
     private var binding: FragmentChannelDetailBinding? = null
 
-    private val channelId: String by lazy { arguments?.getString("channelId").orEmpty() }
-    private val channelName: String? by lazy { arguments?.getString("channelName") }
-    private val isExcluded: Boolean by lazy { arguments?.getBoolean("excluded", false) ?: false }
+    private val channelId: String by lazy { arguments?.getString(ARG_CHANNEL_ID).orEmpty() }
+    private val channelName: String? by lazy { arguments?.getString(ARG_CHANNEL_NAME) }
+    private val isExcluded: Boolean by lazy { arguments?.getBoolean(ARG_EXCLUDED, false) ?: false }
 
     private val viewModel: ChannelDetailViewModel by viewModels(
         extrasProducer = {
@@ -35,17 +49,25 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
         }
     )
 
+    private var tabLayoutMediator: TabLayoutMediator? = null
+    private var pageChangeCallback: androidx.viewpager2.widget.ViewPager2.OnPageChangeCallback? = null
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding = FragmentChannelDetailBinding.bind(view)
 
-        setupUI()
-        observeViewModel()
+        setupToolbar()
+        setupTabs()
+        observeHeaderState()
+
+        // Restore selected tab
+        savedInstanceState?.getInt(STATE_SELECTED_TAB)?.let { position ->
+            binding?.viewPager?.setCurrentItem(position, false)
+        }
     }
 
-    private fun setupUI() {
+    private fun setupToolbar() {
         binding?.apply {
-            // Set toolbar title and back button
             toolbar.title = channelName ?: channelId
             toolbar.setNavigationOnClickListener {
                 findNavController().navigateUp()
@@ -53,95 +75,149 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
 
             // Show exclusion banner if needed
             exclusionBanner.isVisible = isExcluded
-
-            // Setup tabs
-            val tabs = ChannelTab.values()
-            viewPager.adapter = ChannelDetailPagerAdapter(
-                this@ChannelDetailFragment,
-                channelId,
-                channelName ?: channelId,
-                tabs,
-                viewModel
-            )
-            
-            TabLayoutMediator(tabLayout, viewPager) { tab, position ->
-                tab.setText(tabs[position].titleRes)
-            }.attach()
         }
     }
 
-    private fun observeViewModel() {
+    private fun setupTabs() {
+        binding?.apply {
+            val tabs = ChannelTab.entries.toTypedArray()
+
+            viewPager.adapter = ChannelDetailPagerAdapter(
+                fragment = this@ChannelDetailFragment,
+                tabs = tabs
+            )
+
+            // Disable swipe between tabs if needed for nested scrolling
+            viewPager.isUserInputEnabled = true
+
+            tabLayoutMediator = TabLayoutMediator(tabLayout, viewPager) { tab, position ->
+                tab.setText(getTabTitle(tabs[position]))
+            }.also { it.attach() }
+
+            // Track selected tab for state restoration
+            pageChangeCallback = object : androidx.viewpager2.widget.ViewPager2.OnPageChangeCallback() {
+                override fun onPageSelected(position: Int) {
+                    viewModel.setSelectedTab(position)
+                }
+            }
+            viewPager.registerOnPageChangeCallback(pageChangeCallback!!)
+        }
+    }
+
+    private fun getTabTitle(tab: ChannelTab): Int {
+        return when (tab) {
+            ChannelTab.VIDEOS -> R.string.channel_tab_videos
+            ChannelTab.LIVE -> R.string.channel_tab_live
+            ChannelTab.SHORTS -> R.string.channel_tab_shorts
+            ChannelTab.PLAYLISTS -> R.string.channel_tab_playlists
+            ChannelTab.ABOUT -> R.string.channel_tab_about
+        }
+    }
+
+    private fun observeHeaderState() {
         viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.channelState.collect { state ->
-                when (state) {
-                    is ChannelDetailViewModel.ChannelState.Loading -> {
-                        Log.d(TAG, "Loading channel details...")
-                        binding?.apply {
-                            progressBar.isVisible = true
-                            contentContainer.isVisible = false
-                            errorText.isVisible = false
-                        }
-                    }
-                    is ChannelDetailViewModel.ChannelState.Success -> {
-                        Log.d(TAG, "Channel loaded: ${state.channel.name}")
-                        binding?.apply {
-                            progressBar.isVisible = false
-                            contentContainer.isVisible = true
-                            errorText.isVisible = false
+            viewModel.headerState.collect { state ->
+                updateHeaderUI(state)
+            }
+        }
+    }
 
-                            // Update toolbar title with actual channel name
-                            toolbar.title = state.channel.name
-
-                            // Update channel info
-                            channelNameText.text = state.channel.name
-                            
-                            val formattedSubs = NumberFormat.getInstance().format(state.channel.subscribers)
-                            subscriberCountText.text = getString(R.string.channel_subscribers_format, formattedSubs)
-                            
-                            if (!state.channel.description.isNullOrBlank()) {
-                                channelDescriptionText.text = state.channel.description
-                                channelDescriptionText.isVisible = true
-                            } else {
-                                channelDescriptionText.isVisible = false
-                            }
-
-                            // Update category chips
-                            categoryChipsContainer.removeAllViews()
-                            val categories = state.channel.categories?.filterNotNull()
-                                ?: listOfNotNull(state.channel.category)
-                            if (categories.isNotEmpty()) {
-                                categories.forEach { category ->
-                                    val chip = Chip(requireContext()).apply {
-                                        text = category
-                                        isClickable = false
-                                        chipBackgroundColor = android.content.res.ColorStateList.valueOf(
-                                            requireContext().getColor(R.color.surface_variant)
-                                        )
-                                        setTextColor(requireContext().getColor(R.color.primary_green))
-                                    }
-                                    categoryChipsContainer.addView(chip)
-                                }
-                                categoryChipsContainer.isVisible = true
-                            } else {
-                                categoryChipsContainer.isVisible = false
-                            }
-                        }
-                    }
-                    is ChannelDetailViewModel.ChannelState.Error -> {
-                        Log.e(TAG, "Error loading channel: ${state.message}")
-                        binding?.apply {
-                            progressBar.isVisible = false
-                            contentContainer.isVisible = false
-                            errorText.isVisible = true
-                            errorText.text = state.message
-                        }
+    private fun updateHeaderUI(state: ChannelDetailViewModel.HeaderState) {
+        binding?.apply {
+            when (state) {
+                is ChannelDetailViewModel.HeaderState.Loading -> {
+                    Log.d(TAG, "Loading channel header...")
+                    headerSkeleton.isVisible = true
+                    contentContainer.isVisible = false
+                    errorState.root.isVisible = false
+                }
+                is ChannelDetailViewModel.HeaderState.Success -> {
+                    Log.d(TAG, "Channel header loaded: ${state.header.title}")
+                    headerSkeleton.isVisible = false
+                    contentContainer.isVisible = true
+                    errorState.root.isVisible = false
+                    bindHeader(state.header)
+                }
+                is ChannelDetailViewModel.HeaderState.Error -> {
+                    Log.e(TAG, "Error loading channel header: ${state.message}")
+                    headerSkeleton.isVisible = false
+                    contentContainer.isVisible = false
+                    errorState.root.isVisible = true
+                    errorState.errorBody.text = state.message
+                    errorState.retryButton.setOnClickListener {
+                        viewModel.loadHeader(forceRefresh = true)
                     }
                 }
             }
         }
     }
 
+    private fun bindHeader(header: ChannelHeader) {
+        binding?.apply {
+            // Update toolbar title
+            toolbar.title = header.title
+
+            // Load banner image
+            if (!header.bannerUrl.isNullOrBlank()) {
+                channelBanner.load(header.bannerUrl) {
+                    placeholder(R.drawable.thumbnail_placeholder)
+                    error(R.drawable.thumbnail_placeholder)
+                    crossfade(true)
+                }
+                bannerGradient.isVisible = true
+            } else {
+                channelBanner.setImageResource(R.drawable.thumbnail_placeholder)
+                bannerGradient.isVisible = false
+            }
+
+            // Load avatar
+            if (!header.avatarUrl.isNullOrBlank()) {
+                channelAvatar.load(header.avatarUrl) {
+                    placeholder(R.drawable.thumbnail_placeholder)
+                    error(R.drawable.thumbnail_placeholder)
+                    crossfade(true)
+                }
+            }
+
+            // Channel name
+            channelNameText.text = header.title
+
+            // Verified badge (localized via content description)
+            verifiedBadge.isVisible = header.isVerified
+
+            // Subscriber count
+            if (header.subscriberCount != null && header.subscriberCount > 0) {
+                val formattedCount = NumberFormat.getInstance().format(header.subscriberCount)
+                subscriberCountText.text = getString(R.string.channel_subscribers_format, formattedCount)
+                subscriberCountText.isVisible = true
+            } else {
+                subscriberCountText.text = getString(R.string.channel_subscribers_unknown)
+                subscriberCountText.isVisible = true
+            }
+
+            // Summary / short description
+            val summary = header.summaryLine ?: header.shortDescription
+            if (!summary.isNullOrBlank()) {
+                channelSummaryText.text = summary
+                channelSummaryText.isVisible = true
+            } else {
+                channelSummaryText.isVisible = false
+            }
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        binding?.viewPager?.currentItem?.let { position ->
+            outState.putInt(STATE_SELECTED_TAB, position)
+        }
+    }
+
     override fun onDestroyView() {
+        tabLayoutMediator?.detach()
+        tabLayoutMediator = null
+        pageChangeCallback?.let { binding?.viewPager?.unregisterOnPageChangeCallback(it) }
+        pageChangeCallback = null
         binding = null
         super.onDestroyView()
     }
@@ -151,30 +227,28 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
         const val ARG_CHANNEL_ID = "channelId"
         const val ARG_CHANNEL_NAME = "channelName"
         const val ARG_EXCLUDED = "excluded"
+        private const val STATE_SELECTED_TAB = "selectedTab"
     }
 }
 
+/**
+ * ViewPager adapter for channel detail tabs.
+ * Creates the appropriate fragment for each tab.
+ */
 private class ChannelDetailPagerAdapter(
     fragment: Fragment,
-    private val channelId: String,
-    private val channelName: String,
-    private val tabs: Array<ChannelTab>,
-    private val viewModel: ChannelDetailViewModel
+    private val tabs: Array<ChannelTab>
 ) : FragmentStateAdapter(fragment) {
 
     override fun getItemCount(): Int = tabs.size
 
     override fun createFragment(position: Int): Fragment {
-        val tab = tabs[position]
-        return ChannelDetailTabFragment.newInstance(tab, channelId, channelName)
+        return when (tabs[position]) {
+            ChannelTab.VIDEOS -> ChannelVideosTabFragment()
+            ChannelTab.LIVE -> ChannelLiveTabFragment()
+            ChannelTab.SHORTS -> ChannelShortsTabFragment()
+            ChannelTab.PLAYLISTS -> ChannelPlaylistsTabFragment()
+            ChannelTab.ABOUT -> ChannelAboutTabFragment()
+        }
     }
-}
-
-enum class ChannelTab(val titleRes: Int) {
-    VIDEOS(R.string.channel_tab_videos),
-    LIVE(R.string.channel_tab_live),
-    SHORTS(R.string.channel_tab_shorts),
-    PLAYLISTS(R.string.channel_tab_playlists),
-    POSTS(R.string.channel_tab_posts),
-    ABOUT(R.string.channel_tab_about)
 }

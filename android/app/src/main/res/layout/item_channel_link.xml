@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Item layout for links in the Channel About tab -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:padding="@dimen/spacing_sm"
+    android:background="?attr/selectableItemBackground"
+    android:clickable="true"
+    android:focusable="true">
+
+    <!-- Link icon -->
+    <ImageView
+        android:layout_width="20dp"
+        android:layout_height="20dp"
+        android:src="@drawable/ic_link"
+        android:tint="@color/primary_green"
+        android:importantForAccessibility="no" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:layout_marginStart="@dimen/spacing_md">
+
+        <!-- Link name -->
+        <TextView
+            android:id="@+id/linkName"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:textColor="?android:attr/textColorPrimary"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textAlignment="viewStart"
+            tools:text="Official Website" />
+
+        <!-- Link URL -->
+        <TextView
+            android:id="@+id/linkUrl"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textSize="12sp"
+            android:textColor="@color/primary_green"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textAlignment="viewStart"
+            tools:text="https://example.com" />
+
+    </LinearLayout>
+
+    <!-- Chevron arrow -->
+    <ImageView
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:src="@drawable/ic_chevron_right"
+        android:tint="?android:attr/textColorSecondary"
+        android:importantForAccessibility="no" />
+
+</LinearLayout>

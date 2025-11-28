@@ -231,4 +231,7 @@ object DataModule {
     fun provideImagesEnabled(): Boolean {
         return BuildConfig.ENABLE_THUMBNAIL_IMAGES
     }
+
+    // Note: ChannelDetailRepository binding moved to ChannelDetailRepositoryModule
+    // for easier test replacement via @TestInstallIn
 }
