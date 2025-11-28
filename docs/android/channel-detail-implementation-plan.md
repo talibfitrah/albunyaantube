@@ -185,85 +185,62 @@ private data class TabPaginationController(
 
 ### 2.1 Channel Header (Phone – `layout/fragment_channel_detail.xml`)
 
-**Structure (inside `contentContainer`):**
+**Implemented Structure (using CoordinatorLayout for collapsing header):**
 
-- `MaterialToolbar` (existing) with:
-  - Back navigation icon.
-  - Title = `channelName` argument until header loads, then real name.
+```
+CoordinatorLayout
+├── AppBarLayout
+│   ├── CollapsingToolbarLayout (scroll|exitUntilCollapsed)
+│   │   ├── headerContent (LinearLayout, collapseMode="parallax")
+│   │   │   ├── exclusionBanner (visibility=gone by default)
+│   │   │   ├── FrameLayout
+│   │   │   │   ├── channelBanner (ImageView, @dimen/channel_banner_height)
+│   │   │   │   └── bannerGradient (View, @drawable/banner_gradient_overlay)
+│   │   │   └── ConstraintLayout (channel info)
+│   │   │       ├── channelAvatar (ShapeableImageView, circular)
+│   │   │       ├── channelNameContainer (LinearLayout, horizontal)
+│   │   │       │   ├── channelNameText
+│   │   │       │   └── verifiedBadge
+│   │   │       ├── subscriberCountText
+│   │   │       └── channelSummaryText
+│   │   └── toolbar (MaterialToolbar, collapseMode="pin")
+│   └── tabLayout (TabLayout, sticky)
+├── contentContainer (FrameLayout, appbar_scrolling_view_behavior)
+│   ├── viewPager (ViewPager2)
+│   ├── contentSkeleton (loading indicator)
+│   └── contentErrorState (include @layout/error_state)
+└── headerSkeleton (LinearLayout, overlays AppBarLayout during loading)
+```
 
-- Header container (new):
-  - `FrameLayout` for banner:
-    - `ImageView` `@id/channelBanner`
-      - `layout_width="match_parent"`
-      - `layout_height="0dp"` + `app:layout_constraintDimensionRatio="16:9"` or fixed height dimen.
-      - `scaleType="centerCrop"`
-      - Placeholder background (from `thumbnail_placeholder` or new banner placeholder).
-    - Optional gradient overlay `View` for legibility.
+**Key implementation details:**
 
-  - `ConstraintLayout` overlapping banner bottom:
-    - `ImageView` `@id/channelAvatar`
-      - Circular avatar using existing avatar dimens and rounded background.
-      - Constrained to `start|bottom` in LTR and `end|bottom` in RTL (use `layout_constraintStart_toStartOf="parent"` etc.).
-    - Text + button column constrained to `end` of avatar:
-      - `TextView` `@id/channelNameText`
-        - `textSize="@dimen/text_headline"`, `textStyle="bold"`, `textAlignment="viewStart"`.
-      - `TextView` `@id/subscriberCountText`
-        - Green text (`@color/primary_green`), caption size.
-      - `TextView` `@id/channelSummaryText`
-        - 2–3 lines max, ellipsized, `textAlignment="viewStart"`.
-      - `MaterialButton` `@id/channelPrimaryButton`
-        - Text “General” (string resource).
-        - Style: primary filled, `backgroundTint="@color/primary_green"`.
+- `CollapsingToolbarLayout` with `scroll|exitUntilCollapsed` scroll flags
+- `headerContent` uses `collapseMode="parallax"` for smooth collapse effect
+- `toolbar` uses `collapseMode="pin"` to stay visible when fully collapsed
+- `tabLayout` placed outside `CollapsingToolbarLayout` but inside `AppBarLayout` for sticky behavior
+- `contentContainer` uses `appbar_scrolling_view_behavior` to coordinate with AppBar
+- `headerSkeleton` positioned with `layout_marginTop="?attr/actionBarSize"` to appear below pinned toolbar
 
-- Header skeleton:
-  - A dedicated `LinearLayout` / `ConstraintLayout` `@id/headerSkeleton` stacked over the real header.
-  - Contains:
-    - Banner stub rectangle with `@drawable/skeleton_shimmer`.
-    - Circle stub for avatar.
-    - 2–3 full‑width shimmer lines (for name and summary).
-  - Visible while `HeaderState.Loading`.
+**Note:** The "General" button was removed from the initial implementation to simplify the header. It may be added later for category indication.
 
-- Tabs:
-  - `TabLayout` `@id/tabLayout`
-    - `app:tabMode="scrollable"`.
-    - `app:tabSelectedTextColor="@color/primary_green"`.
-    - Five tabs with titles from string resources:
-      - Videos, Live, Shorts, Playlists, About.
-  - `ViewPager2` `@id/viewPager`
-    - `layout_height="0dp"` + `layout_weight="1"` to fill remaining space.
+### 2.2 Channel Header (Tablet – `layout-sw600dp/fragment_channel_detail.xml`) ✅ IMPLEMENTED
 
-### 2.2 Channel Header (Tablet – `layout-sw600dp/fragment_channel_detail.xml`)
+Uses the **same CoordinatorLayout structure** as phone layout with identical view IDs. Key differences:
 
-Create a separate layout file for tablets with **identical IDs**:
+- Uses `@dimen/channel_banner_height_tablet` for banner height
+- Uses `@dimen/channel_avatar_size_tablet` for larger avatar
+- Increased paddings via device-specific dimens in `values-sw600dp/dimens.xml`
+- All text uses `textAlignment="viewStart"` and `start`/`end` constraints for RTL support
 
-- Keep the banner full width (16:9) at top.
-- Below banner, use a wider `ConstraintLayout`:
-  - Avatar pinned to the start (or end in RTL).
-  - Text block and primary button arranged horizontally:
-    - Name + subscribers stacked.
-    - Summary text + “General” button aligned in a second column.
-- Increase paddings using `@dimen/spacing_xl`.
-- Ensure `textAlignment="viewStart"` for all text views and use `start` / `end` constraints only (no `left`/`right`), to fully support RTL.
+### 2.3 Channel Header (Large Tablet / TV – `layout-sw720dp/fragment_channel_detail.xml`) ✅ IMPLEMENTED
 
-### 2.3 Channel Header (Large Tablet / TV – `layout-sw720dp/fragment_channel_detail.xml`)
+Uses the **same CoordinatorLayout structure** with identical view IDs. Key differences:
 
-Support the **third device tier** from the multi‑device matrix (large tablet / TV) with a dedicated layout, again using the **same view IDs**:
-
-- File: `layout-sw720dp/fragment_channel_detail.xml`.
-- Banner:
-  - Still 16:9 full width, but consider slightly increased height on TV for impact (via a dedicated dimen, e.g., `channel_banner_height_tv`).
-- Header content:
-  - Use a spacious horizontal `ConstraintLayout` or `GridLayout` beneath the banner:
-    - Avatar aligned to the **center‑start** (start in LTR, end in RTL).
-    - Channel name + subscribers stacked next to avatar.
-    - Summary + primary “General” button can form a second column, aligned toward the center to avoid extreme edges on large screens.
-  - Increase horizontal margins (e.g., `@dimen/spacing_xl` or a new `channel_detail_horizontal_margin_tv`) so content doesn’t hug edges on TV.
-- Tabs + content:
-  - `TabLayout` remains full‑width across the top of the content area; tab labels may use slightly larger text via a style override for better TV readability.
-  - `ViewPager2` fills remaining space; per‑tab fragments can choose denser layouts (e.g., more columns in Shorts grid) while keeping IDs consistent.
-- Accessibility & focus:
-  - Ensure all actionable elements (tabs, “General” button, list items) are focusable for D‑pad/remote navigation.
-  - Use existing design tokens and minimum touch target sizes as minimum focus target sizes.
+- Uses `@dimen/channel_banner_height_tv` for larger banner
+- Uses `@dimen/channel_avatar_size_tv` for larger avatar
+- More generous horizontal margins via `values-sw720dp/dimens.xml`
+- Tab labels remain at readable size for TV distance
+- All focusable elements (tabs, list items) support D-pad/remote navigation
 
 ### 2.4 Tab Container Layouts
 
@@ -605,30 +582,42 @@ Use JUnit 5 + Coroutines test (`runTest`):
 
 ## 7. Implementation Checklist
 
-1. **Data layer**
-   - Add `ChannelDetailRepository` and implementation backed by `NewPipeExtractorClient`.
-   - Implement channel feed extraction (videos, live, shorts, playlists, about).
-2. **ViewModel**
-   - Refactor `ChannelDetailViewModel` to use repository and new state models.
-   - Add pagination controllers and rate limiting.
-3. **Fragments**
-   - Replace generic `ChannelDetailTabFragment` with five concrete tab fragments.
-   - Wire each to the shared ViewModel and base tab layouts.
-4. **Layouts**
-   - Redesign `fragment_channel_detail.xml` + add `layout-sw600dp` (tablet) and `layout-sw720dp` (large tablet / TV) variants, keeping all view IDs identical.
-   - Replace `fragment_channel_detail_tab.xml` with reusable list tab layout.
-   - Add `fragment_channel_shorts_tab.xml` and `fragment_channel_about_tab.xml`.
-   - Add skeleton header + tab skeletons reusing `skeleton_content_item` and `home_section_skeleton` patterns.
-5. **Adapters & UI**
-   - Reuse `item_video_list.xml` and `item_playlist.xml` with suitable adapters.
-   - Implement new adapters for Live, Shorts, and About.
-6. **Navigation & State**
-   - Confirm all navigation paths into `ChannelDetailFragment` pass the required args.
-   - Persist selected tab + scroll positions across rotations.
-7. **Testing**
-   - Add ViewModel unit tests for header + tab states, pagination, and rate limiting.
-   - Add UI tests for phone + tablet + TV + RTL, covering skeletons, empty, and error states.
-   - Add integration tests (or strong fakes) for the NewPipe repository.
+1. **Data layer** ✅ COMPLETE
+   - ✅ `ChannelDetailRepository` interface and `NewPipeChannelDetailRepository` implementation
+   - ✅ Channel feed extraction (videos, live, shorts, playlists, about)
+   - ✅ In-memory caching for header and first page of each tab
+2. **ViewModel** ✅ COMPLETE
+   - ✅ `ChannelDetailViewModel` with `HeaderState` and `PaginatedState` sealed classes
+   - ✅ `TabPaginationController` for rate limiting and state management
+   - ✅ Assisted injection with `@AssistedFactory` for channelId parameter
+3. **Fragments** ✅ COMPLETE
+   - ✅ Five concrete tab fragments: `ChannelVideosTabFragment`, `ChannelLiveTabFragment`, `ChannelShortsTabFragment`, `ChannelPlaylistsTabFragment`, `ChannelAboutTabFragment`
+   - ✅ `BaseChannelListTabFragment` for shared list behavior
+   - ✅ All fragments share the parent-scoped ViewModel
+4. **Layouts** ✅ COMPLETE
+   - ✅ `fragment_channel_detail.xml` with CoordinatorLayout + CollapsingToolbarLayout
+   - ✅ `layout-sw600dp/fragment_channel_detail.xml` for tablets
+   - ✅ `layout-sw720dp/fragment_channel_detail.xml` for large tablets/TV
+   - ✅ `fragment_channel_list_tab.xml` for Videos, Live, Playlists tabs
+   - ✅ `fragment_channel_shorts_tab.xml` for Shorts grid
+   - ✅ `fragment_channel_about_tab.xml` for About section
+   - ✅ Header skeleton + content skeleton with proper loading states
+5. **Adapters & UI** ✅ COMPLETE
+   - ✅ `ChannelVideoAdapter` reusing `item_video_list.xml` pattern
+   - ✅ `ChannelLiveAdapter` with LIVE/UPCOMING badges
+   - ✅ `ChannelShortsAdapter` with 9:16 grid items
+   - ✅ `ChannelPlaylistsAdapter` reusing existing playlist pattern
+   - ✅ About tab with description, links, and channel info sections
+6. **Navigation & State** ✅ COMPLETE
+   - ✅ Navigation from Channels list, Home, Featured, and Search
+   - ✅ Tab selection persisted via `onSaveInstanceState`
+   - ✅ RecyclerView scroll positions restored via default fragment lifecycle
+7. **Testing** ✅ COMPLETE
+   - ✅ `ChannelDetailViewModelTest.kt` - unit tests for all states and pagination
+   - ✅ `ChannelDetailFragmentTest.kt` - UI tests for core functionality
+   - ✅ `ChannelDetailDeviceTest.kt` - device-specific layout tests
+   - ✅ `ChannelDetailRtlTest.kt` - RTL layout verification
+   - ✅ `FakeChannelDetailRepository` + `TestChannelDetailModule` for test isolation
 
 This document should be treated as the authoritative implementation plan for the NewPipe‑backed Channel Detail screen. Any deviations during implementation should be reflected by updating this file.
 
@@ -693,3 +682,80 @@ Unit tests for `ChannelDetailViewModel` cover:
 - Tab selection state
 
 Located at: `android/app/src/test/java/com/albunyaan/tube/ui/detail/ChannelDetailViewModelTest.kt`
+
+### 8.6 Collapsing Toolbar with Sticky Tabs (Added Nov 2025)
+
+The layout uses `CoordinatorLayout` + `AppBarLayout` + `CollapsingToolbarLayout` for smooth scrolling behavior:
+
+**Structure:**
+```
+CoordinatorLayout
+├── AppBarLayout
+│   ├── CollapsingToolbarLayout (scroll|exitUntilCollapsed)
+│   │   ├── headerContent (LinearLayout, collapseMode="parallax")
+│   │   │   ├── exclusionBanner
+│   │   │   ├── channelBanner + bannerGradient
+│   │   │   └── channelAvatar, name, subscribers, summary
+│   │   └── toolbar (collapseMode="pin")
+│   └── tabLayout (sticky, does not scroll)
+├── contentContainer (appbar_scrolling_view_behavior)
+│   ├── viewPager
+│   ├── contentSkeleton
+│   └── contentErrorState
+└── headerSkeleton (overlays AppBarLayout during loading)
+```
+
+**Key behaviors:**
+- Banner and channel info collapse with parallax effect when scrolling
+- Toolbar pins at top when fully collapsed (back button always accessible)
+- TabLayout remains sticky below the toolbar
+- Tab content (RecyclerViews) scrolls independently with proper nested scrolling
+
+**View binding renames (Nov 2025):**
+- `contentContainer` → wraps ViewPager, skeleton, and error states
+- `headerContent` → the actual header content (banner, avatar, info)
+- `contentSkeleton` → loading indicator for content area
+- `contentErrorState` → error state shown in content area (not full screen)
+
+### 8.7 Loading State Improvements (Added Nov 2025)
+
+The loading and error states were improved to keep the toolbar accessible at all times:
+
+**AppBarLayout always visible:** During loading and error states, the `AppBarLayout` (containing the toolbar with back button) remains visible. This ensures users can always navigate back, even if the channel fails to load.
+
+**Separate skeleton areas:**
+1. `headerSkeleton` - Overlays the header area below the toolbar, shows shimmer placeholders for banner, avatar, name, subscribers, and tabs
+2. `contentSkeleton` - Shown in the content area below AppBar, displays a centered progress indicator with "Loading…" text
+
+**State visibility matrix:**
+
+| State | headerSkeleton | headerContent | tabLayout | viewPager | contentSkeleton | contentErrorState |
+|-------|----------------|---------------|-----------|-----------|-----------------|-------------------|
+| Loading | ✅ visible | ❌ gone | ❌ gone | ❌ gone | ✅ visible | ❌ gone |
+| Success | ❌ gone | ✅ visible | ✅ visible | ✅ visible | ❌ gone | ❌ gone |
+| Error | ❌ gone | ❌ gone | ❌ gone | ❌ gone | ❌ gone | ✅ visible |
+
+**Multi-device layouts:** All three layout variants (phone, tablet `sw600dp`, large tablet/TV `sw720dp`) follow this same structure with identical view IDs for binding compatibility.
+
+### 8.8 UI Tests (Added Nov 2025)
+
+Comprehensive UI tests were added covering all device configurations and states:
+
+**Test classes:**
+- `ChannelDetailFragmentTest.kt` - Core functionality tests (header states, tab navigation, data binding)
+- `ChannelDetailDeviceTest.kt` - Device-specific tests (phone, tablet, large tablet layouts)
+- `ChannelDetailRtlTest.kt` - RTL layout tests for Arabic locale
+
+**Test utilities:**
+- `LocaleTestRule.kt` - JUnit rule for temporarily switching locale in tests
+- `ViewStateIdlingResource.kt` - Espresso idling resource for waiting on StateFlow emissions
+- `FakeChannelDetailRepository.kt` - Configurable fake for controlling test scenarios
+- `TestChannelDetailModule.kt` - Hilt test module providing fake repository
+
+**Coverage areas:**
+- Loading, success, and error states for header
+- Tab navigation and content display
+- Skeleton visibility during loading
+- Error retry functionality
+- RTL text alignment and layout mirroring
+- Device-specific layout assertions (column counts, spacing)
