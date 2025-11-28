@@ -124,27 +124,41 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
 
     private fun updateHeaderUI(state: ChannelDetailViewModel.HeaderState) {
         binding?.apply {
+            // AppBarLayout always visible to keep toolbar (back button) accessible
+            appBarLayout.isVisible = true
+
             when (state) {
                 is ChannelDetailViewModel.HeaderState.Loading -> {
                     Log.d(TAG, "Loading channel header...")
+                    // Show header skeleton (below toolbar) and content skeleton
                     headerSkeleton.isVisible = true
-                    contentContainer.isVisible = false
-                    errorState.root.isVisible = false
+                    headerContent.isVisible = false
+                    tabLayout.isVisible = false
+                    viewPager.isVisible = false
+                    contentSkeleton.isVisible = true
+                    contentErrorState.root.isVisible = false
                 }
                 is ChannelDetailViewModel.HeaderState.Success -> {
                     Log.d(TAG, "Channel header loaded: ${state.header.title}")
                     headerSkeleton.isVisible = false
-                    contentContainer.isVisible = true
-                    errorState.root.isVisible = false
+                    headerContent.isVisible = true
+                    tabLayout.isVisible = true
+                    viewPager.isVisible = true
+                    contentSkeleton.isVisible = false
+                    contentErrorState.root.isVisible = false
                     bindHeader(state.header)
                 }
                 is ChannelDetailViewModel.HeaderState.Error -> {
                     Log.e(TAG, "Error loading channel header: ${state.message}")
+                    // Show error in content area (below AppBar so toolbar remains accessible)
                     headerSkeleton.isVisible = false
-                    contentContainer.isVisible = false
-                    errorState.root.isVisible = true
-                    errorState.errorBody.text = state.message
-                    errorState.retryButton.setOnClickListener {
+                    headerContent.isVisible = false
+                    tabLayout.isVisible = false
+                    viewPager.isVisible = false
+                    contentSkeleton.isVisible = false
+                    contentErrorState.root.isVisible = true
+                    contentErrorState.errorBody.text = state.message
+                    contentErrorState.retryButton.setOnClickListener {
                         viewModel.loadHeader(forceRefresh = true)
                     }
                 }

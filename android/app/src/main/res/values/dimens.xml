@@ -119,6 +119,7 @@
     <dimen name="channel_avatar_size">80dp</dimen>
     <dimen name="channel_avatar_stroke">3dp</dimen>
     <dimen name="channel_header_overlap">32dp</dimen>
+    <dimen name="channel_header_horizontal_margin">16dp</dimen>
 
     <!-- Typography sizes -->
     <dimen name="text_headline">20sp</dimen>

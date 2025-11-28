@@ -108,7 +108,8 @@
     <string name="nav_playlists">Playlists</string>
     <string name="nav_videos">Videos</string>
 
-    <!-- Empty/Error States -->
+    <!-- Empty/Error/Loading States -->
+    <string name="loading">Loading…</string>
     <string name="clear_filters">Clear filters</string>
     <string name="retry">Retry</string>
     <string name="empty_state_no_content">No content found</string>
