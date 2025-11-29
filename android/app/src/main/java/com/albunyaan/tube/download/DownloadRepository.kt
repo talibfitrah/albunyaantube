@@ -29,7 +29,41 @@ interface DownloadRepository {
     fun pause(requestId: String)
     fun resume(requestId: String)
     fun cancel(requestId: String)
+
+    /**
+     * Enqueue all videos in a playlist for download.
+     *
+     * @param playlistId YouTube playlist ID
+     * @param playlistTitle Playlist title for display
+     * @param qualityLabel Selected quality (e.g., "360p")
+     * @param items List of playlist items to download
+     * @param audioOnly Whether to download audio only
+     * @param targetHeight Target video height for quality selection (null = best available)
+     * @return Number of items actually enqueued (excludes duplicates)
+     */
+    fun enqueuePlaylist(
+        playlistId: String,
+        playlistTitle: String,
+        qualityLabel: String,
+        items: List<PlaylistDownloadItem>,
+        audioOnly: Boolean,
+        targetHeight: Int? = null
+    ): Int
+
+    /**
+     * Check if a playlist is currently being downloaded at a specific quality.
+     */
+    fun isPlaylistDownloading(playlistId: String, qualityLabel: String): Boolean
 }
+
+/**
+ * Simplified playlist item for download purposes.
+ */
+data class PlaylistDownloadItem(
+    val videoId: String,
+    val title: String,
+    val indexInPlaylist: Int
+)
 
 class DefaultDownloadRepository(
     private val workManager: WorkManager,
@@ -148,8 +182,11 @@ class DefaultDownloadRepository(
             android.util.Log.d("DownloadRepository", "Found ${downloadFiles.size} download files on disk")
 
             for ((downloadId, file) in downloadFiles) {
-                // Parse downloadId: "videoId_timestamp" format
-                val videoId = downloadId.substringBefore('_')
+                // Parse downloadId to extract videoId
+                // Supports two formats:
+                // 1. Playlist format: "playlistId|qualityLabel|videoId" (new)
+                // 2. Single video format: "videoId_timestamp" (legacy)
+                val videoId = parseVideoIdFromDownloadId(downloadId)
                 val audioOnly = file.name.endsWith(".m4a")
 
                 // Try to fetch actual title from metadata extractor
@@ -161,11 +198,16 @@ class DefaultDownloadRepository(
                     videoId  // Fallback to videoId
                 }
 
+                // Extract playlist metadata if present
+                val playlistMetadata = parsePlaylistMetadataFromDownloadId(downloadId)
+
                 val request = DownloadRequest(
                     id = downloadId,
                     title = title,
                     videoId = videoId,
-                    audioOnly = audioOnly
+                    audioOnly = audioOnly,
+                    playlistId = playlistMetadata?.first,
+                    playlistQualityLabel = playlistMetadata?.second
                 )
 
                 val metadata = DownloadFileMetadata(
@@ -185,6 +227,35 @@ class DefaultDownloadRepository(
             }
 
             android.util.Log.d("DownloadRepository", "Restored ${entries.value.size} completed downloads")
+        }
+    }
+
+    /**
+     * Parse videoId from downloadId supporting both formats:
+     * - Playlist format: "playlistId|qualityLabel|videoId" -> returns videoId (third part)
+     * - Legacy format: "videoId_timestamp" -> returns videoId (before underscore)
+     */
+    private fun parseVideoIdFromDownloadId(downloadId: String): String {
+        return if (downloadId.contains('|')) {
+            // Playlist format: playlistId|qualityLabel|videoId
+            val parts = downloadId.split('|')
+            if (parts.size >= 3) parts[2] else downloadId
+        } else {
+            // Legacy format: videoId_timestamp
+            downloadId.substringBefore('_')
+        }
+    }
+
+    /**
+     * Extract playlist metadata (playlistId, qualityLabel) from downloadId if present.
+     * Returns null for legacy single-video downloads.
+     */
+    private fun parsePlaylistMetadataFromDownloadId(downloadId: String): Pair<String, String>? {
+        return if (downloadId.contains('|')) {
+            val parts = downloadId.split('|')
+            if (parts.size >= 2) Pair(parts[0], parts[1]) else null
+        } else {
+            null
         }
     }
 
@@ -241,6 +312,71 @@ class DefaultDownloadRepository(
         }
         updateEntry(requestId) {
             it.copy(status = DownloadStatus.CANCELLED, progress = 0, filePath = null, metadata = null)
+        }
+    }
+
+    override fun enqueuePlaylist(
+        playlistId: String,
+        playlistTitle: String,
+        qualityLabel: String,
+        items: List<PlaylistDownloadItem>,
+        audioOnly: Boolean,
+        targetHeight: Int?
+    ): Int {
+        val playlistSize = items.size
+        var enqueuedCount = 0
+
+        for (item in items) {
+            // Generate deterministic request ID for deduplication
+            // Format: playlistId|qualityLabel|videoId
+            val requestId = "$playlistId|$qualityLabel|${item.videoId}"
+
+            // Skip if already downloaded or in progress
+            val existing = entries.value.find { it.request.id == requestId }
+            if (existing != null && existing.status in listOf(
+                    DownloadStatus.QUEUED,
+                    DownloadStatus.RUNNING,
+                    DownloadStatus.PAUSED,
+                    DownloadStatus.COMPLETED
+                )
+            ) {
+                android.util.Log.d(
+                    "DownloadRepository",
+                    "Skipping duplicate: $requestId (status=${existing.status})"
+                )
+                continue
+            }
+
+            val request = DownloadRequest(
+                id = requestId,
+                title = item.title,
+                videoId = item.videoId,
+                audioOnly = audioOnly,
+                targetHeight = targetHeight,
+                playlistId = playlistId,
+                playlistTitle = playlistTitle,
+                playlistQualityLabel = qualityLabel,
+                indexInPlaylist = item.indexInPlaylist,
+                playlistSize = playlistSize
+            )
+
+            enqueue(request)
+            enqueuedCount++
+        }
+
+        android.util.Log.i(
+            "DownloadRepository",
+            "Playlist enqueue: $enqueuedCount of ${items.size} items queued for $playlistTitle ($qualityLabel)"
+        )
+
+        return enqueuedCount
+    }
+
+    override fun isPlaylistDownloading(playlistId: String, qualityLabel: String): Boolean {
+        val prefix = "$playlistId|$qualityLabel|"
+        return entries.value.any { entry ->
+            entry.request.id.startsWith(prefix) &&
+                    entry.status in listOf(DownloadStatus.QUEUED, DownloadStatus.RUNNING)
         }
     }
 

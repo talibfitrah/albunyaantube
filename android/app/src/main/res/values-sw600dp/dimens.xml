@@ -73,4 +73,8 @@
 
     <!-- Channel Shorts Grid (Tablet) -->
     <integer name="channel_shorts_span_count">4</integer>
+
+    <!-- Playlist Detail Screen (Tablet) -->
+    <dimen name="playlist_banner_height">240dp</dimen>
+    <dimen name="playlist_header_horizontal_margin">32dp</dimen>
 </resources>

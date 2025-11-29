@@ -243,4 +243,24 @@
     <string name="views_count_millions">%.1fM views</string>
     <string name="views_count_thousands">%.1fK views</string>
     <string name="views_count">%d views</string>
+
+    <!-- Playlist Detail Screen -->
+    <string name="playlist_play_all">Play all</string>
+    <string name="playlist_shuffle">Shuffle</string>
+    <string name="playlist_metadata_format">%1$d videos</string>
+    <string name="playlist_metadata_duration_format">%1$d videos • %2$s</string>
+    <string name="playlist_empty_state">This playlist has no videos yet</string>
+    <string name="playlist_download_already_downloading">Playlist is already downloading at %1$s</string>
+    <string name="playlist_download_started">Downloading %1$d videos from %2$s</string>
+    <string name="cd_playlist_banner">Playlist banner image</string>
+    <string name="cd_play_all_button">Play all videos in this playlist</string>
+    <string name="cd_shuffle_button">Shuffle and play all videos</string>
+    <string name="cd_download_playlist_button">Download entire playlist</string>
+
+    <!-- Playlist Video Item -->
+    <string name="playlist_video_position">Position %1$d</string>
+    <string name="a11y_playlist_video">Position %1$d, %2$s, Duration: %3$s, %4$s</string>
+    <string name="playlist_video_downloaded">Downloaded</string>
+    <string name="playlist_video_downloading">Downloading %1$d%%</string>
+    <string name="playlist_video_queued">Queued</string>
 </resources>

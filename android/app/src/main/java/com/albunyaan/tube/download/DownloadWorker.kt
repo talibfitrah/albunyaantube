@@ -10,12 +10,13 @@ import com.albunyaan.tube.analytics.ExtractorMetricsReporter
 import com.albunyaan.tube.data.extractor.VideoTrack
 import com.albunyaan.tube.data.source.RetrofitDownloadService
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_AUDIO_ONLY
+import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_COMPLETED_AT
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_DOWNLOAD_ID
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_FILE_PATH
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_FILE_SIZE
-import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_COMPLETED_AT
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_MIME_TYPE
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_PROGRESS
+import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_TARGET_HEIGHT
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_TITLE
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_VIDEO_ID
 import com.albunyaan.tube.player.PlayerRepository
@@ -61,11 +62,13 @@ class DownloadWorker @AssistedInject constructor(
         val videoId = inputData.getString(KEY_VIDEO_ID) ?: return Result.failure()
         val title = inputData.getString(KEY_TITLE) ?: videoId
         val audioOnly = inputData.getBoolean(KEY_AUDIO_ONLY, true)
+        // Target height for quality selection (0 means not specified - use best available)
+        val targetHeight = inputData.getInt(KEY_TARGET_HEIGHT, 0).takeIf { it > 0 }
 
         setForegroundAsync(notifications.createForegroundInfo(downloadId, title, 0))
 
         return runCatching {
-            val resolvedStream = resolveStream(videoId, audioOnly) ?: return@runCatching Result.failure()
+            val resolvedStream = resolveStream(videoId, audioOnly, targetHeight) ?: return@runCatching Result.failure()
 
             // Track download started only after policy/token validation succeeds
             runCatching {
@@ -208,8 +211,12 @@ class DownloadWorker @AssistedInject constructor(
 
     /**
      * Resolve stream URLs from backend API or fallback to local extractor.
+     *
+     * @param videoId YouTube video ID
+     * @param audioOnly Whether to download audio only
+     * @param targetHeight Target video height for quality selection (null = best available)
      */
-    private suspend fun resolveStream(videoId: String, audioOnly: Boolean): ResolvedStream? {
+    private suspend fun resolveStream(videoId: String, audioOnly: Boolean, targetHeight: Int?): ResolvedStream? {
         return try {
             // Check download policy first
             val policy = downloadService.checkDownloadPolicy(videoId)
@@ -223,8 +230,15 @@ class DownloadWorker @AssistedInject constructor(
 
             // Get download manifest with stream URLs (requires token)
             // Pass FFmpeg availability so backend only returns split streams if client can merge
+            // Pass audioOnly and targetHeight for proper stream selection
             val supportsMerging = ffmpegMerger.isAvailable()
-            val manifest = downloadService.getDownloadManifest(videoId, downloadToken.token, supportsMerging)
+            val manifest = downloadService.getDownloadManifest(
+                videoId = videoId,
+                token = downloadToken.token,
+                supportsMerging = supportsMerging,
+                audioOnly = audioOnly,
+                targetHeight = targetHeight
+            )
             val stream = manifest.selectedStream
 
             // Get URL based on stream type
@@ -280,20 +294,51 @@ class DownloadWorker @AssistedInject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Failed to resolve stream via backend API for $videoId", e)
             // Fall back to extractor if backend fails
-            resolveStreamViaExtractor(videoId, audioOnly)
+            resolveStreamViaExtractor(videoId, audioOnly, targetHeight)
         }
     }
 
     /**
      * Fallback: resolve stream via local NewPipe extractor.
+     *
+     * @param videoId YouTube video ID
+     * @param audioOnly Whether to download audio only
+     * @param targetHeight Target video height for quality selection (null = best available)
      */
-    private suspend fun resolveStreamViaExtractor(videoId: String, audioOnly: Boolean): ResolvedStream? {
+    private suspend fun resolveStreamViaExtractor(
+        videoId: String,
+        audioOnly: Boolean,
+        targetHeight: Int?
+    ): ResolvedStream? {
         val resolved = repository.resolveStreams(videoId) ?: return null
         val audioTrack = resolved.audioTracks.maxByOrNull { it.bitrate ?: 0 }
-        val videoTrack = resolved.videoTracks.maxWithOrNull(
-            compareBy<VideoTrack> { it.height ?: 0 }
-                .thenBy { it.bitrate ?: 0 }
-        )
+
+        // Select video track based on target height
+        val videoTrack = if (targetHeight != null) {
+            // Find track closest to (but not exceeding) target height
+            // Exclude tracks with null height from targeted selection
+            resolved.videoTracks
+                .filter { it.height != null && it.height <= targetHeight }
+                .maxWithOrNull(
+                    compareBy<VideoTrack> { it.height ?: 0 }
+                        .thenBy { it.bitrate ?: 0 }
+                )
+                // Fallback to best available (excluding null heights)
+                ?: resolved.videoTracks
+                    .filter { it.height != null }
+                    .maxWithOrNull(
+                        compareBy<VideoTrack> { it.height ?: 0 }
+                            .thenBy { it.bitrate ?: 0 }
+                    )
+        } else {
+            // No target height - use best available (excluding null heights)
+            resolved.videoTracks
+                .filter { it.height != null }
+                .maxWithOrNull(
+                    compareBy<VideoTrack> { it.height ?: 0 }
+                        .thenBy { it.bitrate ?: 0 }
+                )
+        }
 
         val url = if (audioOnly) {
             audioTrack?.url

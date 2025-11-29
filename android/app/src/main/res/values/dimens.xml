@@ -93,6 +93,16 @@
     <dimen name="home_duration_chip_padding_horizontal">6dp</dimen>
     <dimen name="home_duration_chip_padding_vertical">3dp</dimen>
 
+    <!-- Badge/Chip Design Tokens -->
+    <dimen name="badge_padding_horizontal">8dp</dimen>
+    <dimen name="badge_padding_vertical">2dp</dimen>
+    <dimen name="badge_icon_size">20dp</dimen>
+    <dimen name="text_badge">10sp</dimen>
+    <dimen name="text_duration">11sp</dimen>
+
+    <!-- List Item Position Indicator -->
+    <dimen name="list_position_width">32dp</dimen>
+
     <!-- Home Card Sizing (responsive) -->
     <dimen name="home_channel_card_width">100dp</dimen>
     <dimen name="home_channel_avatar_size">72dp</dimen>
@@ -120,6 +130,10 @@
     <dimen name="channel_avatar_stroke">3dp</dimen>
     <dimen name="channel_header_overlap">32dp</dimen>
     <dimen name="channel_header_horizontal_margin">16dp</dimen>
+
+    <!-- Playlist Detail Screen -->
+    <dimen name="playlist_banner_height">200dp</dimen>
+    <dimen name="playlist_header_horizontal_margin">16dp</dimen>
 
     <!-- Typography sizes -->
     <dimen name="text_headline">20sp</dimen>

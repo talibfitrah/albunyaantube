@@ -4,10 +4,23 @@ data class DownloadRequest(
     val id: String,
     val title: String,
     val videoId: String,
-    val audioOnly: Boolean = true
+    val audioOnly: Boolean = true,
+    /** Target video height for quality selection (null = best available or audio-only) */
+    val targetHeight: Int? = null,
+    // Optional playlist context for playlist downloads
+    val playlistId: String? = null,
+    val playlistTitle: String? = null,
+    val playlistQualityLabel: String? = null,
+    val indexInPlaylist: Int? = null,
+    val playlistSize: Int? = null
 )
 
 enum class DownloadStatus { QUEUED, RUNNING, PAUSED, COMPLETED, FAILED, CANCELLED }
+
+/**
+ * Download policy for content.
+ */
+enum class DownloadPolicy { ENABLED, QUEUED, DISABLED }
 
 data class DownloadFileMetadata(
     val sizeBytes: Long,

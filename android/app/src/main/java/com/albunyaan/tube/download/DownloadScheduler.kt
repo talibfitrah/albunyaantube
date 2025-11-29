@@ -17,13 +17,24 @@ class DownloadScheduler(
 
     fun schedule(request: DownloadRequest): UUID {
         val workId = UUID.randomUUID()
-        val input = Data.Builder()
+        val inputBuilder = Data.Builder()
             .putString(KEY_DOWNLOAD_ID, request.id)
             .putString(KEY_VIDEO_ID, request.videoId)
             .putString(KEY_TITLE, request.title)
             .putBoolean(KEY_AUDIO_ONLY, request.audioOnly)
             .putString(KEY_WORK_ID, workId.toString())
-            .build()
+
+        // Add target height for quality selection (0 = best available)
+        request.targetHeight?.let { inputBuilder.putInt(KEY_TARGET_HEIGHT, it) }
+
+        // Add optional playlist context
+        request.playlistId?.let { inputBuilder.putString(KEY_PLAYLIST_ID, it) }
+        request.playlistTitle?.let { inputBuilder.putString(KEY_PLAYLIST_TITLE, it) }
+        request.playlistQualityLabel?.let { inputBuilder.putString(KEY_PLAYLIST_QUALITY_LABEL, it) }
+        request.indexInPlaylist?.let { inputBuilder.putInt(KEY_INDEX_IN_PLAYLIST, it) }
+        request.playlistSize?.let { inputBuilder.putInt(KEY_PLAYLIST_SIZE, it) }
+
+        val input = inputBuilder.build()
 
         val workRequest = OneTimeWorkRequestBuilder<DownloadWorker>()
             .setId(workId)
@@ -87,6 +98,14 @@ class DownloadScheduler(
         internal const val KEY_FILE_SIZE = "file_size"
         internal const val KEY_COMPLETED_AT = "completed_at"
         internal const val KEY_MIME_TYPE = "mime_type"
+        // Playlist context keys
+        internal const val KEY_PLAYLIST_ID = "playlist_id"
+        internal const val KEY_PLAYLIST_TITLE = "playlist_title"
+        internal const val KEY_PLAYLIST_QUALITY_LABEL = "playlist_quality_label"
+        internal const val KEY_INDEX_IN_PLAYLIST = "index_in_playlist"
+        internal const val KEY_PLAYLIST_SIZE = "playlist_size"
+        // Target video height for quality selection (0 for audio-only or best available)
+        internal const val KEY_TARGET_HEIGHT = "target_height"
 
         private val NETWORK_CONSTRAINTS = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)

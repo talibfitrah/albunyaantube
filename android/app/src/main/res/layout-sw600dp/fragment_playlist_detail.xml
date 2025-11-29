@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Phone layout for Playlist Detail screen -->
+<!-- Tablet layout for Playlist Detail screen (sw600dp) -->
 <androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
@@ -75,16 +75,16 @@
 
                 </FrameLayout>
 
-                <!-- Playlist Info Header -->
+                <!-- Playlist Info Header (Tablet: more horizontal spacing) -->
                 <androidx.constraintlayout.widget.ConstraintLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:paddingStart="@dimen/playlist_header_horizontal_margin"
                     android:paddingEnd="@dimen/playlist_header_horizontal_margin"
-                    android:paddingTop="@dimen/spacing_md"
-                    android:paddingBottom="@dimen/spacing_md">
+                    android:paddingTop="@dimen/spacing_lg"
+                    android:paddingBottom="@dimen/spacing_lg">
 
-                    <!-- Playlist Title -->
+                    <!-- Playlist Title (Tablet: larger text) -->
                     <TextView
                         android:id="@+id/playlistTitle"
                         android:layout_width="0dp"
@@ -154,13 +154,14 @@
 
                     </com.google.android.material.chip.ChipGroup>
 
-                    <!-- Actions Row (stacked on phone) -->
+                    <!-- Actions Row (Tablet: horizontal layout) -->
                     <LinearLayout
                         android:id="@+id/actionsContainer"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/spacing_md"
-                        android:orientation="vertical"
+                        android:layout_marginTop="@dimen/spacing_lg"
+                        android:orientation="horizontal"
+                        android:weightSum="3"
                         app:layout_constraintStart_toStartOf="parent"
                         app:layout_constraintEnd_toEndOf="parent"
                         app:layout_constraintTop_toBottomOf="@id/categoryChipsContainer">
@@ -168,45 +169,40 @@
                         <!-- Play All Button -->
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/playAllButton"
-                            android:layout_width="match_parent"
+                            android:layout_width="0dp"
                             android:layout_height="@dimen/touch_target_button"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="@dimen/spacing_sm"
                             android:text="@string/playlist_play_all"
                             android:contentDescription="@string/cd_play_all_button"
                             app:icon="@drawable/ic_play"
                             app:iconGravity="textStart" />
 
-                        <!-- Shuffle and Download Row -->
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/spacing_sm"
-                            android:orientation="horizontal"
-                            android:weightSum="2">
+                        <!-- Shuffle Button -->
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/shuffleButton"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="@dimen/touch_target_button"
+                            android:layout_weight="1"
+                            android:layout_marginStart="@dimen/spacing_sm"
+                            android:layout_marginEnd="@dimen/spacing_sm"
+                            android:text="@string/playlist_shuffle"
+                            android:contentDescription="@string/cd_shuffle_button"
+                            app:icon="@drawable/ic_shuffle"
+                            app:iconGravity="textStart" />
 
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/shuffleButton"
-                                style="@style/Widget.Material3.Button.OutlinedButton"
-                                android:layout_width="0dp"
-                                android:layout_height="@dimen/touch_target_button"
-                                android:layout_weight="1"
-                                android:layout_marginEnd="@dimen/spacing_xs"
-                                android:text="@string/playlist_shuffle"
-                                android:contentDescription="@string/cd_shuffle_button"
-                                app:icon="@drawable/ic_shuffle"
-                                app:iconGravity="textStart" />
-
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/downloadPlaylistButton"
-                                android:layout_width="0dp"
-                                android:layout_height="@dimen/touch_target_button"
-                                android:layout_weight="1"
-                                android:layout_marginStart="@dimen/spacing_xs"
-                                android:text="@string/playlist_detail_download"
-                                android:contentDescription="@string/cd_download_playlist_button"
-                                app:icon="@drawable/ic_download"
-                                app:iconGravity="textStart" />
-
-                        </LinearLayout>
+                        <!-- Download Button -->
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/downloadPlaylistButton"
+                            android:layout_width="0dp"
+                            android:layout_height="@dimen/touch_target_button"
+                            android:layout_weight="1"
+                            android:layout_marginStart="@dimen/spacing_sm"
+                            android:text="@string/playlist_detail_download"
+                            android:contentDescription="@string/cd_download_playlist_button"
+                            app:icon="@drawable/ic_download"
+                            app:iconGravity="textStart" />
 
                     </LinearLayout>
 
@@ -250,49 +246,58 @@
         android:layout_height="match_parent"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
-        <!-- Main Content (Videos list) -->
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/videosRecyclerView"
+        <!-- Constrained width container for tablet -->
+        <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:clipToPadding="false"
-            android:paddingBottom="@dimen/bottom_nav_height"
-            android:visibility="gone"
-            tools:visibility="visible"
-            tools:listitem="@layout/item_video_list" />
+            android:layout_gravity="center_horizontal"
+            android:paddingStart="@dimen/playlist_header_horizontal_margin"
+            android:paddingEnd="@dimen/playlist_header_horizontal_margin">
 
-        <!-- List Skeleton (shown while loading items) -->
-        <LinearLayout
-            android:id="@+id/listSkeletonContainer"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:visibility="gone"
-            tools:visibility="visible">
+            <!-- Main Content (Videos list) -->
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/videosRecyclerView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:visibility="gone"
+                tools:visibility="visible"
+                tools:listitem="@layout/item_video_list" />
 
-            <include layout="@layout/skeleton_content_item" />
-            <include layout="@layout/skeleton_content_item" />
-            <include layout="@layout/skeleton_content_item" />
-            <include layout="@layout/skeleton_content_item" />
-            <include layout="@layout/skeleton_content_item" />
+            <!-- List Skeleton (shown while loading items) -->
+            <LinearLayout
+                android:id="@+id/listSkeletonContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone"
+                tools:visibility="visible">
 
-        </LinearLayout>
+                <include layout="@layout/skeleton_content_item" />
+                <include layout="@layout/skeleton_content_item" />
+                <include layout="@layout/skeleton_content_item" />
+                <include layout="@layout/skeleton_content_item" />
+                <include layout="@layout/skeleton_content_item" />
 
-        <!-- Empty State -->
-        <include
-            android:id="@+id/emptyState"
-            layout="@layout/empty_state"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:visibility="gone" />
+            </LinearLayout>
 
-        <!-- Error State -->
-        <include
-            android:id="@+id/errorState"
-            layout="@layout/error_state"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:visibility="gone" />
+            <!-- Empty State -->
+            <include
+                android:id="@+id/emptyState"
+                layout="@layout/empty_state"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="gone" />
+
+            <!-- Error State -->
+            <include
+                android:id="@+id/errorState"
+                layout="@layout/error_state"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="gone" />
+
+        </FrameLayout>
 
     </FrameLayout>
 
@@ -320,25 +325,25 @@
             android:layout_height="wrap_content"
             android:paddingStart="@dimen/playlist_header_horizontal_margin"
             android:paddingEnd="@dimen/playlist_header_horizontal_margin"
-            android:paddingTop="@dimen/spacing_md"
-            android:paddingBottom="@dimen/spacing_md">
+            android:paddingTop="@dimen/spacing_lg"
+            android:paddingBottom="@dimen/spacing_lg">
 
             <!-- Title skeleton -->
             <View
                 android:id="@+id/skeletonTitle"
                 android:layout_width="0dp"
-                android:layout_height="24dp"
+                android:layout_height="28dp"
                 android:background="@drawable/skeleton_shimmer"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintTop_toTopOf="parent"
-                app:layout_constraintWidth_percent="0.7" />
+                app:layout_constraintWidth_percent="0.6" />
 
             <!-- Channel skeleton -->
             <View
                 android:id="@+id/skeletonChannel"
-                android:layout_width="150dp"
-                android:layout_height="16dp"
+                android:layout_width="180dp"
+                android:layout_height="18dp"
                 android:layout_marginTop="@dimen/spacing_sm"
                 android:background="@drawable/skeleton_shimmer"
                 app:layout_constraintStart_toStartOf="parent"
@@ -347,46 +352,45 @@
             <!-- Metadata skeleton -->
             <View
                 android:id="@+id/skeletonMetadata"
-                android:layout_width="100dp"
-                android:layout_height="16dp"
+                android:layout_width="120dp"
+                android:layout_height="18dp"
                 android:layout_marginTop="@dimen/spacing_xs"
                 android:background="@drawable/skeleton_shimmer"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toBottomOf="@id/skeletonChannel" />
 
-            <!-- Button skeleton row -->
-            <View
+            <!-- Button skeleton row (horizontal) -->
+            <LinearLayout
                 android:id="@+id/skeletonPlayAllButton"
                 android:layout_width="0dp"
-                android:layout_height="@dimen/touch_target_button"
-                android:layout_marginTop="@dimen/spacing_md"
-                android:background="@drawable/skeleton_shimmer"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/skeletonMetadata" />
-
-            <!-- Second button row skeleton -->
-            <LinearLayout
-                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_sm"
+                android:layout_marginTop="@dimen/spacing_lg"
                 android:orientation="horizontal"
+                android:weightSum="3"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/skeletonPlayAllButton">
+                app:layout_constraintTop_toBottomOf="@id/skeletonMetadata">
 
                 <View
                     android:layout_width="0dp"
                     android:layout_height="@dimen/touch_target_button"
                     android:layout_weight="1"
-                    android:layout_marginEnd="@dimen/spacing_xs"
+                    android:layout_marginEnd="@dimen/spacing_sm"
                     android:background="@drawable/skeleton_shimmer" />
 
                 <View
                     android:layout_width="0dp"
                     android:layout_height="@dimen/touch_target_button"
                     android:layout_weight="1"
-                    android:layout_marginStart="@dimen/spacing_xs"
+                    android:layout_marginStart="@dimen/spacing_sm"
+                    android:layout_marginEnd="@dimen/spacing_sm"
+                    android:background="@drawable/skeleton_shimmer" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="@dimen/touch_target_button"
+                    android:layout_weight="1"
+                    android:layout_marginStart="@dimen/spacing_sm"
                     android:background="@drawable/skeleton_shimmer" />
 
             </LinearLayout>

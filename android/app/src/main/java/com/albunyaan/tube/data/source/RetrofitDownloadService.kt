@@ -53,11 +53,19 @@ class RetrofitDownloadService(
      * @param videoId The video ID to get manifest for
      * @param token Download authorization token (required by backend)
      * @param supportsMerging Whether client supports FFmpeg merging (for split streams)
+     * @param audioOnly Whether to select audio-only stream
+     * @param targetHeight Target video height for quality selection (null = best available)
      * @return Download manifest with video/audio streams
      */
-    suspend fun getDownloadManifest(videoId: String, token: String, supportsMerging: Boolean = false): DownloadManifest {
+    suspend fun getDownloadManifest(
+        videoId: String,
+        token: String,
+        supportsMerging: Boolean = false,
+        audioOnly: Boolean = false,
+        targetHeight: Int? = null
+    ): DownloadManifest {
         val dto = api.getDownloadManifest(videoId, token, supportsMerging)
-        return dto.toDomainManifest()
+        return dto.toDomainManifest(audioOnly, targetHeight)
     }
 
     /**
@@ -153,20 +161,20 @@ private fun DownloadTokenDto.toDomainToken(): DownloadToken {
 /**
  * Map DownloadManifestDto to domain DownloadManifest
  *
- * Selects the best stream option based on bitrate (highest quality first).
- * When supportsMerging=true was passed, backend includes split streams which are
- * typically higher quality (>480p), so we simply pick highest bitrate.
+ * Uses DownloadStreamSelector to select stream based on audioOnly flag and targetHeight preference.
+ *
+ * @param audioOnly Whether to select audio-only stream
+ * @param targetHeight Target video height for quality selection (null = best available)
  */
-private fun DownloadManifestDto.toDomainManifest(): DownloadManifest {
-    // Select best video stream by highest bitrate (split streams are higher quality when available)
-    val bestVideo = this.videoStreams
-        ?.sortedByDescending { it.bitrate ?: 0 }
-        ?.firstOrNull()
-        ?: throw IllegalStateException("No video streams available")
+private fun DownloadManifestDto.toDomainManifest(
+    audioOnly: Boolean = false,
+    targetHeight: Int? = null
+): DownloadManifest {
+    val selectedStream = DownloadStreamSelector.selectStream(this, audioOnly, targetHeight)
 
     return DownloadManifest(
         videoId = this.videoId ?: "",
-        selectedStream = bestVideo.toDomainStream(),
+        selectedStream = selectedStream.toDomainStream(),
         expiresAtMillis = this.expiresAtMillis ?: 0L
     )
 }

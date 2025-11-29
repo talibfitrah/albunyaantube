@@ -76,6 +76,10 @@
     <dimen name="channel_header_overlap">56dp</dimen>
     <dimen name="channel_header_horizontal_margin">48dp</dimen>
 
+    <!-- Playlist Detail Screen (Large Tablet / TV) -->
+    <dimen name="playlist_banner_height">280dp</dimen>
+    <dimen name="playlist_header_horizontal_margin">48dp</dimen>
+
     <!-- Typography sizes (larger for TV viewing distance) -->
     <dimen name="text_headline">24sp</dimen>
     <dimen name="text_subtitle">18sp</dimen>

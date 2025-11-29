@@ -7,6 +7,7 @@ import com.albunyaan.tube.download.DownloadRepository
 import com.albunyaan.tube.download.DownloadRequest
 import com.albunyaan.tube.download.DownloadScheduler
 import com.albunyaan.tube.download.DownloadStorage
+import com.albunyaan.tube.download.PlaylistDownloadItem
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -104,6 +105,23 @@ class FakeDownloadRepository : DownloadRepository {
 
     override fun cancel(requestId: String) {
         actions += "cancel:$requestId"
+    }
+
+    override fun enqueuePlaylist(
+        playlistId: String,
+        playlistTitle: String,
+        qualityLabel: String,
+        items: List<PlaylistDownloadItem>,
+        audioOnly: Boolean,
+        targetHeight: Int?
+    ): Int {
+        actions += "enqueuePlaylist:$playlistId:$qualityLabel:${items.size}:audioOnly=$audioOnly:targetHeight=$targetHeight"
+        return items.size
+    }
+
+    override fun isPlaylistDownloading(playlistId: String, qualityLabel: String): Boolean {
+        // For tests, default to false
+        return false
     }
 
     fun emit(entries: List<DownloadEntry>) {
