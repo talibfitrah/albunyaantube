@@ -88,9 +88,12 @@ class PlaylistVideosAdapter(
             // Download indicator
             bindDownloadState(uiItem)
 
-            // Click handler
+            // Click handler with position validation
             binding.root.setOnClickListener {
-                onVideoClick(item, bindingAdapterPosition)
+                val position = bindingAdapterPosition
+                if (position != RecyclerView.NO_POSITION) {
+                    onVideoClick(item, position)
+                }
             }
 
             // Accessibility content description
@@ -127,11 +130,12 @@ class PlaylistVideosAdapter(
                     binding.downloadedIcon.isVisible = false
                     binding.downloadingProgress.isVisible = true
                     binding.downloadingProgress.isIndeterminate = false
-                    binding.downloadingProgress.progress = uiItem.downloadProgress
+                    val boundedProgress = uiItem.downloadProgress.coerceIn(0, 100)
+                    binding.downloadingProgress.progress = boundedProgress
                     binding.downloadStatusBadge.isVisible = true
                     binding.downloadStatusBadge.text = context.getString(
                         R.string.playlist_video_downloading,
-                        uiItem.downloadProgress
+                        boundedProgress
                     )
                 }
                 DownloadStatus.QUEUED -> {
@@ -145,7 +149,7 @@ class PlaylistVideosAdapter(
                     binding.downloadedIcon.isVisible = false
                     binding.downloadingProgress.isVisible = true
                     binding.downloadingProgress.isIndeterminate = false
-                    binding.downloadingProgress.progress = uiItem.downloadProgress
+                    binding.downloadingProgress.progress = uiItem.downloadProgress.coerceIn(0, 100)
                     binding.downloadStatusBadge.isVisible = true
                     binding.downloadStatusBadge.text = context.getString(R.string.download_status_paused)
                 }

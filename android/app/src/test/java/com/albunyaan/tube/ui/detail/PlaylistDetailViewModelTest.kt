@@ -6,6 +6,7 @@ import com.albunyaan.tube.data.playlist.PlaylistHeader
 import com.albunyaan.tube.data.playlist.PlaylistItem
 import com.albunyaan.tube.data.playlist.PlaylistPage
 import com.albunyaan.tube.download.DownloadEntry
+import com.albunyaan.tube.download.DownloadPolicy
 import com.albunyaan.tube.download.DownloadRepository
 import com.albunyaan.tube.download.DownloadRequest
 import com.albunyaan.tube.download.DownloadStatus

@@ -253,7 +253,8 @@ class PlaylistDetailViewModel @AssistedInject constructor(
                 PlaylistUiEvent.ShowDownloadQualitySheet(
                     playlistId = playlistId,
                     playlistTitle = header.title,
-                    itemCount = header.itemCount?.toInt() ?: 0,
+                    // Guard against integer overflow for very large playlists
+                    itemCount = header.itemCount?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt() ?: 0,
                     suggestedQuality = PlaylistQualityOption.QUALITY_360P // Default
                 )
             )

@@ -173,6 +173,8 @@ class DefaultDownloadRepository(
 
     companion object {
         // Note: TTL is now defined in DownloadExpiryPolicy (single source of truth)
+        /** Delimiter for composite playlist download IDs: "playlistId|qualityLabel|videoId" */
+        private const val PLAYLIST_ID_DELIMITER = '|'
     }
 
     private fun restoreDownloadsFromWorkManager() {
@@ -236,10 +238,10 @@ class DefaultDownloadRepository(
      * - Legacy format: "videoId_timestamp" -> returns videoId (before underscore)
      */
     private fun parseVideoIdFromDownloadId(downloadId: String): String {
-        return if (downloadId.contains('|')) {
+        return if (downloadId.contains(PLAYLIST_ID_DELIMITER)) {
             // Playlist format: playlistId|qualityLabel|videoId
-            val parts = downloadId.split('|')
-            if (parts.size >= 3) parts[2] else downloadId
+            val parts = downloadId.split(PLAYLIST_ID_DELIMITER)
+            if (parts.size == 3) parts[2] else downloadId.substringBefore('_')
         } else {
             // Legacy format: videoId_timestamp
             downloadId.substringBefore('_')
@@ -251,9 +253,9 @@ class DefaultDownloadRepository(
      * Returns null for legacy single-video downloads.
      */
     private fun parsePlaylistMetadataFromDownloadId(downloadId: String): Pair<String, String>? {
-        return if (downloadId.contains('|')) {
-            val parts = downloadId.split('|')
-            if (parts.size >= 2) Pair(parts[0], parts[1]) else null
+        return if (downloadId.contains(PLAYLIST_ID_DELIMITER)) {
+            val parts = downloadId.split(PLAYLIST_ID_DELIMITER)
+            if (parts.size == 3) Pair(parts[0], parts[1]) else null
         } else {
             null
         }
@@ -329,7 +331,7 @@ class DefaultDownloadRepository(
         for (item in items) {
             // Generate deterministic request ID for deduplication
             // Format: playlistId|qualityLabel|videoId
-            val requestId = "$playlistId|$qualityLabel|${item.videoId}"
+            val requestId = "$playlistId$PLAYLIST_ID_DELIMITER$qualityLabel$PLAYLIST_ID_DELIMITER${item.videoId}"
 
             // Skip if already downloaded or in progress
             val existing = entries.value.find { it.request.id == requestId }
@@ -373,7 +375,7 @@ class DefaultDownloadRepository(
     }
 
     override fun isPlaylistDownloading(playlistId: String, qualityLabel: String): Boolean {
-        val prefix = "$playlistId|$qualityLabel|"
+        val prefix = "$playlistId$PLAYLIST_ID_DELIMITER$qualityLabel$PLAYLIST_ID_DELIMITER"
         return entries.value.any { entry ->
             entry.request.id.startsWith(prefix) &&
                     entry.status in listOf(DownloadStatus.QUEUED, DownloadStatus.RUNNING)

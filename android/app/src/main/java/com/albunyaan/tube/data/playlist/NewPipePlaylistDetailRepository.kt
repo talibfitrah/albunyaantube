@@ -6,6 +6,8 @@ import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
 import com.albunyaan.tube.download.DownloadPolicy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.InfoItem
 import org.schabi.newpipe.extractor.ServiceList
@@ -15,7 +17,6 @@ import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubePlaylist
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeStreamLinkHandlerFactory
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import java.io.IOException
-import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -37,8 +38,27 @@ class NewPipePlaylistDetailRepository @Inject constructor(
     private val youtubeService = ServiceList.YouTube
     private val playlistLinkHandlerFactory = YoutubePlaylistLinkHandlerFactory.getInstance()
 
-    // In-memory cache for playlist info
-    private val playlistInfoCache = ConcurrentHashMap<String, CacheEntry<PlaylistInfo>>()
+    /**
+     * Mutex to ensure atomic cache operations (TTL check + eviction + insertion).
+     * Prevents race conditions when multiple coroutines access the cache concurrently.
+     */
+    private val cacheMutex = Mutex()
+
+    /**
+     * In-memory cache for playlist info using LinkedHashMap with insertion-order tracking.
+     * Automatic eviction when size exceeds MAX_CACHE_SIZE via removeEldestEntry.
+     * All access must be protected by [cacheMutex] to ensure atomicity.
+     */
+    private val playlistInfoCache: MutableMap<String, CacheEntry<PlaylistInfo>> =
+        object : LinkedHashMap<String, CacheEntry<PlaylistInfo>>(MAX_CACHE_SIZE, 0.75f, false) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CacheEntry<PlaylistInfo>>): Boolean {
+                val shouldRemove = size > MAX_CACHE_SIZE
+                if (shouldRemove) {
+                    Log.d(TAG, "Evicting oldest cache entry: ${eldest.key}")
+                }
+                return shouldRemove
+            }
+        }
 
     override suspend fun getHeader(
         playlistId: String,
@@ -108,17 +128,20 @@ class NewPipePlaylistDetailRepository @Inject constructor(
 
     /**
      * Fetches playlist info with caching support.
+     * Uses [cacheMutex] to ensure atomic cache read/write operations.
      */
     private suspend fun getPlaylistInfo(playlistId: String, forceRefresh: Boolean): PlaylistInfo {
         return withContext(Dispatchers.IO) {
             val now = System.currentTimeMillis()
 
-            // Check cache unless force refresh
+            // Check cache atomically unless force refresh
             if (!forceRefresh) {
-                playlistInfoCache[playlistId]?.let { entry ->
-                    if (now - entry.timestamp <= CACHE_TTL_MILLIS) {
-                        Log.d(TAG, "Cache hit for playlist: $playlistId")
-                        return@withContext entry.value
+                cacheMutex.withLock {
+                    playlistInfoCache[playlistId]?.let { entry ->
+                        if (now - entry.timestamp <= CACHE_TTL_MILLIS) {
+                            Log.d(TAG, "Cache hit for playlist: $playlistId")
+                            return@withContext entry.value
+                        }
                     }
                 }
             }
@@ -132,8 +155,10 @@ class NewPipePlaylistDetailRepository @Inject constructor(
                 extractor.fetchPage()
                 val info = PlaylistInfo.getInfo(extractor)
 
-                // Cache the result
-                playlistInfoCache[playlistId] = CacheEntry(info, now)
+                // Cache the result atomically (LinkedHashMap eviction + insertion as one operation)
+                cacheMutex.withLock {
+                    playlistInfoCache[playlistId] = CacheEntry(info, now)
+                }
                 Log.d(TAG, "Cached playlist info for: $playlistId with ${info.streamCount} items")
 
                 info
@@ -262,5 +287,6 @@ class NewPipePlaylistDetailRepository @Inject constructor(
     companion object {
         private const val TAG = "PlaylistDetailRepo"
         private const val CACHE_TTL_MILLIS = 30 * 60 * 1000L // 30 minutes
+        private const val MAX_CACHE_SIZE = 100 // Maximum cached playlists
     }
 }

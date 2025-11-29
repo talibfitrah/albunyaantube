@@ -356,7 +356,9 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
             errorState.root.isVisible = true
             errorState.errorBody.text = message
             errorState.retryButton.setOnClickListener {
+                // Reload both header and items on retry
                 viewModel.loadHeader(forceRefresh = true)
+                viewModel.retryInitial()
             }
         }
     }
