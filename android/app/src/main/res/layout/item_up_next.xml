@@ -1,26 +1,84 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- Up Next video item - consistent with Playlist Detail and Channel Detail video list items -->
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:padding="12dp"
+    android:padding="@dimen/spacing_md"
     android:background="?attr/selectableItemBackground"
     android:clickable="true"
     android:focusable="true">
 
+    <!-- Video Thumbnail (16:9 aspect ratio, rounded corners) - consistent with item_playlist_video.xml -->
+    <FrameLayout
+        android:id="@+id/thumbnailContainer"
+        android:layout_width="@dimen/video_list_thumbnail_width"
+        android:layout_height="0dp"
+        app:layout_constraintDimensionRatio="16:9"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <com.google.android.material.imageview.ShapeableImageView
+            android:id="@+id/upNextThumbnail"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="centerCrop"
+            android:contentDescription="@string/player_up_next_header"
+            android:background="@drawable/thumbnail_placeholder"
+            app:shapeAppearanceOverlay="@style/ShapeAppearance.Albunyaan.SmallComponent"
+            tools:src="@drawable/thumbnail_placeholder" />
+
+        <!-- Duration Overlay (Bottom-right of thumbnail) - consistent styling -->
+        <TextView
+            android:id="@+id/upNextDuration"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|end"
+            android:layout_margin="@dimen/spacing_xs"
+            android:paddingStart="@dimen/home_duration_chip_padding_horizontal"
+            android:paddingEnd="@dimen/home_duration_chip_padding_horizontal"
+            android:paddingTop="@dimen/home_duration_chip_padding_vertical"
+            android:paddingBottom="@dimen/home_duration_chip_padding_vertical"
+            android:background="@drawable/home_duration_chip_bg"
+            android:textColor="@color/onPrimary"
+            android:textSize="@dimen/text_duration"
+            android:textStyle="bold"
+            tools:text="12:34" />
+    </FrameLayout>
+
+    <!-- Video Title -->
     <TextView
         android:id="@+id/upNextTitle"
-        android:layout_width="match_parent"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:textAppearance="@style/TextAppearance.MaterialComponents.Body1"
-        android:text="Sample title"/>
+        android:layout_marginStart="@dimen/spacing_md"
+        android:layout_marginEnd="@dimen/spacing_sm"
+        android:textSize="@dimen/text_body"
+        android:textStyle="bold"
+        android:textColor="?android:attr/textColorPrimary"
+        android:maxLines="2"
+        android:ellipsize="end"
+        android:textAlignment="viewStart"
+        app:layout_constraintStart_toEndOf="@id/thumbnailContainer"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="@id/thumbnailContainer"
+        tools:text="Sample title" />
 
+    <!-- Video Metadata (Channel + Duration + Views) -->
     <TextView
         android:id="@+id/upNextMeta"
-        android:layout_width="match_parent"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:textAppearance="@style/TextAppearance.MaterialComponents.Caption"
-        android:text="Sample meta"/>
+        android:layout_marginTop="@dimen/spacing_xs"
+        android:textSize="@dimen/text_caption"
+        android:textColor="?android:attr/textColorSecondary"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:textAlignment="viewStart"
+        app:layout_constraintStart_toStartOf="@id/upNextTitle"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/upNextTitle"
+        tools:text="Channel • 12:34 • 100K views" />
 
-</LinearLayout>
+</androidx.constraintlayout.widget.ConstraintLayout>

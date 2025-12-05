@@ -181,7 +181,8 @@
                 android:background="@android:color/transparent"
                 android:focusable="true"
                 app:layout_collapseMode="pin"
-                app:navigationIcon="?attr/homeAsUpIndicator"
+                app:navigationIcon="@drawable/ic_arrow_back"
+                app:navigationIconTint="?attr/colorOnSurface"
                 app:title="@string/app_name"
                 app:titleTextColor="?attr/colorOnSurface" />
 

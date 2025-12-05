@@ -23,6 +23,7 @@ import androidx.core.view.isVisible
 import androidx.core.content.FileProvider
 import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.navigation.fragment.findNavController
 import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.R
 import com.albunyaan.tube.databinding.FragmentPlayerBinding
@@ -57,6 +58,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private lateinit var gestureDetector: GestureDetectorCompat
     private var isFullscreen = false
     private var castContext: com.google.android.gms.cast.framework.CastContext? = null
+    private var exoNextButton: View? = null
+    private var exoPrevButton: View? = null
 
     // Overlay controls are now always visible for better UX
     // Users need constant access to quality, cast, and minimize buttons
@@ -94,11 +97,36 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // Cast not available
         }
 
-        // Get video ID from arguments
+        // Get playback arguments - check for playlist first, then single video
+        val playlistId = arguments?.getString("playlistId")
         val videoId = arguments?.getString("videoId")
-        if (!videoId.isNullOrEmpty()) {
-            viewModel.loadVideo(videoId)
+        val startIndex = arguments?.getInt("startIndex", 0) ?: 0
+        val shuffled = arguments?.getBoolean("shuffled", false) ?: false
+
+        when {
+            !playlistId.isNullOrEmpty() -> {
+                // Playlist playback mode - load playlist and start from specified index
+                viewModel.loadPlaylist(playlistId, startIndex, shuffled)
+            }
+            !videoId.isNullOrEmpty() -> {
+                // Single video playback mode
+                viewModel.loadVideo(videoId)
+            }
+            // If no arguments, ViewModel will use default stub queue (for testing)
         }
+
+        // Access ExoPlayer's internal navigation buttons (requires ExoPlayer 2.x)
+        // Note: These IDs are part of ExoPlayer's default player controls layout
+        exoNextButton = binding.playerView.findViewById(com.google.android.exoplayer2.ui.R.id.exo_next)
+        exoPrevButton = binding.playerView.findViewById(com.google.android.exoplayer2.ui.R.id.exo_prev)
+
+        if (exoNextButton == null || exoPrevButton == null) {
+            android.util.Log.w("PlayerFragment", "ExoPlayer navigation buttons not found - check ExoPlayer version compatibility")
+        }
+
+        // Ensure prev/next buttons are always visible (ExoPlayer may hide them if no playlist attached)
+        exoNextButton?.visibility = View.VISIBLE
+        exoPrevButton?.visibility = View.VISIBLE
 
         binding.audioOnlyToggle.setOnCheckedChangeListener { _, isChecked ->
             viewModel.setAudioOnly(isChecked)
@@ -142,7 +170,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         }
 
         binding.minimizeButton?.setOnClickListener {
-            requireActivity().onBackPressedDispatcher.onBackPressed()
+            // Use navigateUp for predictable navigation back to previous screen
+            findNavController().navigateUp()
         }
 
         binding.fullscreenButton?.setOnClickListener {
@@ -245,15 +274,18 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         binding.playerView.player = player
         player.addListener(viewModel.playerListener)
 
-        // Add listener to auto-hide controls when playback starts
+        // Add listener to auto-hide controls when playback starts and handle errors
         player.addListener(object : com.google.android.exoplayer2.Player.Listener {
             private var hasAutoHidden = false
+            private var retryCount = 0
+            private val maxRetries = 2
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 android.util.Log.d("PlayerFragment", "onIsPlayingChanged: isPlaying=$isPlaying, hasAutoHidden=$hasAutoHidden")
                 if (isPlaying && !hasAutoHidden) {
                     // Auto-hide controls after playback starts
                     hasAutoHidden = true
+                    retryCount = 0 // Reset retry count on successful playback
                     binding.playerView.postDelayed({
                         if (player?.isPlaying == true) {
                             android.util.Log.d("PlayerFragment", "Auto-hiding controls now")
@@ -271,6 +303,68 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 if (playbackState == com.google.android.exoplayer2.Player.STATE_IDLE) {
                     hasAutoHidden = false
                 }
+                if (playbackState == com.google.android.exoplayer2.Player.STATE_ENDED) {
+                    val advanced = viewModel.markCurrentComplete()
+                    if (advanced) {
+                        player?.playWhenReady = true
+                    }
+                }
+            }
+
+            override fun onPlayerError(error: com.google.android.exoplayer2.PlaybackException) {
+                android.util.Log.e("PlayerFragment", "Player error: ${error.errorCodeName}, retryCount=$retryCount", error)
+
+                // Handle different error types
+                when (error.errorCode) {
+                    com.google.android.exoplayer2.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+                    com.google.android.exoplayer2.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+                    com.google.android.exoplayer2.PlaybackException.ERROR_CODE_IO_UNSPECIFIED -> {
+                        // Network errors - retry with backoff
+                        if (retryCount < maxRetries) {
+                            retryCount++
+                            val delayMs = retryCount * 1500L
+                            android.util.Log.d("PlayerFragment", "Retrying playback in ${delayMs}ms (attempt $retryCount)")
+                            // Use lifecycle-aware coroutine to prevent crashes if fragment is destroyed
+                            viewLifecycleOwner.lifecycleScope.launch {
+                                kotlinx.coroutines.delay(delayMs)
+                                player?.let {
+                                    it.prepare()
+                                    it.playWhenReady = true
+                                }
+                            }
+                        } else {
+                            // Use safe context access to prevent crash if fragment is detached
+                            context?.let { ctx ->
+                                Toast.makeText(ctx, R.string.player_stream_error, Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                    com.google.android.exoplayer2.PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
+                    com.google.android.exoplayer2.PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED -> {
+                        // Stream URL expired or malformed - clear cache and retry once
+                        if (retryCount < 1) {
+                            retryCount++
+                            android.util.Log.d("PlayerFragment", "Stream parsing failed - clearing cache and retrying")
+                            preparedStreamKey = null
+                            preparedStreamUrl = null
+                            // Reload the video to get fresh URLs
+                            viewModel.state.value.currentItem?.let { item ->
+                                viewModel.loadVideo(item.streamId, item.title)
+                            }
+                        } else {
+                            // Use safe context access to prevent crash if fragment is detached
+                            context?.let { ctx ->
+                                Toast.makeText(ctx, R.string.player_stream_unavailable, Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                    else -> {
+                        // Other errors - show message with safe context access
+                        context?.let { ctx ->
+                            Toast.makeText(ctx, getString(R.string.player_stream_error) + ": ${error.errorCodeName}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
             }
         })
 
@@ -279,12 +373,22 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             setControllerAutoShow(true)
             setControllerHideOnTouch(true)
             controllerShowTimeoutMs = 5000 // 5 seconds
+            setShowFastForwardButton(true)
+            setShowNextButton(true)
+            setShowPreviousButton(true)
 
             // Sync custom overlay controls with ExoPlayer controller visibility
             setControllerVisibilityListener(
                 com.google.android.exoplayer2.ui.StyledPlayerView.ControllerVisibilityListener { visibility ->
                     android.util.Log.d("PlayerFragment", "Controller visibility changed: $visibility")
                     binding.playerOverlayControls?.visibility = visibility
+
+                    // Re-apply our custom prev/next button states when controller becomes visible
+                    // This prevents ExoPlayer from overriding our button configuration
+                    if (visibility == View.VISIBLE) {
+                        val state = viewModel.state.value
+                        updatePlaylistNavigationButtons(state.hasPrevious, state.hasNext)
+                    }
                 }
             )
         }
@@ -337,19 +441,22 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     binding.videoDescription?.text = "No description available"
                 }
 
-                binding.currentlyPlaying.text = currentItem?.let {
-                    getString(R.string.player_current_item, it.title)
-                } ?: getString(R.string.player_no_current_item)
-                binding.completeButton.isEnabled = state.streamState is StreamState.Ready
-                updateDownloadControls(binding, state)
-                upNextAdapter.submitList(state.upNext)
-                binding.upNextList.isVisible = state.upNext.isNotEmpty()
-                binding.upNextEmpty.isVisible = state.upNext.isEmpty()
-                binding.excludedMessage.isVisible = state.excludedItems.isNotEmpty()
-                if (state.excludedItems.isNotEmpty()) {
-                    binding.excludedMessage.text = getString(
-                        R.string.player_excluded_message,
-                        state.excludedItems.size
+            binding.currentlyPlaying.text = currentItem?.let {
+                getString(R.string.player_current_item, it.title)
+            } ?: getString(R.string.player_no_current_item)
+            binding.completeButton.isEnabled = state.streamState is StreamState.Ready
+            updateDownloadControls(binding, state)
+            upNextAdapter.submitList(state.upNext)
+            binding.upNextList.isVisible = state.upNext.isNotEmpty()
+            binding.upNextEmpty.isVisible = state.upNext.isEmpty()
+                // Update ExoPlayer prev/next buttons based on playlist position
+                // Always keep buttons visible but visually indicate disabled state
+                updatePlaylistNavigationButtons(state.hasPrevious, state.hasNext)
+            binding.excludedMessage.isVisible = state.excludedItems.isNotEmpty()
+            if (state.excludedItems.isNotEmpty()) {
+                binding.excludedMessage.text = getString(
+                    R.string.player_excluded_message,
+                    state.excludedItems.size
                     )
                 }
                 binding.analyticsStatus.text = renderAnalytics(state.lastAnalyticsEvent)
@@ -592,6 +699,20 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             }
             return
         }
+
+        // Ensure player is initialized - if not, set it up first
+        // Note: setupPlayer creates a new player each time, so no duplicate listener issue.
+        // This is a defensive fallback - normal flow sets up player in onViewCreated.
+        val currentPlayer = player ?: run {
+            android.util.Log.w("PlayerFragment", "Player is null during stream preparation - initializing")
+            val b = binding ?: return
+            setupPlayer(b)
+            player ?: run {
+                android.util.Log.e("PlayerFragment", "Failed to initialize player")
+                return
+            }
+        }
+
         val key = streamState.streamId to state.audioOnly
 
         // Check if we're switching quality (same stream, different audio/video mode)
@@ -602,11 +723,14 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         // Save current position for seamless quality switching
         val savedPosition = if (isQualitySwitch) {
-            player?.currentPosition ?: 0
+            currentPlayer.currentPosition
         } else {
             0
         }
-        val wasPlaying = player?.playWhenReady == true
+        val wasPlaying = currentPlayer.playWhenReady
+        // For quality switches: preserve user's play/pause state
+        // For new videos: auto-play (standard video player UX - user selected a video to watch)
+        val shouldPlay = if (isQualitySwitch) wasPlaying else true
 
         // Create multi-quality MediaSource from resolved streams
         val mediaSource = try {
@@ -628,19 +752,24 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             ).createMediaSource(mediaItem)
         }
 
-        player?.let {
-            it.setMediaSource(mediaSource)
-            it.prepare()
+        try {
+            currentPlayer.setMediaSource(mediaSource)
+            currentPlayer.prepare()
 
             // Restore position for seamless quality switching
             if (isQualitySwitch && savedPosition > 0) {
-                it.seekTo(savedPosition)
+                currentPlayer.seekTo(savedPosition)
             }
 
-            it.playWhenReady = wasPlaying
+            currentPlayer.playWhenReady = shouldPlay
+            preparedStreamKey = key
+            preparedStreamUrl = streamState.selection.video?.url
+            android.util.Log.d("PlayerFragment", "Stream prepared successfully: ${streamState.streamId}")
+        } catch (e: Exception) {
+            android.util.Log.e("PlayerFragment", "Failed to prepare stream: ${e.message}", e)
+            preparedStreamKey = null
+            preparedStreamUrl = null
         }
-        preparedStreamKey = key
-        preparedStreamUrl = streamState.selection.video?.url
     }
 
     private fun selectTrack(selection: PlaybackSelection, audioOnly: Boolean): Pair<String, String>? {
@@ -882,11 +1011,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
     private fun loadMediaToCast() {
         val currentItem = viewModel.state.value.currentItem ?: return
-        val streamState = viewModel.state.value.streamState
-        if (streamState !is StreamState.Ready) return
+            val streamState = viewModel.state.value.streamState
+            if (streamState !is StreamState.Ready) return
 
-        val castSession = castContext?.sessionManager?.currentCastSession ?: return
-        val remoteMediaClient = castSession.remoteMediaClient ?: return
+            val castSession = castContext?.sessionManager?.currentCastSession ?: return
+            val remoteMediaClient = castSession.remoteMediaClient ?: return
 
         try {
             // Get the video URL from stream state
@@ -935,35 +1064,50 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         }
     }
 
-    private fun showCastDeviceSelector() {
-        try {
-            val castContext = com.google.android.gms.cast.framework.CastContext.getSharedInstance(requireContext())
-            val castSession = castContext.sessionManager.currentCastSession
+    /**
+     * Updates the ExoPlayer's previous/next buttons based on playlist navigation state.
+     *
+     * Playlist Navigation Logic:
+     * - First item: Previous disabled, Next enabled (if more items exist)
+     * - Middle items: Both Previous and Next enabled
+     * - Last item: Previous enabled, Next disabled
+     * - Single item: Both disabled
+     *
+     * Buttons are always kept visible but visually indicate disabled state via alpha.
+     */
+    private fun updatePlaylistNavigationButtons(hasPrevious: Boolean, hasNext: Boolean) {
+        // Always ensure buttons are visible (ExoPlayer may try to hide them)
+        exoPrevButton?.visibility = View.VISIBLE
+        exoNextButton?.visibility = View.VISIBLE
 
-            if (castSession != null && castSession.isConnected) {
-                // Already connected, show disconnect option
-                MaterialAlertDialogBuilder(requireContext())
-                    .setTitle("Chromecast")
-                    .setMessage("Connected to ${castSession.castDevice?.friendlyName ?: "device"}")
-                    .setNegativeButton("Disconnect") { _, _ ->
-                        castContext.sessionManager.endCurrentSession(true)
+        // Previous button state
+        exoPrevButton?.apply {
+            isEnabled = hasPrevious
+            alpha = if (hasPrevious) 1f else 0.3f
+            setOnClickListener {
+                if (hasPrevious) {
+                    val moved = viewModel.skipToPrevious()
+                    if (moved) {
+                        player?.playWhenReady = true
                     }
-                    .setPositiveButton("OK", null)
-                    .show()
-            } else {
-                // Show MediaRouteButton-like dialog by programmatically triggering route chooser
-                Toast.makeText(
-                    requireContext(),
-                    "Tap the Cast button in the toolbar or enable Cast from your device's Quick Settings",
-                    Toast.LENGTH_LONG
-                ).show()
+                }
             }
-        } catch (e: Exception) {
-            Toast.makeText(
-                requireContext(),
-                "Chromecast not available: ${e.message}",
-                Toast.LENGTH_SHORT
-            ).show()
+        }
+
+        // Next button state
+        exoNextButton?.apply {
+            isEnabled = hasNext
+            alpha = if (hasNext) 1f else 0.3f
+            setOnClickListener {
+                if (hasNext) {
+                    val advanced = viewModel.skipToNext()
+                    if (advanced) {
+                        player?.playWhenReady = true
+                    }
+                } else {
+                    Toast.makeText(requireContext(), getString(R.string.player_up_next_empty), Toast.LENGTH_SHORT).show()
+                }
+            }
         }
     }
 

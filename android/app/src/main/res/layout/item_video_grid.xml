@@ -1,81 +1,116 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Video grid item with fixed content height for row alignment -->
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:padding="@dimen/spacing_sm"
+    android:paddingStart="@dimen/spacing_sm"
+    android:paddingEnd="@dimen/spacing_sm"
+    android:paddingTop="@dimen/spacing_sm"
+    android:paddingBottom="@dimen/spacing_md"
     android:background="?attr/selectableItemBackground"
     android:clickable="true"
     android:focusable="true">
 
-    <!-- Video Thumbnail -->
-    <ImageView
-        android:id="@+id/videoThumbnail"
+    <!-- Video Thumbnail with rounded corners -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/thumbnailCard"
         android:layout_width="0dp"
-        android:layout_height="0dp"
-        android:scaleType="centerCrop"
-        android:background="@drawable/thumbnail_placeholder"
-        android:clipToOutline="true"
-        android:outlineProvider="background"
-        android:contentDescription="@null"
-        android:importantForAccessibility="no"
-        app:layout_constraintDimensionRatio="16:9"
+        android:layout_height="wrap_content"
+        app:cardCornerRadius="@dimen/home_thumbnail_corner_radius"
+        app:cardElevation="0dp"
+        app:strokeWidth="0dp"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        tools:src="@drawable/thumbnail_placeholder"/>
+        app:layout_constraintTop_toTopOf="parent">
 
-    <!-- Duration Overlay (Bottom-right of thumbnail) -->
-    <TextView
-        android:id="@+id/videoDuration"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_margin="@dimen/spacing_xs"
-        android:paddingStart="6dp"
-        android:paddingEnd="6dp"
-        android:paddingTop="2dp"
-        android:paddingBottom="2dp"
-        android:background="@android:color/black"
-        android:textColor="@android:color/white"
-        android:textSize="11sp"
-        android:textStyle="bold"
-        app:layout_constraintEnd_toEndOf="@id/videoThumbnail"
-        app:layout_constraintBottom_toBottomOf="@id/videoThumbnail"
-        tools:text="10:30"/>
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
 
-    <!-- Video Title -->
-    <TextView
-        android:id="@+id/videoTitle"
+            <ImageView
+                android:id="@+id/videoThumbnail"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:scaleType="centerCrop"
+                android:background="@color/surface_variant"
+                android:contentDescription="@null"
+                android:importantForAccessibility="no"
+                app:layout_constraintDimensionRatio="16:9"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintTop_toTopOf="parent"
+                tools:src="@drawable/thumbnail_placeholder" />
+
+            <!-- Duration Overlay (Bottom-right of thumbnail) -->
+            <TextView
+                android:id="@+id/videoDuration"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_margin="@dimen/spacing_xs"
+                android:paddingStart="@dimen/home_duration_chip_padding_horizontal"
+                android:paddingEnd="@dimen/home_duration_chip_padding_horizontal"
+                android:paddingTop="@dimen/home_duration_chip_padding_vertical"
+                android:paddingBottom="@dimen/home_duration_chip_padding_vertical"
+                android:background="@drawable/duration_badge_background"
+                android:textColor="@android:color/white"
+                android:textSize="@dimen/text_duration"
+                android:textStyle="bold"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent"
+                tools:text="10:30" />
+
+        </androidx.constraintlayout.widget.ConstraintLayout>
+
+    </com.google.android.material.card.MaterialCardView>
+
+    <!-- Fixed height content area for consistent row alignment -->
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/contentArea"
         android:layout_width="0dp"
-        android:layout_height="wrap_content"
+        android:layout_height="@dimen/home_card_content_height"
         android:layout_marginTop="@dimen/spacing_sm"
-        android:textSize="14sp"
-        android:textStyle="bold"
-        android:textColor="@android:color/black"
-        android:maxLines="2"
-        android:ellipsize="end"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/videoThumbnail"
-        tools:text="The Essence of Faith"/>
+        app:layout_constraintTop_toBottomOf="@id/thumbnailCard">
 
-    <!-- Video Metadata (Channel + Views + Date) -->
-    <TextView
-        android:id="@+id/videoMeta"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="@dimen/spacing_xs"
-        android:textSize="12sp"
-        android:textColor="@android:color/darker_gray"
-        android:maxLines="1"
-        android:ellipsize="end"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/videoTitle"
-        tools:text="100K views • 2 weeks ago"/>
+        <!-- Video Title - Fixed 2 lines -->
+        <TextView
+            android:id="@+id/videoTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:textSize="@dimen/home_item_title_size"
+            android:textStyle="bold"
+            android:textColor="?attr/colorOnSurface"
+            android:textAlignment="viewStart"
+            android:maxLines="2"
+            android:ellipsize="end"
+            android:minLines="2"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            tools:text="The Essence of Faith" />
 
-    <!-- Category Chip -->
+        <!-- Video Metadata (Channel + Views + Date) -->
+        <TextView
+            android:id="@+id/videoMeta"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_xs"
+            android:textSize="@dimen/home_item_meta_size"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:textAlignment="viewStart"
+            android:maxLines="2"
+            android:ellipsize="end"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/videoTitle"
+            tools:text="100K views • 2 weeks ago" />
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <!-- Category Chip - anchored below content area -->
     <com.google.android.material.chip.ChipGroup
         android:id="@+id/categoryChipsContainer"
         android:layout_width="0dp"
@@ -84,6 +119,6 @@
         app:singleLine="true"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/videoMeta"/>
+        app:layout_constraintTop_toBottomOf="@id/contentArea" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

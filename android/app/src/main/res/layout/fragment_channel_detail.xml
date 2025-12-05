@@ -180,6 +180,7 @@
                 android:background="@android:color/transparent"
                 app:layout_collapseMode="pin"
                 app:navigationIcon="?attr/homeAsUpIndicator"
+                app:navigationIconTint="?attr/colorOnSurface"
                 app:title="@string/app_name"
                 app:titleTextColor="?attr/colorOnSurface" />
 

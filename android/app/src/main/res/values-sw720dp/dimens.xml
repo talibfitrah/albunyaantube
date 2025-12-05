@@ -13,6 +13,7 @@
 
     <!-- Player (optimized for Full HD displays) -->
     <dimen name="player_portrait_height">480dp</dimen>  <!-- was 240dp on phone, 360dp on tablet -->
+    <dimen name="player_min_height">240dp</dimen>  <!-- was 120dp on phone, 180dp on tablet -->
     <dimen name="player_controls_offset">72dp</dimen>
 
     <!-- Thumbnails (constrained, not oversized) -->
@@ -78,7 +79,12 @@
 
     <!-- Playlist Detail Screen (Large Tablet / TV) -->
     <dimen name="playlist_banner_height">280dp</dimen>
+    <dimen name="banner_gradient_top_height">96dp</dimen>
     <dimen name="playlist_header_horizontal_margin">48dp</dimen>
+
+    <!-- Playlist Hero Component (Large Tablet / TV) -->
+    <dimen name="playlist_hero_height">320dp</dimen>
+    <dimen name="playlist_hero_thumbnail_max_width">560dp</dimen>
 
     <!-- Typography sizes (larger for TV viewing distance) -->
     <dimen name="text_headline">24sp</dimen>

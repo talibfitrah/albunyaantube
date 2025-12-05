@@ -12,24 +12,47 @@
         android:background="@android:color/black"
         app:elevation="0dp">
 
-        <FrameLayout
+        <!-- CollapsingToolbarLayout for scroll-to-shrink behavior -->
+        <com.google.android.material.appbar.CollapsingToolbarLayout
+            android:id="@+id/collapsingToolbar"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content">
+            android:layout_height="wrap_content"
+            android:minHeight="@dimen/player_min_height"
+            app:layout_scrollFlags="scroll|exitUntilCollapsed|snap"
+            app:scrimVisibleHeightTrigger="0dp"
+            app:contentScrim="@android:color/black"
+            app:toolbarId="@+id/playerToolbarPlaceholder">
 
-            <com.google.android.exoplayer2.ui.StyledPlayerView
-                android:id="@+id/playerView"
+            <FrameLayout
                 android:layout_width="match_parent"
-                android:layout_height="@dimen/player_portrait_height"
-                android:keepScreenOn="true"
-                android:contentDescription="@string/player_video_player"
-                app:show_buffering="when_playing"
-                app:use_controller="true"
-                app:show_subtitle_button="true"
-                app:show_vr_button="false"
-                app:show_shuffle_button="false"
-                app:show_timeout="5000"
-                app:auto_show="true"
-                app:hide_on_touch="true" />
+                android:layout_height="wrap_content"
+                app:layout_collapseMode="parallax"
+                app:layout_collapseParallaxMultiplier="0.5">
+
+                <com.google.android.exoplayer2.ui.StyledPlayerView
+                    android:id="@+id/playerView"
+                    android:layout_width="match_parent"
+                    android:layout_height="@dimen/player_portrait_height"
+                    android:keepScreenOn="true"
+                    android:contentDescription="@string/player_video_player"
+                    app:show_buffering="when_playing"
+                    app:use_controller="true"
+                    app:show_subtitle_button="true"
+                    app:show_vr_button="false"
+                    app:show_shuffle_button="false"
+                    app:show_timeout="5000"
+                    app:auto_show="true"
+                    app:hide_on_touch="true" />
+
+            </FrameLayout>
+
+            <!-- Invisible toolbar placeholder for CollapsingToolbarLayout -->
+            <androidx.appcompat.widget.Toolbar
+                android:id="@+id/playerToolbarPlaceholder"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:visibility="invisible"
+                app:layout_collapseMode="pin" />
 
             <!-- Auto-hiding overlay controls -->
             <FrameLayout
@@ -43,16 +66,19 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
-                    android:padding="8dp">
+                    android:paddingStart="@dimen/spacing_sm"
+                    android:paddingTop="@dimen/spacing_sm"
+                    android:paddingEnd="@dimen/spacing_sm"
+                    android:paddingBottom="@dimen/spacing_xs">
 
                     <!-- Minimize Button - Top Left -->
                     <ImageButton
                         android:id="@+id/minimizeButton"
-                        android:layout_width="48dp"
-                        android:layout_height="48dp"
+                        android:layout_width="@dimen/touch_target_min"
+                        android:layout_height="@dimen/touch_target_min"
                         android:background="?attr/selectableItemBackgroundBorderless"
-                        android:src="@drawable/ic_expand_more"
-                        android:contentDescription="@string/player_action_minimize"
+                        android:src="@drawable/ic_arrow_back"
+                        android:contentDescription="@string/navigate_back"
                         app:tint="@android:color/white" />
 
                     <View
@@ -63,8 +89,8 @@
                     <!-- Quality Button -->
                     <ImageButton
                         android:id="@+id/qualityButton"
-                        android:layout_width="48dp"
-                        android:layout_height="48dp"
+                        android:layout_width="@dimen/touch_target_min"
+                        android:layout_height="@dimen/touch_target_min"
                         android:background="?attr/selectableItemBackgroundBorderless"
                         android:src="@android:drawable/ic_menu_view"
                         android:contentDescription="@string/player_quality_selector"
@@ -73,8 +99,8 @@
                     <!-- Chromecast Button -->
                     <androidx.mediarouter.app.MediaRouteButton
                         android:id="@+id/castButton"
-                        android:layout_width="48dp"
-                        android:layout_height="48dp"
+                        android:layout_width="@dimen/touch_target_min"
+                        android:layout_height="@dimen/touch_target_min"
                         android:background="?attr/selectableItemBackgroundBorderless"
                         android:contentDescription="@string/player_action_cast"
                         app:mediaRouteButtonTint="@android:color/white" />
@@ -87,7 +113,7 @@
                     android:layout_width="@dimen/touch_target_min"
                     android:layout_height="@dimen/touch_target_min"
                     android:layout_gravity="bottom|end"
-                    android:layout_marginEnd="@dimen/spacing_sm"
+                    android:layout_marginEnd="@dimen/spacing_md"
                     android:layout_marginBottom="@dimen/player_controls_offset"
                     android:background="?attr/selectableItemBackgroundBorderless"
                     android:src="@drawable/ic_fullscreen"
@@ -96,7 +122,7 @@
 
             </FrameLayout>
 
-        </FrameLayout>
+        </com.google.android.material.appbar.CollapsingToolbarLayout>
 
     </com.google.android.material.appbar.AppBarLayout>
 
@@ -352,16 +378,16 @@
                 android:layout_height="1dp"
                 android:background="?attr/colorOutline" />
 
-            <!-- Up Next Section -->
-            <TextView
-                android:id="@+id/upNextHeader"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:padding="16dp"
-                android:text="Up Next"
-                android:textColor="?attr/colorOnSurface"
-                android:textSize="16sp"
-                android:textStyle="bold" />
+    <!-- Up Next Section -->
+    <TextView
+        android:id="@+id/upNextHeader"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="16dp"
+        android:text="@string/player_up_next_header"
+        android:textColor="?attr/colorOnSurface"
+        android:textSize="16sp"
+        android:textStyle="bold" />
 
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/upNextList"

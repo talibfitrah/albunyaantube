@@ -3,6 +3,7 @@ package com.albunyaan.tube.ui.detail
 import android.os.Bundle
 import android.util.Log
 import android.view.View
+import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
@@ -19,6 +20,8 @@ import com.albunyaan.tube.ui.detail.tabs.ChannelLiveTabFragment
 import com.albunyaan.tube.ui.detail.tabs.ChannelPlaylistsTabFragment
 import com.albunyaan.tube.ui.detail.tabs.ChannelShortsTabFragment
 import com.albunyaan.tube.ui.detail.tabs.ChannelVideosTabFragment
+import com.google.android.material.appbar.AppBarLayout
+import com.google.android.material.color.MaterialColors
 import com.google.android.material.tabs.TabLayoutMediator
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.lifecycle.withCreationCallback
@@ -51,6 +54,7 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
 
     private var tabLayoutMediator: TabLayoutMediator? = null
     private var pageChangeCallback: androidx.viewpager2.widget.ViewPager2.OnPageChangeCallback? = null
+    private var appBarOffsetListener: AppBarLayout.OnOffsetChangedListener? = null
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -68,10 +72,22 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
 
     private fun setupToolbar() {
         binding?.apply {
+            toolbar.navigationIcon = AppCompatResources.getDrawable(requireContext(), R.drawable.ic_arrow_back)
             toolbar.title = channelName ?: channelId
             toolbar.setNavigationOnClickListener {
                 findNavController().navigateUp()
             }
+
+            val listener = AppBarLayout.OnOffsetChangedListener { appBarLayout, verticalOffset ->
+                val collapsed = appBarLayout.totalScrollRange + verticalOffset <= 0
+                // Use colorOnPrimary for expanded state (white in both light/dark themes) for visibility over banner
+                val expandedColor = MaterialColors.getColor(toolbar, com.google.android.material.R.attr.colorOnPrimary)
+                val collapsedColor = MaterialColors.getColor(toolbar, com.google.android.material.R.attr.colorOnSurface)
+                toolbar.navigationIcon?.mutate()?.setTint(if (collapsed) collapsedColor else expandedColor)
+                toolbar.setTitleTextColor(if (collapsed) collapsedColor else expandedColor)
+            }
+            appBarLayout.addOnOffsetChangedListener(listener)
+            appBarOffsetListener = listener
 
             // Show exclusion banner if needed
             exclusionBanner.isVisible = isExcluded
@@ -232,6 +248,8 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
         tabLayoutMediator = null
         pageChangeCallback?.let { binding?.viewPager?.unregisterOnPageChangeCallback(it) }
         pageChangeCallback = null
+        binding?.appBarLayout?.removeOnOffsetChangedListener(appBarOffsetListener)
+        appBarOffsetListener = null
         binding = null
         super.onDestroyView()
     }

@@ -1,28 +1,40 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Playlist list item with proper spacing and rounded thumbnail -->
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:padding="@dimen/spacing_md"
+    android:paddingStart="@dimen/spacing_md"
+    android:paddingEnd="@dimen/spacing_md"
+    android:paddingTop="@dimen/spacing_sm"
+    android:paddingBottom="@dimen/spacing_sm"
     android:background="?attr/selectableItemBackground"
     android:clickable="true"
     android:focusable="true">
 
-    <!-- Playlist Thumbnail (Square with rounded corners) -->
-    <ImageView
-        android:id="@+id/playlistThumbnail"
+    <!-- Playlist Thumbnail (Square with rounded corners via MaterialCardView) -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/thumbnailCard"
         android:layout_width="@dimen/playlist_thumbnail_size"
         android:layout_height="@dimen/playlist_thumbnail_size"
-        android:scaleType="centerCrop"
-        android:background="@drawable/thumbnail_placeholder"
-        android:clipToOutline="true"
-        android:outlineProvider="background"
-        android:contentDescription="@null"
-        android:importantForAccessibility="no"
+        app:cardCornerRadius="@dimen/home_thumbnail_corner_radius"
+        app:cardElevation="0dp"
+        app:strokeWidth="0dp"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        tools:src="@drawable/thumbnail_placeholder"/>
+        app:layout_constraintTop_toTopOf="parent">
+
+        <ImageView
+            android:id="@+id/playlistThumbnail"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="centerCrop"
+            android:background="@color/surface_variant"
+            android:contentDescription="@null"
+            android:importantForAccessibility="no"
+            tools:src="@drawable/thumbnail_placeholder" />
+
+    </com.google.android.material.card.MaterialCardView>
 
     <!-- Playlist Title -->
     <TextView
@@ -30,34 +42,34 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginStart="@dimen/spacing_md"
-        android:layout_marginEnd="@dimen/spacing_md"
-        android:textSize="16sp"
+        android:textSize="@dimen/text_subtitle"
         android:textStyle="bold"
-        android:textColor="@android:color/black"
+        android:textColor="?attr/colorOnSurface"
         android:maxLines="2"
         android:ellipsize="end"
         android:textAlignment="viewStart"
-        app:layout_constraintStart_toEndOf="@id/playlistThumbnail"
+        app:layout_constraintStart_toEndOf="@id/thumbnailCard"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toTopOf="@id/playlistThumbnail"
-        tools:text="Quran Recitations"/>
+        app:layout_constraintTop_toTopOf="@id/thumbnailCard"
+        tools:text="Quran Recitations" />
 
-    <!-- Item Count and Channel Name -->
+    <!-- Item Count -->
     <TextView
         android:id="@+id/playlistMeta"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginTop="@dimen/spacing_xs"
-        android:textSize="13sp"
-        android:textColor="@android:color/darker_gray"
+        android:textSize="@dimen/home_item_meta_size"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:textAlignment="viewStart"
         android:maxLines="1"
         android:ellipsize="end"
         app:layout_constraintStart_toStartOf="@id/playlistTitle"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toBottomOf="@id/playlistTitle"
-        tools:text="10 items • Albunyaan"/>
+        tools:text="10 items" />
 
-    <!-- Category Chip -->
+    <!-- Category Chip - aligned with text column -->
     <com.google.android.material.chip.ChipGroup
         android:id="@+id/categoryChipsContainer"
         android:layout_width="0dp"
@@ -66,6 +78,6 @@
         app:singleLine="true"
         app:layout_constraintStart_toStartOf="@id/playlistTitle"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/playlistMeta"/>
+        app:layout_constraintTop_toBottomOf="@id/playlistMeta" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

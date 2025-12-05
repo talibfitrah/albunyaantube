@@ -30,7 +30,7 @@
     <string name="playlist_detail_category">Category: %1$s</string>
     <string name="playlist_detail_item_count">%1$d videos</string>
     <string name="playlist_detail_description_placeholder">Curated playlist overview coming soon.</string>
-    <string name="playlist_detail_download">Download playlist</string>
+    <string name="playlist_detail_download">Download</string>
     <string name="playlist_detail_downloading">Download queued</string>
     <string name="playlist_detail_download_disabled">Download unavailable</string>
     <string name="playlist_detail_download_hint">Downloads respect policy AC-DL-001. Content becomes available offline once completed.</string>
@@ -161,6 +161,7 @@
     <string name="player_action_minimize">Minimize player</string>
     <string name="player_action_fullscreen">Toggle fullscreen</string>
     <string name="player_action_settings">Player settings</string>
+    <string name="player_action_next">Play next video</string>
     <string name="player_action_cast">Cast to TV</string>
     <string name="home_select_category">Select content category</string>
     <string name="home_see_all_featured">See all featured content</string>

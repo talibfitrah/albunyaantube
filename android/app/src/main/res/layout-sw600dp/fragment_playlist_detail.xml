@@ -49,29 +49,95 @@
                     android:visibility="gone"
                     tools:visibility="visible" />
 
-                <!-- Playlist Banner Image -->
+                <!-- Playlist Hero (YouTube-style: blurred background + centered thumbnail) -->
                 <FrameLayout
+                    android:id="@+id/playlistHeroContainer"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content">
 
+                    <!-- Blurred Background Image (fills width, softened) -->
                     <ImageView
-                        android:id="@+id/playlistBanner"
+                        android:id="@+id/heroBackgroundBlurred"
                         android:layout_width="match_parent"
-                        android:layout_height="@dimen/playlist_banner_height"
+                        android:layout_height="@dimen/playlist_hero_height"
                         android:scaleType="centerCrop"
+                        android:alpha="0.6"
                         android:background="@drawable/thumbnail_placeholder"
-                        android:contentDescription="@string/cd_playlist_banner"
+                        android:contentDescription="@null"
+                        android:importantForAccessibility="no"
                         tools:src="@drawable/thumbnail_placeholder" />
 
-                    <!-- Gradient overlay for legibility (decorative) -->
+                    <!-- Color overlay for better contrast -->
+                    <View
+                        android:id="@+id/heroColorOverlay"
+                        android:layout_width="match_parent"
+                        android:layout_height="@dimen/playlist_hero_height"
+                        android:background="@color/hero_overlay"
+                        android:contentDescription="@null"
+                        android:importantForAccessibility="no" />
+
+                    <!-- Bottom gradient for text overlay readability (bottom-to-top gradient) -->
                     <View
                         android:id="@+id/bannerGradient"
                         android:layout_width="match_parent"
-                        android:layout_height="@dimen/playlist_banner_height"
+                        android:layout_height="@dimen/playlist_hero_height"
                         android:background="@drawable/banner_gradient_overlay"
                         android:contentDescription="@null"
-                        android:importantForAccessibility="no"
-                        android:focusable="false" />
+                        android:importantForAccessibility="no" />
+
+                    <!-- Top gradient scrim for toolbar readability (rendered on top for visibility) -->
+                    <View
+                        android:id="@+id/bannerGradientTop"
+                        android:layout_width="match_parent"
+                        android:layout_height="@dimen/banner_gradient_top_height"
+                        android:background="@drawable/banner_gradient_top"
+                        android:contentDescription="@null"
+                        android:importantForAccessibility="no" />
+
+                    <!-- Centered 16:9 Thumbnail Card (foreground) -->
+                    <androidx.constraintlayout.widget.ConstraintLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="@dimen/playlist_hero_height"
+                        android:layout_gravity="center">
+
+                        <!-- Thumbnail card: 60% of container width, capped at max width on large tablets.
+                             ConstraintLayout applies the more restrictive constraint, ensuring the card
+                             scales proportionally on tablets while not exceeding a readable size. -->
+                        <com.google.android.material.card.MaterialCardView
+                            android:id="@+id/heroThumbnailCard"
+                            android:layout_width="0dp"
+                            android:layout_height="0dp"
+                            android:layout_margin="@dimen/spacing_lg"
+                            app:cardCornerRadius="@dimen/home_thumbnail_corner_radius"
+                            app:cardElevation="@dimen/home_card_elevation"
+                            app:layout_constraintBottom_toBottomOf="parent"
+                            app:layout_constraintDimensionRatio="16:9"
+                            app:layout_constraintEnd_toEndOf="parent"
+                            app:layout_constraintStart_toStartOf="parent"
+                            app:layout_constraintTop_toTopOf="parent"
+                            app:layout_constraintWidth_max="@dimen/playlist_hero_thumbnail_max_width"
+                            app:layout_constraintWidth_percent="0.6">
+
+                            <com.google.android.material.imageview.ShapeableImageView
+                                android:id="@+id/heroThumbnail"
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:scaleType="centerCrop"
+                                android:background="@drawable/thumbnail_placeholder"
+                                android:contentDescription="@string/cd_playlist_banner"
+                                tools:src="@drawable/thumbnail_placeholder" />
+
+                        </com.google.android.material.card.MaterialCardView>
+
+                    </androidx.constraintlayout.widget.ConstraintLayout>
+
+                    <!-- Legacy playlistBanner ID for backward compatibility -->
+                    <ImageView
+                        android:id="@+id/playlistBanner"
+                        android:layout_width="0dp"
+                        android:layout_height="0dp"
+                        android:visibility="gone"
+                        tools:ignore="ContentDescription" />
 
                 </FrameLayout>
 
@@ -225,15 +291,18 @@
             </LinearLayout>
 
             <!-- Toolbar with back button - pins when collapsed -->
+            <!-- Design: White icons over banner with 50% black gradient scrim (banner_gradient_top.xml)
+                 providing WCAG AA compliant contrast. Not using theme attrs as toolbar must remain
+                 visible over dynamic banner images. -->
             <com.google.android.material.appbar.MaterialToolbar
                 android:id="@+id/toolbar"
                 android:layout_width="match_parent"
                 android:layout_height="?attr/actionBarSize"
                 android:background="@android:color/transparent"
                 app:layout_collapseMode="pin"
-                app:navigationIcon="?attr/homeAsUpIndicator"
-                app:title="@string/app_name"
-                app:titleTextColor="?attr/colorOnSurface" />
+                app:navigationIcon="@drawable/ic_arrow_back"
+                app:navigationIconTint="@android:color/white"
+                app:titleTextColor="@android:color/white" />
 
         </com.google.android.material.appbar.CollapsingToolbarLayout>
 
@@ -313,10 +382,10 @@
         android:visibility="gone"
         tools:visibility="visible">
 
-        <!-- Banner skeleton -->
+        <!-- Banner skeleton (matches hero height to prevent layout shift) -->
         <View
             android:layout_width="match_parent"
-            android:layout_height="@dimen/playlist_banner_height"
+            android:layout_height="@dimen/playlist_hero_height"
             android:background="@drawable/skeleton_shimmer" />
 
         <!-- Title and metadata skeleton -->

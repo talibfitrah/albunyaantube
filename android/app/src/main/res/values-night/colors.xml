@@ -35,4 +35,7 @@
     <color name="home_error_bg">#3D2A1A</color>
     <color name="home_error_text">#FFCC80</color>
     <color name="home_error_icon">#FFB74D</color>
+
+    <!-- Hero overlays for playlist/channel detail (stronger in dark mode) -->
+    <color name="hero_overlay">#66000000</color>
 </resources>

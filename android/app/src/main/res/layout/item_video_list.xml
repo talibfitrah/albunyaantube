@@ -1,53 +1,64 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Video list item (horizontal layout) with rounded thumbnail -->
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:padding="@dimen/spacing_md"
+    android:paddingStart="@dimen/spacing_md"
+    android:paddingEnd="@dimen/spacing_md"
+    android:paddingTop="@dimen/spacing_sm"
+    android:paddingBottom="@dimen/spacing_sm"
     android:background="?attr/selectableItemBackground"
     android:clickable="true"
     android:focusable="true">
 
-    <!-- Video Thumbnail (16:9 aspect ratio, rounded corners) -->
-    <FrameLayout
-        android:id="@+id/thumbnailContainer"
+    <!-- Video Thumbnail with rounded corners via MaterialCardView -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/thumbnailCard"
         android:layout_width="@dimen/video_list_thumbnail_width"
         android:layout_height="0dp"
+        app:cardCornerRadius="@dimen/home_thumbnail_corner_radius"
+        app:cardElevation="0dp"
+        app:strokeWidth="0dp"
         app:layout_constraintDimensionRatio="16:9"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent">
 
-        <ImageView
-            android:id="@+id/videoThumbnail"
+        <FrameLayout
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:scaleType="centerCrop"
-            android:background="@drawable/thumbnail_placeholder"
-            android:clipToOutline="true"
-            android:outlineProvider="background"
-            android:contentDescription="@null"
-            android:importantForAccessibility="no"
-            tools:src="@drawable/thumbnail_placeholder"/>
+            android:layout_height="match_parent">
 
-        <!-- Duration Overlay (Bottom-right of thumbnail) -->
-        <TextView
-            android:id="@+id/videoDuration"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom|end"
-            android:layout_margin="@dimen/spacing_xs"
-            android:paddingStart="6dp"
-            android:paddingEnd="6dp"
-            android:paddingTop="2dp"
-            android:paddingBottom="2dp"
-            android:background="@drawable/home_duration_chip_bg"
-            android:textColor="@color/onPrimary"
-            android:textSize="11sp"
-            android:textStyle="bold"
-            tools:text="10:30"/>
+            <ImageView
+                android:id="@+id/videoThumbnail"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="centerCrop"
+                android:background="@color/surface_variant"
+                android:contentDescription="@null"
+                android:importantForAccessibility="no"
+                tools:src="@drawable/thumbnail_placeholder" />
 
-    </FrameLayout>
+            <!-- Duration Overlay (Bottom-right of thumbnail) -->
+            <TextView
+                android:id="@+id/videoDuration"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom|end"
+                android:layout_margin="@dimen/spacing_xs"
+                android:paddingStart="@dimen/home_duration_chip_padding_horizontal"
+                android:paddingEnd="@dimen/home_duration_chip_padding_horizontal"
+                android:paddingTop="@dimen/home_duration_chip_padding_vertical"
+                android:paddingBottom="@dimen/home_duration_chip_padding_vertical"
+                android:background="@drawable/duration_badge_background"
+                android:textColor="?attr/colorOnPrimary"
+                android:textSize="@dimen/text_duration"
+                android:textStyle="bold"
+                tools:text="10:30" />
+
+        </FrameLayout>
+
+    </com.google.android.material.card.MaterialCardView>
 
     <!-- Video Title -->
     <TextView
@@ -55,17 +66,16 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginStart="@dimen/spacing_md"
-        android:layout_marginEnd="@dimen/spacing_sm"
-        android:textSize="16sp"
+        android:textSize="@dimen/text_subtitle"
         android:textStyle="bold"
-        android:textColor="?android:attr/textColorPrimary"
+        android:textColor="?attr/colorOnSurface"
         android:maxLines="2"
         android:ellipsize="end"
         android:textAlignment="viewStart"
-        app:layout_constraintStart_toEndOf="@id/thumbnailContainer"
+        app:layout_constraintStart_toEndOf="@id/thumbnailCard"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toTopOf="@id/thumbnailContainer"
-        tools:text="The Essence of Faith"/>
+        app:layout_constraintTop_toTopOf="@id/thumbnailCard"
+        tools:text="The Essence of Faith" />
 
     <!-- Video Metadata (Views + Date) -->
     <TextView
@@ -73,14 +83,15 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginTop="@dimen/spacing_xs"
-        android:textSize="13sp"
-        android:textColor="?android:attr/textColorSecondary"
-        android:maxLines="1"
+        android:textSize="@dimen/home_item_meta_size"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:textAlignment="viewStart"
+        android:maxLines="2"
         android:ellipsize="end"
         app:layout_constraintStart_toStartOf="@id/videoTitle"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toBottomOf="@id/videoTitle"
-        tools:text="100K views • 2 weeks ago"/>
+        tools:text="100K views • 2 weeks ago" />
 
     <!-- Category Chip -->
     <com.google.android.material.chip.ChipGroup
@@ -91,6 +102,6 @@
         app:singleLine="true"
         app:layout_constraintStart_toStartOf="@id/videoTitle"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/videoMeta"/>
+        app:layout_constraintTop_toBottomOf="@id/videoMeta" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

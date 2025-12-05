@@ -20,88 +20,96 @@
         android:textColor="?attr/colorOnSurfaceVariant"
         android:textAlignment="center"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="@id/thumbnailContainer"
-        app:layout_constraintBottom_toBottomOf="@id/thumbnailContainer"
+        app:layout_constraintTop_toTopOf="@id/thumbnailCard"
+        app:layout_constraintBottom_toBottomOf="@id/thumbnailCard"
         tools:text="1" />
 
-    <!-- Video Thumbnail (16:9 aspect ratio, rounded corners) -->
-    <FrameLayout
-        android:id="@+id/thumbnailContainer"
+    <!-- Video Thumbnail with rounded corners via MaterialCardView -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/thumbnailCard"
         android:layout_width="@dimen/video_list_thumbnail_width"
         android:layout_height="0dp"
         android:layout_marginStart="@dimen/spacing_sm"
+        app:cardCornerRadius="@dimen/home_thumbnail_corner_radius"
+        app:cardElevation="0dp"
+        app:strokeWidth="0dp"
         app:layout_constraintDimensionRatio="16:9"
         app:layout_constraintStart_toEndOf="@id/positionNumber"
         app:layout_constraintTop_toTopOf="parent">
 
-        <ImageView
-            android:id="@+id/videoThumbnail"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:scaleType="centerCrop"
-            android:background="@drawable/thumbnail_placeholder"
-            android:clipToOutline="true"
-            android:outlineProvider="background"
-            android:contentDescription="@null"
-            android:importantForAccessibility="no"
-            tools:src="@drawable/thumbnail_placeholder" />
-
-        <!-- Duration Overlay (Bottom-right of thumbnail) -->
-        <TextView
-            android:id="@+id/videoDuration"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom|end"
-            android:layout_margin="@dimen/spacing_xs"
-            android:paddingStart="@dimen/home_duration_chip_padding_horizontal"
-            android:paddingEnd="@dimen/home_duration_chip_padding_horizontal"
-            android:paddingTop="@dimen/home_duration_chip_padding_vertical"
-            android:paddingBottom="@dimen/home_duration_chip_padding_vertical"
-            android:background="@drawable/home_duration_chip_bg"
-            android:textColor="@color/onPrimary"
-            android:textSize="@dimen/text_duration"
-            android:textStyle="bold"
-            tools:text="10:30" />
-
-        <!-- Download indicator overlay (bottom-left) -->
         <FrameLayout
-            android:id="@+id/downloadIndicatorContainer"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom|start"
-            android:layout_margin="@dimen/spacing_xs"
-            android:visibility="gone"
-            tools:visibility="visible">
+            android:id="@+id/thumbnailContainer"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
 
-            <!-- Downloaded check icon -->
             <ImageView
-                android:id="@+id/downloadedIcon"
-                android:layout_width="@dimen/badge_icon_size"
-                android:layout_height="@dimen/badge_icon_size"
-                android:src="@drawable/ic_download"
-                android:background="@drawable/home_duration_chip_bg"
-                android:padding="@dimen/badge_padding_vertical"
-                android:visibility="gone"
-                app:tint="@color/onPrimary"
-                android:contentDescription="@string/download_status_completed"
-                tools:visibility="visible" />
+                android:id="@+id/videoThumbnail"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="centerCrop"
+                android:background="@color/surface_variant"
+                android:contentDescription="@null"
+                android:importantForAccessibility="no"
+                tools:src="@drawable/thumbnail_placeholder" />
 
-            <!-- Downloading progress -->
-            <com.google.android.material.progressindicator.CircularProgressIndicator
-                android:id="@+id/downloadingProgress"
-                android:layout_width="@dimen/badge_icon_size"
-                android:layout_height="@dimen/badge_icon_size"
+            <!-- Duration Overlay (Bottom-right of thumbnail) -->
+            <TextView
+                android:id="@+id/videoDuration"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom|end"
+                android:layout_margin="@dimen/spacing_xs"
+                android:paddingStart="@dimen/home_duration_chip_padding_horizontal"
+                android:paddingEnd="@dimen/home_duration_chip_padding_horizontal"
+                android:paddingTop="@dimen/home_duration_chip_padding_vertical"
+                android:paddingBottom="@dimen/home_duration_chip_padding_vertical"
+                android:background="@drawable/duration_badge_background"
+                android:textColor="@android:color/white"
+                android:textSize="@dimen/text_duration"
+                android:textStyle="bold"
+                tools:text="10:30" />
+
+            <!-- Download indicator overlay (bottom-left) -->
+            <FrameLayout
+                android:id="@+id/downloadIndicatorContainer"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom|start"
+                android:layout_margin="@dimen/spacing_xs"
                 android:visibility="gone"
-                android:contentDescription="@string/download_status_running"
-                app:indicatorSize="16dp"
-                app:trackThickness="@dimen/badge_padding_vertical"
-                app:indicatorColor="@color/onPrimary"
-                app:trackColor="@color/skeleton_background"
-                tools:visibility="gone" />
+                tools:visibility="visible">
+
+                <!-- Downloaded check icon -->
+                <ImageView
+                    android:id="@+id/downloadedIcon"
+                    android:layout_width="@dimen/badge_icon_size"
+                    android:layout_height="@dimen/badge_icon_size"
+                    android:src="@drawable/ic_download"
+                    android:background="@drawable/duration_badge_background"
+                    android:padding="@dimen/badge_padding_vertical"
+                    android:visibility="gone"
+                    app:tint="@android:color/white"
+                    android:contentDescription="@string/download_status_completed"
+                    tools:visibility="visible" />
+
+                <!-- Downloading progress -->
+                <com.google.android.material.progressindicator.CircularProgressIndicator
+                    android:id="@+id/downloadingProgress"
+                    android:layout_width="@dimen/badge_icon_size"
+                    android:layout_height="@dimen/badge_icon_size"
+                    android:visibility="gone"
+                    android:contentDescription="@string/download_status_running"
+                    app:indicatorSize="16dp"
+                    app:trackThickness="@dimen/badge_padding_vertical"
+                    app:indicatorColor="@android:color/white"
+                    app:trackColor="@color/skeleton_background"
+                    tools:visibility="gone" />
+
+            </FrameLayout>
 
         </FrameLayout>
 
-    </FrameLayout>
+    </com.google.android.material.card.MaterialCardView>
 
     <!-- Video Title -->
     <TextView
@@ -109,16 +117,15 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginStart="@dimen/spacing_md"
-        android:layout_marginEnd="@dimen/spacing_sm"
         android:textSize="@dimen/text_body"
         android:textStyle="bold"
-        android:textColor="?android:attr/textColorPrimary"
+        android:textColor="?attr/colorOnSurface"
         android:maxLines="2"
         android:ellipsize="end"
         android:textAlignment="viewStart"
-        app:layout_constraintStart_toEndOf="@id/thumbnailContainer"
+        app:layout_constraintStart_toEndOf="@id/thumbnailCard"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toTopOf="@id/thumbnailContainer"
+        app:layout_constraintTop_toTopOf="@id/thumbnailCard"
         tools:text="The Essence of Faith" />
 
     <!-- Video Metadata (Views + Date or Channel Name) -->

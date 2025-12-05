@@ -172,8 +172,9 @@ dependencies {
     implementation("io.github.trongnhan136:ffmpeg-kit-min-gpl:7.1.2")
     implementation("com.arthenica:smart-exception-java:0.2.1")
 
-    // Core library desugaring for Java 10+ APIs
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+    // Core library desugaring for Java 10+ APIs (including java.nio for NewPipeExtractor compatibility)
+    // Using desugar_jdk_libs_nio to include URLEncoder.encode(String, Charset) support
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.4")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")

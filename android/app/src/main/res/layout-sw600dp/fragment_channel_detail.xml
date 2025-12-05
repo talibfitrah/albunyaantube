@@ -172,13 +172,18 @@
             </LinearLayout>
 
             <!-- Toolbar with back button - pins when collapsed -->
+            <!-- Design: Toolbar icon/title colors are controlled dynamically in ChannelDetailFragment.kt
+                 based on AppBarLayout scroll state. When expanded (over banner image), white is used
+                 for visibility over the gradient scrim. When collapsed, theme colorOnSurface is used.
+                 XML colors here are initial state only. -->
             <com.google.android.material.appbar.MaterialToolbar
                 android:id="@+id/toolbar"
                 android:layout_width="match_parent"
                 android:layout_height="?attr/actionBarSize"
                 android:background="@android:color/transparent"
                 app:layout_collapseMode="pin"
-                app:navigationIcon="?attr/homeAsUpIndicator"
+                app:navigationIcon="@drawable/ic_arrow_back"
+                app:navigationIconTint="?attr/colorOnSurface"
                 app:title="@string/app_name"
                 app:titleTextColor="?attr/colorOnSurface" />
 

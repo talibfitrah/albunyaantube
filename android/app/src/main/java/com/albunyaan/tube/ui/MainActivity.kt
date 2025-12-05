@@ -54,10 +54,13 @@ class MainActivity : AppCompatActivity() {
                         .findFragmentById(R.id.main_shell_nav_host) as? NavHostFragment
                     val nestedNavController = mainShellNavHost?.navController
 
-                    if (nestedNavController != null && nestedNavController.currentDestination?.id != R.id.homeFragment) {
-                        // If not on home tab, navigate to home tab
-                        nestedNavController.navigate(R.id.homeFragment)
-                        return
+                    if (nestedNavController != null) {
+                        // Try to pop the nested back stack first
+                        if (nestedNavController.popBackStack()) {
+                            return
+                        }
+                        // If we're on a root tab and can't pop, finish the activity
+                        // (user can use bottom nav to switch tabs)
                     }
                 }
 

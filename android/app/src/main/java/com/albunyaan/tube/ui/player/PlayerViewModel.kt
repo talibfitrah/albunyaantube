@@ -41,7 +41,8 @@ class PlayerViewModel @Inject constructor(
     private val repository: PlayerRepository,
     private val downloadRepository: DownloadRepository,
     private val eulaManager: EulaManager,
-    @Named("real") private val contentService: ContentService
+    @Named("real") private val contentService: ContentService,
+    private val playlistDetailRepository: com.albunyaan.tube.data.playlist.PlaylistDetailRepository
 ) : ViewModel() {
 
     private val dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate
@@ -50,9 +51,15 @@ class PlayerViewModel @Inject constructor(
     val state: StateFlow<PlayerState> = _state
 
     private val queue = mutableListOf<UpNextItem>()
+    private val previousItems = mutableListOf<UpNextItem>()
+    private val maxHistorySize = 100 // Limit history to prevent unbounded memory growth
     private var currentItem: UpNextItem? = null
     private var resolveJob: Job? = null
     private var latestDownloads: List<DownloadEntry> = emptyList()
+
+    // Playlist playback state
+    private var currentPlaylistId: String? = null
+    private var isPlaylistMode: Boolean = false
 
     private val _analyticsEvents = MutableSharedFlow<PlaybackAnalyticsEvent>(
         replay = 0,
@@ -84,24 +91,27 @@ class PlayerViewModel @Inject constructor(
         if (current?.id == item.id) return
         val removed = queue.remove(item)
         if (!removed) return
-        current?.let { queue.add(0, it) }
+        current?.let { addToHistory(it) }
         currentItem = item
         applyQueueState()
         publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(item, PlaybackStartReason.USER_SELECTED))
         resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
     }
 
-    fun markCurrentComplete() {
-        val finished = currentItem ?: return
-        publishAnalytics(PlaybackAnalyticsEvent.PlaybackCompleted(finished))
-        currentItem = if (queue.isNotEmpty()) queue.removeAt(0) else null
+    fun markCurrentComplete(): Boolean = advanceToNext(PlaybackStartReason.AUTO, markComplete = true)
+
+    fun skipToNext(): Boolean = advanceToNext(PlaybackStartReason.USER_SELECTED, markComplete = false)
+
+    fun skipToPrevious(): Boolean {
+        val current = currentItem ?: return false
+        if (previousItems.isEmpty()) return false
+        val previous = previousItems.removeLast()
+        queue.add(0, current)
+        currentItem = previous
         applyQueueState()
-        currentItem?.let {
-            publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(it, PlaybackStartReason.AUTO))
-            resolveStreamFor(it, PlaybackStartReason.AUTO)
-        } ?: run {
-            updateState { state -> state.copy(streamState = StreamState.Idle) }
-        }
+        publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(previous, PlaybackStartReason.USER_SELECTED))
+        resolveStreamFor(previous, PlaybackStartReason.USER_SELECTED)
+        return true
     }
 
     fun downloadCurrent(): Boolean {
@@ -212,6 +222,9 @@ class PlayerViewModel @Inject constructor(
      * Load and play a specific video by ID
      */
     fun loadVideo(videoId: String, title: String = "Video") {
+        isPlaylistMode = false
+        currentPlaylistId = null
+
         viewModelScope.launch(dispatcher) {
             updateState { it.copy(streamState = StreamState.Loading) }
 
@@ -241,6 +254,7 @@ class PlayerViewModel @Inject constructor(
                     )
                     currentItem = item
                     queue.clear()
+                    previousItems.clear()
                     applyQueueState()
                     publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(item, PlaybackStartReason.USER_SELECTED))
                     resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
@@ -255,6 +269,7 @@ class PlayerViewModel @Inject constructor(
                     )
                     currentItem = item
                     queue.clear()
+                    previousItems.clear()
                     applyQueueState()
                     publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(item, PlaybackStartReason.USER_SELECTED))
                     resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
@@ -270,9 +285,93 @@ class PlayerViewModel @Inject constructor(
                 )
                 currentItem = item
                 queue.clear()
+                previousItems.clear()
                 applyQueueState()
                 publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(item, PlaybackStartReason.USER_SELECTED))
                 resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
+            }
+        }
+    }
+
+    /**
+     * Load and play a playlist from the specified position.
+     *
+     * @param playlistId YouTube playlist ID
+     * @param startIndex 0-based index of the video to start playing
+     * @param shuffled If true, randomize the order of videos in the queue
+     */
+    fun loadPlaylist(playlistId: String, startIndex: Int = 0, shuffled: Boolean = false) {
+        isPlaylistMode = true
+        currentPlaylistId = playlistId
+
+        viewModelScope.launch(dispatcher) {
+            updateState { it.copy(streamState = StreamState.Loading) }
+
+            try {
+                // Fetch playlist items from NewPipe via repository
+                val page = playlistDetailRepository.getItems(playlistId, page = null, itemOffset = 1)
+                var items = page.items
+
+                if (items.isEmpty()) {
+                    updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_unavailable)) }
+                    return@launch
+                }
+
+                // If shuffled, randomize the order but preserve the starting video
+                if (shuffled) {
+                    val startItem = items.getOrNull(startIndex)
+                    items = items.shuffled()
+                    // Move the starting video to the front if it was specified
+                    if (startItem != null) {
+                        items = listOf(startItem) + items.filter { it.videoId != startItem.videoId }
+                    }
+                }
+
+                // Convert to UpNextItems
+                val upNextItems = items.mapIndexed { index, playlistItem ->
+                    UpNextItem(
+                        id = playlistItem.videoId,
+                        title = playlistItem.title,
+                        channelName = playlistItem.channelName ?: "",
+                        durationSeconds = playlistItem.durationSeconds ?: 0,
+                        streamId = playlistItem.videoId,
+                        thumbnailUrl = playlistItem.thumbnailUrl,
+                        viewCount = playlistItem.viewCount
+                    )
+                }
+
+                // Set up the queue - put videos after startIndex in the queue
+                queue.clear()
+                previousItems.clear()
+                val effectiveStartIndex = if (shuffled) 0 else startIndex.coerceIn(0, upNextItems.lastIndex)
+
+                // Current item is the video at startIndex
+                currentItem = upNextItems.getOrNull(effectiveStartIndex)
+
+                // Queue is everything after the current item
+                if (effectiveStartIndex + 1 < upNextItems.size) {
+                    queue.addAll(upNextItems.subList(effectiveStartIndex + 1, upNextItems.size))
+                }
+                // Note: Items before startIndex are NOT added to history because they haven't been played.
+                // History is only populated when the user actually plays/skips items during the session.
+
+                applyQueueState()
+
+                currentItem?.let { item ->
+                    publishAnalytics(
+                        PlaybackAnalyticsEvent.PlaybackStarted(
+                            item,
+                            PlaybackStartReason.USER_SELECTED
+                        )
+                    )
+                    resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
+                } ?: run {
+                    updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_unavailable)) }
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                android.util.Log.e("PlayerViewModel", "Failed to load playlist: $playlistId", e)
+                updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_error)) }
             }
         }
     }
@@ -281,6 +380,7 @@ class PlayerViewModel @Inject constructor(
         val stubItems = stubUpNextItems()
         val (playable, excluded) = stubItems.partition { !it.isExcluded }
         queue.clear()
+        previousItems.clear()
         queue.addAll(playable)
         currentItem = if (queue.isNotEmpty()) queue.removeAt(0) else null
         updateState {
@@ -288,7 +388,9 @@ class PlayerViewModel @Inject constructor(
                 currentItem = currentItem,
                 upNext = queue.toList(),
                 excludedItems = excluded,
-                currentDownload = findDownloadFor(currentItem, latestDownloads)
+                currentDownload = findDownloadFor(currentItem, latestDownloads),
+                hasNext = queue.isNotEmpty(),
+                hasPrevious = previousItems.isNotEmpty()
             )
         }
         publishAnalytics(
@@ -309,7 +411,9 @@ class PlayerViewModel @Inject constructor(
             state.copy(
                 currentItem = currentItem,
                 upNext = queue.toList(),
-                currentDownload = findDownloadFor(currentItem, latestDownloads)
+                currentDownload = findDownloadFor(currentItem, latestDownloads),
+                hasNext = queue.isNotEmpty(),
+                hasPrevious = previousItems.isNotEmpty()
             )
         }
     }
@@ -360,6 +464,41 @@ class PlayerViewModel @Inject constructor(
         _state.value = transform(_state.value)
     }
 
+    private fun advanceToNext(reason: PlaybackStartReason, markComplete: Boolean): Boolean {
+        val finished = currentItem ?: return false
+        if (markComplete) {
+            publishAnalytics(PlaybackAnalyticsEvent.PlaybackCompleted(finished))
+        }
+        val next = if (queue.isNotEmpty()) queue.removeAt(0) else null
+        currentItem = next
+        addToHistory(finished)
+        applyQueueState()
+        return if (next != null) {
+            publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(next, reason))
+            resolveStreamFor(next, reason)
+            true
+        } else {
+            updateState { state -> state.copy(streamState = StreamState.Idle) }
+            false
+        }
+    }
+
+    /** Add item to history, maintaining max size limit */
+    private fun addToHistory(item: UpNextItem) {
+        previousItems.add(item)
+        while (previousItems.size > maxHistorySize) {
+            previousItems.removeAt(0)
+        }
+    }
+
+    /** Add multiple items to history, maintaining max size limit */
+    private fun addAllToHistory(items: List<UpNextItem>) {
+        previousItems.addAll(items)
+        while (previousItems.size > maxHistorySize) {
+            previousItems.removeAt(0)
+        }
+    }
+
 }
 
 data class PlayerState(
@@ -372,7 +511,9 @@ data class PlayerState(
     val isEulaAccepted: Boolean = false,
     val streamState: StreamState = StreamState.Idle,
     val selectedSubtitle: SubtitleTrack? = null,
-    val lastAnalyticsEvent: PlaybackAnalyticsEvent? = null
+    val lastAnalyticsEvent: PlaybackAnalyticsEvent? = null,
+    val hasNext: Boolean = false,
+    val hasPrevious: Boolean = false
 )
 
 data class UpNextItem(

@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Reusable Playlist Hero Component (YouTube-style)
+     Background: Blurred/softened thumbnail filling width
+     Foreground: Centered 16:9 thumbnail card with correct aspect ratio
+     Top gradient scrim for text/icon readability
+
+     Usage: Include in playlist detail layouts and bind with PlaylistHeroHelper -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/playlistHeroContainer"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <!-- Blurred Background Image (fills width, softened) -->
+    <ImageView
+        android:id="@+id/heroBackgroundBlurred"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/playlist_hero_height"
+        android:scaleType="centerCrop"
+        android:alpha="0.6"
+        android:background="@drawable/thumbnail_placeholder"
+        android:contentDescription="@null"
+        android:importantForAccessibility="no"
+        tools:src="@drawable/thumbnail_placeholder" />
+
+    <!-- Color overlay for better contrast (optional, can be palette-based) -->
+    <View
+        android:id="@+id/heroColorOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/playlist_hero_height"
+        android:background="@color/hero_overlay"
+        android:contentDescription="@null"
+        android:importantForAccessibility="no" />
+
+    <!-- Top gradient scrim for toolbar/status bar readability -->
+    <View
+        android:id="@+id/heroGradientTop"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/banner_gradient_top_height"
+        android:background="@drawable/banner_gradient_top"
+        android:contentDescription="@null"
+        android:importantForAccessibility="no" />
+
+    <!-- Bottom gradient for text overlay readability -->
+    <View
+        android:id="@+id/heroGradientBottom"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/playlist_hero_height"
+        android:background="@drawable/banner_gradient_overlay"
+        android:contentDescription="@null"
+        android:importantForAccessibility="no" />
+
+    <!-- Centered 16:9 Thumbnail Card (foreground) -->
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/playlist_hero_height"
+        android:layout_gravity="center">
+
+        <!-- Thumbnail Card with 16:9 aspect ratio, centered -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/heroThumbnailCard"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_margin="@dimen/spacing_lg"
+            app:cardCornerRadius="@dimen/home_thumbnail_corner_radius"
+            app:cardElevation="@dimen/home_card_elevation"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintDimensionRatio="16:9"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintWidth_max="@dimen/playlist_hero_thumbnail_max_width"
+            app:layout_constraintWidth_percent="0.7">
+
+            <com.google.android.material.imageview.ShapeableImageView
+                android:id="@+id/heroThumbnail"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="centerCrop"
+                android:background="@drawable/thumbnail_placeholder"
+                android:contentDescription="@string/cd_playlist_banner"
+                tools:src="@drawable/thumbnail_placeholder" />
+
+        </com.google.android.material.card.MaterialCardView>
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+</FrameLayout>

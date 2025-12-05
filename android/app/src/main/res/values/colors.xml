@@ -54,4 +54,7 @@
     <!-- Live badges -->
     <color name="live_badge_bg">#F44336</color>
     <color name="upcoming_badge_bg">#2196F3</color>
+
+    <!-- Hero overlays for playlist/channel detail -->
+    <color name="hero_overlay">#40000000</color>
 </resources>

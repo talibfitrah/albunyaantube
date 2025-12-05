@@ -46,6 +46,7 @@
 
     <!-- Player -->
     <dimen name="player_portrait_height">240dp</dimen>
+    <dimen name="player_min_height">120dp</dimen>
     <dimen name="player_controls_offset">56dp</dimen>
 
     <!-- Thumbnails -->
@@ -133,7 +134,12 @@
 
     <!-- Playlist Detail Screen -->
     <dimen name="playlist_banner_height">200dp</dimen>
+    <dimen name="banner_gradient_top_height">80dp</dimen>
     <dimen name="playlist_header_horizontal_margin">16dp</dimen>
+
+    <!-- Playlist Hero Component (YouTube-style) -->
+    <dimen name="playlist_hero_height">200dp</dimen>
+    <dimen name="playlist_hero_thumbnail_max_width">320dp</dimen>
 
     <!-- Typography sizes -->
     <dimen name="text_headline">20sp</dimen>

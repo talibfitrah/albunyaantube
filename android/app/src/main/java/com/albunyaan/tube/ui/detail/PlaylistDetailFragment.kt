@@ -4,6 +4,8 @@ import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.widget.Toast
+import androidx.appcompat.content.res.AppCompatResources
+import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
@@ -13,6 +15,8 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.appbar.AppBarLayout
+import com.google.android.material.color.MaterialColors
 import coil.load
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.playlist.PlaylistHeader
@@ -75,6 +79,7 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
 
     // Track download states for items
     private var downloadStates: Map<String, Pair<DownloadStatus, Int>> = emptyMap()
+    private var appBarOffsetListener: AppBarLayout.OnOffsetChangedListener? = null
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -89,11 +94,25 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
 
     private fun setupToolbar() {
         binding?.apply {
+            toolbar.navigationIcon = AppCompatResources.getDrawable(requireContext(), R.drawable.ic_arrow_back)
             toolbar.setNavigationOnClickListener {
                 findNavController().navigateUp()
             }
-            // Set initial title from args while loading
-            toolbar.title = playlistTitleArg ?: getString(R.string.app_name)
+            // Only show title on tablets; phones show title in the header content area
+            val isTablet = resources.getBoolean(R.bool.is_tablet)
+            toolbar.title = if (isTablet) (playlistTitleArg ?: getString(R.string.app_name)) else ""
+
+            val listener = AppBarLayout.OnOffsetChangedListener { appBarLayout, verticalOffset ->
+                val collapsed = appBarLayout.totalScrollRange + verticalOffset <= 0
+                val expandedColor = ContextCompat.getColor(requireContext(), android.R.color.white)
+                val collapsedColor = MaterialColors.getColor(toolbar, com.google.android.material.R.attr.colorOnSurface)
+                toolbar.navigationIcon?.mutate()?.setTint(if (collapsed) collapsedColor else expandedColor)
+                if (isTablet) {
+                    toolbar.setTitleTextColor(if (collapsed) collapsedColor else expandedColor)
+                }
+            }
+            appBarLayout.addOnOffsetChangedListener(listener)
+            appBarOffsetListener = listener
         }
     }
 
@@ -286,21 +305,36 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
 
     private fun bindHeader(header: PlaylistHeader) {
         binding?.apply {
-            // Update toolbar
-            toolbar.title = header.title
+            // Update toolbar title only on tablets; phones show title in content area
+            val isTablet = resources.getBoolean(R.bool.is_tablet)
+            if (isTablet) {
+                toolbar.title = header.title
+            }
 
             // Title
             playlistTitle.text = header.title
 
-            // Banner image
-            if (!header.bannerUrl.isNullOrEmpty()) {
-                playlistBanner.load(header.bannerUrl) {
+            // Hero component (YouTube-style: blurred background + centered thumbnail)
+            val thumbnailUrl = header.thumbnailUrl ?: header.bannerUrl
+            if (!thumbnailUrl.isNullOrEmpty()) {
+                // Load blurred background (scaled down for softening + RenderEffect on API 31+)
+                heroBackgroundBlurred.load(thumbnailUrl) {
                     placeholder(R.drawable.thumbnail_placeholder)
                     error(R.drawable.thumbnail_placeholder)
                     crossfade(true)
+                    size(320, 180) // Scaled down for natural softening
+                    listener(onSuccess = { _, _ ->
+                        // Apply RenderEffect blur on API 31+
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                            heroBackgroundBlurred.setRenderEffect(
+                                android.graphics.RenderEffect.createBlurEffect(30f, 30f, android.graphics.Shader.TileMode.CLAMP)
+                            )
+                        }
+                    })
                 }
-            } else if (!header.thumbnailUrl.isNullOrEmpty()) {
-                playlistBanner.load(header.thumbnailUrl) {
+
+                // Load sharp foreground thumbnail
+                (heroThumbnail as? android.widget.ImageView)?.load(thumbnailUrl) {
                     placeholder(R.drawable.thumbnail_placeholder)
                     error(R.drawable.thumbnail_placeholder)
                     crossfade(true)
@@ -475,6 +509,8 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
     }
 
     override fun onDestroyView() {
+        binding?.appBarLayout?.removeOnOffsetChangedListener(appBarOffsetListener)
+        appBarOffsetListener = null
         binding = null
         super.onDestroyView()
     }

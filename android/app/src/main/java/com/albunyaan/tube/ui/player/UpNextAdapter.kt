@@ -2,9 +2,11 @@ package com.albunyaan.tube.ui.player
 
 import android.view.LayoutInflater
 import android.view.ViewGroup
+import androidx.core.view.isVisible
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import coil.load
 import com.albunyaan.tube.R
 import com.albunyaan.tube.databinding.ItemUpNextBinding
 
@@ -37,15 +39,26 @@ class UpNextAdapter(
 
         fun bind(item: UpNextItem) {
             binding.upNextTitle.text = item.title
-            binding.upNextMeta.text = binding.root.context.getString(
-                R.string.player_up_next_meta,
-                item.channelName,
-                formatDuration(item.durationSeconds)
+            val duration = formatDuration(item.durationSeconds)
+            val viewCount = formatViewCount(item.viewCount)
+            val metaParts = listOfNotNull(
+                item.channelName.takeIf { it.isNotBlank() },
+                viewCount
             )
+            binding.upNextMeta.text = metaParts.joinToString(" \u2022 ")
+            binding.upNextMeta.isVisible = metaParts.isNotEmpty()
+            binding.upNextDuration.text = duration
+            binding.upNextDuration.isVisible = duration.isNotEmpty()
+            binding.upNextThumbnail.load(item.thumbnailUrl) {
+                placeholder(R.drawable.thumbnail_placeholder)
+                error(R.drawable.thumbnail_placeholder)
+                crossfade(true)
+            }
             binding.root.setOnClickListener { onItemClicked(item) }
         }
 
         private fun formatDuration(seconds: Int): String {
+            if (seconds <= 0) return ""
             val minutes = seconds / 60
             val remaining = seconds % 60
             return binding.root.context.getString(
@@ -53,6 +66,16 @@ class UpNextAdapter(
                 minutes,
                 remaining
             )
+        }
+
+        private fun formatViewCount(viewCount: Long?): String? {
+            val count = viewCount ?: return null
+            return when {
+                count >= 1_000_000_000 -> String.format("%.1fB", count / 1_000_000_000.0)
+                count >= 1_000_000 -> String.format("%.1fM", count / 1_000_000.0)
+                count >= 1_000 -> String.format("%.1fK", count / 1_000.0)
+                else -> count.toString()
+            }
         }
     }
 }
