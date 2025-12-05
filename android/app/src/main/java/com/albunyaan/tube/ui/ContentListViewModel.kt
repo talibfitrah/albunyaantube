@@ -8,14 +8,22 @@ import com.albunyaan.tube.data.filters.FilterState
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.source.ContentService
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /**
- * ViewModel for non-paged content lists (used by *FragmentNew screens).
- * Fetches up to 50 items and exposes ContentState.
+ * ViewModel for paginated content lists (used by *FragmentNew screens).
+ * Supports infinite scroll pagination with cursor-based loading and pull-to-refresh.
+ *
+ * Safety mechanisms:
+ * - isLoadingMore: Prevents concurrent pagination requests (scroll spam protection)
+ * - hasMoreData: Stops requests when all data is loaded
+ * - isRefreshing: Prevents loadMore during refresh operation
+ * - loadJob: Cancels previous requests on refresh to prevent race conditions
+ *
  * NOT a @HiltViewModel - uses manual Factory with injected ContentService.
  */
 class ContentListViewModel(
@@ -26,24 +34,59 @@ class ContentListViewModel(
     private val _content = MutableStateFlow<ContentState>(ContentState.Loading)
     val content: StateFlow<ContentState> = _content.asStateFlow()
 
+    // Pagination state - private backing fields
+    private var nextCursor: String? = null
+    private var _hasMoreData = true
+    private var _isLoadingMore = false
+    private var _isRefreshing = false
+    private var loadJob: Job? = null
+
+    // Public read-only accessors for Fragment-side guards
+    val canLoadMore: Boolean
+        get() = !_isLoadingMore && !_isRefreshing && _hasMoreData
+
+    // Accumulated items for pagination
+    private val allItems = mutableListOf<ContentItem>()
+
     init {
         loadContent()
     }
 
+    /**
+     * Initial load or refresh - clears existing data and fetches from the beginning.
+     */
     fun loadContent() {
-        viewModelScope.launch {
+        // Cancel any ongoing request to prevent race conditions
+        loadJob?.cancel()
+
+        // Reset pagination state
+        nextCursor = null
+        _hasMoreData = true
+        _isLoadingMore = false
+        _isRefreshing = false
+        allItems.clear()
+
+        loadJob = viewModelScope.launch {
             _content.value = ContentState.Loading
             try {
-                Log.d(TAG, "Fetching content for type=$contentType")
+                Log.d(TAG, "Fetching content for type=$contentType (initial load)")
                 val response = contentService.fetchContent(
                     type = contentType,
                     cursor = null,
-                    pageSize = 50,
+                    pageSize = PAGE_SIZE,
                     filters = FilterState()
                 )
 
-                Log.d(TAG, "Received ${response.data.size} items for type=$contentType")
-                _content.value = ContentState.Success(response.data)
+                allItems.addAll(response.data)
+                nextCursor = response.pageInfo?.nextCursor
+                _hasMoreData = nextCursor != null
+
+                Log.d(TAG, "Received ${response.data.size} items, hasMore=$_hasMoreData")
+                _content.value = ContentState.Success(
+                    items = allItems.toList(),
+                    isLoadingMore = false,
+                    hasMoreData = _hasMoreData
+                )
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading content for type=$contentType", e)
                 _content.value = ContentState.Error(e.message ?: "Unknown error")
@@ -51,9 +94,127 @@ class ContentListViewModel(
         }
     }
 
+    /**
+     * Refresh - clears data and fetches from beginning.
+     * Sets isRefreshing to prevent loadMore during refresh.
+     */
+    fun refresh() {
+        // Guard: prevent refresh while already refreshing
+        if (_isRefreshing) {
+            Log.d(TAG, "refresh skipped: already refreshing")
+            return
+        }
+
+        _isRefreshing = true
+        // Cancel any ongoing request to prevent race conditions
+        loadJob?.cancel()
+
+        // Reset pagination state
+        nextCursor = null
+        _hasMoreData = true
+        _isLoadingMore = false
+        allItems.clear()
+
+        loadJob = viewModelScope.launch {
+            _content.value = ContentState.Loading
+            try {
+                Log.d(TAG, "Refreshing content for type=$contentType")
+                val response = contentService.fetchContent(
+                    type = contentType,
+                    cursor = null,
+                    pageSize = PAGE_SIZE,
+                    filters = FilterState()
+                )
+
+                allItems.addAll(response.data)
+                nextCursor = response.pageInfo?.nextCursor
+                _hasMoreData = nextCursor != null
+
+                Log.d(TAG, "Refresh complete: ${response.data.size} items, hasMore=$_hasMoreData")
+                _content.value = ContentState.Success(
+                    items = allItems.toList(),
+                    isLoadingMore = false,
+                    hasMoreData = _hasMoreData
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Error refreshing content for type=$contentType", e)
+                _content.value = ContentState.Error(e.message ?: "Unknown error")
+            } finally {
+                _isRefreshing = false
+            }
+        }
+    }
+
+    /**
+     * Load more items for infinite scroll.
+     * Protected against:
+     * - Concurrent requests (isLoadingMore guard)
+     * - Requests when no more data (hasMoreData guard)
+     * - Requests during refresh (isRefreshing guard)
+     */
+    fun loadMore() {
+        // Guard: prevent duplicate/spam requests and requests during refresh
+        if (_isLoadingMore || _isRefreshing || !_hasMoreData) {
+            Log.d(TAG, "loadMore skipped: isLoadingMore=$_isLoadingMore, isRefreshing=$_isRefreshing, hasMoreData=$_hasMoreData")
+            return
+        }
+
+        _isLoadingMore = true
+
+        // Update UI to show loading indicator at bottom
+        _content.value = ContentState.Success(
+            items = allItems.toList(),
+            isLoadingMore = true,
+            hasMoreData = _hasMoreData
+        )
+
+        // Cancel any previous loadMore job to prevent race conditions with refresh
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
+            try {
+                Log.d(TAG, "Loading more for type=$contentType, cursor=$nextCursor")
+                val response = contentService.fetchContent(
+                    type = contentType,
+                    cursor = nextCursor,
+                    pageSize = PAGE_SIZE,
+                    filters = FilterState()
+                )
+
+                allItems.addAll(response.data)
+                nextCursor = response.pageInfo?.nextCursor
+                _hasMoreData = nextCursor != null
+
+                Log.d(TAG, "Loaded ${response.data.size} more items, total=${allItems.size}, hasMore=$_hasMoreData")
+                _content.value = ContentState.Success(
+                    items = allItems.toList(),
+                    isLoadingMore = false,
+                    hasMoreData = _hasMoreData
+                )
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Log.e(TAG, "Error loading more content", e)
+                // On error, keep existing items but show pagination error state
+                _content.value = ContentState.Success(
+                    items = allItems.toList(),
+                    isLoadingMore = false,
+                    hasMoreData = _hasMoreData,
+                    paginationError = e.message ?: "Failed to load more"
+                )
+            } finally {
+                _isLoadingMore = false
+                loadJob = null
+            }
+        }
+    }
+
     sealed class ContentState {
         object Loading : ContentState()
-        data class Success(val items: List<ContentItem>) : ContentState()
+        data class Success(
+            val items: List<ContentItem>,
+            val isLoadingMore: Boolean = false,
+            val hasMoreData: Boolean = true,
+            val paginationError: String? = null
+        ) : ContentState()
         data class Error(val message: String) : ContentState()
     }
 
@@ -72,5 +233,6 @@ class ContentListViewModel(
 
     companion object {
         private const val TAG = "ContentListViewModel"
+        private const val PAGE_SIZE = 20
     }
 }

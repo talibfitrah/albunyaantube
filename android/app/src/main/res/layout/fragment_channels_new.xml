@@ -4,14 +4,31 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/recyclerView"
+    <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+        android:id="@+id/swipeRefresh"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:clipToPadding="false"
-        android:overScrollMode="never"
-        android:padding="@dimen/spacing_md"
-        android:paddingBottom="@dimen/bottom_nav_height"/>
+        android:layout_height="match_parent">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/recyclerView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:overScrollMode="never"
+            android:padding="@dimen/spacing_md"
+            android:paddingBottom="@dimen/bottom_nav_height" />
+
+    </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+
+    <!-- Bottom loading indicator for pagination -->
+    <ProgressBar
+        android:id="@+id/loadingMore"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="88dp"
+        android:indeterminate="true"
+        android:visibility="gone" />
 
     <!-- Categories FAB - positioned above bottom nav -->
     <com.google.android.material.floatingactionbutton.FloatingActionButton
@@ -24,6 +41,6 @@
         android:contentDescription="@string/categories"
         android:src="@android:drawable/ic_menu_sort_by_size"
         app:backgroundTint="@color/primary_green"
-        app:tint="@android:color/white"/>
+        app:tint="@android:color/white" />
 
 </FrameLayout>

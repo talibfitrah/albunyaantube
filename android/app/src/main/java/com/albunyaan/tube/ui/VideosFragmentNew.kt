@@ -9,6 +9,7 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
@@ -43,7 +44,14 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
         binding = FragmentSimpleListBinding.bind(view)
 
         setupRecyclerView()
+        setupSwipeRefresh()
         observeViewModel()
+    }
+
+    private fun setupSwipeRefresh() {
+        binding?.swipeRefresh?.setOnRefreshListener {
+            viewModel.refresh()
+        }
     }
 
     private fun setupRecyclerView() {
@@ -57,6 +65,26 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
             val spanCount = requireContext().calculateGridSpanCount(itemMinWidthDp = 180)
             layoutManager = GridLayoutManager(requireContext(), spanCount)
             adapter = this@VideosFragmentNew.adapter
+
+            // Infinite scroll listener with Fragment-side guards
+            addOnScrollListener(object : RecyclerView.OnScrollListener() {
+                override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                    // Only trigger on scroll down
+                    if (dy <= 0) return
+
+                    // Fragment-side guard: early exit if cannot load more
+                    if (!viewModel.canLoadMore) return
+
+                    val layoutManager = recyclerView.layoutManager as? GridLayoutManager ?: return
+                    val totalItems = layoutManager.itemCount
+                    val lastVisible = layoutManager.findLastVisibleItemPosition()
+
+                    // Load more when 5 items from bottom (threshold for smooth UX)
+                    if (lastVisible >= totalItems - LOAD_MORE_THRESHOLD) {
+                        viewModel.loadMore()
+                    }
+                }
+            })
         }
     }
 
@@ -72,13 +100,20 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
                 when (state) {
                     is ContentListViewModel.ContentState.Loading -> {
                         Log.d(TAG, "Loading videos...")
+                        binding?.swipeRefresh?.isRefreshing = true
+                        binding?.loadingMore?.visibility = View.GONE
                     }
                     is ContentListViewModel.ContentState.Success -> {
+                        binding?.swipeRefresh?.isRefreshing = false
+                        // Show/hide bottom loading indicator
+                        binding?.loadingMore?.visibility = if (state.isLoadingMore) View.VISIBLE else View.GONE
                         val videos = state.items.filterIsInstance<ContentItem.Video>()
-                        Log.d(TAG, "Videos loaded: ${videos.size} items")
+                        Log.d(TAG, "Videos loaded: ${videos.size} items, loadingMore=${state.isLoadingMore}, hasMore=${state.hasMoreData}")
                         adapter.submitList(videos)
                     }
                     is ContentListViewModel.ContentState.Error -> {
+                        binding?.swipeRefresh?.isRefreshing = false
+                        binding?.loadingMore?.visibility = View.GONE
                         Log.e(TAG, "Error loading videos: ${state.message}")
                     }
                 }
@@ -88,6 +123,7 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
 
     companion object {
         private const val TAG = "VideosFragmentNew"
+        private const val LOAD_MORE_THRESHOLD = 5
     }
 
     override fun onDestroyView() {

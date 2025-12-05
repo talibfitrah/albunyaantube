@@ -9,6 +9,7 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
@@ -43,7 +44,14 @@ class PlaylistsFragmentNew : Fragment(R.layout.fragment_simple_list) {
         binding = FragmentSimpleListBinding.bind(view)
 
         setupRecyclerView()
+        setupSwipeRefresh()
         observeViewModel()
+    }
+
+    private fun setupSwipeRefresh() {
+        binding?.swipeRefresh?.setOnRefreshListener {
+            viewModel.refresh()
+        }
     }
 
     private fun setupRecyclerView() {
@@ -58,6 +66,26 @@ class PlaylistsFragmentNew : Fragment(R.layout.fragment_simple_list) {
         binding?.recyclerView?.apply {
             layoutManager = LinearLayoutManager(requireContext())
             adapter = this@PlaylistsFragmentNew.adapter
+
+            // Infinite scroll listener with Fragment-side guards
+            addOnScrollListener(object : RecyclerView.OnScrollListener() {
+                override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                    // Only trigger on scroll down
+                    if (dy <= 0) return
+
+                    // Fragment-side guard: early exit if cannot load more
+                    if (!viewModel.canLoadMore) return
+
+                    val layoutManager = recyclerView.layoutManager as? LinearLayoutManager ?: return
+                    val totalItems = layoutManager.itemCount
+                    val lastVisible = layoutManager.findLastVisibleItemPosition()
+
+                    // Load more when 5 items from bottom (threshold for smooth UX)
+                    if (lastVisible >= totalItems - LOAD_MORE_THRESHOLD) {
+                        viewModel.loadMore()
+                    }
+                }
+            })
         }
     }
 
@@ -67,13 +95,20 @@ class PlaylistsFragmentNew : Fragment(R.layout.fragment_simple_list) {
                 when (state) {
                     is ContentListViewModel.ContentState.Loading -> {
                         Log.d(TAG, "Loading playlists...")
+                        binding?.swipeRefresh?.isRefreshing = true
+                        binding?.loadingMore?.visibility = View.GONE
                     }
                     is ContentListViewModel.ContentState.Success -> {
+                        binding?.swipeRefresh?.isRefreshing = false
+                        // Show/hide bottom loading indicator
+                        binding?.loadingMore?.visibility = if (state.isLoadingMore) View.VISIBLE else View.GONE
                         val playlists = state.items.filterIsInstance<ContentItem.Playlist>()
-                        Log.d(TAG, "Playlists loaded: ${playlists.size} items")
+                        Log.d(TAG, "Playlists loaded: ${playlists.size} items, loadingMore=${state.isLoadingMore}, hasMore=${state.hasMoreData}")
                         adapter.submitList(playlists)
                     }
                     is ContentListViewModel.ContentState.Error -> {
+                        binding?.swipeRefresh?.isRefreshing = false
+                        binding?.loadingMore?.visibility = View.GONE
                         Log.e(TAG, "Error loading playlists: ${state.message}")
                     }
                 }
@@ -83,6 +118,7 @@ class PlaylistsFragmentNew : Fragment(R.layout.fragment_simple_list) {
 
     companion object {
         private const val TAG = "PlaylistsFragmentNew"
+        private const val LOAD_MORE_THRESHOLD = 5
     }
 
     override fun onDestroyView() {
