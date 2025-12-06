@@ -265,6 +265,12 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
                     R.id.action_global_playerFragment,
                     android.os.Bundle().apply {
                         putString("videoId", item.id)
+                        putString("title", item.title)
+                        putString("channelName", item.category)
+                        putString("thumbnailUrl", item.thumbnailUrl)
+                        putString("description", item.description)
+                        putInt("durationSeconds", item.durationSeconds)
+                        putLong("viewCount", item.viewCount ?: -1L)
                     }
                 )
             }

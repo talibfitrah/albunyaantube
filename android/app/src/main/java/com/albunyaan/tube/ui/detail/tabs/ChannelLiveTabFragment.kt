@@ -44,9 +44,10 @@ class ChannelLiveTabFragment : BaseChannelListTabFragment<ChannelLiveStream>() {
                 R.id.action_global_playerFragment,
                 android.os.Bundle().apply {
                     putString("videoId", stream.id)
-                    putString("videoTitle", stream.title)
-                    putString("playlistId", "")
-                    putBoolean("audioOnly", false)
+                    putString("title", stream.title)
+                    putString("channelName", stream.uploaderName ?: "")
+                    putString("thumbnailUrl", stream.thumbnailUrl ?: "")
+                    putLong("viewCount", stream.viewCount ?: -1L)
                 }
             )
         }

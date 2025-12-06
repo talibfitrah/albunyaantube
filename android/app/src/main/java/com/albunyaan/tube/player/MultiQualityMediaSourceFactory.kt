@@ -26,8 +26,10 @@ class MultiQualityMediaSourceFactory(context: Context) {
         context,
         DefaultHttpDataSource.Factory()
             .setUserAgent("Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36")
-            .setConnectTimeoutMs(8000)   // Faster timeout for quicker failure detection
-            .setReadTimeoutMs(8000)      // Faster read timeout
+            // Harmonized with OkHttp timeouts (15s connect, 20s read) for consistent behavior
+            // Slightly lower for media to detect failures faster while still allowing for slow starts
+            .setConnectTimeoutMs(12000)  // 12s connect timeout
+            .setReadTimeoutMs(15000)     // 15s read timeout
             .setAllowCrossProtocolRedirects(true)  // Allow HTTP -> HTTPS redirects
     )
 

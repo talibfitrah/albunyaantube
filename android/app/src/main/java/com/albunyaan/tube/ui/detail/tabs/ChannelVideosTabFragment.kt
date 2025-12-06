@@ -46,9 +46,11 @@ class ChannelVideosTabFragment : BaseChannelListTabFragment<ChannelVideo>() {
                 R.id.action_global_playerFragment,
                 android.os.Bundle().apply {
                     putString("videoId", video.id)
-                    putString("videoTitle", video.title)
-                    putString("playlistId", "") // Empty for standalone video
-                    putBoolean("audioOnly", false)
+                    putString("title", video.title)
+                    putString("channelName", video.uploaderName ?: "")
+                    putString("thumbnailUrl", video.thumbnailUrl ?: "")
+                    putInt("durationSeconds", video.durationSeconds ?: 0)
+                    putLong("viewCount", video.viewCount ?: -1L)
                 }
             )
         }

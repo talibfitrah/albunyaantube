@@ -106,7 +106,15 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
                     Log.d(TAG, "Featured video clicked: ${item.title}")
                     findNavController().navigate(
                         R.id.action_global_playerFragment,
-                        bundleOf("videoId" to item.id)
+                        bundleOf(
+                            "videoId" to item.id,
+                            "title" to item.title,
+                            "channelName" to item.category,
+                            "thumbnailUrl" to item.thumbnailUrl,
+                            "description" to item.description,
+                            "durationSeconds" to item.durationSeconds,
+                            "viewCount" to (item.viewCount ?: -1L)
+                        )
                     )
                 }
                 is ContentItem.Playlist -> {
@@ -156,7 +164,15 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
             Log.d(TAG, "Video clicked: ${video.title}")
             findNavController().navigate(
                 R.id.action_global_playerFragment,
-                bundleOf("videoId" to video.id)
+                bundleOf(
+                    "videoId" to video.id,
+                    "title" to video.title,
+                    "channelName" to video.category,
+                    "thumbnailUrl" to video.thumbnailUrl,
+                    "description" to video.description,
+                    "durationSeconds" to video.durationSeconds,
+                    "viewCount" to (video.viewCount ?: -1L)
+                )
             )
         }
     }

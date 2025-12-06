@@ -65,6 +65,12 @@
     <string name="player_event_stream_resolved">Stream resolved (%1$s)</string>
     <string name="player_event_stream_resolved_unknown">unknown quality</string>
     <string name="player_event_stream_failed">Stream resolution failed</string>
+    <string name="player_error_title">Unable to play video</string>
+    <string name="player_error_message">There was a problem loading this video. Please try again.</string>
+    <string name="player_retry">Retry</string>
+    <string name="player_try_audio_only">Try Audio Only</string>
+    <string name="player_retrying">Retrying... (attempt %1$d of %2$d)</string>
+    <string name="player_auto_audio_stall">Switched to audio-only due to slow connection</string>
     <string name="player_start_reason_auto">Auto-advance</string>
     <string name="player_start_reason_user_selected">Manual selection</string>
     <string name="player_start_reason_resume">Resume playback</string>

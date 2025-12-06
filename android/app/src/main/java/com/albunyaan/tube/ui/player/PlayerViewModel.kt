@@ -12,10 +12,6 @@ import com.albunyaan.tube.data.extractor.VideoTrack
 import com.albunyaan.tube.download.DownloadEntry
 import com.albunyaan.tube.download.DownloadRepository
 import com.albunyaan.tube.download.DownloadRequest
-import com.albunyaan.tube.data.filters.FilterState
-import com.albunyaan.tube.data.model.ContentItem
-import com.albunyaan.tube.data.model.ContentType
-import com.albunyaan.tube.data.source.ContentService
 import com.albunyaan.tube.player.PlayerRepository
 import com.google.android.exoplayer2.Player
 import com.google.android.exoplayer2.video.VideoSize
@@ -30,7 +26,6 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-import javax.inject.Named
 
 /**
  * P3-T4: PlayerViewModel with Hilt DI
@@ -39,7 +34,6 @@ import javax.inject.Named
 class PlayerViewModel @Inject constructor(
     private val repository: PlayerRepository,
     private val downloadRepository: DownloadRepository,
-    @Named("real") private val contentService: ContentService,
     private val playlistDetailRepository: com.albunyaan.tube.data.playlist.PlaylistDetailRepository
 ) : ViewModel() {
 
@@ -53,7 +47,12 @@ class PlayerViewModel @Inject constructor(
     private val maxHistorySize = 100 // Limit history to prevent unbounded memory growth
     private var currentItem: UpNextItem? = null
     private var resolveJob: Job? = null
+    private var prefetchJob: Job? = null
     private var latestDownloads: List<DownloadEntry> = emptyList()
+
+    // Prefetch cache: stores resolved streams for next items
+    private val prefetchCache = mutableMapOf<String, ResolvedStreams>()
+    private val maxPrefetchItems = 2
 
     // Playlist playback state
     private var currentPlaylistId: String? = null
@@ -199,78 +198,53 @@ class PlayerViewModel @Inject constructor(
     }
 
     /**
-     * Load and play a specific video by ID
+     * Load and play a specific video by ID.
+     *
+     * Fast-path: Starts stream resolution immediately without blocking on metadata fetch.
+     * Metadata (title, thumbnail, etc.) should be passed via navigation arguments.
+     * This eliminates the 15-20s potential delay from backend calls.
+     *
+     * @param videoId YouTube video ID
+     * @param title Video title (passed via nav args for instant display)
+     * @param channelName Channel name (optional, passed via nav args)
+     * @param thumbnailUrl Thumbnail URL (optional, passed via nav args)
+     * @param description Video description (optional)
+     * @param durationSeconds Video duration in seconds (optional)
+     * @param viewCount View count (optional)
      */
-    fun loadVideo(videoId: String, title: String = "Video") {
+    fun loadVideo(
+        videoId: String,
+        title: String = "Video",
+        channelName: String = "",
+        thumbnailUrl: String? = null,
+        description: String? = null,
+        durationSeconds: Int = 0,
+        viewCount: Long? = null
+    ) {
         isPlaylistMode = false
         currentPlaylistId = null
 
-        viewModelScope.launch(dispatcher) {
-            updateState { it.copy(streamState = StreamState.Loading) }
+        // Create item immediately from nav args - no backend fetch needed
+        val item = UpNextItem(
+            id = videoId,
+            title = title,
+            channelName = channelName,
+            durationSeconds = durationSeconds,
+            streamId = videoId,
+            thumbnailUrl = thumbnailUrl,
+            description = description,
+            viewCount = viewCount
+        )
 
-            try {
-                // Fetch video metadata from backend
-                val response = contentService.fetchContent(
-                    type = ContentType.VIDEOS,
-                    cursor = null,
-                    pageSize = 100,
-                    filters = FilterState()
-                )
+        currentItem = item
+        queue.clear()
+        previousItems.clear()
+        applyQueueState()
 
-                val video = response.data
-                    .filterIsInstance<ContentItem.Video>()
-                    .firstOrNull { it.id == videoId }
+        publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(item, PlaybackStartReason.USER_SELECTED))
 
-                if (video != null) {
-                    val item = UpNextItem(
-                        id = video.id,
-                        title = video.title,
-                        channelName = "Albunyaan", // TODO: Add channel name to Video model
-                        durationSeconds = video.durationSeconds,
-                        streamId = video.id,
-                        thumbnailUrl = video.thumbnailUrl,
-                        description = video.description,
-                        viewCount = video.viewCount
-                    )
-                    currentItem = item
-                    queue.clear()
-                    previousItems.clear()
-                    applyQueueState()
-                    publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(item, PlaybackStartReason.USER_SELECTED))
-                    resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
-                } else {
-                    // Fallback to basic item if video not found
-                    val item = UpNextItem(
-                        id = videoId,
-                        title = title,
-                        channelName = "Albunyaan",
-                        durationSeconds = 0,
-                        streamId = videoId
-                    )
-                    currentItem = item
-                    queue.clear()
-                    previousItems.clear()
-                    applyQueueState()
-                    publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(item, PlaybackStartReason.USER_SELECTED))
-                    resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
-                }
-            } catch (e: Exception) {
-                // Fallback to basic item on error
-                val item = UpNextItem(
-                    id = videoId,
-                    title = title,
-                    channelName = "Albunyaan",
-                    durationSeconds = 0,
-                    streamId = videoId
-                )
-                currentItem = item
-                queue.clear()
-                previousItems.clear()
-                applyQueueState()
-                publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(item, PlaybackStartReason.USER_SELECTED))
-                resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
-            }
-        }
+        // Start stream resolution immediately - this is the fast path
+        resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
     }
 
     /**
@@ -398,35 +372,158 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Retry resolving the current stream after an error.
+     * Called from UI when user taps retry button.
+     */
+    fun retryCurrentStream() {
+        val item = currentItem ?: return
+        resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
+    }
+
+    /**
+     * Retry with audio-only fallback when video fails.
+     * Useful when video streams are blocked but audio might work.
+     */
+    fun retryWithAudioOnly() {
+        setAudioOnly(true)
+        retryCurrentStream()
+    }
+
     private fun resolveStreamFor(item: UpNextItem, reason: PlaybackStartReason) {
         resolveJob?.cancel()
-        updateState { it.copy(streamState = StreamState.Loading) }
+        updateState { it.copy(streamState = StreamState.Loading, retryCount = 0) }
         resolveJob = viewModelScope.launch(dispatcher) {
+            resolveWithRetry(item, maxAttempts = MAX_RETRY_ATTEMPTS)
+        }
+    }
+
+    /**
+     * Resolve streams with exponential backoff retry.
+     * Checks prefetch cache first for instant playback.
+     * Attempts: 3 times with delays of 1s, 2s, 4s between attempts.
+     */
+    private suspend fun resolveWithRetry(item: UpNextItem, maxAttempts: Int) {
+        // Check prefetch cache first for instant playback
+        val prefetched = synchronized(prefetchCache) { prefetchCache.remove(item.streamId) }
+        if (prefetched != null) {
+            android.util.Log.d("PlayerViewModel", "Using prefetched stream for ${item.streamId}")
+            val selection = prefetched.toDefaultSelection()
+            if (selection != null) {
+                publishAnalytics(PlaybackAnalyticsEvent.StreamResolved(item.streamId, selection.video?.qualityLabel))
+                updateState { it.copy(streamState = StreamState.Ready(prefetched.streamId, selection), retryCount = 0) }
+                return
+            }
+            // Prefetch data was invalid, fall through to normal resolution
+            android.util.Log.w("PlayerViewModel", "Prefetched stream invalid, resolving fresh")
+        }
+
+        var lastError: Throwable? = null
+
+        for (attempt in 1..maxAttempts) {
+            updateState { it.copy(retryCount = attempt - 1) }
+
             val resolved = try {
-                repository.resolveStreams(item.streamId)
+                // Add timeout wrapper to prevent indefinite hangs during extraction
+                kotlinx.coroutines.withTimeout(EXTRACTOR_TIMEOUT_MS) {
+                    repository.resolveStreams(item.streamId)
+                }
             } catch (t: Throwable) {
                 if (t is kotlinx.coroutines.CancellationException) throw t
-                updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_error)) }
-                publishAnalytics(PlaybackAnalyticsEvent.StreamFailed(item.streamId))
-                return@launch
+                lastError = t
+                val errorMessage = when (t) {
+                    is kotlinx.coroutines.TimeoutCancellationException -> "Timed out after ${EXTRACTOR_TIMEOUT_MS/1000}s"
+                    else -> t.message
+                }
+                android.util.Log.w("PlayerViewModel", "Stream resolve attempt $attempt failed: $errorMessage")
+
+                if (attempt < maxAttempts) {
+                    // Exponential backoff: 1s, 2s, 4s
+                    val delayMs = RETRY_BASE_DELAY_MS * (1 shl (attempt - 1))
+                    android.util.Log.d("PlayerViewModel", "Retrying in ${delayMs}ms...")
+                    kotlinx.coroutines.delay(delayMs)
+                    continue
+                } else {
+                    // All retries exhausted
+                    updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_error)) }
+                    publishAnalytics(PlaybackAnalyticsEvent.StreamFailed(item.streamId))
+                    return
+                }
             }
 
             if (resolved == null) {
-                updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_unavailable)) }
-                publishAnalytics(PlaybackAnalyticsEvent.StreamFailed(item.streamId))
-                return@launch
+                android.util.Log.w("PlayerViewModel", "Stream resolved to null on attempt $attempt")
+                if (attempt < maxAttempts) {
+                    val delayMs = RETRY_BASE_DELAY_MS * (1 shl (attempt - 1))
+                    kotlinx.coroutines.delay(delayMs)
+                    continue
+                } else {
+                    updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_unavailable)) }
+                    publishAnalytics(PlaybackAnalyticsEvent.StreamFailed(item.streamId))
+                    return
+                }
             }
 
             val selection = resolved.toDefaultSelection()
             if (selection == null) {
                 updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_unavailable)) }
                 publishAnalytics(PlaybackAnalyticsEvent.StreamFailed(item.streamId))
-                return@launch
+                return
             }
 
+            // Success!
+            android.util.Log.d("PlayerViewModel", "Stream resolved successfully on attempt $attempt")
             publishAnalytics(PlaybackAnalyticsEvent.StreamResolved(item.streamId, selection.video?.qualityLabel))
-            updateState { it.copy(streamState = StreamState.Ready(resolved.streamId, selection)) }
+            updateState { it.copy(streamState = StreamState.Ready(resolved.streamId, selection), retryCount = 0) }
+            return
         }
+    }
+
+    /**
+     * Prefetch streams for the next items in the queue.
+     * Called when current video starts playing to reduce wait time for next video.
+     */
+    fun prefetchNextItems() {
+        prefetchJob?.cancel()
+        // Snapshot the queue on Main thread before switching to IO for thread safety
+        val itemsToPrefetch = queue.take(maxPrefetchItems).toList()
+        if (itemsToPrefetch.isEmpty()) return
+
+        prefetchJob = viewModelScope.launch(Dispatchers.IO) {
+            for (item in itemsToPrefetch) {
+                val alreadyCached = synchronized(prefetchCache) { prefetchCache.containsKey(item.streamId) }
+                if (alreadyCached) {
+                    android.util.Log.d("PlayerViewModel", "Prefetch: ${item.streamId} already cached")
+                    continue
+                }
+
+                try {
+                    android.util.Log.d("PlayerViewModel", "Prefetch: Starting for ${item.streamId}")
+                    val resolved = repository.resolveStreams(item.streamId)
+                    if (resolved != null) {
+                        synchronized(prefetchCache) {
+                            // Evict old entries if cache is full
+                            if (prefetchCache.size >= maxPrefetchItems * 2) {
+                                val oldest = prefetchCache.keys.firstOrNull()
+                                oldest?.let { prefetchCache.remove(it) }
+                            }
+                            prefetchCache[item.streamId] = resolved
+                        }
+                        android.util.Log.d("PlayerViewModel", "Prefetch: Completed for ${item.streamId}")
+                    }
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    android.util.Log.w("PlayerViewModel", "Prefetch failed for ${item.streamId}: ${e.message}")
+                    // Don't propagate - prefetch failures are non-fatal
+                }
+            }
+        }
+    }
+
+    companion object {
+        private const val MAX_RETRY_ATTEMPTS = 3
+        private const val RETRY_BASE_DELAY_MS = 1000L
+        private const val EXTRACTOR_TIMEOUT_MS = 12000L // 12s timeout for extraction
     }
 
     private fun findDownloadFor(item: UpNextItem?, entries: List<DownloadEntry>): DownloadEntry? {
@@ -492,7 +589,9 @@ data class PlayerState(
     val selectedSubtitle: SubtitleTrack? = null,
     val lastAnalyticsEvent: PlaybackAnalyticsEvent? = null,
     val hasNext: Boolean = false,
-    val hasPrevious: Boolean = false
+    val hasPrevious: Boolean = false,
+    /** Current retry attempt (0 = first attempt, 1 = first retry, etc.) */
+    val retryCount: Int = 0
 )
 
 data class UpNextItem(

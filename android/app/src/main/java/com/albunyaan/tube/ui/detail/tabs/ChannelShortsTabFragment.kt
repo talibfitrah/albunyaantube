@@ -34,6 +34,10 @@ class ChannelShortsTabFragment : Fragment(R.layout.fragment_channel_shorts_tab) 
         }
     }
 
+    private val channelName: String by lazy {
+        requireParentFragment().arguments?.getString("channelName") ?: ""
+    }
+
     private val viewModel: ChannelDetailViewModel by viewModels(
         ownerProducer = { requireParentFragment() },
         extrasProducer = {
@@ -50,9 +54,11 @@ class ChannelShortsTabFragment : Fragment(R.layout.fragment_channel_shorts_tab) 
                 R.id.action_global_playerFragment,
                 Bundle().apply {
                     putString("videoId", short.id)
-                    putString("videoTitle", short.title)
-                    putString("playlistId", "")
-                    putBoolean("audioOnly", false)
+                    putString("title", short.title)
+                    putString("channelName", channelName)
+                    putString("thumbnailUrl", short.thumbnailUrl ?: "")
+                    putInt("durationSeconds", short.durationSeconds ?: 0)
+                    putLong("viewCount", short.viewCount ?: -1L)
                 }
             )
         }

@@ -55,7 +55,15 @@ class FeaturedListFragment : Fragment(R.layout.fragment_featured_list) {
                     Log.d(TAG, "Video clicked: ${item.id}")
                     findNavController().navigate(
                         R.id.action_global_playerFragment,
-                        bundleOf("videoId" to item.id)
+                        bundleOf(
+                            "videoId" to item.id,
+                            "title" to item.title,
+                            "channelName" to item.category,
+                            "thumbnailUrl" to item.thumbnailUrl,
+                            "description" to item.description,
+                            "durationSeconds" to item.durationSeconds,
+                            "viewCount" to (item.viewCount ?: -1L)
+                        )
                     )
                 }
                 is ContentItem.Playlist -> {

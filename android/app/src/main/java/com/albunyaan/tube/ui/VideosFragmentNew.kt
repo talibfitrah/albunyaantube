@@ -56,7 +56,7 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
 
     private fun setupRecyclerView() {
         adapter = VideoGridAdapter { video ->
-            navigateToPlayer(video.id)
+            navigateToPlayer(video)
         }
 
         binding?.recyclerView?.apply {
@@ -88,8 +88,16 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
         }
     }
 
-    private fun navigateToPlayer(videoId: String) {
-        val bundle = bundleOf("videoId" to videoId)
+    private fun navigateToPlayer(video: ContentItem.Video) {
+        val bundle = bundleOf(
+            "videoId" to video.id,
+            "title" to video.title,
+            "channelName" to video.category,
+            "thumbnailUrl" to video.thumbnailUrl,
+            "description" to video.description,
+            "durationSeconds" to video.durationSeconds,
+            "viewCount" to (video.viewCount ?: -1L)
+        )
         // Navigate using global action since player is now in main_tabs_nav
         findNavController().navigate(R.id.action_global_playerFragment, bundle)
     }

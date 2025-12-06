@@ -57,4 +57,7 @@
 
     <!-- Hero overlays for playlist/channel detail -->
     <color name="hero_overlay">#40000000</color>
+
+    <!-- Player overlays -->
+    <color name="player_error_overlay">#CC000000</color>
 </resources>

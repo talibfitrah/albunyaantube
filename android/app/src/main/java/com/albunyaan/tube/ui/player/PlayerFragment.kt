@@ -103,14 +103,30 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         val startIndex = arguments?.getInt("startIndex", 0) ?: 0
         val shuffled = arguments?.getBoolean("shuffled", false) ?: false
 
+        // Extract metadata from nav args for fast-path playback (no backend fetch needed)
+        val videoTitle = arguments?.getString("title") ?: "Video"
+        val channelName = arguments?.getString("channelName") ?: ""
+        val thumbnailUrl = arguments?.getString("thumbnailUrl")
+        val description = arguments?.getString("description")
+        val durationSeconds = arguments?.getInt("durationSeconds", 0) ?: 0
+        val viewCount = arguments?.getLong("viewCount", -1L)?.takeIf { it >= 0 }
+
         when {
             !playlistId.isNullOrEmpty() -> {
                 // Playlist playback mode - load playlist and start from specified index
                 viewModel.loadPlaylist(playlistId, startIndex, shuffled)
             }
             !videoId.isNullOrEmpty() -> {
-                // Single video playback mode
-                viewModel.loadVideo(videoId)
+                // Single video playback mode - fast path with metadata from nav args
+                viewModel.loadVideo(
+                    videoId = videoId,
+                    title = videoTitle,
+                    channelName = channelName,
+                    thumbnailUrl = thumbnailUrl,
+                    description = description,
+                    durationSeconds = durationSeconds,
+                    viewCount = viewCount
+                )
             }
             // If no arguments, ViewModel will use default stub queue (for testing)
         }
@@ -177,6 +193,14 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         }
 
         // Overlay controls are always visible now - no click listener needed
+
+        // Setup error retry buttons
+        binding.playerRetryButton?.setOnClickListener {
+            viewModel.retryCurrentStream()
+        }
+        binding.playerAudioOnlyButton?.setOnClickListener {
+            viewModel.retryWithAudioOnly()
+        }
 
         // Configure Cast button
         castContext?.let { context ->
@@ -274,12 +298,22 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             private var retryCount = 0
             private val maxRetries = 2
 
+            // Stall detection
+            private var bufferingStartTime: Long = 0L
+            private var stallCheckJob: kotlinx.coroutines.Job? = null
+            private val stallThresholdMs = 8000L // 8s of buffering = stall
+            private var hasAutoDowngraded = false
+
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 android.util.Log.d("PlayerFragment", "onIsPlayingChanged: isPlaying=$isPlaying, hasAutoHidden=$hasAutoHidden")
                 if (isPlaying && !hasAutoHidden) {
                     // Auto-hide controls after playback starts
                     hasAutoHidden = true
                     retryCount = 0 // Reset retry count on successful playback
+
+                    // Prefetch next items in queue when current video starts playing
+                    viewModel.prefetchNextItems()
+
                     binding.playerView.postDelayed({
                         if (player?.isPlaying == true) {
                             android.util.Log.d("PlayerFragment", "Auto-hiding controls now")
@@ -293,14 +327,60 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
             override fun onPlaybackStateChanged(playbackState: Int) {
                 android.util.Log.d("PlayerFragment", "onPlaybackStateChanged: state=$playbackState")
-                // When a new video loads, reset the auto-hide flag
+                // When a new video loads, reset the auto-hide flag and stall tracking
                 if (playbackState == com.google.android.exoplayer2.Player.STATE_IDLE) {
                     hasAutoHidden = false
+                    hasAutoDowngraded = false
+                    bufferingStartTime = 0L
+                    stallCheckJob?.cancel()
                 }
-                if (playbackState == com.google.android.exoplayer2.Player.STATE_ENDED) {
-                    val advanced = viewModel.markCurrentComplete()
-                    if (advanced) {
-                        player?.playWhenReady = true
+
+                // Stall detection: track buffering duration
+                when (playbackState) {
+                    com.google.android.exoplayer2.Player.STATE_BUFFERING -> {
+                        if (bufferingStartTime == 0L) {
+                            bufferingStartTime = System.currentTimeMillis()
+                            android.util.Log.d("PlayerFragment", "Buffering started")
+
+                            // Start stall check job
+                            stallCheckJob?.cancel()
+                            stallCheckJob = viewLifecycleOwner.lifecycleScope.launch {
+                                kotlinx.coroutines.delay(stallThresholdMs)
+                                // Still buffering after threshold - consider stalled
+                                if (player?.playbackState == com.google.android.exoplayer2.Player.STATE_BUFFERING && !hasAutoDowngraded) {
+                                    val bufferDuration = System.currentTimeMillis() - bufferingStartTime
+                                    android.util.Log.w("PlayerFragment", "Stall detected: buffering for ${bufferDuration}ms")
+
+                                    // Auto-switch to audio-only if not already
+                                    val state = viewModel.state.value
+                                    if (!state.audioOnly) {
+                                        hasAutoDowngraded = true
+                                        android.util.Log.d("PlayerFragment", "Auto-downgrading to audio-only due to stall")
+                                        context?.let { ctx ->
+                                            Toast.makeText(ctx, R.string.player_auto_audio_stall, Toast.LENGTH_SHORT).show()
+                                        }
+                                        viewModel.setAudioOnly(true)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    com.google.android.exoplayer2.Player.STATE_READY -> {
+                        if (bufferingStartTime > 0L) {
+                            val bufferDuration = System.currentTimeMillis() - bufferingStartTime
+                            android.util.Log.d("PlayerFragment", "Buffering ended after ${bufferDuration}ms")
+                        }
+                        bufferingStartTime = 0L
+                        stallCheckJob?.cancel()
+                    }
+                    com.google.android.exoplayer2.Player.STATE_ENDED -> {
+                        bufferingStartTime = 0L
+                        stallCheckJob?.cancel()
+                        val advanced = viewModel.markCurrentComplete()
+                        if (advanced) {
+                            player?.playWhenReady = true
+                            hasAutoDowngraded = false // Reset for next video
+                        }
                     }
                 }
             }
@@ -341,9 +421,17 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                             android.util.Log.d("PlayerFragment", "Stream parsing failed - clearing cache and retrying")
                             preparedStreamKey = null
                             preparedStreamUrl = null
-                            // Reload the video to get fresh URLs
+                            // Reload the video to get fresh URLs, preserving all metadata
                             viewModel.state.value.currentItem?.let { item ->
-                                viewModel.loadVideo(item.streamId, item.title)
+                                viewModel.loadVideo(
+                                    videoId = item.streamId,
+                                    title = item.title,
+                                    channelName = item.channelName,
+                                    thumbnailUrl = item.thumbnailUrl,
+                                    description = item.description,
+                                    durationSeconds = item.durationSeconds,
+                                    viewCount = item.viewCount
+                                )
                             }
                         } else {
                             // Use safe context access to prevent crash if fragment is detached
@@ -630,12 +718,30 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
     private fun updatePlayerStatus(binding: FragmentPlayerBinding, state: PlayerState) {
         when (val streamState = state.streamState) {
-            StreamState.Idle -> binding.playerStatus.text = getString(R.string.player_status_initializing)
-            StreamState.Loading -> binding.playerStatus.text = getString(R.string.player_status_resolving)
-            is StreamState.Error -> binding.playerStatus.text = getString(streamState.messageRes)
-            is StreamState.Ready -> binding.playerStatus.text = when {
-                state.audioOnly -> getString(R.string.player_status_audio_only)
-                else -> getString(R.string.player_status_video_playing)
+            StreamState.Idle -> {
+                binding.playerStatus.text = getString(R.string.player_status_initializing)
+                binding.playerErrorOverlay?.visibility = View.GONE
+            }
+            StreamState.Loading -> {
+                binding.playerStatus.text = if (state.retryCount > 0) {
+                    getString(R.string.player_retrying, state.retryCount + 1, 3)
+                } else {
+                    getString(R.string.player_status_resolving)
+                }
+                binding.playerErrorOverlay?.visibility = View.GONE
+            }
+            is StreamState.Error -> {
+                binding.playerStatus.text = getString(streamState.messageRes)
+                // Show error overlay with retry options
+                binding.playerErrorOverlay?.visibility = View.VISIBLE
+                binding.playerErrorMessage?.text = getString(streamState.messageRes)
+            }
+            is StreamState.Ready -> {
+                binding.playerStatus.text = when {
+                    state.audioOnly -> getString(R.string.player_status_audio_only)
+                    else -> getString(R.string.player_status_video_playing)
+                }
+                binding.playerErrorOverlay?.visibility = View.GONE
             }
         }
     }
@@ -699,12 +805,22 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         }
 
         val key = streamState.streamId to state.audioOnly
+        // Track the actual video URL to detect quality changes
+        val currentVideoUrl = streamState.selection.video?.url
 
-        // Check if we're switching quality (same stream, different audio/video mode)
-        val isQualitySwitch = preparedStreamKey != null && preparedStreamKey?.first == key.first && preparedStreamKey != key
+        // Check if we need to rebuild: same stream but different quality or audio mode
+        val isSameStream = preparedStreamKey?.first == key.first
+        val isQualityChange = isSameStream && preparedStreamUrl != currentVideoUrl
+        val isAudioModeChange = isSameStream && preparedStreamKey?.second != key.second
+        val isQualitySwitch = isQualityChange || isAudioModeChange
 
-        // If it's the exact same stream configuration, don't reload
-        if (preparedStreamKey == key) return
+        // If it's the exact same stream AND same video URL, don't reload
+        if (preparedStreamKey == key && preparedStreamUrl == currentVideoUrl) {
+            android.util.Log.d("PlayerFragment", "Stream already prepared with same URL, skipping")
+            return
+        }
+
+        android.util.Log.d("PlayerFragment", "Preparing stream: id=${key.first}, audioOnly=${key.second}, url=$currentVideoUrl, isQualitySwitch=$isQualitySwitch")
 
         // Save current position for seamless quality switching
         val savedPosition = if (isQualitySwitch) {
