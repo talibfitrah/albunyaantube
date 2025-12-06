@@ -10,7 +10,6 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
-import androidx.navigation.findNavController
 import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.albunyaan.tube.R
@@ -135,7 +134,7 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
         binding?.searchResultsList?.apply {
             layoutManager = LinearLayoutManager(requireContext())
             adapter = searchResultsAdapter
-            addItemDecoration(DividerItemDecoration(requireContext(), LinearLayoutManager.VERTICAL))
+            // No divider decoration - item layouts have their own spacing
         }
     }
 
@@ -176,14 +175,16 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
                         binding?.apply {
                             loadingState.isVisible = false
                             emptyState.isVisible = true
-                            emptyStateTitle.text = "No results found"
-                            emptyStateMessage.text = "Try different keywords for \"${state.query}\""
+                            emptyStateTitle.text = getString(R.string.search_no_results)
+                            emptyStateMessage.text = getString(R.string.search_try_different, state.query)
                             searchHistorySection.isVisible = false
                             searchResultsList.isVisible = false
                         }
                     }
                     is SearchViewModel.SearchState.Error -> {
-                        showError("Search failed: ${state.message}")
+                        // Log the actual error for debugging, show generic message to user
+                        android.util.Log.e("SearchFragment", "Search error: ${state.message}")
+                        showError(getString(R.string.search_error_generic))
                     }
                 }
             }
@@ -250,7 +251,7 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
         binding?.apply {
             loadingState.isVisible = false
             emptyState.isVisible = true
-            emptyStateTitle.text = "Error"
+            emptyStateTitle.text = getString(R.string.error_title)
             emptyStateMessage.text = message
             searchHistorySection.isVisible = false
             searchResultsList.isVisible = false

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="onboarding_carousel_content">شرائح التعريف</string>
+    <string name="onboarding_help">تعرف على المزيد حول محتوى التطبيق</string>
+    <string name="onboarding_continue">التالي</string>
+    <string name="onboarding_get_started">ابدأ الآن</string>
+    <string name="onboarding_skip">تخطي</string>
+
+    <!-- Page 1 -->
+    <string name="onboarding_page1_title">تصفح</string>
+    <string name="onboarding_page1_desc">استكشف مجموعة متنوعة من الفيديوهات الإسلامية، من المحاضرات إلى الوثائقيات، كلها في مكان واحد.</string>
+
+    <!-- Page 2 -->
+    <string name="onboarding_page2_title">استمع في الخلفية</string>
+    <string name="onboarding_page2_desc">تابع الاستماع إلى المحاضرات والتلاوات حتى عندما يكون التطبيق في الخلفية.</string>
+
+    <!-- Page 3 -->
+    <string name="onboarding_page3_title">حمّل للمشاهدة بدون إنترنت</string>
+    <string name="onboarding_page3_desc">احفظ محتواك المفضل للمشاهدة أو الاستماع بدون اتصال، في أي وقت وأي مكان.</string>
+</resources>

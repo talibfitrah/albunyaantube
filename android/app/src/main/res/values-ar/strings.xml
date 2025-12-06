@@ -71,12 +71,7 @@
     <string name="player_download_in_progress">جارٍ التنزيل (%1$d%%)</string>
     <string name="player_download_ready">تم التنزيل %1$s • %2$s</string>
     <string name="player_download_status_placeholder">حالة التنزيل</string>
-    <string name="player_review_eula">مراجعة اتفاقية الاستخدام</string>
-    <string name="player_download_requires_eula">اقبل اتفاقية التنزيلات دون اتصال للمتابعة.</string>
-    <string name="eula_dialog_title">اتفاقية التنزيلات دون اتصال</string>
-    <string name="eula_dialog_body">الوصول دون اتصال متاح للدراسة الشخصية فقط. بقبولك، توافق على عدم إعادة توزيع التنزيلات، واحترام طلبات إزالة المحتوى، وحذف الملفات عند إلغاء الوصول.</string>
-    <string name="eula_dialog_accept">أوافق</string>
-    <string name="eula_dialog_decline">ليس الآن</string>
+    <string name="player_like_coming_soon">ميزة الإعجاب قادمة قريباً</string>
     <string name="nav_downloads">التنزيلات</string>
     <string name="downloads_empty">لا توجد تنزيلات بعد. ابدأ بحفظ المحتوى للتشغيل دون اتصال.</string>
     <string name="download_action_pause">إيقاف مؤقت</string>
@@ -156,4 +151,248 @@
     <string name="home_see_all_channels">عرض كل القنوات</string>
     <string name="home_see_all_playlists">عرض كل قوائم التشغيل</string>
     <string name="home_see_all_videos">عرض كل الفيديوهات</string>
+    <string name="home_see_all_featured">عرض كل المحتوى المميز</string>
+    <string name="home_retry_section">إعادة تحميل القسم</string>
+
+    <!-- Missing strings from English -->
+    <string name="navigate_back">رجوع</string>
+    <string name="channel_tab_about">حول</string>
+    <string name="player_action_quality">الجودة</string>
+    <string name="player_action_captions">الترجمة</string>
+    <string name="player_action_minimize">تصغير المشغل</string>
+    <string name="player_action_fullscreen">ملء الشاشة</string>
+    <string name="player_action_settings">إعدادات المشغل</string>
+    <string name="player_action_next">تشغيل الفيديو التالي</string>
+    <string name="player_action_cast">البث إلى التلفاز</string>
+    <string name="loading">جارٍ التحميل…</string>
+    <string name="section_featured">المميز</string>
+
+    <!-- Content Type Badges -->
+    <string name="type_video">فيديو</string>
+    <string name="type_playlist">قائمة تشغيل</string>
+    <string name="type_channel">قناة</string>
+
+    <!-- Channel Detail -->
+    <string name="channel_subscribers_format">%s مشترك</string>
+    <string name="channel_subscribers_unknown">–</string>
+    <string name="playlist_videos_title">الفيديوهات في هذه القائمة</string>
+
+    <!-- Channel About Tab -->
+    <string name="channel_about_description">الوصف</string>
+    <string name="channel_about_no_description">لا يوجد وصف متاح</string>
+    <string name="channel_about_links">الروابط</string>
+    <string name="channel_about_more_info">معلومات إضافية</string>
+    <string name="channel_verified">موثق</string>
+    <string name="channel_joined_date">انضم في %s</string>
+    <string name="channel_total_views">%s مشاهدة إجمالية</string>
+
+    <!-- Channel Tab Empty States -->
+    <string name="channel_videos_empty">هذه القناة ليس لديها فيديوهات بعد</string>
+    <string name="channel_live_empty">لا توجد بثوث مباشرة أو قادمة</string>
+    <string name="channel_shorts_empty">لا توجد مقاطع قصيرة متاحة</string>
+    <string name="channel_playlists_empty">لا توجد قوائم تشغيل متاحة</string>
+
+    <!-- Live Badge -->
+    <string name="live_badge">مباشر</string>
+    <string name="upcoming_badge">قادم</string>
+
+    <!-- Additional Accessibility Descriptions -->
+    <string name="cd_video_thumbnail">صورة مصغرة للفيديو</string>
+    <string name="cd_channel_avatar">صورة القناة</string>
+    <string name="cd_playlist_thumbnail">صورة مصغرة لقائمة التشغيل</string>
+    <string name="cd_delete_search_history">حذف عنصر من سجل البحث</string>
+    <string name="cd_search_icon">بحث</string>
+    <string name="cd_filter_button">تصفية المحتوى</string>
+    <string name="cd_bottom_nav_home">الرئيسية</string>
+    <string name="cd_bottom_nav_categories">التصنيفات</string>
+    <string name="cd_bottom_nav_library">المكتبة</string>
+    <string name="cd_bottom_nav_settings">الإعدادات</string>
+    <string name="cd_clear_history">مسح كل سجل البحث</string>
+    <string name="cd_download_pause_resume">إيقاف أو استئناف التنزيل</string>
+    <string name="cd_download_cancel">إلغاء التنزيل</string>
+    <string name="cd_download_open">فتح الفيديو المنزل</string>
+    <string name="cd_category_chevron">عرض التصنيفات الفرعية</string>
+
+    <!-- Screen Reader Announcements -->
+    <string name="a11y_duration_format">المدة: %s</string>
+    <string name="a11y_video_item">فيديو: %1$s، المدة: %2$s، %3$s، %4$s</string>
+    <string name="a11y_channel_item">قناة: %1$s، %2$s</string>
+    <string name="a11y_playlist_item">قائمة تشغيل: %1$s، %2$d عنصر</string>
+    <string name="a11y_search_history">بحث حديث: %1$s</string>
+    <string name="a11y_download_item">%1$s، %2$s، %3$d بالمائة</string>
+
+    <!-- Video metadata -->
+    <string name="video_views_format">%s مشاهدة</string>
+    <string name="video_uploaded_today">اليوم</string>
+    <plurals name="video_uploaded_days_ago">
+        <item quantity="zero">اليوم</item>
+        <item quantity="one">منذ يوم</item>
+        <item quantity="two">منذ يومين</item>
+        <item quantity="few">منذ %d أيام</item>
+        <item quantity="many">منذ %d يوماً</item>
+        <item quantity="other">منذ %d يوم</item>
+    </plurals>
+
+    <!-- Plurals -->
+    <plurals name="video_count">
+        <item quantity="zero">لا فيديوهات</item>
+        <item quantity="one">فيديو واحد</item>
+        <item quantity="two">فيديوهان</item>
+        <item quantity="few">%d فيديوهات</item>
+        <item quantity="many">%d فيديو</item>
+        <item quantity="other">%d فيديو</item>
+    </plurals>
+    <plurals name="playlist_item_count">
+        <item quantity="zero">لا عناصر</item>
+        <item quantity="one">عنصر واحد</item>
+        <item quantity="two">عنصران</item>
+        <item quantity="few">%d عناصر</item>
+        <item quantity="many">%d عنصراً</item>
+        <item quantity="other">%d عنصر</item>
+    </plurals>
+    <plurals name="video_views">
+        <item quantity="zero">لا مشاهدات</item>
+        <item quantity="one">%s مشاهدة</item>
+        <item quantity="two">%s مشاهدتان</item>
+        <item quantity="few">%s مشاهدات</item>
+        <item quantity="many">%s مشاهدة</item>
+        <item quantity="other">%s مشاهدة</item>
+    </plurals>
+    <plurals name="time_ago_weeks">
+        <item quantity="zero">اليوم</item>
+        <item quantity="one">منذ أسبوع</item>
+        <item quantity="two">منذ أسبوعين</item>
+        <item quantity="few">منذ %d أسابيع</item>
+        <item quantity="many">منذ %d أسبوعاً</item>
+        <item quantity="other">منذ %d أسبوع</item>
+    </plurals>
+    <plurals name="time_ago_months">
+        <item quantity="zero">اليوم</item>
+        <item quantity="one">منذ شهر</item>
+        <item quantity="two">منذ شهرين</item>
+        <item quantity="few">منذ %d أشهر</item>
+        <item quantity="many">منذ %d شهراً</item>
+        <item quantity="other">منذ %d شهر</item>
+    </plurals>
+    <plurals name="time_ago_years">
+        <item quantity="zero">اليوم</item>
+        <item quantity="one">منذ سنة</item>
+        <item quantity="two">منذ سنتين</item>
+        <item quantity="few">منذ %d سنوات</item>
+        <item quantity="many">منذ %d سنة</item>
+        <item quantity="other">منذ %d سنة</item>
+    </plurals>
+
+    <!-- View Count Formatting (Shorts) -->
+    <string name="views_count_billions">%.1f مليار مشاهدة</string>
+    <string name="views_count_millions">%.1f مليون مشاهدة</string>
+    <string name="views_count_thousands">%.1f ألف مشاهدة</string>
+    <string name="views_count">%d مشاهدة</string>
+
+    <!-- Playlist Detail Screen -->
+    <string name="playlist_play_all">تشغيل الكل</string>
+    <string name="playlist_shuffle">تشغيل عشوائي</string>
+    <string name="playlist_metadata_format">%1$d فيديو</string>
+    <string name="playlist_metadata_duration_format">%1$d فيديو • %2$s</string>
+    <string name="playlist_empty_state">هذه القائمة ليس لديها فيديوهات بعد</string>
+    <string name="playlist_download_already_downloading">القائمة قيد التنزيل بجودة %1$s</string>
+    <string name="playlist_download_started">جارٍ تنزيل %1$d فيديو من %2$s</string>
+    <string name="download_started">بدأ التنزيل</string>
+    <string name="cd_playlist_banner">صورة بانر القائمة</string>
+    <string name="cd_play_all_button">تشغيل كل الفيديوهات في هذه القائمة</string>
+    <string name="cd_shuffle_button">تشغيل عشوائي لكل الفيديوهات</string>
+    <string name="cd_download_playlist_button">تنزيل القائمة كاملة</string>
+
+    <!-- Playlist Video Item -->
+    <string name="playlist_video_position">الموضع %1$d</string>
+    <string name="a11y_playlist_video">الموضع %1$d، %2$s، المدة: %3$s، %4$s</string>
+    <string name="playlist_video_downloaded">تم التنزيل</string>
+    <string name="playlist_video_downloading">جارٍ التنزيل %1$d%%</string>
+    <string name="playlist_video_queued">في الانتظار</string>
+
+    <!-- Downloads & Library Screen -->
+    <string name="downloads_library_title">التنزيلات والمكتبة</string>
+    <string name="downloads_section_title">التنزيلات</string>
+    <string name="downloads_empty_title">لا توجد تنزيلات بعد</string>
+    <string name="downloads_empty_subtitle">الفيديوهات المنزلة ستظهر هنا</string>
+    <string name="downloads_storage_used">التخزين المستخدم</string>
+    <string name="downloads_storage_format">%1$d تنزيل • %2$s مستخدم • %3$s متاح</string>
+    <string name="downloads_storage_calculating">جارٍ الحساب…</string>
+    <string name="downloads_no_file">لم يتم العثور على الملف</string>
+    <string name="downloads_file_not_found">الملف غير موجود: %1$s</string>
+    <string name="downloads_open_error">خطأ: %1$s</string>
+    <string name="downloads_no_player">لم يتم العثور على مشغل فيديو</string>
+    <string name="library_section_title">المكتبة</string>
+    <string name="library_saved">المحفوظات</string>
+    <string name="library_saved_count">%1$d فيديو</string>
+    <string name="library_saved_coming_soon">الفيديوهات المحفوظة (قريباً)</string>
+    <string name="library_recently_watched">شوهد مؤخراً</string>
+    <string name="library_recently_watched_count">%1$d فيديو</string>
+    <string name="library_recently_watched_coming_soon">شوهد مؤخراً (قريباً)</string>
+    <string name="library_history">السجل</string>
+    <string name="library_history_count">%1$d فيديو</string>
+    <string name="library_history_coming_soon">سجل المشاهدة (قريباً)</string>
+
+    <!-- Settings Screen -->
+    <string name="settings_title">الإعدادات</string>
+    <string name="settings_general">عام</string>
+    <string name="settings_playback">التشغيل</string>
+    <string name="settings_audio_only">صوت فقط</string>
+    <string name="settings_audio_only_desc">تشغيل الصوت بدون الفيديو لتوفير البيانات</string>
+    <string name="settings_background_play">التشغيل في الخلفية</string>
+    <string name="settings_background_play_desc">متابعة التشغيل عند تصغير التطبيق</string>
+    <string name="settings_downloads">التنزيلات</string>
+    <string name="settings_wifi_only">واي فاي فقط</string>
+    <string name="settings_wifi_only_desc">التنزيل عبر شبكة واي فاي فقط</string>
+    <string name="settings_download_quality">جودة التنزيل</string>
+    <string name="settings_download_quality_desc">اختر جودة التنزيل المفضلة</string>
+    <string name="settings_quality_low">منخفضة (360p)</string>
+    <string name="settings_quality_medium">متوسطة (720p)</string>
+    <string name="settings_quality_high">عالية (1080p)</string>
+    <string name="settings_quality_changed">تم تعيين جودة التنزيل إلى %1$s</string>
+    <string name="settings_content">المحتوى</string>
+    <string name="settings_safe_mode">الوضع الآمن</string>
+    <string name="settings_safe_mode_desc">عرض المحتوى المناسب للعائلة فقط</string>
+    <string name="settings_appearance">المظهر</string>
+    <string name="settings_language">اللغة</string>
+    <string name="settings_language_desc">اختر لغتك المفضلة</string>
+    <string name="settings_language_changed">تم تغيير اللغة. سيتم إعادة تشغيل التطبيق.</string>
+    <string name="settings_theme">السمة</string>
+    <string name="settings_theme_desc">اختر سمة التطبيق</string>
+    <string name="settings_theme_coming_soon">اختيار السمة قريباً</string>
+    <string name="settings_storage">التخزين</string>
+    <string name="settings_storage_location">موقع التخزين</string>
+    <string name="settings_storage_location_desc">اختر مكان حفظ التنزيلات</string>
+    <string name="settings_storage_format">التنزيلات: %1$s • المتاح: %2$s من %3$s</string>
+    <string name="settings_clear_downloads">مسح كل التنزيلات</string>
+    <string name="settings_clear_downloads_desc">حذف كل المحتوى المنزل</string>
+    <string name="settings_clear_downloads_title">مسح كل التنزيلات؟</string>
+    <string name="settings_clear_downloads_message">سيتم حذف جميع الفيديوهات والملفات الصوتية المنزلة. لا يمكن التراجع عن هذا الإجراء.</string>
+    <string name="settings_clear_downloads_confirm">مسح الكل</string>
+    <string name="settings_files_cleared">تم مسح %1$d ملف</string>
+    <string name="settings_download_location">موقع التنزيل</string>
+    <string name="settings_storage_internal">التخزين الداخلي</string>
+    <string name="settings_storage_external">بطاقة SD الخارجية (إن وجدت)</string>
+    <string name="settings_storage_internal_selected">يتم استخدام التخزين الداخلي</string>
+    <string name="settings_storage_external_not_implemented">التخزين الخارجي غير متاح بعد</string>
+    <string name="settings_support">الدعم</string>
+    <string name="settings_about_support">حول والدعم</string>
+    <string name="settings_support_center">مركز المساعدة</string>
+    <string name="settings_support_center_desc">احصل على المساعدة وأرسل ملاحظاتك</string>
+    <string name="cancel">إلغاء</string>
+
+    <!-- Search Screen -->
+    <string name="search_hint">البحث في القنوات وقوائم التشغيل والفيديوهات…</string>
+    <string name="search_recent">عمليات البحث الأخيرة</string>
+    <string name="search_clear_history">مسح</string>
+    <string name="search_no_results">لا توجد نتائج</string>
+    <string name="search_try_different">جرب كلمات مختلفة لـ \"%1$s\"</string>
+    <string name="search_try_different_hint">جرب كلمات مختلفة</string>
+    <string name="search_error">فشل البحث: %1$s</string>
+    <string name="search_error_generic">فشل البحث. يرجى المحاولة مرة أخرى.</string>
+    <string name="search_loading">جارٍ البحث…</string>
+    <string name="error_title">خطأ</string>
+
+    <!-- Home Overflow Menu -->
+    <string name="menu_settings">الإعدادات</string>
 </resources>

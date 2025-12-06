@@ -5,10 +5,10 @@ import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
-import coil.load
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.databinding.ItemVideoGridBinding
+import com.albunyaan.tube.util.ImageLoading.loadThumbnailUrl
 import com.google.android.material.chip.Chip
 import java.text.NumberFormat
 import java.util.Locale
@@ -62,12 +62,8 @@ class VideoGridAdapter(
                 timeAgo
             }
 
-            // Load thumbnail
-            binding.videoThumbnail.load(video.thumbnailUrl) {
-                placeholder(R.drawable.thumbnail_placeholder)
-                error(R.drawable.thumbnail_placeholder)
-                crossfade(true)
-            }
+            // Load thumbnail with aggressive caching
+            binding.videoThumbnail.loadThumbnailUrl(video.thumbnailUrl)
 
             // Add category chip
             binding.categoryChipsContainer.removeAllViews()

@@ -5,10 +5,10 @@ import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
-import coil.load
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.databinding.ItemPlaylistBinding
+import com.albunyaan.tube.util.ImageLoading.loadThumbnailUrl
 import com.google.android.material.chip.Chip
 
 class PlaylistAdapter(
@@ -37,12 +37,8 @@ class PlaylistAdapter(
             binding.playlistTitle.text = playlist.title
             binding.playlistMeta.text = "${playlist.itemCount} items"
 
-            // Load thumbnail
-            binding.playlistThumbnail.load(playlist.thumbnailUrl) {
-                placeholder(R.drawable.thumbnail_placeholder)
-                error(R.drawable.thumbnail_placeholder)
-                crossfade(true)
-            }
+            // Load thumbnail with aggressive caching
+            binding.playlistThumbnail.loadThumbnailUrl(playlist.thumbnailUrl)
 
             // Add category chip
             binding.categoryChipsContainer.removeAllViews()

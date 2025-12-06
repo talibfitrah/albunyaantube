@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Tablet layout for Downloads screen (sw600dp) -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -24,11 +25,15 @@
         android:clipToPadding="false"
         android:paddingBottom="@dimen/bottom_nav_height">
 
+        <!-- Tablet: Centered content with max width -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="@dimen/spacing_md">
+            android:paddingStart="@dimen/spacing_lg"
+            android:paddingEnd="@dimen/spacing_lg"
+            android:paddingTop="@dimen/spacing_md"
+            android:paddingBottom="@dimen/spacing_md">
 
             <!-- Downloads Section -->
             <TextView
@@ -38,12 +43,13 @@
                 android:textSize="18sp"
                 android:textStyle="bold"
                 android:textColor="@android:color/black"
+                android:textAlignment="viewStart"
                 android:layout_marginBottom="@dimen/spacing_sm"/>
 
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="@dimen/spacing_md"
+                android:layout_marginBottom="@dimen/spacing_lg"
                 app:cardBackgroundColor="@android:color/white"
                 app:cardCornerRadius="@dimen/corner_radius_medium"
                 app:cardElevation="0dp">
@@ -52,7 +58,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="@dimen/spacing_md">
+                    android:padding="@dimen/spacing_lg">
 
                     <!-- Downloads list placeholder -->
                     <androidx.recyclerview.widget.RecyclerView
@@ -104,7 +110,7 @@
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
                         android:layout_marginTop="@dimen/spacing_md"
-                        android:padding="@dimen/spacing_sm"
+                        android:padding="@dimen/spacing_md"
                         android:background="@color/background_gray">
 
                         <TextView
@@ -113,6 +119,7 @@
                             android:text="@string/downloads_storage_used"
                             android:textSize="14sp"
                             android:textColor="@android:color/black"
+                            android:textAlignment="viewStart"
                             android:textStyle="bold"/>
 
                         <TextView
@@ -122,6 +129,7 @@
                             android:layout_marginTop="@dimen/spacing_xs"
                             android:text="@string/downloads_storage_calculating"
                             android:textSize="14sp"
+                            android:textAlignment="viewStart"
                             android:textColor="@color/icon_gray"/>
 
                         <ProgressBar
@@ -147,6 +155,7 @@
                 android:textSize="18sp"
                 android:textStyle="bold"
                 android:textColor="@android:color/black"
+                android:textAlignment="viewStart"
                 android:layout_marginBottom="@dimen/spacing_sm"/>
 
             <com.google.android.material.card.MaterialCardView

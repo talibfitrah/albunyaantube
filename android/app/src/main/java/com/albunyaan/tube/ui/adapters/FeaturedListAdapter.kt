@@ -5,13 +5,12 @@ import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
-import coil.load
-import coil.transform.CircleCropTransformation
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.databinding.ItemChannelBinding
 import com.albunyaan.tube.databinding.ItemPlaylistBinding
 import com.albunyaan.tube.databinding.ItemVideoListBinding
+import com.albunyaan.tube.util.ImageLoading.loadThumbnailUrl
 import com.google.android.material.chip.Chip
 import java.text.NumberFormat
 import java.util.Locale
@@ -70,13 +69,16 @@ class FeaturedListAdapter(
             binding.channelName.text = channel.name
 
             val formattedSubs = NumberFormat.getInstance().format(channel.subscribers)
-            binding.subscriberCount.text = "$formattedSubs subscribers"
+            binding.subscriberCount.text = binding.root.context.getString(
+                R.string.channel_subscribers_format,
+                formattedSubs
+            )
 
-            binding.channelAvatar.load(channel.thumbnailUrl) {
-                transformations(CircleCropTransformation())
-                placeholder(R.drawable.onboarding_icon_bg)
-                error(R.drawable.onboarding_icon_bg)
-            }
+            binding.channelAvatar.loadThumbnailUrl(
+                url = channel.thumbnailUrl,
+                placeholder = R.drawable.onboarding_icon_bg,
+                circleCrop = true
+            )
 
             binding.categoryChipsContainer.removeAllViews()
             val categories = channel.categories ?: listOf(channel.category)
@@ -115,11 +117,7 @@ class FeaturedListAdapter(
             binding.playlistTitle.text = playlist.title
             binding.playlistMeta.text = "${playlist.itemCount} items"
 
-            binding.playlistThumbnail.load(playlist.thumbnailUrl) {
-                placeholder(R.drawable.thumbnail_placeholder)
-                error(R.drawable.thumbnail_placeholder)
-                crossfade(true)
-            }
+            binding.playlistThumbnail.loadThumbnailUrl(playlist.thumbnailUrl)
 
             binding.categoryChipsContainer.removeAllViews()
             val chip = Chip(binding.root.context).apply {
@@ -174,11 +172,7 @@ class FeaturedListAdapter(
                 timeAgo
             }
 
-            binding.videoThumbnail.load(video.thumbnailUrl) {
-                placeholder(R.drawable.thumbnail_placeholder)
-                error(R.drawable.thumbnail_placeholder)
-                crossfade(true)
-            }
+            binding.videoThumbnail.loadThumbnailUrl(video.thumbnailUrl)
 
             binding.categoryChipsContainer.removeAllViews()
             val chip = Chip(binding.root.context).apply {

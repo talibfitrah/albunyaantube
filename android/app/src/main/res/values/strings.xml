@@ -75,12 +75,7 @@
     <string name="player_download_in_progress">Download in progress (%1$d%%)</string>
     <string name="player_download_ready">Downloaded %1$s • %2$s</string>
     <string name="player_download_status_placeholder">Download status</string>
-    <string name="player_review_eula">Review EULA</string>
-    <string name="player_download_requires_eula">Accept the offline downloads EULA to continue.</string>
-    <string name="eula_dialog_title">Offline Downloads Agreement</string>
-    <string name="eula_dialog_body">Offline access is provided for personal study only. By accepting, you agree not to redistribute downloads, respect content takedown requests, and delete files when access is revoked.</string>
-    <string name="eula_dialog_accept">I Agree</string>
-    <string name="eula_dialog_decline">Not Now</string>
+    <string name="player_like_coming_soon">Like feature coming soon</string>
     <string name="nav_downloads">Downloads</string>
     <string name="downloads_empty">No downloads yet. Start saving content for offline playback.</string>
     <string name="download_action_pause">Pause</string>
@@ -238,6 +233,26 @@
         <item quantity="one">%d video</item>
         <item quantity="other">%d videos</item>
     </plurals>
+    <plurals name="playlist_item_count">
+        <item quantity="one">%d item</item>
+        <item quantity="other">%d items</item>
+    </plurals>
+    <plurals name="video_views">
+        <item quantity="one">%s view</item>
+        <item quantity="other">%s views</item>
+    </plurals>
+    <plurals name="time_ago_weeks">
+        <item quantity="one">%d week ago</item>
+        <item quantity="other">%d weeks ago</item>
+    </plurals>
+    <plurals name="time_ago_months">
+        <item quantity="one">%d month ago</item>
+        <item quantity="other">%d months ago</item>
+    </plurals>
+    <plurals name="time_ago_years">
+        <item quantity="one">%d year ago</item>
+        <item quantity="other">%d years ago</item>
+    </plurals>
 
     <!-- View Count Formatting (Shorts) -->
     <string name="views_count_billions">%.1fB views</string>
@@ -253,6 +268,7 @@
     <string name="playlist_empty_state">This playlist has no videos yet</string>
     <string name="playlist_download_already_downloading">Playlist is already downloading at %1$s</string>
     <string name="playlist_download_started">Downloading %1$d videos from %2$s</string>
+    <string name="download_started">Download started</string>
     <string name="cd_playlist_banner">Playlist banner image</string>
     <string name="cd_play_all_button">Play all videos in this playlist</string>
     <string name="cd_shuffle_button">Shuffle and play all videos</string>
@@ -264,4 +280,90 @@
     <string name="playlist_video_downloaded">Downloaded</string>
     <string name="playlist_video_downloading">Downloading %1$d%%</string>
     <string name="playlist_video_queued">Queued</string>
+
+    <!-- Downloads & Library Screen -->
+    <string name="downloads_library_title">Downloads &amp; Library</string>
+    <string name="downloads_section_title">Downloads</string>
+    <string name="downloads_empty_title">No downloads yet</string>
+    <string name="downloads_empty_subtitle">Downloaded videos will appear here</string>
+    <string name="downloads_storage_used">Storage Used</string>
+    <string name="downloads_storage_format">%1$d downloads • %2$s used • %3$s available</string>
+    <string name="downloads_storage_calculating">Calculating…</string>
+    <string name="downloads_no_file">No file found</string>
+    <string name="downloads_file_not_found">File not found: %1$s</string>
+    <string name="downloads_open_error">Error: %1$s</string>
+    <string name="downloads_no_player">No video player found</string>
+    <string name="library_section_title">Library</string>
+    <string name="library_saved">Saved</string>
+    <string name="library_saved_count">%1$d videos</string>
+    <string name="library_saved_coming_soon">Saved videos (coming soon)</string>
+    <string name="library_recently_watched">Recently Watched</string>
+    <string name="library_recently_watched_count">%1$d videos</string>
+    <string name="library_recently_watched_coming_soon">Recently Watched (coming soon)</string>
+    <string name="library_history">History</string>
+    <string name="library_history_count">%1$d videos</string>
+    <string name="library_history_coming_soon">Watch history (coming soon)</string>
+
+    <!-- Settings Screen -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_general">General</string>
+    <string name="settings_playback">Playback</string>
+    <string name="settings_audio_only">Audio Only</string>
+    <string name="settings_audio_only_desc">Play audio without video to save data</string>
+    <string name="settings_background_play">Background Play</string>
+    <string name="settings_background_play_desc">Continue playback when app is minimized</string>
+    <string name="settings_downloads">Downloads</string>
+    <string name="settings_wifi_only">WiFi Only</string>
+    <string name="settings_wifi_only_desc">Only download over WiFi connections</string>
+    <string name="settings_download_quality">Download Quality</string>
+    <string name="settings_download_quality_desc">Select preferred download quality</string>
+    <string name="settings_quality_low">Low (360p)</string>
+    <string name="settings_quality_medium">Medium (720p)</string>
+    <string name="settings_quality_high">High (1080p)</string>
+    <string name="settings_quality_changed">Download quality set to %1$s</string>
+    <string name="settings_content">Content</string>
+    <string name="settings_safe_mode">Safe Mode</string>
+    <string name="settings_safe_mode_desc">Show only family-friendly content</string>
+    <string name="settings_appearance">Appearance</string>
+    <string name="settings_language">Language</string>
+    <string name="settings_language_desc">Choose your preferred language</string>
+    <string name="settings_language_changed">Language changed. App will restart.</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_theme_desc">Choose app theme</string>
+    <string name="settings_theme_coming_soon">Theme selection coming soon</string>
+    <string name="settings_storage">Storage</string>
+    <string name="settings_storage_location">Storage Location</string>
+    <string name="settings_storage_location_desc">Choose where to save downloads</string>
+    <string name="settings_storage_format">Downloads: %1$s • Available: %2$s of %3$s</string>
+    <string name="settings_clear_downloads">Clear All Downloads</string>
+    <string name="settings_clear_downloads_desc">Delete all downloaded content</string>
+    <string name="settings_clear_downloads_title">Clear All Downloads?</string>
+    <string name="settings_clear_downloads_message">This will delete all downloaded videos and audio files. This action cannot be undone.</string>
+    <string name="settings_clear_downloads_confirm">Clear All</string>
+    <string name="settings_files_cleared">Cleared %1$d files</string>
+    <string name="settings_download_location">Download Location</string>
+    <string name="settings_storage_internal">Internal Storage</string>
+    <string name="settings_storage_external">External SD Card (if available)</string>
+    <string name="settings_storage_internal_selected">Using internal storage</string>
+    <string name="settings_storage_external_not_implemented">External storage not yet implemented</string>
+    <string name="settings_support">Support</string>
+    <string name="settings_about_support">About &amp; Support</string>
+    <string name="settings_support_center">Support Center</string>
+    <string name="settings_support_center_desc">Get help and send feedback</string>
+    <string name="cancel">Cancel</string>
+
+    <!-- Search Screen -->
+    <string name="search_hint">Search channels, playlists, videos…</string>
+    <string name="search_recent">Recent searches</string>
+    <string name="search_clear_history">Clear</string>
+    <string name="search_no_results">No results found</string>
+    <string name="search_try_different">Try different keywords for \"%1$s\"</string>
+    <string name="search_try_different_hint">Try different keywords</string>
+    <string name="search_error">Search failed: %1$s</string>
+    <string name="search_error_generic">Search failed. Please try again.</string>
+    <string name="search_loading">Searching…</string>
+    <string name="error_title">Error</string>
+
+    <!-- Home Overflow Menu -->
+    <string name="menu_settings">Settings</string>
 </resources>

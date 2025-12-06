@@ -144,7 +144,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         // Setup action buttons
         binding.likeButton?.setOnClickListener {
-            Toast.makeText(requireContext(), "Like feature coming soon", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), R.string.player_like_coming_soon, Toast.LENGTH_SHORT).show()
         }
 
         binding.shareButton?.setOnClickListener {
@@ -155,17 +155,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             binding.audioOnlyToggle.isChecked = !binding.audioOnlyToggle.isChecked
         }
 
-        // Download button - initial setup (will be overridden by updateDownloadControls)
+        // Download button - downloads are always allowed (no EULA gating)
         binding.downloadButton?.setOnClickListener {
-            if (viewModel.state.value.isEulaAccepted) {
-                val started = viewModel.downloadCurrent()
-                if (!started) {
-                    showEulaDialog()
-                } else {
-                    Toast.makeText(requireContext(), "Download started", Toast.LENGTH_SHORT).show()
-                }
-            } else {
-                showEulaDialog()
+            val started = viewModel.downloadCurrent()
+            if (started) {
+                Toast.makeText(requireContext(), R.string.download_started, Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -657,12 +651,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             return
         }
 
-        if (!state.isEulaAccepted) {
-            button.isEnabled = true
-            button.setOnClickListener { showEulaDialog() }
-            return
-        }
-
         when (downloadEntry?.status) {
             DownloadStatus.COMPLETED -> {
                 button.isEnabled = true
@@ -679,10 +667,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             else -> {
                 button.isEnabled = true
                 button.setOnClickListener {
-                    val started = viewModel.downloadCurrent()
-                    if (!started) {
-                        showEulaDialog()
-                    }
+                    viewModel.downloadCurrent()
                 }
                 // Status text no longer shown in new UI
             }
@@ -840,17 +825,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             android.util.Log.e("PlayerFragment", "No apps found to handle video")
             Toast.makeText(requireContext(), "No video player found", Toast.LENGTH_SHORT).show()
         }
-    }
-
-    private fun showEulaDialog() {
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(R.string.eula_dialog_title)
-            .setMessage(R.string.eula_dialog_body)
-            .setNegativeButton(R.string.eula_dialog_decline, null)
-            .setPositiveButton(R.string.eula_dialog_accept) { _, _ ->
-                viewModel.acceptEula()
-            }
-            .show()
     }
 
     private fun shareCurrentVideo() {

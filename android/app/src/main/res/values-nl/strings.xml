@@ -1,0 +1,347 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Albunyaan Tube</string>
+    <string name="navigate_back">Terug</string>
+    <string name="filter_category">Categorie</string>
+    <string name="filter_category_all">Alle categorieën</string>
+    <string name="filter_length">Duur</string>
+    <string name="filter_length_any">Alle lengtes</string>
+    <string name="filter_length_short">Korter dan 4 minuten</string>
+    <string name="filter_length_medium">4–20 minuten</string>
+    <string name="filter_length_long">Langer dan 20 minuten</string>
+    <string name="filter_date">Datum</string>
+    <string name="filter_date_any">Altijd</string>
+    <string name="filter_date_last_24_hours">Afgelopen 24 uur</string>
+    <string name="filter_date_last_7_days">Afgelopen 7 dagen</string>
+    <string name="filter_date_last_30_days">Afgelopen 30 dagen</string>
+    <string name="filter_sort">Sorteren</string>
+    <string name="filter_sort_default">Standaard volgorde</string>
+    <string name="filter_sort_popular">Meest populair</string>
+    <string name="filter_sort_newest">Nieuwste eerst</string>
+    <string name="filter_clear">Filters wissen</string>
+    <string name="filter_chip_value">%1$s • %2$s</string>
+    <string name="channel_tab_videos">Video\'s</string>
+    <string name="channel_tab_live">Live</string>
+    <string name="channel_tab_shorts">Shorts</string>
+    <string name="channel_tab_playlists">Afspeellijsten</string>
+    <string name="channel_tab_about">Over</string>
+    <string name="channel_detail_placeholder">%1$s tabblad voor %2$s komt binnenkort.</string>
+    <string name="playlist_detail_title_placeholder">%1$s</string>
+    <string name="playlist_detail_category">Categorie: %1$s</string>
+    <string name="playlist_detail_item_count">%1$d video\'s</string>
+    <string name="playlist_detail_description_placeholder">Afspeellijst overzicht komt binnenkort.</string>
+    <string name="playlist_detail_download">Downloaden</string>
+    <string name="playlist_detail_downloading">Download in wachtrij</string>
+    <string name="playlist_detail_download_disabled">Downloaden niet beschikbaar</string>
+    <string name="playlist_detail_download_hint">Downloads volgen beleid AC-DL-001. Inhoud wordt offline beschikbaar na voltooiing.</string>
+    <string name="detail_excluded_banner">Dit item is momenteel niet beschikbaar vanwege beleidsregels.</string>
+    <string name="player_audio_only_label">Alleen audio</string>
+    <string name="player_status_audio_only">Alleen audio afspelen.</string>
+    <string name="player_status_video_playing">Video afspelen.</string>
+    <string name="player_status_initializing">Speler initialiseren…</string>
+    <string name="player_status_resolving">Stream oplossen…</string>
+    <string name="player_stream_error">Afspelen niet beschikbaar. Probeer het later opnieuw.</string>
+    <string name="player_stream_unavailable">Deze video is niet beschikbaar voor afspelen.</string>
+    <string name="player_notification_channel_name">Afspelen</string>
+    <string name="player_notification_channel_desc">Beheert afspelen wanneer de app op de achtergrond draait.</string>
+    <string name="player_action_quality">Kwaliteit</string>
+    <string name="player_action_captions">Ondertitels</string>
+    <string name="player_action_enter_pip">Beeld-in-beeld</string>
+    <string name="player_action_play_pause">Afspelen/Pauzeren</string>
+    <string name="player_no_current_item">Er wordt momenteel geen video afgespeeld.</string>
+    <string name="player_mark_current_complete">Markeer als voltooid</string>
+    <string name="player_up_next_header">Volgende</string>
+    <string name="player_up_next_meta">%1$s • %2$s</string>
+    <string name="player_up_next_empty">Wachtrij is leeg.</string>
+    <string name="player_excluded_placeholder">Geen uitsluitingen toegepast.</string>
+    <string name="player_excluded_message">%1$d item(s) overgeslagen vanwege beleidsregels.</string>
+    <string name="player_analytics_header">Laatste analytisch evenement</string>
+    <string name="player_analytics_none">Nog geen evenementen geregistreerd.</string>
+    <string name="player_event_queue_hydrated">Wachtrij geladen (%1$d totaal, %2$d gefilterd)</string>
+    <string name="player_event_play_started">Afspelen gestart: %1$s (%2$s)</string>
+    <string name="player_event_play_completed">Afspelen voltooid: %1$s</string>
+    <string name="player_event_audio_only_on">Alleen audio ingeschakeld</string>
+    <string name="player_event_audio_only_off">Alleen audio uitgeschakeld</string>
+    <string name="player_event_stream_resolved">Stream opgelost (%1$s)</string>
+    <string name="player_event_stream_resolved_unknown">onbekende kwaliteit</string>
+    <string name="player_event_stream_failed">Stream oplossen mislukt</string>
+    <string name="player_start_reason_auto">Automatisch volgende</string>
+    <string name="player_start_reason_user_selected">Handmatige selectie</string>
+    <string name="player_start_reason_resume">Afspelen hervatten</string>
+    <string name="player_duration_minutes_seconds">%1$d:%2$02d</string>
+    <string name="player_current_item">Nu afspelen: %1$s</string>
+    <string name="player_download_current">Downloaden voor offline</string>
+    <string name="player_open_download">Offline openen</string>
+    <string name="player_download_in_progress">Downloaden (%1$d%%)</string>
+    <string name="player_download_ready">Gedownload %1$s • %2$s</string>
+    <string name="player_download_status_placeholder">Downloadstatus</string>
+    <string name="player_like_coming_soon">Like-functie komt binnenkort</string>
+    <string name="nav_downloads">Downloads</string>
+    <string name="downloads_empty">Nog geen downloads. Begin met het opslaan van inhoud voor offline afspelen.</string>
+    <string name="download_action_pause">Pauzeren</string>
+    <string name="download_action_resume">Hervatten</string>
+    <string name="download_action_cancel">Annuleren</string>
+    <string name="download_action_open">Openen</string>
+    <string name="download_status_queued">In wachtrij</string>
+    <string name="download_status_running">Downloaden</string>
+    <string name="download_status_paused">Gepauzeerd</string>
+    <string name="download_status_completed">Voltooid</string>
+    <string name="download_status_failed">Mislukt</string>
+    <string name="download_status_cancelled">Geannuleerd</string>
+    <string name="download_item_content_description">Download %1$s. Status %2$s. %3$d%% voltooid.</string>
+    <string name="download_details_format">%1$s • %2$s</string>
+    <string name="download_toast_no_viewer">Kan dit bestand niet openen op uw apparaat.</string>
+    <string name="download_notification_channel_name">Downloads</string>
+    <string name="download_notification_channel_desc">Toont voortgang voor offline downloads.</string>
+    <string name="download_notification_title">Downloaden %1$s</string>
+    <string name="download_notification_progress">%1$d%% voltooid</string>
+    <string name="download_notification_complete">Download voltooid.</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">Start</string>
+    <string name="nav_channels">Kanalen</string>
+    <string name="nav_playlists">Afspeellijsten</string>
+    <string name="nav_videos">Video\'s</string>
+
+    <!-- Empty/Error/Loading States -->
+    <string name="loading">Laden…</string>
+    <string name="clear_filters">Filters wissen</string>
+    <string name="retry">Opnieuw proberen</string>
+    <string name="empty_state_no_content">Geen inhoud gevonden</string>
+    <string name="empty_state_adjust_filters">Probeer uw filters of zoektermen aan te passen</string>
+    <string name="error_state_title">Er ging iets mis</string>
+    <string name="error_state_check_connection">Kan inhoud niet laden. Controleer uw verbinding en probeer het opnieuw.</string>
+
+    <!-- Error Messages -->
+    <string name="error_network">Geen internetverbinding. Controleer uw netwerkinstellingen.</string>
+    <string name="error_network_title">Verbindingsfout</string>
+    <string name="error_timeout">Verzoek verlopen. Probeer het opnieuw.</string>
+    <string name="error_timeout_title">Time-out fout</string>
+    <string name="error_server">Serverfout. Probeer het later opnieuw.</string>
+    <string name="error_server_title">Serverfout</string>
+    <string name="error_parse">Gegevensverwerking mislukt. Probeer het opnieuw.</string>
+    <string name="error_parse_title">Gegevensfout</string>
+    <string name="error_unknown">Er is een onverwachte fout opgetreden.</string>
+    <string name="offline_mode">U bent offline. Opgeslagen inhoud wordt getoond.</string>
+    <string name="offline_mode_limited">Sommige functies zijn offline niet beschikbaar.</string>
+
+    <!-- Home Screen Sections -->
+    <string name="section_featured">Uitgelicht</string>
+    <string name="section_channels">Kanalen</string>
+    <string name="section_playlists">Afspeellijsten</string>
+    <string name="section_videos">Video\'s</string>
+    <string name="see_all">Alles bekijken</string>
+    <string name="search">Zoeken</string>
+    <string name="categories">Categorieën</string>
+    <string name="menu">Menu</string>
+    <string name="settings">Instellingen</string>
+    <string name="downloads">Downloads</string>
+
+    <!-- Splash Screen -->
+    <string name="splash_tagline">Uw betrouwbare bron voor islamitische content</string>
+
+    <!-- Player Controls -->
+    <string name="player_quality_selector">Kwaliteit</string>
+    <string name="player_rewind">10 seconden terugspoelen</string>
+    <string name="player_forward">10 seconden vooruitspoelen</string>
+    <string name="player_brightness">Helderheid</string>
+    <string name="player_volume">Volume</string>
+
+    <!-- Accessibility -->
+    <string name="player_video_player">Videospeler</string>
+    <string name="player_toggle_description">Video beschrijving tonen/verbergen</string>
+    <string name="player_action_like">Video liken</string>
+    <string name="player_action_share">Video delen</string>
+    <string name="player_action_download">Video downloaden</string>
+    <string name="player_action_minimize">Speler minimaliseren</string>
+    <string name="player_action_fullscreen">Volledig scherm wisselen</string>
+    <string name="player_action_settings">Spelerinstellingen</string>
+    <string name="player_action_next">Volgende video afspelen</string>
+    <string name="player_action_cast">Casten naar TV</string>
+    <string name="home_select_category">Inhoudscategorie selecteren</string>
+    <string name="home_see_all_featured">Alle uitgelichte inhoud bekijken</string>
+    <string name="home_see_all_channels">Alle kanalen bekijken</string>
+    <string name="home_see_all_playlists">Alle afspeellijsten bekijken</string>
+    <string name="home_see_all_videos">Alle video\'s bekijken</string>
+    <string name="home_retry_section">Sectie opnieuw laden</string>
+
+    <!-- Content Type Badges -->
+    <string name="type_video">Video</string>
+    <string name="type_playlist">Afspeellijst</string>
+    <string name="type_channel">Kanaal</string>
+
+    <!-- Channel Detail -->
+    <string name="channel_subscribers_format">%s abonnees</string>
+    <string name="channel_subscribers_unknown">–</string>
+    <string name="playlist_videos_title">Video\'s in deze afspeellijst</string>
+
+    <!-- Channel About Tab -->
+    <string name="channel_about_description">Beschrijving</string>
+    <string name="channel_about_no_description">Geen beschrijving beschikbaar</string>
+    <string name="channel_about_links">Links</string>
+    <string name="channel_about_more_info">Meer informatie</string>
+    <string name="channel_verified">Geverifieerd</string>
+    <string name="channel_joined_date">Lid sinds %s</string>
+    <string name="channel_total_views">%s totale weergaven</string>
+
+    <!-- Channel Tab Empty States -->
+    <string name="channel_videos_empty">Dit kanaal heeft nog geen video\'s</string>
+    <string name="channel_live_empty">Geen live of geplande streams</string>
+    <string name="channel_shorts_empty">Geen Shorts beschikbaar</string>
+    <string name="channel_playlists_empty">Geen afspeellijsten beschikbaar</string>
+
+    <!-- Live Badge -->
+    <string name="live_badge">LIVE</string>
+    <string name="upcoming_badge">GEPLAND</string>
+
+    <!-- Additional Accessibility Descriptions -->
+    <string name="cd_video_thumbnail">Video miniatuur</string>
+    <string name="cd_channel_avatar">Kanaal avatar</string>
+    <string name="cd_playlist_thumbnail">Afspeellijst miniatuur</string>
+    <string name="cd_delete_search_history">Zoekgeschiedenis item verwijderen</string>
+    <string name="cd_search_icon">Zoeken</string>
+    <string name="cd_filter_button">Inhoud filteren</string>
+    <string name="cd_bottom_nav_home">Start</string>
+    <string name="cd_bottom_nav_categories">Categorieën</string>
+    <string name="cd_bottom_nav_library">Bibliotheek</string>
+    <string name="cd_bottom_nav_settings">Instellingen</string>
+    <string name="cd_clear_history">Alle zoekgeschiedenis wissen</string>
+    <string name="cd_download_pause_resume">Download pauzeren of hervatten</string>
+    <string name="cd_download_cancel">Download annuleren</string>
+    <string name="cd_download_open">Gedownloade video openen</string>
+    <string name="cd_category_chevron">Subcategorieën bekijken</string>
+
+    <!-- Screen Reader Announcements -->
+    <string name="a11y_duration_format">Duur: %s</string>
+    <string name="a11y_video_item">Video: %1$s, Duur: %2$s, %3$s, %4$s</string>
+    <string name="a11y_channel_item">Kanaal: %1$s, %2$s</string>
+    <string name="a11y_playlist_item">Afspeellijst: %1$s, %2$d items</string>
+    <string name="a11y_search_history">Recente zoekopdracht: %1$s</string>
+    <string name="a11y_download_item">%1$s, %2$s, %3$d procent</string>
+
+    <!-- Video metadata -->
+    <string name="video_views_format">%s weergaven</string>
+    <string name="video_uploaded_today">Vandaag</string>
+    <plurals name="video_uploaded_days_ago">
+        <item quantity="one">%d dag geleden</item>
+        <item quantity="other">%d dagen geleden</item>
+    </plurals>
+
+    <!-- Plurals -->
+    <plurals name="video_count">
+        <item quantity="one">%d video</item>
+        <item quantity="other">%d video\'s</item>
+    </plurals>
+
+    <!-- View Count Formatting (Shorts) -->
+    <string name="views_count_billions">%.1f mld weergaven</string>
+    <string name="views_count_millions">%.1f mln weergaven</string>
+    <string name="views_count_thousands">%.1fK weergaven</string>
+    <string name="views_count">%d weergaven</string>
+
+    <!-- Playlist Detail Screen -->
+    <string name="playlist_play_all">Alles afspelen</string>
+    <string name="playlist_shuffle">Willekeurig</string>
+    <string name="playlist_metadata_format">%1$d video\'s</string>
+    <string name="playlist_metadata_duration_format">%1$d video\'s • %2$s</string>
+    <string name="playlist_empty_state">Deze afspeellijst heeft nog geen video\'s</string>
+    <string name="playlist_download_already_downloading">Afspeellijst wordt al gedownload op %1$s</string>
+    <string name="playlist_download_started">%1$d video\'s downloaden van %2$s</string>
+    <string name="download_started">Download gestart</string>
+    <string name="cd_playlist_banner">Afspeellijst banner afbeelding</string>
+    <string name="cd_play_all_button">Alle video\'s in deze afspeellijst afspelen</string>
+    <string name="cd_shuffle_button">Willekeurig afspelen van alle video\'s</string>
+    <string name="cd_download_playlist_button">Hele afspeellijst downloaden</string>
+
+    <!-- Playlist Video Item -->
+    <string name="playlist_video_position">Positie %1$d</string>
+    <string name="a11y_playlist_video">Positie %1$d, %2$s, Duur: %3$s, %4$s</string>
+    <string name="playlist_video_downloaded">Gedownload</string>
+    <string name="playlist_video_downloading">Downloaden %1$d%%</string>
+    <string name="playlist_video_queued">In wachtrij</string>
+
+    <!-- Downloads & Library Screen -->
+    <string name="downloads_library_title">Downloads &amp; Bibliotheek</string>
+    <string name="downloads_section_title">Downloads</string>
+    <string name="downloads_empty_title">Nog geen downloads</string>
+    <string name="downloads_empty_subtitle">Gedownloade video\'s verschijnen hier</string>
+    <string name="downloads_storage_used">Opslagruimte gebruikt</string>
+    <string name="downloads_storage_format">%1$d downloads • %2$s gebruikt • %3$s beschikbaar</string>
+    <string name="downloads_storage_calculating">Berekenen…</string>
+    <string name="downloads_no_file">Geen bestand gevonden</string>
+    <string name="downloads_file_not_found">Bestand niet gevonden: %1$s</string>
+    <string name="downloads_open_error">Fout: %1$s</string>
+    <string name="downloads_no_player">Geen videospeler gevonden</string>
+    <string name="library_section_title">Bibliotheek</string>
+    <string name="library_saved">Opgeslagen</string>
+    <string name="library_saved_count">%1$d video\'s</string>
+    <string name="library_saved_coming_soon">Opgeslagen video\'s (binnenkort)</string>
+    <string name="library_recently_watched">Recent bekeken</string>
+    <string name="library_recently_watched_count">%1$d video\'s</string>
+    <string name="library_recently_watched_coming_soon">Recent bekeken (binnenkort)</string>
+    <string name="library_history">Geschiedenis</string>
+    <string name="library_history_count">%1$d video\'s</string>
+    <string name="library_history_coming_soon">Kijkgeschiedenis (binnenkort)</string>
+
+    <!-- Settings Screen -->
+    <string name="settings_title">Instellingen</string>
+    <string name="settings_general">Algemeen</string>
+    <string name="settings_playback">Afspelen</string>
+    <string name="settings_audio_only">Alleen audio</string>
+    <string name="settings_audio_only_desc">Speel alleen audio af om data te besparen</string>
+    <string name="settings_background_play">Achtergrond afspelen</string>
+    <string name="settings_background_play_desc">Blijf afspelen wanneer de app geminimaliseerd is</string>
+    <string name="settings_downloads">Downloads</string>
+    <string name="settings_wifi_only">Alleen WiFi</string>
+    <string name="settings_wifi_only_desc">Alleen downloaden via WiFi-verbindingen</string>
+    <string name="settings_download_quality">Downloadkwaliteit</string>
+    <string name="settings_download_quality_desc">Selecteer gewenste downloadkwaliteit</string>
+    <string name="settings_quality_low">Laag (360p)</string>
+    <string name="settings_quality_medium">Gemiddeld (720p)</string>
+    <string name="settings_quality_high">Hoog (1080p)</string>
+    <string name="settings_quality_changed">Downloadkwaliteit ingesteld op %1$s</string>
+    <string name="settings_content">Inhoud</string>
+    <string name="settings_safe_mode">Veilige modus</string>
+    <string name="settings_safe_mode_desc">Toon alleen gezinsvriendelijke inhoud</string>
+    <string name="settings_appearance">Uiterlijk</string>
+    <string name="settings_language">Taal</string>
+    <string name="settings_language_desc">Kies uw voorkeurstaal</string>
+    <string name="settings_language_changed">Taal gewijzigd. App wordt opnieuw gestart.</string>
+    <string name="settings_theme">Thema</string>
+    <string name="settings_theme_desc">Kies app-thema</string>
+    <string name="settings_theme_coming_soon">Thema selectie komt binnenkort</string>
+    <string name="settings_storage">Opslag</string>
+    <string name="settings_storage_location">Opslaglocatie</string>
+    <string name="settings_storage_location_desc">Kies waar downloads worden opgeslagen</string>
+    <string name="settings_storage_format">Downloads: %1$s • Beschikbaar: %2$s van %3$s</string>
+    <string name="settings_clear_downloads">Alle downloads wissen</string>
+    <string name="settings_clear_downloads_desc">Verwijder alle gedownloade inhoud</string>
+    <string name="settings_clear_downloads_title">Alle downloads wissen?</string>
+    <string name="settings_clear_downloads_message">Dit verwijdert alle gedownloade video\'s en audiobestanden. Deze actie kan niet ongedaan worden gemaakt.</string>
+    <string name="settings_clear_downloads_confirm">Alles wissen</string>
+    <string name="settings_files_cleared">%1$d bestanden gewist</string>
+    <string name="settings_download_location">Downloadlocatie</string>
+    <string name="settings_storage_internal">Interne opslag</string>
+    <string name="settings_storage_external">Externe SD-kaart (indien beschikbaar)</string>
+    <string name="settings_storage_internal_selected">Interne opslag wordt gebruikt</string>
+    <string name="settings_storage_external_not_implemented">Externe opslag nog niet geïmplementeerd</string>
+    <string name="settings_support">Ondersteuning</string>
+    <string name="settings_about_support">Over &amp; Ondersteuning</string>
+    <string name="settings_support_center">Helpcentrum</string>
+    <string name="settings_support_center_desc">Krijg hulp en stuur feedback</string>
+    <string name="cancel">Annuleren</string>
+
+    <!-- Search Screen -->
+    <string name="search_hint">Zoek kanalen, afspeellijsten, video\'s…</string>
+    <string name="search_recent">Recente zoekopdrachten</string>
+    <string name="search_clear_history">Wissen</string>
+    <string name="search_no_results">Geen resultaten gevonden</string>
+    <string name="search_try_different">Probeer andere zoektermen voor \"%1$s\"</string>
+    <string name="search_try_different_hint">Probeer andere zoektermen</string>
+    <string name="search_error">Zoeken mislukt: %1$s</string>
+    <string name="search_loading">Zoeken…</string>
+    <string name="error_title">Fout</string>
+
+    <!-- Home Overflow Menu -->
+    <string name="menu_settings">Instellingen</string>
+</resources>

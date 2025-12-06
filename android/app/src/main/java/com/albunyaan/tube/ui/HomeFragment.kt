@@ -3,6 +3,7 @@ package com.albunyaan.tube.ui
 import android.os.Bundle
 import android.util.Log
 import android.view.View
+import androidx.appcompat.widget.PopupMenu
 import androidx.core.os.bundleOf
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
@@ -161,6 +162,8 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
     }
 
     private fun setupRecyclerViews(binding: FragmentHomeNewBinding) {
+        // RecyclerViews inherit layoutDirection from parent via XML (android:layoutDirection="locale")
+        // No need to set reverseLayout - that would reverse item order, not scroll direction
         binding.featuredRecyclerView.apply {
             adapter = featuredAdapter
             layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
@@ -242,10 +245,10 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
             findNavController().navigate(R.id.searchFragment)
         }
 
-        // Menu button
-        binding.menuButton.setOnClickListener {
+        // Menu button - show popup menu
+        binding.menuButton.setOnClickListener { view ->
             Log.d(TAG, "Menu clicked")
-            findNavController().navigate(R.id.settingsFragment)
+            showOverflowMenu(view)
         }
     }
 
@@ -408,6 +411,21 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
         } else {
             Log.e(TAG, "Could not find mainBottomNav - parentFragment: $parentFragment, mainShell: $mainShellFragment")
         }
+    }
+
+    private fun showOverflowMenu(anchor: View) {
+        val popup = PopupMenu(requireContext(), anchor, android.view.Gravity.END)
+        popup.menuInflater.inflate(R.menu.home_menu, popup.menu)
+        popup.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.action_settings -> {
+                    findNavController().navigate(R.id.settingsFragment)
+                    true
+                }
+                else -> false
+            }
+        }
+        popup.show()
     }
 
     override fun onDestroyView() {

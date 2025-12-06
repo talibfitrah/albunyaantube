@@ -4,19 +4,24 @@ import android.os.Bundle
 import android.util.Log
 import android.view.View
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.viewpager2.widget.ViewPager2
 import com.albunyaan.tube.R
 import com.albunyaan.tube.databinding.FragmentOnboardingBinding
 import com.albunyaan.tube.onboarding.OnboardingPagerAdapter
 import com.albunyaan.tube.onboarding.onboardingPages
+import com.albunyaan.tube.preferences.SettingsPreferences
+import kotlinx.coroutines.launch
 
 class OnboardingFragment : Fragment(R.layout.fragment_onboarding) {
 
     private var binding: FragmentOnboardingBinding? = null
+    private lateinit var settingsPreferences: SettingsPreferences
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        settingsPreferences = SettingsPreferences(requireContext())
         binding = FragmentOnboardingBinding.bind(view).apply {
             // Set up ViewPager2
             viewPager.adapter = OnboardingPagerAdapter(onboardingPages)
@@ -75,6 +80,9 @@ class OnboardingFragment : Fragment(R.layout.fragment_onboarding) {
     }
 
     private fun navigateToMain() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            settingsPreferences.setOnboardingCompleted(true)
+        }
         val navController = findNavController()
         if (navController.currentDestination?.id == R.id.onboardingFragment) {
             navController.navigate(R.id.action_onboarding_to_main)

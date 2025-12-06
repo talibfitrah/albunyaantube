@@ -1,80 +1,208 @@
 package com.albunyaan.tube.ui
 
+import android.content.Context
 import android.view.LayoutInflater
 import android.view.ViewGroup
-import androidx.core.view.isVisible
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import coil.ImageLoader
-import coil.load
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.model.ContentItem
-import com.albunyaan.tube.databinding.ItemContentBinding
+import com.albunyaan.tube.databinding.ItemChannelBinding
+import com.albunyaan.tube.databinding.ItemPlaylistBinding
+import com.albunyaan.tube.databinding.ItemVideoListBinding
+import com.albunyaan.tube.util.ImageLoading.loadThumbnailUrl
+import com.google.android.material.chip.Chip
 import java.text.NumberFormat
 import java.util.Locale
 
+/**
+ * Search results adapter using the same layouts as FeaturedListAdapter
+ * for consistent visual design across the app.
+ */
 class SearchResultsAdapter(
     private val imageLoader: ImageLoader,
     private val enableImages: Boolean = true,
     private val onItemClick: (ContentItem) -> Unit
-) : ListAdapter<ContentItem, SearchResultsAdapter.SearchResultViewHolder>(DIFF) {
+) : ListAdapter<ContentItem, RecyclerView.ViewHolder>(DIFF) {
 
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): SearchResultViewHolder {
-        val binding = ItemContentBinding.inflate(LayoutInflater.from(parent.context), parent, false)
-        return SearchResultViewHolder(binding, onItemClick, imageLoader, enableImages)
+    override fun getItemViewType(position: Int): Int {
+        return when (getItem(position)) {
+            is ContentItem.Channel -> VIEW_TYPE_CHANNEL
+            is ContentItem.Playlist -> VIEW_TYPE_PLAYLIST
+            is ContentItem.Video -> VIEW_TYPE_VIDEO
+        }
     }
 
-    override fun onBindViewHolder(holder: SearchResultViewHolder, position: Int) {
-        holder.bind(getItem(position))
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+        val inflater = LayoutInflater.from(parent.context)
+        return when (viewType) {
+            VIEW_TYPE_CHANNEL -> {
+                val binding = ItemChannelBinding.inflate(inflater, parent, false)
+                ChannelViewHolder(binding, onItemClick, enableImages)
+            }
+            VIEW_TYPE_PLAYLIST -> {
+                val binding = ItemPlaylistBinding.inflate(inflater, parent, false)
+                PlaylistViewHolder(binding, onItemClick, enableImages)
+            }
+            VIEW_TYPE_VIDEO -> {
+                val binding = ItemVideoListBinding.inflate(inflater, parent, false)
+                VideoViewHolder(binding, onItemClick, enableImages)
+            }
+            else -> throw IllegalArgumentException("Unknown view type: $viewType")
+        }
     }
 
-    class SearchResultViewHolder(
-        private val binding: ItemContentBinding,
-        private val clickListener: (ContentItem) -> Unit,
-        private val imageLoader: ImageLoader,
+    override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+        val item = getItem(position)
+        when (holder) {
+            is ChannelViewHolder -> holder.bind(item as ContentItem.Channel)
+            is PlaylistViewHolder -> holder.bind(item as ContentItem.Playlist)
+            is VideoViewHolder -> holder.bind(item as ContentItem.Video)
+        }
+    }
+
+    // ========== Channel ViewHolder ==========
+    class ChannelViewHolder(
+        private val binding: ItemChannelBinding,
+        private val onItemClick: (ContentItem) -> Unit,
         private val enableImages: Boolean
     ) : RecyclerView.ViewHolder(binding.root) {
 
-        fun bind(item: ContentItem) {
-            when (item) {
-                is ContentItem.Video -> {
-                    binding.title.text = item.title
-                    val viewSuffix = item.viewCount?.let { " • ${NumberFormat.getInstance().format(it)} views" } ?: ""
-                    binding.metadata.text = "${item.category} • ${formatDuration(item.durationSeconds)}$viewSuffix"
-                    val description = item.description.takeIf { it.isNotBlank() }
-                        ?: "Uploaded ${item.uploadedDaysAgo} days ago"
-                    binding.description.text = description
-                }
-                is ContentItem.Channel -> {
-                    binding.title.text = item.name
-                    binding.metadata.text = "${item.category} • ${NumberFormat.getInstance().format(item.subscribers)} subscribers"
-                    val description = item.description
-                        ?: "Curated channel from ${item.category}"
-                    binding.description.text = description
-                }
-                is ContentItem.Playlist -> {
-                    binding.title.text = item.title
-                    binding.metadata.text = "${item.category} • ${item.itemCount} items"
-                    val description = item.description
-                        ?: "Playlist for ${item.category}"
-                    binding.description.text = description
-                }
+        fun bind(channel: ContentItem.Channel) {
+            binding.channelName.text = channel.name
+
+            val formattedSubs = NumberFormat.getInstance().format(channel.subscribers)
+            binding.subscriberCount.text = binding.root.context.getString(
+                R.string.channel_subscribers_format,
+                formattedSubs
+            )
+
+            if (enableImages) {
+                binding.channelAvatar.loadThumbnailUrl(
+                    url = channel.thumbnailUrl,
+                    placeholder = R.drawable.onboarding_icon_bg,
+                    circleCrop = true
+                )
+            } else {
+                binding.channelAvatar.setImageResource(R.drawable.onboarding_icon_bg)
             }
 
-            val thumbnailUrl = when (item) {
-                is ContentItem.Video -> item.thumbnailUrl
-                is ContentItem.Channel -> item.thumbnailUrl
-                is ContentItem.Playlist -> item.thumbnailUrl
-            }
-            bindThumbnail(thumbnailUrl)
+            binding.categoryChipsContainer.removeAllViews()
+            val categories = channel.categories ?: listOf(channel.category)
+            val firstCategory = categories.firstOrNull() ?: channel.category
+            val remainingCount = categories.size - 1
 
-            binding.root.setOnClickListener { clickListener(item) }
+            val chipText = if (remainingCount > 0) {
+                "$firstCategory +$remainingCount"
+            } else {
+                firstCategory
+            }
+
+            val chip = Chip(binding.root.context).apply {
+                text = chipText
+                isClickable = false
+                chipBackgroundColor = android.content.res.ColorStateList.valueOf(
+                    binding.root.context.getColor(R.color.surface_variant)
+                )
+                setTextColor(binding.root.context.getColor(R.color.primary_green))
+            }
+            binding.categoryChipsContainer.addView(chip)
+
+            binding.root.setOnClickListener {
+                onItemClick(channel)
+            }
+        }
+    }
+
+    // ========== Playlist ViewHolder ==========
+    class PlaylistViewHolder(
+        private val binding: ItemPlaylistBinding,
+        private val onItemClick: (ContentItem) -> Unit,
+        private val enableImages: Boolean
+    ) : RecyclerView.ViewHolder(binding.root) {
+
+        fun bind(playlist: ContentItem.Playlist) {
+            binding.playlistTitle.text = playlist.title
+            binding.playlistMeta.text = binding.root.context.resources.getQuantityString(
+                R.plurals.playlist_item_count,
+                playlist.itemCount,
+                playlist.itemCount
+            )
+
+            if (enableImages) {
+                binding.playlistThumbnail.loadThumbnailUrl(playlist.thumbnailUrl)
+            } else {
+                binding.playlistThumbnail.setImageResource(R.drawable.thumbnail_placeholder)
+            }
+
+            binding.categoryChipsContainer.removeAllViews()
+            val chip = Chip(binding.root.context).apply {
+                text = playlist.category
+                isClickable = false
+                chipBackgroundColor = android.content.res.ColorStateList.valueOf(
+                    binding.root.context.getColor(R.color.surface_variant)
+                )
+                setTextColor(binding.root.context.getColor(R.color.primary_green))
+            }
+            binding.categoryChipsContainer.addView(chip)
+
+            binding.root.setOnClickListener {
+                onItemClick(playlist)
+            }
+        }
+    }
+
+    // ========== Video ViewHolder ==========
+    class VideoViewHolder(
+        private val binding: ItemVideoListBinding,
+        private val onItemClick: (ContentItem) -> Unit,
+        private val enableImages: Boolean
+    ) : RecyclerView.ViewHolder(binding.root) {
+
+        fun bind(video: ContentItem.Video) {
+            binding.videoTitle.text = video.title
+            binding.videoDuration.text = formatDuration(video.durationSeconds)
+
+            val context = binding.root.context
+            val res = context.resources
+
+            val views = video.viewCount?.let {
+                val formattedCount = NumberFormat.getInstance().format(it)
+                res.getQuantityString(R.plurals.video_views, it.toInt().coerceAtLeast(0), formattedCount)
+            } ?: ""
+
+            val timeAgo = formatTimeAgo(context, video.uploadedDaysAgo)
+
+            binding.videoMeta.text = if (views.isNotEmpty()) {
+                "$views • $timeAgo"
+            } else {
+                timeAgo
+            }
+
+            if (enableImages) {
+                binding.videoThumbnail.loadThumbnailUrl(video.thumbnailUrl)
+            } else {
+                binding.videoThumbnail.setImageResource(R.drawable.thumbnail_placeholder)
+            }
+
+            binding.categoryChipsContainer.removeAllViews()
+            val chip = Chip(binding.root.context).apply {
+                text = video.category
+                isClickable = false
+                chipBackgroundColor = android.content.res.ColorStateList.valueOf(
+                    binding.root.context.getColor(R.color.surface_variant)
+                )
+                setTextColor(binding.root.context.getColor(R.color.primary_green))
+            }
+            binding.categoryChipsContainer.addView(chip)
+
+            binding.root.setOnClickListener {
+                onItemClick(video)
+            }
         }
 
-        /**
-         * Format duration in seconds to HH:mm:ss (if >= 1 hour) or mm:ss (if < 1 hour)
-         */
         private fun formatDuration(totalSeconds: Int): String {
             val hours = totalSeconds / 3600
             val mins = (totalSeconds % 3600) / 60
@@ -86,27 +214,32 @@ class SearchResultsAdapter(
             }
         }
 
-        private fun bindThumbnail(url: String?) {
-            if (!enableImages) {
-                binding.thumbnail.isVisible = true
-                binding.thumbnail.setImageResource(R.drawable.thumbnail_placeholder)
-                return
-            }
-            if (url.isNullOrBlank()) {
-                binding.thumbnail.isVisible = true
-                binding.thumbnail.setImageResource(R.drawable.thumbnail_placeholder)
-                return
-            }
-            binding.thumbnail.isVisible = true
-            binding.thumbnail.load(url, imageLoader) {
-                placeholder(R.drawable.thumbnail_placeholder)
-                error(R.drawable.thumbnail_placeholder)
-                crossfade(true)
+        private fun formatTimeAgo(context: Context, daysAgo: Int): String {
+            val res = context.resources
+            return when {
+                daysAgo <= 0 -> context.getString(R.string.video_uploaded_today)
+                daysAgo < 7 -> res.getQuantityString(R.plurals.video_uploaded_days_ago, daysAgo, daysAgo)
+                daysAgo < 30 -> {
+                    val weeks = daysAgo / 7
+                    res.getQuantityString(R.plurals.time_ago_weeks, weeks, weeks)
+                }
+                daysAgo < 365 -> {
+                    val months = daysAgo / 30
+                    res.getQuantityString(R.plurals.time_ago_months, months, months)
+                }
+                else -> {
+                    val years = daysAgo / 365
+                    res.getQuantityString(R.plurals.time_ago_years, years, years)
+                }
             }
         }
     }
 
     companion object {
+        private const val VIEW_TYPE_CHANNEL = 0
+        private const val VIEW_TYPE_PLAYLIST = 1
+        private const val VIEW_TYPE_VIDEO = 2
+
         private val DIFF = object : DiffUtil.ItemCallback<ContentItem>() {
             override fun areItemsTheSame(oldItem: ContentItem, newItem: ContentItem): Boolean {
                 return when {

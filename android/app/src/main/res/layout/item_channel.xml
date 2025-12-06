@@ -50,6 +50,7 @@
         android:textColor="@color/primary_green"
         android:maxLines="1"
         android:ellipsize="end"
+        android:textAlignment="viewStart"
         app:layout_constraintStart_toStartOf="@id/channelName"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toBottomOf="@id/channelName"

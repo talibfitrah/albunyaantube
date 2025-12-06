@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="onboarding_carousel_content">Introductie dia\'s</string>
+    <string name="onboarding_help">Meer informatie over de app-inhoud</string>
+    <string name="onboarding_continue">Volgende</string>
+    <string name="onboarding_get_started">Aan de slag</string>
+    <string name="onboarding_skip">Overslaan</string>
+
+    <!-- Page 1 -->
+    <string name="onboarding_page1_title">Bladeren</string>
+    <string name="onboarding_page1_desc">Ontdek een diverse collectie islamitische video\'s, van lezingen tot documentaires, allemaal op één plek.</string>
+
+    <!-- Page 2 -->
+    <string name="onboarding_page2_title">Luister op de achtergrond</string>
+    <string name="onboarding_page2_desc">Blijf luisteren naar lezingen en recitaties, zelfs wanneer de app op de achtergrond draait.</string>
+
+    <!-- Page 3 -->
+    <string name="onboarding_page3_title">Download voor offline</string>
+    <string name="onboarding_page3_desc">Sla je favoriete content op om offline te bekijken of beluisteren, altijd en overal.</string>
+</resources>

@@ -17,7 +17,6 @@ import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.source.ContentService
 import com.albunyaan.tube.player.PlayerRepository
-import com.albunyaan.tube.policy.EulaManager
 import com.google.android.exoplayer2.Player
 import com.google.android.exoplayer2.video.VideoSize
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -40,7 +39,6 @@ import javax.inject.Named
 class PlayerViewModel @Inject constructor(
     private val repository: PlayerRepository,
     private val downloadRepository: DownloadRepository,
-    private val eulaManager: EulaManager,
     @Named("real") private val contentService: ContentService,
     private val playlistDetailRepository: com.albunyaan.tube.data.playlist.PlaylistDetailRepository
 ) : ViewModel() {
@@ -77,7 +75,6 @@ class PlayerViewModel @Inject constructor(
     init {
         hydrateQueue()
         observeDownloads()
-        observeEulaAcceptance()
     }
 
     fun setAudioOnly(audioOnly: Boolean) {
@@ -116,9 +113,6 @@ class PlayerViewModel @Inject constructor(
 
     fun downloadCurrent(): Boolean {
         val state = _state.value
-        if (!state.isEulaAccepted) {
-            return false
-        }
         val item = state.currentItem ?: return false
         val request = DownloadRequest(
             id = item.streamId + "_" + System.currentTimeMillis(),
@@ -138,20 +132,6 @@ class PlayerViewModel @Inject constructor(
                     state.copy(currentDownload = findDownloadFor(state.currentItem, entries))
                 }
             }
-        }
-    }
-
-    private fun observeEulaAcceptance() {
-        viewModelScope.launch(dispatcher) {
-            eulaManager.isAccepted.collect { accepted ->
-                updateState { it.copy(isEulaAccepted = accepted) }
-            }
-        }
-    }
-
-    fun acceptEula() {
-        viewModelScope.launch(dispatcher) {
-            eulaManager.setAccepted(true)
         }
     }
 
@@ -508,7 +488,6 @@ data class PlayerState(
     val upNext: List<UpNextItem> = emptyList(),
     val excludedItems: List<UpNextItem> = emptyList(),
     val currentDownload: DownloadEntry? = null,
-    val isEulaAccepted: Boolean = false,
     val streamState: StreamState = StreamState.Idle,
     val selectedSubtitle: SubtitleTrack? = null,
     val lastAnalyticsEvent: PlaybackAnalyticsEvent? = null,

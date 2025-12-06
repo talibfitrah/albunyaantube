@@ -88,7 +88,7 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
 
             // Theme setting - show theme selection dialog
             themeItem?.setOnClickListener {
-                Snackbar.make(view, "Theme selection coming soon", Snackbar.LENGTH_SHORT).show()
+                Snackbar.make(view, R.string.settings_theme_coming_soon, Snackbar.LENGTH_SHORT).show()
             }
 
             // Download quality - show quality selection dialog
@@ -135,7 +135,7 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
             dialog.setOnLanguageSelectedListener { selectedLanguage ->
                 LocaleManager.saveAndApplyLocale(requireContext(), selectedLanguage)
                 binding?.root?.let { view ->
-                    Snackbar.make(view, "Language changed. Restart may be required.", Snackbar.LENGTH_LONG).show()
+                    Snackbar.make(view, R.string.settings_language_changed, Snackbar.LENGTH_LONG).show()
                 }
             }
             dialog.show(childFragmentManager, "language_selection")
@@ -151,11 +151,11 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
                     preferences.setDownloadQuality(selectedQuality)
                     binding?.root?.let { view ->
                         val qualityLabel = when (selectedQuality) {
-                            "low" -> "Low (360p)"
-                            "high" -> "High (1080p)"
-                            else -> "Medium (720p)"
+                            "low" -> getString(R.string.settings_quality_low)
+                            "high" -> getString(R.string.settings_quality_high)
+                            else -> getString(R.string.settings_quality_medium)
                         }
-                        Snackbar.make(view, "Download quality set to $qualityLabel", Snackbar.LENGTH_SHORT).show()
+                        Snackbar.make(view, getString(R.string.settings_quality_changed, qualityLabel), Snackbar.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -202,7 +202,7 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
                 val usedDeviceBytes = totalBytes - availableBytes
                 val progress = ((usedDeviceBytes.toDouble() / totalBytes) * 100).toInt().coerceIn(0, 100)
 
-                storageQuotaValue?.text = "Downloads: $downloadedStr • Available: $availableStr of $totalStr"
+                storageQuotaValue?.text = getString(R.string.settings_storage_format, downloadedStr, availableStr, totalStr)
                 storageQuotaProgress?.progress = progress
             }
         }
@@ -222,38 +222,41 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
     }
 
     private fun showStorageLocationDialog() {
-        val options = arrayOf("Internal Storage", "External SD Card (if available)")
+        val options = arrayOf(
+            getString(R.string.settings_storage_internal),
+            getString(R.string.settings_storage_external)
+        )
         val currentSelection = 0 // Internal storage is default
 
         AlertDialog.Builder(requireContext())
-            .setTitle("Download Location")
+            .setTitle(R.string.settings_download_location)
             .setSingleChoiceItems(options, currentSelection) { dialog, which ->
                 when (which) {
                     0 -> {
                         binding?.root?.let { view ->
-                            Snackbar.make(view, "Using internal storage", Snackbar.LENGTH_SHORT).show()
+                            Snackbar.make(view, R.string.settings_storage_internal_selected, Snackbar.LENGTH_SHORT).show()
                         }
                     }
                     1 -> {
                         binding?.root?.let { view ->
-                            Snackbar.make(view, "External storage not yet implemented", Snackbar.LENGTH_SHORT).show()
+                            Snackbar.make(view, R.string.settings_storage_external_not_implemented, Snackbar.LENGTH_SHORT).show()
                         }
                     }
                 }
                 dialog.dismiss()
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(R.string.cancel, null)
             .show()
     }
 
     private fun showClearDownloadsConfirmation() {
         AlertDialog.Builder(requireContext())
-            .setTitle("Clear All Downloads?")
-            .setMessage("This will delete all downloaded videos and audio files. This action cannot be undone.")
-            .setPositiveButton("Clear All") { _, _ ->
+            .setTitle(R.string.settings_clear_downloads_title)
+            .setMessage(R.string.settings_clear_downloads_message)
+            .setPositiveButton(R.string.settings_clear_downloads_confirm) { _, _ ->
                 clearAllDownloads()
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(R.string.cancel, null)
             .show()
     }
 
@@ -263,7 +266,7 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
             val deletedCount = deleteDirectoryContents(downloadDir)
 
             binding?.root?.let { view ->
-                Snackbar.make(view, "Cleared $deletedCount files", Snackbar.LENGTH_SHORT).show()
+                Snackbar.make(view, getString(R.string.settings_files_cleared, deletedCount), Snackbar.LENGTH_SHORT).show()
             }
 
             updateStorageDisplay()

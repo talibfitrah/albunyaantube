@@ -5,20 +5,6 @@
     android:layout_height="match_parent"
     android:padding="@dimen/onboarding_padding">
 
-    <!-- Help Button - floats at top right -->
-    <ImageButton
-        android:id="@+id/helpButton"
-        android:layout_width="@dimen/touch_target_min"
-        android:layout_height="@dimen/touch_target_min"
-        android:layout_margin="0dp"
-        android:background="?attr/selectableItemBackgroundBorderless"
-        android:contentDescription="@string/onboarding_help"
-        android:src="@android:drawable/ic_menu_help"
-        android:tint="@color/home_text_primary"
-        android:focusable="true"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"/>
-
     <!-- ViewPager2 for swipeable pages - takes most of the screen -->
     <androidx.viewpager2.widget.ViewPager2
         android:id="@+id/viewPager"

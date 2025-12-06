@@ -19,7 +19,15 @@
 
         <!-- Bottom Navigation -->
         <item name="bottomNavigationStyle">@style/Widget.Albunyaan.BottomNavigationView</item>
+
+        <!-- Popup Menu Style -->
+        <item name="popupMenuStyle">@style/Widget.Albunyaan.PopupMenu</item>
+        <item name="android:popupMenuStyle">@style/Widget.Albunyaan.PopupMenu</item>
     </style>
+
+    <!-- Popup Menu Style (consistent with app design) -->
+    <!-- Inherits Material3 defaults for surface colors (adapts to dark mode automatically) -->
+    <style name="Widget.Albunyaan.PopupMenu" parent="Widget.Material3.PopupMenu" />
 
     <!-- Shape Appearances (Design Spec: 20dp radius) -->
     <style name="ShapeAppearance.Albunyaan.SmallComponent" parent="ShapeAppearance.Material3.SmallComponent">

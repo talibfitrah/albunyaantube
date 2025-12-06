@@ -2,6 +2,7 @@ package com.albunyaan.tube.util
 
 import android.widget.ImageView
 import coil.load
+import coil.request.CachePolicy
 import coil.transform.CircleCropTransformation
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.model.ContentItem
@@ -9,6 +10,8 @@ import com.albunyaan.tube.data.model.ContentItem
 /**
  * Utility for loading images with Coil, providing content-type specific placeholders
  * and transformations.
+ *
+ * All image loading uses aggressive caching to ensure thumbnails always display.
  */
 object ImageLoading {
     /**
@@ -35,6 +38,39 @@ object ImageLoading {
             if (shouldApplyCircleCrop(item)) {
                 transformations(CircleCropTransformation())
             }
+            // Aggressive caching for reliable thumbnail display
+            memoryCachePolicy(CachePolicy.ENABLED)
+            diskCachePolicy(CachePolicy.ENABLED)
+            networkCachePolicy(CachePolicy.ENABLED)
+        }
+    }
+
+    /**
+     * Extension function to load any thumbnail URL with reliable caching.
+     * Use this for direct URL loading in adapters.
+     */
+    fun ImageView.loadThumbnailUrl(
+        url: String?,
+        placeholder: Int = R.drawable.thumbnail_placeholder,
+        circleCrop: Boolean = false,
+        crossfade: Boolean = true
+    ) {
+        if (url.isNullOrBlank()) {
+            setImageResource(placeholder)
+            return
+        }
+
+        load(url) {
+            placeholder(placeholder)
+            error(placeholder)
+            if (crossfade) crossfade(true)
+            if (circleCrop) {
+                transformations(CircleCropTransformation())
+            }
+            // Aggressive caching for reliable thumbnail display
+            memoryCachePolicy(CachePolicy.ENABLED)
+            diskCachePolicy(CachePolicy.ENABLED)
+            networkCachePolicy(CachePolicy.ENABLED)
         }
     }
 

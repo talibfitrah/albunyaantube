@@ -4,6 +4,7 @@
     android:id="@+id/homeScrollView"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:layoutDirection="locale"
     android:background="@color/home_surface_background"
     android:fillViewport="true"
     android:overScrollMode="never">

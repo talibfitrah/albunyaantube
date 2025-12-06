@@ -30,7 +30,6 @@ import com.albunyaan.tube.data.source.api.ContentApi
 import com.albunyaan.tube.data.source.api.DownloadApi
 import com.albunyaan.tube.player.DefaultPlayerRepository
 import com.albunyaan.tube.player.PlayerRepository
-import com.albunyaan.tube.policy.EulaManager
 import com.albunyaan.tube.telemetry.LogTelemetryClient
 import com.albunyaan.tube.telemetry.TelemetryClient
 import dagger.Module
@@ -196,14 +195,6 @@ object DataModule {
     @Singleton
     fun provideRetrofitDownloadService(downloadApi: DownloadApi): RetrofitDownloadService {
         return RetrofitDownloadService(downloadApi)
-    }
-
-    @Provides
-    @Singleton
-    fun provideEulaManager(
-        @Named("policyDataStore") dataStore: DataStore<Preferences>
-    ): EulaManager {
-        return EulaManager(dataStore)
     }
 
     @Provides

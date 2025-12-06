@@ -3,6 +3,7 @@ package com.albunyaan.tube.ui.download
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.text.format.Formatter
 import android.view.View
 import android.widget.Toast
 import androidx.core.content.FileProvider
@@ -16,10 +17,12 @@ import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.R
 import com.albunyaan.tube.databinding.FragmentDownloadsBinding
 import com.albunyaan.tube.download.DownloadEntry
+import com.albunyaan.tube.download.DownloadStorage
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.io.File
+import javax.inject.Inject
 
 /**
  * P3-T3: DownloadsFragment with Hilt DI
@@ -30,6 +33,9 @@ class DownloadsFragment : Fragment(R.layout.fragment_downloads) {
     private var binding: FragmentDownloadsBinding? = null
     private val adapter = DownloadsAdapter(::onPauseResumeClicked, ::onCancelClicked, ::onOpenClicked)
     private val viewModel: DownloadViewModel by viewModels()
+
+    @Inject
+    lateinit var downloadStorage: DownloadStorage
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -45,10 +51,26 @@ class DownloadsFragment : Fragment(R.layout.fragment_downloads) {
                 binding.emptyDownloads.visibility = if (entries.isEmpty()) View.VISIBLE else View.GONE
                 binding.downloadsRecyclerView.visibility = if (entries.isEmpty()) View.GONE else View.VISIBLE
 
-                // Update storage info (simplified for now)
+                // Update storage info with real data from DownloadStorage
                 val downloadCount = entries.size
-                binding.storageText.text = "$downloadCount downloads • 0 MB of 500 MB"
-                binding.storageProgress.progress = 0
+                val usedBytes = downloadStorage.getCurrentDownloadSize()
+                val availableBytes = downloadStorage.getAvailableDeviceStorage()
+                val totalBytes = downloadStorage.getTotalDeviceStorage()
+
+                val usedStr = Formatter.formatShortFileSize(requireContext(), usedBytes)
+                val availableStr = Formatter.formatShortFileSize(requireContext(), availableBytes)
+
+                binding.storageText.text = getString(R.string.downloads_storage_format, downloadCount, usedStr, availableStr)
+
+                // Progress shows download usage as percentage of total device storage.
+                // Using total storage (not available) provides a stable baseline that
+                // doesn't fluctuate as other apps consume device storage.
+                val progress = if (totalBytes > 0) {
+                    ((usedBytes.toDouble() / totalBytes) * 100).toInt().coerceIn(0, 100)
+                } else {
+                    0
+                }
+                binding.storageProgress.progress = progress
             }
         }
     }
@@ -76,18 +98,15 @@ class DownloadsFragment : Fragment(R.layout.fragment_downloads) {
             val historyItem = view.findViewById<View>(R.id.historyItem)
 
             savedItem?.setOnClickListener {
-                // TODO: Navigate to saved videos
-                Toast.makeText(requireContext(), "Saved videos", Toast.LENGTH_SHORT).show()
+                Toast.makeText(requireContext(), R.string.library_saved_coming_soon, Toast.LENGTH_SHORT).show()
             }
 
             recentlyWatchedItem?.setOnClickListener {
-                // TODO: Navigate to recently watched
-                Toast.makeText(requireContext(), "Recently watched", Toast.LENGTH_SHORT).show()
+                Toast.makeText(requireContext(), R.string.library_recently_watched_coming_soon, Toast.LENGTH_SHORT).show()
             }
 
             historyItem?.setOnClickListener {
-                // TODO: Navigate to history
-                Toast.makeText(requireContext(), "History", Toast.LENGTH_SHORT).show()
+                Toast.makeText(requireContext(), R.string.library_history_coming_soon, Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -114,13 +133,13 @@ class DownloadsFragment : Fragment(R.layout.fragment_downloads) {
         android.util.Log.d("DownloadsFragment", "onOpenClicked called for: ${entry.request.videoId}")
         val file = viewModel.fileFor(entry) ?: run {
             android.util.Log.e("DownloadsFragment", "fileFor returned null")
-            Toast.makeText(requireContext(), "No file found", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), R.string.downloads_no_file, Toast.LENGTH_SHORT).show()
             return
         }
         android.util.Log.d("DownloadsFragment", "File path: ${file.absolutePath}")
         if (!file.exists()) {
             android.util.Log.e("DownloadsFragment", "File does not exist")
-            Toast.makeText(requireContext(), "File not found: ${file.name}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.downloads_file_not_found, file.name), Toast.LENGTH_SHORT).show()
             return
         }
         android.util.Log.d("DownloadsFragment", "File exists, size: ${file.length()} bytes")
@@ -159,11 +178,11 @@ class DownloadsFragment : Fragment(R.layout.fragment_downloads) {
                 android.util.Log.d("DownloadsFragment", "Activity started successfully")
             } catch (e: Exception) {
                 android.util.Log.e("DownloadsFragment", "Failed to start activity", e)
-                Toast.makeText(requireContext(), "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(requireContext(), getString(R.string.downloads_open_error, e.message), Toast.LENGTH_LONG).show()
             }
         } else {
             android.util.Log.e("DownloadsFragment", "No apps found to handle video")
-            Toast.makeText(requireContext(), "No video player found", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), R.string.downloads_no_player, Toast.LENGTH_SHORT).show()
         }
     }
 }

@@ -7,8 +7,11 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import android.os.Build
+import android.os.LocaleList
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import java.util.Locale
 
 /**
  * Settings preferences manager using DataStore.
@@ -36,9 +39,40 @@ class SettingsPreferences(private val context: Context) {
         // Theme preference (for future dark mode support)
         val THEME_KEY = stringPreferencesKey("theme")
 
+        // Onboarding
+        val ONBOARDING_COMPLETED_KEY = booleanPreferencesKey("onboarding_completed")
+
+        // Supported languages
+        val SUPPORTED_LOCALES = setOf("en", "ar", "nl")
+
         // Default values
         const val DEFAULT_LOCALE = "en"
         const val DEFAULT_DOWNLOAD_QUALITY = "medium"
+
+        /**
+         * Get the default locale based on device language preferences.
+         * Checks all preferred locales in the user's LocaleList (Android 7.0+) and
+         * returns the first one that matches a supported language (en, ar, nl).
+         * Falls back to English if no supported locale is found.
+         */
+        fun getDefaultLocaleForDevice(): String {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                val localeList = LocaleList.getDefault()
+                for (i in 0 until localeList.size()) {
+                    val language = localeList[i].language
+                    if (language in SUPPORTED_LOCALES) {
+                        return language
+                    }
+                }
+            } else {
+                // Fallback for older devices - check primary locale only
+                val deviceLanguage = Locale.getDefault().language
+                if (deviceLanguage in SUPPORTED_LOCALES) {
+                    return deviceLanguage
+                }
+            }
+            return DEFAULT_LOCALE
+        }
         const val DEFAULT_THEME = "system"
         const val DEFAULT_AUDIO_ONLY = false
         const val DEFAULT_BACKGROUND_PLAY = true
@@ -46,9 +80,9 @@ class SettingsPreferences(private val context: Context) {
         const val DEFAULT_SAFE_MODE = true
     }
 
-    // Locale
+    // Locale - defaults to device language if supported, otherwise English
     val locale: Flow<String> = context.dataStore.data.map { preferences ->
-        preferences[LOCALE_KEY] ?: DEFAULT_LOCALE
+        preferences[LOCALE_KEY] ?: getDefaultLocaleForDevice()
     }
 
     suspend fun setLocale(locale: String) {
@@ -120,6 +154,17 @@ class SettingsPreferences(private val context: Context) {
     suspend fun setTheme(theme: String) {
         context.dataStore.edit { preferences ->
             preferences[THEME_KEY] = theme
+        }
+    }
+
+    // Onboarding completion
+    val onboardingCompleted: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[ONBOARDING_COMPLETED_KEY] ?: false
+    }
+
+    suspend fun setOnboardingCompleted(completed: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[ONBOARDING_COMPLETED_KEY] = completed
         }
     }
 }
