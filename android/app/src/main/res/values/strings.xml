@@ -137,6 +137,12 @@
     <string name="section_playlists">Playlists</string>
     <string name="section_videos">Videos</string>
     <string name="see_all">See all</string>
+    <string name="home_empty_videos">No videos available yet</string>
+    <string name="home_empty_playlists">No playlists available yet</string>
+    <string name="home_empty_channels">No channels available yet</string>
+    <string name="home_empty_featured">No featured content yet</string>
+    <string name="videos_empty_title">No videos yet</string>
+    <string name="videos_empty_subtitle">Approved videos will appear here</string>
     <string name="search">Search</string>
     <string name="categories">Categories</string>
     <string name="menu">Menu</string>

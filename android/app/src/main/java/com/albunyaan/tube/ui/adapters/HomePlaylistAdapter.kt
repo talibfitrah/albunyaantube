@@ -30,9 +30,10 @@ class HomePlaylistAdapter(
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         if (cardWidth > 0) {
-            val params = holder.itemView.layoutParams
-            params.width = cardWidth
-            holder.itemView.layoutParams = params
+            holder.itemView.layoutParams?.let { lp ->
+                lp.width = cardWidth
+                holder.itemView.layoutParams = lp
+            }
         }
         holder.bind(getItem(position))
     }

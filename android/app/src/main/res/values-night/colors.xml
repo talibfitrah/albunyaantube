@@ -36,6 +36,11 @@
     <color name="home_error_text">#FFCC80</color>
     <color name="home_error_icon">#FFB74D</color>
 
+    <!-- Home empty state colors (dark mode) -->
+    <color name="home_empty_bg">@color/home_card_background</color>
+    <color name="home_empty_text">@color/home_text_secondary</color>
+    <color name="home_empty_icon">@color/home_text_muted</color>
+
     <!-- Hero overlays for playlist/channel detail (stronger in dark mode) -->
     <color name="hero_overlay">#66000000</color>
 </resources>

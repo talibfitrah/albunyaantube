@@ -39,6 +39,11 @@
     <color name="home_error_text">#E65100</color>
     <color name="home_error_icon">#FF6F00</color>
 
+    <!-- Home empty state colors -->
+    <color name="home_empty_bg">#F5F5F5</color>
+    <color name="home_empty_text">#757575</color>
+    <color name="home_empty_icon">#9E9E9E</color>
+
     <!-- Icon colors (adaptive for light/dark) -->
     <color name="ic_icon_default">#DE000000</color>
 

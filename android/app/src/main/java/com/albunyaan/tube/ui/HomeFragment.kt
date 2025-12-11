@@ -277,6 +277,7 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
                         Log.d(TAG, "Loading featured...")
                         binding.featuredSkeleton.root.isVisible = true
                         binding.featuredError.root.isVisible = false
+                        binding.featuredEmpty.root.isVisible = false
                         binding.featuredRecyclerView.isVisible = false
                         binding.featuredSection.isVisible = true
                     }
@@ -286,17 +287,21 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
                         binding.featuredError.root.isVisible = false
                         featuredAdapter.submitList(state.items)
 
+                        binding.featuredSection.isVisible = true
                         if (state.items.isNotEmpty()) {
-                            binding.featuredSection.isVisible = true
                             binding.featuredRecyclerView.isVisible = true
+                            binding.featuredEmpty.root.isVisible = false
                         } else {
-                            binding.featuredSection.isVisible = false
+                            binding.featuredRecyclerView.isVisible = false
+                            binding.featuredEmpty.root.isVisible = true
+                            binding.featuredEmpty.emptyMessage.setText(R.string.home_empty_featured)
                         }
                     }
                     is HomeViewModel.SectionState.Error -> {
                         Log.e(TAG, "Error loading featured: ${state.message}")
                         binding.featuredSkeleton.root.isVisible = false
                         binding.featuredRecyclerView.isVisible = false
+                        binding.featuredEmpty.root.isVisible = false
                         binding.featuredError.root.isVisible = true
                         binding.featuredSection.isVisible = true
                         featuredAdapter.submitList(emptyList())
@@ -313,6 +318,7 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
                         Log.d(TAG, "Loading channels...")
                         binding.channelsSkeleton.root.isVisible = true
                         binding.channelsError.root.isVisible = false
+                        binding.channelsEmpty.root.isVisible = false
                         binding.channelsRecyclerView.isVisible = false
                         binding.channelsSection.isVisible = true
                     }
@@ -322,17 +328,21 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
                         binding.channelsError.root.isVisible = false
                         channelAdapter.submitList(state.items)
 
+                        binding.channelsSection.isVisible = true
                         if (state.items.isNotEmpty()) {
-                            binding.channelsSection.isVisible = true
                             binding.channelsRecyclerView.isVisible = true
+                            binding.channelsEmpty.root.isVisible = false
                         } else {
-                            binding.channelsSection.isVisible = false
+                            binding.channelsRecyclerView.isVisible = false
+                            binding.channelsEmpty.root.isVisible = true
+                            binding.channelsEmpty.emptyMessage.setText(R.string.home_empty_channels)
                         }
                     }
                     is HomeViewModel.SectionState.Error -> {
                         Log.e(TAG, "Error loading channels: ${state.message}")
                         binding.channelsSkeleton.root.isVisible = false
                         binding.channelsRecyclerView.isVisible = false
+                        binding.channelsEmpty.root.isVisible = false
                         binding.channelsError.root.isVisible = true
                         binding.channelsSection.isVisible = true
                         channelAdapter.submitList(emptyList())
@@ -349,6 +359,7 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
                         Log.d(TAG, "Loading playlists...")
                         binding.playlistsSkeleton.root.isVisible = true
                         binding.playlistsError.root.isVisible = false
+                        binding.playlistsEmpty.root.isVisible = false
                         binding.playlistsRecyclerView.isVisible = false
                         binding.playlistsSection.isVisible = true
                     }
@@ -358,17 +369,21 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
                         binding.playlistsError.root.isVisible = false
                         playlistAdapter.submitList(state.items)
 
+                        binding.playlistsSection.isVisible = true
                         if (state.items.isNotEmpty()) {
-                            binding.playlistsSection.isVisible = true
                             binding.playlistsRecyclerView.isVisible = true
+                            binding.playlistsEmpty.root.isVisible = false
                         } else {
-                            binding.playlistsSection.isVisible = false
+                            binding.playlistsRecyclerView.isVisible = false
+                            binding.playlistsEmpty.root.isVisible = true
+                            binding.playlistsEmpty.emptyMessage.setText(R.string.home_empty_playlists)
                         }
                     }
                     is HomeViewModel.SectionState.Error -> {
                         Log.e(TAG, "Error loading playlists: ${state.message}")
                         binding.playlistsSkeleton.root.isVisible = false
                         binding.playlistsRecyclerView.isVisible = false
+                        binding.playlistsEmpty.root.isVisible = false
                         binding.playlistsError.root.isVisible = true
                         binding.playlistsSection.isVisible = true
                         playlistAdapter.submitList(emptyList())
@@ -385,6 +400,7 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
                         Log.d(TAG, "Loading videos...")
                         binding.videosSkeleton.root.isVisible = true
                         binding.videosError.root.isVisible = false
+                        binding.videosEmpty.root.isVisible = false
                         binding.videosRecyclerView.isVisible = false
                         binding.videosSection.isVisible = true
                     }
@@ -394,17 +410,21 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
                         binding.videosError.root.isVisible = false
                         videoAdapter.submitList(state.items)
 
+                        binding.videosSection.isVisible = true
                         if (state.items.isNotEmpty()) {
-                            binding.videosSection.isVisible = true
                             binding.videosRecyclerView.isVisible = true
+                            binding.videosEmpty.root.isVisible = false
                         } else {
-                            binding.videosSection.isVisible = false
+                            binding.videosRecyclerView.isVisible = false
+                            binding.videosEmpty.root.isVisible = true
+                            binding.videosEmpty.emptyMessage.setText(R.string.home_empty_videos)
                         }
                     }
                     is HomeViewModel.SectionState.Error -> {
                         Log.e(TAG, "Error loading videos: ${state.message}")
                         binding.videosSkeleton.root.isVisible = false
                         binding.videosRecyclerView.isVisible = false
+                        binding.videosEmpty.root.isVisible = false
                         binding.videosError.root.isVisible = true
                         binding.videosSection.isVisible = true
                         videoAdapter.submitList(emptyList())

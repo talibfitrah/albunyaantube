@@ -165,6 +165,16 @@
     <string name="home_see_all_videos">Alle video\'s bekijken</string>
     <string name="home_retry_section">Sectie opnieuw laden</string>
 
+    <!-- Home Section Empty States -->
+    <string name="home_empty_videos">Nog geen video\'s beschikbaar</string>
+    <string name="home_empty_playlists">Nog geen afspeellijsten beschikbaar</string>
+    <string name="home_empty_channels">Nog geen kanalen beschikbaar</string>
+    <string name="home_empty_featured">Nog geen uitgelichte inhoud</string>
+
+    <!-- Videos Tab Empty State -->
+    <string name="videos_empty_title">Nog geen video\'s</string>
+    <string name="videos_empty_subtitle">Goedgekeurde video\'s verschijnen hier</string>
+
     <!-- Content Type Badges -->
     <string name="type_video">Video</string>
     <string name="type_playlist">Afspeellijst</string>

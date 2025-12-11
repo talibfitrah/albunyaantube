@@ -17,6 +17,7 @@ import com.albunyaan.tube.data.source.ContentService
 import com.albunyaan.tube.databinding.FragmentSimpleListBinding
 import com.albunyaan.tube.ui.adapters.VideoGridAdapter
 import com.albunyaan.tube.ui.utils.calculateGridSpanCount
+import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -110,18 +111,65 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
                         Log.d(TAG, "Loading videos...")
                         binding?.swipeRefresh?.isRefreshing = true
                         binding?.loadingMore?.visibility = View.GONE
+                        binding?.emptyState?.visibility = View.GONE
                     }
                     is ContentListViewModel.ContentState.Success -> {
-                        binding?.swipeRefresh?.isRefreshing = false
-                        // Show/hide bottom loading indicator
-                        binding?.loadingMore?.visibility = if (state.isLoadingMore) View.VISIBLE else View.GONE
                         val videos = state.items.filterIsInstance<ContentItem.Video>()
                         Log.d(TAG, "Videos loaded: ${videos.size} items, loadingMore=${state.isLoadingMore}, hasMore=${state.hasMoreData}")
-                        adapter.submitList(videos)
+                        binding?.let { binding ->
+                            binding.swipeRefresh.isRefreshing = false
+                            // Show/hide bottom loading indicator
+                            binding.loadingMore.visibility = if (state.isLoadingMore) View.VISIBLE else View.GONE
+
+                            // Surface pagination errors as a transient message while keeping content visible
+                            state.paginationError?.let { errorMessage ->
+                                val message = if (errorMessage.isBlank()) {
+                                    getString(R.string.list_error_title)
+                                } else {
+                                    errorMessage
+                                }
+                                Snackbar.make(binding.root, message, Snackbar.LENGTH_SHORT).show()
+                            }
+
+                            adapter.submitList(videos)
+
+                            if (videos.isEmpty()) {
+                                binding.emptyState.visibility = View.VISIBLE
+                                binding.recyclerView.visibility = View.GONE
+                                binding.emptyIcon.setImageResource(R.drawable.ic_videos)
+                                binding.emptyTitle.text = getString(R.string.videos_empty_title)
+                                binding.emptySubtitle.text = getString(R.string.videos_empty_subtitle)
+                            } else {
+                                binding.emptyState.visibility = View.GONE
+                                binding.recyclerView.visibility = View.VISIBLE
+                            }
+                        }
                     }
                     is ContentListViewModel.ContentState.Error -> {
-                        binding?.swipeRefresh?.isRefreshing = false
-                        binding?.loadingMore?.visibility = View.GONE
+                        binding?.let { binding ->
+                            binding.swipeRefresh.isRefreshing = false
+                            binding.loadingMore.visibility = View.GONE
+
+                            val message = if (state.message.isBlank()) {
+                                getString(R.string.list_error_title)
+                            } else {
+                                state.message
+                            }
+                            Snackbar.make(binding.root, message, Snackbar.LENGTH_SHORT).show()
+
+                            if (adapter.currentList.isEmpty()) {
+                                // Initial load/refresh failure with no data - show error empty state
+                                binding.emptyState.visibility = View.VISIBLE
+                                binding.recyclerView.visibility = View.GONE
+                                binding.emptyIcon.setImageResource(R.drawable.ic_error)
+                                binding.emptyTitle.text = getString(R.string.list_error_title)
+                                binding.emptySubtitle.text = getString(R.string.list_error_description)
+                            } else {
+                                // Existing content present - keep list visible and rely on Snackbar for feedback
+                                binding.emptyState.visibility = View.GONE
+                                binding.recyclerView.visibility = View.VISIBLE
+                            }
+                        }
                         Log.e(TAG, "Error loading videos: ${state.message}")
                     }
                 }

@@ -172,6 +172,11 @@
                 layout="@layout/home_section_error"
                 android:visibility="gone" />
 
+            <include
+                android:id="@+id/featuredEmpty"
+                layout="@layout/home_section_empty"
+                android:visibility="gone" />
+
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/featuredRecyclerView"
                 android:layout_width="match_parent"
@@ -237,6 +242,11 @@
             <include
                 android:id="@+id/channelsError"
                 layout="@layout/home_section_error"
+                android:visibility="gone" />
+
+            <include
+                android:id="@+id/channelsEmpty"
+                layout="@layout/home_section_empty"
                 android:visibility="gone" />
 
             <androidx.recyclerview.widget.RecyclerView
@@ -307,6 +317,11 @@
                 layout="@layout/home_section_error"
                 android:visibility="gone" />
 
+            <include
+                android:id="@+id/playlistsEmpty"
+                layout="@layout/home_section_empty"
+                android:visibility="gone" />
+
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/playlistsRecyclerView"
                 android:layout_width="match_parent"
@@ -373,6 +388,11 @@
             <include
                 android:id="@+id/videosError"
                 layout="@layout/home_section_error"
+                android:visibility="gone" />
+
+            <include
+                android:id="@+id/videosEmpty"
+                layout="@layout/home_section_empty"
                 android:visibility="gone" />
 
             <androidx.recyclerview.widget.RecyclerView

@@ -31,8 +31,9 @@ class HomeChannelAdapter(
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         if (cardWidth > 0) {
-            holder.itemView.layoutParams?.apply {
-                width = cardWidth
+            holder.itemView.layoutParams?.let { lp ->
+                lp.width = cardWidth
+                holder.itemView.layoutParams = lp
             }
         }
         holder.bind(getItem(position))

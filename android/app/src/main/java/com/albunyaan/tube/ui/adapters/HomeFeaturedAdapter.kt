@@ -58,25 +58,28 @@ class HomeFeaturedAdapter(
         when (holder) {
             is ChannelViewHolder -> {
                 if (channelCardWidth > 0) {
-                    val params = holder.itemView.layoutParams
-                    params.width = channelCardWidth
-                    holder.itemView.layoutParams = params
+                    holder.itemView.layoutParams?.let { lp ->
+                        lp.width = channelCardWidth
+                        holder.itemView.layoutParams = lp
+                    }
                 }
                 holder.bind(item as ContentItem.Channel)
             }
             is PlaylistViewHolder -> {
                 if (cardWidth > 0) {
-                    val params = holder.itemView.layoutParams
-                    params.width = cardWidth
-                    holder.itemView.layoutParams = params
+                    holder.itemView.layoutParams?.let { lp ->
+                        lp.width = cardWidth
+                        holder.itemView.layoutParams = lp
+                    }
                 }
                 holder.bind(item as ContentItem.Playlist)
             }
             is VideoViewHolder -> {
                 if (cardWidth > 0) {
-                    val params = holder.itemView.layoutParams
-                    params.width = cardWidth
-                    holder.itemView.layoutParams = params
+                    holder.itemView.layoutParams?.let { lp ->
+                        lp.width = cardWidth
+                        holder.itemView.layoutParams = lp
+                    }
                 }
                 holder.bind(item as ContentItem.Video)
             }

@@ -154,6 +154,16 @@
     <string name="home_see_all_featured">عرض كل المحتوى المميز</string>
     <string name="home_retry_section">إعادة تحميل القسم</string>
 
+    <!-- Home Section Empty States -->
+    <string name="home_empty_videos">لا توجد فيديوهات متاحة بعد</string>
+    <string name="home_empty_playlists">لا توجد قوائم تشغيل متاحة بعد</string>
+    <string name="home_empty_channels">لا توجد قنوات متاحة بعد</string>
+    <string name="home_empty_featured">لا يوجد محتوى مميز بعد</string>
+
+    <!-- Videos Tab Empty State -->
+    <string name="videos_empty_title">لا توجد فيديوهات بعد</string>
+    <string name="videos_empty_subtitle">ستظهر الفيديوهات المعتمدة هنا</string>
+
     <!-- Missing strings from English -->
     <string name="navigate_back">رجوع</string>
     <string name="channel_tab_about">حول</string>

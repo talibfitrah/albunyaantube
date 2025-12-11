@@ -27,6 +27,15 @@
         <domain includeSubdomains="true">192.168.1.167</domain>
     </domain-config>
 
+    <!--
+        PRODUCTION/VPS SETUP:
+        Do NOT add public IPs here for cleartext traffic.
+        Instead:
+        1. Configure HTTPS on your VPS (Let's Encrypt recommended)
+        2. Update api.base.url in local.properties to https://your-domain.com
+        3. The base-config below enforces HTTPS for all non-local domains
+    -->
+
     <!-- Default: require HTTPS for all other domains (enforced for production) -->
     <base-config cleartextTrafficPermitted="false" />
 </network-security-config>
