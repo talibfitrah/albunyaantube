@@ -1,5 +1,6 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.dto.BatchValidationResult;
 import com.albunyaan.tube.dto.StreamDetailsDto;
 import com.albunyaan.tube.model.SourceType;
 import com.albunyaan.tube.model.ValidationRun;
@@ -16,9 +17,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
@@ -93,28 +92,34 @@ public class VideoValidationService {
                     .map(Video::getYoutubeId)
                     .collect(Collectors.toList());
 
-            // Batch validate against YouTube API
-            Map<String, StreamDetailsDto> validVideos =
-                    youtubeService.batchValidateVideosDto(youtubeIds);
+            // Batch validate against YouTube with detailed error categorization.
+            // IMPORTANT: Do NOT treat "missing from results" as UNAVAILABLE, because the old API
+            // hid transient errors (rate limiting/network) and caused mass false-unavailability.
+            BatchValidationResult<StreamDetailsDto> validationResult =
+                    youtubeService.batchValidateVideosDtoWithDetails(youtubeIds);
 
             // Process results
             int checkedCount = 0;
             int unavailableCount = 0;
             int errorCount = 0;
             List<String> unavailableVideoIds = new ArrayList<>();
+            List<String> errorVideoIds = new ArrayList<>();
 
             for (Video video : videosToValidate) {
                 try {
                     checkedCount++;
 
-                    if (validVideos.containsKey(video.getYoutubeId())) {
+                    String youtubeId = video.getYoutubeId();
+
+                    if (validationResult.isValid(youtubeId)) {
                         // Video exists on YouTube - mark as VALID
                         video.setValidationStatus(ValidationStatus.VALID);
                         video.setLastValidatedAt(Timestamp.now());
                         videoRepository.save(video);
-                        logger.debug("Video {} is valid", video.getYoutubeId());
-                    } else {
-                        // Video not found on YouTube - mark as UNAVAILABLE
+                        logger.debug("Video {} is valid", youtubeId);
+                    } else if (validationResult.isNotFound(youtubeId)) {
+                        // Video definitively not available on YouTube - mark as UNAVAILABLE (legacy).
+                        // (PublicContentService excludes UNAVAILABLE/ARCHIVED from the app feed.)
                         video.setValidationStatus(ValidationStatus.UNAVAILABLE);
                         video.setLastValidatedAt(Timestamp.now());
                         videoRepository.save(video);
@@ -130,8 +135,27 @@ public class VideoValidationService {
                                 triggeredByDisplayName != null ? triggeredByDisplayName : "Video Validation Scheduler"
                         );
 
-                        logger.info("Video marked as unavailable - youtubeId: {}, title: {}",
-                                video.getYoutubeId(), video.getTitle());
+                        logger.info("Video marked as unavailable (confirmed not found) - youtubeId: {}, title: {}",
+                                youtubeId, video.getTitle());
+                    } else if (validationResult.isError(youtubeId)) {
+                        // Transient error (timeouts/rate limiting/parsing) - do NOT hide the video from the app.
+                        video.setValidationStatus(ValidationStatus.ERROR);
+                        video.setLastValidatedAt(Timestamp.now());
+                        videoRepository.save(video);
+
+                        errorCount++;
+                        errorVideoIds.add(video.getId());
+                        logger.warn("Video validation error (will retry later) - youtubeId: {}, error: {}",
+                                youtubeId, validationResult.getErrorMessage(youtubeId));
+                    } else {
+                        // Defensive fallback: never auto-unavailable if we can't classify the result.
+                        video.setValidationStatus(ValidationStatus.ERROR);
+                        video.setLastValidatedAt(Timestamp.now());
+                        videoRepository.save(video);
+
+                        errorCount++;
+                        errorVideoIds.add(video.getId());
+                        logger.warn("Video validation returned no classification for youtubeId: {} (treating as ERROR)", youtubeId);
                     }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
@@ -144,11 +168,16 @@ public class VideoValidationService {
                 }
             }
 
-            // Update validation run with results
+            // Update validation run with results.
+            // Note: videosMarkedArchived tracks YouTube-unavailable videos (ValidationStatus.UNAVAILABLE).
+            // The naming is historical - both fields track the same count for backward compatibility.
             validationRun.setVideosChecked(checkedCount);
             validationRun.setVideosMarkedUnavailable(unavailableCount);
             validationRun.setErrorCount(errorCount);
             validationRun.addDetail("unavailableVideoIds", unavailableVideoIds);
+            if (!errorVideoIds.isEmpty()) {
+                validationRun.addDetail("errorVideoIds", errorVideoIds);
+            }
             validationRun.complete("COMPLETED");
 
             validationRunRepository.save(validationRun);
@@ -199,8 +228,9 @@ public class VideoValidationService {
                     return sourceType == SourceType.STANDALONE || sourceType == SourceType.UNKNOWN;
                 })
                 .filter(v -> {
-                    // Skip videos already marked as unavailable
-                    if (v.getValidationStatus() == ValidationStatus.UNAVAILABLE) {
+                    // Skip videos already marked as unavailable/archived
+                    if (v.getValidationStatus() == ValidationStatus.UNAVAILABLE
+                            || v.getValidationStatus() == ValidationStatus.ARCHIVED) {
                         return false;
                     }
 
@@ -259,28 +289,34 @@ public class VideoValidationService {
                     .map(Video::getYoutubeId)
                     .collect(Collectors.toList());
 
-            // Batch validate
-            Map<String, StreamDetailsDto> validVideos =
-                    youtubeService.batchValidateVideosDto(youtubeIds);
+            // Batch validate with detailed error categorization (see validateStandaloneVideos for rationale)
+            BatchValidationResult<StreamDetailsDto> validationResult =
+                    youtubeService.batchValidateVideosDtoWithDetails(youtubeIds);
 
             // Process results
             int checkedCount = 0;
             int unavailableCount = 0;
+            int errorCount = 0;
 
             for (Video video : videos) {
                 checkedCount++;
-                if (!validVideos.containsKey(video.getYoutubeId())) {
+                String youtubeId = video.getYoutubeId();
+                if (validationResult.isNotFound(youtubeId)) {
                     unavailableCount++;
+                } else if (validationResult.isError(youtubeId)) {
+                    errorCount++;
                 }
             }
 
+            // Note: Only set videosMarkedUnavailable (videosMarkedArchived is deprecated/unused here).
             validationRun.setVideosChecked(checkedCount);
             validationRun.setVideosMarkedUnavailable(unavailableCount);
+            validationRun.setErrorCount(errorCount);
             validationRun.complete("COMPLETED");
             validationRunRepository.save(validationRun);
 
-            logger.info("Specific video validation completed - checked: {}, unavailable: {}",
-                    checkedCount, unavailableCount);
+            logger.info("Specific video validation completed - checked: {}, unavailable: {}, errors: {}",
+                    checkedCount, unavailableCount, errorCount);
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -327,4 +363,3 @@ public class VideoValidationService {
         return validationRunRepository.findAll(limit);
     }
 }
-
