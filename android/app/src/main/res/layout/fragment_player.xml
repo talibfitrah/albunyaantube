@@ -106,11 +106,11 @@
                             style="@style/Widget.Material3.Button" />
 
                         <com.google.android.material.button.MaterialButton
-                            android:id="@+id/playerAudioOnlyButton"
+                            android:id="@+id/playerRefreshStreamButton"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginStart="@dimen/spacing_sm"
-                            android:text="@string/player_try_audio_only"
+                            android:text="@string/player_refresh_stream"
                             style="@style/Widget.Material3.Button.OutlinedButton" />
 
                     </LinearLayout>

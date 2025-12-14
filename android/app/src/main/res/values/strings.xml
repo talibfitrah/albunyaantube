@@ -68,7 +68,7 @@
     <string name="player_error_title">Unable to play video</string>
     <string name="player_error_message">There was a problem loading this video. Please try again.</string>
     <string name="player_retry">Retry</string>
-    <string name="player_try_audio_only">Try Audio Only</string>
+    <string name="player_refresh_stream">Refresh Stream</string>
     <string name="player_retrying">Retrying... (attempt %1$d of %2$d)</string>
     <string name="player_auto_audio_stall">Switched to audio-only due to slow connection</string>
     <string name="player_start_reason_auto">Auto-advance</string>

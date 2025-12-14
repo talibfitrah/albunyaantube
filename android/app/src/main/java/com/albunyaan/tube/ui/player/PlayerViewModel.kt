@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.extractor.AudioTrack
 import com.albunyaan.tube.data.extractor.PlaybackSelection
+import com.albunyaan.tube.data.extractor.QualitySelectionOrigin
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.SubtitleTrack
 import com.albunyaan.tube.data.extractor.VideoTrack
@@ -135,14 +136,31 @@ class PlayerViewModel @Inject constructor(
     }
 
     /**
-     * Get available quality options for current stream
+     * Get available quality options for current stream.
+     * Deduplicates by resolution height, preferring muxed streams over video-only
+     * for better reliability (no audio/video merge needed).
      */
     fun getAvailableQualities(): List<QualityOption> {
         val streamState = _state.value.streamState
         if (streamState !is StreamState.Ready) return emptyList()
 
         val videoTracks = streamState.selection.resolved.videoTracks
-        return videoTracks.mapNotNull { track ->
+
+        // Deduplicate by height: prefer muxed over video-only, then highest bitrate
+        val deduped = videoTracks
+            .filter { it.height != null && it.qualityLabel != null }
+            .groupBy { it.height }
+            .mapValues { (_, tracksAtHeight) ->
+                tracksAtHeight
+                    .sortedWith(
+                        compareBy<VideoTrack> { it.isVideoOnly } // muxed first (false < true)
+                            .thenByDescending { it.bitrate ?: 0 }
+                    )
+                    .first()
+            }
+            .values
+
+        return deduped.mapNotNull { track ->
             track.qualityLabel?.let { label ->
                 QualityOption(label, track)
             }
@@ -150,22 +168,96 @@ class PlayerViewModel @Inject constructor(
     }
 
     /**
-     * Select a specific video quality
+     * Set user quality cap (ceiling) from manual selection.
+     * This treats the user's choice as a maximum resolution cap. ABR can still drop
+     * below when network dips, then recover back up to the cap.
+     *
+     * For adaptive streaming (HLS/DASH): Applied via track selector constraints
+     * For progressive streaming: Selects the best track under the cap
      */
-    fun selectQuality(track: VideoTrack) {
+    fun setUserQualityCap(track: VideoTrack) {
         val streamState = _state.value.streamState
         if (streamState !is StreamState.Ready) return
 
-        val audio = streamState.selection.audio
+        // Guard against null/invalid height - treat as "use this exact track" without setting a cap
+        val capHeight = track.height
+        if (capHeight == null || capHeight <= 0) {
+            android.util.Log.w("PlayerViewModel", "setUserQualityCap: track has no valid height, using track directly")
+            val newSelection = PlaybackSelection(
+                streamId = streamState.streamId,
+                video = track,
+                audio = streamState.selection.audio,
+                resolved = streamState.selection.resolved,
+                userQualityCapHeight = null, // No cap - can't determine height
+                selectionOrigin = QualitySelectionOrigin.MANUAL
+            )
+            updateState { it.copy(streamState = StreamState.Ready(streamState.streamId, newSelection)) }
+            publishAnalytics(PlaybackAnalyticsEvent.QualityChanged(track.qualityLabel ?: "Unknown"))
+            return
+        }
+
+        val resolved = streamState.selection.resolved
+
+        // Find the best track that respects the cap; fallback to lowest available if none under cap
+        val bestUnderCap = findBestTrackUnderCap(resolved.videoTracks, capHeight)
+            ?: resolved.videoTracks.minByOrNull { it.height ?: Int.MAX_VALUE }
+            ?: track // final fallback if no tracks available
+
         val newSelection = PlaybackSelection(
             streamId = streamState.streamId,
-            video = track,
-            audio = audio,
-            resolved = streamState.selection.resolved
+            video = bestUnderCap,
+            audio = streamState.selection.audio,
+            resolved = resolved,
+            userQualityCapHeight = capHeight,
+            selectionOrigin = QualitySelectionOrigin.MANUAL
         )
 
         updateState { it.copy(streamState = StreamState.Ready(streamState.streamId, newSelection)) }
         publishAnalytics(PlaybackAnalyticsEvent.QualityChanged(track.qualityLabel ?: "Unknown"))
+    }
+
+    /**
+     * Apply automatic quality step-down during playback stalls.
+     * This does NOT change the user's quality cap - it's a temporary recovery action.
+     * Used only when playing progressive streams (not adaptive).
+     */
+    fun applyAutoQualityStepDown(track: VideoTrack) {
+        val streamState = _state.value.streamState
+        if (streamState !is StreamState.Ready) return
+
+        // Preserve user's cap if they set one - auto step-down should not override it
+        val newSelection = PlaybackSelection(
+            streamId = streamState.streamId,
+            video = track,
+            audio = streamState.selection.audio,
+            resolved = streamState.selection.resolved,
+            userQualityCapHeight = streamState.selection.userQualityCapHeight,
+            selectionOrigin = QualitySelectionOrigin.AUTO_RECOVERY
+        )
+
+        updateState { it.copy(streamState = StreamState.Ready(streamState.streamId, newSelection)) }
+        android.util.Log.d("PlayerViewModel", "Auto step-down to ${track.qualityLabel} (cap preserved: ${streamState.selection.userQualityCapHeight}p)")
+    }
+
+    /**
+     * Legacy method - delegates to setUserQualityCap for backward compatibility.
+     * @deprecated Use setUserQualityCap instead
+     */
+    fun selectQuality(track: VideoTrack) = setUserQualityCap(track)
+
+    /**
+     * Find the best video track that respects the given height cap.
+     * Prefers muxed streams over video-only for reliability.
+     */
+    private fun findBestTrackUnderCap(tracks: List<VideoTrack>, capHeight: Int): VideoTrack? {
+        return tracks
+            .filter { (it.height ?: 0) <= capHeight }
+            .sortedWith(
+                compareByDescending<VideoTrack> { it.height ?: 0 }
+                    .thenBy { it.isVideoOnly } // prefer muxed
+                    .thenByDescending { it.bitrate ?: 0 }
+            )
+            .firstOrNull()
     }
 
     /**
@@ -378,44 +470,63 @@ class PlayerViewModel @Inject constructor(
      */
     fun retryCurrentStream() {
         val item = currentItem ?: return
-        resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
+        resolveStreamFor(item, PlaybackStartReason.USER_SELECTED, forceRefresh = false)
     }
 
     /**
-     * Retry with audio-only fallback when video fails.
-     * Useful when video streams are blocked but audio might work.
+     * Force re-resolve stream URLs, bypassing the cache.
+     * Called from PlayerFragment when recovering from HTTP/parsing failures mid-playback.
+     */
+    fun forceRefreshCurrentStream() {
+        val item = currentItem ?: return
+        // Invalidate the prefetch cache as well since URLs are likely stale
+        synchronized(prefetchCache) { prefetchCache.remove(item.streamId) }
+        resolveStreamFor(item, PlaybackStartReason.USER_SELECTED, forceRefresh = true)
+    }
+
+    /**
+     * Retry resolving the current stream (same as retryCurrentStream).
+     * Legacy method name retained for UI compatibility.
+     *
+     * Note: Audio-only fallback is intentionally not applied automatically. Video playback should
+     * remain the default and recovery should focus on re-resolving streams / adjusting quality.
      */
     fun retryWithAudioOnly() {
-        setAudioOnly(true)
         retryCurrentStream()
     }
 
-    private fun resolveStreamFor(item: UpNextItem, reason: PlaybackStartReason) {
+    private fun resolveStreamFor(item: UpNextItem, reason: PlaybackStartReason, forceRefresh: Boolean = false) {
         resolveJob?.cancel()
         updateState { it.copy(streamState = StreamState.Loading, retryCount = 0) }
         resolveJob = viewModelScope.launch(dispatcher) {
-            resolveWithRetry(item, maxAttempts = MAX_RETRY_ATTEMPTS)
+            resolveWithRetry(item, maxAttempts = MAX_RETRY_ATTEMPTS, forceRefresh = forceRefresh)
         }
     }
 
     /**
      * Resolve streams with exponential backoff retry.
-     * Checks prefetch cache first for instant playback.
+     * Checks prefetch cache first for instant playback (unless forceRefresh is true).
      * Attempts: 3 times with delays of 1s, 2s, 4s between attempts.
+     *
+     * @param forceRefresh If true, bypass all caches (prefetch and stream URL cache)
      */
-    private suspend fun resolveWithRetry(item: UpNextItem, maxAttempts: Int) {
-        // Check prefetch cache first for instant playback
-        val prefetched = synchronized(prefetchCache) { prefetchCache.remove(item.streamId) }
-        if (prefetched != null) {
-            android.util.Log.d("PlayerViewModel", "Using prefetched stream for ${item.streamId}")
-            val selection = prefetched.toDefaultSelection()
-            if (selection != null) {
-                publishAnalytics(PlaybackAnalyticsEvent.StreamResolved(item.streamId, selection.video?.qualityLabel))
-                updateState { it.copy(streamState = StreamState.Ready(prefetched.streamId, selection), retryCount = 0) }
-                return
+    private suspend fun resolveWithRetry(item: UpNextItem, maxAttempts: Int, forceRefresh: Boolean = false) {
+        // Check prefetch cache first for instant playback (skip if forceRefresh)
+        if (!forceRefresh) {
+            val prefetched = synchronized(prefetchCache) { prefetchCache.remove(item.streamId) }
+            if (prefetched != null) {
+                android.util.Log.d("PlayerViewModel", "Using prefetched stream for ${item.streamId}")
+                val selection = prefetched.toDefaultSelection()
+                if (selection != null) {
+                    publishAnalytics(PlaybackAnalyticsEvent.StreamResolved(item.streamId, selection.video?.qualityLabel))
+                    updateState { it.copy(streamState = StreamState.Ready(prefetched.streamId, selection), retryCount = 0) }
+                    return
+                }
+                // Prefetch data was invalid, fall through to normal resolution
+                android.util.Log.w("PlayerViewModel", "Prefetched stream invalid, resolving fresh")
             }
-            // Prefetch data was invalid, fall through to normal resolution
-            android.util.Log.w("PlayerViewModel", "Prefetched stream invalid, resolving fresh")
+        } else {
+            android.util.Log.d("PlayerViewModel", "Force refresh requested for ${item.streamId}, bypassing caches")
         }
 
         var lastError: Throwable? = null
@@ -425,8 +536,9 @@ class PlayerViewModel @Inject constructor(
 
             val resolved = try {
                 // Add timeout wrapper to prevent indefinite hangs during extraction
+                // Use forceRefresh on first attempt to bypass stream URL cache
                 kotlinx.coroutines.withTimeout(EXTRACTOR_TIMEOUT_MS) {
-                    repository.resolveStreams(item.streamId)
+                    repository.resolveStreams(item.streamId, forceRefresh = forceRefresh && attempt == 1)
                 }
             } catch (t: Throwable) {
                 if (t is kotlinx.coroutines.CancellationException) throw t
@@ -523,7 +635,7 @@ class PlayerViewModel @Inject constructor(
     companion object {
         private const val MAX_RETRY_ATTEMPTS = 3
         private const val RETRY_BASE_DELAY_MS = 1000L
-        private const val EXTRACTOR_TIMEOUT_MS = 12000L // 12s timeout for extraction
+        private const val EXTRACTOR_TIMEOUT_MS = 20000L // 20s timeout for extraction (NewPipe can be slow)
     }
 
     private fun findDownloadFor(item: UpNextItem?, entries: List<DownloadEntry>): DownloadEntry? {
@@ -656,11 +768,17 @@ enum class PlaybackStartReason(@StringRes val labelRes: Int) {
  * Users can manually switch to higher quality if needed.
  */
 private fun ResolvedStreams.toDefaultSelection(): PlaybackSelection? {
+    if (videoTracks.isEmpty()) return null
+
     // Smart quality selection: prefer 720p for faster loading, fallback to best available
-    val preferredVideo = videoTracks.firstOrNull { it.height == 720 }
+    val preferredVideo = videoTracks.firstOrNull { it.height == 720 && !it.isVideoOnly }
+        ?: videoTracks.firstOrNull { it.height == 480 && !it.isVideoOnly }
+        ?: videoTracks.firstOrNull { it.height == 720 }
         ?: videoTracks.firstOrNull { it.height == 480 }
-        ?: videoTracks.maxWithOrNull(compareBy<VideoTrack> { it.height ?: 0 }
-            .thenBy { it.bitrate ?: 0 })
+        ?: videoTracks.maxWithOrNull(
+            compareBy<VideoTrack> { it.height ?: 0 }
+                .thenBy { it.bitrate ?: 0 }
+        )
 
     val preferredAudio = (audioTracks.maxByOrNull { it.bitrate ?: 0 }
         ?: preferredVideo?.let {

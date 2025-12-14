@@ -43,13 +43,24 @@ class NewPipeExtractorClient(
         initializeNewPipe()
     }
 
-    suspend fun resolveStreams(videoId: String): ResolvedStreams? = withContext(Dispatchers.IO) {
+    /**
+     * Resolve stream URLs for the given video.
+     * @param forceRefresh If true, bypass cache and fetch fresh URLs (use for recovery from playback failures).
+     *        Note: On forceRefresh, old cache is NOT removed before fetch - it's only replaced on success.
+     *        This allows subsequent non-forceRefresh calls to still use cached data if the refresh failed.
+     */
+    suspend fun resolveStreams(videoId: String, forceRefresh: Boolean = false): ResolvedStreams? = withContext(Dispatchers.IO) {
         if (!YOUTUBE_ID_PATTERN.matcher(videoId).matches()) return@withContext null
         val now = clock()
-        streamCache[videoId]?.takeIf { now - it.timestamp <= STREAM_CACHE_TTL_MILLIS }?.let {
-            metrics.onCacheHit(ContentType.VIDEOS, 1)
-            return@withContext it.value
+        // Only use cache if not forcing refresh
+        if (!forceRefresh) {
+            streamCache[videoId]?.takeIf { now - it.timestamp <= STREAM_CACHE_TTL_MILLIS }?.let {
+                metrics.onCacheHit(ContentType.VIDEOS, 1)
+                return@withContext it.value
+            }
         }
+        // Don't remove cache entry before fetch - successful fetch will overwrite it,
+        // and keeping it preserves fallback data if fresh fetch fails
         metrics.onCacheMiss(ContentType.VIDEOS, 1)
         val start = clock()
         try {
@@ -293,7 +304,7 @@ class NewPipeExtractorClient(
                     stream.width > 0 -> "${stream.width}x${stream.height}"
                     else -> stream.quality // Fallback to NewPipe's label
                 }
-                android.util.Log.d("NewPipeExtractor", "Video stream: $properLabel (${stream.width}x${stream.height}), videoOnly=${stream.isVideoOnly}")
+                android.util.Log.d("NewPipeExtractor", "Video stream: $properLabel (${stream.width}x${stream.height}), bitrate=${stream.bitrate}, videoOnly=${stream.isVideoOnly}")
                 VideoTrack(
                     url = stream.content,
                     mimeType = stream.format?.mimeType,
@@ -301,11 +312,17 @@ class NewPipeExtractorClient(
                     height = stream.height.takeIf { it > 0 },
                     bitrate = stream.bitrate.takeIf { it > 0 },
                     qualityLabel = properLabel,
-                    fps = stream.fps.takeIf { it > 0 }
+                    fps = stream.fps.takeIf { it > 0 },
+                    isVideoOnly = stream.isVideoOnly
                 )
             }
-            .distinctBy { it.height to it.fps } // Remove duplicates with same resolution
-            .sortedByDescending { it.height ?: 0 } // Sort by quality, highest first
+            // No additional deduplication - preserve ALL streams for maximum step-down flexibility.
+            // URL-based deduplication already happened above (distinctBy { it.content }).
+            // This preserves multiple bitrates at the same resolution for quality step-down.
+            .sortedWith(
+                compareByDescending<VideoTrack> { it.height ?: 0 }
+                    .thenByDescending { it.bitrate ?: 0 }
+            )
 
         android.util.Log.d("NewPipeExtractor", "Extracted ${videoTracks.size} unique video qualities: ${videoTracks.map { it.qualityLabel }}")
 
@@ -336,8 +353,25 @@ class NewPipeExtractorClient(
         if (videoTracks.isEmpty() && audioTracks.isEmpty()) return null
 
         val durationSeconds = duration.takeIf { it > 0 }?.toInt()
+
+        // Extract HLS/DASH URLs for adaptive streaming (better for long videos)
+        val hlsStreamUrl = hlsUrl?.takeIf { it.isNotBlank() }
+        val dashStreamUrl = dashMpdUrl?.takeIf { it.isNotBlank() }
+
+        if (hlsStreamUrl != null || dashStreamUrl != null) {
+            android.util.Log.d("NewPipeExtractor", "Adaptive streams available: HLS=${hlsStreamUrl != null}, DASH=${dashStreamUrl != null}")
+        }
+
         // TODO: Extract subtitle tracks from StreamInfo when NewPipe adds support
-        return ResolvedStreams(streamId, videoTracks, audioTracks, emptyList(), durationSeconds)
+        return ResolvedStreams(
+            streamId = streamId,
+            videoTracks = videoTracks,
+            audioTracks = audioTracks,
+            subtitleTracks = emptyList(),
+            durationSeconds = durationSeconds,
+            hlsUrl = hlsStreamUrl,
+            dashUrl = dashStreamUrl
+        )
     }
 
     private fun Long.toIntSafely(): Int? = when {

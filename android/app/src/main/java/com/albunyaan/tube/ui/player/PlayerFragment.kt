@@ -51,15 +51,21 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
     private var binding: FragmentPlayerBinding? = null
     private var player: ExoPlayer? = null
+    private var trackSelector: com.google.android.exoplayer2.trackselection.DefaultTrackSelector? = null
     private val viewModel: PlayerViewModel by viewModels()
     private val upNextAdapter = UpNextAdapter { item -> viewModel.playItem(item) }
     private var preparedStreamKey: Pair<String, Boolean>? = null
     private var preparedStreamUrl: String? = null // Track the actual URL to detect quality changes
+    private var pendingResumeStreamId: String? = null
+    private var pendingResumePositionMs: Long? = null
+    private var pendingResumePlayWhenReady: Boolean? = null
     private lateinit var gestureDetector: GestureDetectorCompat
     private var isFullscreen = false
     private var castContext: com.google.android.gms.cast.framework.CastContext? = null
     private var exoNextButton: View? = null
     private var exoPrevButton: View? = null
+    /** Tracks whether current media source is adaptive (HLS/DASH) vs progressive */
+    private var preparedIsAdaptive: Boolean = false
 
     // Overlay controls are now always visible for better UX
     // Users need constant access to quality, cast, and minimize buttons
@@ -198,8 +204,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         binding.playerRetryButton?.setOnClickListener {
             viewModel.retryCurrentStream()
         }
-        binding.playerAudioOnlyButton?.setOnClickListener {
-            viewModel.retryWithAudioOnly()
+        binding.playerRefreshStreamButton?.setOnClickListener {
+            viewModel.forceRefreshCurrentStream()
         }
 
         // Configure Cast button
@@ -264,21 +270,32 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     }
 
     private fun setupPlayer(binding: FragmentPlayerBinding) {
-        // Configure load control for better buffering and faster startup
+        // Configure load control for better buffering - optimized for long videos
         val loadControl = com.google.android.exoplayer2.DefaultLoadControl.Builder()
-            // Increase buffer for smoother playback (default is 50s max)
+            // Buffering tuned for long video stability:
+            // - Larger buffer to handle network variance on 10+ min videos
+            // - Faster initial playback to reduce perceived latency
             .setBufferDurationsMs(
-                /* minBufferMs= */ 2500,         // Start playback after 2.5s (faster startup)
-                /* maxBufferMs= */ 60000,        // Buffer up to 60s ahead
-                /* bufferForPlaybackMs= */ 1500, // Resume after rebuffer at 1.5s (faster)
-                /* bufferForPlaybackAfterRebufferMs= */ 2500 // Faster recovery from stalls
+                /* minBufferMs= */ 30000,         // Keep ~30s buffered (increased for long videos)
+                /* maxBufferMs= */ 180000,        // Buffer up to 3 minutes ahead (increased)
+                /* bufferForPlaybackMs= */ 2000,  // Start after 2s buffered (faster start)
+                /* bufferForPlaybackAfterRebufferMs= */ 4000 // Resume after 4s buffered
             )
+            // Back buffer for seek-back performance (60 seconds)
+            .setBackBuffer(60000, true)
             // Prioritize minimum rebuffer time over memory
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
 
+        // Configure track selector for adaptive streaming quality constraints
+        // This allows applying user quality caps to HLS/DASH streams
+        val trackSelector = com.google.android.exoplayer2.trackselection.DefaultTrackSelector(requireContext()).also {
+            this.trackSelector = it
+        }
+
         val player = ExoPlayer.Builder(requireContext())
             .setLoadControl(loadControl)
+            .setTrackSelector(trackSelector)
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(com.google.android.exoplayer2.C.WAKE_MODE_NETWORK)
             // Enable seek back/forward optimizations
@@ -296,13 +313,17 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         player.addListener(object : com.google.android.exoplayer2.Player.Listener {
             private var hasAutoHidden = false
             private var retryCount = 0
-            private val maxRetries = 2
+            private val maxRetries = 3
+            private var streamRefreshCount = 0
+            private val maxStreamRefreshes = 2
+            private var lastStreamIdForRetries: String? = null
 
-            // Stall detection
+            // Stall detection - increased threshold for long videos with variable network
             private var bufferingStartTime: Long = 0L
             private var stallCheckJob: kotlinx.coroutines.Job? = null
-            private val stallThresholdMs = 8000L // 8s of buffering = stall
-            private var hasAutoDowngraded = false
+            private val stallThresholdMs = 15000L // 15s of buffering = stall (increased from 8s)
+            private val autoDowngradeCount = java.util.concurrent.atomic.AtomicInteger(0)
+            private val maxAutoDowngrades = 4 // Increased to allow more recovery attempts
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 android.util.Log.d("PlayerFragment", "onIsPlayingChanged: isPlaying=$isPlaying, hasAutoHidden=$hasAutoHidden")
@@ -329,8 +350,14 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 android.util.Log.d("PlayerFragment", "onPlaybackStateChanged: state=$playbackState")
                 // When a new video loads, reset the auto-hide flag and stall tracking
                 if (playbackState == com.google.android.exoplayer2.Player.STATE_IDLE) {
+                    val currentStreamId = viewModel.state.value.currentItem?.streamId
+                    if (currentStreamId != lastStreamIdForRetries) {
+                        lastStreamIdForRetries = currentStreamId
+                        retryCount = 0
+                        streamRefreshCount = 0
+                    }
                     hasAutoHidden = false
-                    hasAutoDowngraded = false
+                    autoDowngradeCount.set(0)
                     bufferingStartTime = 0L
                     stallCheckJob?.cancel()
                 }
@@ -347,19 +374,40 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                             stallCheckJob = viewLifecycleOwner.lifecycleScope.launch {
                                 kotlinx.coroutines.delay(stallThresholdMs)
                                 // Still buffering after threshold - consider stalled
-                                if (player?.playbackState == com.google.android.exoplayer2.Player.STATE_BUFFERING && !hasAutoDowngraded) {
+                                if (player?.playbackState == com.google.android.exoplayer2.Player.STATE_BUFFERING && autoDowngradeCount.get() < maxAutoDowngrades) {
                                     val bufferDuration = System.currentTimeMillis() - bufferingStartTime
-                                    android.util.Log.w("PlayerFragment", "Stall detected: buffering for ${bufferDuration}ms")
+                                    android.util.Log.w("PlayerFragment", "Stall detected: buffering for ${bufferDuration}ms, isAdaptive=$preparedIsAdaptive")
 
-                                    // Auto-switch to audio-only if not already
-                                    val state = viewModel.state.value
-                                    if (!state.audioOnly) {
-                                        hasAutoDowngraded = true
-                                        android.util.Log.d("PlayerFragment", "Auto-downgrading to audio-only due to stall")
-                                        context?.let { ctx ->
-                                            Toast.makeText(ctx, R.string.player_auto_audio_stall, Toast.LENGTH_SHORT).show()
+                                    // Adaptive-aware stall recovery:
+                                    // - For HLS/DASH: Let ABR handle quality adaptation, only refresh URLs if stall persists
+                                    // - For progressive: Step down quality manually
+                                    if (preparedIsAdaptive) {
+                                        // Adaptive streaming: ABR should handle quality adaptation automatically.
+                                        // If we're still stalled, URLs may be expired - refresh them.
+                                        android.util.Log.w("PlayerFragment", "Stall on adaptive stream; refreshing URLs (ABR should handle quality)")
+                                        autoDowngradeCount.incrementAndGet()
+                                        requestStreamRefreshAndResume("stall detected on adaptive stream")
+                                    } else {
+                                        // Progressive streaming: Manual step-down is our only option.
+                                        val state = viewModel.state.value
+                                        val streamState = state.streamState
+                                        if (streamState is StreamState.Ready) {
+                                            autoDowngradeCount.incrementAndGet()
+                                            val nextLower = findNextLowerQualityTrack(
+                                                current = streamState.selection.video,
+                                                available = streamState.selection.resolved.videoTracks
+                                            )
+                                            if (nextLower != null) {
+                                                android.util.Log.w(
+                                                    "PlayerFragment",
+                                                    "Stall on progressive stream; stepping down to ${nextLower.qualityLabel}"
+                                                )
+                                                // Use auto step-down method - does NOT change user's quality cap
+                                                viewModel.applyAutoQualityStepDown(nextLower)
+                                            } else {
+                                                requestStreamRefreshAndResume("stall detected; no lower quality")
+                                            }
                                         }
-                                        viewModel.setAudioOnly(true)
                                     }
                                 }
                             }
@@ -379,14 +427,19 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         val advanced = viewModel.markCurrentComplete()
                         if (advanced) {
                             player?.playWhenReady = true
-                            hasAutoDowngraded = false // Reset for next video
+                            autoDowngradeCount.set(0) // Reset for next video
                         }
                     }
                 }
             }
 
             override fun onPlayerError(error: com.google.android.exoplayer2.PlaybackException) {
-                android.util.Log.e("PlayerFragment", "Player error: ${error.errorCodeName}, retryCount=$retryCount", error)
+                val httpResponseCode = findHttpResponseCode(error.cause)
+                android.util.Log.e(
+                    "PlayerFragment",
+                    "Player error: ${error.errorCodeName}, retryCount=$retryCount, streamRefreshCount=$streamRefreshCount, http=$httpResponseCode",
+                    error
+                )
 
                 // Handle different error types
                 when (error.errorCode) {
@@ -407,32 +460,31 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                                 }
                             }
                         } else {
-                            // Use safe context access to prevent crash if fragment is detached
-                            context?.let { ctx ->
-                                Toast.makeText(ctx, R.string.player_stream_error, Toast.LENGTH_SHORT).show()
+                            // If prepare retries are exhausted, try re-resolving stream URLs as a last resort.
+                            if (streamRefreshCount < maxStreamRefreshes) {
+                                streamRefreshCount++
+                                requestStreamRefreshAndResume(
+                                    "network retries exhausted (${error.errorCodeName})"
+                                )
+                            } else {
+                                // Use safe context access to prevent crash if fragment is detached
+                                context?.let { ctx ->
+                                    Toast.makeText(ctx, R.string.player_stream_error, Toast.LENGTH_SHORT).show()
+                                }
                             }
                         }
                     }
+                    com.google.android.exoplayer2.PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS,
+                    com.google.android.exoplayer2.PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,
+                    com.google.android.exoplayer2.PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE,
                     com.google.android.exoplayer2.PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
                     com.google.android.exoplayer2.PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED -> {
-                        // Stream URL expired or malformed - clear cache and retry once
-                        if (retryCount < 1) {
-                            retryCount++
-                            android.util.Log.d("PlayerFragment", "Stream parsing failed - clearing cache and retrying")
-                            preparedStreamKey = null
-                            preparedStreamUrl = null
-                            // Reload the video to get fresh URLs, preserving all metadata
-                            viewModel.state.value.currentItem?.let { item ->
-                                viewModel.loadVideo(
-                                    videoId = item.streamId,
-                                    title = item.title,
-                                    channelName = item.channelName,
-                                    thumbnailUrl = item.thumbnailUrl,
-                                    description = item.description,
-                                    durationSeconds = item.durationSeconds,
-                                    viewCount = item.viewCount
-                                )
-                            }
+                        // Stream URL expired/invalid (or a hard HTTP failure) - re-resolve URLs and resume.
+                        if (streamRefreshCount < maxStreamRefreshes) {
+                            streamRefreshCount++
+                            requestStreamRefreshAndResume(
+                                "source invalid/expired (${error.errorCodeName}, http=${httpResponseCode ?: "n/a"})"
+                            )
                         } else {
                             // Use safe context access to prevent crash if fragment is detached
                             context?.let { ctx ->
@@ -780,6 +832,66 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         }
     }
 
+    private fun requestStreamRefreshAndResume(reason: String) {
+        val currentItem = viewModel.state.value.currentItem ?: return
+        val currentPlayer = player ?: return
+
+        val resumePosition = currentPlayer.currentPosition.coerceAtLeast(0L)
+        pendingResumeStreamId = currentItem.streamId
+        pendingResumePositionMs = resumePosition.takeIf { it > 0L }
+        pendingResumePlayWhenReady = currentPlayer.playWhenReady
+
+        android.util.Log.w(
+            "PlayerFragment",
+            "Refreshing stream for ${currentItem.streamId} at ${resumePosition}ms: $reason"
+        )
+
+        preparedStreamKey = null
+        preparedStreamUrl = null
+        currentPlayer.stop()
+
+        context?.let { ctx ->
+            Toast.makeText(ctx, R.string.player_status_resolving, Toast.LENGTH_SHORT).show()
+        }
+
+        // Use forceRefresh to bypass cached URLs that may be expired/invalid
+        viewModel.forceRefreshCurrentStream()
+    }
+
+    private fun findHttpResponseCode(throwable: Throwable?): Int? {
+        var current = throwable
+        while (current != null) {
+            val invalid = current as? com.google.android.exoplayer2.upstream.HttpDataSource.InvalidResponseCodeException
+            if (invalid != null) return invalid.responseCode
+            current = current.cause
+        }
+        return null
+    }
+
+    /**
+     * Find the next lower quality track to step down to.
+     * Delegates to [com.albunyaan.tube.player.QualityStepDownHelper] for testability.
+     */
+    private fun findNextLowerQualityTrack(
+        current: com.albunyaan.tube.data.extractor.VideoTrack?,
+        available: List<com.albunyaan.tube.data.extractor.VideoTrack>
+    ): com.albunyaan.tube.data.extractor.VideoTrack? {
+        val result = com.albunyaan.tube.player.QualityStepDownHelper.findNextLowerQualityTrack(current, available)
+        if (result != null && current != null) {
+            val currentHeight = current.height ?: 0
+            val resultHeight = result.height ?: 0
+            when {
+                current.isVideoOnly && !result.isVideoOnly && resultHeight == currentHeight ->
+                    android.util.Log.d("PlayerFragment", "Step-down: video-only -> muxed at ${currentHeight}p")
+                resultHeight == currentHeight ->
+                    android.util.Log.d("PlayerFragment", "Step-down: lower bitrate at ${currentHeight}p (${current.bitrate} -> ${result.bitrate})")
+                else ->
+                    android.util.Log.d("PlayerFragment", "Step-down: ${currentHeight}p -> ${resultHeight}p")
+            }
+        }
+        return result
+    }
+
     private fun maybePrepareStream(state: PlayerState) {
         val streamState = state.streamState
         if (streamState !is StreamState.Ready) {
@@ -822,28 +934,66 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         android.util.Log.d("PlayerFragment", "Preparing stream: id=${key.first}, audioOnly=${key.second}, url=$currentVideoUrl, isQualitySwitch=$isQualitySwitch")
 
-        // Save current position for seamless quality switching
-        val savedPosition = if (isQualitySwitch) {
-            currentPlayer.currentPosition
-        } else {
-            0
+        val hasPendingResume = pendingResumeStreamId == streamState.streamId && pendingResumePositionMs != null
+        if (pendingResumeStreamId != null && pendingResumeStreamId != streamState.streamId) {
+            pendingResumeStreamId = null
+            pendingResumePositionMs = null
+            pendingResumePlayWhenReady = null
         }
+
+        // Save position for seamless quality switching and stream refresh recovery.
+        val savedPosition = when {
+            hasPendingResume -> pendingResumePositionMs ?: 0L
+            isQualitySwitch -> currentPlayer.currentPosition
+            else -> 0L
+        }
+
         val wasPlaying = currentPlayer.playWhenReady
-        // For quality switches: preserve user's play/pause state
-        // For new videos: auto-play (standard video player UX - user selected a video to watch)
-        val shouldPlay = if (isQualitySwitch) wasPlaying else true
+        // For quality switches / refresh recovery: preserve user's play/pause state.
+        // For new videos: auto-play (standard video player UX - user selected a video to watch).
+        val shouldPlay = when {
+            hasPendingResume -> pendingResumePlayWhenReady ?: wasPlaying
+            isQualitySwitch -> wasPlaying
+            else -> true
+        }
 
         // Create multi-quality MediaSource from resolved streams
+        // Apply user quality cap via track selector for adaptive streams, or select specific track for progressive
         val mediaSource = try {
-            val selectedQuality = streamState.selection.video
-            mediaSourceFactory.createMediaSource(
-                resolved = streamState.selection.resolved,
+            val selection = streamState.selection
+            val result = mediaSourceFactory.createMediaSourceWithType(
+                resolved = selection.resolved,
                 audioOnly = state.audioOnly,
-                selectedQuality = selectedQuality
+                selectedQuality = selection.video,
+                userQualityCapHeight = selection.userQualityCapHeight
             )
+            preparedIsAdaptive = result.second
+            android.util.Log.d("PlayerFragment", "Created media source: isAdaptive=$preparedIsAdaptive, qualityCap=${selection.userQualityCapHeight}p")
+
+            // Apply quality cap to track selector for adaptive streams
+            if (preparedIsAdaptive && selection.hasUserQualityCap) {
+                applyQualityCapToTrackSelector(selection.userQualityCapHeight!!)
+            } else if (preparedIsAdaptive) {
+                // No cap - allow ABR to choose freely
+                clearTrackSelectorConstraints()
+            }
+
+            result.first
         } catch (e: Exception) {
             // Fallback to single quality if multi-quality fails
-            val (url, mimeType) = selectTrack(streamState.selection, state.audioOnly) ?: return
+            // Progressive fallback - ensure preparedIsAdaptive is correctly set
+            preparedIsAdaptive = false
+            val trackPair = selectTrack(streamState.selection, state.audioOnly)
+            if (trackPair == null) {
+                android.util.Log.e("PlayerFragment", "No video track available and audio-only not requested")
+                context?.let { ctx ->
+                    Toast.makeText(ctx, R.string.player_stream_error, Toast.LENGTH_SHORT).show()
+                }
+                preparedStreamKey = null
+                preparedStreamUrl = null
+                return
+            }
+            val (url, mimeType) = trackPair
             val mediaItem = MediaItem.Builder()
                 .setUri(url)
                 .setMimeType(mimeType)
@@ -857,8 +1007,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             currentPlayer.setMediaSource(mediaSource)
             currentPlayer.prepare()
 
-            // Restore position for seamless quality switching
-            if (isQualitySwitch && savedPosition > 0) {
+            // Restore position for quality switching / stream refresh recovery.
+            if ((isQualitySwitch || hasPendingResume) && savedPosition > 0) {
                 currentPlayer.seekTo(savedPosition)
             }
 
@@ -866,6 +1016,12 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             preparedStreamKey = key
             preparedStreamUrl = streamState.selection.video?.url
             android.util.Log.d("PlayerFragment", "Stream prepared successfully: ${streamState.streamId}")
+
+            if (hasPendingResume) {
+                pendingResumeStreamId = null
+                pendingResumePositionMs = null
+                pendingResumePlayWhenReady = null
+            }
         } catch (e: Exception) {
             android.util.Log.e("PlayerFragment", "Failed to prepare stream: ${e.message}", e)
             preparedStreamKey = null
@@ -879,12 +1035,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             audio.url to (audio.mimeType ?: DEFAULT_AUDIO_MIME)
         } else {
             val video = selection.video
-            if (video != null) {
-                video.url to (video.mimeType ?: DEFAULT_VIDEO_MIME)
-            } else {
-                val audio = selection.audio
-                audio.url to (audio.mimeType ?: DEFAULT_AUDIO_MIME)
-            }
+            video?.url?.let { url -> url to (video.mimeType ?: DEFAULT_VIDEO_MIME) }
         }
     }
 
@@ -1109,7 +1260,15 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         try {
             // Get the video URL from stream state
-            val (videoUrl, _) = selectTrack(streamState.selection, viewModel.state.value.audioOnly) ?: return
+            val trackPair = selectTrack(streamState.selection, viewModel.state.value.audioOnly)
+            if (trackPair == null) {
+                android.util.Log.e("PlayerFragment", "Cannot cast: no video track available")
+                context?.let { ctx ->
+                    Toast.makeText(ctx, R.string.player_stream_error, Toast.LENGTH_SHORT).show()
+                }
+                return
+            }
+            val (videoUrl, _) = trackPair
 
             // Build Cast media metadata
             val metadata = com.google.android.gms.cast.MediaMetadata(com.google.android.gms.cast.MediaMetadata.MEDIA_TYPE_MOVIE)
@@ -1199,6 +1358,34 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 }
             }
         }
+    }
+
+    /**
+     * Apply quality cap constraints to the track selector for adaptive streams (HLS/DASH).
+     * This limits the maximum video resolution ABR can select while still allowing it
+     * to drop lower when network conditions require it.
+     */
+    private fun applyQualityCapToTrackSelector(capHeight: Int) {
+        val selector = trackSelector ?: return
+        val params = selector.buildUponParameters()
+            .setMaxVideoSize(Int.MAX_VALUE, capHeight)  // Cap height, unlimited width
+            .setForceHighestSupportedBitrate(false)      // Allow ABR to choose
+            .build()
+        selector.setParameters(params)
+        android.util.Log.d("PlayerFragment", "Track selector: applied quality cap ${capHeight}p")
+    }
+
+    /**
+     * Clear any quality constraints from the track selector, allowing ABR to choose freely.
+     */
+    private fun clearTrackSelectorConstraints() {
+        val selector = trackSelector ?: return
+        val params = selector.buildUponParameters()
+            .clearVideoSizeConstraints()
+            .setForceHighestSupportedBitrate(false)
+            .build()
+        selector.setParameters(params)
+        android.util.Log.d("PlayerFragment", "Track selector: cleared constraints (ABR free)")
     }
 
     private companion object {

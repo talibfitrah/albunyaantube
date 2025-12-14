@@ -7,7 +7,8 @@ data class VideoTrack(
     val height: Int?,
     val bitrate: Int?,
     val qualityLabel: String?,
-    val fps: Int?
+    val fps: Int?,
+    val isVideoOnly: Boolean
 )
 
 data class AudioTrack(
@@ -30,12 +31,48 @@ data class ResolvedStreams(
     val videoTracks: List<VideoTrack>,
     val audioTracks: List<AudioTrack>,
     val subtitleTracks: List<SubtitleTrack> = emptyList(),
-    val durationSeconds: Int?
+    val durationSeconds: Int?,
+    /** HLS manifest URL for adaptive streaming (preferred for long videos) */
+    val hlsUrl: String? = null,
+    /** DASH manifest URL for adaptive streaming (alternative to HLS) */
+    val dashUrl: String? = null
 )
+
+/**
+ * Represents the origin of a quality selection.
+ */
+enum class QualitySelectionOrigin {
+    /** System default - no user preference expressed */
+    AUTO,
+    /** User manually selected a quality (cap/ceiling) */
+    MANUAL,
+    /** Automatic recovery action (stall step-down) - does NOT set manual cap */
+    AUTO_RECOVERY
+}
 
 data class PlaybackSelection(
     val streamId: String,
     val video: VideoTrack?,
     val audio: AudioTrack,
-    val resolved: ResolvedStreams
-)
+    val resolved: ResolvedStreams,
+    /**
+     * User's manually selected quality cap (ceiling). When set, playback should not
+     * exceed this resolution. ABR can drop below when network dips, then recover up to cap.
+     *
+     * null = AUTO mode (no cap, ABR chooses freely)
+     * non-null = User preference for maximum resolution height
+     */
+    val userQualityCapHeight: Int? = null,
+    /**
+     * The origin of the current selection. Used to distinguish manual user choices
+     * from automatic recovery actions.
+     */
+    val selectionOrigin: QualitySelectionOrigin = QualitySelectionOrigin.AUTO
+) {
+    /**
+     * For backward compatibility: returns true if user has manually set a quality cap.
+     * Use this when deciding whether to apply track selector constraints.
+     */
+    val hasUserQualityCap: Boolean
+        get() = userQualityCapHeight != null
+}
