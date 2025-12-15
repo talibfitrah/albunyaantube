@@ -101,7 +101,7 @@ app:
     stream-cache-ttl-minutes: 30
     # Executor service settings
     executor:
-      pool-size: 3  # Thread pool size for batch operations
+      pool-size: 1  # REDUCED from 3 to 1 to minimize concurrent requests
     # HTTP client settings
     http:
       connect-timeout-seconds: 30
@@ -112,6 +112,36 @@ app:
       # Set to true via env var for debugging: APP_NEWPIPE_HTTP_LOG_BODY_ENABLED=true
       log-body-enabled: ${APP_NEWPIPE_HTTP_LOG_BODY_ENABLED:false}
       log-body-chars: 400
+  # Content validation settings (for scheduled video/channel/playlist checks)
+  validation:
+    video:
+      # Maximum items to validate per scheduled run (conservative default to prevent rate limiting)
+      max-items-per-run: ${APP_VALIDATION_VIDEO_MAX_ITEMS_PER_RUN:10}
+      scheduler:
+        # Enable/disable scheduled validation (set to false to stop all scheduled runs)
+        enabled: ${APP_VALIDATION_VIDEO_SCHEDULER_ENABLED:true}
+        # Cron expression for validation schedule (default: once daily at 6 AM UTC)
+        # Format: second minute hour day-of-month month day-of-week
+        cron: ${APP_VALIDATION_VIDEO_SCHEDULER_CRON:0 0 6 * * ?}
+    youtube:
+      throttle:
+        # Enable throttling between YouTube requests
+        enabled: ${APP_VALIDATION_YOUTUBE_THROTTLE_ENABLED:true}
+        # Delay between requests in milliseconds (default: 3 seconds)
+        delay-between-items-ms: ${APP_VALIDATION_YOUTUBE_THROTTLE_DELAY_MS:3000}
+        # Random jitter added to delay (up to this value in ms, default: 1 second)
+        jitter-ms: ${APP_VALIDATION_YOUTUBE_THROTTLE_JITTER_MS:1000}
+      circuit-breaker:
+        # Enable circuit breaker for rate limiting protection
+        enabled: ${APP_VALIDATION_YOUTUBE_CIRCUIT_BREAKER_ENABLED:true}
+        # Cooldown period after rate limit detected (in minutes, default: 12 hours)
+        cooldown-minutes: ${APP_VALIDATION_YOUTUBE_CIRCUIT_BREAKER_COOLDOWN_MINUTES:720}
+        # Number of rate limit errors before opening circuit (default: 1)
+        max-rate-limit-errors-to-open: ${APP_VALIDATION_YOUTUBE_CIRCUIT_BREAKER_MAX_ERRORS:1}
+        # Maximum cooldown after exponential backoff (in minutes, default: 48 hours)
+        max-cooldown-minutes: ${APP_VALIDATION_YOUTUBE_CIRCUIT_BREAKER_MAX_COOLDOWN_MINUTES:2880}
+        # Backoff multiplier for repeated rate limits (default: 2x)
+        backoff-multiplier: ${APP_VALIDATION_YOUTUBE_CIRCUIT_BREAKER_BACKOFF_MULTIPLIER:2.0}
   security:
     cors:
       allowed-origins: "http://localhost:5173,http://127.0.0.1:5173"

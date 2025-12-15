@@ -43,11 +43,19 @@ class ChannelOrchestratorTest {
     @Mock
     private YouTubeGateway gateway;
 
+    @Mock
+    private YouTubeThrottler throttler;
+
+    @Mock
+    private YouTubeCircuitBreaker circuitBreaker;
+
     private ChannelOrchestrator orchestrator;
 
     @BeforeEach
     void setUp() {
-        orchestrator = new ChannelOrchestrator(gateway);
+        // Pass null for throttler and circuitBreaker in most tests for backward compatibility
+        // The new batch validation tests will use the mocks
+        orchestrator = new ChannelOrchestrator(gateway, null, null);
     }
 
     @Nested
@@ -287,9 +295,9 @@ class ChannelOrchestratorTest {
         }
 
         @Test
-        @DisplayName("Should use gateway executor for batch operations")
+        @DisplayName("Deprecated batch method should still use gateway executor")
         void batchValidateChannels_usesExecutor() throws Exception {
-            // Arrange
+            // Arrange - deprecated methods still use concurrent execution
             when(gateway.runAsync(any())).thenAnswer(invocation -> {
                 Runnable runnable = invocation.getArgument(0);
                 runnable.run();
@@ -306,6 +314,23 @@ class ChannelOrchestratorTest {
             assertEquals(1, result.size());
             verify(gateway).runAsync(any());
         }
+
+        @Test
+        @DisplayName("WithDetails batch validation should process sequentially")
+        void batchValidateChannelsWithDetails_processesSequentially() throws Exception {
+            // Arrange
+            ChannelInfo channelInfo = mock(ChannelInfo.class);
+            when(channelInfo.getName()).thenReturn("Test Channel");
+            when(gateway.fetchChannelInfo(anyString())).thenReturn(channelInfo);
+
+            // Act
+            var result = orchestrator.batchValidateChannelsWithDetails(List.of("UC1", "UC2"));
+
+            // Assert - should call fetchChannelInfo directly (not via runAsync)
+            verify(gateway, times(2)).fetchChannelInfo(anyString());
+            verify(gateway, never()).runAsync(any()); // Should NOT use async
+            assertEquals(2, result.getValidCount());
+        }
     }
 
     @Nested
@@ -315,14 +340,7 @@ class ChannelOrchestratorTest {
         @Test
         @DisplayName("Should identify channel not found messages")
         void isNotFoundErrorMessage_channelNotFound() throws Exception {
-            // Arrange
-            when(gateway.runAsync(any())).thenAnswer(invocation -> {
-                Runnable runnable = invocation.getArgument(0);
-                runnable.run();
-                return CompletableFuture.completedFuture(null);
-            });
-
-            // Simulate "this channel does not exist" error
+            // Arrange - WithDetails methods use sequential processing (no runAsync)
             when(gateway.fetchChannelInfo("UC_notfound"))
                     .thenThrow(new ExtractionException("this channel does not exist"));
 
@@ -338,12 +356,6 @@ class ChannelOrchestratorTest {
         @DisplayName("Should identify video unavailable messages")
         void isNotFoundErrorMessage_videoUnavailable() throws Exception {
             // Arrange
-            when(gateway.runAsync(any())).thenAnswer(invocation -> {
-                Runnable runnable = invocation.getArgument(0);
-                runnable.run();
-                return CompletableFuture.completedFuture(null);
-            });
-
             when(gateway.fetchStreamInfo("video_unavailable"))
                     .thenThrow(new ExtractionException("this video is unavailable"));
 
@@ -358,12 +370,6 @@ class ChannelOrchestratorTest {
         @DisplayName("Should identify account terminated messages")
         void isNotFoundErrorMessage_accountTerminated() throws Exception {
             // Arrange
-            when(gateway.runAsync(any())).thenAnswer(invocation -> {
-                Runnable runnable = invocation.getArgument(0);
-                runnable.run();
-                return CompletableFuture.completedFuture(null);
-            });
-
             when(gateway.fetchChannelInfo("UC_terminated"))
                     .thenThrow(new ExtractionException("account has been terminated"));
 
@@ -377,14 +383,7 @@ class ChannelOrchestratorTest {
         @Test
         @DisplayName("Should NOT classify generic errors as notFound")
         void isNotFoundErrorMessage_genericError_shouldBeError() throws Exception {
-            // Arrange
-            when(gateway.runAsync(any())).thenAnswer(invocation -> {
-                Runnable runnable = invocation.getArgument(0);
-                runnable.run();
-                return CompletableFuture.completedFuture(null);
-            });
-
-            // Generic network error - should be treated as transient
+            // Arrange - generic network error should be treated as transient
             when(gateway.fetchChannelInfo("UC_network"))
                     .thenThrow(new ExtractionException("Connection timed out"));
 
@@ -399,14 +398,7 @@ class ChannelOrchestratorTest {
         @Test
         @DisplayName("Should NOT classify parser errors as notFound")
         void isNotFoundErrorMessage_parserError_shouldBeError() throws Exception {
-            // Arrange
-            when(gateway.runAsync(any())).thenAnswer(invocation -> {
-                Runnable runnable = invocation.getArgument(0);
-                runnable.run();
-                return CompletableFuture.completedFuture(null);
-            });
-
-            // Parser error - could be temporary due to YouTube changes
+            // Arrange - parser error could be temporary due to YouTube changes
             when(gateway.fetchChannelInfo("UC_parser"))
                     .thenThrow(new ExtractionException("Could not parse JSON response"));
 
