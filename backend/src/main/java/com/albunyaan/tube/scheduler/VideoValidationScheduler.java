@@ -1,19 +1,29 @@
 package com.albunyaan.tube.scheduler;
 
 import com.albunyaan.tube.config.CacheConfig;
+import com.albunyaan.tube.config.ValidationProperties;
 import com.albunyaan.tube.model.ValidationRun;
 import com.albunyaan.tube.service.ContentValidationService;
+import com.albunyaan.tube.service.YouTubeCircuitBreaker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.CacheManager;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 /**
  * Video Validation Scheduler
  *
- * Automatically validates videos 3 times per day to detect removed/unavailable content.
- * Runs at: 6:00 AM, 2:00 PM, and 10:00 PM UTC.
+ * Automatically validates videos according to configured schedule to detect removed/unavailable content.
+ * Default: Once daily at 6:00 AM UTC (configurable via app.validation.video.scheduler.cron).
+ *
+ * Safety features:
+ * - Can be disabled via app.validation.video.scheduler.enabled=false
+ * - Prevents concurrent runs (only one validation can run at a time)
+ * - Respects circuit breaker state (won't run if YouTube rate limiting detected)
+ * - Uses conservative batch sizes (configurable via app.validation.video.max-items-per-run)
  *
  * Uses ContentValidationService which implements conservative validation logic:
  * - VALID: Video confirmed to exist on YouTube
@@ -27,52 +37,84 @@ public class VideoValidationScheduler {
 
     private final ContentValidationService contentValidationService;
     private final CacheManager cacheManager;
+    private final ValidationProperties validationProperties;
+    private final YouTubeCircuitBreaker circuitBreaker;
 
-    public VideoValidationScheduler(ContentValidationService contentValidationService, CacheManager cacheManager) {
+    // Prevents concurrent runs
+    private final AtomicBoolean isRunning = new AtomicBoolean(false);
+
+    public VideoValidationScheduler(
+            ContentValidationService contentValidationService,
+            CacheManager cacheManager,
+            ValidationProperties validationProperties,
+            YouTubeCircuitBreaker circuitBreaker) {
         this.contentValidationService = contentValidationService;
         this.cacheManager = cacheManager;
+        this.validationProperties = validationProperties;
+        this.circuitBreaker = circuitBreaker;
+
+        logger.info("VideoValidationScheduler initialized - enabled: {}, cron: {}, maxItems: {}",
+                validationProperties.getVideo().getScheduler().isEnabled(),
+                validationProperties.getVideo().getScheduler().getCron(),
+                validationProperties.getVideo().getMaxItemsPerRun());
     }
 
     /**
-     * Morning validation run at 6:00 AM
+     * Scheduled validation run using configurable cron expression.
+     * Default: "0 0 6 * * ?" (6:00 AM UTC daily)
      */
-    @Scheduled(cron = "0 0 6 * * ?", zone = "UTC")
-    public void morningValidation() {
-        logger.info("Starting morning video validation at 6:00 AM UTC");
-        runValidation("morning");
-    }
-
-    /**
-     * Afternoon validation run at 2:00 PM
-     */
-    @Scheduled(cron = "0 0 14 * * ?", zone = "UTC")
-    public void afternoonValidation() {
-        logger.info("Starting afternoon video validation at 2:00 PM UTC");
-        runValidation("afternoon");
-    }
-
-    /**
-     * Evening validation run at 10:00 PM
-     */
-    @Scheduled(cron = "0 0 22 * * ?", zone = "UTC")
-    public void eveningValidation() {
-        logger.info("Starting evening video validation at 10:00 PM UTC");
-        runValidation("evening");
+    @Scheduled(cron = "${app.validation.video.scheduler.cron:0 0 6 * * ?}", zone = "UTC")
+    public void scheduledValidation() {
+        logger.info("Scheduled video validation triggered");
+        runValidation("scheduled");
     }
 
     /**
      * Common validation logic for all scheduled runs.
+     *
+     * Safety checks:
+     * 1. Scheduler must be enabled
+     * 2. Must not be currently running (prevents concurrent runs)
+     * 3. Circuit breaker must not be open (rate limiting cooldown)
+     *
      * Uses ContentValidationService.validateVideos() which implements conservative validation:
      * - Only marks videos as ARCHIVED when definitively not found on YouTube
      * - Treats transient errors as ERROR (video remains visible in app)
      */
     private void runValidation(String timeOfDay) {
+        // Check if scheduler is enabled
+        if (!validationProperties.getVideo().getScheduler().isEnabled()) {
+            logger.info("Video validation scheduler is DISABLED - skipping {} run", timeOfDay);
+            return;
+        }
+
+        // Check circuit breaker
+        if (circuitBreaker.isOpen()) {
+            YouTubeCircuitBreaker.CircuitBreakerStatus status = circuitBreaker.getStatus();
+            logger.warn("Video validation skipped - circuit breaker is OPEN. " +
+                        "YouTube rate limiting detected. Cooldown remaining: {} minutes. " +
+                        "Last error: {} - {}",
+                    status.getRemainingCooldownMs() / 60000,
+                    status.getLastErrorType(),
+                    status.getLastErrorMessage());
+            return;
+        }
+
+        // Prevent concurrent runs
+        if (!isRunning.compareAndSet(false, true)) {
+            logger.warn("Video validation skipped - a previous run is still in progress");
+            return;
+        }
+
         try {
+            int maxItems = validationProperties.getVideo().getMaxItemsPerRun();
+            logger.info("Starting {} video validation (max items: {})", timeOfDay, maxItems);
+
             ValidationRun result = contentValidationService.validateVideos(
                     ValidationRun.TRIGGER_SCHEDULED,
                     null,  // triggeredBy (null for scheduled runs)
                     "Video Validation Scheduler (" + timeOfDay + ")",
-                    null   // maxItems (use default)
+                    maxItems
             );
 
             logger.info("{} validation completed - Run ID: {}, Status: {}, Checked: {}, Archived: {}, Errors: {}",
@@ -95,6 +137,13 @@ public class VideoValidationScheduler {
 
         } catch (Exception e) {
             logger.error("{} video validation failed", timeOfDay, e);
+
+            // Check if this was a rate limit error
+            if (circuitBreaker.isRateLimitError(e)) {
+                circuitBreaker.recordRateLimitError(e);
+            }
+        } finally {
+            isRunning.set(false);
         }
     }
 
@@ -120,5 +169,65 @@ public class VideoValidationScheduler {
             logger.warn("Failed to evict caches after validation: {}", e.getMessage());
         }
     }
-}
 
+    /**
+     * Check if a validation run is currently in progress.
+     */
+    public boolean isRunning() {
+        return isRunning.get();
+    }
+
+    /**
+     * Manually trigger a validation run (for admin use).
+     * Respects the same safety checks as scheduled runs.
+     *
+     * @return true if validation was started, false if skipped
+     */
+    public boolean triggerManualRun() {
+        // Check circuit breaker first (before scheduler enabled check for manual runs)
+        if (circuitBreaker.isOpen()) {
+            logger.warn("Manual validation rejected - circuit breaker is OPEN");
+            return false;
+        }
+
+        if (!isRunning.compareAndSet(false, true)) {
+            logger.warn("Manual validation rejected - a run is already in progress");
+            return false;
+        }
+
+        try {
+            int maxItems = validationProperties.getVideo().getMaxItemsPerRun();
+            logger.info("Starting manual video validation (max items: {})", maxItems);
+
+            ValidationRun result = contentValidationService.validateVideos(
+                    ValidationRun.TRIGGER_MANUAL,
+                    null,
+                    "Manual Trigger",
+                    maxItems
+            );
+
+            logger.info("Manual validation completed - Run ID: {}, Status: {}, Checked: {}, Archived: {}, Errors: {}",
+                    result.getId(),
+                    result.getStatus(),
+                    result.getVideosChecked(),
+                    result.getVideosMarkedArchived(),
+                    result.getErrorCount()
+            );
+
+            if (ValidationRun.STATUS_COMPLETED.equals(result.getStatus())) {
+                evictPublicContentCaches();
+            }
+
+            return true;
+        } catch (Exception e) {
+            logger.error("Manual video validation failed", e);
+
+            if (circuitBreaker.isRateLimitError(e)) {
+                circuitBreaker.recordRateLimitError(e);
+            }
+            return false;
+        } finally {
+            isRunning.set(false);
+        }
+    }
+}
