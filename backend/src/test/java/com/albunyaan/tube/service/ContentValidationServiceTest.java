@@ -1,5 +1,6 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.config.ValidationProperties;
 import com.albunyaan.tube.dto.*;
 import com.albunyaan.tube.model.*;
 import com.albunyaan.tube.repository.*;
@@ -56,17 +57,23 @@ class ContentValidationServiceTest {
     @Mock
     private AuditLogService auditLogService;
 
+    private ValidationProperties validationProperties;
+
     private ContentValidationService service;
 
     @BeforeEach
     void setUp() {
+        validationProperties = new ValidationProperties();
+        validationProperties.getVideo().setMaxItemsPerRun(10); // Use small value for tests
+
         service = new ContentValidationService(
                 channelRepository,
                 playlistRepository,
                 videoRepository,
                 youtubeService,
                 auditLogService,
-                validationRunRepository
+                validationRunRepository,
+                validationProperties
         );
     }
 

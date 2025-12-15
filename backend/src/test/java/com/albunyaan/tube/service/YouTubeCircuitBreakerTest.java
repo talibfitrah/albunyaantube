@@ -28,7 +28,8 @@ class YouTubeCircuitBreakerTest {
     @BeforeEach
     void setUp() {
         validationProperties = createDefaultProperties();
-        circuitBreaker = new YouTubeCircuitBreaker(validationProperties);
+        // Pass null for SystemSettingsRepository in tests (no persistence)
+        circuitBreaker = new YouTubeCircuitBreaker(validationProperties, null);
     }
 
     private ValidationProperties createDefaultProperties() {
@@ -124,7 +125,7 @@ class YouTubeCircuitBreakerTest {
     void circuitShouldNotOpenWhenDisabled() {
         // Arrange
         validationProperties.getYoutube().getCircuitBreaker().setEnabled(false);
-        circuitBreaker = new YouTubeCircuitBreaker(validationProperties);
+        circuitBreaker = new YouTubeCircuitBreaker(validationProperties, null);
         Exception rateLimitError = new RuntimeException("Sign in to confirm you're not a bot");
 
         // Act
@@ -159,7 +160,7 @@ class YouTubeCircuitBreakerTest {
     void successShouldResetConsecutiveErrorCount() {
         // Arrange - configure to require 3 errors to open
         validationProperties.getYoutube().getCircuitBreaker().setMaxRateLimitErrorsToOpen(3);
-        circuitBreaker = new YouTubeCircuitBreaker(validationProperties);
+        circuitBreaker = new YouTubeCircuitBreaker(validationProperties, null);
 
         // Record 2 errors (not enough to open)
         circuitBreaker.recordRateLimitError(new RuntimeException("rate limit"));
