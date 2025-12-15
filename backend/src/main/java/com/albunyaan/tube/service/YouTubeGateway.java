@@ -26,10 +26,14 @@ import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * P2-T3: YouTube Gateway
@@ -150,6 +154,51 @@ public class YouTubeGateway {
         if (circuitBreaker != null && circuitBreaker.isRateLimitError(e)) {
             circuitBreaker.recordRateLimitError(e);
             logger.warn("Rate limit error detected, circuit breaker recording: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Execute an operation with probe timeout if this is a probe request.
+     * Probe requests (during HALF_OPEN state) use a shorter timeout to quickly
+     * determine if YouTube is responsive again.
+     */
+    private <T> T executeWithProbeTimeout(Callable<T> operation) throws IOException, ExtractionException {
+        // Check if this is a probe request
+        boolean isProbe = circuitBreaker != null && circuitBreaker.isProbeRequest();
+
+        if (!isProbe) {
+            // Not a probe - execute normally
+            try {
+                return operation.call();
+            } catch (IOException | ExtractionException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new IOException("Unexpected error during YouTube operation", e);
+            }
+        }
+
+        // Probe request - apply timeout
+        int timeoutSeconds = circuitBreaker.getProbeTimeoutSeconds();
+        logger.info("Executing probe request with {}s timeout", timeoutSeconds);
+
+        Future<T> future = executorService.submit(operation);
+        try {
+            return future.get(timeoutSeconds, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            throw new IOException("Probe request timed out after " + timeoutSeconds + " seconds");
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof IOException) {
+                throw (IOException) cause;
+            } else if (cause instanceof ExtractionException) {
+                throw (ExtractionException) cause;
+            } else {
+                throw new IOException("Probe request failed: " + cause.getMessage(), cause);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Probe request interrupted", e);
         }
     }
 
@@ -347,7 +396,7 @@ public class YouTubeGateway {
 
     /**
      * Fetch stream info by video ID.
-     * Applies throttling and circuit breaker protection.
+     * Applies throttling, circuit breaker protection, and probe timeout (for HALF_OPEN probes).
      */
     public StreamInfo fetchStreamInfo(String videoId) throws IOException, ExtractionException {
         checkCircuitBreaker();
@@ -355,7 +404,8 @@ public class YouTubeGateway {
 
         try {
             String url = streamLinkHandlerFactory.getUrl(videoId);
-            StreamInfo result = StreamInfo.getInfo(youtube, url);
+            // Use probe timeout wrapper for probe requests
+            StreamInfo result = executeWithProbeTimeout(() -> StreamInfo.getInfo(youtube, url));
             recordSuccess();
             return result;
         } catch (IOException | ExtractionException e) {

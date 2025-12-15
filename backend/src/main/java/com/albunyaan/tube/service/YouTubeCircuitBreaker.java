@@ -75,7 +75,10 @@ public class YouTubeCircuitBreaker {
     private final AtomicInteger backoffLevel = new AtomicInteger(0);
     private final AtomicLong version = new AtomicLong(0);
 
-    // Rolling window error tracking
+    // HALF_OPEN probe tracking: ensures only one request proceeds as probe
+    private final AtomicReference<Boolean> probeInProgress = new AtomicReference<>(false);
+
+    // Rolling window error tracking (timestamps stored in Firestore for multi-instance)
     private final List<Instant> recentErrors = new ArrayList<>();
     private final Object errorListLock = new Object();
 
@@ -201,10 +204,33 @@ public class YouTubeCircuitBreaker {
         if (totalOpens != null) {
             totalCircuitOpens.set(totalOpens.intValue());
         }
+
+        // Load rolling window errors for multi-instance coordination
+        @SuppressWarnings("unchecked")
+        List<Number> errorEpochs = (List<Number>) stateData.get("recentErrorEpochs");
+        if (errorEpochs != null) {
+            int windowMinutes = validationProperties.getYoutube().getCircuitBreaker()
+                    .getRollingWindow().getWindowMinutes();
+            Instant windowStart = Instant.now().minusSeconds(windowMinutes * 60L);
+
+            synchronized (errorListLock) {
+                recentErrors.clear();
+                for (Number epoch : errorEpochs) {
+                    if (epoch != null) {
+                        Instant errorTime = Instant.ofEpochMilli(epoch.longValue());
+                        // Only include errors within the window
+                        if (errorTime.isAfter(windowStart)) {
+                            recentErrors.add(errorTime);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /**
      * Persist current state to Firestore with optimistic locking.
+     * Uses version check to prevent concurrent update conflicts.
      * Returns true if persist succeeded, false otherwise.
      */
     private boolean persistState() {
@@ -214,6 +240,9 @@ public class YouTubeCircuitBreaker {
 
         for (int attempt = 0; attempt < MAX_OPTIMISTIC_LOCK_RETRIES; attempt++) {
             try {
+                long currentVersion = version.get();
+                long newVersion = currentVersion + 1;
+
                 Map<String, Object> stateData = new HashMap<>();
                 stateData.put("state", state.get().name());
 
@@ -227,39 +256,59 @@ public class YouTubeCircuitBreaker {
                 stateData.put("lastErrorAtEpoch", lastErr != null ? lastErr.toEpochMilli() : null);
 
                 stateData.put("backoffLevel", backoffLevel.get());
-                stateData.put("version", version.incrementAndGet());
+                stateData.put("version", newVersion);
                 stateData.put("lastErrorType", lastErrorType.get());
                 stateData.put("lastErrorMessage", lastErrorMessage.get());
                 stateData.put("totalRateLimitErrors", totalRateLimitErrors.get());
                 stateData.put("totalCircuitOpens", totalCircuitOpens.get());
                 stateData.put("lastUpdated", Instant.now().toEpochMilli());
 
-                systemSettingsRepository.save(SETTINGS_KEY, stateData);
-                persistenceAvailable.set(true);
-                logger.debug("Circuit breaker state persisted - state: {}, version: {}", state.get(), version.get());
-                return true;
+                // Persist rolling window errors for multi-instance coordination
+                synchronized (errorListLock) {
+                    List<Long> errorEpochs = new ArrayList<>();
+                    for (Instant errorTime : recentErrors) {
+                        errorEpochs.add(errorTime.toEpochMilli());
+                    }
+                    stateData.put("recentErrorEpochs", errorEpochs);
+                }
+
+                // Use version-checked save for optimistic locking
+                // Pass currentVersion (or -1 if version is 0, meaning new document)
+                boolean success = systemSettingsRepository.saveWithVersionCheck(
+                        SETTINGS_KEY, stateData, currentVersion == 0 ? -1 : currentVersion);
+
+                if (success) {
+                    version.set(newVersion);
+                    persistenceAvailable.set(true);
+                    logger.debug("Circuit breaker state persisted - state: {}, version: {}", state.get(), newVersion);
+                    return true;
+                }
+
+                // Version conflict - reload and retry
+                logger.debug("Version conflict on persist attempt {}, reloading state", attempt + 1);
+                refreshStateFromFirestore();
 
             } catch (Exception e) {
+                logger.warn("Persist attempt {} failed: {}", attempt + 1, e.getMessage());
                 if (attempt < MAX_OPTIMISTIC_LOCK_RETRIES - 1) {
-                    logger.debug("Persist attempt {} failed, retrying: {}", attempt + 1, e.getMessage());
                     // Reload state before retry
                     try {
                         refreshStateFromFirestore();
                     } catch (Exception refreshEx) {
                         logger.warn("Failed to refresh state before retry: {}", refreshEx.getMessage());
                     }
-                } else {
-                    logger.error("Failed to persist circuit breaker state after {} attempts: {}",
-                            MAX_OPTIMISTIC_LOCK_RETRIES, e.getMessage());
-                    persistenceAvailable.set(false);
                 }
             }
         }
+
+        logger.error("Failed to persist circuit breaker state after {} attempts", MAX_OPTIMISTIC_LOCK_RETRIES);
+        persistenceAvailable.set(false);
         return false;
     }
 
     /**
      * Refresh state from Firestore (for multi-instance coordination).
+     * Uses loadOrThrow to properly detect persistence failures.
      */
     private void refreshStateFromFirestore() {
         if (systemSettingsRepository == null) {
@@ -267,11 +316,12 @@ public class YouTubeCircuitBreaker {
         }
 
         try {
-            Optional<Map<String, Object>> data = systemSettingsRepository.load(SETTINGS_KEY);
+            // Use loadOrThrow to detect persistence failures
+            Optional<Map<String, Object>> data = systemSettingsRepository.loadOrThrow(SETTINGS_KEY);
             if (data.isPresent()) {
                 loadStateFromMap(data.get());
-                persistenceAvailable.set(true);
             }
+            persistenceAvailable.set(true);
         } catch (Exception e) {
             logger.warn("Failed to refresh circuit breaker state: {}", e.getMessage());
             persistenceAvailable.set(false);
@@ -320,9 +370,14 @@ public class YouTubeCircuitBreaker {
 
             case HALF_OPEN:
                 // In HALF_OPEN, we allow exactly one probe request
-                // The first caller gets through, subsequent ones are blocked
-                // This is handled by allowProbe()
-                return false;
+                // Use atomic CAS to ensure only one caller proceeds
+                if (probeInProgress.compareAndSet(false, true)) {
+                    logger.info("HALF_OPEN: Allowing single probe request");
+                    return false; // Allow this one probe
+                }
+                // Another probe is already in progress
+                logger.debug("HALF_OPEN: Probe already in progress, blocking request");
+                return true;
 
             default:
                 return true;
@@ -337,6 +392,25 @@ public class YouTubeCircuitBreaker {
      */
     public boolean allowProbe() {
         return state.get() == State.HALF_OPEN;
+    }
+
+    /**
+     * Check if the current request is a probe (circuit is in HALF_OPEN and probe is in progress).
+     * Used by gateway to apply probe timeout.
+     *
+     * @return true if this is a probe request
+     */
+    public boolean isProbeRequest() {
+        return state.get() == State.HALF_OPEN && probeInProgress.get();
+    }
+
+    /**
+     * Get the configured probe timeout in seconds.
+     *
+     * @return probe timeout in seconds
+     */
+    public int getProbeTimeoutSeconds() {
+        return validationProperties.getYoutube().getCircuitBreaker().getProbeTimeoutSeconds();
     }
 
     /**
@@ -430,8 +504,9 @@ public class YouTubeCircuitBreaker {
         State currentState = state.get();
 
         if (currentState == State.HALF_OPEN) {
-            // Probe succeeded - close the circuit
+            // Probe succeeded - close the circuit and reset probe flag
             logger.info("Circuit breaker probe succeeded - transitioning to CLOSED");
+            probeInProgress.set(false);
             closeCircuit();
             return;
         }
@@ -504,6 +579,9 @@ public class YouTubeCircuitBreaker {
      * Reopen circuit after failed HALF_OPEN probe with increased backoff.
      */
     private void reopenWithIncreasedBackoff() {
+        // Reset probe flag first
+        probeInProgress.set(false);
+
         // Increment backoff level (capped at max)
         int newLevel = Math.min(backoffLevel.incrementAndGet(), COOLDOWN_BY_LEVEL.length - 1);
         backoffLevel.set(newLevel);
@@ -548,18 +626,26 @@ public class YouTubeCircuitBreaker {
 
     /**
      * Get cooldown duration in minutes for a given backoff level.
+     * Uses the COOLDOWN_BY_LEVEL array for the specified backoff schedule:
+     * Level 0: 1 hour (60 min)
+     * Level 1: 6 hours (360 min)
+     * Level 2: 12 hours (720 min)
+     * Level 3: 24 hours (1440 min)
+     * Level 4: 48 hours (2880 min) - cap
      */
     private int getCooldownMinutesForLevel(int level) {
-        int baseMinutes = validationProperties.getYoutube().getCircuitBreaker().getCooldownBaseMinutes();
         int maxMinutes = validationProperties.getYoutube().getCircuitBreaker().getCooldownMaxMinutes();
 
-        if (level >= COOLDOWN_BY_LEVEL.length) {
+        // Clamp level to valid range
+        if (level < 0) {
+            level = 0;
+        } else if (level >= COOLDOWN_BY_LEVEL.length) {
             level = COOLDOWN_BY_LEVEL.length - 1;
         }
 
-        // Use configured base and scale by level
-        int calculatedMinutes = baseMinutes * (int) Math.pow(2, level);
-        return Math.min(calculatedMinutes, maxMinutes);
+        // Use the predefined backoff schedule
+        int cooldownMinutes = COOLDOWN_BY_LEVEL[level];
+        return Math.min(cooldownMinutes, maxMinutes);
     }
 
     /**
