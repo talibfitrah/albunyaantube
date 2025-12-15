@@ -9,9 +9,10 @@ import com.albunyaan.tube.service.YouTubeCircuitBreaker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.CacheManager;
-import org.springframework.lang.Nullable;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+
+import jakarta.annotation.PreDestroy;
 
 import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
@@ -86,6 +87,25 @@ public class VideoValidationScheduler {
                 validationProperties.getVideo().getScheduler().getCron(),
                 validationProperties.getVideo().getMaxItemsPerRun(),
                 instanceId);
+    }
+
+    /**
+     * Cleanup resources on application shutdown.
+     * Shuts down the heartbeat executor gracefully.
+     */
+    @PreDestroy
+    public void shutdown() {
+        logger.info("Shutting down VideoValidationScheduler heartbeat executor");
+        heartbeatExecutor.shutdown();
+        try {
+            if (!heartbeatExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                heartbeatExecutor.shutdownNow();
+                logger.warn("Heartbeat executor did not terminate gracefully, forced shutdown");
+            }
+        } catch (InterruptedException e) {
+            heartbeatExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 
     /**

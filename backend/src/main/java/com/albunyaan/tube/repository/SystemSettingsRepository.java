@@ -87,9 +87,24 @@ public class SystemSettingsRepository {
     }
 
     // ==================== Distributed Locking ====================
+    //
+    // Implementation notes:
+    // - Locks are stored in system_settings collection with "lock_" prefix
+    // - Uses client-side timestamps (System.currentTimeMillis()) for TTL
+    // - Lock orphan risk: If JVM crashes while holding a lock, the lock remains
+    //   until TTL expires. Callers should use a heartbeat mechanism to extend
+    //   the lock during long operations, and set a reasonable TTL (e.g., 10 min)
+    //   that balances recovery time vs. heartbeat frequency.
 
     /**
      * Try to acquire a distributed lock. Uses Firestore transactions to ensure atomicity.
+     *
+     * <p>If the lock is already held by another instance and not expired, returns false.
+     * If the lock is held by this instance, it extends the TTL (heartbeat pattern).
+     * If the lock is expired or doesn't exist, it acquires the lock.</p>
+     *
+     * <p><b>Lock orphan handling:</b> If the holder crashes without releasing the lock,
+     * the lock auto-expires after ttlSeconds. Use a heartbeat to extend during long operations.</p>
      *
      * @param lockKey The lock identifier
      * @param instanceId Unique ID of this instance (e.g., hostname + pid)
