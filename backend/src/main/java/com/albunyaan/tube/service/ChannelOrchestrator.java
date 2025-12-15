@@ -453,10 +453,12 @@ public class ChannelOrchestrator {
 
         // Check circuit breaker before starting
         if (circuitBreaker != null && circuitBreaker.isOpen()) {
-            logger.warn("Batch channel validation skipped - circuit breaker is OPEN");
-            // Mark all as errors due to circuit breaker
+            logger.warn("Batch channel validation skipped - circuit breaker is OPEN. " +
+                        "Marking {} items as SKIPPED (will retry on next run).", youtubeIds.size());
+            // Mark all as SKIPPED (not errors) - they should NOT have status/lastValidatedAt updated
+            // This preserves their position in the retry queue
             for (String id : youtubeIds) {
-                result.addError(id, "Circuit breaker open - YouTube rate limiting detected");
+                result.addSkipped(id);
             }
             return result;
         }
@@ -593,9 +595,11 @@ public class ChannelOrchestrator {
 
         // Check circuit breaker before starting
         if (circuitBreaker != null && circuitBreaker.isOpen()) {
-            logger.warn("Batch playlist validation skipped - circuit breaker is OPEN");
+            logger.warn("Batch playlist validation skipped - circuit breaker is OPEN. " +
+                        "Marking {} items as SKIPPED (will retry on next run).", youtubeIds.size());
+            // Mark all as SKIPPED (not errors) - they should NOT have status/lastValidatedAt updated
             for (String id : youtubeIds) {
-                result.addError(id, "Circuit breaker open - YouTube rate limiting detected");
+                result.addSkipped(id);
             }
             return result;
         }
@@ -720,9 +724,11 @@ public class ChannelOrchestrator {
 
         // Check circuit breaker before starting
         if (circuitBreaker != null && circuitBreaker.isOpen()) {
-            logger.warn("Batch video validation skipped - circuit breaker is OPEN");
+            logger.warn("Batch video validation skipped - circuit breaker is OPEN. " +
+                        "Marking {} items as SKIPPED (will retry on next run).", youtubeIds.size());
+            // Mark all as SKIPPED (not errors) - they should NOT have status/lastValidatedAt updated
             for (String id : youtubeIds) {
-                result.addError(id, "Circuit breaker open - YouTube rate limiting detected");
+                result.addSkipped(id);
             }
             return result;
         }
@@ -1015,9 +1021,10 @@ public class ChannelOrchestrator {
         rawResult.getValid().forEach((id, info) ->
                 dtoResult.addValid(id, mapToChannelDetailsDto(info)));
 
-        // Copy notFound and error sets
+        // Copy notFound, error, and skipped sets
         rawResult.getNotFound().forEach(dtoResult::addNotFound);
         rawResult.getErrorMessages().forEach(dtoResult::addError);
+        rawResult.getSkipped().forEach(dtoResult::addSkipped);
 
         return dtoResult;
     }
@@ -1037,9 +1044,10 @@ public class ChannelOrchestrator {
         rawResult.getValid().forEach((id, info) ->
                 dtoResult.addValid(id, mapToPlaylistDetailsDto(info)));
 
-        // Copy notFound and error sets
+        // Copy notFound, error, and skipped sets
         rawResult.getNotFound().forEach(dtoResult::addNotFound);
         rawResult.getErrorMessages().forEach(dtoResult::addError);
+        rawResult.getSkipped().forEach(dtoResult::addSkipped);
 
         return dtoResult;
     }
@@ -1059,9 +1067,10 @@ public class ChannelOrchestrator {
         rawResult.getValid().forEach((id, info) ->
                 dtoResult.addValid(id, mapToStreamDetailsDto(info)));
 
-        // Copy notFound and error sets
+        // Copy notFound, error, and skipped sets
         rawResult.getNotFound().forEach(dtoResult::addNotFound);
         rawResult.getErrorMessages().forEach(dtoResult::addError);
+        rawResult.getSkipped().forEach(dtoResult::addSkipped);
 
         return dtoResult;
     }
