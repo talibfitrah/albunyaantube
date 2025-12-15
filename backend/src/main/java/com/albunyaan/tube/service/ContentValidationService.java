@@ -416,10 +416,20 @@ public class ContentValidationService {
         List<String> archivedChannelIds = new ArrayList<>();
         List<String> errorChannelIds = new ArrayList<>();
 
+        int skippedCount = 0;
         for (Channel channel : channelsToValidate) {
             try {
-                run.incrementChannelsChecked();
                 String youtubeId = channel.getYoutubeId();
+
+                // Check if item was skipped (circuit breaker opened mid-batch or at start)
+                // Skipped items should NOT have their status/lastValidatedAt updated
+                if (validationResult.isSkipped(youtubeId)) {
+                    skippedCount++;
+                    logger.debug("Channel {} was skipped (circuit breaker) - will retry on next run", youtubeId);
+                    continue; // Do NOT increment checked counter or update status
+                }
+
+                run.incrementChannelsChecked();
 
                 if (validationResult.isValid(youtubeId)) {
                     // Channel exists on YouTube - mark as VALID and refresh metadata
@@ -487,6 +497,9 @@ public class ContentValidationService {
         if (!errorChannelIds.isEmpty()) {
             run.addDetail("errorChannelIds", errorChannelIds);
         }
+        if (skippedCount > 0) {
+            run.addDetail("skippedChannelsCount", skippedCount);
+        }
     }
 
     private void validatePlaylistsInternal(ValidationRun run, String actorName, int limit)
@@ -516,10 +529,20 @@ public class ContentValidationService {
         List<String> archivedPlaylistIds = new ArrayList<>();
         List<String> errorPlaylistIds = new ArrayList<>();
 
+        int skippedCount = 0;
         for (Playlist playlist : playlistsToValidate) {
             try {
-                run.incrementPlaylistsChecked();
                 String youtubeId = playlist.getYoutubeId();
+
+                // Check if item was skipped (circuit breaker opened mid-batch or at start)
+                // Skipped items should NOT have their status/lastValidatedAt updated
+                if (validationResult.isSkipped(youtubeId)) {
+                    skippedCount++;
+                    logger.debug("Playlist {} was skipped (circuit breaker) - will retry on next run", youtubeId);
+                    continue; // Do NOT increment checked counter or update status
+                }
+
+                run.incrementPlaylistsChecked();
 
                 if (validationResult.isValid(youtubeId)) {
                     // Playlist exists on YouTube - mark as VALID and refresh metadata
@@ -587,6 +610,9 @@ public class ContentValidationService {
         if (!errorPlaylistIds.isEmpty()) {
             run.addDetail("errorPlaylistIds", errorPlaylistIds);
         }
+        if (skippedCount > 0) {
+            run.addDetail("skippedPlaylistsCount", skippedCount);
+        }
     }
 
     private void validateVideosInternal(ValidationRun run, String actorName, int limit)
@@ -616,10 +642,20 @@ public class ContentValidationService {
         List<String> archivedVideoIds = new ArrayList<>();
         List<String> errorVideoIds = new ArrayList<>();
 
+        int skippedCount = 0;
         for (Video video : videosToValidate) {
             try {
-                run.incrementVideosChecked();
                 String youtubeId = video.getYoutubeId();
+
+                // Check if item was skipped (circuit breaker opened mid-batch or at start)
+                // Skipped items should NOT have their status/lastValidatedAt updated
+                if (validationResult.isSkipped(youtubeId)) {
+                    skippedCount++;
+                    logger.debug("Video {} was skipped (circuit breaker) - will retry on next run", youtubeId);
+                    continue; // Do NOT increment checked counter or update status
+                }
+
+                run.incrementVideosChecked();
 
                 if (validationResult.isValid(youtubeId)) {
                     // Video exists on YouTube - mark as VALID and refresh metadata
@@ -686,6 +722,9 @@ public class ContentValidationService {
         }
         if (!errorVideoIds.isEmpty()) {
             run.addDetail("errorVideoIds", errorVideoIds);
+        }
+        if (skippedCount > 0) {
+            run.addDetail("skippedVideosCount", skippedCount);
         }
     }
 
