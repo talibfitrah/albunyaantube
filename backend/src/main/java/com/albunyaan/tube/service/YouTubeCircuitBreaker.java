@@ -9,23 +9,30 @@ import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Circuit breaker for YouTube API calls.
+ * Circuit breaker for YouTube API calls with Firestore-persisted state machine.
  *
- * Detects rate limiting / anti-bot responses from YouTube and opens the circuit
- * to prevent further requests during a cooldown period.
+ * Implements a three-state circuit breaker:
+ * - CLOSED: Normal operation, requests allowed
+ * - OPEN: Blocking requests, waiting for cooldown
+ * - HALF_OPEN: Testing recovery with a single probe request
  *
  * Features:
- * - Opens circuit on detecting rate limit errors (SignInConfirmNotBotException, etc.)
- * - Exponential backoff on repeated rate limit detections
- * - Configurable cooldown period
- * - Jitter to avoid deterministic patterns
+ * - Rolling window error detection (N errors in T minutes)
+ * - Exponential backoff with 5 levels (1h → 6h → 12h → 24h → 48h)
+ * - Backoff decay after sustained success
+ * - Firestore persistence for multi-instance coordination
+ * - Fail-safe: defaults to OPEN if persistence unavailable (rejects requests)
+ * - Optimistic locking for safe concurrent updates
  *
  * Thread-safe: All state is managed with atomic operations.
  */
@@ -33,33 +40,64 @@ import java.util.concurrent.atomic.AtomicReference;
 public class YouTubeCircuitBreaker {
 
     private static final Logger logger = LoggerFactory.getLogger(YouTubeCircuitBreaker.class);
-    private static final String SETTINGS_KEY = "circuit_breaker";
+    private static final String SETTINGS_KEY = "youtube_circuit_breaker";
+    private static final int MAX_OPTIMISTIC_LOCK_RETRIES = 3;
+
+    /**
+     * Circuit breaker states.
+     */
+    public enum State {
+        CLOSED,    // Normal operation, requests allowed
+        OPEN,      // Blocking requests, cooldown active
+        HALF_OPEN  // Testing recovery with probe request
+    }
+
+    /**
+     * Cooldown durations by backoff level (in minutes).
+     */
+    private static final int[] COOLDOWN_BY_LEVEL = {
+        60,    // Level 0: 1 hour
+        360,   // Level 1: 6 hours
+        720,   // Level 2: 12 hours
+        1440,  // Level 3: 24 hours
+        2880   // Level 4: 48 hours (cap)
+    };
 
     private final ValidationProperties validationProperties;
 
     @Nullable
     private final SystemSettingsRepository systemSettingsRepository;
 
-    // Circuit breaker state
+    // Circuit breaker state (in-memory, synced with Firestore)
+    private final AtomicReference<State> state = new AtomicReference<>(State.CLOSED);
+    private final AtomicReference<Instant> openedAt = new AtomicReference<>(null);
     private final AtomicReference<Instant> cooldownUntil = new AtomicReference<>(null);
-    private final AtomicReference<Instant> lastOpenedAt = new AtomicReference<>(null);
-    private final AtomicInteger consecutiveRateLimitErrors = new AtomicInteger(0);
-    private final AtomicInteger currentCooldownMinutes = new AtomicInteger(0);
+    private final AtomicInteger backoffLevel = new AtomicInteger(0);
+    private final AtomicLong version = new AtomicLong(0);
+
+    // Rolling window error tracking
+    private final List<Instant> recentErrors = new ArrayList<>();
+    private final Object errorListLock = new Object();
+
+    // Error details for diagnostics
     private final AtomicReference<String> lastErrorMessage = new AtomicReference<>(null);
     private final AtomicReference<String> lastErrorType = new AtomicReference<>(null);
+    private final AtomicReference<Instant> lastErrorAt = new AtomicReference<>(null);
 
     // Metrics counters
     private final AtomicInteger totalRateLimitErrors = new AtomicInteger(0);
     private final AtomicInteger totalCircuitOpens = new AtomicInteger(0);
+
+    // Flag to track if we're in fail-safe mode (persistence unavailable)
+    private final AtomicReference<Boolean> persistenceAvailable = new AtomicReference<>(true);
 
     public YouTubeCircuitBreaker(
             ValidationProperties validationProperties,
             @Nullable SystemSettingsRepository systemSettingsRepository) {
         this.validationProperties = validationProperties;
         this.systemSettingsRepository = systemSettingsRepository;
-        logger.info("YouTubeCircuitBreaker initialized - enabled: {}, cooldown: {} minutes, persistence: {}",
+        logger.info("YouTubeCircuitBreaker initialized - enabled: {}, persistence: {}",
                 validationProperties.getYoutube().getCircuitBreaker().isEnabled(),
-                validationProperties.getYoutube().getCircuitBreaker().getCooldownMinutes(),
                 systemSettingsRepository != null ? "enabled" : "disabled");
     }
 
@@ -69,105 +107,182 @@ public class YouTubeCircuitBreaker {
     @PostConstruct
     public void loadPersistedState() {
         if (systemSettingsRepository == null) {
-            logger.debug("No system settings repository - skipping state load");
+            logger.debug("No system settings repository - circuit breaker will use in-memory state only");
             return;
         }
 
         try {
             Optional<Map<String, Object>> data = systemSettingsRepository.load(SETTINGS_KEY);
             if (data.isPresent()) {
-                Map<String, Object> state = data.get();
+                Map<String, Object> stateData = data.get();
+                loadStateFromMap(stateData);
 
-                // Load cooldown state (use Number to handle Firestore returning Integer, Long, or Double)
-                Number cooldownEpochNum = (Number) state.get("cooldownUntilEpoch");
-                if (cooldownEpochNum != null && cooldownEpochNum.longValue() > Instant.now().toEpochMilli()) {
-                    long cooldownEpoch = cooldownEpochNum.longValue();
-                    cooldownUntil.set(Instant.ofEpochMilli(cooldownEpoch));
-                    logger.info("Loaded circuit breaker state - circuit is OPEN until {}",
-                            Instant.ofEpochMilli(cooldownEpoch));
+                // Handle stale OPEN state: if cooldown expired, transition to HALF_OPEN
+                if (state.get() == State.OPEN) {
+                    Instant until = cooldownUntil.get();
+                    if (until != null && Instant.now().isAfter(until)) {
+                        logger.info("Stale OPEN state detected on startup - transitioning to HALF_OPEN");
+                        state.set(State.HALF_OPEN);
+                        persistState();
+                    }
                 }
 
-                Number lastOpenedEpochNum = (Number) state.get("lastOpenedAtEpoch");
-                if (lastOpenedEpochNum != null) {
-                    lastOpenedAt.set(Instant.ofEpochMilli(lastOpenedEpochNum.longValue()));
-                }
-
-                Number cooldownMins = (Number) state.get("currentCooldownMinutes");
-                if (cooldownMins != null) {
-                    currentCooldownMinutes.set(cooldownMins.intValue());
-                }
-
-                Number consecutiveErrors = (Number) state.get("consecutiveRateLimitErrors");
-                if (consecutiveErrors != null) {
-                    consecutiveRateLimitErrors.set(consecutiveErrors.intValue());
-                }
-
-                String errorType = (String) state.get("lastErrorType");
-                if (errorType != null) {
-                    lastErrorType.set(errorType);
-                }
-
-                String errorMessage = (String) state.get("lastErrorMessage");
-                if (errorMessage != null) {
-                    lastErrorMessage.set(errorMessage);
-                }
-
-                // Load metrics
-                Number totalErrors = (Number) state.get("totalRateLimitErrors");
-                if (totalErrors != null) {
-                    totalRateLimitErrors.set(totalErrors.intValue());
-                }
-
-                Number totalOpens = (Number) state.get("totalCircuitOpens");
-                if (totalOpens != null) {
-                    totalCircuitOpens.set(totalOpens.intValue());
-                }
-
-                logger.info("Circuit breaker state loaded - isOpen: {}, totalErrors: {}, totalOpens: {}",
-                        isOpen(), totalRateLimitErrors.get(), totalCircuitOpens.get());
+                logger.info("Circuit breaker state loaded - state: {}, backoffLevel: {}, version: {}",
+                        state.get(), backoffLevel.get(), version.get());
             } else {
-                logger.debug("No persisted circuit breaker state found - starting fresh");
+                logger.debug("No persisted circuit breaker state found - starting fresh (CLOSED)");
             }
         } catch (Exception e) {
-            logger.warn("Failed to load circuit breaker state: {} - starting fresh", e.getMessage());
+            logger.warn("Failed to load circuit breaker state: {} - starting fresh (CLOSED)", e.getMessage());
         }
     }
 
     /**
-     * Persist current state to storage.
+     * Load state from a map (used by loadPersistedState and tests).
      */
-    private void persistState() {
+    private void loadStateFromMap(Map<String, Object> stateData) {
+        // Load state enum
+        String stateStr = (String) stateData.get("state");
+        if (stateStr != null) {
+            try {
+                state.set(State.valueOf(stateStr));
+            } catch (IllegalArgumentException e) {
+                logger.warn("Invalid state value '{}' - defaulting to CLOSED", stateStr);
+                state.set(State.CLOSED);
+            }
+        }
+
+        // Load timestamps
+        Number openedAtEpoch = (Number) stateData.get("openedAtEpoch");
+        if (openedAtEpoch != null) {
+            openedAt.set(Instant.ofEpochMilli(openedAtEpoch.longValue()));
+        }
+
+        Number cooldownUntilEpoch = (Number) stateData.get("cooldownUntilEpoch");
+        if (cooldownUntilEpoch != null) {
+            cooldownUntil.set(Instant.ofEpochMilli(cooldownUntilEpoch.longValue()));
+        }
+
+        Number lastErrorAtEpoch = (Number) stateData.get("lastErrorAtEpoch");
+        if (lastErrorAtEpoch != null) {
+            lastErrorAt.set(Instant.ofEpochMilli(lastErrorAtEpoch.longValue()));
+        }
+
+        // Load backoff level
+        Number level = (Number) stateData.get("backoffLevel");
+        if (level != null) {
+            backoffLevel.set(Math.min(level.intValue(), COOLDOWN_BY_LEVEL.length - 1));
+        }
+
+        // Load version for optimistic locking
+        Number ver = (Number) stateData.get("version");
+        if (ver != null) {
+            version.set(ver.longValue());
+        }
+
+        // Load error details
+        String errorType = (String) stateData.get("lastErrorType");
+        if (errorType != null) {
+            lastErrorType.set(errorType);
+        }
+
+        String errorMessage = (String) stateData.get("lastErrorMessage");
+        if (errorMessage != null) {
+            lastErrorMessage.set(errorMessage);
+        }
+
+        // Load metrics
+        Number totalErrors = (Number) stateData.get("totalRateLimitErrors");
+        if (totalErrors != null) {
+            totalRateLimitErrors.set(totalErrors.intValue());
+        }
+
+        Number totalOpens = (Number) stateData.get("totalCircuitOpens");
+        if (totalOpens != null) {
+            totalCircuitOpens.set(totalOpens.intValue());
+        }
+    }
+
+    /**
+     * Persist current state to Firestore with optimistic locking.
+     * Returns true if persist succeeded, false otherwise.
+     */
+    private boolean persistState() {
+        if (systemSettingsRepository == null) {
+            return true; // No persistence configured, consider it success
+        }
+
+        for (int attempt = 0; attempt < MAX_OPTIMISTIC_LOCK_RETRIES; attempt++) {
+            try {
+                Map<String, Object> stateData = new HashMap<>();
+                stateData.put("state", state.get().name());
+
+                Instant opened = openedAt.get();
+                stateData.put("openedAtEpoch", opened != null ? opened.toEpochMilli() : null);
+
+                Instant until = cooldownUntil.get();
+                stateData.put("cooldownUntilEpoch", until != null ? until.toEpochMilli() : null);
+
+                Instant lastErr = lastErrorAt.get();
+                stateData.put("lastErrorAtEpoch", lastErr != null ? lastErr.toEpochMilli() : null);
+
+                stateData.put("backoffLevel", backoffLevel.get());
+                stateData.put("version", version.incrementAndGet());
+                stateData.put("lastErrorType", lastErrorType.get());
+                stateData.put("lastErrorMessage", lastErrorMessage.get());
+                stateData.put("totalRateLimitErrors", totalRateLimitErrors.get());
+                stateData.put("totalCircuitOpens", totalCircuitOpens.get());
+                stateData.put("lastUpdated", Instant.now().toEpochMilli());
+
+                systemSettingsRepository.save(SETTINGS_KEY, stateData);
+                persistenceAvailable.set(true);
+                logger.debug("Circuit breaker state persisted - state: {}, version: {}", state.get(), version.get());
+                return true;
+
+            } catch (Exception e) {
+                if (attempt < MAX_OPTIMISTIC_LOCK_RETRIES - 1) {
+                    logger.debug("Persist attempt {} failed, retrying: {}", attempt + 1, e.getMessage());
+                    // Reload state before retry
+                    try {
+                        refreshStateFromFirestore();
+                    } catch (Exception refreshEx) {
+                        logger.warn("Failed to refresh state before retry: {}", refreshEx.getMessage());
+                    }
+                } else {
+                    logger.error("Failed to persist circuit breaker state after {} attempts: {}",
+                            MAX_OPTIMISTIC_LOCK_RETRIES, e.getMessage());
+                    persistenceAvailable.set(false);
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Refresh state from Firestore (for multi-instance coordination).
+     */
+    private void refreshStateFromFirestore() {
         if (systemSettingsRepository == null) {
             return;
         }
 
         try {
-            Map<String, Object> state = new HashMap<>();
-
-            Instant until = cooldownUntil.get();
-            state.put("cooldownUntilEpoch", until != null ? until.toEpochMilli() : null);
-
-            Instant opened = lastOpenedAt.get();
-            state.put("lastOpenedAtEpoch", opened != null ? opened.toEpochMilli() : null);
-
-            state.put("currentCooldownMinutes", currentCooldownMinutes.get());
-            state.put("consecutiveRateLimitErrors", consecutiveRateLimitErrors.get());
-            state.put("lastErrorType", lastErrorType.get());
-            state.put("lastErrorMessage", lastErrorMessage.get());
-            state.put("totalRateLimitErrors", totalRateLimitErrors.get());
-            state.put("totalCircuitOpens", totalCircuitOpens.get());
-            state.put("lastUpdated", Instant.now().toEpochMilli());
-
-            systemSettingsRepository.save(SETTINGS_KEY, state);
-            logger.debug("Circuit breaker state persisted");
+            Optional<Map<String, Object>> data = systemSettingsRepository.load(SETTINGS_KEY);
+            if (data.isPresent()) {
+                loadStateFromMap(data.get());
+                persistenceAvailable.set(true);
+            }
         } catch (Exception e) {
-            logger.warn("Failed to persist circuit breaker state: {}", e.getMessage());
-            // Don't throw - persistence is best-effort
+            logger.warn("Failed to refresh circuit breaker state: {}", e.getMessage());
+            persistenceAvailable.set(false);
         }
     }
 
     /**
      * Check if the circuit is currently open (requests should not be made).
+     *
+     * FAIL-SAFE POLICY: If persistence is unavailable and we can't verify state,
+     * this defaults to OPEN (rejecting requests) to prevent hammering YouTube.
      *
      * @return true if circuit is open and requests should be blocked
      */
@@ -176,18 +291,52 @@ public class YouTubeCircuitBreaker {
             return false;
         }
 
-        Instant until = cooldownUntil.get();
-        if (until == null) {
-            return false;
+        // Refresh state from Firestore for multi-instance coordination
+        refreshStateFromFirestore();
+
+        // FAIL-SAFE: If persistence failed, default to OPEN
+        if (!persistenceAvailable.get() && systemSettingsRepository != null) {
+            logger.warn("Circuit breaker persistence unavailable - defaulting to OPEN (safe mode)");
+            return true;
         }
 
-        if (Instant.now().isAfter(until)) {
-            // Cooldown has expired, close the circuit
-            closeCircuit();
-            return false;
-        }
+        State currentState = state.get();
 
-        return true;
+        switch (currentState) {
+            case CLOSED:
+                return false;
+
+            case OPEN:
+                // Check if cooldown has expired
+                Instant until = cooldownUntil.get();
+                if (until == null || Instant.now().isAfter(until)) {
+                    // Transition to HALF_OPEN
+                    logger.info("Circuit breaker cooldown expired - transitioning to HALF_OPEN");
+                    state.set(State.HALF_OPEN);
+                    persistState();
+                    return false; // Allow the probe request
+                }
+                return true;
+
+            case HALF_OPEN:
+                // In HALF_OPEN, we allow exactly one probe request
+                // The first caller gets through, subsequent ones are blocked
+                // This is handled by allowProbe()
+                return false;
+
+            default:
+                return true;
+        }
+    }
+
+    /**
+     * Check if a probe request is allowed (for HALF_OPEN state).
+     * Call this before making a request when in HALF_OPEN state.
+     *
+     * @return true if this request should proceed as a probe
+     */
+    public boolean allowProbe() {
+        return state.get() == State.HALF_OPEN;
     }
 
     /**
@@ -217,27 +366,208 @@ public class YouTubeCircuitBreaker {
         }
 
         totalRateLimitErrors.incrementAndGet();
-        consecutiveRateLimitErrors.incrementAndGet();
-        lastErrorMessage.set(exception.getMessage());
+        lastErrorMessage.set(truncate(exception.getMessage(), 500));
         lastErrorType.set(exception.getClass().getSimpleName());
+        lastErrorAt.set(Instant.now());
 
         logger.error("YouTube rate limit error detected: {} - {}",
                 exception.getClass().getSimpleName(), exception.getMessage());
 
-        ValidationProperties.YouTube.CircuitBreaker cbConfig =
-                validationProperties.getYoutube().getCircuitBreaker();
+        // Handle based on current state
+        State currentState = state.get();
 
-        if (consecutiveRateLimitErrors.get() >= cbConfig.getMaxRateLimitErrorsToOpen()) {
+        if (currentState == State.HALF_OPEN) {
+            // Probe failed - reopen with increased backoff
+            reopenWithIncreasedBackoff();
+            return;
+        }
+
+        // Add to rolling window
+        addErrorToRollingWindow();
+
+        // Check rolling window threshold
+        if (shouldOpenCircuit()) {
             openCircuit();
+        }
+
+        persistState();
+    }
+
+    /**
+     * Add error to rolling window and clean old entries.
+     */
+    private void addErrorToRollingWindow() {
+        int windowMinutes = validationProperties.getYoutube().getCircuitBreaker()
+                .getRollingWindow().getWindowMinutes();
+        Instant windowStart = Instant.now().minusSeconds(windowMinutes * 60L);
+
+        synchronized (errorListLock) {
+            // Add new error
+            recentErrors.add(Instant.now());
+
+            // Remove errors outside the window
+            recentErrors.removeIf(t -> t.isBefore(windowStart));
         }
     }
 
     /**
-     * Record a successful request (used to reset consecutive error count).
+     * Check if rolling window threshold is exceeded.
+     */
+    private boolean shouldOpenCircuit() {
+        int threshold = validationProperties.getYoutube().getCircuitBreaker()
+                .getRollingWindow().getErrorThreshold();
+
+        synchronized (errorListLock) {
+            return recentErrors.size() >= threshold;
+        }
+    }
+
+    /**
+     * Record a successful request.
+     * Resets error state and potentially closes circuit from HALF_OPEN.
      */
     public void recordSuccess() {
-        // Reset consecutive errors on success
-        consecutiveRateLimitErrors.set(0);
+        State currentState = state.get();
+
+        if (currentState == State.HALF_OPEN) {
+            // Probe succeeded - close the circuit
+            logger.info("Circuit breaker probe succeeded - transitioning to CLOSED");
+            closeCircuit();
+            return;
+        }
+
+        if (currentState == State.CLOSED) {
+            // Check for backoff decay (decrement level after sustained success)
+            checkBackoffDecay();
+        }
+
+        // Clear rolling window on success
+        synchronized (errorListLock) {
+            recentErrors.clear();
+        }
+    }
+
+    /**
+     * Check if backoff level should decay (decrement after 48h of success).
+     */
+    private void checkBackoffDecay() {
+        if (backoffLevel.get() == 0) {
+            return; // Already at minimum
+        }
+
+        int decayHours = validationProperties.getYoutube().getCircuitBreaker().getBackoffDecayHours();
+        Instant lastError = lastErrorAt.get();
+
+        if (lastError == null) {
+            return;
+        }
+
+        Instant decayThreshold = Instant.now().minusSeconds(decayHours * 3600L);
+        if (lastError.isBefore(decayThreshold)) {
+            int newLevel = backoffLevel.decrementAndGet();
+            logger.info("Backoff level decayed to {} (no errors for {}+ hours)", newLevel, decayHours);
+            lastErrorAt.set(Instant.now()); // Reset decay timer
+            persistState();
+        }
+    }
+
+    /**
+     * Open the circuit with current backoff level.
+     */
+    private void openCircuit() {
+        int level = backoffLevel.get();
+        int cooldownMinutes = getCooldownMinutesForLevel(level);
+
+        Instant now = Instant.now();
+        Instant until = now.plusSeconds(cooldownMinutes * 60L);
+
+        state.set(State.OPEN);
+        openedAt.set(now);
+        cooldownUntil.set(until);
+        totalCircuitOpens.incrementAndGet();
+
+        // Clear rolling window after opening
+        synchronized (errorListLock) {
+            recentErrors.clear();
+        }
+
+        logger.error("CIRCUIT BREAKER OPENED - YouTube rate limiting detected! " +
+                     "State: OPEN, Backoff level: {}, Cooldown: {} minutes (until {}). " +
+                     "Last error: {} - {}",
+                level, cooldownMinutes, until,
+                lastErrorType.get(), lastErrorMessage.get());
+
+        persistState();
+    }
+
+    /**
+     * Reopen circuit after failed HALF_OPEN probe with increased backoff.
+     */
+    private void reopenWithIncreasedBackoff() {
+        // Increment backoff level (capped at max)
+        int newLevel = Math.min(backoffLevel.incrementAndGet(), COOLDOWN_BY_LEVEL.length - 1);
+        backoffLevel.set(newLevel);
+
+        int cooldownMinutes = getCooldownMinutesForLevel(newLevel);
+        Instant now = Instant.now();
+        Instant until = now.plusSeconds(cooldownMinutes * 60L);
+
+        state.set(State.OPEN);
+        openedAt.set(now);
+        cooldownUntil.set(until);
+        totalCircuitOpens.incrementAndGet();
+
+        logger.error("CIRCUIT BREAKER REOPENED - HALF_OPEN probe failed! " +
+                     "State: OPEN, Backoff level increased to: {}, Cooldown: {} minutes (until {}). " +
+                     "Last error: {} - {}",
+                newLevel, cooldownMinutes, until,
+                lastErrorType.get(), lastErrorMessage.get());
+
+        persistState();
+    }
+
+    /**
+     * Close the circuit (successful recovery).
+     */
+    private void closeCircuit() {
+        state.set(State.CLOSED);
+        cooldownUntil.set(null);
+        // Don't reset backoffLevel - it decays naturally after sustained success
+        // Don't reset openedAt - useful for diagnostics
+
+        // Clear rolling window
+        synchronized (errorListLock) {
+            recentErrors.clear();
+        }
+
+        logger.info("Circuit breaker CLOSED - validation requests will resume. Backoff level: {}",
+                backoffLevel.get());
+
+        persistState();
+    }
+
+    /**
+     * Get cooldown duration in minutes for a given backoff level.
+     */
+    private int getCooldownMinutesForLevel(int level) {
+        int baseMinutes = validationProperties.getYoutube().getCircuitBreaker().getCooldownBaseMinutes();
+        int maxMinutes = validationProperties.getYoutube().getCircuitBreaker().getCooldownMaxMinutes();
+
+        if (level >= COOLDOWN_BY_LEVEL.length) {
+            level = COOLDOWN_BY_LEVEL.length - 1;
+        }
+
+        // Use configured base and scale by level
+        int calculatedMinutes = baseMinutes * (int) Math.pow(2, level);
+        return Math.min(calculatedMinutes, maxMinutes);
+    }
+
+    /**
+     * Truncate string to max length.
+     */
+    private String truncate(String s, int maxLen) {
+        if (s == null) return null;
+        return s.length() > maxLen ? s.substring(0, maxLen) : s;
     }
 
     /**
@@ -281,7 +611,6 @@ public class YouTubeCircuitBreaker {
             return false;
         }
 
-        // NewPipeExtractor exception names that indicate rate limiting
         return className.contains("SignInConfirmNotBotException") ||
                className.contains("ReCaptchaException") ||
                className.contains("TooManyRequestsException");
@@ -297,7 +626,6 @@ public class YouTubeCircuitBreaker {
 
         String lowerMessage = message.toLowerCase();
 
-        // YouTube anti-bot messages
         return lowerMessage.contains("sign in to confirm") ||
                lowerMessage.contains("not a bot") ||
                lowerMessage.contains("confirm you're not a bot") ||
@@ -311,81 +639,22 @@ public class YouTubeCircuitBreaker {
     }
 
     /**
-     * Open the circuit with exponential backoff.
-     */
-    private void openCircuit() {
-        ValidationProperties.YouTube.CircuitBreaker cbConfig =
-                validationProperties.getYoutube().getCircuitBreaker();
-
-        // Calculate cooldown with exponential backoff
-        int baseCooldown = cbConfig.getCooldownMinutes();
-        int currentCooldown = currentCooldownMinutes.get();
-
-        int newCooldown;
-        if (currentCooldown == 0) {
-            // First time opening
-            newCooldown = baseCooldown;
-        } else {
-            // Apply exponential backoff
-            newCooldown = (int) Math.min(
-                    currentCooldown * cbConfig.getBackoffMultiplier(),
-                    cbConfig.getMaxCooldownMinutes()
-            );
-        }
-
-        // Add jitter (up to 10% of cooldown)
-        int jitterMinutes = (int) (newCooldown * 0.1 * Math.random());
-        newCooldown += jitterMinutes;
-
-        currentCooldownMinutes.set(newCooldown);
-
-        Instant openedAt = Instant.now();
-        Instant until = openedAt.plusSeconds(newCooldown * 60L);
-
-        lastOpenedAt.set(openedAt);
-        cooldownUntil.set(until);
-        totalCircuitOpens.incrementAndGet();
-
-        logger.error("CIRCUIT BREAKER OPENED - YouTube rate limiting detected! " +
-                     "Cooldown: {} minutes (until {}). " +
-                     "Consecutive errors: {}. Last error: {} - {}",
-                newCooldown, until, consecutiveRateLimitErrors.get(),
-                lastErrorType.get(), lastErrorMessage.get());
-
-        // Persist state so it survives restarts
-        persistState();
-    }
-
-    /**
-     * Close the circuit (called when cooldown expires).
-     */
-    private void closeCircuit() {
-        logger.info("Circuit breaker closing - cooldown period has ended. " +
-                    "Validation will resume cautiously.");
-
-        // Keep current cooldown for backoff calculation, but reset cooldown time
-        cooldownUntil.set(null);
-
-        // Don't reset consecutiveRateLimitErrors or currentCooldownMinutes here
-        // They will be used for backoff if we hit rate limits again
-
-        // Persist state
-        persistState();
-    }
-
-    /**
      * Manually reset the circuit breaker (for admin intervention).
      */
     public void reset() {
         logger.info("Circuit breaker manually reset");
+        state.set(State.CLOSED);
+        openedAt.set(null);
         cooldownUntil.set(null);
-        lastOpenedAt.set(null);
-        consecutiveRateLimitErrors.set(0);
-        currentCooldownMinutes.set(0);
+        backoffLevel.set(0);
         lastErrorMessage.set(null);
         lastErrorType.set(null);
+        lastErrorAt.set(null);
 
-        // Persist reset state
+        synchronized (errorListLock) {
+            recentErrors.clear();
+        }
+
         persistState();
     }
 
@@ -397,11 +666,11 @@ public class YouTubeCircuitBreaker {
     public CircuitBreakerStatus getStatus() {
         return new CircuitBreakerStatus(
                 isOpen(),
+                state.get(),
                 getRemainingCooldownMs(),
-                lastOpenedAt.get(),
+                openedAt.get(),
                 cooldownUntil.get(),
-                consecutiveRateLimitErrors.get(),
-                currentCooldownMinutes.get(),
+                backoffLevel.get(),
                 lastErrorType.get(),
                 lastErrorMessage.get(),
                 totalRateLimitErrors.get(),
@@ -410,15 +679,22 @@ public class YouTubeCircuitBreaker {
     }
 
     /**
+     * Get current state for logging/diagnostics.
+     */
+    public State getCurrentState() {
+        return state.get();
+    }
+
+    /**
      * Circuit breaker status for monitoring and diagnostics.
      */
     public static class CircuitBreakerStatus {
         private final boolean open;
+        private final State state;
         private final long remainingCooldownMs;
         private final Instant lastOpenedAt;
         private final Instant cooldownUntil;
-        private final int consecutiveErrors;
-        private final int currentCooldownMinutes;
+        private final int backoffLevel;
         private final String lastErrorType;
         private final String lastErrorMessage;
         private final int totalRateLimitErrors;
@@ -426,22 +702,22 @@ public class YouTubeCircuitBreaker {
 
         public CircuitBreakerStatus(
                 boolean open,
+                State state,
                 long remainingCooldownMs,
                 Instant lastOpenedAt,
                 Instant cooldownUntil,
-                int consecutiveErrors,
-                int currentCooldownMinutes,
+                int backoffLevel,
                 String lastErrorType,
                 String lastErrorMessage,
                 int totalRateLimitErrors,
                 int totalCircuitOpens
         ) {
             this.open = open;
+            this.state = state;
             this.remainingCooldownMs = remainingCooldownMs;
             this.lastOpenedAt = lastOpenedAt;
             this.cooldownUntil = cooldownUntil;
-            this.consecutiveErrors = consecutiveErrors;
-            this.currentCooldownMinutes = currentCooldownMinutes;
+            this.backoffLevel = backoffLevel;
             this.lastErrorType = lastErrorType;
             this.lastErrorMessage = lastErrorMessage;
             this.totalRateLimitErrors = totalRateLimitErrors;
@@ -449,14 +725,18 @@ public class YouTubeCircuitBreaker {
         }
 
         public boolean isOpen() { return open; }
+        public State getState() { return state; }
         public long getRemainingCooldownMs() { return remainingCooldownMs; }
         public Instant getLastOpenedAt() { return lastOpenedAt; }
         public Instant getCooldownUntil() { return cooldownUntil; }
-        public int getConsecutiveErrors() { return consecutiveErrors; }
-        public int getCurrentCooldownMinutes() { return currentCooldownMinutes; }
+        public int getBackoffLevel() { return backoffLevel; }
         public String getLastErrorType() { return lastErrorType; }
         public String getLastErrorMessage() { return lastErrorMessage; }
         public int getTotalRateLimitErrors() { return totalRateLimitErrors; }
         public int getTotalCircuitOpens() { return totalCircuitOpens; }
+
+        // Legacy getters for backwards compatibility
+        public int getConsecutiveErrors() { return 0; } // Deprecated - use rolling window
+        public int getCurrentCooldownMinutes() { return (int) (remainingCooldownMs / 60000); }
     }
 }

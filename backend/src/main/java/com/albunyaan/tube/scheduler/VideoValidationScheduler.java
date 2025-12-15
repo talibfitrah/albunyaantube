@@ -46,11 +46,11 @@ public class VideoValidationScheduler {
     /** Distributed lock key for video validation scheduler. */
     private static final String LOCK_KEY = "video_validation_scheduler";
 
-    /** Lock TTL in seconds (10 minutes). Long enough for validation, short enough to recover from crashes. */
-    private static final int LOCK_TTL_SECONDS = 600;
-
     /** Heartbeat interval in seconds (3 minutes). Extends lock periodically during long validation runs. */
     private static final int HEARTBEAT_INTERVAL_SECONDS = 180;
+
+    /** Default lock TTL in seconds if config is not available. */
+    private static final int DEFAULT_LOCK_TTL_SECONDS = 7200; // 2 hours
 
     private final ContentValidationService contentValidationService;
     private final CacheManager cacheManager;
@@ -126,6 +126,15 @@ public class VideoValidationScheduler {
     }
 
     /**
+     * Get the lock TTL in seconds from configuration.
+     * Converts from minutes (config) to seconds (lock API).
+     */
+    private int getLockTtlSeconds() {
+        int ttlMinutes = validationProperties.getVideo().getScheduler().getLockTtlMinutes();
+        return ttlMinutes > 0 ? ttlMinutes * 60 : DEFAULT_LOCK_TTL_SECONDS;
+    }
+
+    /**
      * Start a background heartbeat task that extends the lock periodically.
      * This prevents lock expiration during long validation runs.
      *
@@ -137,7 +146,7 @@ public class VideoValidationScheduler {
                     () -> {
                         try {
                             boolean extended = systemSettingsRepository.tryAcquireLock(
-                                    LOCK_KEY, instanceId, LOCK_TTL_SECONDS);
+                                    LOCK_KEY, instanceId, getLockTtlSeconds());
                             if (extended) {
                                 logger.debug("Lock heartbeat: extended lock TTL");
                             } else {
@@ -209,7 +218,7 @@ public class VideoValidationScheduler {
         }
 
         // Acquire distributed lock (prevents concurrent runs across multiple instances)
-        if (!systemSettingsRepository.tryAcquireLock(LOCK_KEY, instanceId, LOCK_TTL_SECONDS)) {
+        if (!systemSettingsRepository.tryAcquireLock(LOCK_KEY, instanceId, getLockTtlSeconds())) {
             logger.info("Video validation skipped - another instance is running or lock acquisition failed");
             return;
         }
@@ -303,7 +312,7 @@ public class VideoValidationScheduler {
         }
 
         // Acquire distributed lock
-        if (!systemSettingsRepository.tryAcquireLock(LOCK_KEY, instanceId, LOCK_TTL_SECONDS)) {
+        if (!systemSettingsRepository.tryAcquireLock(LOCK_KEY, instanceId, getLockTtlSeconds())) {
             logger.warn("Manual validation rejected - another instance is running or lock acquisition failed");
             return false;
         }

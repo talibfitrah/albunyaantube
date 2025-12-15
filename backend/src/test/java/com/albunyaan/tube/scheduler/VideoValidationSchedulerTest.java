@@ -165,7 +165,7 @@ class VideoValidationSchedulerTest {
         when(circuitBreaker.isOpen()).thenReturn(true);
         when(circuitBreaker.getStatus()).thenReturn(
                 new YouTubeCircuitBreaker.CircuitBreakerStatus(
-                        true, 60000, null, null, 1, 60, "TestException", "Rate limited", 1, 1));
+                        true, YouTubeCircuitBreaker.State.OPEN, 60000, null, null, 1, "TestException", "Rate limited", 1, 1));
 
         // Act
         scheduler.scheduledValidation();

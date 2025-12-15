@@ -36,7 +36,13 @@ class YouTubeCircuitBreakerTest {
         ValidationProperties props = new ValidationProperties();
         // Set up default values for testing
         props.getYoutube().getCircuitBreaker().setEnabled(true);
-        props.getYoutube().getCircuitBreaker().setCooldownMinutes(1); // Short cooldown for testing
+        props.getYoutube().getCircuitBreaker().setCooldownBaseMinutes(1); // Short cooldown for testing
+        props.getYoutube().getCircuitBreaker().setCooldownMaxMinutes(10);
+        // Rolling window: 1 error in 10 minutes opens circuit (for easy testing)
+        props.getYoutube().getCircuitBreaker().getRollingWindow().setErrorThreshold(1);
+        props.getYoutube().getCircuitBreaker().getRollingWindow().setWindowMinutes(10);
+        // Legacy properties (for backwards compatibility)
+        props.getYoutube().getCircuitBreaker().setCooldownMinutes(1);
         props.getYoutube().getCircuitBreaker().setMaxRateLimitErrorsToOpen(1);
         props.getYoutube().getCircuitBreaker().setMaxCooldownMinutes(10);
         props.getYoutube().getCircuitBreaker().setBackoffMultiplier(2.0);
@@ -151,30 +157,31 @@ class YouTubeCircuitBreakerTest {
         assertEquals(0, circuitBreaker.getRemainingCooldownMs());
 
         YouTubeCircuitBreaker.CircuitBreakerStatus status = circuitBreaker.getStatus();
-        assertEquals(0, status.getConsecutiveErrors());
+        assertEquals(YouTubeCircuitBreaker.State.CLOSED, status.getState());
         assertEquals(0, status.getCurrentCooldownMinutes());
+        assertEquals(0, status.getBackoffLevel());
     }
 
     @Test
-    @DisplayName("Success should reset consecutive error count")
-    void successShouldResetConsecutiveErrorCount() {
-        // Arrange - configure to require 3 errors to open
-        validationProperties.getYoutube().getCircuitBreaker().setMaxRateLimitErrorsToOpen(3);
+    @DisplayName("Success should clear rolling window errors")
+    void successShouldClearRollingWindowErrors() {
+        // Arrange - configure to require 3 errors in window to open
+        validationProperties.getYoutube().getCircuitBreaker().getRollingWindow().setErrorThreshold(3);
         circuitBreaker = new YouTubeCircuitBreaker(validationProperties, null);
 
         // Record 2 errors (not enough to open)
         circuitBreaker.recordRateLimitError(new RuntimeException("rate limit"));
         circuitBreaker.recordRateLimitError(new RuntimeException("rate limit"));
-        assertFalse(circuitBreaker.isOpen()); // Still closed
+        assertFalse(circuitBreaker.isOpen()); // Still closed (only 2 errors, need 3)
 
-        // Act - record success
+        // Act - record success (in new implementation, success clears rolling window)
         circuitBreaker.recordSuccess();
 
-        // Record 2 more errors (should not open since consecutive count was reset)
+        // Record 2 more errors (should not open since rolling window was cleared)
         circuitBreaker.recordRateLimitError(new RuntimeException("rate limit"));
         circuitBreaker.recordRateLimitError(new RuntimeException("rate limit"));
 
-        // Assert - should still be closed (only 2 consecutive errors)
+        // Assert - should still be closed (only 2 errors in window after clear)
         assertFalse(circuitBreaker.isOpen());
     }
 
@@ -190,10 +197,11 @@ class YouTubeCircuitBreakerTest {
 
         // Assert
         assertTrue(status.isOpen());
+        assertEquals(YouTubeCircuitBreaker.State.OPEN, status.getState());
         assertTrue(status.getRemainingCooldownMs() > 0);
         assertNotNull(status.getLastOpenedAt());
         assertNotNull(status.getCooldownUntil());
-        assertEquals(1, status.getConsecutiveErrors());
+        assertEquals(0, status.getBackoffLevel()); // First open is level 0
         assertEquals(1, status.getTotalRateLimitErrors());
         assertEquals(1, status.getTotalCircuitOpens());
         assertNotNull(status.getLastErrorMessage());
