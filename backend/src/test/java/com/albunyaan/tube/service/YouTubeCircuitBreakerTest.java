@@ -214,17 +214,17 @@ class YouTubeCircuitBreakerTest {
         // Arrange - record first error and reset to trigger backoff
         Exception error = new RuntimeException("rate limit");
         circuitBreaker.recordRateLimitError(error);
-        int firstCooldown = circuitBreaker.getStatus().getCurrentCooldownMinutes();
+        int firstBackoffLevel = circuitBreaker.getStatus().getBackoffLevel();
 
-        // Let circuit close by resetting, but keep cooldown state
+        // Let circuit close by resetting
         circuitBreaker.reset();
 
-        // Record another error - should have higher cooldown due to backoff
-        // But since we reset, it should start fresh
+        // Record another error - after reset, backoff level should be 0 again
         circuitBreaker.recordRateLimitError(error);
-        int secondCooldown = circuitBreaker.getStatus().getCurrentCooldownMinutes();
+        int secondBackoffLevel = circuitBreaker.getStatus().getBackoffLevel();
 
-        // After reset, cooldown starts fresh (reset clears cooldown state)
-        assertEquals(firstCooldown, secondCooldown); // Both should be base cooldown after reset
+        // After reset, backoff level starts fresh (reset clears backoff state)
+        assertEquals(0, firstBackoffLevel); // First error is always level 0
+        assertEquals(0, secondBackoffLevel); // After reset, back to level 0
     }
 }
