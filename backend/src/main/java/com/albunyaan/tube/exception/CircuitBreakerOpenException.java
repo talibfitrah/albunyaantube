@@ -3,6 +3,7 @@ package com.albunyaan.tube.exception;
 import com.albunyaan.tube.service.YouTubeCircuitBreakerService;
 
 import java.io.IOException;
+import java.util.Objects;
 
 /**
  * Exception thrown when a YouTube request is blocked by the circuit breaker.
@@ -20,12 +21,12 @@ public class CircuitBreakerOpenException extends IOException {
 
     public CircuitBreakerOpenException(String message, YouTubeCircuitBreakerService.CircuitBreakerStatus status) {
         super(message);
-        this.status = status;
+        this.status = Objects.requireNonNull(status, "status must not be null");
     }
 
     public CircuitBreakerOpenException(String message, YouTubeCircuitBreakerService.CircuitBreakerStatus status, Throwable cause) {
         super(message, cause);
-        this.status = status;
+        this.status = Objects.requireNonNull(status, "status must not be null");
     }
 
     /**

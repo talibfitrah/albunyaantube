@@ -1,5 +1,6 @@
 package com.albunyaan.tube.config;
 
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -182,21 +183,34 @@ public class YouTubeCircuitBreakerProperties {
     }
 
     /**
+     * Cross-field validation to ensure cooldownBaseMinutes does not exceed cooldownMaxMinutes.
+     */
+    @AssertTrue(message = "cooldownBaseMinutes must not exceed cooldownMaxMinutes")
+    private boolean isCooldownRangeValid() {
+        return cooldownBaseMinutes <= cooldownMaxMinutes;
+    }
+
+    /**
      * Calculate cooldown duration in minutes for a given backoff level.
      * Uses a fixed schedule (not exponential formula):
      *   Level 0: base (default 60min / 1h)
      *   Level 1: 360min (6h)
      *   Level 2: 720min (12h)
      *   Level 3: 1440min (24h)
-     *   Level 4: max (default 2880min / 48h)
+     *   Level 4+: max (default 2880min / 48h)
+     *
+     * Note: If cooldownMaxMinutes is configured below the intermediate step values
+     * (360, 720, or 1440), multiple backoff levels will effectively have the same
+     * cooldown duration (clamped to max).
      */
     public long calculateCooldownMinutes(int backoffLevel) {
         if (backoffLevel <= 0) {
             return cooldownBaseMinutes;
         }
-        // Fixed backoff schedule, capped at max
-        long[] cooldowns = {cooldownBaseMinutes, 360, 720, 1440, cooldownMaxMinutes};
-        int index = Math.min(backoffLevel, cooldowns.length - 1);
+        // Fixed backoff schedule for levels 1-4, capped at max
+        // Array indexes: 0=level1, 1=level2, 2=level3, 3=level4+
+        long[] cooldowns = {360, 720, 1440, cooldownMaxMinutes};
+        int index = Math.min(backoffLevel - 1, cooldowns.length - 1);
         return Math.min(cooldowns[index], cooldownMaxMinutes);
     }
 }

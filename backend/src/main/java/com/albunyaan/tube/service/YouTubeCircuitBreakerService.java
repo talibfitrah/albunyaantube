@@ -240,7 +240,7 @@ public class YouTubeCircuitBreakerService {
                                 // Return OPEN status since we're reopening
                                 CircuitBreakerStatus openStatus = new CircuitBreakerStatus(
                                         true, STATE_OPEN, now, state.cooldownUntil(),
-                                        "ProbeTimeout", state.backoffLevel() + 1, state.consecutiveFailures()
+                                        "ProbeTimeout", Math.min(state.backoffLevel() + 1, 4), state.consecutiveFailures()
                                 );
                                 return new AllowRequestResult(false, openStatus);
                             }
@@ -794,10 +794,15 @@ public class YouTubeCircuitBreakerService {
                     return;
                 }
 
-                // Version conflict, retry
-                logger.warn("Circuit breaker state persist conflict (attempt {}/{})", attempt, retries);
+                // Version conflict - another instance updated the state, our update is no longer valid.
+                // Don't retry because retrying with the same expectedVersion will always fail.
+                // The caller will re-read state on next request and get the updated version.
+                logger.warn("Circuit breaker state persist version conflict - state changed by another instance, " +
+                        "abandoning update (state will be re-read on next request)");
+                return;
 
             } catch (Exception e) {
+                // Only retry on transient errors (network issues, etc.)
                 logger.error("Failed to persist circuit breaker state (attempt {}/{}): {}",
                         attempt, retries, e.getMessage());
             }

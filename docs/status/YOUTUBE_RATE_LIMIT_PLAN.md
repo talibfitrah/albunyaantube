@@ -1,7 +1,7 @@
 # YouTube Rate Limiting Remediation Plan
 
 **Last Updated**: December 15, 2025
-**Status**: ✅ **Implemented** (P0–P3 complete, P4 partial)
+**Status**: ✅ **Implemented** (P0–P3 functional; 2 manual/integration tests pending; P4 metrics deferred)
 
 This document is the concrete, step-by-step plan to stop triggering YouTube anti-bot rate limits (`SignInConfirmNotBotException`: “Sign in to confirm that you're not a bot”) and make validation safe-by-default.
 
@@ -468,7 +468,7 @@ Backout:
 
 ## 7) Verification Checklist
 
-### Phase 0 — Safety Switches ✅
+### Phase 0 — Safety Switches (7/8 complete)
 - [x] Scheduled validation can be disabled via config (no deploy).
 - [x] Cron schedule is configurable via `app.validation.video.scheduler.cron`.
 - [x] **Distributed lock prevents concurrent runs:**
@@ -490,7 +490,7 @@ Backout:
 - [x] **Pool size respected**: Concurrent YouTube requests limited to `app.newpipe.executor.pool-size`.
 - [x] **Throttle covers all call sites**: Manual validation, scheduled validation, and admin refresh all throttled.
 
-### Phase 2 — Circuit Breaker Persistence ✅
+### Phase 2 — Circuit Breaker Persistence (15/16 complete)
 - [x] **Storage**: Breaker state persisted in `system_settings/youtube_circuit_breaker` document.
 - [x] **State transitions**: CLOSED → OPEN → HALF_OPEN → CLOSED cycle works correctly.
 - [x] **Fail-safe policy**: When Firestore unavailable, breaker defaults to OPEN (rejects calls).
@@ -513,6 +513,20 @@ Backout:
   - [x] Unit test: Verify `archiveContent()` is NOT called on rate-limit exceptions.
   - [x] Unit test: Verify `archiveContent()` is NOT called on network timeout.
   - [ ] Integration test: Simulate rate-limit mid-batch; confirm no items archived.
+
+### Phase 3 — Backoff Strategy ✅
+- [x] **Exponential backoff**: Cooldown increases with backoff level (1h → 6h → 12h → 24h → 48h cap).
+- [x] **Jitter**: Random jitter applied to throttle delays via `jitter-ms` config.
+- [x] **Backoff decay**: Level decrements after 48h of successful calls.
+- [x] **Backoff cap**: Level capped at 4 (48h max cooldown).
+
+### Phase 4 — Observability and Tests (partial)
+- [x] **Unit tests**: Exception/message classification tests implemented.
+- [x] **Unit tests**: Circuit breaker open/close behavior tests implemented.
+- [x] **Unit tests**: Throttle behavior tests implemented.
+- [x] **Test policy**: All tests run within 300s timeout.
+- [ ] **Metrics**: Counters for validation attempts/successes/errors (deferred).
+- [ ] **Metrics**: Gauge for breaker state and cooldown remaining (deferred).
 
 ### All Phases
 - [x] Tests pass within 300s: `cd backend && timeout 300 ./gradlew test` (387 tests, 0 failures)
