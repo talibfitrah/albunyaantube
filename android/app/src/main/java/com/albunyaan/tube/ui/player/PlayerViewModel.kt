@@ -688,6 +688,60 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
+    // --- Recovery State Management ---
+
+    /**
+     * Transition to Recovering state for UI to show recovery overlay.
+     * Preserves the underlying stream/selection so playback can continue.
+     */
+    fun setRecoveringState(
+        streamId: String,
+        selection: PlaybackSelection,
+        step: RecoveryStep,
+        attempt: Int
+    ) {
+        updateState { it.copy(streamState = StreamState.Recovering(streamId, selection, step, attempt)) }
+    }
+
+    /**
+     * Clear recovering state and return to Ready state.
+     * Called when recovery succeeds.
+     */
+    fun clearRecoveringState() {
+        val current = _state.value.streamState
+        when (current) {
+            is StreamState.Recovering -> {
+                updateState { it.copy(streamState = StreamState.Ready(current.streamId, current.selection)) }
+            }
+            is StreamState.RecoveryExhausted -> {
+                updateState { it.copy(streamState = StreamState.Ready(current.streamId, current.selection)) }
+            }
+            else -> { /* No-op for other states */ }
+        }
+    }
+
+    /**
+     * Transition to RecoveryExhausted state when all automatic recovery attempts fail.
+     * Called by PlaybackRecoveryManager.onRecoveryExhausted callback.
+     */
+    fun setRecoveryExhaustedState() {
+        val current = _state.value.streamState
+        val (streamId, selection) = when (current) {
+            is StreamState.Recovering -> current.streamId to current.selection
+            is StreamState.Ready -> current.streamId to current.selection
+            else -> return // Can't transition from Idle/Loading/Error
+        }
+        updateState { it.copy(streamState = StreamState.RecoveryExhausted(streamId, selection)) }
+    }
+
+    /**
+     * Set error state for UI to show error overlay.
+     * Called when recovery is exhausted.
+     */
+    fun setErrorState(@StringRes messageRes: Int) {
+        updateState { it.copy(streamState = StreamState.Error(messageRes)) }
+    }
+
 }
 
 data class PlayerState(
@@ -724,6 +778,36 @@ sealed class StreamState {
     object Loading : StreamState()
     data class Ready(val streamId: String, val selection: PlaybackSelection) : StreamState()
     data class Error(@StringRes val messageRes: Int) : StreamState()
+    /**
+     * Automatic recovery in progress. UI should show "Recovering..." overlay.
+     * Contains the underlying Ready state so playback can continue while recovering.
+     */
+    data class Recovering(
+        val streamId: String,
+        val selection: PlaybackSelection,
+        val step: RecoveryStep,
+        val attempt: Int
+    ) : StreamState()
+
+    /**
+     * All automatic recovery attempts exhausted. UI should show manual retry option.
+     * Contains the underlying selection so user can trigger manual retry.
+     */
+    data class RecoveryExhausted(
+        val streamId: String,
+        val selection: PlaybackSelection
+    ) : StreamState()
+}
+
+/**
+ * Recovery steps for automatic playback recovery.
+ */
+enum class RecoveryStep {
+    RE_PREPARE,
+    SEEK_TO_CURRENT,
+    QUALITY_DOWNSHIFT,
+    REFRESH_URLS,
+    REBUILD_PLAYER
 }
 
 data class QualityOption(

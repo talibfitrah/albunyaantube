@@ -65,4 +65,5 @@
 
     <!-- Player overlays -->
     <color name="player_error_overlay">#CC000000</color>
+    <color name="player_recovery_overlay">#99000000</color>
 </resources>

@@ -32,6 +32,7 @@ import com.albunyaan.tube.data.extractor.PlaybackSelection
 import com.albunyaan.tube.data.extractor.SubtitleTrack
 import com.albunyaan.tube.download.DownloadEntry
 import com.albunyaan.tube.download.DownloadStatus
+import com.albunyaan.tube.player.PlaybackRecoveryManager
 import com.albunyaan.tube.player.PlaybackService
 import com.google.android.exoplayer2.MediaItem
 import com.google.android.exoplayer2.ExoPlayer
@@ -66,6 +67,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private var exoPrevButton: View? = null
     /** Tracks whether current media source is adaptive (HLS/DASH) vs progressive */
     private var preparedIsAdaptive: Boolean = false
+
+    /** Manages automatic playback recovery for freeze detection and stall handling */
+    private var recoveryManager: PlaybackRecoveryManager? = null
 
     // Overlay controls are now always visible for better UX
     // Users need constant access to quality, cast, and minimize buttons
@@ -208,6 +212,14 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             viewModel.forceRefreshCurrentStream()
         }
 
+        // Setup recovery retry button (shown when auto-recovery exhausted)
+        binding.playerRecoveryRetryButton?.setOnClickListener {
+            // User manual retry - resets recovery state and forces stream refresh
+            recoveryManager?.resetRecoveryState()
+            viewModel.clearRecoveringState()
+            viewModel.forceRefreshCurrentStream()
+        }
+
         // Configure Cast button
         castContext?.let { context ->
             binding.castButton?.let { button ->
@@ -247,6 +259,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     }
 
     override fun onDestroyView() {
+        // Clean up recovery manager
+        recoveryManager?.cancel()
+        recoveryManager = null
+
         // Clean up player resources - ExoPlayer handles its own callback cleanup during release
         binding?.playerView?.player = null
         preparedStreamKey = null
@@ -309,6 +325,12 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         binding.playerView.player = player
         player.addListener(viewModel.playerListener)
 
+        // Initialize PlaybackRecoveryManager for freeze detection and automatic recovery
+        recoveryManager = PlaybackRecoveryManager(
+            scope = viewLifecycleOwner.lifecycleScope,
+            callbacks = createRecoveryCallbacks()
+        )
+
         // Add listener to auto-hide controls when playback starts and handle errors
         player.addListener(object : com.google.android.exoplayer2.Player.Listener {
             private var hasAutoHidden = false
@@ -318,37 +340,39 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             private val maxStreamRefreshes = 2
             private var lastStreamIdForRetries: String? = null
 
-            // Stall detection - increased threshold for long videos with variable network
-            private var bufferingStartTime: Long = 0L
-            private var stallCheckJob: kotlinx.coroutines.Job? = null
-            private val stallThresholdMs = 15000L // 15s of buffering = stall (increased from 8s)
-            private val autoDowngradeCount = java.util.concurrent.atomic.AtomicInteger(0)
-            private val maxAutoDowngrades = 4 // Increased to allow more recovery attempts
-
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 android.util.Log.d("PlayerFragment", "onIsPlayingChanged: isPlaying=$isPlaying, hasAutoHidden=$hasAutoHidden")
-                if (isPlaying && !hasAutoHidden) {
-                    // Auto-hide controls after playback starts
-                    hasAutoHidden = true
-                    retryCount = 0 // Reset retry count on successful playback
+                if (isPlaying) {
+                    // Notify recovery manager that playback is healthy
+                    recoveryManager?.onPlaybackStarted()
 
-                    // Prefetch next items in queue when current video starts playing
-                    viewModel.prefetchNextItems()
+                    if (!hasAutoHidden) {
+                        // Auto-hide controls after playback starts
+                        hasAutoHidden = true
+                        retryCount = 0 // Reset retry count on successful playback
 
-                    binding.playerView.postDelayed({
-                        if (player?.isPlaying == true) {
-                            android.util.Log.d("PlayerFragment", "Auto-hiding controls now")
-                            binding.playerView.hideController()
-                            // Also explicitly hide overlay controls
-                            binding.playerOverlayControls?.visibility = View.GONE
-                        }
-                    }, 3000) // 3 seconds delay to give user time to see controls
+                        // Prefetch next items in queue when current video starts playing
+                        viewModel.prefetchNextItems()
+
+                        binding.playerView.postDelayed({
+                            if (player?.isPlaying == true) {
+                                android.util.Log.d("PlayerFragment", "Auto-hiding controls now")
+                                binding.playerView.hideController()
+                                // Also explicitly hide overlay controls
+                                binding.playerOverlayControls?.visibility = View.GONE
+                            }
+                        }, 3000) // 3 seconds delay to give user time to see controls
+                    }
                 }
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
                 android.util.Log.d("PlayerFragment", "onPlaybackStateChanged: state=$playbackState")
-                // When a new video loads, reset the auto-hide flag and stall tracking
+
+                // Delegate to recovery manager for freeze detection
+                player?.let { p -> recoveryManager?.onPlaybackStateChanged(p, playbackState) }
+
+                // When a new video loads, reset the auto-hide flag
                 if (playbackState == com.google.android.exoplayer2.Player.STATE_IDLE) {
                     val currentStreamId = viewModel.state.value.currentItem?.streamId
                     if (currentStreamId != lastStreamIdForRetries) {
@@ -357,80 +381,20 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         streamRefreshCount = 0
                     }
                     hasAutoHidden = false
-                    autoDowngradeCount.set(0)
-                    bufferingStartTime = 0L
-                    stallCheckJob?.cancel()
                 }
 
-                // Stall detection: track buffering duration
-                when (playbackState) {
-                    com.google.android.exoplayer2.Player.STATE_BUFFERING -> {
-                        if (bufferingStartTime == 0L) {
-                            bufferingStartTime = System.currentTimeMillis()
-                            android.util.Log.d("PlayerFragment", "Buffering started")
-
-                            // Start stall check job
-                            stallCheckJob?.cancel()
-                            stallCheckJob = viewLifecycleOwner.lifecycleScope.launch {
-                                kotlinx.coroutines.delay(stallThresholdMs)
-                                // Still buffering after threshold - consider stalled
-                                if (player?.playbackState == com.google.android.exoplayer2.Player.STATE_BUFFERING && autoDowngradeCount.get() < maxAutoDowngrades) {
-                                    val bufferDuration = System.currentTimeMillis() - bufferingStartTime
-                                    android.util.Log.w("PlayerFragment", "Stall detected: buffering for ${bufferDuration}ms, isAdaptive=$preparedIsAdaptive")
-
-                                    // Adaptive-aware stall recovery:
-                                    // - For HLS/DASH: Let ABR handle quality adaptation, only refresh URLs if stall persists
-                                    // - For progressive: Step down quality manually
-                                    if (preparedIsAdaptive) {
-                                        // Adaptive streaming: ABR should handle quality adaptation automatically.
-                                        // If we're still stalled, URLs may be expired - refresh them.
-                                        android.util.Log.w("PlayerFragment", "Stall on adaptive stream; refreshing URLs (ABR should handle quality)")
-                                        autoDowngradeCount.incrementAndGet()
-                                        requestStreamRefreshAndResume("stall detected on adaptive stream")
-                                    } else {
-                                        // Progressive streaming: Manual step-down is our only option.
-                                        val state = viewModel.state.value
-                                        val streamState = state.streamState
-                                        if (streamState is StreamState.Ready) {
-                                            autoDowngradeCount.incrementAndGet()
-                                            val nextLower = findNextLowerQualityTrack(
-                                                current = streamState.selection.video,
-                                                available = streamState.selection.resolved.videoTracks
-                                            )
-                                            if (nextLower != null) {
-                                                android.util.Log.w(
-                                                    "PlayerFragment",
-                                                    "Stall on progressive stream; stepping down to ${nextLower.qualityLabel}"
-                                                )
-                                                // Use auto step-down method - does NOT change user's quality cap
-                                                viewModel.applyAutoQualityStepDown(nextLower)
-                                            } else {
-                                                requestStreamRefreshAndResume("stall detected; no lower quality")
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    com.google.android.exoplayer2.Player.STATE_READY -> {
-                        if (bufferingStartTime > 0L) {
-                            val bufferDuration = System.currentTimeMillis() - bufferingStartTime
-                            android.util.Log.d("PlayerFragment", "Buffering ended after ${bufferDuration}ms")
-                        }
-                        bufferingStartTime = 0L
-                        stallCheckJob?.cancel()
-                    }
-                    com.google.android.exoplayer2.Player.STATE_ENDED -> {
-                        bufferingStartTime = 0L
-                        stallCheckJob?.cancel()
-                        val advanced = viewModel.markCurrentComplete()
-                        if (advanced) {
-                            player?.playWhenReady = true
-                            autoDowngradeCount.set(0) // Reset for next video
-                        }
+                // Handle playback ended
+                if (playbackState == com.google.android.exoplayer2.Player.STATE_ENDED) {
+                    val advanced = viewModel.markCurrentComplete()
+                    if (advanced) {
+                        player?.playWhenReady = true
                     }
                 }
+            }
+
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                // Delegate to recovery manager for stuck-in-ready detection
+                player?.let { p -> recoveryManager?.onPlayWhenReadyChanged(p, playWhenReady) }
             }
 
             override fun onPlayerError(error: com.google.android.exoplayer2.PlaybackException) {
@@ -773,6 +737,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             StreamState.Idle -> {
                 binding.playerStatus.text = getString(R.string.player_status_initializing)
                 binding.playerErrorOverlay?.visibility = View.GONE
+                binding.playerRecoveryOverlay?.visibility = View.GONE
             }
             StreamState.Loading -> {
                 binding.playerStatus.text = if (state.retryCount > 0) {
@@ -781,12 +746,14 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     getString(R.string.player_status_resolving)
                 }
                 binding.playerErrorOverlay?.visibility = View.GONE
+                binding.playerRecoveryOverlay?.visibility = View.GONE
             }
             is StreamState.Error -> {
                 binding.playerStatus.text = getString(streamState.messageRes)
                 // Show error overlay with retry options
                 binding.playerErrorOverlay?.visibility = View.VISIBLE
                 binding.playerErrorMessage?.text = getString(streamState.messageRes)
+                binding.playerRecoveryOverlay?.visibility = View.GONE
             }
             is StreamState.Ready -> {
                 binding.playerStatus.text = when {
@@ -794,6 +761,29 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     else -> getString(R.string.player_status_video_playing)
                 }
                 binding.playerErrorOverlay?.visibility = View.GONE
+                binding.playerRecoveryOverlay?.visibility = View.GONE
+            }
+            is StreamState.Recovering -> {
+                // Show recovery overlay with progress
+                binding.playerRecoveryOverlay?.visibility = View.VISIBLE
+                binding.playerRecoveryProgress?.visibility = View.VISIBLE
+                binding.playerRecoveryMessage?.text = getString(
+                    R.string.player_recovering_attempt,
+                    streamState.attempt,
+                    PlaybackRecoveryManager.MAX_RECOVERY_ATTEMPTS
+                )
+                binding.playerRecoveryRetryButton?.visibility = View.GONE
+                binding.playerErrorOverlay?.visibility = View.GONE
+                binding.playerStatus.text = getString(R.string.player_recovering)
+            }
+            is StreamState.RecoveryExhausted -> {
+                // Show recovery overlay with retry button (exhausted state)
+                binding.playerRecoveryOverlay?.visibility = View.VISIBLE
+                binding.playerRecoveryProgress?.visibility = View.GONE
+                binding.playerRecoveryMessage?.text = getString(R.string.player_recovery_exhausted_message)
+                binding.playerRecoveryRetryButton?.visibility = View.VISIBLE
+                binding.playerErrorOverlay?.visibility = View.GONE
+                binding.playerStatus.text = getString(R.string.player_recovery_exhausted)
             }
         }
     }
@@ -1015,7 +1005,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             currentPlayer.playWhenReady = shouldPlay
             preparedStreamKey = key
             preparedStreamUrl = streamState.selection.video?.url
-            android.util.Log.d("PlayerFragment", "Stream prepared successfully: ${streamState.streamId}")
+            android.util.Log.d("PlayerFragment", "Stream prepared successfully: ${streamState.streamId}, isAdaptive=$preparedIsAdaptive")
+
+            // Notify recovery manager of new stream - pass streamId and adaptive flag
+            recoveryManager?.onNewStream(streamState.streamId, preparedIsAdaptive)
 
             if (hasPendingResume) {
                 pendingResumeStreamId = null
@@ -1036,6 +1029,107 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         } else {
             val video = selection.video
             video?.url?.let { url -> url to (video.mimeType ?: DEFAULT_VIDEO_MIME) }
+        }
+    }
+
+    /**
+     * Creates callbacks for PlaybackRecoveryManager to handle recovery actions.
+     */
+    private fun createRecoveryCallbacks(): PlaybackRecoveryManager.RecoveryCallbacks {
+        return object : PlaybackRecoveryManager.RecoveryCallbacks {
+            override fun onRecoveryStarted(step: PlaybackRecoveryManager.RecoveryStep, attempt: Int) {
+                android.util.Log.i("PlayerFragment", "Recovery started: step=$step, attempt=$attempt")
+                val state = viewModel.state.value
+                val streamState = state.streamState
+
+                // Handle Ready, Recovering, and RecoveryExhausted states to support multi-attempt updates and manual retry
+                val (streamId, selection) = when (streamState) {
+                    is StreamState.Ready -> streamState.streamId to streamState.selection
+                    is StreamState.Recovering -> streamState.streamId to streamState.selection
+                    is StreamState.RecoveryExhausted -> streamState.streamId to streamState.selection
+                    else -> return // Can't recover from Idle/Loading/Error states
+                }
+
+                // Transition to (or update) Recovering state for UI
+                viewModel.setRecoveringState(
+                    streamId,
+                    selection,
+                    step.toViewModelStep(),
+                    attempt
+                )
+            }
+
+            override fun onRecoverySucceeded() {
+                android.util.Log.i("PlayerFragment", "Recovery succeeded")
+                // Transition back to Ready state
+                viewModel.clearRecoveringState()
+            }
+
+            override fun onRecoveryExhausted() {
+                android.util.Log.e("PlayerFragment", "Recovery exhausted - transitioning to exhausted state")
+                // Transition to RecoveryExhausted state - UI will be updated via state observation
+                viewModel.setRecoveryExhaustedState()
+            }
+
+            override fun onRequestQualityDownshift(): Boolean {
+                val state = viewModel.state.value
+                val streamState = when (val s = state.streamState) {
+                    is StreamState.Ready -> s
+                    is StreamState.Recovering -> StreamState.Ready(s.streamId, s.selection)
+                    is StreamState.RecoveryExhausted -> StreamState.Ready(s.streamId, s.selection)
+                    else -> return false
+                }
+                val nextLower = findNextLowerQualityTrack(
+                    current = streamState.selection.video,
+                    available = streamState.selection.resolved.videoTracks
+                )
+                return if (nextLower != null) {
+                    android.util.Log.i("PlayerFragment", "Recovery: stepping down to ${nextLower.qualityLabel}")
+                    viewModel.applyAutoQualityStepDown(nextLower)
+                    true
+                } else {
+                    false
+                }
+            }
+
+            override fun onRequestStreamRefresh(resumePositionMs: Long) {
+                android.util.Log.i("PlayerFragment", "Recovery: refreshing stream URLs, resume at ${resumePositionMs}ms")
+                requestStreamRefreshAndResume("recovery ladder step: refresh URLs")
+            }
+
+            override fun onRequestPlayerRebuild(resumePositionMs: Long) {
+                android.util.Log.i("PlayerFragment", "Recovery: rebuilding player at ${resumePositionMs}ms")
+                // Save state, release player, recreate
+                val currentItem = viewModel.state.value.currentItem ?: return
+                pendingResumeStreamId = currentItem.streamId
+                pendingResumePositionMs = resumePositionMs.takeIf { it > 0 }
+                pendingResumePlayWhenReady = true
+
+                // Cancel existing recovery manager before rebuild to prevent duplicate callbacks
+                recoveryManager?.cancel()
+                recoveryManager = null
+
+                // Release and recreate player (setupPlayer creates new recoveryManager)
+                player?.release()
+                player = null
+                binding?.let { setupPlayer(it) }
+
+                // Force stream refresh to get fresh URLs
+                viewModel.forceRefreshCurrentStream()
+            }
+        }
+    }
+
+    /**
+     * Extension to convert PlaybackRecoveryManager.RecoveryStep to viewmodel enum.
+     */
+    private fun PlaybackRecoveryManager.RecoveryStep.toViewModelStep(): RecoveryStep {
+        return when (this) {
+            PlaybackRecoveryManager.RecoveryStep.RE_PREPARE -> RecoveryStep.RE_PREPARE
+            PlaybackRecoveryManager.RecoveryStep.SEEK_TO_CURRENT -> RecoveryStep.SEEK_TO_CURRENT
+            PlaybackRecoveryManager.RecoveryStep.QUALITY_DOWNSHIFT -> RecoveryStep.QUALITY_DOWNSHIFT
+            PlaybackRecoveryManager.RecoveryStep.REFRESH_URLS -> RecoveryStep.REFRESH_URLS
+            PlaybackRecoveryManager.RecoveryStep.REBUILD_PLAYER -> RecoveryStep.REBUILD_PLAYER
         }
     }
 
