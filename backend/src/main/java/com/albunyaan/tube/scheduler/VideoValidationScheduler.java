@@ -15,6 +15,10 @@ import org.springframework.stereotype.Component;
 
 import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Video Validation Scheduler
@@ -44,6 +48,9 @@ public class VideoValidationScheduler {
     /** Lock TTL in seconds (10 minutes). Long enough for validation, short enough to recover from crashes. */
     private static final int LOCK_TTL_SECONDS = 600;
 
+    /** Heartbeat interval in seconds (3 minutes). Extends lock periodically during long validation runs. */
+    private static final int HEARTBEAT_INTERVAL_SECONDS = 180;
+
     private final ContentValidationService contentValidationService;
     private final CacheManager cacheManager;
     private final ValidationProperties validationProperties;
@@ -52,6 +59,9 @@ public class VideoValidationScheduler {
 
     /** Unique identifier for this instance (hostname + PID). Used for distributed locking. */
     private final String instanceId;
+
+    /** Executor for lock heartbeat during long validation runs. */
+    private final ScheduledExecutorService heartbeatExecutor;
 
     public VideoValidationScheduler(
             ContentValidationService contentValidationService,
@@ -65,6 +75,11 @@ public class VideoValidationScheduler {
         this.circuitBreaker = circuitBreaker;
         this.systemSettingsRepository = systemSettingsRepository;
         this.instanceId = generateInstanceId();
+        this.heartbeatExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "lock-heartbeat");
+            t.setDaemon(true);
+            return t;
+        });
 
         logger.info("VideoValidationScheduler initialized - enabled: {}, cron: {}, maxItems: {}, instanceId: {}",
                 validationProperties.getVideo().getScheduler().isEnabled(),
@@ -83,10 +98,52 @@ public class VideoValidationScheduler {
             String pid = ManagementFactory.getRuntimeMXBean().getName().split("@")[0];
             return hostname + "-" + pid;
         } catch (Exception e) {
-            // Fallback to random ID if hostname lookup fails
-            String fallbackId = "instance-" + System.currentTimeMillis();
+            // Fallback to UUID if hostname lookup fails (guaranteed unique)
+            String fallbackId = "instance-" + java.util.UUID.randomUUID().toString().substring(0, 8);
             logger.warn("Could not determine hostname for instance ID, using fallback: {}", fallbackId);
             return fallbackId;
+        }
+    }
+
+    /**
+     * Start a background heartbeat task that extends the lock periodically.
+     * This prevents lock expiration during long validation runs.
+     *
+     * @return The scheduled future for cancellation, or null if scheduling failed
+     */
+    private ScheduledFuture<?> startLockHeartbeat() {
+        try {
+            return heartbeatExecutor.scheduleAtFixedRate(
+                    () -> {
+                        try {
+                            boolean extended = systemSettingsRepository.tryAcquireLock(
+                                    LOCK_KEY, instanceId, LOCK_TTL_SECONDS);
+                            if (extended) {
+                                logger.debug("Lock heartbeat: extended lock TTL");
+                            } else {
+                                logger.warn("Lock heartbeat: failed to extend lock (may have been released)");
+                            }
+                        } catch (Exception e) {
+                            logger.warn("Lock heartbeat failed: {}", e.getMessage());
+                        }
+                    },
+                    HEARTBEAT_INTERVAL_SECONDS,
+                    HEARTBEAT_INTERVAL_SECONDS,
+                    TimeUnit.SECONDS
+            );
+        } catch (Exception e) {
+            logger.warn("Failed to start lock heartbeat: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Stop the lock heartbeat task.
+     */
+    private void stopLockHeartbeat(ScheduledFuture<?> heartbeat) {
+        if (heartbeat != null) {
+            heartbeat.cancel(false);
+            logger.debug("Lock heartbeat stopped");
         }
     }
 
@@ -137,6 +194,9 @@ public class VideoValidationScheduler {
             return;
         }
 
+        // Start heartbeat to extend lock during long validation runs
+        ScheduledFuture<?> heartbeat = startLockHeartbeat();
+
         try {
             int maxItems = validationProperties.getVideo().getMaxItemsPerRun();
             logger.info("Starting {} video validation (max items: {}, instanceId: {})", timeOfDay, maxItems, instanceId);
@@ -174,6 +234,7 @@ public class VideoValidationScheduler {
                 circuitBreaker.recordRateLimitError(e);
             }
         } finally {
+            stopLockHeartbeat(heartbeat);
             systemSettingsRepository.releaseLock(LOCK_KEY, instanceId);
         }
     }
@@ -227,6 +288,9 @@ public class VideoValidationScheduler {
             return false;
         }
 
+        // Start heartbeat to extend lock during long validation runs
+        ScheduledFuture<?> heartbeat = startLockHeartbeat();
+
         try {
             int maxItems = validationProperties.getVideo().getMaxItemsPerRun();
             logger.info("Starting manual video validation (max items: {}, instanceId: {})", maxItems, instanceId);
@@ -259,6 +323,7 @@ public class VideoValidationScheduler {
             }
             return false;
         } finally {
+            stopLockHeartbeat(heartbeat);
             systemSettingsRepository.releaseLock(LOCK_KEY, instanceId);
         }
     }

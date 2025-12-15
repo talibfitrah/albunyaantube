@@ -129,6 +129,19 @@ public class SystemSettingsRepository {
                 lockData.put("heldBy", instanceId);
                 lockData.put("acquiredAt", System.currentTimeMillis());
                 lockData.put("expiresAt", System.currentTimeMillis() + (ttlSeconds * 1000L));
+
+                // Track extension count for debugging (how many times lock was extended)
+                int extensionCount = 0;
+                if (snapshot.exists()) {
+                    Map<String, Object> existingData = snapshot.getData();
+                    if (existingData != null && existingData.containsKey("extensionCount")) {
+                        Number existing = (Number) existingData.get("extensionCount");
+                        extensionCount = (existing != null) ? existing.intValue() + 1 : 1;
+                    }
+                }
+                lockData.put("extensionCount", extensionCount);
+                lockData.put("lastExtendedAt", System.currentTimeMillis());
+
                 transaction.set(docRef, lockData);
 
                 return true;

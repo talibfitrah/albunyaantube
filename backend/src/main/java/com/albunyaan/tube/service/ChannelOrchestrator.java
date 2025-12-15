@@ -227,14 +227,14 @@ public class ChannelOrchestrator {
 
             // Get initial page or requested page
             ListExtractor.InfoItemsPage<InfoItem> page;
-	            if (pageToken != null && !pageToken.isEmpty()) {
-	                Page requestedPage = gateway.decodePageToken(pageToken);
-	                if (requestedPage != null) {
-	                    page = gateway.getTabPage(tabExtractor, requestedPage);
-	                } else {
-	                    page = tabExtractor.getInitialPage();
-	                }
-	            } else {
+            if (pageToken != null && !pageToken.isEmpty()) {
+                Page requestedPage = gateway.decodePageToken(pageToken);
+                if (requestedPage != null) {
+                    page = gateway.getTabPage(tabExtractor, requestedPage);
+                } else {
+                    page = tabExtractor.getInitialPage();
+                }
+            } else {
                 page = tabExtractor.getInitialPage();
             }
 
