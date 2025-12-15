@@ -13,6 +13,7 @@ import com.albunyaan.tube.data.extractor.VideoTrack
 import com.albunyaan.tube.download.DownloadEntry
 import com.albunyaan.tube.download.DownloadRepository
 import com.albunyaan.tube.download.DownloadRequest
+import com.albunyaan.tube.player.ExtractionRateLimiter
 import com.albunyaan.tube.player.PlayerRepository
 import com.google.android.exoplayer2.Player
 import com.google.android.exoplayer2.video.VideoSize
@@ -35,7 +36,8 @@ import javax.inject.Inject
 class PlayerViewModel @Inject constructor(
     private val repository: PlayerRepository,
     private val downloadRepository: DownloadRepository,
-    private val playlistDetailRepository: com.albunyaan.tube.data.playlist.PlaylistDetailRepository
+    private val playlistDetailRepository: com.albunyaan.tube.data.playlist.PlaylistDetailRepository,
+    private val rateLimiter: ExtractionRateLimiter
 ) : ViewModel() {
 
     private val dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate
@@ -54,6 +56,12 @@ class PlayerViewModel @Inject constructor(
     // Prefetch cache: stores resolved streams for next items
     private val prefetchCache = mutableMapOf<String, ResolvedStreams>()
     private val maxPrefetchItems = 2
+
+    // Pending quality cap: stored when URLs expire during quality switch, applied after refresh
+    private var pendingQualityCap: VideoTrack? = null
+
+    // PR5: Pending refresh job for cancellation when video changes or new refresh requested
+    private var pendingRefreshJob: Job? = null
 
     // Playlist playback state
     private var currentPlaylistId: String? = null
@@ -88,6 +96,9 @@ class PlayerViewModel @Inject constructor(
         if (current?.id == item.id) return
         val removed = queue.remove(item)
         if (!removed) return
+        // PR5: Cancel any pending delayed refresh for the old video
+        pendingRefreshJob?.cancel()
+        pendingRefreshJob = null
         current?.let { addToHistory(it) }
         currentItem = item
         applyQueueState()
@@ -102,6 +113,9 @@ class PlayerViewModel @Inject constructor(
     fun skipToPrevious(): Boolean {
         val current = currentItem ?: return false
         if (previousItems.isEmpty()) return false
+        // PR5: Cancel any pending delayed refresh for the old video
+        pendingRefreshJob?.cancel()
+        pendingRefreshJob = null
         val previous = previousItems.removeLast()
         queue.add(0, current)
         currentItem = previous
@@ -184,10 +198,14 @@ class PlayerViewModel @Inject constructor(
 
         // PR4: URL Lifecycle Hardening - check if progressive URLs are expired
         if (isProgressiveStream && resolved.areUrlsExpired()) {
-            android.util.Log.w("PlayerViewModel", "setUserQualityCap: URLs expired, forcing stream refresh before quality switch")
-            // Don't switch to potentially expired URL - refresh first
-            // The user's quality preference will be preserved after refresh
-            forceRefreshCurrentStream()
+            android.util.Log.w("PlayerViewModel", "setUserQualityCap: URLs expired, storing pending cap and forcing refresh")
+            // Store the user's quality preference to apply after refresh
+            pendingQualityCap = track
+            if (!forceRefreshCurrentStream()) {
+                // Refresh blocked by rate limiter - clear pending cap to avoid applying to wrong video later
+                pendingQualityCap = null
+                android.util.Log.w("PlayerViewModel", "setUserQualityCap: Refresh blocked, quality cap not applied")
+            }
             return
         }
 
@@ -336,6 +354,10 @@ class PlayerViewModel @Inject constructor(
         durationSeconds: Int = 0,
         viewCount: Long? = null
     ) {
+        // PR5: Cancel any pending delayed refresh for the old video
+        pendingRefreshJob?.cancel()
+        pendingRefreshJob = null
+
         isPlaylistMode = false
         currentPlaylistId = null
 
@@ -498,10 +520,79 @@ class PlayerViewModel @Inject constructor(
 
     /**
      * Force re-resolve stream URLs, bypassing the cache.
-     * Called from PlayerFragment when recovering from HTTP/parsing failures mid-playback.
+     * Called from PlayerFragment when user manually triggers refresh.
+     *
+     * PR5: Rate-limited to prevent excessive extraction calls.
+     * Uses MANUAL request kind with strict limits.
+     *
+     * @return true if refresh was initiated, false if rate-limited
      */
-    fun forceRefreshCurrentStream() {
-        val item = currentItem ?: return
+    fun forceRefreshCurrentStream(): Boolean {
+        return forceRefreshCurrentStreamWithKind(ExtractionRateLimiter.RequestKind.MANUAL)
+    }
+
+    /**
+     * Force re-resolve stream URLs for automatic recovery.
+     * Called from PlaybackRecoveryManager during REFRESH_URLS step.
+     *
+     * PR5: Uses AUTO_RECOVERY request kind with reserved budget that won't be
+     * blocked by manual refresh limits - ensures recovery can always proceed.
+     *
+     * @return true if refresh was initiated, false if rate-limited
+     */
+    fun forceRefreshForAutoRecovery(): Boolean {
+        return forceRefreshCurrentStreamWithKind(ExtractionRateLimiter.RequestKind.AUTO_RECOVERY)
+    }
+
+    /**
+     * Internal implementation for force refresh with configurable request kind.
+     */
+    private fun forceRefreshCurrentStreamWithKind(kind: ExtractionRateLimiter.RequestKind): Boolean {
+        val item = currentItem ?: return false
+
+        // Cancel any pending delayed refresh job
+        pendingRefreshJob?.cancel()
+        pendingRefreshJob = null
+
+        // Capture streamId at call time for validation in delayed execution
+        val targetStreamId = item.streamId
+
+        // PR5: Acquire permit - records attempt BEFORE extraction
+        when (val result = rateLimiter.acquire(targetStreamId, kind)) {
+            is ExtractionRateLimiter.RateLimitResult.Allowed -> {
+                // Proceed immediately
+                forceRefreshCurrentStreamInternal(item)
+                return true
+            }
+            is ExtractionRateLimiter.RateLimitResult.Delayed -> {
+                android.util.Log.w("PlayerViewModel", "Force refresh ($kind) delayed: ${result.reason}, wait ${result.delayMs}ms")
+                // Schedule delayed refresh with streamId validation
+                pendingRefreshJob = viewModelScope.launch(dispatcher) {
+                    kotlinx.coroutines.delay(result.delayMs)
+                    // Validate streamId hasn't changed during delay
+                    val currentStreamId = currentItem?.streamId
+                    if (currentStreamId != targetStreamId) {
+                        android.util.Log.d("PlayerViewModel", "Delayed refresh cancelled: video changed from $targetStreamId to $currentStreamId")
+                        return@launch
+                    }
+                    // Re-acquire permit for delayed execution
+                    val newResult = rateLimiter.acquire(targetStreamId, kind)
+                    if (newResult is ExtractionRateLimiter.RateLimitResult.Allowed) {
+                        currentItem?.let { forceRefreshCurrentStreamInternal(it) }
+                    } else {
+                        android.util.Log.w("PlayerViewModel", "Delayed refresh still blocked after delay: $newResult")
+                    }
+                }
+                return true // Refresh scheduled
+            }
+            is ExtractionRateLimiter.RateLimitResult.Blocked -> {
+                android.util.Log.e("PlayerViewModel", "Force refresh ($kind) BLOCKED: ${result.reason}, retry after ${result.retryAfterMs}ms")
+                return false
+            }
+        }
+    }
+
+    private fun forceRefreshCurrentStreamInternal(item: UpNextItem) {
         // Invalidate the prefetch cache as well since URLs are likely stale
         synchronized(prefetchCache) { prefetchCache.remove(item.streamId) }
         resolveStreamFor(item, PlaybackStartReason.USER_SELECTED, forceRefresh = true)
@@ -608,15 +699,36 @@ class PlayerViewModel @Inject constructor(
 
             // Success!
             android.util.Log.d("PlayerViewModel", "Stream resolved successfully on attempt $attempt")
+            // PR5: Signal success to reset backoff state (attempt was already recorded in acquire())
+            rateLimiter.onExtractionSuccess(item.streamId)
             publishAnalytics(PlaybackAnalyticsEvent.StreamResolved(item.streamId, selection.video?.qualityLabel))
             updateState { it.copy(streamState = StreamState.Ready(resolved.streamId, selection), retryCount = 0) }
+
+            // Apply pending quality cap if set (stored when URLs expired during quality switch)
+            val pendingCap = pendingQualityCap
+            if (pendingCap != null) {
+                pendingQualityCap = null
+                android.util.Log.d("PlayerViewModel", "Applying pending quality cap: ${pendingCap.qualityLabel}")
+                // Use post to ensure state is updated before applying cap
+                setUserQualityCap(pendingCap)
+            }
             return
         }
     }
 
     /**
+     * Call when playback starts successfully to reset rate limit backoff state.
+     * This allows future refreshes without exponential backoff penalty.
+     */
+    fun onPlaybackSuccess(videoId: String) {
+        rateLimiter.resetForVideo(videoId)
+    }
+
+    /**
      * Prefetch streams for the next items in the queue.
      * Called when current video starts playing to reduce wait time for next video.
+     *
+     * PR5: Rate-limited with PREFETCH kind - lowest priority, skipped if budget pressure.
      */
     fun prefetchNextItems() {
         prefetchJob?.cancel()
@@ -632,10 +744,27 @@ class PlayerViewModel @Inject constructor(
                     continue
                 }
 
+                // PR5: Acquire permit with PREFETCH kind - lowest priority, can be skipped
+                when (val result = rateLimiter.acquire(item.streamId, ExtractionRateLimiter.RequestKind.PREFETCH)) {
+                    is ExtractionRateLimiter.RateLimitResult.Allowed -> {
+                        // Proceed with prefetch
+                    }
+                    is ExtractionRateLimiter.RateLimitResult.Delayed -> {
+                        android.util.Log.d("PlayerViewModel", "Prefetch: Skipping ${item.streamId} (rate limited: ${result.reason})")
+                        continue // Skip this item, try next - don't wait for prefetch
+                    }
+                    is ExtractionRateLimiter.RateLimitResult.Blocked -> {
+                        android.util.Log.d("PlayerViewModel", "Prefetch: Skipping ${item.streamId} (blocked: ${result.reason})")
+                        continue // Skip this item, try next
+                    }
+                }
+
                 try {
                     android.util.Log.d("PlayerViewModel", "Prefetch: Starting for ${item.streamId}")
                     val resolved = repository.resolveStreams(item.streamId)
                     if (resolved != null) {
+                        // PR5: Signal success to reset backoff state
+                        rateLimiter.onExtractionSuccess(item.streamId)
                         synchronized(prefetchCache) {
                             // Evict old entries if cache is full
                             if (prefetchCache.size >= maxPrefetchItems * 2) {
@@ -678,6 +807,9 @@ class PlayerViewModel @Inject constructor(
 
     private fun advanceToNext(reason: PlaybackStartReason, markComplete: Boolean): Boolean {
         val finished = currentItem ?: return false
+        // PR5: Cancel any pending delayed refresh for the old video
+        pendingRefreshJob?.cancel()
+        pendingRefreshJob = null
         if (markComplete) {
             publishAnalytics(PlaybackAnalyticsEvent.PlaybackCompleted(finished))
         }

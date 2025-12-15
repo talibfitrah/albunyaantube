@@ -1,5 +1,6 @@
 package com.albunyaan.tube.player
 
+import android.os.SystemClock
 import android.util.Log
 import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.Player
@@ -205,7 +206,7 @@ class PlaybackRecoveryManager(
 
     private fun startBufferingStallDetection(player: ExoPlayer) {
         if (bufferingStartTime == 0L) {
-            bufferingStartTime = System.currentTimeMillis()
+            bufferingStartTime = SystemClock.elapsedRealtime()
             Log.d(TAG, "Buffering started")
         }
 
@@ -213,7 +214,7 @@ class PlaybackRecoveryManager(
         bufferingStallJob = scope.launch {
             delay(BUFFERING_STALL_THRESHOLD_MS)
             if (player.playbackState == Player.STATE_BUFFERING) {
-                val duration = System.currentTimeMillis() - bufferingStartTime
+                val duration = SystemClock.elapsedRealtime() - bufferingStartTime
                 Log.w(TAG, "Buffering stall detected: ${duration}ms")
                 initiateRecovery(player, "buffering stall (${duration}ms)")
             }
@@ -222,7 +223,7 @@ class PlaybackRecoveryManager(
 
     private fun stopBufferingStallDetection() {
         if (bufferingStartTime > 0L) {
-            val duration = System.currentTimeMillis() - bufferingStartTime
+            val duration = SystemClock.elapsedRealtime() - bufferingStartTime
             Log.d(TAG, "Buffering ended after ${duration}ms")
         }
         bufferingStartTime = 0L
@@ -249,10 +250,10 @@ class PlaybackRecoveryManager(
                 if (currentPosition <= lastKnownPosition + expectedMinAdvance) {
                     // Position not advancing
                     if (positionStuckSince == 0L) {
-                        positionStuckSince = System.currentTimeMillis()
+                        positionStuckSince = SystemClock.elapsedRealtime()
                         Log.d(TAG, "Position appears stuck at ${currentPosition}ms")
                     } else {
-                        val stuckDuration = System.currentTimeMillis() - positionStuckSince
+                        val stuckDuration = SystemClock.elapsedRealtime() - positionStuckSince
                         if (stuckDuration >= STUCK_READY_THRESHOLD_MS) {
                             Log.w(TAG, "Stuck in READY detected: position=${currentPosition}ms, stuck for ${stuckDuration}ms")
                             initiateRecovery(player, "stuck in READY (position not advancing)")
@@ -290,7 +291,7 @@ class PlaybackRecoveryManager(
         }
 
         // Backoff check BEFORE incrementing attempt
-        val now = System.currentTimeMillis()
+        val now = SystemClock.elapsedRealtime()
         val timeSinceLastRecovery = now - lastRecoveryTime.get()
         val nextAttempt = currentAttempt + 1
         val requiredBackoff = RECOVERY_BACKOFF_BASE_MS * nextAttempt

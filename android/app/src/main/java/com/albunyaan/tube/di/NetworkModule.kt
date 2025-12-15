@@ -18,6 +18,7 @@ import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import java.io.File
 import java.util.concurrent.TimeUnit
+import com.albunyaan.tube.player.ExtractionRateLimiter
 import javax.inject.Singleton
 
 /**
@@ -28,6 +29,12 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
+
+    @Provides
+    @Singleton
+    fun provideExtractionRateLimiter(): ExtractionRateLimiter {
+        return ExtractionRateLimiter()
+    }
 
     @Provides
     @Singleton

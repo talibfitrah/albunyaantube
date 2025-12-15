@@ -1,5 +1,6 @@
 package com.albunyaan.tube.player
 
+import android.os.SystemClock
 import android.util.Log
 import com.google.android.exoplayer2.Player
 import kotlinx.coroutines.CoroutineScope
@@ -97,14 +98,14 @@ class BufferHealthMonitor(
         // Stop any existing monitoring
         stopMonitoring()
 
-        // Reset state
+        // Reset state - all tracking is per-stream
         currentStreamId = streamId
         isProgressiveStream = !isAdaptive
         bufferSamples.clear()
         consecutiveDecliningCount = 0
-        streamStartTimeMs = System.currentTimeMillis()
+        streamStartTimeMs = SystemClock.elapsedRealtime()
         proactiveDownshiftCount = 0
-        // Note: lastDownshiftTimeMs is NOT reset - cooldown spans across streams
+        lastDownshiftTimeMs = 0L // Reset per stream - new video shouldn't inherit previous cooldown
 
         // Only monitor progressive streams (adaptive has ABR)
         if (isProgressiveStream) {
@@ -167,10 +168,10 @@ class BufferHealthMonitor(
                 continue
             }
 
-            // Sample current buffer
+            // Sample current buffer (clamp to >= 0 for discontinuities/seeks)
             val currentPosition = player.currentPosition
             val bufferedPosition = player.bufferedPosition
-            val bufferMs = bufferedPosition - currentPosition
+            val bufferMs = (bufferedPosition - currentPosition).coerceAtLeast(0L)
 
             // Add sample
             bufferSamples.addLast(bufferMs)
@@ -186,8 +187,10 @@ class BufferHealthMonitor(
     }
 
     private fun evaluateBufferHealth(currentBufferMs: Long) {
+        val now = SystemClock.elapsedRealtime()
+
         // Grace period check
-        val elapsed = System.currentTimeMillis() - streamStartTimeMs
+        val elapsed = now - streamStartTimeMs
         if (elapsed < GRACE_PERIOD_MS) {
             Log.v(TAG, "Buffer: ${currentBufferMs}ms (grace period: ${GRACE_PERIOD_MS - elapsed}ms remaining)")
             return
@@ -200,7 +203,7 @@ class BufferHealthMonitor(
         }
 
         // Cooldown check
-        val timeSinceLastDownshift = System.currentTimeMillis() - lastDownshiftTimeMs
+        val timeSinceLastDownshift = now - lastDownshiftTimeMs
         if (lastDownshiftTimeMs > 0 && timeSinceLastDownshift < DOWNSHIFT_COOLDOWN_MS) {
             Log.v(TAG, "Buffer: ${currentBufferMs}ms (cooldown: ${DOWNSHIFT_COOLDOWN_MS - timeSinceLastDownshift}ms remaining)")
             return
@@ -266,14 +269,14 @@ class BufferHealthMonitor(
 
         if (success) {
             proactiveDownshiftCount++
-            lastDownshiftTimeMs = System.currentTimeMillis()
+            lastDownshiftTimeMs = SystemClock.elapsedRealtime()
             consecutiveDecliningCount = 0
             bufferSamples.clear() // Reset samples after successful downshift
             Log.i(TAG, "Proactive downshift successful (count=$proactiveDownshiftCount)")
         } else {
             Log.w(TAG, "Proactive downshift failed or no lower quality available")
             // Don't count failed attempts against max, but do apply cooldown
-            lastDownshiftTimeMs = System.currentTimeMillis()
+            lastDownshiftTimeMs = SystemClock.elapsedRealtime()
         }
     }
 

@@ -213,7 +213,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             viewModel.retryCurrentStream()
         }
         binding.playerRefreshStreamButton?.setOnClickListener {
-            viewModel.forceRefreshCurrentStream()
+            // PR5: Show feedback if rate-limited
+            if (!viewModel.forceRefreshCurrentStream()) {
+                Toast.makeText(requireContext(), R.string.player_refresh_rate_limited, Toast.LENGTH_SHORT).show()
+            }
         }
 
         // Setup recovery retry button (shown when auto-recovery exhausted)
@@ -221,7 +224,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // User manual retry - resets recovery state and forces stream refresh
             recoveryManager?.resetRecoveryState()
             viewModel.clearRecoveringState()
-            viewModel.forceRefreshCurrentStream()
+            // PR5: Show feedback if rate-limited
+            if (!viewModel.forceRefreshCurrentStream()) {
+                Toast.makeText(requireContext(), R.string.player_refresh_rate_limited, Toast.LENGTH_SHORT).show()
+            }
         }
 
         // Configure Cast button
@@ -366,6 +372,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
                     // Notify buffer health monitor to start monitoring (progressive streams only)
                     player?.let { bufferHealthMonitor?.onPlaybackStarted(it) }
+
+                    // PR5: Reset rate limiter backoff for successful playback
+                    viewModel.state.value.currentItem?.streamId?.let { streamId ->
+                        viewModel.onPlaybackSuccess(streamId)
+                    }
 
                     if (!hasAutoHidden) {
                         // Auto-hide controls after playback starts
@@ -868,8 +879,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             Toast.makeText(ctx, R.string.player_status_resolving, Toast.LENGTH_SHORT).show()
         }
 
-        // Use forceRefresh to bypass cached URLs that may be expired/invalid
-        viewModel.forceRefreshCurrentStream()
+        // PR5: Use auto-recovery method - this is called from error handlers and recovery ladder,
+        // not from user buttons. AUTO_RECOVERY has reserved budget that won't be blocked by manual limits.
+        viewModel.forceRefreshForAutoRecovery()
     }
 
     private fun findHttpResponseCode(throwable: Throwable?): Int? {
@@ -1141,8 +1153,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 player = null
                 binding?.let { setupPlayer(it) }
 
-                // Force stream refresh to get fresh URLs
-                viewModel.forceRefreshCurrentStream()
+                // PR5: Force stream refresh using auto-recovery method - this is the final recovery step,
+                // uses reserved budget that won't be blocked by manual limits.
+                viewModel.forceRefreshForAutoRecovery()
             }
         }
     }
