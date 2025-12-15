@@ -69,8 +69,9 @@ class NewPipeExtractorClient(
             // CRITICAL: Must call fetchPage() before getInfo() to get ALL video formats!
             extractor.fetchPage()
             val info = StreamInfo.getInfo(extractor)
-            val resolved = info.toResolvedStreams(videoId) ?: return@withContext null
-            streamCache[videoId] = CacheEntry(resolved, clock())
+            val urlGeneratedAt = clock()
+            val resolved = info.toResolvedStreams(videoId, urlGeneratedAt) ?: return@withContext null
+            streamCache[videoId] = CacheEntry(resolved, urlGeneratedAt)
             metrics.onStreamResolveSuccess(videoId, clock() - start)
             resolved
         } catch (c: CancellationException) {
@@ -286,7 +287,7 @@ class NewPipeExtractorClient(
         }
     }
 
-    private fun StreamInfo.toResolvedStreams(streamId: String): ResolvedStreams? {
+    private fun StreamInfo.toResolvedStreams(streamId: String, generatedAt: Long): ResolvedStreams? {
         // Extract ALL video streams (muxed + video-only) for all quality options
         android.util.Log.d("NewPipeExtractor", "Video streams (muxed): ${videoStreams.size}")
         android.util.Log.d("NewPipeExtractor", "Video-only streams: ${videoOnlyStreams.size}")
@@ -370,7 +371,8 @@ class NewPipeExtractorClient(
             subtitleTracks = emptyList(),
             durationSeconds = durationSeconds,
             hlsUrl = hlsStreamUrl,
-            dashUrl = dashStreamUrl
+            dashUrl = dashStreamUrl,
+            urlGeneratedAt = generatedAt
         )
     }
 

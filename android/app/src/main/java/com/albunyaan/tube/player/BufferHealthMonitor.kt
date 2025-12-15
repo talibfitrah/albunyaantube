@@ -244,7 +244,7 @@ class BufferHealthMonitor(
 
     /**
      * Check if buffer is declining based on recent samples.
-     * Uses simple linear trend: compare average of recent samples to older samples.
+     * Compares the last two samples to detect immediate declining trend.
      */
     private fun isBufferDeclining(): Boolean {
         if (bufferSamples.size < 3) return false

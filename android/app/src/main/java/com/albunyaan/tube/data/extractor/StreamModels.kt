@@ -35,8 +35,32 @@ data class ResolvedStreams(
     /** HLS manifest URL for adaptive streaming (preferred for long videos) */
     val hlsUrl: String? = null,
     /** DASH manifest URL for adaptive streaming (alternative to HLS) */
-    val dashUrl: String? = null
-)
+    val dashUrl: String? = null,
+    /**
+     * Timestamp when the stream URLs were generated (System.currentTimeMillis).
+     * YouTube stream URLs typically expire after ~6 hours, but we use a conservative
+     * 1-hour TTL to ensure quality switches use fresh URLs.
+     */
+    val urlGeneratedAt: Long = System.currentTimeMillis()
+) {
+    companion object {
+        /**
+         * Conservative URL TTL: 1 hour (YouTube typically allows ~6 hours).
+         * Using a shorter TTL ensures we refresh URLs before they expire,
+         * preventing playback failures during quality switches.
+         */
+        const val URL_TTL_MS = 60 * 60 * 1000L // 1 hour
+    }
+
+    /**
+     * Check if the stream URLs are likely expired based on urlGeneratedAt.
+     * @param nowMs Current time in milliseconds (default: System.currentTimeMillis())
+     * @return true if URLs are likely expired and should be refreshed
+     */
+    fun areUrlsExpired(nowMs: Long = System.currentTimeMillis()): Boolean {
+        return (nowMs - urlGeneratedAt) > URL_TTL_MS
+    }
+}
 
 /**
  * Represents the origin of a quality selection.

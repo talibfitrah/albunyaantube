@@ -339,6 +339,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             callbacks = createRecoveryCallbacks()
         )
 
+        // Clean up existing buffer health monitor before recreating
+        bufferHealthMonitor?.release()
+        bufferHealthMonitor = null
+
         // Initialize BufferHealthMonitor for proactive quality downshift on progressive streams
         bufferHealthMonitor = BufferHealthMonitor(
             scope = viewLifecycleOwner.lifecycleScope,
@@ -1108,8 +1112,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 )
                 return if (nextLower != null) {
                     android.util.Log.i("PlayerFragment", "Recovery: stepping down to ${nextLower.qualityLabel}")
+                    // Returns false if URLs expired and refresh triggered instead
                     viewModel.applyAutoQualityStepDown(nextLower)
-                    true
                 } else {
                     false
                 }
@@ -1179,8 +1183,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
                 return if (nextLower != null) {
                     android.util.Log.i("PlayerFragment", "Proactive downshift: ${streamState.selection.video?.qualityLabel} -> ${nextLower.qualityLabel}")
+                    // Returns false if URLs expired and refresh triggered instead
                     viewModel.applyAutoQualityStepDown(nextLower)
-                    true
                 } else {
                     android.util.Log.d("PlayerFragment", "Proactive downshift: no lower quality available")
                     false

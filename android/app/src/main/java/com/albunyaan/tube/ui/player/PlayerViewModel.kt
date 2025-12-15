@@ -179,6 +179,18 @@ class PlayerViewModel @Inject constructor(
         val streamState = _state.value.streamState
         if (streamState !is StreamState.Ready) return
 
+        val resolved = streamState.selection.resolved
+        val isProgressiveStream = resolved.hlsUrl == null && resolved.dashUrl == null
+
+        // PR4: URL Lifecycle Hardening - check if progressive URLs are expired
+        if (isProgressiveStream && resolved.areUrlsExpired()) {
+            android.util.Log.w("PlayerViewModel", "setUserQualityCap: URLs expired, forcing stream refresh before quality switch")
+            // Don't switch to potentially expired URL - refresh first
+            // The user's quality preference will be preserved after refresh
+            forceRefreshCurrentStream()
+            return
+        }
+
         // Guard against null/invalid height - treat as "use this exact track" without setting a cap
         val capHeight = track.height
         if (capHeight == null || capHeight <= 0) {
@@ -187,7 +199,7 @@ class PlayerViewModel @Inject constructor(
                 streamId = streamState.streamId,
                 video = track,
                 audio = streamState.selection.audio,
-                resolved = streamState.selection.resolved,
+                resolved = resolved,
                 userQualityCapHeight = null, // No cap - can't determine height
                 selectionOrigin = QualitySelectionOrigin.MANUAL
             )
@@ -195,8 +207,6 @@ class PlayerViewModel @Inject constructor(
             publishAnalytics(PlaybackAnalyticsEvent.QualityChanged(track.qualityLabel ?: "Unknown"))
             return
         }
-
-        val resolved = streamState.selection.resolved
 
         // Find the best track that respects the cap; fallback to lowest available if none under cap
         val bestUnderCap = findBestTrackUnderCap(resolved.videoTracks, capHeight)
@@ -220,23 +230,36 @@ class PlayerViewModel @Inject constructor(
      * Apply automatic quality step-down during playback stalls.
      * This does NOT change the user's quality cap - it's a temporary recovery action.
      * Used only when playing progressive streams (not adaptive).
+     *
+     * @return true if step-down was applied, false if URLs were expired (refresh triggered)
      */
-    fun applyAutoQualityStepDown(track: VideoTrack) {
+    fun applyAutoQualityStepDown(track: VideoTrack): Boolean {
         val streamState = _state.value.streamState
-        if (streamState !is StreamState.Ready) return
+        if (streamState !is StreamState.Ready) return false
+
+        val resolved = streamState.selection.resolved
+        val isProgressiveStream = resolved.hlsUrl == null && resolved.dashUrl == null
+
+        // PR4: URL Lifecycle Hardening - check if progressive URLs are expired
+        if (isProgressiveStream && resolved.areUrlsExpired()) {
+            android.util.Log.w("PlayerViewModel", "applyAutoQualityStepDown: URLs expired, forcing stream refresh instead of step-down")
+            forceRefreshCurrentStream()
+            return false
+        }
 
         // Preserve user's cap if they set one - auto step-down should not override it
         val newSelection = PlaybackSelection(
             streamId = streamState.streamId,
             video = track,
             audio = streamState.selection.audio,
-            resolved = streamState.selection.resolved,
+            resolved = resolved,
             userQualityCapHeight = streamState.selection.userQualityCapHeight,
             selectionOrigin = QualitySelectionOrigin.AUTO_RECOVERY
         )
 
         updateState { it.copy(streamState = StreamState.Ready(streamState.streamId, newSelection)) }
         android.util.Log.d("PlayerViewModel", "Auto step-down to ${track.qualityLabel} (cap preserved: ${streamState.selection.userQualityCapHeight}p)")
+        return true
     }
 
     /**
