@@ -3,6 +3,7 @@ package com.albunyaan.tube.scheduler;
 import com.albunyaan.tube.config.CacheConfig;
 import com.albunyaan.tube.config.ValidationProperties;
 import com.albunyaan.tube.model.ValidationRun;
+import com.albunyaan.tube.repository.SystemSettingsRepository;
 import com.albunyaan.tube.service.ContentValidationService;
 import com.albunyaan.tube.service.YouTubeCircuitBreaker;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,6 +19,7 @@ import org.springframework.cache.CacheManager;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.lenient;
 
 /**
  * Unit tests for VideoValidationScheduler
@@ -44,6 +46,9 @@ class VideoValidationSchedulerTest {
     private YouTubeCircuitBreaker circuitBreaker;
 
     @Mock
+    private SystemSettingsRepository systemSettingsRepository;
+
+    @Mock
     private Cache publicContentCache;
 
     @Mock
@@ -55,11 +60,17 @@ class VideoValidationSchedulerTest {
     @BeforeEach
     void setUp() {
         validationProperties = createDefaultProperties();
+        // By default, lock acquisition succeeds and no lock is held (use lenient to avoid strict mode errors)
+        lenient().when(systemSettingsRepository.tryAcquireLock(anyString(), anyString(), anyInt())).thenReturn(true);
+        lenient().when(systemSettingsRepository.releaseLock(anyString(), anyString())).thenReturn(true);
+        lenient().when(systemSettingsRepository.isLockHeld(anyString())).thenReturn(false);
+
         scheduler = new VideoValidationScheduler(
                 contentValidationService,
                 cacheManager,
                 validationProperties,
-                circuitBreaker
+                circuitBreaker,
+                systemSettingsRepository
         );
     }
 
@@ -110,7 +121,7 @@ class VideoValidationSchedulerTest {
         // Arrange
         validationProperties.getVideo().setMaxItemsPerRun(25);
         scheduler = new VideoValidationScheduler(
-                contentValidationService, cacheManager, validationProperties, circuitBreaker);
+                contentValidationService, cacheManager, validationProperties, circuitBreaker, systemSettingsRepository);
 
         ValidationRun mockRun = new ValidationRun(ValidationRun.TRIGGER_SCHEDULED, null, "Test");
         mockRun.complete(ValidationRun.STATUS_COMPLETED);
@@ -137,7 +148,7 @@ class VideoValidationSchedulerTest {
         // Arrange
         validationProperties.getVideo().getScheduler().setEnabled(false);
         scheduler = new VideoValidationScheduler(
-                contentValidationService, cacheManager, validationProperties, circuitBreaker);
+                contentValidationService, cacheManager, validationProperties, circuitBreaker, systemSettingsRepository);
 
         // Act
         scheduler.scheduledValidation();
@@ -165,21 +176,32 @@ class VideoValidationSchedulerTest {
     }
 
     @Test
-    @DisplayName("Should prevent concurrent runs")
+    @DisplayName("Should prevent concurrent runs via distributed lock")
     void scheduledValidation_shouldPreventConcurrentRuns() throws InterruptedException {
         // Arrange
         ValidationRun mockRun = new ValidationRun(ValidationRun.TRIGGER_SCHEDULED, null, "Test");
         mockRun.complete(ValidationRun.STATUS_COMPLETED);
 
         when(circuitBreaker.isOpen()).thenReturn(false);
+        when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(publicContentCache);
+        when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(videosCache);
+
+        // Simulate lock contention: first call acquires, second call fails
+        java.util.concurrent.atomic.AtomicBoolean lockHeld = new java.util.concurrent.atomic.AtomicBoolean(false);
+        when(systemSettingsRepository.tryAcquireLock(anyString(), anyString(), anyInt()))
+                .thenAnswer(invocation -> lockHeld.compareAndSet(false, true));
+        when(systemSettingsRepository.releaseLock(anyString(), anyString()))
+                .thenAnswer(invocation -> {
+                    lockHeld.set(false);
+                    return true;
+                });
+
         // First call takes a long time
         when(contentValidationService.validateVideos(anyString(), any(), anyString(), anyInt()))
                 .thenAnswer(invocation -> {
                     Thread.sleep(100); // Simulate long-running validation
                     return mockRun;
                 });
-        when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(publicContentCache);
-        when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(videosCache);
 
         // Act - start first validation in a separate thread
         Thread firstRun = new Thread(() -> scheduler.scheduledValidation());
@@ -304,7 +326,7 @@ class VideoValidationSchedulerTest {
         // Arrange
         validationProperties.getVideo().getScheduler().setEnabled(false);
         scheduler = new VideoValidationScheduler(
-                contentValidationService, cacheManager, validationProperties, circuitBreaker);
+                contentValidationService, cacheManager, validationProperties, circuitBreaker, systemSettingsRepository);
 
         ValidationRun mockRun = new ValidationRun(ValidationRun.TRIGGER_MANUAL, null, "Test");
         mockRun.complete(ValidationRun.STATUS_COMPLETED);
@@ -347,13 +369,24 @@ class VideoValidationSchedulerTest {
         mockRun.complete(ValidationRun.STATUS_COMPLETED);
 
         when(circuitBreaker.isOpen()).thenReturn(false);
+        when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(publicContentCache);
+        when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(videosCache);
+
+        // Simulate lock contention: first call acquires, second call fails
+        java.util.concurrent.atomic.AtomicBoolean lockHeld = new java.util.concurrent.atomic.AtomicBoolean(false);
+        when(systemSettingsRepository.tryAcquireLock(anyString(), anyString(), anyInt()))
+                .thenAnswer(invocation -> lockHeld.compareAndSet(false, true));
+        when(systemSettingsRepository.releaseLock(anyString(), anyString()))
+                .thenAnswer(invocation -> {
+                    lockHeld.set(false);
+                    return true;
+                });
+
         when(contentValidationService.validateVideos(anyString(), any(), anyString(), anyInt()))
                 .thenAnswer(invocation -> {
                     Thread.sleep(100);
                     return mockRun;
                 });
-        when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(publicContentCache);
-        when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(videosCache);
 
         // Act - start first run in separate thread
         Thread firstRun = new Thread(() -> scheduler.triggerManualRun());

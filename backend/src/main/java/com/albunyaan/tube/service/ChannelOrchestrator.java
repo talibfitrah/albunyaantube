@@ -27,6 +27,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 /**
@@ -117,16 +118,16 @@ public class ChannelOrchestrator {
                 return videos;
             }
 
-            // Fetch the tab
+            // Fetch the tab with throttling and circuit breaker protection
             ChannelTabExtractor tabExtractor = gateway.createChannelTabExtractor(videosTab);
-            tabExtractor.fetchPage();
+            gateway.fetchTabPage(tabExtractor);
 
-            // Get requested page or initial page
+            // Get requested page or initial page (with throttling/circuit breaker protection for pagination)
             ListExtractor.InfoItemsPage<InfoItem> page;
             if (pageToken != null && !pageToken.isEmpty()) {
                 Page requestedPage = gateway.decodePageToken(pageToken);
                 if (requestedPage != null) {
-                    page = tabExtractor.getPage(requestedPage);
+                    page = gateway.getTabPage(tabExtractor, requestedPage);
                 } else {
                     page = tabExtractor.getInitialPage();
                 }
@@ -163,7 +164,8 @@ public class ChannelOrchestrator {
 
                 if (page.hasNextPage()) {
                     try {
-                        page = tabExtractor.getPage(page.getNextPage());
+                        // Use gateway for throttling/circuit breaker protection on pagination
+                        page = gateway.getTabPage(tabExtractor, page.getNextPage());
                     } catch (Exception e) {
                         logger.warn("Failed to fetch next page of videos: {}", e.getMessage());
                         break;
@@ -219,20 +221,20 @@ public class ChannelOrchestrator {
                 return playlists;
             }
 
-            // Fetch the playlists tab
+            // Fetch the playlists tab with throttling and circuit breaker protection
             ChannelTabExtractor tabExtractor = gateway.createChannelTabExtractor(playlistsTab);
-            tabExtractor.fetchPage();
+            gateway.fetchTabPage(tabExtractor);
 
             // Get initial page or requested page
             ListExtractor.InfoItemsPage<InfoItem> page;
-            if (pageToken != null && !pageToken.isEmpty()) {
-                Page requestedPage = gateway.decodePageToken(pageToken);
-                if (requestedPage != null) {
-                    page = tabExtractor.getPage(requestedPage);
-                } else {
-                    page = tabExtractor.getInitialPage();
-                }
-            } else {
+	            if (pageToken != null && !pageToken.isEmpty()) {
+	                Page requestedPage = gateway.decodePageToken(pageToken);
+	                if (requestedPage != null) {
+	                    page = gateway.getTabPage(tabExtractor, requestedPage);
+	                } else {
+	                    page = tabExtractor.getInitialPage();
+	                }
+	            } else {
                 page = tabExtractor.getInitialPage();
             }
 
@@ -459,27 +461,27 @@ public class ChannelOrchestrator {
             return result;
         }
 
-        logger.info("Batch validating {} channels SEQUENTIALLY with throttling", youtubeIds.size());
+        logger.info("Batch validating {} channels SEQUENTIALLY (throttling handled by gateway)", youtubeIds.size());
 
-        // Process SEQUENTIALLY to avoid rate limiting (no concurrent requests)
+        // Process SEQUENTIALLY to avoid rate limiting (throttling/circuit breaker handled by YouTubeGateway)
         for (int i = 0; i < youtubeIds.size(); i++) {
             String channelId = youtubeIds.get(i);
 
             // Check circuit breaker before each request
             if (circuitBreaker != null && circuitBreaker.isOpen()) {
-                logger.warn("Stopping batch validation at item {}/{} - circuit breaker opened",
-                        i + 1, youtubeIds.size());
-                // Mark remaining items as errors
+                logger.warn("Stopping batch validation at item {}/{} - circuit breaker opened. " +
+                            "Skipping remaining {} items (will retry on next run).",
+                        i + 1, youtubeIds.size(), youtubeIds.size() - i);
+                // Mark remaining items as SKIPPED (not errors) - they will be retried on next run
+                // without updating their status/lastValidatedAt
                 for (int j = i; j < youtubeIds.size(); j++) {
-                    result.addError(youtubeIds.get(j), "Circuit breaker opened during batch");
+                    result.addSkipped(youtubeIds.get(j));
                 }
                 break;
             }
 
-            // Apply throttle before request
-            if (throttler != null) {
-                throttler.throttle();
-            }
+            // Note: Throttling and circuit breaker recording are handled by YouTubeGateway.
+            // Do NOT duplicate here to avoid over-escalation of cooldown/backoff.
 
             try {
                 // Call gateway directly to get the raw NewPipe exceptions
@@ -487,9 +489,6 @@ public class ChannelOrchestrator {
                 if (info != null) {
                     result.addValid(channelId, info);
                     logger.debug("Channel {} exists on YouTube: {}", channelId, info.getName());
-                    if (circuitBreaker != null) {
-                        circuitBreaker.recordSuccess();
-                    }
                 } else {
                     // Null result without exception - should not happen, but treat as error
                     logger.warn("Channel {} returned null info without exception", channelId);
@@ -505,24 +504,17 @@ public class ChannelOrchestrator {
                 logger.info("Channel {} CONFIRMED not available (ContentNotAvailableException): {} ({})",
                         channelId, e.getMessage(), e.getClass().getSimpleName());
                 result.addNotFound(channelId);
-                if (circuitBreaker != null) {
-                    circuitBreaker.recordSuccess(); // Not a rate limit error
-                }
             } catch (ExtractionException e) {
-                // Check if this is a rate limit error
+                // Check if this is a rate limit error (detection only - recording is in gateway)
                 if (circuitBreaker != null && circuitBreaker.isRateLimitError(e)) {
                     logger.error("Channel {} RATE LIMITED: {} ({})",
                             channelId, e.getMessage(), e.getClass().getSimpleName());
-                    circuitBreaker.recordRateLimitError(e);
                     result.addError(channelId, "Rate limit: " + e.getMessage());
                 } else if (isNotFoundErrorMessage(e.getMessage())) {
                     // Check if the error message indicates content doesn't exist
                     logger.info("Channel {} CONFIRMED not available (error message): {} ({})",
                             channelId, e.getMessage(), e.getClass().getSimpleName());
                     result.addNotFound(channelId);
-                    if (circuitBreaker != null) {
-                        circuitBreaker.recordSuccess();
-                    }
                 } else {
                     // Other extraction errors - could be parsing issues, format changes, etc.
                     logger.warn("Channel {} extraction error (will retry): {} ({})",
@@ -608,35 +600,32 @@ public class ChannelOrchestrator {
             return result;
         }
 
-        logger.info("Batch validating {} playlists SEQUENTIALLY with throttling", youtubeIds.size());
+        logger.info("Batch validating {} playlists SEQUENTIALLY (throttling handled by gateway)", youtubeIds.size());
 
-        // Process SEQUENTIALLY to avoid rate limiting
+        // Process SEQUENTIALLY to avoid rate limiting (throttling/circuit breaker handled by YouTubeGateway)
         for (int i = 0; i < youtubeIds.size(); i++) {
             String playlistId = youtubeIds.get(i);
 
             // Check circuit breaker before each request
             if (circuitBreaker != null && circuitBreaker.isOpen()) {
-                logger.warn("Stopping batch validation at item {}/{} - circuit breaker opened",
-                        i + 1, youtubeIds.size());
+                logger.warn("Stopping batch validation at item {}/{} - circuit breaker opened. " +
+                            "Skipping remaining {} items (will retry on next run).",
+                        i + 1, youtubeIds.size(), youtubeIds.size() - i);
+                // Mark remaining items as SKIPPED (not errors) - they will be retried on next run
                 for (int j = i; j < youtubeIds.size(); j++) {
-                    result.addError(youtubeIds.get(j), "Circuit breaker opened during batch");
+                    result.addSkipped(youtubeIds.get(j));
                 }
                 break;
             }
 
-            // Apply throttle before request
-            if (throttler != null) {
-                throttler.throttle();
-            }
+            // Note: Throttling and circuit breaker recording are handled by YouTubeGateway.
+            // Do NOT duplicate here to avoid over-escalation of cooldown/backoff.
 
             try {
                 PlaylistInfo info = gateway.fetchPlaylistInfo(playlistId);
                 if (info != null) {
                     result.addValid(playlistId, info);
                     logger.debug("Playlist {} exists on YouTube: {}", playlistId, info.getName());
-                    if (circuitBreaker != null) {
-                        circuitBreaker.recordSuccess();
-                    }
                 } else {
                     logger.warn("Playlist {} returned null info without exception", playlistId);
                     result.addError(playlistId, "Null response from YouTube");
@@ -645,22 +634,16 @@ public class ChannelOrchestrator {
                 logger.info("Playlist {} CONFIRMED not available (ContentNotAvailableException): {} ({})",
                         playlistId, e.getMessage(), e.getClass().getSimpleName());
                 result.addNotFound(playlistId);
-                if (circuitBreaker != null) {
-                    circuitBreaker.recordSuccess();
-                }
             } catch (ExtractionException e) {
+                // Check if this is a rate limit error (detection only - recording is in gateway)
                 if (circuitBreaker != null && circuitBreaker.isRateLimitError(e)) {
                     logger.error("Playlist {} RATE LIMITED: {} ({})",
                             playlistId, e.getMessage(), e.getClass().getSimpleName());
-                    circuitBreaker.recordRateLimitError(e);
                     result.addError(playlistId, "Rate limit: " + e.getMessage());
                 } else if (isNotFoundErrorMessage(e.getMessage())) {
                     logger.info("Playlist {} CONFIRMED not available (error message): {} ({})",
                             playlistId, e.getMessage(), e.getClass().getSimpleName());
                     result.addNotFound(playlistId);
-                    if (circuitBreaker != null) {
-                        circuitBreaker.recordSuccess();
-                    }
                 } else {
                     logger.warn("Playlist {} extraction error (will retry): {} ({})",
                             playlistId, e.getMessage(), e.getClass().getSimpleName());
@@ -744,35 +727,32 @@ public class ChannelOrchestrator {
             return result;
         }
 
-        logger.info("Batch validating {} videos SEQUENTIALLY with throttling", youtubeIds.size());
+        logger.info("Batch validating {} videos SEQUENTIALLY (throttling handled by gateway)", youtubeIds.size());
 
-        // Process SEQUENTIALLY to avoid rate limiting
+        // Process SEQUENTIALLY to avoid rate limiting (throttling/circuit breaker handled by YouTubeGateway)
         for (int i = 0; i < youtubeIds.size(); i++) {
             String videoId = youtubeIds.get(i);
 
             // Check circuit breaker before each request
             if (circuitBreaker != null && circuitBreaker.isOpen()) {
-                logger.warn("Stopping batch validation at item {}/{} - circuit breaker opened",
-                        i + 1, youtubeIds.size());
+                logger.warn("Stopping batch validation at item {}/{} - circuit breaker opened. " +
+                            "Skipping remaining {} items (will retry on next run).",
+                        i + 1, youtubeIds.size(), youtubeIds.size() - i);
+                // Mark remaining items as SKIPPED (not errors) - they will be retried on next run
                 for (int j = i; j < youtubeIds.size(); j++) {
-                    result.addError(youtubeIds.get(j), "Circuit breaker opened during batch");
+                    result.addSkipped(youtubeIds.get(j));
                 }
                 break;
             }
 
-            // Apply throttle before request
-            if (throttler != null) {
-                throttler.throttle();
-            }
+            // Note: Throttling and circuit breaker recording are handled by YouTubeGateway.
+            // Do NOT duplicate here to avoid over-escalation of cooldown/backoff.
 
             try {
                 StreamInfo info = gateway.fetchStreamInfo(videoId);
                 if (info != null) {
                     result.addValid(videoId, info);
                     logger.debug("Video {} exists on YouTube: {}", videoId, info.getName());
-                    if (circuitBreaker != null) {
-                        circuitBreaker.recordSuccess();
-                    }
                 } else {
                     logger.warn("Video {} returned null info without exception", videoId);
                     result.addError(videoId, "Null response from YouTube");
@@ -781,22 +761,16 @@ public class ChannelOrchestrator {
                 logger.info("Video {} CONFIRMED not available (ContentNotAvailableException): {} ({})",
                         videoId, e.getMessage(), e.getClass().getSimpleName());
                 result.addNotFound(videoId);
-                if (circuitBreaker != null) {
-                    circuitBreaker.recordSuccess();
-                }
             } catch (ExtractionException e) {
+                // Check if this is a rate limit error (detection only - recording is in gateway)
                 if (circuitBreaker != null && circuitBreaker.isRateLimitError(e)) {
                     logger.error("Video {} RATE LIMITED: {} ({})",
                             videoId, e.getMessage(), e.getClass().getSimpleName());
-                    circuitBreaker.recordRateLimitError(e);
                     result.addError(videoId, "Rate limit: " + e.getMessage());
                 } else if (isNotFoundErrorMessage(e.getMessage())) {
                     logger.info("Video {} CONFIRMED not available (error message): {} ({})",
                             videoId, e.getMessage(), e.getClass().getSimpleName());
                     result.addNotFound(videoId);
-                    if (circuitBreaker != null) {
-                        circuitBreaker.recordSuccess();
-                    }
                 } else {
                     logger.warn("Video {} extraction error (will retry): {} ({})",
                             videoId, e.getMessage(), e.getClass().getSimpleName());

@@ -78,17 +78,18 @@ public class YouTubeCircuitBreaker {
             if (data.isPresent()) {
                 Map<String, Object> state = data.get();
 
-                // Load cooldown state
-                Long cooldownEpoch = (Long) state.get("cooldownUntilEpoch");
-                if (cooldownEpoch != null && cooldownEpoch > Instant.now().toEpochMilli()) {
+                // Load cooldown state (use Number to handle Firestore returning Integer, Long, or Double)
+                Number cooldownEpochNum = (Number) state.get("cooldownUntilEpoch");
+                if (cooldownEpochNum != null && cooldownEpochNum.longValue() > Instant.now().toEpochMilli()) {
+                    long cooldownEpoch = cooldownEpochNum.longValue();
                     cooldownUntil.set(Instant.ofEpochMilli(cooldownEpoch));
                     logger.info("Loaded circuit breaker state - circuit is OPEN until {}",
                             Instant.ofEpochMilli(cooldownEpoch));
                 }
 
-                Long lastOpenedEpoch = (Long) state.get("lastOpenedAtEpoch");
-                if (lastOpenedEpoch != null) {
-                    lastOpenedAt.set(Instant.ofEpochMilli(lastOpenedEpoch));
+                Number lastOpenedEpochNum = (Number) state.get("lastOpenedAtEpoch");
+                if (lastOpenedEpochNum != null) {
+                    lastOpenedAt.set(Instant.ofEpochMilli(lastOpenedEpochNum.longValue()));
                 }
 
                 Number cooldownMins = (Number) state.get("currentCooldownMinutes");

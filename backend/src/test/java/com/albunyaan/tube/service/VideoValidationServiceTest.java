@@ -1,5 +1,6 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.config.ValidationProperties;
 import com.albunyaan.tube.dto.BatchValidationResult;
 import com.albunyaan.tube.dto.StreamDetailsDto;
 import com.albunyaan.tube.model.ValidationRun;
@@ -25,6 +26,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -44,11 +46,20 @@ class VideoValidationServiceTest {
     @Mock
     private ValidationRunRepository validationRunRepository;
 
+    @Mock
+    private ValidationProperties validationProperties;
+
+    @Mock
+    private ValidationProperties.Video videoProperties;
+
     private VideoValidationService service;
 
     @BeforeEach
     void setUp() {
-        service = new VideoValidationService(videoRepository, youtubeService, auditLogService, validationRunRepository);
+        // Use lenient stubbing - not all tests use these stubs
+        lenient().when(validationProperties.getVideo()).thenReturn(videoProperties);
+        lenient().when(videoProperties.getMaxItemsPerRun()).thenReturn(10);
+        service = new VideoValidationService(videoRepository, youtubeService, auditLogService, validationRunRepository, validationProperties);
     }
 
     @Test
