@@ -1,30 +1,23 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.config.YouTubeThrottleProperties;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 import org.schabi.newpipe.extractor.Page;
 import org.schabi.newpipe.extractor.StreamingService;
 import org.schabi.newpipe.extractor.ServiceList;
 import org.schabi.newpipe.extractor.NewPipe;
-import org.schabi.newpipe.extractor.channel.ChannelInfo;
 import org.schabi.newpipe.extractor.exceptions.ExtractionException;
-import org.schabi.newpipe.extractor.playlist.PlaylistInfo;
 import org.schabi.newpipe.extractor.search.SearchExtractor;
-import org.schabi.newpipe.extractor.stream.StreamInfo;
 
 import java.util.concurrent.ExecutorService;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
 
 /**
  * Unit tests for YouTubeGateway
@@ -33,12 +26,13 @@ import static org.mockito.Mockito.*;
  * - Page token encoding/decoding
  * - Executor service management
  * - NewPipe service initialization
+ * - Throttle configuration
  */
-@ExtendWith(MockitoExtension.class)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class YouTubeGatewayTest {
 
     private YouTubeGateway gateway;
+    private YouTubeThrottleProperties throttleProperties;
 
     @BeforeAll
     static void initializeNewPipe() {
@@ -66,7 +60,10 @@ class YouTubeGatewayTest {
     @BeforeEach
     void setUp() {
         StreamingService youtube = ServiceList.YouTube;
-        gateway = new YouTubeGateway(youtube, 3); // Use default pool size of 3
+        // Create throttle properties with throttling disabled for fast tests
+        throttleProperties = new YouTubeThrottleProperties();
+        throttleProperties.setEnabled(false);  // Disable throttling in tests
+        gateway = new YouTubeGateway(youtube, 3, throttleProperties);
     }
 
     @Nested
@@ -220,6 +217,41 @@ class YouTubeGatewayTest {
     }
 
     @Nested
+    @DisplayName("Throttle Configuration")
+    class ThrottleConfigTests {
+
+        @Test
+        @DisplayName("Should report throttle status")
+        void getThrottleStatus_returnsConfiguration() {
+            YouTubeGateway.ThrottleStatus status = gateway.getThrottleStatus();
+
+            assertNotNull(status);
+            assertFalse(status.enabled(), "Throttling should be disabled in tests");
+        }
+
+        @Test
+        @DisplayName("Should apply throttle when enabled")
+        void throttleEnabled_appliesDelay() {
+            // Create gateway with throttling enabled but very short delay
+            YouTubeThrottleProperties enabledProps = new YouTubeThrottleProperties();
+            enabledProps.setEnabled(true);
+            enabledProps.setDelayBetweenItemsMs(10);  // Short delay for test
+            enabledProps.setJitterMs(0);
+
+            StreamingService youtube = ServiceList.YouTube;
+            YouTubeGateway throttledGateway = new YouTubeGateway(youtube, 1, enabledProps);
+
+            YouTubeGateway.ThrottleStatus status = throttledGateway.getThrottleStatus();
+            assertTrue(status.enabled());
+            assertEquals(10, status.delayMs());
+            assertEquals(0, status.jitterMs());
+
+            // Cleanup
+            throttledGateway.shutdown();
+        }
+    }
+
+    @Nested
     @DisplayName("Shutdown Behavior")
     class ShutdownTests {
 
@@ -228,7 +260,9 @@ class YouTubeGatewayTest {
         void shutdown_completesWithoutError() {
             // Create a separate gateway instance for shutdown test
             StreamingService youtube = ServiceList.YouTube;
-            YouTubeGateway testGateway = new YouTubeGateway(youtube, 3);
+            YouTubeThrottleProperties props = new YouTubeThrottleProperties();
+            props.setEnabled(false);
+            YouTubeGateway testGateway = new YouTubeGateway(youtube, 3, props);
 
             // Should not throw
             assertDoesNotThrow(() -> testGateway.shutdown());

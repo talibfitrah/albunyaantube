@@ -1,5 +1,6 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.config.YouTubeThrottleProperties;
 import org.schabi.newpipe.extractor.ListExtractor;
 import org.schabi.newpipe.extractor.Page;
 import org.schabi.newpipe.extractor.StreamingService;
@@ -28,6 +29,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * P2-T3: YouTube Gateway
@@ -40,6 +42,7 @@ import java.util.concurrent.TimeUnit;
  * - Provides direct access to NewPipe objects (ChannelInfo, PlaylistInfo, etc.)
  * - Handles pagination encoding/decoding
  * - Manages the executor service for batch operations
+ * - Implements request throttling to prevent YouTube rate limiting
  *
  * Does NOT:
  * - Apply caching (handled by orchestrators)
@@ -56,19 +59,64 @@ public class YouTubeGateway {
     private final YoutubeChannelLinkHandlerFactory channelLinkHandlerFactory;
     private final YoutubePlaylistLinkHandlerFactory playlistLinkHandlerFactory;
     private final YoutubeStreamLinkHandlerFactory streamLinkHandlerFactory;
+    private final YouTubeThrottleProperties throttleProperties;
+
+    // Track last request time for throttling
+    private final AtomicLong lastRequestTimeMs = new AtomicLong(0);
+    private final Object throttleLock = new Object();
 
     @Autowired
     public YouTubeGateway(
             @Qualifier("newPipeYouTubeService") StreamingService youTubeService,
-            @Value("${app.newpipe.executor.pool-size:3}") int poolSize) {
+            @Value("${app.newpipe.executor.pool-size:1}") int poolSize,
+            YouTubeThrottleProperties throttleProperties) {
         this.youtube = youTubeService;
         this.executorService = Executors.newFixedThreadPool(poolSize);
         this.channelLinkHandlerFactory = YoutubeChannelLinkHandlerFactory.getInstance();
         this.playlistLinkHandlerFactory = YoutubePlaylistLinkHandlerFactory.getInstance();
         this.streamLinkHandlerFactory = YoutubeStreamLinkHandlerFactory.getInstance();
+        this.throttleProperties = throttleProperties;
 
         logger.info("YouTubeGateway initialized with NewPipeExtractor (executor pool size: {})", poolSize);
+        logger.info("Throttling enabled: {}, delay: {}ms, jitter: {}ms",
+                throttleProperties.isEnabled(),
+                throttleProperties.getDelayBetweenItemsMs(),
+                throttleProperties.getJitterMs());
         logger.info("Service: {}, ID: {}", youtube.getServiceInfo().getName(), youtube.getServiceId());
+    }
+
+    /**
+     * Apply throttle delay before making a YouTube request.
+     * Uses synchronized block to ensure only one request is made at a time
+     * and delay is applied between requests.
+     */
+    private void applyThrottle() {
+        if (!throttleProperties.isEnabled()) {
+            return;
+        }
+
+        synchronized (throttleLock) {
+            long now = System.currentTimeMillis();
+            long lastRequest = lastRequestTimeMs.get();
+            long delay = throttleProperties.calculateDelayWithJitter();
+
+            if (lastRequest > 0 && delay > 0) {
+                long timeSinceLastRequest = now - lastRequest;
+                long remainingDelay = delay - timeSinceLastRequest;
+
+                if (remainingDelay > 0) {
+                    try {
+                        logger.debug("Throttling YouTube request: waiting {}ms", remainingDelay);
+                        Thread.sleep(remainingDelay);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        logger.warn("Throttle delay interrupted");
+                    }
+                }
+            }
+
+            lastRequestTimeMs.set(System.currentTimeMillis());
+        }
     }
 
     /**
@@ -103,6 +151,7 @@ public class YouTubeGateway {
      * Create a search extractor for the given query
      */
     public SearchExtractor createSearchExtractor(String query) throws ExtractionException {
+        applyThrottle();
         return youtube.getSearchExtractor(query);
     }
 
@@ -112,6 +161,7 @@ public class YouTubeGateway {
      * Fetch channel info by channel ID
      */
     public ChannelInfo fetchChannelInfo(String channelId) throws IOException, ExtractionException {
+        applyThrottle();
         // Use /channel/ format directly instead of link handler factory
         // The factory incorrectly generates /c/ URLs which return 404
         String url = buildChannelUrl(channelId);
@@ -153,6 +203,7 @@ public class YouTubeGateway {
      * Create a channel tab extractor for the given tab
      */
     public ChannelTabExtractor createChannelTabExtractor(ListLinkHandler tab) throws ExtractionException {
+        applyThrottle();
         return youtube.getChannelTabExtractor(tab);
     }
 
@@ -162,6 +213,7 @@ public class YouTubeGateway {
      * Fetch playlist info by playlist ID
      */
     public PlaylistInfo fetchPlaylistInfo(String playlistId) throws IOException, ExtractionException {
+        applyThrottle();
         String url = playlistLinkHandlerFactory.getUrl(playlistId);
         return PlaylistInfo.getInfo(youtube, url);
     }
@@ -178,6 +230,7 @@ public class YouTubeGateway {
      */
     public ListExtractor.InfoItemsPage<StreamInfoItem> getPlaylistMoreItems(String playlistId, Page page)
             throws IOException, ExtractionException {
+        applyThrottle();
         String url = playlistLinkHandlerFactory.getUrl(playlistId);
         return PlaylistInfo.getMoreItems(youtube, url, page);
     }
@@ -188,6 +241,7 @@ public class YouTubeGateway {
      * Fetch stream info by video ID
      */
     public StreamInfo fetchStreamInfo(String videoId) throws IOException, ExtractionException {
+        applyThrottle();
         String url = streamLinkHandlerFactory.getUrl(videoId);
         return StreamInfo.getInfo(youtube, url);
     }
@@ -246,4 +300,28 @@ public class YouTubeGateway {
     public CompletableFuture<Void> runAsync(Runnable runnable) {
         return CompletableFuture.runAsync(runnable, executorService);
     }
+
+    // ==================== Throttle Status (for monitoring) ====================
+
+    /**
+     * Get throttle configuration status for monitoring/debugging.
+     */
+    public ThrottleStatus getThrottleStatus() {
+        return new ThrottleStatus(
+                throttleProperties.isEnabled(),
+                throttleProperties.getDelayBetweenItemsMs(),
+                throttleProperties.getJitterMs(),
+                lastRequestTimeMs.get()
+        );
+    }
+
+    /**
+     * Throttle status for monitoring.
+     */
+    public record ThrottleStatus(
+            boolean enabled,
+            long delayMs,
+            long jitterMs,
+            long lastRequestTimeMs
+    ) {}
 }
