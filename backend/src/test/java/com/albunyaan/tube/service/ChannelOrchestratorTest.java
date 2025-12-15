@@ -306,6 +306,97 @@ class ChannelOrchestratorTest {
             assertEquals(1, result.size());
             verify(gateway).runAsync(any());
         }
+
+        @Test
+        @DisplayName("Should fail fast when circuit breaker is blocking - channels")
+        void batchValidateChannelsWithDetails_circuitBreakerBlocking_failsFast() throws Exception {
+            // Arrange
+            when(gateway.isCircuitBreakerBlocking()).thenReturn(true);
+            List<String> channelIds = List.of("UC1", "UC2", "UC3");
+
+            // Act
+            var result = orchestrator.batchValidateChannelsWithDetails(channelIds);
+
+            // Assert - all items should be marked as errors
+            assertEquals(0, result.getValidCount());
+            assertEquals(0, result.getNotFoundCount());
+            assertEquals(3, result.getErrorCount());
+            for (String id : channelIds) {
+                assertTrue(result.isError(id));
+                assertTrue(result.getErrorMessage(id).contains("Circuit breaker"));
+            }
+            // Gateway.runAsync should NOT be called when circuit breaker is blocking
+            verify(gateway, never()).runAsync(any());
+            verify(gateway, never()).fetchChannelInfo(anyString());
+        }
+
+        @Test
+        @DisplayName("Should fail fast when circuit breaker is blocking - playlists")
+        void batchValidatePlaylistsWithDetails_circuitBreakerBlocking_failsFast() throws Exception {
+            // Arrange
+            when(gateway.isCircuitBreakerBlocking()).thenReturn(true);
+            List<String> playlistIds = List.of("PL1", "PL2");
+
+            // Act
+            var result = orchestrator.batchValidatePlaylistsWithDetails(playlistIds);
+
+            // Assert
+            assertEquals(0, result.getValidCount());
+            assertEquals(2, result.getErrorCount());
+            for (String id : playlistIds) {
+                assertTrue(result.isError(id));
+                assertTrue(result.getErrorMessage(id).contains("Circuit breaker"));
+            }
+            verify(gateway, never()).fetchPlaylistInfo(anyString());
+        }
+
+        @Test
+        @DisplayName("Should fail fast when circuit breaker is blocking - videos")
+        void batchValidateVideosWithDetails_circuitBreakerBlocking_failsFast() throws Exception {
+            // Arrange
+            when(gateway.isCircuitBreakerBlocking()).thenReturn(true);
+            List<String> videoIds = List.of("video1", "video2", "video3", "video4");
+
+            // Act
+            var result = orchestrator.batchValidateVideosWithDetails(videoIds);
+
+            // Assert
+            assertEquals(0, result.getValidCount());
+            assertEquals(4, result.getErrorCount());
+            for (String id : videoIds) {
+                assertTrue(result.isError(id));
+                assertTrue(result.getErrorMessage(id).contains("Circuit breaker"));
+            }
+            verify(gateway, never()).fetchStreamInfo(anyString());
+        }
+
+        @Test
+        @DisplayName("Should proceed with validation when circuit breaker is not blocking")
+        void batchValidateChannelsWithDetails_circuitBreakerNotBlocking_proceeds() throws Exception {
+            // Arrange
+            when(gateway.isCircuitBreakerBlocking()).thenReturn(false);
+            when(gateway.runAsync(any())).thenAnswer(invocation -> {
+                Runnable runnable = invocation.getArgument(0);
+                runnable.run();
+                return CompletableFuture.completedFuture(null);
+            });
+
+            ChannelInfo channelInfo = mock(ChannelInfo.class);
+            when(channelInfo.getName()).thenReturn("Test Channel");
+            when(channelInfo.getUrl()).thenReturn("https://youtube.com/channel/UC1");
+            when(channelInfo.getTags()).thenReturn(Collections.emptyList());
+            when(channelInfo.getAvatars()).thenReturn(Collections.emptyList());
+            when(channelInfo.getBanners()).thenReturn(Collections.emptyList());
+            when(gateway.fetchChannelInfo("UC1")).thenReturn(channelInfo);
+
+            // Act
+            var result = orchestrator.batchValidateChannelsDtoWithDetails(List.of("UC1"));
+
+            // Assert
+            assertEquals(1, result.getValidCount());
+            assertEquals(0, result.getErrorCount());
+            assertTrue(result.isValid("UC1"));
+        }
     }
 
     @Nested

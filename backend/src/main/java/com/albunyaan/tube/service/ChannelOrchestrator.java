@@ -427,6 +427,15 @@ public class ChannelOrchestrator {
             return result;
         }
 
+        // Fail fast if circuit breaker is blocking - don't waste time iterating
+        if (gateway.isCircuitBreakerBlocking()) {
+            logger.warn("Circuit breaker is blocking - skipping batch validation of {} channels", youtubeIds.size());
+            for (String id : youtubeIds) {
+                result.addError(id, "Circuit breaker open - YouTube rate limited");
+            }
+            return result;
+        }
+
         logger.info("Batch validating {} channels with detailed error handling", youtubeIds.size());
 
         List<CompletableFuture<Void>> futures = new ArrayList<>();
@@ -533,6 +542,15 @@ public class ChannelOrchestrator {
             return result;
         }
 
+        // Fail fast if circuit breaker is blocking - don't waste time iterating
+        if (gateway.isCircuitBreakerBlocking()) {
+            logger.warn("Circuit breaker is blocking - skipping batch validation of {} playlists", youtubeIds.size());
+            for (String id : youtubeIds) {
+                result.addError(id, "Circuit breaker open - YouTube rate limited");
+            }
+            return result;
+        }
+
         logger.info("Batch validating {} playlists with detailed error handling", youtubeIds.size());
 
         List<CompletableFuture<Void>> futures = new ArrayList<>();
@@ -623,6 +641,15 @@ public class ChannelOrchestrator {
         BatchValidationResult<StreamInfo> result = new BatchValidationResult<>();
 
         if (youtubeIds == null || youtubeIds.isEmpty()) {
+            return result;
+        }
+
+        // Fail fast if circuit breaker is blocking - don't waste time iterating
+        if (gateway.isCircuitBreakerBlocking()) {
+            logger.warn("Circuit breaker is blocking - skipping batch validation of {} videos", youtubeIds.size());
+            for (String id : youtubeIds) {
+                result.addError(id, "Circuit breaker open - YouTube rate limited");
+            }
             return result;
         }
 
