@@ -1,7 +1,9 @@
-# Player & Playback Reliability Roadmap
+# Player & Playback Reliability Roadmap (Android)
 
-**Last Updated**: 2025-12-15  
-**Scope**: Android player stability, progressive/adaptive strategy, extraction/refresh safety, and backend YouTube anti-bot mitigation.
+**Last Updated**: 2025-12-16
+**Scope**: Android player stability, progressive/adaptive strategy, and extraction/refresh safety.
+
+> **Note**: Backend YouTube rate-limit remediation is tracked separately on branch `claude/fix-youtube-rate-limiting-clean` in `docs/status/YOUTUBE_RATE_LIMIT_PLAN.md`.
 
 ## Guiding Principles (Rock-Solid UX)
 
@@ -38,10 +40,6 @@
 
 ### Still required (mandatory validation)
 - **Manual visual verification** per `AGENTS.md`: phone + `sw600dp` tablet + RTL Arabic locale.
-
-### Backend plan reference
-- Backend anti-bot mitigation plan: `docs/status/YOUTUBE_RATE_LIMIT_PLAN.md`
-  - **Status**: Draft (tracked in git). PR6–PR8 in this roadmap depend on it.
 
 ---
 
@@ -111,34 +109,9 @@
 
 ---
 
-# Backend YouTube Rate Limit Remediation (separate but critical)
-
-This should be implemented per `docs/status/YOUTUBE_RATE_LIMIT_PLAN.md`.
-
-## PR6 (Backend P0+P1): Safety switches + throttling — *Status: Planned*
-- Config-only scheduler enable flag; configurable cron; prevent overlapping runs.
-- Reduce default batch sizes; throttle between validations; set executor pool size defaults safely.
-
-**Acceptance**
-- No burst patterns; safe defaults; can disable without deploy.
-
-## PR7 (Backend P2+P3): Circuit breaker + cooldown + exponential backoff — *Status: Planned*
-- Detect anti-bot signals, open breaker, persist state, fail fast during cooldown, ramp-up slowly after.
-
-**Acceptance**
-- One detection stops the run; restarts don’t resume hammering.
-
-## PR8 (Backend P4): Metrics + tests — *Status: Planned*
-- Metrics for attempts/success/fail categories; breaker gauge; deterministic unit tests.
-
-**Acceptance**
-- Regressions become obvious; tests stay under 300s.
-
----
-
 # Product / UX Follow-ups (pending after stability baseline)
 
-## PR9: Media3 Migration (Keep UI layout, preserve stability features) — *Status: Planned*
+## PR6: Media3 Migration (Keep UI layout, preserve stability features) — *Status: Planned*
 
 **Goal**: Migrate to Media3 for long-term maintenance + better session/notification primitives, without claiming it fixes progressive.
 
@@ -150,28 +123,28 @@ This should be implemented per `docs/status/YOUTUBE_RATE_LIMIT_PLAN.md`.
 **Acceptance**
 - Feature parity; no regressions in recovery/proactive behavior (adaptive + progressive + audio-only).
 
-## PR10: Notification / Background Controls + Thumbnail (Media3-first) — *Status: Planned*
+## PR7: Notification / Background Controls + Thumbnail (Media3-first) — *Status: Planned*
 - Implement `MediaSessionService`, attach player to a `MediaSession`.
 - Provide actions (play/pause/next/prev/stop) + metadata + artwork.
 
 **Acceptance**
 - Controls work reliably in background/lockscreen/headset.
 
-## PR11: Fullscreen + Orientation Policy (Phone + Tablet) — *Status: Planned*
+## PR8: Fullscreen + Orientation Policy (Phone + Tablet) — *Status: Planned*
 - Landscape → fullscreen automatically; portrait → normal player screen.
 - Verify immersive UI + RTL.
 
-## PR12: Downloads – MP4-only Export, Always With Audio — *Status: Planned*
+## PR9: Downloads – MP4-only Export, Always With Audio — *Status: Planned*
 - Add resolution picker UI (video qualities); auto-pick audio; mux in background.
 - Always output a single MP4 (with audio), or show a clear failure reason.
 
-## PR13: Favorites (Local Like Replacement) + Favorites Screen — *Status: Planned*
+## PR10: Favorites (Local Like Replacement) + Favorites Screen — *Status: Planned*
 - Local persistence (Room recommended), toggle in player, favorites list reachable via home kebab menu.
 
-## PR14: Share (Absolutely NO YouTube URL) — *Status: Planned*
+## PR11: Share (Absolutely NO YouTube URL) — *Status: Planned*
 - Share only app deep-links + rich preview; never `youtube.com`/`youtu.be`.
 
-## PR15: Documentation Sync (PRD + Agent Docs) — *Status: Planned*
+## PR12: Documentation Sync (PRD + Agent Docs) — *Status: Planned*
 - Update `docs/PRD.md`, `AGENTS.md`, `CLAUDE.md` to reflect actual behavior and the stability architecture.
 
 ---
