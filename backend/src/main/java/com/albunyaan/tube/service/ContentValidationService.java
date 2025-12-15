@@ -82,7 +82,7 @@ public class ContentValidationService {
         ValidationRun validationRun = new ValidationRun(triggerType, triggeredBy, triggeredByDisplayName);
 
         try {
-            // Use sensible default limit to prevent OOM/timeout (500 total items = ~167 per type)
+            // Use configurable default limit to prevent OOM/timeout/rate limiting
             int limit = maxItems != null ? maxItems : validationProperties.getVideo().getMaxItemsPerRun();
             int perTypeLimit = (int) Math.ceil(limit / 3.0);
 
@@ -185,7 +185,7 @@ public class ContentValidationService {
         }
 
         try {
-            // Use sensible default limit to prevent OOM/timeout (500 total items = ~167 per type)
+            // Use configurable default limit to prevent OOM/timeout/rate limiting
             int limit = maxItems != null ? maxItems : validationProperties.getVideo().getMaxItemsPerRun();
             int perTypeLimit = (int) Math.ceil(limit / 3.0);
 

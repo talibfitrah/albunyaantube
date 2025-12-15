@@ -1,5 +1,6 @@
 package com.albunyaan.tube.service;
 
+import org.schabi.newpipe.extractor.InfoItem;
 import org.schabi.newpipe.extractor.ListExtractor;
 import org.schabi.newpipe.extractor.Page;
 import org.schabi.newpipe.extractor.StreamingService;
@@ -161,6 +162,42 @@ public class YouTubeGateway {
         return youtube.getSearchExtractor(query);
     }
 
+    /**
+     * Fetch the initial page for a search extractor with throttling and circuit breaker protection.
+     * This should be used instead of calling extractor.fetchPage() directly.
+     */
+    public void fetchSearchPage(SearchExtractor extractor) throws IOException, ExtractionException {
+        checkCircuitBreaker();
+        applyThrottling();
+
+        try {
+            extractor.fetchPage();
+            recordSuccess();
+        } catch (IOException | ExtractionException e) {
+            recordError(e);
+            throw e;
+        }
+    }
+
+    /**
+     * Get a specific page from a search extractor with throttling and circuit breaker protection.
+     * This should be used instead of calling extractor.getPage() directly for pagination.
+     */
+    public ListExtractor.InfoItemsPage<InfoItem> getSearchPage(SearchExtractor extractor, Page page)
+            throws IOException, ExtractionException {
+        checkCircuitBreaker();
+        applyThrottling();
+
+        try {
+            ListExtractor.InfoItemsPage<InfoItem> result = extractor.getPage(page);
+            recordSuccess();
+            return result;
+        } catch (IOException | ExtractionException e) {
+            recordError(e);
+            throw e;
+        }
+    }
+
     // ==================== Channel Operations ====================
 
     /**
@@ -220,6 +257,42 @@ public class YouTubeGateway {
      */
     public ChannelTabExtractor createChannelTabExtractor(ListLinkHandler tab) throws ExtractionException {
         return youtube.getChannelTabExtractor(tab);
+    }
+
+    /**
+     * Fetch the initial page for a channel tab extractor with throttling and circuit breaker protection.
+     * This should be used instead of calling extractor.fetchPage() directly.
+     */
+    public void fetchTabPage(ChannelTabExtractor extractor) throws IOException, ExtractionException {
+        checkCircuitBreaker();
+        applyThrottling();
+
+        try {
+            extractor.fetchPage();
+            recordSuccess();
+        } catch (IOException | ExtractionException e) {
+            recordError(e);
+            throw e;
+        }
+    }
+
+    /**
+     * Get a specific page from a channel tab extractor with throttling and circuit breaker protection.
+     * This should be used instead of calling extractor.getPage() directly for pagination.
+     */
+    public ListExtractor.InfoItemsPage<InfoItem> getTabPage(ChannelTabExtractor extractor, Page page)
+            throws IOException, ExtractionException {
+        checkCircuitBreaker();
+        applyThrottling();
+
+        try {
+            ListExtractor.InfoItemsPage<InfoItem> result = extractor.getPage(page);
+            recordSuccess();
+            return result;
+        } catch (IOException | ExtractionException e) {
+            recordError(e);
+            throw e;
+        }
     }
 
     // ==================== Playlist Operations ====================

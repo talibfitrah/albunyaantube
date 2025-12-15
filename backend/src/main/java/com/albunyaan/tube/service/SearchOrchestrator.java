@@ -54,23 +54,23 @@ public class SearchOrchestrator {
             // Create search extractor
             SearchExtractor extractor = gateway.createSearchExtractor(query);
 
-            // Fetch initial page
-            extractor.fetchPage();
+            // Fetch initial page with throttling and circuit breaker protection
+            gateway.fetchSearchPage(extractor);
 
             List<InfoItem> allItems = new ArrayList<>(extractor.getInitialPage().getItems());
             Page nextPage = extractor.getInitialPage().getNextPage();
 
-            // If pageToken provided, navigate to that page
+            // If pageToken provided, navigate to that page with throttling/circuit breaker protection
             if (pageToken != null && !pageToken.isEmpty()) {
                 try {
                     Page requestedPage = gateway.decodePageToken(pageToken);
                     if (requestedPage != null) {
-                        ListExtractor.InfoItemsPage<InfoItem> page = extractor.getPage(requestedPage);
+                        ListExtractor.InfoItemsPage<InfoItem> page = gateway.getSearchPage(extractor, requestedPage);
                         allItems = new ArrayList<>(page.getItems());
                         nextPage = page.getNextPage();
                     }
                 } catch (Exception e) {
-                    logger.warn("Failed to decode page token, using initial page: {}", e.getMessage());
+                    logger.warn("Failed to fetch requested page, using initial page: {}", e.getMessage());
                 }
             }
 
@@ -144,7 +144,7 @@ public class SearchOrchestrator {
             logger.debug("Searching YouTube for type {} with query: '{}'", types, query);
 
             SearchExtractor extractor = gateway.createSearchExtractor(query);
-            extractor.fetchPage();
+            gateway.fetchSearchPage(extractor);
 
             List<InfoItem> items = extractor.getInitialPage().getItems();
             List<EnrichedSearchResult> results = new ArrayList<>();

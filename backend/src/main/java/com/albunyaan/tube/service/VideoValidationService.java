@@ -1,5 +1,6 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.config.ValidationProperties;
 import com.albunyaan.tube.dto.BatchValidationResult;
 import com.albunyaan.tube.dto.StreamDetailsDto;
 import com.albunyaan.tube.model.SourceType;
@@ -33,23 +34,25 @@ public class VideoValidationService {
 
     private static final Logger logger = LoggerFactory.getLogger(VideoValidationService.class);
     private static final int DEFAULT_BATCH_SIZE = 50; // YouTube API limit
-    private static final int DEFAULT_MAX_VIDEOS_PER_RUN = 500; // Prevent quota exhaustion
 
     private final VideoRepository videoRepository;
     private final YouTubeService youtubeService;
     private final AuditLogService auditLogService;
     private final ValidationRunRepository validationRunRepository;
+    private final ValidationProperties validationProperties;
 
     public VideoValidationService(
             VideoRepository videoRepository,
             YouTubeService youtubeService,
             AuditLogService auditLogService,
-            ValidationRunRepository validationRunRepository
+            ValidationRunRepository validationRunRepository,
+            ValidationProperties validationProperties
     ) {
         this.videoRepository = videoRepository;
         this.youtubeService = youtubeService;
         this.auditLogService = auditLogService;
         this.validationRunRepository = validationRunRepository;
+        this.validationProperties = validationProperties;
     }
 
     /**
@@ -102,14 +105,24 @@ public class VideoValidationService {
             int checkedCount = 0;
             int unavailableCount = 0;
             int errorCount = 0;
+            int skippedCount = 0;
             List<String> unavailableVideoIds = new ArrayList<>();
             List<String> errorVideoIds = new ArrayList<>();
 
             for (Video video : videosToValidate) {
                 try {
-                    checkedCount++;
-
                     String youtubeId = video.getYoutubeId();
+
+                    // Check if this item was skipped (circuit breaker opened mid-batch).
+                    // Skipped items should NOT have their status/lastValidatedAt updated.
+                    // They will be retried on the next validation run.
+                    if (validationResult.isSkipped(youtubeId)) {
+                        skippedCount++;
+                        logger.debug("Video {} was skipped (circuit breaker) - will retry on next run", youtubeId);
+                        continue; // Do NOT update status or lastValidatedAt
+                    }
+
+                    checkedCount++;
 
                     if (validationResult.isValid(youtubeId)) {
                         // Video exists on YouTube - mark as VALID
@@ -178,12 +191,15 @@ public class VideoValidationService {
             if (!errorVideoIds.isEmpty()) {
                 validationRun.addDetail("errorVideoIds", errorVideoIds);
             }
+            if (skippedCount > 0) {
+                validationRun.addDetail("skippedCount", skippedCount);
+            }
             validationRun.complete("COMPLETED");
 
             validationRunRepository.save(validationRun);
 
-            logger.info("Video validation completed - checked: {}, unavailable: {}, errors: {}",
-                    checkedCount, unavailableCount, errorCount);
+            logger.info("Video validation completed - checked: {}, unavailable: {}, errors: {}, skipped: {}",
+                    checkedCount, unavailableCount, errorCount, skippedCount);
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -253,8 +269,21 @@ public class VideoValidationService {
                 ))
                 .collect(Collectors.toList());
 
-        // Apply limit
-        int limit = maxVideos != null ? maxVideos : DEFAULT_MAX_VIDEOS_PER_RUN;
+        // Apply limit (use configured maxItemsPerRun if not explicitly provided)
+        // Clamp manual overrides to prevent accidental large runs that could trigger rate limiting
+        int configuredLimit = validationProperties.getVideo().getMaxItemsPerRun();
+        int maxAllowedLimit = configuredLimit * 5; // Safety cap at 5x configured limit
+        int limit;
+        if (maxVideos != null) {
+            if (maxVideos > maxAllowedLimit) {
+                logger.warn("Requested maxVideos ({}) exceeds safety cap ({}), clamping to cap", maxVideos, maxAllowedLimit);
+                limit = maxAllowedLimit;
+            } else {
+                limit = maxVideos;
+            }
+        } else {
+            limit = configuredLimit;
+        }
         if (standaloneVideos.size() > limit) {
             return standaloneVideos.subList(0, limit);
         }

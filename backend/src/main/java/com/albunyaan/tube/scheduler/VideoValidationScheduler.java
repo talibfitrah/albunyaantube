@@ -3,15 +3,18 @@ package com.albunyaan.tube.scheduler;
 import com.albunyaan.tube.config.CacheConfig;
 import com.albunyaan.tube.config.ValidationProperties;
 import com.albunyaan.tube.model.ValidationRun;
+import com.albunyaan.tube.repository.SystemSettingsRepository;
 import com.albunyaan.tube.service.ContentValidationService;
 import com.albunyaan.tube.service.YouTubeCircuitBreaker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.CacheManager;
+import org.springframework.lang.Nullable;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.lang.management.ManagementFactory;
+import java.net.InetAddress;
 
 /**
  * Video Validation Scheduler
@@ -35,28 +38,56 @@ public class VideoValidationScheduler {
 
     private static final Logger logger = LoggerFactory.getLogger(VideoValidationScheduler.class);
 
+    /** Distributed lock key for video validation scheduler. */
+    private static final String LOCK_KEY = "video_validation_scheduler";
+
+    /** Lock TTL in seconds (10 minutes). Long enough for validation, short enough to recover from crashes. */
+    private static final int LOCK_TTL_SECONDS = 600;
+
     private final ContentValidationService contentValidationService;
     private final CacheManager cacheManager;
     private final ValidationProperties validationProperties;
     private final YouTubeCircuitBreaker circuitBreaker;
+    private final SystemSettingsRepository systemSettingsRepository;
 
-    // Prevents concurrent runs
-    private final AtomicBoolean isRunning = new AtomicBoolean(false);
+    /** Unique identifier for this instance (hostname + PID). Used for distributed locking. */
+    private final String instanceId;
 
     public VideoValidationScheduler(
             ContentValidationService contentValidationService,
             CacheManager cacheManager,
             ValidationProperties validationProperties,
-            YouTubeCircuitBreaker circuitBreaker) {
+            YouTubeCircuitBreaker circuitBreaker,
+            SystemSettingsRepository systemSettingsRepository) {
         this.contentValidationService = contentValidationService;
         this.cacheManager = cacheManager;
         this.validationProperties = validationProperties;
         this.circuitBreaker = circuitBreaker;
+        this.systemSettingsRepository = systemSettingsRepository;
+        this.instanceId = generateInstanceId();
 
-        logger.info("VideoValidationScheduler initialized - enabled: {}, cron: {}, maxItems: {}",
+        logger.info("VideoValidationScheduler initialized - enabled: {}, cron: {}, maxItems: {}, instanceId: {}",
                 validationProperties.getVideo().getScheduler().isEnabled(),
                 validationProperties.getVideo().getScheduler().getCron(),
-                validationProperties.getVideo().getMaxItemsPerRun());
+                validationProperties.getVideo().getMaxItemsPerRun(),
+                instanceId);
+    }
+
+    /**
+     * Generate a unique instance ID for distributed locking.
+     * Format: hostname-pid (e.g., "server1-12345")
+     */
+    private String generateInstanceId() {
+        try {
+            String hostname = InetAddress.getLocalHost().getHostName();
+            String pid = ManagementFactory.getRuntimeMXBean().getName().split("@")[0];
+            return hostname + "-" + pid;
+        } catch (Exception e) {
+            // Fallback to random ID if hostname lookup fails
+            String fallbackId = "instance-" + System.currentTimeMillis();
+            logger.warn("Could not determine hostname for instance ID, using fallback: {}", fallbackId);
+            return fallbackId;
+        }
     }
 
     /**
@@ -100,15 +131,15 @@ public class VideoValidationScheduler {
             return;
         }
 
-        // Prevent concurrent runs
-        if (!isRunning.compareAndSet(false, true)) {
-            logger.warn("Video validation skipped - a previous run is still in progress");
+        // Acquire distributed lock (prevents concurrent runs across multiple instances)
+        if (!systemSettingsRepository.tryAcquireLock(LOCK_KEY, instanceId, LOCK_TTL_SECONDS)) {
+            logger.info("Video validation skipped - another instance is running or lock acquisition failed");
             return;
         }
 
         try {
             int maxItems = validationProperties.getVideo().getMaxItemsPerRun();
-            logger.info("Starting {} video validation (max items: {})", timeOfDay, maxItems);
+            logger.info("Starting {} video validation (max items: {}, instanceId: {})", timeOfDay, maxItems, instanceId);
 
             ValidationRun result = contentValidationService.validateVideos(
                     ValidationRun.TRIGGER_SCHEDULED,
@@ -143,7 +174,7 @@ public class VideoValidationScheduler {
                 circuitBreaker.recordRateLimitError(e);
             }
         } finally {
-            isRunning.set(false);
+            systemSettingsRepository.releaseLock(LOCK_KEY, instanceId);
         }
     }
 
@@ -171,10 +202,10 @@ public class VideoValidationScheduler {
     }
 
     /**
-     * Check if a validation run is currently in progress.
+     * Check if a validation run is currently in progress (on any instance).
      */
     public boolean isRunning() {
-        return isRunning.get();
+        return systemSettingsRepository.isLockHeld(LOCK_KEY);
     }
 
     /**
@@ -190,14 +221,15 @@ public class VideoValidationScheduler {
             return false;
         }
 
-        if (!isRunning.compareAndSet(false, true)) {
-            logger.warn("Manual validation rejected - a run is already in progress");
+        // Acquire distributed lock
+        if (!systemSettingsRepository.tryAcquireLock(LOCK_KEY, instanceId, LOCK_TTL_SECONDS)) {
+            logger.warn("Manual validation rejected - another instance is running or lock acquisition failed");
             return false;
         }
 
         try {
             int maxItems = validationProperties.getVideo().getMaxItemsPerRun();
-            logger.info("Starting manual video validation (max items: {})", maxItems);
+            logger.info("Starting manual video validation (max items: {}, instanceId: {})", maxItems, instanceId);
 
             ValidationRun result = contentValidationService.validateVideos(
                     ValidationRun.TRIGGER_MANUAL,
@@ -227,7 +259,7 @@ public class VideoValidationScheduler {
             }
             return false;
         } finally {
-            isRunning.set(false);
+            systemSettingsRepository.releaseLock(LOCK_KEY, instanceId);
         }
     }
 }

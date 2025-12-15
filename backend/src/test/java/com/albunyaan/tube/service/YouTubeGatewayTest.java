@@ -66,7 +66,7 @@ class YouTubeGatewayTest {
     @BeforeEach
     void setUp() {
         StreamingService youtube = ServiceList.YouTube;
-        gateway = new YouTubeGateway(youtube, 3); // Use default pool size of 3
+        gateway = new YouTubeGateway(youtube, 3, null, null); // Use default pool size of 3
     }
 
     @Nested
@@ -228,7 +228,7 @@ class YouTubeGatewayTest {
         void shutdown_completesWithoutError() {
             // Create a separate gateway instance for shutdown test
             StreamingService youtube = ServiceList.YouTube;
-            YouTubeGateway testGateway = new YouTubeGateway(youtube, 3);
+            YouTubeGateway testGateway = new YouTubeGateway(youtube, 3, null, null);
 
             // Should not throw
             assertDoesNotThrow(() -> testGateway.shutdown());
