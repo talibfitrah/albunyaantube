@@ -56,6 +56,78 @@ public class SystemSettingsRepository {
     }
 
     /**
+     * Save a settings document by key, returning success/failure status.
+     * @return true if save succeeded, false otherwise
+     */
+    public boolean trySave(String key, Map<String, Object> data) {
+        try {
+            ApiFuture<WriteResult> result = getDocument(key).set(data);
+            result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+            logger.debug("Saved system setting: {}", key);
+            return true;
+        } catch (ExecutionException | InterruptedException | TimeoutException e) {
+            logger.warn("Failed to save system setting '{}': {}", key, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Save with optimistic locking using version check.
+     * Only succeeds if the current version in Firestore matches expectedVersion.
+     *
+     * @param key The document key
+     * @param data The data to save (must include "version" field)
+     * @param expectedVersion The version expected to be in Firestore (or -1 if new document)
+     * @return true if save succeeded, false if version conflict or error
+     */
+    public boolean saveWithVersionCheck(String key, Map<String, Object> data, long expectedVersion) {
+        try {
+            DocumentReference docRef = getDocument(key);
+
+            Boolean success = firestore.runTransaction(transaction -> {
+                DocumentSnapshot snapshot = transaction.get(docRef).get();
+
+                if (expectedVersion < 0) {
+                    // Expecting new document
+                    if (snapshot.exists()) {
+                        logger.debug("Version conflict for '{}': expected new document but exists", key);
+                        return false;
+                    }
+                } else {
+                    // Check version matches
+                    if (!snapshot.exists()) {
+                        logger.debug("Version conflict for '{}': document doesn't exist", key);
+                        return false;
+                    }
+
+                    Map<String, Object> existing = snapshot.getData();
+                    if (existing != null) {
+                        Number currentVersion = (Number) existing.get("version");
+                        long current = (currentVersion != null) ? currentVersion.longValue() : 0;
+                        if (current != expectedVersion) {
+                            logger.debug("Version conflict for '{}': expected {} but found {}",
+                                    key, expectedVersion, current);
+                            return false;
+                        }
+                    }
+                }
+
+                transaction.set(docRef, data);
+                return true;
+            }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+
+            if (success) {
+                logger.debug("Saved system setting with version check: {}", key);
+            }
+            return success;
+
+        } catch (Exception e) {
+            logger.warn("Failed to save system setting '{}' with version check: {}", key, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
      * Load a settings document by key.
      */
     public Optional<Map<String, Object>> load(String key) {
@@ -70,6 +142,26 @@ public class SystemSettingsRepository {
             // Don't throw - return empty and let caller use defaults
         }
         return Optional.empty();
+    }
+
+    /**
+     * Load a settings document, throwing exception on failure.
+     * Use this when you need to detect persistence failures.
+     *
+     * @return The data, or empty Optional if document doesn't exist
+     * @throws RuntimeException if Firestore operation fails
+     */
+    public Optional<Map<String, Object>> loadOrThrow(String key) {
+        try {
+            ApiFuture<DocumentSnapshot> future = getDocument(key).get();
+            DocumentSnapshot document = future.get(timeoutProperties.getRead(), TimeUnit.SECONDS);
+            if (document.exists()) {
+                return Optional.of(document.getData());
+            }
+            return Optional.empty();
+        } catch (ExecutionException | InterruptedException | TimeoutException e) {
+            throw new RuntimeException("Failed to load system setting '" + key + "': " + e.getMessage(), e);
+        }
     }
 
     /**
