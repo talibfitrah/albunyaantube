@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PreDestroy;
@@ -57,17 +58,28 @@ public class YouTubeGateway {
     private final YoutubePlaylistLinkHandlerFactory playlistLinkHandlerFactory;
     private final YoutubeStreamLinkHandlerFactory streamLinkHandlerFactory;
 
+    @Nullable
+    private final YouTubeThrottler throttler;
+
+    @Nullable
+    private final YouTubeCircuitBreaker circuitBreaker;
+
     @Autowired
     public YouTubeGateway(
             @Qualifier("newPipeYouTubeService") StreamingService youTubeService,
-            @Value("${app.newpipe.executor.pool-size:3}") int poolSize) {
+            @Value("${app.newpipe.executor.pool-size:3}") int poolSize,
+            @Nullable YouTubeThrottler throttler,
+            @Nullable YouTubeCircuitBreaker circuitBreaker) {
         this.youtube = youTubeService;
         this.executorService = Executors.newFixedThreadPool(poolSize);
         this.channelLinkHandlerFactory = YoutubeChannelLinkHandlerFactory.getInstance();
         this.playlistLinkHandlerFactory = YoutubePlaylistLinkHandlerFactory.getInstance();
         this.streamLinkHandlerFactory = YoutubeStreamLinkHandlerFactory.getInstance();
+        this.throttler = throttler;
+        this.circuitBreaker = circuitBreaker;
 
-        logger.info("YouTubeGateway initialized with NewPipeExtractor (executor pool size: {})", poolSize);
+        logger.info("YouTubeGateway initialized with NewPipeExtractor (executor pool size: {}, throttler: {}, circuitBreaker: {})",
+                poolSize, throttler != null ? "enabled" : "disabled", circuitBreaker != null ? "enabled" : "disabled");
         logger.info("Service: {}, ID: {}", youtube.getServiceInfo().getName(), youtube.getServiceId());
     }
 
@@ -97,6 +109,49 @@ public class YouTubeGateway {
         }
     }
 
+    // ==================== Rate Limiting Helpers ====================
+
+    /**
+     * Apply throttling before making a YouTube request.
+     * Should be called before each external request.
+     */
+    private void applyThrottling() {
+        if (throttler != null && throttler.isEnabled()) {
+            throttler.throttle();
+        }
+    }
+
+    /**
+     * Check if circuit breaker allows requests.
+     * Throws IOException if circuit is open.
+     */
+    private void checkCircuitBreaker() throws IOException {
+        if (circuitBreaker != null && circuitBreaker.isOpen()) {
+            long remainingMs = circuitBreaker.getRemainingCooldownMs();
+            throw new IOException("YouTube circuit breaker is open. Remaining cooldown: " +
+                    (remainingMs / 1000) + " seconds. Rate limiting detected - waiting for cooldown.");
+        }
+    }
+
+    /**
+     * Record a successful YouTube request.
+     */
+    private void recordSuccess() {
+        if (circuitBreaker != null) {
+            circuitBreaker.recordSuccess();
+        }
+    }
+
+    /**
+     * Record a failed YouTube request and check for rate limiting.
+     */
+    private void recordError(Exception e) {
+        if (circuitBreaker != null && circuitBreaker.isRateLimitError(e)) {
+            circuitBreaker.recordRateLimitError(e);
+            logger.warn("Rate limit error detected, circuit breaker recording: {}", e.getMessage());
+        }
+    }
+
     // ==================== Search Operations ====================
 
     /**
@@ -109,13 +164,24 @@ public class YouTubeGateway {
     // ==================== Channel Operations ====================
 
     /**
-     * Fetch channel info by channel ID
+     * Fetch channel info by channel ID.
+     * Applies throttling and circuit breaker protection.
      */
     public ChannelInfo fetchChannelInfo(String channelId) throws IOException, ExtractionException {
-        // Use /channel/ format directly instead of link handler factory
-        // The factory incorrectly generates /c/ URLs which return 404
-        String url = buildChannelUrl(channelId);
-        return ChannelInfo.getInfo(youtube, url);
+        checkCircuitBreaker();
+        applyThrottling();
+
+        try {
+            // Use /channel/ format directly instead of link handler factory
+            // The factory incorrectly generates /c/ URLs which return 404
+            String url = buildChannelUrl(channelId);
+            ChannelInfo result = ChannelInfo.getInfo(youtube, url);
+            recordSuccess();
+            return result;
+        } catch (IOException | ExtractionException e) {
+            recordError(e);
+            throw e;
+        }
     }
 
     /**
@@ -159,11 +225,22 @@ public class YouTubeGateway {
     // ==================== Playlist Operations ====================
 
     /**
-     * Fetch playlist info by playlist ID
+     * Fetch playlist info by playlist ID.
+     * Applies throttling and circuit breaker protection.
      */
     public PlaylistInfo fetchPlaylistInfo(String playlistId) throws IOException, ExtractionException {
-        String url = playlistLinkHandlerFactory.getUrl(playlistId);
-        return PlaylistInfo.getInfo(youtube, url);
+        checkCircuitBreaker();
+        applyThrottling();
+
+        try {
+            String url = playlistLinkHandlerFactory.getUrl(playlistId);
+            PlaylistInfo result = PlaylistInfo.getInfo(youtube, url);
+            recordSuccess();
+            return result;
+        } catch (IOException | ExtractionException e) {
+            recordError(e);
+            throw e;
+        }
     }
 
     /**
@@ -174,22 +251,44 @@ public class YouTubeGateway {
     }
 
     /**
-     * Get more items from a playlist page
+     * Get more items from a playlist page.
+     * Applies throttling and circuit breaker protection.
      */
     public ListExtractor.InfoItemsPage<StreamInfoItem> getPlaylistMoreItems(String playlistId, Page page)
             throws IOException, ExtractionException {
-        String url = playlistLinkHandlerFactory.getUrl(playlistId);
-        return PlaylistInfo.getMoreItems(youtube, url, page);
+        checkCircuitBreaker();
+        applyThrottling();
+
+        try {
+            String url = playlistLinkHandlerFactory.getUrl(playlistId);
+            ListExtractor.InfoItemsPage<StreamInfoItem> result = PlaylistInfo.getMoreItems(youtube, url, page);
+            recordSuccess();
+            return result;
+        } catch (IOException | ExtractionException e) {
+            recordError(e);
+            throw e;
+        }
     }
 
     // ==================== Video Operations ====================
 
     /**
-     * Fetch stream info by video ID
+     * Fetch stream info by video ID.
+     * Applies throttling and circuit breaker protection.
      */
     public StreamInfo fetchStreamInfo(String videoId) throws IOException, ExtractionException {
-        String url = streamLinkHandlerFactory.getUrl(videoId);
-        return StreamInfo.getInfo(youtube, url);
+        checkCircuitBreaker();
+        applyThrottling();
+
+        try {
+            String url = streamLinkHandlerFactory.getUrl(videoId);
+            StreamInfo result = StreamInfo.getInfo(youtube, url);
+            recordSuccess();
+            return result;
+        } catch (IOException | ExtractionException e) {
+            recordError(e);
+            throw e;
+        }
     }
 
     /**

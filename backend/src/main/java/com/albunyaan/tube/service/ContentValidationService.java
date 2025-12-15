@@ -1,5 +1,6 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.config.ValidationProperties;
 import com.albunyaan.tube.dto.BatchValidationResult;
 import com.albunyaan.tube.dto.ChannelDetailsDto;
 import com.albunyaan.tube.dto.PlaylistDetailsDto;
@@ -37,7 +38,6 @@ import java.util.stream.Collectors;
 public class ContentValidationService {
 
     private static final Logger logger = LoggerFactory.getLogger(ContentValidationService.class);
-    private static final int DEFAULT_MAX_ITEMS_PER_RUN = 500;
 
     private final ChannelRepository channelRepository;
     private final PlaylistRepository playlistRepository;
@@ -45,6 +45,7 @@ public class ContentValidationService {
     private final YouTubeService youtubeService;
     private final AuditLogService auditLogService;
     private final ValidationRunRepository validationRunRepository;
+    private final ValidationProperties validationProperties;
 
     public ContentValidationService(
             ChannelRepository channelRepository,
@@ -52,7 +53,8 @@ public class ContentValidationService {
             VideoRepository videoRepository,
             YouTubeService youtubeService,
             AuditLogService auditLogService,
-            ValidationRunRepository validationRunRepository
+            ValidationRunRepository validationRunRepository,
+            ValidationProperties validationProperties
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
@@ -60,6 +62,7 @@ public class ContentValidationService {
         this.youtubeService = youtubeService;
         this.auditLogService = auditLogService;
         this.validationRunRepository = validationRunRepository;
+        this.validationProperties = validationProperties;
     }
 
     // ==================== Validation Triggers ====================
@@ -80,7 +83,7 @@ public class ContentValidationService {
 
         try {
             // Use sensible default limit to prevent OOM/timeout (500 total items = ~167 per type)
-            int limit = maxItems != null ? maxItems : DEFAULT_MAX_ITEMS_PER_RUN;
+            int limit = maxItems != null ? maxItems : validationProperties.getVideo().getMaxItemsPerRun();
             int perTypeLimit = (int) Math.ceil(limit / 3.0);
 
             // Calculate totals upfront for progress tracking
@@ -183,7 +186,7 @@ public class ContentValidationService {
 
         try {
             // Use sensible default limit to prevent OOM/timeout (500 total items = ~167 per type)
-            int limit = maxItems != null ? maxItems : DEFAULT_MAX_ITEMS_PER_RUN;
+            int limit = maxItems != null ? maxItems : validationProperties.getVideo().getMaxItemsPerRun();
             int perTypeLimit = (int) Math.ceil(limit / 3.0);
 
             // Calculate totals upfront for progress tracking
@@ -259,7 +262,7 @@ public class ContentValidationService {
         try {
             validationRunRepository.save(validationRun);
 
-            int limit = maxItems != null ? maxItems : DEFAULT_MAX_ITEMS_PER_RUN;
+            int limit = maxItems != null ? maxItems : validationProperties.getVideo().getMaxItemsPerRun();
             validateChannelsInternal(validationRun, triggeredByDisplayName, limit);
 
             validationRun.complete(ValidationRun.STATUS_COMPLETED);
@@ -298,7 +301,7 @@ public class ContentValidationService {
         try {
             validationRunRepository.save(validationRun);
 
-            int limit = maxItems != null ? maxItems : DEFAULT_MAX_ITEMS_PER_RUN;
+            int limit = maxItems != null ? maxItems : validationProperties.getVideo().getMaxItemsPerRun();
             validatePlaylistsInternal(validationRun, triggeredByDisplayName, limit);
 
             validationRun.complete(ValidationRun.STATUS_COMPLETED);
@@ -337,7 +340,7 @@ public class ContentValidationService {
         try {
             validationRunRepository.save(validationRun);
 
-            int limit = maxItems != null ? maxItems : DEFAULT_MAX_ITEMS_PER_RUN;
+            int limit = maxItems != null ? maxItems : validationProperties.getVideo().getMaxItemsPerRun();
             validateVideosInternal(validationRun, triggeredByDisplayName, limit);
 
             validationRun.complete(ValidationRun.STATUS_COMPLETED);

@@ -1,11 +1,17 @@
 package com.albunyaan.tube.service;
 
 import com.albunyaan.tube.config.ValidationProperties;
+import com.albunyaan.tube.repository.SystemSettingsRepository;
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -27,8 +33,12 @@ import java.util.concurrent.atomic.AtomicReference;
 public class YouTubeCircuitBreaker {
 
     private static final Logger logger = LoggerFactory.getLogger(YouTubeCircuitBreaker.class);
+    private static final String SETTINGS_KEY = "circuit_breaker";
 
     private final ValidationProperties validationProperties;
+
+    @Nullable
+    private final SystemSettingsRepository systemSettingsRepository;
 
     // Circuit breaker state
     private final AtomicReference<Instant> cooldownUntil = new AtomicReference<>(null);
@@ -42,11 +52,117 @@ public class YouTubeCircuitBreaker {
     private final AtomicInteger totalRateLimitErrors = new AtomicInteger(0);
     private final AtomicInteger totalCircuitOpens = new AtomicInteger(0);
 
-    public YouTubeCircuitBreaker(ValidationProperties validationProperties) {
+    public YouTubeCircuitBreaker(
+            ValidationProperties validationProperties,
+            @Nullable SystemSettingsRepository systemSettingsRepository) {
         this.validationProperties = validationProperties;
-        logger.info("YouTubeCircuitBreaker initialized - enabled: {}, cooldown: {} minutes",
+        this.systemSettingsRepository = systemSettingsRepository;
+        logger.info("YouTubeCircuitBreaker initialized - enabled: {}, cooldown: {} minutes, persistence: {}",
                 validationProperties.getYoutube().getCircuitBreaker().isEnabled(),
-                validationProperties.getYoutube().getCircuitBreaker().getCooldownMinutes());
+                validationProperties.getYoutube().getCircuitBreaker().getCooldownMinutes(),
+                systemSettingsRepository != null ? "enabled" : "disabled");
+    }
+
+    /**
+     * Load persisted state on startup.
+     */
+    @PostConstruct
+    public void loadPersistedState() {
+        if (systemSettingsRepository == null) {
+            logger.debug("No system settings repository - skipping state load");
+            return;
+        }
+
+        try {
+            Optional<Map<String, Object>> data = systemSettingsRepository.load(SETTINGS_KEY);
+            if (data.isPresent()) {
+                Map<String, Object> state = data.get();
+
+                // Load cooldown state
+                Long cooldownEpoch = (Long) state.get("cooldownUntilEpoch");
+                if (cooldownEpoch != null && cooldownEpoch > Instant.now().toEpochMilli()) {
+                    cooldownUntil.set(Instant.ofEpochMilli(cooldownEpoch));
+                    logger.info("Loaded circuit breaker state - circuit is OPEN until {}",
+                            Instant.ofEpochMilli(cooldownEpoch));
+                }
+
+                Long lastOpenedEpoch = (Long) state.get("lastOpenedAtEpoch");
+                if (lastOpenedEpoch != null) {
+                    lastOpenedAt.set(Instant.ofEpochMilli(lastOpenedEpoch));
+                }
+
+                Number cooldownMins = (Number) state.get("currentCooldownMinutes");
+                if (cooldownMins != null) {
+                    currentCooldownMinutes.set(cooldownMins.intValue());
+                }
+
+                Number consecutiveErrors = (Number) state.get("consecutiveRateLimitErrors");
+                if (consecutiveErrors != null) {
+                    consecutiveRateLimitErrors.set(consecutiveErrors.intValue());
+                }
+
+                String errorType = (String) state.get("lastErrorType");
+                if (errorType != null) {
+                    lastErrorType.set(errorType);
+                }
+
+                String errorMessage = (String) state.get("lastErrorMessage");
+                if (errorMessage != null) {
+                    lastErrorMessage.set(errorMessage);
+                }
+
+                // Load metrics
+                Number totalErrors = (Number) state.get("totalRateLimitErrors");
+                if (totalErrors != null) {
+                    totalRateLimitErrors.set(totalErrors.intValue());
+                }
+
+                Number totalOpens = (Number) state.get("totalCircuitOpens");
+                if (totalOpens != null) {
+                    totalCircuitOpens.set(totalOpens.intValue());
+                }
+
+                logger.info("Circuit breaker state loaded - isOpen: {}, totalErrors: {}, totalOpens: {}",
+                        isOpen(), totalRateLimitErrors.get(), totalCircuitOpens.get());
+            } else {
+                logger.debug("No persisted circuit breaker state found - starting fresh");
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to load circuit breaker state: {} - starting fresh", e.getMessage());
+        }
+    }
+
+    /**
+     * Persist current state to storage.
+     */
+    private void persistState() {
+        if (systemSettingsRepository == null) {
+            return;
+        }
+
+        try {
+            Map<String, Object> state = new HashMap<>();
+
+            Instant until = cooldownUntil.get();
+            state.put("cooldownUntilEpoch", until != null ? until.toEpochMilli() : null);
+
+            Instant opened = lastOpenedAt.get();
+            state.put("lastOpenedAtEpoch", opened != null ? opened.toEpochMilli() : null);
+
+            state.put("currentCooldownMinutes", currentCooldownMinutes.get());
+            state.put("consecutiveRateLimitErrors", consecutiveRateLimitErrors.get());
+            state.put("lastErrorType", lastErrorType.get());
+            state.put("lastErrorMessage", lastErrorMessage.get());
+            state.put("totalRateLimitErrors", totalRateLimitErrors.get());
+            state.put("totalCircuitOpens", totalCircuitOpens.get());
+            state.put("lastUpdated", Instant.now().toEpochMilli());
+
+            systemSettingsRepository.save(SETTINGS_KEY, state);
+            logger.debug("Circuit breaker state persisted");
+        } catch (Exception e) {
+            logger.warn("Failed to persist circuit breaker state: {}", e.getMessage());
+            // Don't throw - persistence is best-effort
+        }
     }
 
     /**
@@ -234,6 +350,9 @@ public class YouTubeCircuitBreaker {
                      "Consecutive errors: {}. Last error: {} - {}",
                 newCooldown, until, consecutiveRateLimitErrors.get(),
                 lastErrorType.get(), lastErrorMessage.get());
+
+        // Persist state so it survives restarts
+        persistState();
     }
 
     /**
@@ -248,6 +367,9 @@ public class YouTubeCircuitBreaker {
 
         // Don't reset consecutiveRateLimitErrors or currentCooldownMinutes here
         // They will be used for backoff if we hit rate limits again
+
+        // Persist state
+        persistState();
     }
 
     /**
@@ -261,6 +383,9 @@ public class YouTubeCircuitBreaker {
         currentCooldownMinutes.set(0);
         lastErrorMessage.set(null);
         lastErrorType.set(null);
+
+        // Persist reset state
+        persistState();
     }
 
     // ==================== Status / Metrics ====================
