@@ -32,6 +32,7 @@ import com.albunyaan.tube.data.extractor.PlaybackSelection
 import com.albunyaan.tube.data.extractor.SubtitleTrack
 import com.albunyaan.tube.download.DownloadEntry
 import com.albunyaan.tube.download.DownloadStatus
+import com.albunyaan.tube.player.BufferHealthMonitor
 import com.albunyaan.tube.player.PlaybackRecoveryManager
 import com.albunyaan.tube.player.PlaybackService
 import com.google.android.exoplayer2.MediaItem
@@ -70,6 +71,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
     /** Manages automatic playback recovery for freeze detection and stall handling */
     private var recoveryManager: PlaybackRecoveryManager? = null
+
+    /** Monitors buffer health and triggers proactive quality downshift for progressive streams */
+    private var bufferHealthMonitor: BufferHealthMonitor? = null
 
     // Overlay controls are now always visible for better UX
     // Users need constant access to quality, cast, and minimize buttons
@@ -263,6 +267,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         recoveryManager?.cancel()
         recoveryManager = null
 
+        // Clean up buffer health monitor
+        bufferHealthMonitor?.release()
+        bufferHealthMonitor = null
+
         // Clean up player resources - ExoPlayer handles its own callback cleanup during release
         binding?.playerView?.player = null
         preparedStreamKey = null
@@ -331,6 +339,12 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             callbacks = createRecoveryCallbacks()
         )
 
+        // Initialize BufferHealthMonitor for proactive quality downshift on progressive streams
+        bufferHealthMonitor = BufferHealthMonitor(
+            scope = viewLifecycleOwner.lifecycleScope,
+            callbacks = createBufferHealthCallbacks()
+        )
+
         // Add listener to auto-hide controls when playback starts and handle errors
         player.addListener(object : com.google.android.exoplayer2.Player.Listener {
             private var hasAutoHidden = false
@@ -345,6 +359,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 if (isPlaying) {
                     // Notify recovery manager that playback is healthy
                     recoveryManager?.onPlaybackStarted()
+
+                    // Notify buffer health monitor to start monitoring (progressive streams only)
+                    player?.let { bufferHealthMonitor?.onPlaybackStarted(it) }
 
                     if (!hasAutoHidden) {
                         // Auto-hide controls after playback starts
@@ -363,6 +380,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                             }
                         }, 3000) // 3 seconds delay to give user time to see controls
                     }
+                } else {
+                    // Pause buffer health monitoring when not playing
+                    bufferHealthMonitor?.onPlaybackPaused()
                 }
             }
 
@@ -1010,6 +1030,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // Notify recovery manager of new stream - pass streamId and adaptive flag
             recoveryManager?.onNewStream(streamState.streamId, preparedIsAdaptive)
 
+            // Notify buffer health monitor of new stream - only monitors progressive streams
+            bufferHealthMonitor?.onNewStream(streamState.streamId, preparedIsAdaptive)
+
             if (hasPendingResume) {
                 pendingResumeStreamId = null
                 pendingResumePositionMs = null
@@ -1130,6 +1153,46 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             PlaybackRecoveryManager.RecoveryStep.QUALITY_DOWNSHIFT -> RecoveryStep.QUALITY_DOWNSHIFT
             PlaybackRecoveryManager.RecoveryStep.REFRESH_URLS -> RecoveryStep.REFRESH_URLS
             PlaybackRecoveryManager.RecoveryStep.REBUILD_PLAYER -> RecoveryStep.REBUILD_PLAYER
+        }
+    }
+
+    /**
+     * Creates callbacks for BufferHealthMonitor to handle proactive quality downshift.
+     * Coordinated with PlaybackRecoveryManager: proactive monitoring disabled during recovery.
+     */
+    private fun createBufferHealthCallbacks(): BufferHealthMonitor.BufferHealthCallbacks {
+        return object : BufferHealthMonitor.BufferHealthCallbacks {
+            override fun onProactiveDownshiftRequested(): Boolean {
+                val state = viewModel.state.value
+                val streamState = state.streamState
+
+                // Only process when in Ready state (not during recovery)
+                if (streamState !is StreamState.Ready) {
+                    android.util.Log.d("PlayerFragment", "Proactive downshift skipped: not in Ready state")
+                    return false
+                }
+
+                val nextLower = findNextLowerQualityTrack(
+                    current = streamState.selection.video,
+                    available = streamState.selection.resolved.videoTracks
+                )
+
+                return if (nextLower != null) {
+                    android.util.Log.i("PlayerFragment", "Proactive downshift: ${streamState.selection.video?.qualityLabel} -> ${nextLower.qualityLabel}")
+                    viewModel.applyAutoQualityStepDown(nextLower)
+                    true
+                } else {
+                    android.util.Log.d("PlayerFragment", "Proactive downshift: no lower quality available")
+                    false
+                }
+            }
+
+            override fun isInRecoveryState(): Boolean {
+                return when (viewModel.state.value.streamState) {
+                    is StreamState.Recovering, is StreamState.RecoveryExhausted -> true
+                    else -> false
+                }
+            }
         }
     }
 
