@@ -123,6 +123,9 @@ app:
         # Cron expression for validation schedule (default: once daily at 6 AM UTC)
         # Format: second minute hour day-of-month month day-of-week
         cron: ${APP_VALIDATION_VIDEO_SCHEDULER_CRON:0 0 6 * * ?}
+        # Distributed lock TTL in minutes (default: 2 hours)
+        # Should be longer than maximum expected validation run duration
+        lock-ttl-minutes: ${APP_VALIDATION_VIDEO_SCHEDULER_LOCK_TTL_MINUTES:120}
     youtube:
       throttle:
         # Enable throttling between YouTube requests
@@ -134,13 +137,24 @@ app:
       circuit-breaker:
         # Enable circuit breaker for rate limiting protection
         enabled: ${APP_VALIDATION_YOUTUBE_CIRCUIT_BREAKER_ENABLED:true}
-        # Cooldown period after rate limit detected (in minutes, default: 12 hours)
+        # Base cooldown period (Level 0) in minutes (default: 1 hour)
+        cooldown-base-minutes: ${APP_VALIDATION_YOUTUBE_CIRCUIT_BREAKER_COOLDOWN_BASE_MINUTES:60}
+        # Maximum cooldown (Level 4 cap) in minutes (default: 48 hours)
+        cooldown-max-minutes: ${APP_VALIDATION_YOUTUBE_CIRCUIT_BREAKER_COOLDOWN_MAX_MINUTES:2880}
+        # Hours of success before decrementing backoff level (default: 48 hours)
+        backoff-decay-hours: ${APP_VALIDATION_YOUTUBE_CIRCUIT_BREAKER_BACKOFF_DECAY_HOURS:48}
+        # Timeout for HALF_OPEN probe requests in seconds (default: 30s)
+        probe-timeout-seconds: ${APP_VALIDATION_YOUTUBE_CIRCUIT_BREAKER_PROBE_TIMEOUT_SECONDS:30}
+        # Rolling window policy: open breaker after N errors within T minutes
+        rolling-window:
+          # Number of rate-limit errors to trigger circuit open (default: 3)
+          error-threshold: ${APP_VALIDATION_YOUTUBE_CIRCUIT_BREAKER_ERROR_THRESHOLD:3}
+          # Time window in minutes to count errors within (default: 10 minutes)
+          window-minutes: ${APP_VALIDATION_YOUTUBE_CIRCUIT_BREAKER_WINDOW_MINUTES:10}
+        # Legacy properties (for backwards compatibility)
         cooldown-minutes: ${APP_VALIDATION_YOUTUBE_CIRCUIT_BREAKER_COOLDOWN_MINUTES:720}
-        # Number of rate limit errors before opening circuit (default: 1)
         max-rate-limit-errors-to-open: ${APP_VALIDATION_YOUTUBE_CIRCUIT_BREAKER_MAX_ERRORS:1}
-        # Maximum cooldown after exponential backoff (in minutes, default: 48 hours)
         max-cooldown-minutes: ${APP_VALIDATION_YOUTUBE_CIRCUIT_BREAKER_MAX_COOLDOWN_MINUTES:2880}
-        # Backoff multiplier for repeated rate limits (default: 2x)
         backoff-multiplier: ${APP_VALIDATION_YOUTUBE_CIRCUIT_BREAKER_BACKOFF_MULTIPLIER:2.0}
   security:
     cors:

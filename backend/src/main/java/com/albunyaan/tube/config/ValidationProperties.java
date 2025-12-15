@@ -49,6 +49,7 @@ public class ValidationProperties {
         public static class Scheduler {
             private boolean enabled = true;
             private String cron = "0 0 6 * * ?"; // Default: once daily at 6 AM UTC
+            private int lockTtlMinutes = 120; // Default: 2 hours (120 minutes)
 
             public boolean isEnabled() {
                 return enabled;
@@ -64,6 +65,14 @@ public class ValidationProperties {
 
             public void setCron(String cron) {
                 this.cron = cron;
+            }
+
+            public int getLockTtlMinutes() {
+                return lockTtlMinutes;
+            }
+
+            public void setLockTtlMinutes(int lockTtlMinutes) {
+                this.lockTtlMinutes = lockTtlMinutes;
             }
         }
     }
@@ -117,14 +126,22 @@ public class ValidationProperties {
         }
 
         /**
-         * Circuit breaker settings for rate limiting protection
+         * Circuit breaker settings for rate limiting protection.
+         * Implements a state machine: CLOSED → OPEN → HALF_OPEN → CLOSED
          */
         public static class CircuitBreaker {
             private boolean enabled = true;
-            private int cooldownMinutes = 720; // 12 hours default
-            private int maxRateLimitErrorsToOpen = 1; // Open after first rate limit error
-            private int maxCooldownMinutes = 2880; // 48 hours max
-            private double backoffMultiplier = 2.0; // Double cooldown on repeated errors
+            private int cooldownBaseMinutes = 60; // Level 0: 1 hour
+            private int cooldownMaxMinutes = 2880; // Level 4 cap: 48 hours
+            private int backoffDecayHours = 48; // Hours of success before decrementing backoff level
+            private int probeTimeoutSeconds = 30; // Timeout for HALF_OPEN probe requests
+            private final RollingWindow rollingWindow = new RollingWindow();
+
+            // Legacy properties (kept for backwards compatibility)
+            private int cooldownMinutes = 720; // 12 hours default (legacy)
+            private int maxRateLimitErrorsToOpen = 1; // Legacy - use rolling window instead
+            private int maxCooldownMinutes = 2880; // Legacy - use cooldownMaxMinutes
+            private double backoffMultiplier = 2.0; // Legacy
 
             public boolean isEnabled() {
                 return enabled;
@@ -134,6 +151,43 @@ public class ValidationProperties {
                 this.enabled = enabled;
             }
 
+            public int getCooldownBaseMinutes() {
+                return cooldownBaseMinutes;
+            }
+
+            public void setCooldownBaseMinutes(int cooldownBaseMinutes) {
+                this.cooldownBaseMinutes = cooldownBaseMinutes;
+            }
+
+            public int getCooldownMaxMinutes() {
+                return cooldownMaxMinutes;
+            }
+
+            public void setCooldownMaxMinutes(int cooldownMaxMinutes) {
+                this.cooldownMaxMinutes = cooldownMaxMinutes;
+            }
+
+            public int getBackoffDecayHours() {
+                return backoffDecayHours;
+            }
+
+            public void setBackoffDecayHours(int backoffDecayHours) {
+                this.backoffDecayHours = backoffDecayHours;
+            }
+
+            public int getProbeTimeoutSeconds() {
+                return probeTimeoutSeconds;
+            }
+
+            public void setProbeTimeoutSeconds(int probeTimeoutSeconds) {
+                this.probeTimeoutSeconds = probeTimeoutSeconds;
+            }
+
+            public RollingWindow getRollingWindow() {
+                return rollingWindow;
+            }
+
+            // Legacy getters/setters (for backwards compatibility)
             public int getCooldownMinutes() {
                 return cooldownMinutes;
             }
@@ -164,6 +218,31 @@ public class ValidationProperties {
 
             public void setBackoffMultiplier(double backoffMultiplier) {
                 this.backoffMultiplier = backoffMultiplier;
+            }
+
+            /**
+             * Rolling window settings for determining when to open the circuit breaker.
+             * Opens after N errors within T minutes (default: 3 errors in 10 minutes).
+             */
+            public static class RollingWindow {
+                private int errorThreshold = 3; // Number of rate-limit errors to trigger open
+                private int windowMinutes = 10; // Time window to count errors within
+
+                public int getErrorThreshold() {
+                    return errorThreshold;
+                }
+
+                public void setErrorThreshold(int errorThreshold) {
+                    this.errorThreshold = errorThreshold;
+                }
+
+                public int getWindowMinutes() {
+                    return windowMinutes;
+                }
+
+                public void setWindowMinutes(int windowMinutes) {
+                    this.windowMinutes = windowMinutes;
+                }
             }
         }
     }
