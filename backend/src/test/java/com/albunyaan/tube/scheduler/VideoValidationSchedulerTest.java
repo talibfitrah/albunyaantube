@@ -1,13 +1,10 @@
 package com.albunyaan.tube.scheduler;
 
 import com.albunyaan.tube.config.CacheConfig;
-import com.albunyaan.tube.config.ValidationSchedulerProperties;
 import com.albunyaan.tube.model.ValidationRun;
 import com.albunyaan.tube.service.ContentValidationService;
-import com.albunyaan.tube.service.SchedulerLockService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -24,11 +21,9 @@ import static org.mockito.Mockito.*;
  * Unit tests for VideoValidationScheduler
  *
  * Tests verify:
- * - Scheduler respects enabled/disabled flag
- * - Scheduler acquires and releases distributed lock
- * - Scheduler uses configurable max items
+ * - Scheduler calls ContentValidationService.validateVideos() with correct parameters
  * - Cache eviction occurs only after successful validation (STATUS_COMPLETED)
- * - Cache eviction is skipped when validation fails or scheduler is disabled
+ * - Cache eviction is skipped when validation fails (STATUS_FAILED) or throws exception
  */
 @ExtendWith(MockitoExtension.class)
 class VideoValidationSchedulerTest {
@@ -40,296 +35,220 @@ class VideoValidationSchedulerTest {
     private CacheManager cacheManager;
 
     @Mock
-    private SchedulerLockService lockService;
-
-    @Mock
     private Cache publicContentCache;
 
     @Mock
     private Cache videosCache;
 
-    private ValidationSchedulerProperties schedulerProperties;
     private VideoValidationScheduler scheduler;
 
     @BeforeEach
     void setUp() {
-        schedulerProperties = new ValidationSchedulerProperties();
-        schedulerProperties.setEnabled(true);
-        schedulerProperties.setMaxItemsPerRun(10);
-        schedulerProperties.setLockTtlMinutes(120);
-        scheduler = new VideoValidationScheduler(
-                contentValidationService,
-                cacheManager,
-                schedulerProperties,
-                lockService
+        scheduler = new VideoValidationScheduler(contentValidationService, cacheManager);
+    }
+
+    @Test
+    @DisplayName("Morning validation should call ContentValidationService with SCHEDULED trigger")
+    void morningValidation_shouldCallContentValidationServiceWithScheduledTrigger() {
+        // Arrange
+        ValidationRun mockRun = new ValidationRun(ValidationRun.TRIGGER_SCHEDULED, null, "Test");
+        mockRun.setVideosChecked(10);
+        mockRun.setVideosMarkedArchived(1);
+        mockRun.complete(ValidationRun.STATUS_COMPLETED);
+
+        when(contentValidationService.validateVideos(anyString(), any(), anyString(), any()))
+                .thenReturn(mockRun);
+        when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(publicContentCache);
+        when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(videosCache);
+
+        // Act
+        scheduler.morningValidation();
+
+        // Assert
+        ArgumentCaptor<String> triggerCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> displayNameCaptor = ArgumentCaptor.forClass(String.class);
+
+        verify(contentValidationService).validateVideos(
+                triggerCaptor.capture(),
+                isNull(),
+                displayNameCaptor.capture(),
+                isNull()
+        );
+
+        assertEquals(ValidationRun.TRIGGER_SCHEDULED, triggerCaptor.getValue());
+        assertTrue(displayNameCaptor.getValue().contains("morning"));
+    }
+
+    @Test
+    @DisplayName("Afternoon validation should use correct display name")
+    void afternoonValidation_shouldUseCorrectDisplayName() {
+        // Arrange
+        ValidationRun mockRun = new ValidationRun(ValidationRun.TRIGGER_SCHEDULED, null, "Test");
+        mockRun.complete(ValidationRun.STATUS_COMPLETED);
+
+        when(contentValidationService.validateVideos(anyString(), any(), anyString(), any()))
+                .thenReturn(mockRun);
+        when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(publicContentCache);
+        when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(videosCache);
+
+        // Act
+        scheduler.afternoonValidation();
+
+        // Assert
+        ArgumentCaptor<String> displayNameCaptor = ArgumentCaptor.forClass(String.class);
+        verify(contentValidationService).validateVideos(
+                eq(ValidationRun.TRIGGER_SCHEDULED),
+                isNull(),
+                displayNameCaptor.capture(),
+                isNull()
+        );
+
+        assertTrue(displayNameCaptor.getValue().contains("afternoon"));
+    }
+
+    @Test
+    @DisplayName("Evening validation should use correct display name")
+    void eveningValidation_shouldUseCorrectDisplayName() {
+        // Arrange
+        ValidationRun mockRun = new ValidationRun(ValidationRun.TRIGGER_SCHEDULED, null, "Test");
+        mockRun.complete(ValidationRun.STATUS_COMPLETED);
+
+        when(contentValidationService.validateVideos(anyString(), any(), anyString(), any()))
+                .thenReturn(mockRun);
+        when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(publicContentCache);
+        when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(videosCache);
+
+        // Act
+        scheduler.eveningValidation();
+
+        // Assert
+        ArgumentCaptor<String> displayNameCaptor = ArgumentCaptor.forClass(String.class);
+        verify(contentValidationService).validateVideos(
+                eq(ValidationRun.TRIGGER_SCHEDULED),
+                isNull(),
+                displayNameCaptor.capture(),
+                isNull()
+        );
+
+        assertTrue(displayNameCaptor.getValue().contains("evening"));
+    }
+
+    @Test
+    @DisplayName("Should evict public content cache after successful validation")
+    void validation_shouldEvictPublicContentCache() {
+        // Arrange
+        ValidationRun mockRun = new ValidationRun(ValidationRun.TRIGGER_SCHEDULED, null, "Test");
+        mockRun.complete(ValidationRun.STATUS_COMPLETED);
+
+        when(contentValidationService.validateVideos(anyString(), any(), anyString(), any()))
+                .thenReturn(mockRun);
+        when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(publicContentCache);
+        when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(videosCache);
+
+        // Act
+        scheduler.morningValidation();
+
+        // Assert
+        verify(publicContentCache).clear();
+        verify(videosCache).clear();
+    }
+
+    @Test
+    @DisplayName("Should handle missing caches gracefully")
+    void validation_shouldHandleMissingCachesGracefully() {
+        // Arrange
+        ValidationRun mockRun = new ValidationRun(ValidationRun.TRIGGER_SCHEDULED, null, "Test");
+        mockRun.complete(ValidationRun.STATUS_COMPLETED);
+
+        when(contentValidationService.validateVideos(anyString(), any(), anyString(), any()))
+                .thenReturn(mockRun);
+        when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(null);
+        when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(null);
+
+        // Act - should not throw
+        assertDoesNotThrow(() -> scheduler.morningValidation());
+
+        // Assert - validation was still called
+        verify(contentValidationService).validateVideos(anyString(), any(), anyString(), any());
+    }
+
+    @Test
+    @DisplayName("Should not evict caches when service throws exception")
+    void validation_shouldNotEvictCachesOnServiceException() {
+        // Arrange
+        when(contentValidationService.validateVideos(anyString(), any(), anyString(), any()))
+                .thenThrow(new RuntimeException("Service failure"));
+
+        // Act - should not throw
+        assertDoesNotThrow(() -> scheduler.morningValidation());
+
+        // Assert - caches should not be evicted when exception occurs
+        verify(cacheManager, never()).getCache(anyString());
+    }
+
+    @Test
+    @DisplayName("Should not evict caches when validation returns FAILED status")
+    void validation_shouldNotEvictCachesOnFailedStatus() {
+        // Arrange
+        ValidationRun mockRun = new ValidationRun(ValidationRun.TRIGGER_SCHEDULED, null, "Test");
+        mockRun.complete(ValidationRun.STATUS_FAILED);  // Validation failed
+        mockRun.addDetail("errorMessage", "Database connection failed");
+
+        when(contentValidationService.validateVideos(anyString(), any(), anyString(), any()))
+                .thenReturn(mockRun);
+
+        // Act
+        scheduler.morningValidation();
+
+        // Assert - caches should NOT be evicted when status is FAILED
+        verify(cacheManager, never()).getCache(anyString());
+    }
+
+    @Test
+    @DisplayName("Should pass null for triggeredBy in scheduled runs")
+    void validation_shouldPassNullForTriggeredBy() {
+        // Arrange
+        ValidationRun mockRun = new ValidationRun(ValidationRun.TRIGGER_SCHEDULED, null, "Test");
+        mockRun.complete(ValidationRun.STATUS_COMPLETED);
+
+        when(contentValidationService.validateVideos(anyString(), any(), anyString(), any()))
+                .thenReturn(mockRun);
+        when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(publicContentCache);
+        when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(videosCache);
+
+        // Act
+        scheduler.morningValidation();
+
+        // Assert - second argument (triggeredBy) should be null for scheduled runs
+        verify(contentValidationService).validateVideos(
+                eq(ValidationRun.TRIGGER_SCHEDULED),
+                isNull(),  // triggeredBy should be null
+                anyString(),
+                isNull()   // maxItems should be null (use default)
         );
     }
 
-    @Nested
-    @DisplayName("Enable/Disable Flag Tests")
-    class EnableDisableTests {
+    @Test
+    @DisplayName("Should pass null for maxItems to use service default")
+    void validation_shouldPassNullForMaxItemsToUseDefault() {
+        // Arrange
+        ValidationRun mockRun = new ValidationRun(ValidationRun.TRIGGER_SCHEDULED, null, "Test");
+        mockRun.complete(ValidationRun.STATUS_COMPLETED);
 
-        @Test
-        @DisplayName("Should skip validation when scheduler is disabled")
-        void scheduledValidation_whenDisabled_shouldSkip() {
-            // Arrange
-            schedulerProperties.setEnabled(false);
+        when(contentValidationService.validateVideos(anyString(), any(), anyString(), any()))
+                .thenReturn(mockRun);
+        when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(publicContentCache);
+        when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(videosCache);
 
-            // Act
-            scheduler.scheduledValidation();
+        // Act
+        scheduler.morningValidation();
 
-            // Assert - should not attempt to acquire lock or run validation
-            verify(lockService, never()).tryAcquireLock(anyString());
-            verify(contentValidationService, never()).validateVideos(anyString(), any(), anyString(), anyInt());
-        }
-
-        @Test
-        @DisplayName("Should run validation when scheduler is enabled")
-        void scheduledValidation_whenEnabled_shouldRun() {
-            // Arrange
-            schedulerProperties.setEnabled(true);
-            when(lockService.tryAcquireLock(anyString())).thenReturn(true);
-
-            ValidationRun mockRun = new ValidationRun(ValidationRun.TRIGGER_SCHEDULED, null, "Test");
-            mockRun.complete(ValidationRun.STATUS_COMPLETED);
-            when(contentValidationService.validateVideos(anyString(), any(), anyString(), anyInt()))
-                    .thenReturn(mockRun);
-            when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(publicContentCache);
-            when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(videosCache);
-
-            // Act
-            scheduler.scheduledValidation();
-
-            // Assert
-            verify(lockService).tryAcquireLock(anyString());
-            verify(contentValidationService).validateVideos(anyString(), any(), anyString(), anyInt());
-            verify(lockService).releaseLock(anyString());
-        }
-    }
-
-    @Nested
-    @DisplayName("Distributed Lock Tests")
-    class DistributedLockTests {
-
-        @Test
-        @DisplayName("Should skip validation when lock cannot be acquired")
-        void scheduledValidation_whenLockNotAcquired_shouldSkip() {
-            // Arrange
-            when(lockService.tryAcquireLock(anyString())).thenReturn(false);
-
-            // Act
-            scheduler.scheduledValidation();
-
-            // Assert - should not run validation
-            verify(lockService).tryAcquireLock(anyString());
-            verify(contentValidationService, never()).validateVideos(anyString(), any(), anyString(), anyInt());
-            verify(lockService, never()).releaseLock(anyString());
-        }
-
-        @Test
-        @DisplayName("Should release lock even when validation fails")
-        void scheduledValidation_whenValidationFails_shouldReleaseLock() {
-            // Arrange
-            when(lockService.tryAcquireLock(anyString())).thenReturn(true);
-            when(contentValidationService.validateVideos(anyString(), any(), anyString(), anyInt()))
-                    .thenThrow(new RuntimeException("Validation failed"));
-
-            // Act
-            scheduler.scheduledValidation();
-
-            // Assert - lock should be released even on failure
-            verify(lockService).tryAcquireLock(anyString());
-            verify(lockService).releaseLock(anyString());
-        }
-
-        @Test
-        @DisplayName("Should pass runId to lock service")
-        void scheduledValidation_shouldPassRunIdToLockService() {
-            // Arrange
-            ArgumentCaptor<String> acquireCaptor = ArgumentCaptor.forClass(String.class);
-            ArgumentCaptor<String> releaseCaptor = ArgumentCaptor.forClass(String.class);
-            when(lockService.tryAcquireLock(acquireCaptor.capture())).thenReturn(true);
-
-            ValidationRun mockRun = new ValidationRun(ValidationRun.TRIGGER_SCHEDULED, null, "Test");
-            mockRun.complete(ValidationRun.STATUS_COMPLETED);
-            when(contentValidationService.validateVideos(anyString(), any(), anyString(), anyInt()))
-                    .thenReturn(mockRun);
-            when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(publicContentCache);
-            when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(videosCache);
-            doNothing().when(lockService).releaseLock(releaseCaptor.capture());
-
-            // Act
-            scheduler.scheduledValidation();
-
-            // Assert - same runId should be used for acquire and release
-            String acquiredRunId = acquireCaptor.getValue();
-            String releasedRunId = releaseCaptor.getValue();
-            assertNotNull(acquiredRunId);
-            assertEquals(acquiredRunId, releasedRunId, "Same runId should be used for acquire and release");
-        }
-    }
-
-    @Nested
-    @DisplayName("Max Items Configuration Tests")
-    class MaxItemsTests {
-
-        @Test
-        @DisplayName("Should pass configured max items to validation service")
-        void scheduledValidation_shouldUseConfiguredMaxItems() {
-            // Arrange
-            schedulerProperties.setMaxItemsPerRun(25);
-            when(lockService.tryAcquireLock(anyString())).thenReturn(true);
-
-            ValidationRun mockRun = new ValidationRun(ValidationRun.TRIGGER_SCHEDULED, null, "Test");
-            mockRun.complete(ValidationRun.STATUS_COMPLETED);
-            when(contentValidationService.validateVideos(anyString(), any(), anyString(), anyInt()))
-                    .thenReturn(mockRun);
-            when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(publicContentCache);
-            when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(videosCache);
-
-            // Act
-            scheduler.scheduledValidation();
-
-            // Assert
-            ArgumentCaptor<Integer> maxItemsCaptor = ArgumentCaptor.forClass(Integer.class);
-            verify(contentValidationService).validateVideos(
-                    eq(ValidationRun.TRIGGER_SCHEDULED),
-                    isNull(),
-                    anyString(),
-                    maxItemsCaptor.capture()
-            );
-            assertEquals(25, maxItemsCaptor.getValue());
-        }
-    }
-
-    @Nested
-    @DisplayName("Cache Eviction Tests")
-    class CacheEvictionTests {
-
-        @Test
-        @DisplayName("Should evict caches after successful validation")
-        void scheduledValidation_onSuccess_shouldEvictCaches() {
-            // Arrange
-            when(lockService.tryAcquireLock(anyString())).thenReturn(true);
-
-            ValidationRun mockRun = new ValidationRun(ValidationRun.TRIGGER_SCHEDULED, null, "Test");
-            mockRun.complete(ValidationRun.STATUS_COMPLETED);
-            when(contentValidationService.validateVideos(anyString(), any(), anyString(), anyInt()))
-                    .thenReturn(mockRun);
-            when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(publicContentCache);
-            when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(videosCache);
-
-            // Act
-            scheduler.scheduledValidation();
-
-            // Assert
-            verify(publicContentCache).clear();
-            verify(videosCache).clear();
-        }
-
-        @Test
-        @DisplayName("Should not evict caches when validation fails")
-        void scheduledValidation_onFailedStatus_shouldNotEvictCaches() {
-            // Arrange
-            when(lockService.tryAcquireLock(anyString())).thenReturn(true);
-
-            ValidationRun mockRun = new ValidationRun(ValidationRun.TRIGGER_SCHEDULED, null, "Test");
-            mockRun.complete(ValidationRun.STATUS_FAILED);
-            when(contentValidationService.validateVideos(anyString(), any(), anyString(), anyInt()))
-                    .thenReturn(mockRun);
-
-            // Act
-            scheduler.scheduledValidation();
-
-            // Assert - caches should NOT be evicted
-            verify(cacheManager, never()).getCache(anyString());
-        }
-
-        @Test
-        @DisplayName("Should not evict caches when validation throws exception")
-        void scheduledValidation_onException_shouldNotEvictCaches() {
-            // Arrange
-            when(lockService.tryAcquireLock(anyString())).thenReturn(true);
-            when(contentValidationService.validateVideos(anyString(), any(), anyString(), anyInt()))
-                    .thenThrow(new RuntimeException("Service failure"));
-
-            // Act
-            scheduler.scheduledValidation();
-
-            // Assert - caches should NOT be evicted
-            verify(cacheManager, never()).getCache(anyString());
-        }
-
-        @Test
-        @DisplayName("Should handle missing caches gracefully")
-        void scheduledValidation_withMissingCaches_shouldNotThrow() {
-            // Arrange
-            when(lockService.tryAcquireLock(anyString())).thenReturn(true);
-
-            ValidationRun mockRun = new ValidationRun(ValidationRun.TRIGGER_SCHEDULED, null, "Test");
-            mockRun.complete(ValidationRun.STATUS_COMPLETED);
-            when(contentValidationService.validateVideos(anyString(), any(), anyString(), anyInt()))
-                    .thenReturn(mockRun);
-            when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(null);
-            when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(null);
-
-            // Act & Assert - should not throw
-            assertDoesNotThrow(() -> scheduler.scheduledValidation());
-        }
-    }
-
-    @Nested
-    @DisplayName("Trigger Type Tests")
-    class TriggerTypeTests {
-
-        @Test
-        @DisplayName("Should use SCHEDULED trigger type")
-        void scheduledValidation_shouldUseScheduledTriggerType() {
-            // Arrange
-            when(lockService.tryAcquireLock(anyString())).thenReturn(true);
-
-            ValidationRun mockRun = new ValidationRun(ValidationRun.TRIGGER_SCHEDULED, null, "Test");
-            mockRun.complete(ValidationRun.STATUS_COMPLETED);
-            when(contentValidationService.validateVideos(anyString(), any(), anyString(), anyInt()))
-                    .thenReturn(mockRun);
-            when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(publicContentCache);
-            when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(videosCache);
-
-            // Act
-            scheduler.scheduledValidation();
-
-            // Assert
-            verify(contentValidationService).validateVideos(
-                    eq(ValidationRun.TRIGGER_SCHEDULED),
-                    isNull(),
-                    anyString(),
-                    anyInt()
-            );
-        }
-
-        @Test
-        @DisplayName("Should pass null for triggeredBy in scheduled runs")
-        void scheduledValidation_shouldPassNullForTriggeredBy() {
-            // Arrange
-            when(lockService.tryAcquireLock(anyString())).thenReturn(true);
-
-            ValidationRun mockRun = new ValidationRun(ValidationRun.TRIGGER_SCHEDULED, null, "Test");
-            mockRun.complete(ValidationRun.STATUS_COMPLETED);
-            when(contentValidationService.validateVideos(anyString(), any(), anyString(), anyInt()))
-                    .thenReturn(mockRun);
-            when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(publicContentCache);
-            when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(videosCache);
-
-            // Act
-            scheduler.scheduledValidation();
-
-            // Assert
-            verify(contentValidationService).validateVideos(
-                    anyString(),
-                    isNull(),  // triggeredBy should be null
-                    anyString(),
-                    anyInt()
-            );
-        }
+        // Assert - fourth argument (maxItems) should be null to use service default
+        verify(contentValidationService).validateVideos(
+                anyString(),
+                any(),
+                anyString(),
+                isNull()  // maxItems should be null
+        );
     }
 }

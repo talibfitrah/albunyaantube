@@ -1,7 +1,7 @@
 # YouTube Rate Limiting Remediation Plan
 
-**Last Updated**: December 15, 2025
-**Status**: ✅ **Implemented** (P0–P3 functional; 2 manual/integration tests pending; P4 metrics deferred)
+**Last Updated**: December 15, 2025  
+**Status**: Draft - Pending implementation
 
 This document is the concrete, step-by-step plan to stop triggering YouTube anti-bot rate limits (`SignInConfirmNotBotException`: “Sign in to confirm that you're not a bot”) and make validation safe-by-default.
 
@@ -468,66 +468,51 @@ Backout:
 
 ## 7) Verification Checklist
 
-### Phase 0 — Safety Switches (7/8 complete)
-- [x] Scheduled validation can be disabled via config (no deploy).
-- [x] Cron schedule is configurable via `app.validation.video.scheduler.cron`.
-- [x] **Distributed lock prevents concurrent runs:**
-  - [x] Lock acquisition succeeds when no lock exists.
-  - [x] Lock acquisition fails when valid lock held by another instance.
-  - [x] Lock acquisition succeeds when lock is expired (TTL passed).
-  - [x] Lock release deletes document on normal completion.
-  - [x] Lock release occurs even on run failure (try/finally).
-  - [x] Two backend instances cannot run validation simultaneously (integration test).
-  - [x] Simulated crash scenario: lock expires after TTL, next run proceeds.
+### Phase 0 — Safety Switches
+- [ ] Scheduled validation can be disabled via config (no deploy).
+- [ ] Cron schedule is configurable via `app.validation.video.scheduler.cron`.
+- [ ] **Distributed lock prevents concurrent runs:**
+  - [ ] Lock acquisition succeeds when no lock exists.
+  - [ ] Lock acquisition fails when valid lock held by another instance.
+  - [ ] Lock acquisition succeeds when lock is expired (TTL passed).
+  - [ ] Lock release deletes document on normal completion.
+  - [ ] Lock release occurs even on run failure (try/finally).
+  - [ ] Two backend instances cannot run validation simultaneously (integration test).
+  - [ ] Simulated crash scenario: lock expires after TTL, next run proceeds.
   - [ ] Manual multi-instance deployment test confirms single runner.
 
-### Phase 1 — Throttling ✅
-- [x] Batch size is capped (cannot validate 100s of items in one run by default).
-- [x] **Batch size configurable**: `app.validation.video.max-items-per-run` is respected.
-- [x] Requests are visibly throttled in logs/metrics (no burst patterns).
-- [x] **Throttle delay applied**: Each YouTube call waits `delay-between-items-ms` ± `jitter-ms`.
-- [x] **Jitter randomization**: Delays are not identical (verify via log timestamps or metrics).
-- [x] **Pool size respected**: Concurrent YouTube requests limited to `app.newpipe.executor.pool-size`.
-- [x] **Throttle covers all call sites**: Manual validation, scheduled validation, and admin refresh all throttled.
+### Phase 1 — Throttling
+- [ ] Batch size is capped (cannot validate 100s of items in one run by default).
+- [ ] **Batch size configurable**: `app.validation.video.max-items-per-run` is respected.
+- [ ] Requests are visibly throttled in logs/metrics (no burst patterns).
+- [ ] **Throttle delay applied**: Each YouTube call waits `delay-between-items-ms` ± `jitter-ms`.
+- [ ] **Jitter randomization**: Delays are not identical (verify via log timestamps or metrics).
+- [ ] **Pool size respected**: Concurrent YouTube requests limited to `app.newpipe.executor.pool-size`.
+- [ ] **Throttle covers all call sites**: Manual validation, scheduled validation, and admin refresh all throttled.
 
-### Phase 2 — Circuit Breaker Persistence (15/16 complete)
-- [x] **Storage**: Breaker state persisted in `system_settings/youtube_circuit_breaker` document.
-- [x] **State transitions**: CLOSED → OPEN → HALF_OPEN → CLOSED cycle works correctly.
-- [x] **Fail-safe policy**: When Firestore unavailable, breaker defaults to OPEN (rejects calls).
-- [x] **Persistence failures logged**: ERROR-level logs with correlation ID on read/write failures.
-- [x] **TTL semantics**: `openedAt` and `cooldownUntil` use Firestore server timestamps.
-- [x] **Backoff levels**: Cooldown duration increases correctly (1h → 6h → 12h → 24h → 48h cap).
-- [x] **Backoff decay**: Level decrements after 48h of successful calls with no rate-limit errors.
-- [x] **Stale state recovery**: On startup, expired OPEN state transitions to HALF_OPEN.
-- [x] **HALF_OPEN probes**: Single probe request allowed; success → CLOSED, failure → OPEN.
-- [x] **Concurrency**: Optimistic locking with version field prevents race conditions.
-- [x] **Restart survival**: Breaker state survives backend restart (integration test).
-- [x] **Multi-instance**: All backend instances share breaker state (integration test).
-- [x] Anti-bot detection opens breaker and stops further requests.
-- [x] **Batch fail-fast**: `isCircuitBreakerBlocking()` allows batch callers to fail fast without attempting individual requests (cooldown-aware).
-- [x] **Never-archive guarantee on transient failures**:
-  - [x] Rate-limit errors (`SignInConfirmNotBotException`) do NOT archive content.
-  - [x] Network timeouts do NOT archive content.
-  - [x] Parsing errors (NewPipeExtractor bugs) do NOT archive content.
-  - [x] Only explicit "content not found" / "content deleted" errors archive.
-  - [x] Unit test: Verify `archiveContent()` is NOT called on rate-limit exceptions.
-  - [x] Unit test: Verify `archiveContent()` is NOT called on network timeout.
+### Phase 2 — Circuit Breaker Persistence
+- [ ] **Storage**: Breaker state persisted in `system_settings/youtube_circuit_breaker` document.
+- [ ] **State transitions**: CLOSED → OPEN → HALF_OPEN → CLOSED cycle works correctly.
+- [ ] **Fail-safe policy**: When Firestore unavailable, breaker defaults to OPEN (rejects calls).
+- [ ] **Persistence failures logged**: ERROR-level logs with correlation ID on read/write failures.
+- [ ] **TTL semantics**: `openedAt` and `cooldownUntil` use Firestore server timestamps.
+- [ ] **Backoff levels**: Cooldown duration increases correctly (1h → 6h → 12h → 24h → 48h cap).
+- [ ] **Backoff decay**: Level decrements after 48h of successful calls with no rate-limit errors.
+- [ ] **Stale state recovery**: On startup, expired OPEN state transitions to HALF_OPEN.
+- [ ] **HALF_OPEN probes**: Single probe request allowed; success → CLOSED, failure → OPEN.
+- [ ] **Concurrency**: Optimistic locking with version field prevents race conditions.
+- [ ] **Restart survival**: Breaker state survives backend restart (integration test).
+- [ ] **Multi-instance**: All backend instances share breaker state (integration test).
+- [ ] Anti-bot detection opens breaker and stops further requests.
+- [ ] **Never-archive guarantee on transient failures**:
+  - [ ] Rate-limit errors (`SignInConfirmNotBotException`) do NOT archive content.
+  - [ ] Network timeouts do NOT archive content.
+  - [ ] Parsing errors (NewPipeExtractor bugs) do NOT archive content.
+  - [ ] Only explicit "content not found" / "content deleted" errors archive.
+  - [ ] Unit test: Verify `archiveContent()` is NOT called on rate-limit exceptions.
+  - [ ] Unit test: Verify `archiveContent()` is NOT called on network timeout.
   - [ ] Integration test: Simulate rate-limit mid-batch; confirm no items archived.
 
-### Phase 3 — Backoff Strategy ✅
-- [x] **Exponential backoff**: Cooldown increases with backoff level (1h → 6h → 12h → 24h → 48h cap).
-- [x] **Jitter**: Random jitter applied to throttle delays via `jitter-ms` config.
-- [x] **Backoff decay**: Level decrements after 48h of successful calls.
-- [x] **Backoff cap**: Level capped at 4 (48h max cooldown).
-
-### Phase 4 — Observability and Tests (partial)
-- [x] **Unit tests**: Exception/message classification tests implemented.
-- [x] **Unit tests**: Circuit breaker open/close behavior tests implemented.
-- [x] **Unit tests**: Throttle behavior tests implemented.
-- [x] **Test policy**: All tests run within 300s timeout.
-- [ ] **Metrics**: Counters for validation attempts/successes/errors (deferred).
-- [ ] **Metrics**: Gauge for breaker state and cooldown remaining (deferred).
-
 ### All Phases
-- [x] Tests pass within 300s: `cd backend && timeout 300 ./gradlew test` (387 tests, 0 failures)
+- [ ] Tests pass within 300s: `cd backend && timeout 300 ./gradlew test`
 

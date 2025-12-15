@@ -1,18 +1,11 @@
 package com.albunyaan.tube.service;
 
-import com.albunyaan.tube.config.FirestoreTimeoutProperties;
-import com.albunyaan.tube.config.YouTubeCircuitBreakerProperties;
-import com.albunyaan.tube.config.YouTubeThrottleProperties;
-import com.google.api.core.ApiFuture;
-import com.google.cloud.firestore.CollectionReference;
-import com.google.cloud.firestore.DocumentReference;
-import com.google.cloud.firestore.DocumentSnapshot;
-import com.google.cloud.firestore.Firestore;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -22,14 +15,15 @@ import org.schabi.newpipe.extractor.Page;
 import org.schabi.newpipe.extractor.StreamingService;
 import org.schabi.newpipe.extractor.ServiceList;
 import org.schabi.newpipe.extractor.NewPipe;
+import org.schabi.newpipe.extractor.channel.ChannelInfo;
 import org.schabi.newpipe.extractor.exceptions.ExtractionException;
+import org.schabi.newpipe.extractor.playlist.PlaylistInfo;
 import org.schabi.newpipe.extractor.search.SearchExtractor;
+import org.schabi.newpipe.extractor.stream.StreamInfo;
 
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
@@ -39,31 +33,12 @@ import static org.mockito.Mockito.*;
  * - Page token encoding/decoding
  * - Executor service management
  * - NewPipe service initialization
- * - Throttle configuration
- * - Circuit breaker integration
  */
 @ExtendWith(MockitoExtension.class)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class YouTubeGatewayTest {
 
-    @Mock
-    private Firestore firestore;
-
-    @Mock
-    private CollectionReference collectionReference;
-
-    @Mock
-    private DocumentReference documentReference;
-
-    @Mock
-    private DocumentSnapshot documentSnapshot;
-
-    @Mock
-    private ApiFuture<DocumentSnapshot> documentFuture;
-
     private YouTubeGateway gateway;
-    private YouTubeThrottleProperties throttleProperties;
-    private YouTubeCircuitBreakerService circuitBreakerService;
 
     @BeforeAll
     static void initializeNewPipe() {
@@ -89,31 +64,9 @@ class YouTubeGatewayTest {
     }
 
     @BeforeEach
-    void setUp() throws Exception {
+    void setUp() {
         StreamingService youtube = ServiceList.YouTube;
-
-        // Create throttle properties with throttling disabled for fast tests
-        throttleProperties = new YouTubeThrottleProperties();
-        throttleProperties.setEnabled(false);  // Disable throttling in tests
-
-        // Create circuit breaker with disabled state for most tests
-        FirestoreTimeoutProperties timeoutProperties = new FirestoreTimeoutProperties();
-        timeoutProperties.setRead(5);
-        timeoutProperties.setWrite(10);
-
-        YouTubeCircuitBreakerProperties breakerProperties = new YouTubeCircuitBreakerProperties();
-        breakerProperties.setEnabled(false);  // Disable circuit breaker in most tests
-
-        // Mock Firestore chain for circuit breaker service
-        lenient().when(firestore.collection(anyString())).thenReturn(collectionReference);
-        lenient().when(collectionReference.document(anyString())).thenReturn(documentReference);
-        lenient().when(documentReference.get()).thenReturn(documentFuture);
-        lenient().when(documentFuture.get(anyLong(), any(TimeUnit.class))).thenReturn(documentSnapshot);
-        lenient().when(documentSnapshot.exists()).thenReturn(false);
-
-        circuitBreakerService = new YouTubeCircuitBreakerService(firestore, timeoutProperties, breakerProperties);
-
-        gateway = new YouTubeGateway(youtube, 3, throttleProperties, circuitBreakerService);
+        gateway = new YouTubeGateway(youtube, 3); // Use default pool size of 3
     }
 
     @Nested
@@ -260,44 +213,9 @@ class YouTubeGatewayTest {
 
         @Test
         @DisplayName("Should create search extractor for query")
-        void createSearchExtractor_notNull() throws Exception {
+        void createSearchExtractor_notNull() throws ExtractionException {
             SearchExtractor extractor = gateway.createSearchExtractor("test query");
             assertNotNull(extractor);
-        }
-    }
-
-    @Nested
-    @DisplayName("Throttle Configuration")
-    class ThrottleConfigTests {
-
-        @Test
-        @DisplayName("Should report throttle status")
-        void getThrottleStatus_returnsConfiguration() {
-            YouTubeGateway.ThrottleStatus status = gateway.getThrottleStatus();
-
-            assertNotNull(status);
-            assertFalse(status.enabled(), "Throttling should be disabled in tests");
-        }
-
-        @Test
-        @DisplayName("Should apply throttle when enabled")
-        void throttleEnabled_appliesDelay() {
-            // Create gateway with throttling enabled but very short delay
-            YouTubeThrottleProperties enabledProps = new YouTubeThrottleProperties();
-            enabledProps.setEnabled(true);
-            enabledProps.setDelayBetweenItemsMs(10);  // Short delay for test
-            enabledProps.setJitterMs(0);
-
-            StreamingService youtube = ServiceList.YouTube;
-            YouTubeGateway throttledGateway = new YouTubeGateway(youtube, 1, enabledProps, circuitBreakerService);
-
-            YouTubeGateway.ThrottleStatus status = throttledGateway.getThrottleStatus();
-            assertTrue(status.enabled());
-            assertEquals(10, status.delayMs());
-            assertEquals(0, status.jitterMs());
-
-            // Cleanup
-            throttledGateway.shutdown();
         }
     }
 
@@ -310,142 +228,10 @@ class YouTubeGatewayTest {
         void shutdown_completesWithoutError() {
             // Create a separate gateway instance for shutdown test
             StreamingService youtube = ServiceList.YouTube;
-            YouTubeThrottleProperties props = new YouTubeThrottleProperties();
-            props.setEnabled(false);
-            YouTubeGateway testGateway = new YouTubeGateway(youtube, 3, props, circuitBreakerService);
+            YouTubeGateway testGateway = new YouTubeGateway(youtube, 3);
 
             // Should not throw
             assertDoesNotThrow(() -> testGateway.shutdown());
-        }
-    }
-
-    @Nested
-    @DisplayName("Circuit Breaker Integration")
-    class CircuitBreakerTests {
-
-        @Test
-        @DisplayName("Should return circuit breaker status")
-        void getCircuitBreakerStatus_shouldReturnStatus() {
-            YouTubeCircuitBreakerService.CircuitBreakerStatus status = gateway.getCircuitBreakerStatus();
-
-            assertNotNull(status);
-            // Circuit breaker is disabled in setUp
-            assertFalse(status.enabled());
-        }
-
-        @Test
-        @DisplayName("Should delegate rate limit error check to circuit breaker")
-        void isRateLimitError_shouldDelegate() {
-            Exception rateLimitError = new RuntimeException("confirm you're not a bot");
-            Exception normalError = new RuntimeException("Video not found");
-
-            // Circuit breaker is disabled, so isRateLimitError should still work
-            // as the method doesn't depend on enabled state
-            assertTrue(gateway.isRateLimitError(rateLimitError));
-            assertFalse(gateway.isRateLimitError(normalError));
-        }
-    }
-
-    @Nested
-    @DisplayName("isCircuitBreakerBlocking")
-    class IsCircuitBreakerBlockingTests {
-
-        @Mock
-        private YouTubeCircuitBreakerService mockCircuitBreakerService;
-
-        private YouTubeGateway gatewayWithMockedBreaker;
-
-        @BeforeEach
-        void setUpMockedGateway() {
-            StreamingService youtube = ServiceList.YouTube;
-            YouTubeThrottleProperties props = new YouTubeThrottleProperties();
-            props.setEnabled(false);
-            gatewayWithMockedBreaker = new YouTubeGateway(youtube, 1, props, mockCircuitBreakerService);
-        }
-
-        @org.junit.jupiter.api.AfterEach
-        void tearDownMockedGateway() {
-            if (gatewayWithMockedBreaker != null) {
-                gatewayWithMockedBreaker.shutdown();
-            }
-        }
-
-        @Test
-        @DisplayName("Should return false when circuit breaker is CLOSED")
-        void isCircuitBreakerBlocking_closed_returnsFalse() {
-            when(mockCircuitBreakerService.getStatus()).thenReturn(
-                    new YouTubeCircuitBreakerService.CircuitBreakerStatus(
-                            true, "CLOSED", null, null, null, 0, 0
-                    )
-            );
-
-            assertFalse(gatewayWithMockedBreaker.isCircuitBreakerBlocking());
-        }
-
-        @Test
-        @DisplayName("Should return true when UNKNOWN state (fail-safe)")
-        void isCircuitBreakerBlocking_unknown_returnsTrue() {
-            when(mockCircuitBreakerService.getStatus()).thenReturn(
-                    new YouTubeCircuitBreakerService.CircuitBreakerStatus(
-                            true, "UNKNOWN", null, null, null, 0, 0
-                    )
-            );
-
-            assertTrue(gatewayWithMockedBreaker.isCircuitBreakerBlocking());
-        }
-
-        @Test
-        @DisplayName("Should return true when OPEN and cooldown NOT expired")
-        void isCircuitBreakerBlocking_openActiveCooldown_returnsTrue() {
-            java.time.Instant futureTime = java.time.Instant.now().plusSeconds(3600); // 1 hour from now
-            when(mockCircuitBreakerService.getStatus()).thenReturn(
-                    new YouTubeCircuitBreakerService.CircuitBreakerStatus(
-                            true, "OPEN", java.time.Instant.now(), futureTime, "RateLimitError", 1, 5
-                    )
-            );
-
-            assertTrue(gatewayWithMockedBreaker.isCircuitBreakerBlocking(),
-                    "Should block when OPEN with active cooldown");
-        }
-
-        @Test
-        @DisplayName("Should return false when OPEN but cooldown HAS expired - allows recovery")
-        void isCircuitBreakerBlocking_openExpiredCooldown_returnsFalse() {
-            java.time.Instant pastTime = java.time.Instant.now().minusSeconds(60); // 1 minute ago
-            when(mockCircuitBreakerService.getStatus()).thenReturn(
-                    new YouTubeCircuitBreakerService.CircuitBreakerStatus(
-                            true, "OPEN", java.time.Instant.now().minusSeconds(3600), pastTime, "RateLimitError", 1, 5
-                    )
-            );
-
-            assertFalse(gatewayWithMockedBreaker.isCircuitBreakerBlocking(),
-                    "Should NOT block when OPEN but cooldown has expired - allows recovery via tryAllowRequest()");
-        }
-
-        @Test
-        @DisplayName("Should return false when HALF_OPEN (probe allowed via tryAllowRequest)")
-        void isCircuitBreakerBlocking_halfOpen_returnsFalse() {
-            when(mockCircuitBreakerService.getStatus()).thenReturn(
-                    new YouTubeCircuitBreakerService.CircuitBreakerStatus(
-                            true, "HALF_OPEN", java.time.Instant.now(), null, "RateLimitError", 1, 5
-                    )
-            );
-
-            assertFalse(gatewayWithMockedBreaker.isCircuitBreakerBlocking(),
-                    "Should not block in HALF_OPEN - probe request allowed via tryAllowRequest()");
-        }
-
-        @Test
-        @DisplayName("Should return true when OPEN and cooldownUntil is null (defensive)")
-        void isCircuitBreakerBlocking_openNullCooldown_returnsTrue() {
-            when(mockCircuitBreakerService.getStatus()).thenReturn(
-                    new YouTubeCircuitBreakerService.CircuitBreakerStatus(
-                            true, "OPEN", java.time.Instant.now(), null, "RateLimitError", 1, 5
-                    )
-            );
-
-            assertTrue(gatewayWithMockedBreaker.isCircuitBreakerBlocking(),
-                    "Should block when OPEN with null cooldownUntil (defensive)");
         }
     }
 }

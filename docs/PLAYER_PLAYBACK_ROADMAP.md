@@ -115,39 +115,18 @@
 
 This should be implemented per `docs/status/YOUTUBE_RATE_LIMIT_PLAN.md`.
 
-## PR6 (Backend P0+P1): Safety switches + throttling — *Status: Done*
-
-- ✅ Committed: 2025-12-15
-- ✅ Config-only scheduler enable flag (`app.validation.video.scheduler.enabled`)
-- ✅ Configurable cron schedule (`app.validation.video.scheduler.cron`)
-- ✅ Distributed lock prevents concurrent runs (`SchedulerLockService` with Firestore)
-- ✅ Configurable max items per run (default: 10)
-- ✅ Request throttling with jitter (`YouTubeThrottleProperties`, `YouTubeGateway`)
-- ✅ Executor pool size configurable (default: 1 for sequential processing)
-- ✅ Unit tests for `SchedulerLockService`, `YouTubeThrottleProperties`, `VideoValidationScheduler`
+## PR6 (Backend P0+P1): Safety switches + throttling — *Status: Planned*
+- Config-only scheduler enable flag; configurable cron; prevent overlapping runs.
+- Reduce default batch sizes; throttle between validations; set executor pool size defaults safely.
 
 **Acceptance**
-- ✅ No burst patterns; safe defaults; can disable without deploy.
+- No burst patterns; safe defaults; can disable without deploy.
 
-## PR7 (Backend P2+P3): Circuit breaker + cooldown + exponential backoff — *Status: Done*
-
-- ✅ Committed: 2025-12-15
-- ✅ `YouTubeCircuitBreakerProperties` - Configuration for circuit breaker behavior
-- ✅ `YouTubeCircuitBreakerService` - Circuit breaker with Firestore persistence
-  - States: CLOSED (normal) → OPEN (blocking) → HALF_OPEN (probe)
-  - Detects rate-limit signals: "confirm you're not a bot", "sign in to confirm", `LOGIN_REQUIRED`, `SignInConfirmNotBotException`
-  - Rolling window error threshold (default: 3 errors in 10 minutes)
-  - Exponential backoff: 1h → 6h → 12h → 24h → 48h cooldown
-  - Firestore persistence for crash recovery and multi-instance coordination
-  - Fail-safe: defaults to OPEN (blocking) when Firestore unavailable
-- ✅ `CircuitBreakerOpenException` - Exception thrown when breaker is open
-- ✅ `YouTubeGateway` integration - All YouTube API methods check circuit breaker
-- ✅ Configuration in `application.yml` with environment variable overrides
-- ✅ Unit tests for `YouTubeCircuitBreakerService` and `YouTubeCircuitBreakerProperties`
+## PR7 (Backend P2+P3): Circuit breaker + cooldown + exponential backoff — *Status: Planned*
+- Detect anti-bot signals, open breaker, persist state, fail fast during cooldown, ramp-up slowly after.
 
 **Acceptance**
-- ✅ One detection stops the run; restarts don't resume hammering.
-- ✅ State survives restarts and coordinates across multiple backend instances.
+- One detection stops the run; restarts don’t resume hammering.
 
 ## PR8 (Backend P4): Metrics + tests — *Status: Planned*
 - Metrics for attempts/success/fail categories; breaker gauge; deterministic unit tests.

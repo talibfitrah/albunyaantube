@@ -81,48 +81,6 @@ management:
       tomcat: true
       cache: true
 app:
-  # Video validation scheduler settings (YouTube rate limit prevention)
-  validation:
-    video:
-      scheduler:
-        # Enable/disable scheduled validation (can be changed without code deploy)
-        enabled: ${APP_VALIDATION_SCHEDULER_ENABLED:true}
-        # Cron expression for validation schedule (UTC timezone)
-        # Default: once daily at 6:00 AM UTC
-        cron: ${APP_VALIDATION_SCHEDULER_CRON:0 0 6 * * ?}
-        # Distributed lock TTL in minutes (prevents concurrent runs)
-        lock-ttl-minutes: ${APP_VALIDATION_LOCK_TTL_MINUTES:120}
-        # Maximum items to validate per run (lower = safer)
-        max-items-per-run: ${APP_VALIDATION_MAX_ITEMS:10}
-  # YouTube request throttling and circuit breaker (prevents anti-bot detection)
-  youtube:
-    throttle:
-      # Enable/disable request throttling
-      enabled: ${APP_YOUTUBE_THROTTLE_ENABLED:true}
-      # Base delay between YouTube API calls (milliseconds)
-      delay-between-items-ms: ${APP_YOUTUBE_THROTTLE_DELAY_MS:3000}
-      # Random jitter added to delay to avoid patterns (milliseconds)
-      jitter-ms: ${APP_YOUTUBE_THROTTLE_JITTER_MS:1000}
-    circuit-breaker:
-      # Enable/disable circuit breaker for YouTube rate limiting protection
-      enabled: ${APP_YOUTUBE_CIRCUIT_BREAKER_ENABLED:true}
-      # Firestore persistence settings
-      persistence-collection: ${APP_YOUTUBE_CB_COLLECTION:system_settings}
-      persistence-document-id: ${APP_YOUTUBE_CB_DOC_ID:youtube_circuit_breaker}
-      # Cooldown duration at backoff level 0 (minutes) - default 1 hour
-      cooldown-base-minutes: ${APP_YOUTUBE_CB_COOLDOWN_BASE:60}
-      # Maximum cooldown duration (minutes) - default 48 hours
-      cooldown-max-minutes: ${APP_YOUTUBE_CB_COOLDOWN_MAX:2880}
-      # Hours of successful operation before decrementing backoff level
-      backoff-decay-hours: ${APP_YOUTUBE_CB_BACKOFF_DECAY_HOURS:48}
-      # Timeout for HALF_OPEN probe requests (seconds)
-      probe-timeout-seconds: ${APP_YOUTUBE_CB_PROBE_TIMEOUT:30}
-      # Rolling window: number of rate-limit errors to trigger breaker open
-      rolling-window-error-threshold: ${APP_YOUTUBE_CB_ERROR_THRESHOLD:3}
-      # Rolling window: time window for counting errors (minutes)
-      rolling-window-minutes: ${APP_YOUTUBE_CB_WINDOW_MINUTES:10}
-      # Maximum retry attempts for persisting circuit breaker state
-      max-persistence-retries: ${APP_YOUTUBE_CB_MAX_RETRIES:3}
   firebase:
     # Path to Firebase service account JSON (set via environment variable in production)
     service-account-path: ${FIREBASE_SERVICE_ACCOUNT_PATH:classpath:firebase-service-account.json}
@@ -143,8 +101,7 @@ app:
     stream-cache-ttl-minutes: 30
     # Executor service settings
     executor:
-      # Thread pool size for batch operations (1 = sequential, safer for rate limiting)
-      pool-size: ${APP_NEWPIPE_EXECUTOR_POOL_SIZE:1}
+      pool-size: 3  # Thread pool size for batch operations
     # HTTP client settings
     http:
       connect-timeout-seconds: 30
