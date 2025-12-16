@@ -151,11 +151,6 @@ app:
           error-threshold: ${APP_VALIDATION_YOUTUBE_CIRCUIT_BREAKER_ERROR_THRESHOLD:3}
           # Time window in minutes to count errors within (default: 10 minutes)
           window-minutes: ${APP_VALIDATION_YOUTUBE_CIRCUIT_BREAKER_WINDOW_MINUTES:10}
-        # Legacy properties (for backwards compatibility)
-        cooldown-minutes: ${APP_VALIDATION_YOUTUBE_CIRCUIT_BREAKER_COOLDOWN_MINUTES:720}
-        max-rate-limit-errors-to-open: ${APP_VALIDATION_YOUTUBE_CIRCUIT_BREAKER_MAX_ERRORS:1}
-        max-cooldown-minutes: ${APP_VALIDATION_YOUTUBE_CIRCUIT_BREAKER_MAX_COOLDOWN_MINUTES:2880}
-        backoff-multiplier: ${APP_VALIDATION_YOUTUBE_CIRCUIT_BREAKER_BACKOFF_MULTIPLIER:2.0}
   security:
     cors:
       allowed-origins: "http://localhost:5173,http://127.0.0.1:5173"

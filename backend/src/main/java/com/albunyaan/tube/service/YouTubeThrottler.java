@@ -5,7 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import java.util.Random;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -22,7 +22,6 @@ public class YouTubeThrottler {
     private static final Logger logger = LoggerFactory.getLogger(YouTubeThrottler.class);
 
     private final ValidationProperties validationProperties;
-    private final Random random = new Random();
     private final ReentrantLock throttleLock = new ReentrantLock();
 
     private volatile long lastRequestTime = 0;
@@ -51,7 +50,7 @@ public class YouTubeThrottler {
         // Calculate total delay with jitter
         long delay = baseDelay;
         if (jitter > 0) {
-            delay += random.nextLong(jitter);
+            delay += ThreadLocalRandom.current().nextLong(jitter);
         }
 
         throttleLock.lock();

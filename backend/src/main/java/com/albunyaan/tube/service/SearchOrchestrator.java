@@ -70,7 +70,7 @@ public class SearchOrchestrator {
                         nextPage = page.getNextPage();
                     }
                 } catch (Exception e) {
-                    logger.warn("Failed to fetch requested page, using initial page: {}", e.getMessage());
+                    logger.warn("Failed to decode or fetch requested page, using initial page: {}", e.getMessage());
                 }
             }
 

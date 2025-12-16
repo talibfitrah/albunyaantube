@@ -128,6 +128,10 @@ public class YouTubeCircuitBreaker {
     // Flag to track if we're in fail-safe mode (persistence unavailable)
     private final AtomicReference<Boolean> persistenceAvailable = new AtomicReference<>(true);
 
+    // Time-based cache for Firestore refresh to reduce I/O overhead
+    private final AtomicLong lastRefreshTimeMs = new AtomicLong(0);
+    private static final long REFRESH_INTERVAL_MS = 5000; // 5 seconds
+
     public YouTubeCircuitBreaker(
             ValidationProperties validationProperties,
             @Nullable SystemSettingsRepository systemSettingsRepository) {
@@ -387,8 +391,15 @@ public class YouTubeCircuitBreaker {
             return false;
         }
 
-        // Refresh state from Firestore for multi-instance coordination
-        refreshStateFromFirestore();
+        // Refresh state from Firestore periodically for multi-instance coordination
+        // Use time-based caching to reduce I/O overhead on the critical path
+        long now = System.currentTimeMillis();
+        long lastRefresh = lastRefreshTimeMs.get();
+        if (now - lastRefresh > REFRESH_INTERVAL_MS) {
+            if (lastRefreshTimeMs.compareAndSet(lastRefresh, now)) {
+                refreshStateFromFirestore();
+            }
+        }
 
         // FAIL-SAFE: If persistence failed, default to OPEN
         if (!persistenceAvailable.get() && systemSettingsRepository != null) {
@@ -579,7 +590,8 @@ public class YouTubeCircuitBreaker {
             checkBackoffDecay();
         }
 
-        // Clear rolling window on success
+        // Clear rolling window on success - a successful request indicates YouTube is responding normally,
+        // so we reset the error window. This prevents stale errors from triggering the breaker later.
         synchronized (errorListLock) {
             recentErrors.clear();
         }
@@ -638,10 +650,6 @@ public class YouTubeCircuitBreaker {
      * Check if backoff level should decay (decrement after 48h of success).
      */
     private void checkBackoffDecay() {
-        if (backoffLevel.get() == 0) {
-            return; // Already at minimum
-        }
-
         int decayHours = validationProperties.getYoutube().getCircuitBreaker().getBackoffDecayHours();
         Instant lastError = lastErrorAt.get();
 
@@ -651,10 +659,14 @@ public class YouTubeCircuitBreaker {
 
         Instant decayThreshold = Instant.now().minusSeconds(decayHours * 3600L);
         if (lastError.isBefore(decayThreshold)) {
-            int newLevel = backoffLevel.decrementAndGet();
-            logger.info("Backoff level decayed to {} (no errors for {}+ hours)", newLevel, decayHours);
-            lastErrorAt.set(Instant.now()); // Reset decay timer
-            persistState();
+            // Use updateAndGet with bounds check to prevent race condition where
+            // two threads could both decrement resulting in a negative value
+            int newLevel = backoffLevel.updateAndGet(level -> Math.max(0, level - 1));
+            if (newLevel >= 0) {
+                logger.info("Backoff level decayed to {} (no errors for {}+ hours)", newLevel, decayHours);
+                lastErrorAt.set(Instant.now()); // Reset decay timer
+                persistState();
+            }
         }
     }
 
@@ -691,9 +703,6 @@ public class YouTubeCircuitBreaker {
      * Reopen circuit after failed HALF_OPEN probe with increased backoff.
      */
     private void reopenWithIncreasedBackoff() {
-        // Reset probe flag first
-        probeInProgress.set(false);
-
         // Increment backoff level (capped at max)
         int newLevel = Math.min(backoffLevel.incrementAndGet(), COOLDOWN_BY_LEVEL.length - 1);
         backoffLevel.set(newLevel);
@@ -702,10 +711,16 @@ public class YouTubeCircuitBreaker {
         Instant now = Instant.now();
         Instant until = now.plusSeconds(cooldownMinutes * 60L);
 
+        // Set state to OPEN first to prevent new probe acquisition before clearing probe flag
+        // This ordering prevents a race where another thread could acquire probe between
+        // clearing probeInProgress and setting state to OPEN
         state.set(State.OPEN);
         openedAt.set(now);
         cooldownUntil.set(until);
         totalCircuitOpens.incrementAndGet();
+
+        // Now clear probe flag - state is already OPEN so no new probes can be acquired
+        probeInProgress.compareAndSet(true, false);
 
         logger.error("CIRCUIT BREAKER REOPENED - HALF_OPEN probe failed! " +
                      "State: OPEN, Backoff level increased to: {}, Cooldown: {} minutes (until {}). " +

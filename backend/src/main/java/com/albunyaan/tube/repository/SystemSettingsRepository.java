@@ -50,6 +50,9 @@ public class SystemSettingsRepository {
             result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
             logger.debug("Saved system setting: {}", key);
         } catch (ExecutionException | InterruptedException | TimeoutException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
             logger.warn("Failed to save system setting '{}': {}", key, e.getMessage());
             // Don't throw - persistence is best-effort
         }
@@ -66,6 +69,9 @@ public class SystemSettingsRepository {
             logger.debug("Saved system setting: {}", key);
             return true;
         } catch (ExecutionException | InterruptedException | TimeoutException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
             logger.warn("Failed to save system setting '{}': {}", key, e.getMessage());
             return false;
         }
@@ -138,6 +144,9 @@ public class SystemSettingsRepository {
                 return Optional.of(document.getData());
             }
         } catch (ExecutionException | InterruptedException | TimeoutException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
             logger.warn("Failed to load system setting '{}': {}", key, e.getMessage());
             // Don't throw - return empty and let caller use defaults
         }
@@ -160,6 +169,9 @@ public class SystemSettingsRepository {
             }
             return Optional.empty();
         } catch (ExecutionException | InterruptedException | TimeoutException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
             throw new RuntimeException("Failed to load system setting '" + key + "': " + e.getMessage(), e);
         }
     }
@@ -173,6 +185,9 @@ public class SystemSettingsRepository {
             result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
             logger.debug("Deleted system setting: {}", key);
         } catch (ExecutionException | InterruptedException | TimeoutException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
             logger.warn("Failed to delete system setting '{}': {}", key, e.getMessage());
             // Don't throw - deletion is best-effort
         }

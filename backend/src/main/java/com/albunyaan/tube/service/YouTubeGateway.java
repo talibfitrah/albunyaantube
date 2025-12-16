@@ -228,7 +228,7 @@ public class YouTubeGateway {
 
         // Probe request - apply timeout
         int timeoutSeconds = circuitBreaker.getProbeTimeoutSeconds();
-        logger.info("Executing probe request with {}s timeout", timeoutSeconds);
+        logger.debug("Executing probe request with {}s timeout", timeoutSeconds);
 
         Future<T> future = executorService.submit(operation);
         try {
