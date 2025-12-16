@@ -1,8 +1,11 @@
 package com.albunyaan.tube.scheduler;
 
 import com.albunyaan.tube.config.CacheConfig;
+import com.albunyaan.tube.config.ValidationProperties;
 import com.albunyaan.tube.model.ValidationRun;
+import com.albunyaan.tube.repository.SystemSettingsRepository;
 import com.albunyaan.tube.service.ContentValidationService;
+import com.albunyaan.tube.service.YouTubeCircuitBreaker;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -16,6 +19,7 @@ import org.springframework.cache.CacheManager;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.lenient;
 
 /**
  * Unit tests for VideoValidationScheduler
@@ -24,6 +28,10 @@ import static org.mockito.Mockito.*;
  * - Scheduler calls ContentValidationService.validateVideos() with correct parameters
  * - Cache eviction occurs only after successful validation (STATUS_COMPLETED)
  * - Cache eviction is skipped when validation fails (STATUS_FAILED) or throws exception
+ * - Scheduler respects enable flag
+ * - Scheduler respects circuit breaker state
+ * - Concurrent runs are prevented
+ * - Max items configuration is respected
  */
 @ExtendWith(MockitoExtension.class)
 class VideoValidationSchedulerTest {
@@ -35,102 +43,188 @@ class VideoValidationSchedulerTest {
     private CacheManager cacheManager;
 
     @Mock
+    private YouTubeCircuitBreaker circuitBreaker;
+
+    @Mock
+    private SystemSettingsRepository systemSettingsRepository;
+
+    @Mock
     private Cache publicContentCache;
 
     @Mock
     private Cache videosCache;
 
+    private ValidationProperties validationProperties;
     private VideoValidationScheduler scheduler;
 
     @BeforeEach
     void setUp() {
-        scheduler = new VideoValidationScheduler(contentValidationService, cacheManager);
+        validationProperties = createDefaultProperties();
+        // By default, lock acquisition succeeds and no lock is held (use lenient to avoid strict mode errors)
+        lenient().when(systemSettingsRepository.tryAcquireLock(anyString(), anyString(), anyInt())).thenReturn(true);
+        lenient().when(systemSettingsRepository.releaseLock(anyString(), anyString())).thenReturn(true);
+        lenient().when(systemSettingsRepository.isLockHeld(anyString())).thenReturn(false);
+
+        scheduler = new VideoValidationScheduler(
+                contentValidationService,
+                cacheManager,
+                validationProperties,
+                circuitBreaker,
+                systemSettingsRepository
+        );
+    }
+
+    private ValidationProperties createDefaultProperties() {
+        ValidationProperties props = new ValidationProperties();
+        props.getVideo().getScheduler().setEnabled(true);
+        props.getVideo().getScheduler().setCron("0 0 6 * * ?");
+        props.getVideo().setMaxItemsPerRun(10);
+        return props;
     }
 
     @Test
-    @DisplayName("Morning validation should call ContentValidationService with SCHEDULED trigger")
-    void morningValidation_shouldCallContentValidationServiceWithScheduledTrigger() {
+    @DisplayName("Scheduled validation should call ContentValidationService with SCHEDULED trigger")
+    void scheduledValidation_shouldCallContentValidationServiceWithScheduledTrigger() {
         // Arrange
         ValidationRun mockRun = new ValidationRun(ValidationRun.TRIGGER_SCHEDULED, null, "Test");
         mockRun.setVideosChecked(10);
         mockRun.setVideosMarkedArchived(1);
         mockRun.complete(ValidationRun.STATUS_COMPLETED);
 
-        when(contentValidationService.validateVideos(anyString(), any(), anyString(), any()))
+        when(circuitBreaker.isOpen()).thenReturn(false);
+        when(contentValidationService.validateVideos(anyString(), any(), anyString(), anyInt()))
                 .thenReturn(mockRun);
         when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(publicContentCache);
         when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(videosCache);
 
         // Act
-        scheduler.morningValidation();
+        scheduler.scheduledValidation();
 
         // Assert
         ArgumentCaptor<String> triggerCaptor = ArgumentCaptor.forClass(String.class);
-        ArgumentCaptor<String> displayNameCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<Integer> maxItemsCaptor = ArgumentCaptor.forClass(Integer.class);
 
         verify(contentValidationService).validateVideos(
                 triggerCaptor.capture(),
                 isNull(),
-                displayNameCaptor.capture(),
-                isNull()
+                anyString(),
+                maxItemsCaptor.capture()
         );
 
         assertEquals(ValidationRun.TRIGGER_SCHEDULED, triggerCaptor.getValue());
-        assertTrue(displayNameCaptor.getValue().contains("morning"));
+        assertEquals(10, maxItemsCaptor.getValue()); // Configured max items
     }
 
     @Test
-    @DisplayName("Afternoon validation should use correct display name")
-    void afternoonValidation_shouldUseCorrectDisplayName() {
+    @DisplayName("Should use configured max items per run")
+    void scheduledValidation_shouldUseConfiguredMaxItems() {
         // Arrange
+        validationProperties.getVideo().setMaxItemsPerRun(25);
+        scheduler = new VideoValidationScheduler(
+                contentValidationService, cacheManager, validationProperties, circuitBreaker, systemSettingsRepository);
+
         ValidationRun mockRun = new ValidationRun(ValidationRun.TRIGGER_SCHEDULED, null, "Test");
         mockRun.complete(ValidationRun.STATUS_COMPLETED);
 
-        when(contentValidationService.validateVideos(anyString(), any(), anyString(), any()))
+        when(circuitBreaker.isOpen()).thenReturn(false);
+        when(contentValidationService.validateVideos(anyString(), any(), anyString(), anyInt()))
                 .thenReturn(mockRun);
         when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(publicContentCache);
         when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(videosCache);
 
         // Act
-        scheduler.afternoonValidation();
+        scheduler.scheduledValidation();
 
         // Assert
-        ArgumentCaptor<String> displayNameCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<Integer> maxItemsCaptor = ArgumentCaptor.forClass(Integer.class);
         verify(contentValidationService).validateVideos(
-                eq(ValidationRun.TRIGGER_SCHEDULED),
-                isNull(),
-                displayNameCaptor.capture(),
-                isNull()
-        );
-
-        assertTrue(displayNameCaptor.getValue().contains("afternoon"));
+                anyString(), any(), anyString(), maxItemsCaptor.capture());
+        assertEquals(25, maxItemsCaptor.getValue());
     }
 
     @Test
-    @DisplayName("Evening validation should use correct display name")
-    void eveningValidation_shouldUseCorrectDisplayName() {
+    @DisplayName("Should skip validation when scheduler is disabled")
+    void scheduledValidation_shouldSkipWhenDisabled() {
+        // Arrange
+        validationProperties.getVideo().getScheduler().setEnabled(false);
+        scheduler = new VideoValidationScheduler(
+                contentValidationService, cacheManager, validationProperties, circuitBreaker, systemSettingsRepository);
+
+        // Act
+        scheduler.scheduledValidation();
+
+        // Assert - validation should NOT be called
+        verify(contentValidationService, never()).validateVideos(
+                anyString(), any(), anyString(), anyInt());
+    }
+
+    @Test
+    @DisplayName("Should skip validation when circuit breaker is open")
+    void scheduledValidation_shouldSkipWhenCircuitBreakerOpen() {
+        // Arrange
+        when(circuitBreaker.isOpen()).thenReturn(true);
+        when(circuitBreaker.getStatus()).thenReturn(
+                new YouTubeCircuitBreaker.CircuitBreakerStatus(
+                        true, YouTubeCircuitBreaker.State.OPEN, 60000, null, null, 1, "TestException", "Rate limited", 1, 1));
+
+        // Act
+        scheduler.scheduledValidation();
+
+        // Assert - validation should NOT be called
+        verify(contentValidationService, never()).validateVideos(
+                anyString(), any(), anyString(), anyInt());
+    }
+
+    @Test
+    @DisplayName("Should prevent concurrent runs via distributed lock")
+    void scheduledValidation_shouldPreventConcurrentRuns() throws InterruptedException {
         // Arrange
         ValidationRun mockRun = new ValidationRun(ValidationRun.TRIGGER_SCHEDULED, null, "Test");
         mockRun.complete(ValidationRun.STATUS_COMPLETED);
 
-        when(contentValidationService.validateVideos(anyString(), any(), anyString(), any()))
-                .thenReturn(mockRun);
+        when(circuitBreaker.isOpen()).thenReturn(false);
         when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(publicContentCache);
         when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(videosCache);
 
-        // Act
-        scheduler.eveningValidation();
+        // Simulate lock contention: first call acquires, second call fails
+        java.util.concurrent.atomic.AtomicBoolean lockHeld = new java.util.concurrent.atomic.AtomicBoolean(false);
+        when(systemSettingsRepository.tryAcquireLock(anyString(), anyString(), anyInt()))
+                .thenAnswer(invocation -> lockHeld.compareAndSet(false, true));
+        when(systemSettingsRepository.releaseLock(anyString(), anyString()))
+                .thenAnswer(invocation -> {
+                    lockHeld.set(false);
+                    return true;
+                });
 
-        // Assert
-        ArgumentCaptor<String> displayNameCaptor = ArgumentCaptor.forClass(String.class);
-        verify(contentValidationService).validateVideos(
-                eq(ValidationRun.TRIGGER_SCHEDULED),
-                isNull(),
-                displayNameCaptor.capture(),
-                isNull()
-        );
+        // First call takes a long time
+        when(contentValidationService.validateVideos(anyString(), any(), anyString(), anyInt()))
+                .thenAnswer(invocation -> {
+                    Thread.sleep(100); // Simulate long-running validation
+                    return mockRun;
+                });
 
-        assertTrue(displayNameCaptor.getValue().contains("evening"));
+        // Act - start first validation in a separate thread
+        Thread firstRun = new Thread(() -> scheduler.scheduledValidation());
+        firstRun.start();
+
+        // Wait a bit for the first run to start
+        Thread.sleep(20);
+
+        // Attempt second run while first is still running
+        scheduler.scheduledValidation();
+
+        firstRun.join();
+
+        // Assert - validation should only be called once
+        verify(contentValidationService, times(1)).validateVideos(
+                anyString(), any(), anyString(), anyInt());
+    }
+
+    @Test
+    @DisplayName("Should report running status correctly")
+    void isRunning_shouldReportCorrectly() {
+        // Initially not running
+        assertFalse(scheduler.isRunning());
     }
 
     @Test
@@ -140,13 +234,14 @@ class VideoValidationSchedulerTest {
         ValidationRun mockRun = new ValidationRun(ValidationRun.TRIGGER_SCHEDULED, null, "Test");
         mockRun.complete(ValidationRun.STATUS_COMPLETED);
 
-        when(contentValidationService.validateVideos(anyString(), any(), anyString(), any()))
+        when(circuitBreaker.isOpen()).thenReturn(false);
+        when(contentValidationService.validateVideos(anyString(), any(), anyString(), anyInt()))
                 .thenReturn(mockRun);
         when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(publicContentCache);
         when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(videosCache);
 
         // Act
-        scheduler.morningValidation();
+        scheduler.scheduledValidation();
 
         // Assert
         verify(publicContentCache).clear();
@@ -160,30 +255,50 @@ class VideoValidationSchedulerTest {
         ValidationRun mockRun = new ValidationRun(ValidationRun.TRIGGER_SCHEDULED, null, "Test");
         mockRun.complete(ValidationRun.STATUS_COMPLETED);
 
-        when(contentValidationService.validateVideos(anyString(), any(), anyString(), any()))
+        when(circuitBreaker.isOpen()).thenReturn(false);
+        when(contentValidationService.validateVideos(anyString(), any(), anyString(), anyInt()))
                 .thenReturn(mockRun);
         when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(null);
         when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(null);
 
         // Act - should not throw
-        assertDoesNotThrow(() -> scheduler.morningValidation());
+        assertDoesNotThrow(() -> scheduler.scheduledValidation());
 
         // Assert - validation was still called
-        verify(contentValidationService).validateVideos(anyString(), any(), anyString(), any());
+        verify(contentValidationService).validateVideos(anyString(), any(), anyString(), anyInt());
     }
 
     @Test
     @DisplayName("Should not evict caches when service throws exception")
     void validation_shouldNotEvictCachesOnServiceException() {
         // Arrange
-        when(contentValidationService.validateVideos(anyString(), any(), anyString(), any()))
+        when(circuitBreaker.isOpen()).thenReturn(false);
+        when(circuitBreaker.isRateLimitError(any())).thenReturn(false);
+        when(contentValidationService.validateVideos(anyString(), any(), anyString(), anyInt()))
                 .thenThrow(new RuntimeException("Service failure"));
 
         // Act - should not throw
-        assertDoesNotThrow(() -> scheduler.morningValidation());
+        assertDoesNotThrow(() -> scheduler.scheduledValidation());
 
         // Assert - caches should not be evicted when exception occurs
         verify(cacheManager, never()).getCache(anyString());
+    }
+
+    @Test
+    @DisplayName("Should record rate limit error when exception is rate limit")
+    void validation_shouldRecordRateLimitError() {
+        // Arrange
+        RuntimeException rateLimitError = new RuntimeException("Sign in to confirm you're not a bot");
+        when(circuitBreaker.isOpen()).thenReturn(false);
+        when(circuitBreaker.isRateLimitError(rateLimitError)).thenReturn(true);
+        when(contentValidationService.validateVideos(anyString(), any(), anyString(), anyInt()))
+                .thenThrow(rateLimitError);
+
+        // Act
+        scheduler.scheduledValidation();
+
+        // Assert - rate limit error should be recorded
+        verify(circuitBreaker).recordRateLimitError(rateLimitError);
     }
 
     @Test
@@ -194,61 +309,97 @@ class VideoValidationSchedulerTest {
         mockRun.complete(ValidationRun.STATUS_FAILED);  // Validation failed
         mockRun.addDetail("errorMessage", "Database connection failed");
 
-        when(contentValidationService.validateVideos(anyString(), any(), anyString(), any()))
+        when(circuitBreaker.isOpen()).thenReturn(false);
+        when(contentValidationService.validateVideos(anyString(), any(), anyString(), anyInt()))
                 .thenReturn(mockRun);
 
         // Act
-        scheduler.morningValidation();
+        scheduler.scheduledValidation();
 
         // Assert - caches should NOT be evicted when status is FAILED
         verify(cacheManager, never()).getCache(anyString());
     }
 
     @Test
-    @DisplayName("Should pass null for triggeredBy in scheduled runs")
-    void validation_shouldPassNullForTriggeredBy() {
+    @DisplayName("Manual trigger should work when scheduler is disabled")
+    void manualTrigger_shouldWorkWhenSchedulerDisabled() {
         // Arrange
-        ValidationRun mockRun = new ValidationRun(ValidationRun.TRIGGER_SCHEDULED, null, "Test");
+        validationProperties.getVideo().getScheduler().setEnabled(false);
+        scheduler = new VideoValidationScheduler(
+                contentValidationService, cacheManager, validationProperties, circuitBreaker, systemSettingsRepository);
+
+        ValidationRun mockRun = new ValidationRun(ValidationRun.TRIGGER_MANUAL, null, "Test");
         mockRun.complete(ValidationRun.STATUS_COMPLETED);
 
-        when(contentValidationService.validateVideos(anyString(), any(), anyString(), any()))
+        when(circuitBreaker.isOpen()).thenReturn(false);
+        when(contentValidationService.validateVideos(anyString(), any(), anyString(), anyInt()))
                 .thenReturn(mockRun);
         when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(publicContentCache);
         when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(videosCache);
 
         // Act
-        scheduler.morningValidation();
+        boolean result = scheduler.triggerManualRun();
 
-        // Assert - second argument (triggeredBy) should be null for scheduled runs
+        // Assert - manual trigger should work even when scheduler is disabled
+        assertTrue(result);
         verify(contentValidationService).validateVideos(
-                eq(ValidationRun.TRIGGER_SCHEDULED),
-                isNull(),  // triggeredBy should be null
-                anyString(),
-                isNull()   // maxItems should be null (use default)
-        );
+                eq(ValidationRun.TRIGGER_MANUAL), any(), anyString(), anyInt());
     }
 
     @Test
-    @DisplayName("Should pass null for maxItems to use service default")
-    void validation_shouldPassNullForMaxItemsToUseDefault() {
+    @DisplayName("Manual trigger should fail when circuit breaker is open")
+    void manualTrigger_shouldFailWhenCircuitBreakerOpen() {
         // Arrange
-        ValidationRun mockRun = new ValidationRun(ValidationRun.TRIGGER_SCHEDULED, null, "Test");
+        when(circuitBreaker.isOpen()).thenReturn(true);
+
+        // Act
+        boolean result = scheduler.triggerManualRun();
+
+        // Assert
+        assertFalse(result);
+        verify(contentValidationService, never()).validateVideos(
+                anyString(), any(), anyString(), anyInt());
+    }
+
+    @Test
+    @DisplayName("Manual trigger should fail when another run is in progress")
+    void manualTrigger_shouldFailWhenRunInProgress() throws InterruptedException {
+        // Arrange
+        ValidationRun mockRun = new ValidationRun(ValidationRun.TRIGGER_MANUAL, null, "Test");
         mockRun.complete(ValidationRun.STATUS_COMPLETED);
 
-        when(contentValidationService.validateVideos(anyString(), any(), anyString(), any()))
-                .thenReturn(mockRun);
+        when(circuitBreaker.isOpen()).thenReturn(false);
         when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(publicContentCache);
         when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(videosCache);
 
-        // Act
-        scheduler.morningValidation();
+        // Simulate lock contention: first call acquires, second call fails
+        java.util.concurrent.atomic.AtomicBoolean lockHeld = new java.util.concurrent.atomic.AtomicBoolean(false);
+        when(systemSettingsRepository.tryAcquireLock(anyString(), anyString(), anyInt()))
+                .thenAnswer(invocation -> lockHeld.compareAndSet(false, true));
+        when(systemSettingsRepository.releaseLock(anyString(), anyString()))
+                .thenAnswer(invocation -> {
+                    lockHeld.set(false);
+                    return true;
+                });
 
-        // Assert - fourth argument (maxItems) should be null to use service default
-        verify(contentValidationService).validateVideos(
-                anyString(),
-                any(),
-                anyString(),
-                isNull()  // maxItems should be null
-        );
+        when(contentValidationService.validateVideos(anyString(), any(), anyString(), anyInt()))
+                .thenAnswer(invocation -> {
+                    Thread.sleep(100);
+                    return mockRun;
+                });
+
+        // Act - start first run in separate thread
+        Thread firstRun = new Thread(() -> scheduler.triggerManualRun());
+        firstRun.start();
+
+        Thread.sleep(20);
+
+        // Attempt second manual run
+        boolean result = scheduler.triggerManualRun();
+
+        firstRun.join();
+
+        // Assert - second run should fail
+        assertFalse(result);
     }
 }

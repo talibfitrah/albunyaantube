@@ -1,5 +1,6 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.config.ValidationProperties;
 import com.albunyaan.tube.dto.BatchValidationResult;
 import com.albunyaan.tube.dto.ChannelDetailsDto;
 import com.albunyaan.tube.dto.PlaylistDetailsDto;
@@ -37,7 +38,6 @@ import java.util.stream.Collectors;
 public class ContentValidationService {
 
     private static final Logger logger = LoggerFactory.getLogger(ContentValidationService.class);
-    private static final int DEFAULT_MAX_ITEMS_PER_RUN = 500;
 
     private final ChannelRepository channelRepository;
     private final PlaylistRepository playlistRepository;
@@ -45,6 +45,7 @@ public class ContentValidationService {
     private final YouTubeService youtubeService;
     private final AuditLogService auditLogService;
     private final ValidationRunRepository validationRunRepository;
+    private final ValidationProperties validationProperties;
 
     public ContentValidationService(
             ChannelRepository channelRepository,
@@ -52,7 +53,8 @@ public class ContentValidationService {
             VideoRepository videoRepository,
             YouTubeService youtubeService,
             AuditLogService auditLogService,
-            ValidationRunRepository validationRunRepository
+            ValidationRunRepository validationRunRepository,
+            ValidationProperties validationProperties
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
@@ -60,6 +62,7 @@ public class ContentValidationService {
         this.youtubeService = youtubeService;
         this.auditLogService = auditLogService;
         this.validationRunRepository = validationRunRepository;
+        this.validationProperties = validationProperties;
     }
 
     // ==================== Validation Triggers ====================
@@ -79,8 +82,8 @@ public class ContentValidationService {
         ValidationRun validationRun = new ValidationRun(triggerType, triggeredBy, triggeredByDisplayName);
 
         try {
-            // Use sensible default limit to prevent OOM/timeout (500 total items = ~167 per type)
-            int limit = maxItems != null ? maxItems : DEFAULT_MAX_ITEMS_PER_RUN;
+            // Use configurable default limit to prevent OOM/timeout/rate limiting
+            int limit = maxItems != null ? maxItems : validationProperties.getVideo().getMaxItemsPerRun();
             int perTypeLimit = (int) Math.ceil(limit / 3.0);
 
             // Calculate totals upfront for progress tracking
@@ -182,8 +185,8 @@ public class ContentValidationService {
         }
 
         try {
-            // Use sensible default limit to prevent OOM/timeout (500 total items = ~167 per type)
-            int limit = maxItems != null ? maxItems : DEFAULT_MAX_ITEMS_PER_RUN;
+            // Use configurable default limit to prevent OOM/timeout/rate limiting
+            int limit = maxItems != null ? maxItems : validationProperties.getVideo().getMaxItemsPerRun();
             int perTypeLimit = (int) Math.ceil(limit / 3.0);
 
             // Calculate totals upfront for progress tracking
@@ -259,7 +262,7 @@ public class ContentValidationService {
         try {
             validationRunRepository.save(validationRun);
 
-            int limit = maxItems != null ? maxItems : DEFAULT_MAX_ITEMS_PER_RUN;
+            int limit = maxItems != null ? maxItems : validationProperties.getVideo().getMaxItemsPerRun();
             validateChannelsInternal(validationRun, triggeredByDisplayName, limit);
 
             validationRun.complete(ValidationRun.STATUS_COMPLETED);
@@ -298,7 +301,7 @@ public class ContentValidationService {
         try {
             validationRunRepository.save(validationRun);
 
-            int limit = maxItems != null ? maxItems : DEFAULT_MAX_ITEMS_PER_RUN;
+            int limit = maxItems != null ? maxItems : validationProperties.getVideo().getMaxItemsPerRun();
             validatePlaylistsInternal(validationRun, triggeredByDisplayName, limit);
 
             validationRun.complete(ValidationRun.STATUS_COMPLETED);
@@ -337,7 +340,7 @@ public class ContentValidationService {
         try {
             validationRunRepository.save(validationRun);
 
-            int limit = maxItems != null ? maxItems : DEFAULT_MAX_ITEMS_PER_RUN;
+            int limit = maxItems != null ? maxItems : validationProperties.getVideo().getMaxItemsPerRun();
             validateVideosInternal(validationRun, triggeredByDisplayName, limit);
 
             validationRun.complete(ValidationRun.STATUS_COMPLETED);
@@ -413,10 +416,20 @@ public class ContentValidationService {
         List<String> archivedChannelIds = new ArrayList<>();
         List<String> errorChannelIds = new ArrayList<>();
 
+        int skippedCount = 0;
         for (Channel channel : channelsToValidate) {
             try {
-                run.incrementChannelsChecked();
                 String youtubeId = channel.getYoutubeId();
+
+                // Check if item was skipped (circuit breaker opened mid-batch or at start)
+                // Skipped items should NOT have their status/lastValidatedAt updated
+                if (validationResult.isSkipped(youtubeId)) {
+                    skippedCount++;
+                    logger.debug("Channel {} was skipped (circuit breaker) - will retry on next run", youtubeId);
+                    continue; // Do NOT increment checked counter or update status
+                }
+
+                run.incrementChannelsChecked();
 
                 if (validationResult.isValid(youtubeId)) {
                     // Channel exists on YouTube - mark as VALID and refresh metadata
@@ -484,6 +497,9 @@ public class ContentValidationService {
         if (!errorChannelIds.isEmpty()) {
             run.addDetail("errorChannelIds", errorChannelIds);
         }
+        if (skippedCount > 0) {
+            run.addDetail("skippedChannelsCount", skippedCount);
+        }
     }
 
     private void validatePlaylistsInternal(ValidationRun run, String actorName, int limit)
@@ -513,10 +529,20 @@ public class ContentValidationService {
         List<String> archivedPlaylistIds = new ArrayList<>();
         List<String> errorPlaylistIds = new ArrayList<>();
 
+        int skippedCount = 0;
         for (Playlist playlist : playlistsToValidate) {
             try {
-                run.incrementPlaylistsChecked();
                 String youtubeId = playlist.getYoutubeId();
+
+                // Check if item was skipped (circuit breaker opened mid-batch or at start)
+                // Skipped items should NOT have their status/lastValidatedAt updated
+                if (validationResult.isSkipped(youtubeId)) {
+                    skippedCount++;
+                    logger.debug("Playlist {} was skipped (circuit breaker) - will retry on next run", youtubeId);
+                    continue; // Do NOT increment checked counter or update status
+                }
+
+                run.incrementPlaylistsChecked();
 
                 if (validationResult.isValid(youtubeId)) {
                     // Playlist exists on YouTube - mark as VALID and refresh metadata
@@ -584,6 +610,9 @@ public class ContentValidationService {
         if (!errorPlaylistIds.isEmpty()) {
             run.addDetail("errorPlaylistIds", errorPlaylistIds);
         }
+        if (skippedCount > 0) {
+            run.addDetail("skippedPlaylistsCount", skippedCount);
+        }
     }
 
     private void validateVideosInternal(ValidationRun run, String actorName, int limit)
@@ -613,10 +642,20 @@ public class ContentValidationService {
         List<String> archivedVideoIds = new ArrayList<>();
         List<String> errorVideoIds = new ArrayList<>();
 
+        int skippedCount = 0;
         for (Video video : videosToValidate) {
             try {
-                run.incrementVideosChecked();
                 String youtubeId = video.getYoutubeId();
+
+                // Check if item was skipped (circuit breaker opened mid-batch or at start)
+                // Skipped items should NOT have their status/lastValidatedAt updated
+                if (validationResult.isSkipped(youtubeId)) {
+                    skippedCount++;
+                    logger.debug("Video {} was skipped (circuit breaker) - will retry on next run", youtubeId);
+                    continue; // Do NOT increment checked counter or update status
+                }
+
+                run.incrementVideosChecked();
 
                 if (validationResult.isValid(youtubeId)) {
                     // Video exists on YouTube - mark as VALID and refresh metadata
@@ -683,6 +722,9 @@ public class ContentValidationService {
         }
         if (!errorVideoIds.isEmpty()) {
             run.addDetail("errorVideoIds", errorVideoIds);
+        }
+        if (skippedCount > 0) {
+            run.addDetail("skippedVideosCount", skippedCount);
         }
     }
 

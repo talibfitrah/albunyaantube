@@ -231,7 +231,7 @@ class SearchOrchestratorTest {
             when(gateway.createSearchExtractor(anyString())).thenReturn(searchExtractor);
             when(searchExtractor.getInitialPage()).thenReturn(infoItemsPage);
             when(gateway.decodePageToken(pageToken)).thenReturn(decodedPage);
-            when(searchExtractor.getPage(decodedPage)).thenReturn(secondPage);
+            when(gateway.getSearchPage(searchExtractor, decodedPage)).thenReturn(secondPage);
             when(secondPage.getItems()).thenReturn(Collections.emptyList());
             when(secondPage.getNextPage()).thenReturn(null);
 
@@ -239,7 +239,7 @@ class SearchOrchestratorTest {
             SearchPageResponse response = orchestrator.searchAllEnrichedPaged("test", pageToken);
 
             // Assert
-            verify(searchExtractor).getPage(decodedPage);
+            verify(gateway).getSearchPage(searchExtractor, decodedPage);
         }
 
         @Test
@@ -284,7 +284,7 @@ class SearchOrchestratorTest {
         void searchFetchError_throwsIOException() throws Exception {
             // Arrange
             when(gateway.createSearchExtractor(anyString())).thenReturn(searchExtractor);
-            doThrow(new IOException("Network error")).when(searchExtractor).fetchPage();
+            doThrow(new IOException("Network error")).when(gateway).fetchSearchPage(searchExtractor);
 
             // Act & Assert
             assertThrows(IOException.class,

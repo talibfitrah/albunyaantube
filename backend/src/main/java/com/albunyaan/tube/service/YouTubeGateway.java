@@ -1,5 +1,6 @@
 package com.albunyaan.tube.service;
 
+import org.schabi.newpipe.extractor.InfoItem;
 import org.schabi.newpipe.extractor.ListExtractor;
 import org.schabi.newpipe.extractor.Page;
 import org.schabi.newpipe.extractor.StreamingService;
@@ -20,14 +21,19 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * P2-T3: YouTube Gateway
@@ -57,17 +63,28 @@ public class YouTubeGateway {
     private final YoutubePlaylistLinkHandlerFactory playlistLinkHandlerFactory;
     private final YoutubeStreamLinkHandlerFactory streamLinkHandlerFactory;
 
+    @Nullable
+    private final YouTubeThrottler throttler;
+
+    @Nullable
+    private final YouTubeCircuitBreaker circuitBreaker;
+
     @Autowired
     public YouTubeGateway(
             @Qualifier("newPipeYouTubeService") StreamingService youTubeService,
-            @Value("${app.newpipe.executor.pool-size:3}") int poolSize) {
+            @Value("${app.newpipe.executor.pool-size:3}") int poolSize,
+            @Nullable YouTubeThrottler throttler,
+            @Nullable YouTubeCircuitBreaker circuitBreaker) {
         this.youtube = youTubeService;
         this.executorService = Executors.newFixedThreadPool(poolSize);
         this.channelLinkHandlerFactory = YoutubeChannelLinkHandlerFactory.getInstance();
         this.playlistLinkHandlerFactory = YoutubePlaylistLinkHandlerFactory.getInstance();
         this.streamLinkHandlerFactory = YoutubeStreamLinkHandlerFactory.getInstance();
+        this.throttler = throttler;
+        this.circuitBreaker = circuitBreaker;
 
-        logger.info("YouTubeGateway initialized with NewPipeExtractor (executor pool size: {})", poolSize);
+        logger.info("YouTubeGateway initialized with NewPipeExtractor (executor pool size: {}, throttler: {}, circuitBreaker: {})",
+                poolSize, throttler != null ? "enabled" : "disabled", circuitBreaker != null ? "enabled" : "disabled");
         logger.info("Service: {}, ID: {}", youtube.getServiceInfo().getName(), youtube.getServiceId());
     }
 
@@ -97,6 +114,143 @@ public class YouTubeGateway {
         }
     }
 
+    // ==================== Rate Limiting Helpers ====================
+
+    /**
+     * Apply throttling before making a YouTube request.
+     * Should be called before each external request.
+     */
+    private void applyThrottling() {
+        if (throttler != null && throttler.isEnabled()) {
+            throttler.throttle();
+        }
+    }
+
+    /**
+     * Check if circuit breaker allows requests.
+     * Throws IOException if circuit is open or probe already in progress.
+     *
+     * When in HALF_OPEN state, only ONE request is allowed to proceed as the probe.
+     * This method atomically acquires the probe permit to ensure single-probe semantics.
+     *
+     * Logic flow:
+     * 1. Call isOpen() first - handles OPEN state cooldown and transitions OPEN→HALF_OPEN
+     * 2. If isOpen() returns true:
+     *    - If state is HALF_OPEN, it means a probe is already in progress → specific message
+     *    - Otherwise, state is OPEN with cooldown remaining → generic message
+     * 3. If isOpen() returns false:
+     *    - State is CLOSED → proceed
+     *    - State is HALF_OPEN with no probe yet → call allowProbe() to acquire permit
+     */
+    private void checkCircuitBreaker() throws IOException {
+        if (circuitBreaker == null) {
+            return;
+        }
+
+        // Step 1: Check if circuit is blocking (also triggers OPEN→HALF_OPEN transition if cooldown expired)
+        if (circuitBreaker.isOpen()) {
+            // isOpen() returned true - either OPEN with cooldown or HALF_OPEN with probe in progress
+            YouTubeCircuitBreaker.State currentState = circuitBreaker.getCurrentState();
+            if (currentState == YouTubeCircuitBreaker.State.HALF_OPEN) {
+                // HALF_OPEN and isOpen() returned true means probeInProgress is true
+                throw new IOException("YouTube circuit breaker is in HALF_OPEN state and probe already in progress. " +
+                        "Waiting for probe result before allowing more requests.");
+            } else {
+                // OPEN state with cooldown remaining
+                long remainingMs = circuitBreaker.getRemainingCooldownMs();
+                throw new IOException("YouTube circuit breaker is open. Remaining cooldown: " +
+                        (remainingMs / 1000) + " seconds. Rate limiting detected - waiting for cooldown.");
+            }
+        }
+
+        // Step 2: isOpen() returned false - either CLOSED or HALF_OPEN with no probe yet
+        // Try to acquire probe permit (no-op if CLOSED, acquires permit if HALF_OPEN)
+        if (!circuitBreaker.allowProbe()) {
+            // This can only happen in a race condition: another thread acquired the permit
+            // between our isOpen() check and this allowProbe() call
+            throw new IOException("YouTube circuit breaker is in HALF_OPEN state and probe already in progress. " +
+                    "Waiting for probe result before allowing more requests.");
+        }
+
+        // Proceed with request - either CLOSED or we're the probe request
+    }
+
+    /**
+     * Record a successful YouTube request.
+     */
+    private void recordSuccess() {
+        if (circuitBreaker != null) {
+            circuitBreaker.recordSuccess();
+        }
+    }
+
+    /**
+     * Record a failed YouTube request and check for rate limiting.
+     * If this is a probe request (HALF_OPEN state), ensures the probe permit is cleared
+     * even for non-rate-limit errors to prevent the circuit from getting stuck.
+     */
+    private void recordError(Exception e) {
+        if (circuitBreaker == null) {
+            return;
+        }
+
+        if (circuitBreaker.isRateLimitError(e)) {
+            // Rate limit error - record it (will increase backoff if in HALF_OPEN)
+            circuitBreaker.recordRateLimitError(e);
+            logger.warn("Rate limit error detected, circuit breaker recording: {}", e.getMessage());
+        } else if (circuitBreaker.isProbeRequest()) {
+            // Non-rate-limit error during probe - must clear probe permit to avoid stuck state
+            circuitBreaker.recordProbeFailure(e);
+            logger.warn("Probe failed with non-rate-limit error: {}", e.getMessage());
+        }
+        // For non-rate-limit errors outside of probe: no action needed
+    }
+
+    /**
+     * Execute an operation with probe timeout if this is a probe request.
+     * Probe requests (during HALF_OPEN state) use a shorter timeout to quickly
+     * determine if YouTube is responsive again.
+     */
+    private <T> T executeWithProbeTimeout(Callable<T> operation) throws IOException, ExtractionException {
+        // Check if this is a probe request
+        boolean isProbe = circuitBreaker != null && circuitBreaker.isProbeRequest();
+
+        if (!isProbe) {
+            // Not a probe - execute normally
+            try {
+                return operation.call();
+            } catch (IOException | ExtractionException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new IOException("Unexpected error during YouTube operation", e);
+            }
+        }
+
+        // Probe request - apply timeout
+        int timeoutSeconds = circuitBreaker.getProbeTimeoutSeconds();
+        logger.debug("Executing probe request with {}s timeout", timeoutSeconds);
+
+        Future<T> future = executorService.submit(operation);
+        try {
+            return future.get(timeoutSeconds, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            throw new IOException("Probe request timed out after " + timeoutSeconds + " seconds");
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof IOException) {
+                throw (IOException) cause;
+            } else if (cause instanceof ExtractionException) {
+                throw (ExtractionException) cause;
+            } else {
+                throw new IOException("Probe request failed: " + cause.getMessage(), cause);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Probe request interrupted", e);
+        }
+    }
+
     // ==================== Search Operations ====================
 
     /**
@@ -106,16 +260,63 @@ public class YouTubeGateway {
         return youtube.getSearchExtractor(query);
     }
 
+    /**
+     * Fetch the initial page for a search extractor with throttling and circuit breaker protection.
+     * This should be used instead of calling extractor.fetchPage() directly.
+     */
+    public void fetchSearchPage(SearchExtractor extractor) throws IOException, ExtractionException {
+        checkCircuitBreaker();
+        applyThrottling();
+
+        try {
+            extractor.fetchPage();
+            recordSuccess();
+        } catch (IOException | ExtractionException e) {
+            recordError(e);
+            throw e;
+        }
+    }
+
+    /**
+     * Get a specific page from a search extractor with throttling and circuit breaker protection.
+     * This should be used instead of calling extractor.getPage() directly for pagination.
+     */
+    public ListExtractor.InfoItemsPage<InfoItem> getSearchPage(SearchExtractor extractor, Page page)
+            throws IOException, ExtractionException {
+        checkCircuitBreaker();
+        applyThrottling();
+
+        try {
+            ListExtractor.InfoItemsPage<InfoItem> result = extractor.getPage(page);
+            recordSuccess();
+            return result;
+        } catch (IOException | ExtractionException e) {
+            recordError(e);
+            throw e;
+        }
+    }
+
     // ==================== Channel Operations ====================
 
     /**
-     * Fetch channel info by channel ID
+     * Fetch channel info by channel ID.
+     * Applies throttling and circuit breaker protection.
      */
     public ChannelInfo fetchChannelInfo(String channelId) throws IOException, ExtractionException {
-        // Use /channel/ format directly instead of link handler factory
-        // The factory incorrectly generates /c/ URLs which return 404
-        String url = buildChannelUrl(channelId);
-        return ChannelInfo.getInfo(youtube, url);
+        checkCircuitBreaker();
+        applyThrottling();
+
+        try {
+            // Use /channel/ format directly instead of link handler factory
+            // The factory incorrectly generates /c/ URLs which return 404
+            String url = buildChannelUrl(channelId);
+            ChannelInfo result = ChannelInfo.getInfo(youtube, url);
+            recordSuccess();
+            return result;
+        } catch (IOException | ExtractionException e) {
+            recordError(e);
+            throw e;
+        }
     }
 
     /**
@@ -156,14 +357,61 @@ public class YouTubeGateway {
         return youtube.getChannelTabExtractor(tab);
     }
 
+    /**
+     * Fetch the initial page for a channel tab extractor with throttling and circuit breaker protection.
+     * This should be used instead of calling extractor.fetchPage() directly.
+     */
+    public void fetchTabPage(ChannelTabExtractor extractor) throws IOException, ExtractionException {
+        checkCircuitBreaker();
+        applyThrottling();
+
+        try {
+            extractor.fetchPage();
+            recordSuccess();
+        } catch (IOException | ExtractionException e) {
+            recordError(e);
+            throw e;
+        }
+    }
+
+    /**
+     * Get a specific page from a channel tab extractor with throttling and circuit breaker protection.
+     * This should be used instead of calling extractor.getPage() directly for pagination.
+     */
+    public ListExtractor.InfoItemsPage<InfoItem> getTabPage(ChannelTabExtractor extractor, Page page)
+            throws IOException, ExtractionException {
+        checkCircuitBreaker();
+        applyThrottling();
+
+        try {
+            ListExtractor.InfoItemsPage<InfoItem> result = extractor.getPage(page);
+            recordSuccess();
+            return result;
+        } catch (IOException | ExtractionException e) {
+            recordError(e);
+            throw e;
+        }
+    }
+
     // ==================== Playlist Operations ====================
 
     /**
-     * Fetch playlist info by playlist ID
+     * Fetch playlist info by playlist ID.
+     * Applies throttling and circuit breaker protection.
      */
     public PlaylistInfo fetchPlaylistInfo(String playlistId) throws IOException, ExtractionException {
-        String url = playlistLinkHandlerFactory.getUrl(playlistId);
-        return PlaylistInfo.getInfo(youtube, url);
+        checkCircuitBreaker();
+        applyThrottling();
+
+        try {
+            String url = playlistLinkHandlerFactory.getUrl(playlistId);
+            PlaylistInfo result = PlaylistInfo.getInfo(youtube, url);
+            recordSuccess();
+            return result;
+        } catch (IOException | ExtractionException e) {
+            recordError(e);
+            throw e;
+        }
     }
 
     /**
@@ -174,22 +422,45 @@ public class YouTubeGateway {
     }
 
     /**
-     * Get more items from a playlist page
+     * Get more items from a playlist page.
+     * Applies throttling and circuit breaker protection.
      */
     public ListExtractor.InfoItemsPage<StreamInfoItem> getPlaylistMoreItems(String playlistId, Page page)
             throws IOException, ExtractionException {
-        String url = playlistLinkHandlerFactory.getUrl(playlistId);
-        return PlaylistInfo.getMoreItems(youtube, url, page);
+        checkCircuitBreaker();
+        applyThrottling();
+
+        try {
+            String url = playlistLinkHandlerFactory.getUrl(playlistId);
+            ListExtractor.InfoItemsPage<StreamInfoItem> result = PlaylistInfo.getMoreItems(youtube, url, page);
+            recordSuccess();
+            return result;
+        } catch (IOException | ExtractionException e) {
+            recordError(e);
+            throw e;
+        }
     }
 
     // ==================== Video Operations ====================
 
     /**
-     * Fetch stream info by video ID
+     * Fetch stream info by video ID.
+     * Applies throttling, circuit breaker protection, and probe timeout (for HALF_OPEN probes).
      */
     public StreamInfo fetchStreamInfo(String videoId) throws IOException, ExtractionException {
-        String url = streamLinkHandlerFactory.getUrl(videoId);
-        return StreamInfo.getInfo(youtube, url);
+        checkCircuitBreaker();
+        applyThrottling();
+
+        try {
+            String url = streamLinkHandlerFactory.getUrl(videoId);
+            // Use probe timeout wrapper for probe requests
+            StreamInfo result = executeWithProbeTimeout(() -> StreamInfo.getInfo(youtube, url));
+            recordSuccess();
+            return result;
+        } catch (IOException | ExtractionException e) {
+            recordError(e);
+            throw e;
+        }
     }
 
     /**

@@ -48,11 +48,19 @@ public class BatchValidationResult<T> {
      */
     private final Map<String, String> errorMessages;
 
+    /**
+     * YouTube IDs of content that was skipped due to circuit breaker opening mid-batch.
+     * These items were NOT processed and should NOT have their status/lastValidatedAt updated.
+     * They will be retried on the next validation run.
+     */
+    private final Set<String> skipped;
+
     public BatchValidationResult() {
         this.valid = Collections.synchronizedMap(new HashMap<>());
         this.notFound = Collections.synchronizedSet(new HashSet<>());
         this.errors = Collections.synchronizedSet(new HashSet<>());
         this.errorMessages = Collections.synchronizedMap(new HashMap<>());
+        this.skipped = Collections.synchronizedSet(new HashSet<>());
     }
 
     public void addValid(String youtubeId, T content) {
@@ -68,6 +76,14 @@ public class BatchValidationResult<T> {
         errorMessages.put(youtubeId, message);
     }
 
+    /**
+     * Mark an item as skipped (circuit breaker opened mid-batch).
+     * Skipped items should NOT have their status/lastValidatedAt updated.
+     */
+    public void addSkipped(String youtubeId) {
+        skipped.add(youtubeId);
+    }
+
     public boolean isValid(String youtubeId) {
         return valid.containsKey(youtubeId);
     }
@@ -78,6 +94,10 @@ public class BatchValidationResult<T> {
 
     public boolean isError(String youtubeId) {
         return errors.contains(youtubeId);
+    }
+
+    public boolean isSkipped(String youtubeId) {
+        return skipped.contains(youtubeId);
     }
 
     public T getContent(String youtubeId) {
@@ -104,6 +124,10 @@ public class BatchValidationResult<T> {
         return Collections.unmodifiableMap(errorMessages);
     }
 
+    public Set<String> getSkipped() {
+        return Collections.unmodifiableSet(skipped);
+    }
+
     public int getValidCount() {
         return valid.size();
     }
@@ -116,9 +140,13 @@ public class BatchValidationResult<T> {
         return errors.size();
     }
 
+    public int getSkippedCount() {
+        return skipped.size();
+    }
+
     @Override
     public String toString() {
-        return String.format("BatchValidationResult{valid=%d, notFound=%d, errors=%d}",
-                valid.size(), notFound.size(), errors.size());
+        return String.format("BatchValidationResult{valid=%d, notFound=%d, errors=%d, skipped=%d}",
+                valid.size(), notFound.size(), errors.size(), skipped.size());
     }
 }

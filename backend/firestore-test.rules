@@ -1,0 +1,17 @@
+rules_version = '2';
+
+// Permissive rules for integration tests with Firestore emulator.
+// These rules allow all read/write operations without authentication,
+// enabling test setup/teardown (FirestoreTestHelper.clearCollections).
+//
+// WARNING: These rules should ONLY be used with the Firestore emulator.
+// Never deploy these rules to production.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow all operations for testing
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
