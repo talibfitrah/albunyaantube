@@ -128,14 +128,51 @@ public class YouTubeGateway {
 
     /**
      * Check if circuit breaker allows requests.
-     * Throws IOException if circuit is open.
+     * Throws IOException if circuit is open or probe already in progress.
+     *
+     * When in HALF_OPEN state, only ONE request is allowed to proceed as the probe.
+     * This method atomically acquires the probe permit to ensure single-probe semantics.
+     *
+     * Logic flow:
+     * 1. Call isOpen() first - handles OPEN state cooldown and transitions OPEN→HALF_OPEN
+     * 2. If isOpen() returns true:
+     *    - If state is HALF_OPEN, it means a probe is already in progress → specific message
+     *    - Otherwise, state is OPEN with cooldown remaining → generic message
+     * 3. If isOpen() returns false:
+     *    - State is CLOSED → proceed
+     *    - State is HALF_OPEN with no probe yet → call allowProbe() to acquire permit
      */
     private void checkCircuitBreaker() throws IOException {
-        if (circuitBreaker != null && circuitBreaker.isOpen()) {
-            long remainingMs = circuitBreaker.getRemainingCooldownMs();
-            throw new IOException("YouTube circuit breaker is open. Remaining cooldown: " +
-                    (remainingMs / 1000) + " seconds. Rate limiting detected - waiting for cooldown.");
+        if (circuitBreaker == null) {
+            return;
         }
+
+        // Step 1: Check if circuit is blocking (also triggers OPEN→HALF_OPEN transition if cooldown expired)
+        if (circuitBreaker.isOpen()) {
+            // isOpen() returned true - either OPEN with cooldown or HALF_OPEN with probe in progress
+            YouTubeCircuitBreaker.State currentState = circuitBreaker.getCurrentState();
+            if (currentState == YouTubeCircuitBreaker.State.HALF_OPEN) {
+                // HALF_OPEN and isOpen() returned true means probeInProgress is true
+                throw new IOException("YouTube circuit breaker is in HALF_OPEN state and probe already in progress. " +
+                        "Waiting for probe result before allowing more requests.");
+            } else {
+                // OPEN state with cooldown remaining
+                long remainingMs = circuitBreaker.getRemainingCooldownMs();
+                throw new IOException("YouTube circuit breaker is open. Remaining cooldown: " +
+                        (remainingMs / 1000) + " seconds. Rate limiting detected - waiting for cooldown.");
+            }
+        }
+
+        // Step 2: isOpen() returned false - either CLOSED or HALF_OPEN with no probe yet
+        // Try to acquire probe permit (no-op if CLOSED, acquires permit if HALF_OPEN)
+        if (!circuitBreaker.allowProbe()) {
+            // This can only happen in a race condition: another thread acquired the permit
+            // between our isOpen() check and this allowProbe() call
+            throw new IOException("YouTube circuit breaker is in HALF_OPEN state and probe already in progress. " +
+                    "Waiting for probe result before allowing more requests.");
+        }
+
+        // Proceed with request - either CLOSED or we're the probe request
     }
 
     /**
@@ -149,12 +186,24 @@ public class YouTubeGateway {
 
     /**
      * Record a failed YouTube request and check for rate limiting.
+     * If this is a probe request (HALF_OPEN state), ensures the probe permit is cleared
+     * even for non-rate-limit errors to prevent the circuit from getting stuck.
      */
     private void recordError(Exception e) {
-        if (circuitBreaker != null && circuitBreaker.isRateLimitError(e)) {
+        if (circuitBreaker == null) {
+            return;
+        }
+
+        if (circuitBreaker.isRateLimitError(e)) {
+            // Rate limit error - record it (will increase backoff if in HALF_OPEN)
             circuitBreaker.recordRateLimitError(e);
             logger.warn("Rate limit error detected, circuit breaker recording: {}", e.getMessage());
+        } else if (circuitBreaker.isProbeRequest()) {
+            // Non-rate-limit error during probe - must clear probe permit to avoid stuck state
+            circuitBreaker.recordProbeFailure(e);
+            logger.warn("Probe failed with non-rate-limit error: {}", e.getMessage());
         }
+        // For non-rate-limit errors outside of probe: no action needed
     }
 
     /**

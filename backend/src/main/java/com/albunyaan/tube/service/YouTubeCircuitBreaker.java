@@ -14,6 +14,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -33,6 +34,39 @@ import java.util.concurrent.atomic.AtomicReference;
  * - Firestore persistence for multi-instance coordination
  * - Fail-safe: defaults to OPEN if persistence unavailable (rejects requests)
  * - Optimistic locking for safe concurrent updates
+ *
+ * <h3>HALF_OPEN State: Two-Step Permission Protocol</h3>
+ *
+ * When the circuit is in HALF_OPEN state, callers MUST follow this two-step protocol:
+ * <ol>
+ *   <li>Call {@link #isOpen()} - if it returns {@code false}, requests MAY be allowed</li>
+ *   <li>Call {@link #allowProbe()} - if it returns {@code true}, this caller has acquired
+ *       the exclusive probe permit and should proceed with exactly ONE request</li>
+ * </ol>
+ *
+ * <p><strong>Important:</strong> In HALF_OPEN state, {@code isOpen()} returning {@code false}
+ * does NOT guarantee permission to proceed. The caller must also acquire the probe permit
+ * via {@code allowProbe()}. Only one thread can hold the probe permit at a time.</p>
+ *
+ * <pre>{@code
+ * // Correct usage pattern:
+ * if (!circuitBreaker.isOpen()) {
+ *     if (circuitBreaker.allowProbe()) {
+ *         try {
+ *             // Make YouTube request
+ *             circuitBreaker.recordSuccess();
+ *         } catch (Exception e) {
+ *             if (circuitBreaker.isRateLimitError(e)) {
+ *                 circuitBreaker.recordRateLimitError(e);
+ *             } else {
+ *                 circuitBreaker.recordProbeFailure(e);
+ *             }
+ *         }
+ *     } else {
+ *         // Another thread is already probing - skip this request
+ *     }
+ * }
+ * }</pre>
  *
  * Thread-safe: All state is managed with atomic operations.
  */
@@ -238,6 +272,7 @@ public class YouTubeCircuitBreaker {
             return true; // No persistence configured, consider it success
         }
 
+        String correlationId = newCorrelationId();
         for (int attempt = 0; attempt < MAX_OPTIMISTIC_LOCK_RETRIES; attempt++) {
             try {
                 long currentVersion = version.get();
@@ -289,19 +324,22 @@ public class YouTubeCircuitBreaker {
                 refreshStateFromFirestore();
 
             } catch (Exception e) {
-                logger.warn("Persist attempt {} failed: {}", attempt + 1, e.getMessage());
+                logger.error("Persist attempt {} failed (will retry if possible). correlationId={}, error={}",
+                        attempt + 1, correlationId, e.getMessage());
                 if (attempt < MAX_OPTIMISTIC_LOCK_RETRIES - 1) {
                     // Reload state before retry
                     try {
                         refreshStateFromFirestore();
                     } catch (Exception refreshEx) {
-                        logger.warn("Failed to refresh state before retry: {}", refreshEx.getMessage());
+                        logger.error("Failed to refresh state before retry. correlationId={}, error={}",
+                                correlationId, refreshEx.getMessage());
                     }
                 }
             }
         }
 
-        logger.error("Failed to persist circuit breaker state after {} attempts", MAX_OPTIMISTIC_LOCK_RETRIES);
+        logger.error("Failed to persist circuit breaker state after {} attempts. correlationId={}",
+                MAX_OPTIMISTIC_LOCK_RETRIES, correlationId);
         persistenceAvailable.set(false);
         return false;
     }
@@ -315,6 +353,7 @@ public class YouTubeCircuitBreaker {
             return;
         }
 
+        String correlationId = newCorrelationId();
         try {
             // Use loadOrThrow to detect persistence failures
             Optional<Map<String, Object>> data = systemSettingsRepository.loadOrThrow(SETTINGS_KEY);
@@ -323,7 +362,8 @@ public class YouTubeCircuitBreaker {
             }
             persistenceAvailable.set(true);
         } catch (Exception e) {
-            logger.warn("Failed to refresh circuit breaker state: {}", e.getMessage());
+            logger.error("Failed to refresh circuit breaker state (persistence unavailable). correlationId={}, error={}",
+                    correlationId, e.getMessage());
             persistenceAvailable.set(false);
         }
     }
@@ -331,10 +371,16 @@ public class YouTubeCircuitBreaker {
     /**
      * Check if the circuit is currently open (requests should not be made).
      *
-     * FAIL-SAFE POLICY: If persistence is unavailable and we can't verify state,
-     * this defaults to OPEN (rejecting requests) to prevent hammering YouTube.
+     * <p>FAIL-SAFE POLICY: If persistence is unavailable and we can't verify state,
+     * this defaults to OPEN (rejecting requests) to prevent hammering YouTube.</p>
      *
-     * @return true if circuit is open and requests should be blocked
+     * <p><strong>HALF_OPEN State Warning:</strong> When in HALF_OPEN state, this method
+     * returning {@code false} does NOT grant permission to proceed. Callers MUST also call
+     * {@link #allowProbe()} to acquire the exclusive probe permit. See the class-level
+     * documentation for the correct usage pattern.</p>
+     *
+     * @return true if circuit is open and requests should be blocked; false if requests
+     *         may be allowed (but in HALF_OPEN state, caller must still acquire probe permit)
      */
     public boolean isOpen() {
         if (!validationProperties.getYoutube().getCircuitBreaker().isEnabled()) {
@@ -346,7 +392,8 @@ public class YouTubeCircuitBreaker {
 
         // FAIL-SAFE: If persistence failed, default to OPEN
         if (!persistenceAvailable.get() && systemSettingsRepository != null) {
-            logger.warn("Circuit breaker persistence unavailable - defaulting to OPEN (safe mode)");
+            logger.error("Circuit breaker persistence unavailable - defaulting to OPEN (safe mode). correlationId={}",
+                    newCorrelationId());
             return true;
         }
 
@@ -369,15 +416,10 @@ public class YouTubeCircuitBreaker {
                 return true;
 
             case HALF_OPEN:
-                // In HALF_OPEN, we allow exactly one probe request
-                // Use atomic CAS to ensure only one caller proceeds
-                if (probeInProgress.compareAndSet(false, true)) {
-                    logger.info("HALF_OPEN: Allowing single probe request");
-                    return false; // Allow this one probe
-                }
-                // Another probe is already in progress
-                logger.debug("HALF_OPEN: Probe already in progress, blocking request");
-                return true;
+                // In HALF_OPEN, requests are allowed but ONLY one may proceed as the probe.
+                // IMPORTANT: Do NOT acquire the probe permit here; callers must call allowProbe()
+                // immediately before the outbound YouTube request.
+                return probeInProgress.get();
 
             default:
                 return true;
@@ -385,13 +427,34 @@ public class YouTubeCircuitBreaker {
     }
 
     /**
-     * Check if a probe request is allowed (for HALF_OPEN state).
-     * Call this before making a request when in HALF_OPEN state.
+     * Batch-friendly helper: true when outbound requests should be blocked.
      *
-     * @return true if this request should proceed as a probe
+     * Alias for {@link #isOpen()} to match plan terminology ("blocking" vs "open").
+     */
+    public boolean isCircuitBreakerBlocking() {
+        return isOpen();
+    }
+
+    /**
+     * Attempt to acquire the single probe permit when in HALF_OPEN state.
+     * Call this immediately before making an outbound YouTube request.
+     *
+     * <p><strong>Note:</strong> Callers MUST check {@link #isOpen()} before calling this method.
+     * This method only handles probe permission in HALF_OPEN state and should not be used
+     * to bypass an OPEN circuit. When in OPEN state, this method returns {@code false}
+     * as a defensive measure against misuse.</p>
+     *
+     * @return true if caller may proceed with the request (CLOSED state or acquired probe permit in HALF_OPEN)
      */
     public boolean allowProbe() {
-        return state.get() == State.HALF_OPEN;
+        State currentState = state.get();
+        if (currentState == State.OPEN) {
+            return false; // Explicitly block if circuit is OPEN
+        }
+        if (currentState != State.HALF_OPEN) {
+            return true; // CLOSED state - allow
+        }
+        return probeInProgress.compareAndSet(false, true);
     }
 
     /**
@@ -523,6 +586,55 @@ public class YouTubeCircuitBreaker {
     }
 
     /**
+     * Record a probe failure due to a non-rate-limit error (network timeout, parsing error, etc.).
+     * This clears the probe permit and reopens the circuit WITHOUT increasing backoff level,
+     * since non-rate-limit errors are transient and don't indicate YouTube is actively blocking us.
+     *
+     * <p><strong>Caller Requirement:</strong> This method should only be called by the thread
+     * that successfully acquired the probe permit via {@link #allowProbe()}. If called by a
+     * thread that does not hold the probe permit, the call is ignored.</p>
+     *
+     * @param exception The exception that caused the probe to fail
+     */
+    public void recordProbeFailure(Exception exception) {
+        // Validate probe ownership: only the thread that acquired the probe permit should call this.
+        // Use compareAndSet to atomically clear the probe flag and verify ownership.
+        if (!probeInProgress.compareAndSet(true, false)) {
+            logger.debug("recordProbeFailure called but probe not in progress - ignoring");
+            return;
+        }
+
+        // Use compareAndSet for atomic state transition to prevent overwriting a concurrent
+        // CLOSED transition (e.g., if recordSuccess() was called by another path).
+        if (!state.compareAndSet(State.HALF_OPEN, State.OPEN)) {
+            logger.debug("recordProbeFailure: state changed from HALF_OPEN - skipping probe failure handling");
+            return;
+        }
+
+        // Log the failure
+        logger.warn("Circuit breaker probe failed with non-rate-limit error: {} - {}. " +
+                    "Reopening circuit at current backoff level (not increasing).",
+                exception.getClass().getSimpleName(), exception.getMessage());
+
+        // Reopen circuit at CURRENT backoff level (don't increment - it's not a rate limit)
+        int level = backoffLevel.get();
+        int cooldownMinutes = getCooldownMinutesForLevel(level);
+
+        Instant now = Instant.now();
+        Instant until = now.plusSeconds(cooldownMinutes * 60L);
+
+        openedAt.set(now);
+        cooldownUntil.set(until);
+        // Don't increment totalCircuitOpens - this is a continuation, not a new open
+
+        logger.info("Circuit breaker reopened after probe failure. State: OPEN, Backoff level: {}, " +
+                    "Cooldown: {} minutes (until {})",
+                level, cooldownMinutes, until);
+
+        persistState();
+    }
+
+    /**
      * Check if backoff level should decay (decrement after 48h of success).
      */
     private void checkBackoffDecay() {
@@ -648,6 +760,10 @@ public class YouTubeCircuitBreaker {
         return Math.min(cooldownMinutes, maxMinutes);
     }
 
+    private String newCorrelationId() {
+        return UUID.randomUUID().toString();
+    }
+
     /**
      * Truncate string to max length.
      */
@@ -742,6 +858,14 @@ public class YouTubeCircuitBreaker {
         }
 
         persistState();
+    }
+
+    /**
+     * Package-private method to set state for testing.
+     * DO NOT use in production code.
+     */
+    void setStateForTesting(State newState) {
+        state.set(newState);
     }
 
     // ==================== Status / Metrics ====================

@@ -1,5 +1,6 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.config.ValidationProperties;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -21,6 +22,7 @@ import org.schabi.newpipe.extractor.playlist.PlaylistInfo;
 import org.schabi.newpipe.extractor.search.SearchExtractor;
 import org.schabi.newpipe.extractor.stream.StreamInfo;
 
+import java.io.IOException;
 import java.util.concurrent.ExecutorService;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -232,6 +234,141 @@ class YouTubeGatewayTest {
 
             // Should not throw
             assertDoesNotThrow(() -> testGateway.shutdown());
+        }
+    }
+
+    @Nested
+    @DisplayName("Circuit Breaker Error Messages")
+    class CircuitBreakerErrorMessageTests {
+
+        private ValidationProperties createTestProperties() {
+            ValidationProperties props = new ValidationProperties();
+            props.getYoutube().getCircuitBreaker().setEnabled(true);
+            props.getYoutube().getCircuitBreaker().setCooldownBaseMinutes(60);
+            props.getYoutube().getCircuitBreaker().setCooldownMaxMinutes(600);
+            props.getYoutube().getCircuitBreaker().getRollingWindow().setErrorThreshold(1);
+            props.getYoutube().getCircuitBreaker().getRollingWindow().setWindowMinutes(10);
+            return props;
+        }
+
+        @Test
+        @DisplayName("HALF_OPEN with probe in progress should throw specific error message")
+        void halfOpenWithProbeInProgress_throwsSpecificMessage() {
+            // Arrange: Create circuit breaker and gateway
+            ValidationProperties props = createTestProperties();
+            YouTubeCircuitBreaker circuitBreaker = new YouTubeCircuitBreaker(props, null);
+            StreamingService youtube = ServiceList.YouTube;
+            YouTubeGateway testGateway = new YouTubeGateway(youtube, 3, null, circuitBreaker);
+
+            // Open the circuit
+            circuitBreaker.recordRateLimitError(new RuntimeException("rate limit"));
+            assertEquals(YouTubeCircuitBreaker.State.OPEN, circuitBreaker.getStatus().getState());
+
+            // Transition to HALF_OPEN (simulating cooldown expiry)
+            circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+
+            // First request: should proceed (acquires probe permit)
+            // We need to call a public method that triggers checkCircuitBreaker()
+            // fetchChannelInfo will fail due to stub downloader returning null (causes NPE)
+
+            // Acquire the probe permit by making a request that will fail on extraction but pass circuit check
+            try {
+                testGateway.fetchChannelInfo("UCTest");
+                fail("Expected exception from extraction");
+            } catch (IOException e) {
+                // If it's a circuit breaker message, fail the test
+                if (e.getMessage() != null && e.getMessage().contains("circuit breaker")) {
+                    fail("First request should not be blocked by circuit breaker: " + e.getMessage());
+                }
+                // Otherwise, it's an extraction error which is expected (stub downloader)
+            } catch (ExtractionException e) {
+                // Expected - extraction fails because of stub downloader
+            } catch (NullPointerException e) {
+                // Expected - stub downloader returns null, causing NPE in NewPipe
+                // This is fine - the circuit breaker check passed and the probe permit was acquired
+            }
+
+            // Verify probe permit was acquired (circuit breaker check passed for first request)
+            assertTrue(circuitBreaker.isProbeRequest(),
+                    "First request should have acquired probe permit");
+
+            // Now probe is in progress - second request should get specific message
+            IOException thrown = assertThrows(IOException.class, () -> {
+                testGateway.fetchChannelInfo("UCTest2");
+            });
+
+            assertTrue(thrown.getMessage().contains("HALF_OPEN"),
+                    "Error message should mention HALF_OPEN state. Got: " + thrown.getMessage());
+            assertTrue(thrown.getMessage().contains("probe already in progress"),
+                    "Error message should mention probe in progress. Got: " + thrown.getMessage());
+
+            // Clean up
+            testGateway.shutdown();
+        }
+
+        @Test
+        @DisplayName("OPEN state with cooldown should throw generic circuit open message")
+        void openWithCooldown_throwsGenericMessage() {
+            // Arrange: Create circuit breaker and gateway
+            ValidationProperties props = createTestProperties();
+            YouTubeCircuitBreaker circuitBreaker = new YouTubeCircuitBreaker(props, null);
+            StreamingService youtube = ServiceList.YouTube;
+            YouTubeGateway testGateway = new YouTubeGateway(youtube, 3, null, circuitBreaker);
+
+            // Open the circuit (it will have cooldown remaining)
+            circuitBreaker.recordRateLimitError(new RuntimeException("rate limit"));
+            assertEquals(YouTubeCircuitBreaker.State.OPEN, circuitBreaker.getStatus().getState());
+            assertTrue(circuitBreaker.getRemainingCooldownMs() > 0, "Should have cooldown remaining");
+
+            // Request should get generic "circuit is open" message
+            IOException thrown = assertThrows(IOException.class, () -> {
+                testGateway.fetchChannelInfo("UCTest");
+            });
+
+            assertTrue(thrown.getMessage().contains("circuit breaker is open"),
+                    "Error message should say circuit is open. Got: " + thrown.getMessage());
+            assertTrue(thrown.getMessage().contains("Remaining cooldown"),
+                    "Error message should include remaining cooldown. Got: " + thrown.getMessage());
+            assertFalse(thrown.getMessage().contains("HALF_OPEN"),
+                    "OPEN state should NOT mention HALF_OPEN. Got: " + thrown.getMessage());
+
+            // Clean up
+            testGateway.shutdown();
+        }
+
+        @Test
+        @DisplayName("CLOSED state should not block requests")
+        void closedState_doesNotBlockRequests() {
+            // Arrange: Create circuit breaker and gateway
+            ValidationProperties props = createTestProperties();
+            YouTubeCircuitBreaker circuitBreaker = new YouTubeCircuitBreaker(props, null);
+            StreamingService youtube = ServiceList.YouTube;
+            YouTubeGateway testGateway = new YouTubeGateway(youtube, 3, null, circuitBreaker);
+
+            // Circuit starts in CLOSED state
+            assertEquals(YouTubeCircuitBreaker.State.CLOSED, circuitBreaker.getStatus().getState());
+
+            // Request should NOT be blocked by circuit breaker
+            // It will fail on extraction due to stub downloader returning null (causes NPE)
+            try {
+                testGateway.fetchChannelInfo("UCTest");
+                fail("Expected exception from extraction");
+            } catch (IOException e) {
+                // Should NOT be a circuit breaker error
+                if (e.getMessage() != null) {
+                    assertFalse(e.getMessage().contains("circuit breaker"),
+                            "CLOSED state should not throw circuit breaker error. Got: " + e.getMessage());
+                }
+                // If message is null, that's fine - it's not a circuit breaker error
+            } catch (ExtractionException e) {
+                // Expected - extraction fails because of stub downloader
+            } catch (NullPointerException e) {
+                // Expected - stub downloader returns null, causing NPE in NewPipe
+                // This means the circuit breaker check passed (CLOSED state allows request)
+            }
+
+            // Clean up
+            testGateway.shutdown();
         }
     }
 }
