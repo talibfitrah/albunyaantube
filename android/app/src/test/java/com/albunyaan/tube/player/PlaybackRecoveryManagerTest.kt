@@ -246,17 +246,22 @@ class PlaybackRecoveryManagerTest {
     // --- Recovery Step Determination Tests (via manual retry) ---
 
     @Test
-    fun `recovery steps increment correctly`() {
+    fun `manual retry always starts fresh with RE_PREPARE`() {
         // Arrange
         recoveryManager.onNewStream("video1", false)
 
-        // Act: call manual retry multiple times (simulating failed recoveries)
+        // Act: call manual retry multiple times
+        // Manual retry resets state and always does RE_PREPARE (attempt 0)
         recoveryManager.requestManualRetry(mockPlayer)
         recoveryManager.requestManualRetry(mockPlayer)
         recoveryManager.requestManualRetry(mockPlayer)
 
-        // Assert: steps should progress (1->1, 2->2, 3->3 with resets between)
-        verify(mockCallbacks, atLeast(3)).onRecoveryStarted(any(), any())
+        // Assert: all retries should be RE_PREPARE with attempt 0
+        // (manual retry resets state each time, unlike automatic recovery which progresses)
+        verify(mockCallbacks, times(3)).onRecoveryStarted(
+            eq(PlaybackRecoveryManager.RecoveryStep.RE_PREPARE),
+            eq(0)
+        )
     }
 
     // --- Constants Tests ---

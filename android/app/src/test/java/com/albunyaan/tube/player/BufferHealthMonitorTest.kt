@@ -153,13 +153,21 @@ class BufferHealthMonitorTest {
     // --- Release Tests ---
 
     @Test
-    fun `release stops monitoring without crash`() {
+    fun `release stops monitoring without crash`() = testScope.runTest {
         // Arrange
         bufferMonitor.onNewStream("video1", isAdaptive = false)
         bufferMonitor.onPlaybackStarted(mockPlayer)
 
+        // Allow monitoring to start running
+        advanceTimeBy(5_000L)
+        currentTime += 5_000L
+
         // Act
         bufferMonitor.release()
+
+        // Advance more time - monitoring should be stopped
+        advanceTimeBy(5_000L)
+        currentTime += 5_000L
 
         // Assert: no crash, no callbacks after release
         verify(mockCallbacks, never()).onProactiveDownshiftRequested()
@@ -235,15 +243,31 @@ class BufferHealthMonitorTest {
     // --- isInRecoveryState Integration ---
 
     @Test
-    fun `callbacks isInRecoveryState is checked during monitoring setup`() {
-        // Arrange
+    fun `callbacks isInRecoveryState blocks downshift during monitoring`() = testScope.runTest {
+        // Arrange: configure critical declining buffer conditions
+        var bufferMs = 1_500L
+        whenever(mockPlayer.currentPosition).thenReturn(0L)
+        whenever(mockPlayer.bufferedPosition).thenAnswer { bufferMs }
         whenever(mockCallbacks.isInRecoveryState()).thenReturn(true)
         bufferMonitor.onNewStream("video1", isAdaptive = false)
 
         // Act
         bufferMonitor.onPlaybackStarted(mockPlayer)
 
-        // Assert: no downshift when in recovery state
+        // Pass grace period
+        repeat(11) {
+            advanceTimeBy(1_000L)
+            currentTime += 1_000L
+        }
+
+        // Create declining buffer conditions that would normally trigger downshift
+        repeat(5) {
+            bufferMs -= 300L
+            advanceTimeBy(1_000L)
+            currentTime += 1_000L
+        }
+
+        // Assert: no downshift despite critical declining buffer (recovery state blocks it)
         verify(mockCallbacks, never()).onProactiveDownshiftRequested()
 
         // Cleanup: release to cancel monitoring coroutine
