@@ -1,13 +1,12 @@
 package com.albunyaan.tube.player
 
 import android.content.Context
-import com.google.android.exoplayer2.C
-import com.google.android.exoplayer2.Format
-import com.google.android.exoplayer2.trackselection.AdaptiveTrackSelection
-import com.google.android.exoplayer2.trackselection.DefaultTrackSelector
-import com.google.android.exoplayer2.trackselection.ExoTrackSelection
-import com.google.android.exoplayer2.trackselection.TrackSelection
-import com.google.android.exoplayer2.upstream.BandwidthMeter
+import androidx.annotation.OptIn
+import androidx.media3.common.Format
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.trackselection.AdaptiveTrackSelection
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
+import androidx.media3.exoplayer.trackselection.ExoTrackSelection
 
 /**
  * Custom track selector that provides better quality selection for discrete video streams.
@@ -17,6 +16,7 @@ import com.google.android.exoplayer2.upstream.BandwidthMeter
  * 2. Enable manual quality selection via ExoPlayer settings menu
  * 3. Show quality labels in the settings UI
  */
+@OptIn(UnstableApi::class)
 class QualityTrackSelector(
     context: Context,
     trackSelectionFactory: ExoTrackSelection.Factory = AdaptiveTrackSelection.Factory()

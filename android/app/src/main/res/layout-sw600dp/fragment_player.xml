@@ -31,7 +31,7 @@
                 app:layout_collapseParallaxMultiplier="0.5">
 
                 <!-- Player uses responsive dimension (360dp on tablets vs 240dp on phones) -->
-                <com.google.android.exoplayer2.ui.StyledPlayerView
+                <androidx.media3.ui.PlayerView
                     android:id="@+id/playerView"
                     android:layout_width="match_parent"
                     android:layout_height="@dimen/player_portrait_height"
@@ -40,7 +40,6 @@
                     app:show_buffering="when_playing"
                     app:use_controller="true"
                     app:show_subtitle_button="true"
-                    app:show_vr_button="false"
                     app:show_shuffle_button="false"
                     app:show_timeout="5000"
                     app:auto_show="true"

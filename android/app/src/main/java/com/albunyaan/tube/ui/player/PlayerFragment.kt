@@ -1,12 +1,13 @@
 package com.albunyaan.tube.ui.player
 
 import android.app.PictureInPictureParams
+import android.content.ComponentName
 import android.content.Intent
+import android.content.ServiceConnection
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.text.format.DateUtils
-import android.text.format.Formatter
+import android.os.IBinder
 import android.view.GestureDetector
 import android.view.Menu
 import android.view.MenuInflater
@@ -15,12 +16,26 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
+import androidx.annotation.OptIn
 import androidx.core.view.GestureDetectorCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.core.view.isVisible
 import androidx.core.content.FileProvider
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.HttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
 import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.navigation.fragment.findNavController
@@ -35,8 +50,6 @@ import com.albunyaan.tube.download.DownloadStatus
 import com.albunyaan.tube.player.BufferHealthMonitor
 import com.albunyaan.tube.player.PlaybackRecoveryManager
 import com.albunyaan.tube.player.PlaybackService
-import com.google.android.exoplayer2.MediaItem
-import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -45,15 +58,16 @@ import java.io.File
 /**
  * P3-T4: PlayerFragment with Hilt DI
  *
- * Phase 8 scaffold for the playback screen. Hooks ExoPlayer with audio-only toggle state managed
+ * Phase 8 scaffold for the playback screen. Hooks Media3 ExoPlayer with audio-only toggle state managed
  * by [PlayerViewModel]; real media sources will be supplied once backend wiring is available.
  */
 @AndroidEntryPoint
+@OptIn(UnstableApi::class)
 class PlayerFragment : Fragment(R.layout.fragment_player) {
 
     private var binding: FragmentPlayerBinding? = null
     private var player: ExoPlayer? = null
-    private var trackSelector: com.google.android.exoplayer2.trackselection.DefaultTrackSelector? = null
+    private var trackSelector: DefaultTrackSelector? = null
     private val viewModel: PlayerViewModel by viewModels()
     private val upNextAdapter = UpNextAdapter { item -> viewModel.playItem(item) }
     private var preparedStreamKey: Pair<String, Boolean>? = null
@@ -74,6 +88,35 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
     /** Monitors buffer health and triggers proactive quality downshift for progressive streams */
     private var bufferHealthMonitor: BufferHealthMonitor? = null
+
+    /** PlaybackService for MediaSession and background playback */
+    private var playbackService: PlaybackService? = null
+    /** Tracks whether we called bindService (must unbind even if onServiceConnected hasn't fired) */
+    private var bindingRequested = false
+    /** Tracks user's intended play state - used to preserve pause across lifecycle */
+    private var userWantsToPlay = true
+
+    private val serviceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+            playbackService = (binder as PlaybackService.LocalBinder).getService()
+            // Initialize MediaSession with our player once service is bound
+            player?.let { playbackService?.initializeSession(it) }
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            // Called when service crashes or is killed - not during normal unbind
+            playbackService = null
+            bindingRequested = false
+
+            // Attempt immediate rebind only if fragment is visible (started state)
+            // This handles service death while user is actively watching video
+            // Using lifecycle check to avoid rebinding when app is in background
+            if (view != null && isAdded && lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+                android.util.Log.w("PlayerFragment", "Service disconnected unexpectedly - attempting rebind")
+                bindingRequested = PlaybackService.bind(requireContext(), this)
+            }
+        }
+    }
 
     // Overlay controls are now always visible for better UX
     // Users need constant access to quality, cast, and minimize buttons
@@ -145,13 +188,13 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // If no arguments, ViewModel will use default stub queue (for testing)
         }
 
-        // Access ExoPlayer's internal navigation buttons (requires ExoPlayer 2.x)
-        // Note: These IDs are part of ExoPlayer's default player controls layout
-        exoNextButton = binding.playerView.findViewById(com.google.android.exoplayer2.ui.R.id.exo_next)
-        exoPrevButton = binding.playerView.findViewById(com.google.android.exoplayer2.ui.R.id.exo_prev)
+        // Access Media3's internal navigation buttons
+        // Note: These IDs are part of Media3's default player controls layout
+        exoNextButton = binding.playerView.findViewById(androidx.media3.ui.R.id.exo_next)
+        exoPrevButton = binding.playerView.findViewById(androidx.media3.ui.R.id.exo_prev)
 
         if (exoNextButton == null || exoPrevButton == null) {
-            android.util.Log.w("PlayerFragment", "ExoPlayer navigation buttons not found - check ExoPlayer version compatibility")
+            android.util.Log.w("PlayerFragment", "Media3 navigation buttons not found - check Media3 version compatibility")
         }
 
         // Ensure prev/next buttons are always visible (ExoPlayer may hide them if no playlist attached)
@@ -248,8 +291,14 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
     override fun onStart() {
         super.onStart()
-        PlaybackService.start(requireContext())
-        player?.playWhenReady = true
+        // Bind to PlaybackService for MediaSession and background playback
+        // Using bind() instead of start() avoids Android O+ foreground service timing issues
+        // Guard: only bind once per view lifecycle to prevent stacking binds on repeated start/stop
+        if (!bindingRequested) {
+            bindingRequested = PlaybackService.bind(requireContext(), serviceConnection)
+        }
+        // Restore user's intended play state - don't force resume if user had paused
+        player?.playWhenReady = userWantsToPlay
         castContext?.sessionManager?.addSessionManagerListener(castSessionListener, com.google.android.gms.cast.framework.CastSession::class.java)
     }
 
@@ -277,6 +326,17 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         bufferHealthMonitor?.release()
         bufferHealthMonitor = null
 
+        // Release MediaSession BEFORE releasing player (service doesn't own player lifecycle)
+        playbackService?.releaseSession()
+
+        // Unbind from PlaybackService - must unbind if we requested binding,
+        // even if onServiceConnected hasn't fired yet (prevents ServiceConnection leak)
+        if (bindingRequested) {
+            requireContext().unbindService(serviceConnection)
+            bindingRequested = false
+        }
+        playbackService = null
+
         // Clean up player resources - ExoPlayer handles its own callback cleanup during release
         binding?.playerView?.player = null
         preparedStreamKey = null
@@ -301,7 +361,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
     private fun setupPlayer(binding: FragmentPlayerBinding) {
         // Configure load control for better buffering - optimized for long videos
-        val loadControl = com.google.android.exoplayer2.DefaultLoadControl.Builder()
+        val loadControl = DefaultLoadControl.Builder()
             // Buffering tuned for long video stability:
             // - Larger buffer to handle network variance on 10+ min videos
             // - Faster initial playback to reduce perceived latency
@@ -319,7 +379,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         // Configure track selector for adaptive streaming quality constraints
         // This allows applying user quality caps to HLS/DASH streams
-        val trackSelector = com.google.android.exoplayer2.trackselection.DefaultTrackSelector(requireContext()).also {
+        val trackSelector = DefaultTrackSelector(requireContext()).also {
             this.trackSelector = it
         }
 
@@ -327,7 +387,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             .setLoadControl(loadControl)
             .setTrackSelector(trackSelector)
             .setHandleAudioBecomingNoisy(true)
-            .setWakeMode(com.google.android.exoplayer2.C.WAKE_MODE_NETWORK)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
             // Enable seek back/forward optimizations
             .setSeekBackIncrementMs(10000) // 10s back
             .setSeekForwardIncrementMs(10000) // 10s forward
@@ -338,6 +398,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         binding.playerView.player = player
         player.addListener(viewModel.playerListener)
+
+        // Initialize MediaSession if service is already bound (e.g., after player rebuild during recovery)
+        playbackService?.initializeSession(player)
 
         // Initialize PlaybackRecoveryManager for freeze detection and automatic recovery
         recoveryManager = PlaybackRecoveryManager(
@@ -356,7 +419,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         )
 
         // Add listener to auto-hide controls when playback starts and handle errors
-        player.addListener(object : com.google.android.exoplayer2.Player.Listener {
+        player.addListener(object : Player.Listener {
             private var hasAutoHidden = false
             private var retryCount = 0
             private val maxRetries = 3
@@ -408,7 +471,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 player?.let { p -> recoveryManager?.onPlaybackStateChanged(p, playbackState) }
 
                 // When a new video loads, reset the auto-hide flag
-                if (playbackState == com.google.android.exoplayer2.Player.STATE_IDLE) {
+                if (playbackState == Player.STATE_IDLE) {
                     val currentStreamId = viewModel.state.value.currentItem?.streamId
                     if (currentStreamId != lastStreamIdForRetries) {
                         lastStreamIdForRetries = currentStreamId
@@ -419,7 +482,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 }
 
                 // Handle playback ended
-                if (playbackState == com.google.android.exoplayer2.Player.STATE_ENDED) {
+                if (playbackState == Player.STATE_ENDED) {
                     val advanced = viewModel.markCurrentComplete()
                     if (advanced) {
                         player?.playWhenReady = true
@@ -428,11 +491,16 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             }
 
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                // Track user intent for lifecycle restoration
+                // Only update when change is due to user interaction (not system events like audio focus)
+                if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST) {
+                    userWantsToPlay = playWhenReady
+                }
                 // Delegate to recovery manager for stuck-in-ready detection
                 player?.let { p -> recoveryManager?.onPlayWhenReadyChanged(p, playWhenReady) }
             }
 
-            override fun onPlayerError(error: com.google.android.exoplayer2.PlaybackException) {
+            override fun onPlayerError(error: PlaybackException) {
                 val httpResponseCode = findHttpResponseCode(error.cause)
                 android.util.Log.e(
                     "PlayerFragment",
@@ -442,9 +510,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
                 // Handle different error types
                 when (error.errorCode) {
-                    com.google.android.exoplayer2.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
-                    com.google.android.exoplayer2.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
-                    com.google.android.exoplayer2.PlaybackException.ERROR_CODE_IO_UNSPECIFIED -> {
+                    PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+                    PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+                    PlaybackException.ERROR_CODE_IO_UNSPECIFIED -> {
                         // Network errors - retry with backoff
                         if (retryCount < maxRetries) {
                             retryCount++
@@ -473,11 +541,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                             }
                         }
                     }
-                    com.google.android.exoplayer2.PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS,
-                    com.google.android.exoplayer2.PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,
-                    com.google.android.exoplayer2.PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE,
-                    com.google.android.exoplayer2.PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
-                    com.google.android.exoplayer2.PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED -> {
+                    PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS,
+                    PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,
+                    PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE,
+                    PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
+                    PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED -> {
                         // Stream URL expired/invalid (or a hard HTTP failure) - re-resolve URLs and resume.
                         if (streamRefreshCount < maxStreamRefreshes) {
                             streamRefreshCount++
@@ -510,14 +578,14 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             setShowNextButton(true)
             setShowPreviousButton(true)
 
-            // Sync custom overlay controls with ExoPlayer controller visibility
+            // Sync custom overlay controls with Media3 controller visibility
             setControllerVisibilityListener(
-                com.google.android.exoplayer2.ui.StyledPlayerView.ControllerVisibilityListener { visibility ->
+                PlayerView.ControllerVisibilityListener { visibility ->
                     android.util.Log.d("PlayerFragment", "Controller visibility changed: $visibility")
                     binding.playerOverlayControls?.visibility = visibility
 
                     // Re-apply our custom prev/next button states when controller becomes visible
-                    // This prevents ExoPlayer from overriding our button configuration
+                    // This prevents Media3 from overriding our button configuration
                     if (visibility == View.VISIBLE) {
                         val state = viewModel.state.value
                         updatePlaylistNavigationButtons(state.hasPrevious, state.hasNext)
@@ -887,7 +955,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private fun findHttpResponseCode(throwable: Throwable?): Int? {
         var current = throwable
         while (current != null) {
-            val invalid = current as? com.google.android.exoplayer2.upstream.HttpDataSource.InvalidResponseCodeException
+            val invalid = current as? HttpDataSource.InvalidResponseCodeException
             if (invalid != null) return invalid.responseCode
             current = current.cause
         }
@@ -1024,8 +1092,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 .setUri(url)
                 .setMimeType(mimeType)
                 .build()
-            com.google.android.exoplayer2.source.ProgressiveMediaSource.Factory(
-                com.google.android.exoplayer2.upstream.DefaultDataSource.Factory(requireContext())
+            ProgressiveMediaSource.Factory(
+                DefaultDataSource.Factory(requireContext())
             ).createMediaSource(mediaItem)
         }
 
@@ -1368,7 +1436,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             }
 
             // Make player resize mode to FIT for proper aspect ratio
-            binding.playerView?.resizeMode = com.google.android.exoplayer2.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+            binding.playerView?.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
 
             // Update button icon
             binding.fullscreenButton?.setImageResource(R.drawable.ic_fullscreen_exit)
@@ -1417,7 +1485,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             }
 
             // Restore resize mode
-            binding.playerView?.resizeMode = com.google.android.exoplayer2.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+            binding.playerView?.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
 
             // Update button icon
             binding.fullscreenButton?.setImageResource(R.drawable.ic_fullscreen)

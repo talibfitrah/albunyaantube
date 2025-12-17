@@ -7,7 +7,9 @@ import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.Window
 import android.view.WindowManager
-import com.google.android.exoplayer2.ExoPlayer
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlayer
 import kotlin.math.abs
 
 /**
@@ -16,6 +18,7 @@ import kotlin.math.abs
  * - Swipe up/down on right side: Volume
  * - Double tap left/right: Seek backward/forward
  */
+@OptIn(UnstableApi::class)
 class PlayerGestureDetector(
     context: Context,
     private val player: ExoPlayer?,

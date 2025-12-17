@@ -50,12 +50,13 @@
             </intent-filter>
         </activity>
 
+        <!-- Media3 MediaSessionService for background playback and media controls -->
         <service
             android:name="com.albunyaan.tube.player.PlaybackService"
-            android:exported="false"
+            android:exported="true"
             android:foregroundServiceType="mediaPlayback">
             <intent-filter>
-                <action android:name="android.intent.action.MEDIA_BUTTON" />
+                <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
 

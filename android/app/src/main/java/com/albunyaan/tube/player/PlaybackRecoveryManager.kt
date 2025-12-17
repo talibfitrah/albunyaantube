@@ -1,9 +1,8 @@
 package com.albunyaan.tube.player
 
-import android.os.SystemClock
 import android.util.Log
-import com.google.android.exoplayer2.ExoPlayer
-import com.google.android.exoplayer2.Player
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -27,7 +26,8 @@ import java.util.concurrent.atomic.AtomicLong
  */
 class PlaybackRecoveryManager(
     private val scope: CoroutineScope,
-    private val callbacks: RecoveryCallbacks
+    private val callbacks: RecoveryCallbacks,
+    private val clock: () -> Long = { android.os.SystemClock.elapsedRealtime() }
 ) {
     companion object {
         private const val TAG = "PlaybackRecovery"
@@ -44,16 +44,16 @@ class PlaybackRecoveryManager(
         private const val RECOVERY_BACKOFF_BASE_MS = 2_000L
     }
 
-    // State tracking
-    private var bufferingStartTime: Long = 0L
+    // State tracking (use -1L as sentinel to avoid edge cases when clock starts at 0)
+    private var bufferingStartTime: Long = -1L
     private var lastKnownPosition: Long = -1L
-    private var positionStuckSince: Long = 0L
+    private var positionStuckSince: Long = -1L
     private var currentStreamId: String? = null
     private var isAdaptive: Boolean = false
 
-    // Recovery tracking
+    // Recovery tracking (use -1L as sentinel for lastRecoveryTime)
     private val recoveryAttempt = AtomicInteger(0)
-    private val lastRecoveryTime = AtomicLong(0L)
+    private val lastRecoveryTime = AtomicLong(-1L)
     private var isRecovering = false
 
     // Jobs
@@ -158,7 +158,7 @@ class PlaybackRecoveryManager(
             onRecoverySuccess()
         }
         // Reset position tracking to current
-        positionStuckSince = 0L
+        positionStuckSince = -1L
     }
 
     /**
@@ -205,8 +205,8 @@ class PlaybackRecoveryManager(
     // --- Private implementation ---
 
     private fun startBufferingStallDetection(player: ExoPlayer) {
-        if (bufferingStartTime == 0L) {
-            bufferingStartTime = SystemClock.elapsedRealtime()
+        if (bufferingStartTime == -1L) {
+            bufferingStartTime = clock()
             Log.d(TAG, "Buffering started")
         }
 
@@ -214,7 +214,7 @@ class PlaybackRecoveryManager(
         bufferingStallJob = scope.launch {
             delay(BUFFERING_STALL_THRESHOLD_MS)
             if (player.playbackState == Player.STATE_BUFFERING) {
-                val duration = SystemClock.elapsedRealtime() - bufferingStartTime
+                val duration = clock() - bufferingStartTime
                 Log.w(TAG, "Buffering stall detected: ${duration}ms")
                 initiateRecovery(player, "buffering stall (${duration}ms)")
             }
@@ -222,18 +222,18 @@ class PlaybackRecoveryManager(
     }
 
     private fun stopBufferingStallDetection() {
-        if (bufferingStartTime > 0L) {
-            val duration = SystemClock.elapsedRealtime() - bufferingStartTime
+        if (bufferingStartTime != -1L) {
+            val duration = clock() - bufferingStartTime
             Log.d(TAG, "Buffering ended after ${duration}ms")
         }
-        bufferingStartTime = 0L
+        bufferingStartTime = -1L
         bufferingStallJob?.cancel()
         bufferingStallJob = null
     }
 
     private fun startStuckReadyDetection(player: ExoPlayer) {
         lastKnownPosition = player.currentPosition
-        positionStuckSince = 0L
+        positionStuckSince = -1L
 
         stuckReadyJob?.cancel()
         stuckReadyJob = scope.launch {
@@ -249,11 +249,11 @@ class PlaybackRecoveryManager(
 
                 if (currentPosition <= lastKnownPosition + expectedMinAdvance) {
                     // Position not advancing
-                    if (positionStuckSince == 0L) {
-                        positionStuckSince = SystemClock.elapsedRealtime()
+                    if (positionStuckSince == -1L) {
+                        positionStuckSince = clock()
                         Log.d(TAG, "Position appears stuck at ${currentPosition}ms")
                     } else {
-                        val stuckDuration = SystemClock.elapsedRealtime() - positionStuckSince
+                        val stuckDuration = clock() - positionStuckSince
                         if (stuckDuration >= STUCK_READY_THRESHOLD_MS) {
                             Log.w(TAG, "Stuck in READY detected: position=${currentPosition}ms, stuck for ${stuckDuration}ms")
                             initiateRecovery(player, "stuck in READY (position not advancing)")
@@ -262,10 +262,10 @@ class PlaybackRecoveryManager(
                     }
                 } else {
                     // Position is advancing - reset stuck tracking
-                    if (positionStuckSince > 0L) {
+                    if (positionStuckSince != -1L) {
                         Log.d(TAG, "Position advancing again: $lastKnownPosition -> $currentPosition")
                     }
-                    positionStuckSince = 0L
+                    positionStuckSince = -1L
                     lastKnownPosition = currentPosition
                 }
             }
@@ -275,7 +275,7 @@ class PlaybackRecoveryManager(
     private fun stopStuckReadyDetection() {
         stuckReadyJob?.cancel()
         stuckReadyJob = null
-        positionStuckSince = 0L
+        positionStuckSince = -1L
     }
 
     private var pendingRecoveryJob: Job? = null
@@ -291,12 +291,14 @@ class PlaybackRecoveryManager(
         }
 
         // Backoff check BEFORE incrementing attempt
-        val now = SystemClock.elapsedRealtime()
-        val timeSinceLastRecovery = now - lastRecoveryTime.get()
+        val now = clock()
+        val lastRecovery = lastRecoveryTime.get()
         val nextAttempt = currentAttempt + 1
         val requiredBackoff = RECOVERY_BACKOFF_BASE_MS * nextAttempt
 
-        if (timeSinceLastRecovery < requiredBackoff) {
+        // Skip backoff check if no prior recovery (lastRecoveryTime == -1L sentinel)
+        val timeSinceLastRecovery = now - lastRecovery
+        if (lastRecovery != -1L && timeSinceLastRecovery < requiredBackoff) {
             val delayMs = requiredBackoff - timeSinceLastRecovery
             Log.d(TAG, "Backoff not elapsed - scheduling recovery in ${delayMs}ms")
 
@@ -389,14 +391,14 @@ class PlaybackRecoveryManager(
     }
 
     private fun resetTrackingState() {
-        bufferingStartTime = 0L
+        bufferingStartTime = -1L
         lastKnownPosition = -1L
-        positionStuckSince = 0L
+        positionStuckSince = -1L
     }
 
     private fun resetRecoveryStateInternal() {
         recoveryAttempt.set(0)
-        lastRecoveryTime.set(0L)
+        lastRecoveryTime.set(-1L)
         isRecovering = false
     }
 

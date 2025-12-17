@@ -15,8 +15,8 @@ import com.albunyaan.tube.download.DownloadRepository
 import com.albunyaan.tube.download.DownloadRequest
 import com.albunyaan.tube.player.ExtractionRateLimiter
 import com.albunyaan.tube.player.PlayerRepository
-import com.google.android.exoplayer2.Player
-import com.google.android.exoplayer2.video.VideoSize
+import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -74,7 +74,7 @@ class PlayerViewModel @Inject constructor(
     )
     val analyticsEvents: SharedFlow<PlaybackAnalyticsEvent> = _analyticsEvents
 
-    val playerListener = object : Player.Listener {
+    val playerListener: Player.Listener = object : Player.Listener {
         override fun onVideoSizeChanged(videoSize: VideoSize) {
             updateState { it.copy(hasVideoTrack = videoSize != VideoSize.UNKNOWN) }
         }

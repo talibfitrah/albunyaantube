@@ -120,6 +120,10 @@ android {
     }
 
     testOptions {
+        // Return default values for unmocked Android framework calls (e.g., Log.d returns 0)
+        // Required for unit tests that use classes containing android.util.Log calls
+        unitTests.isReturnDefaultValues = true
+
         unitTests.all {
             // Enforce 300s (5-minute) global test timeout per AGENTS.md policy
             // Prevents hanging tests from blocking CI/CD
@@ -143,8 +147,13 @@ dependencies {
     implementation("androidx.paging:paging-runtime-ktx:3.2.1")
     implementation("androidx.viewpager2:viewpager2:1.0.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
-    implementation("com.google.android.exoplayer:exoplayer:2.19.1")
-    implementation("androidx.media:media:1.7.0")
+    // AndroidX Media3 (replaces ExoPlayer 2.x)
+    val media3Version = "1.4.1"
+    implementation("androidx.media3:media3-exoplayer:$media3Version")
+    implementation("androidx.media3:media3-exoplayer-hls:$media3Version")
+    implementation("androidx.media3:media3-exoplayer-dash:$media3Version")
+    implementation("androidx.media3:media3-ui:$media3Version")
+    implementation("androidx.media3:media3-session:$media3Version")
     implementation("androidx.datastore:datastore-preferences:1.0.0")
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
     implementation("com.squareup.retrofit2:converter-moshi:2.9.0")
@@ -178,6 +187,8 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+    testImplementation("org.mockito.kotlin:mockito-kotlin:5.2.1")
+    testImplementation("org.mockito:mockito-core:5.8.0")
     testImplementation("androidx.work:work-testing:2.9.0")
     testImplementation("androidx.test:core:1.5.0")
     testImplementation("org.robolectric:robolectric:4.11.1")

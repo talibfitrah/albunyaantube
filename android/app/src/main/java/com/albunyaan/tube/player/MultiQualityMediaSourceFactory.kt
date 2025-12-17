@@ -1,17 +1,24 @@
 package com.albunyaan.tube.player
 
 import android.content.Context
+import androidx.annotation.OptIn
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
+import androidx.media3.datasource.cache.SimpleCache
+import androidx.media3.database.StandaloneDatabaseProvider
+import androidx.media3.exoplayer.dash.DashMediaSource
+import androidx.media3.exoplayer.hls.HlsMediaSource
+import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.exoplayer.source.MergingMediaSource
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.VideoTrack
-import com.google.android.exoplayer2.MediaItem
-import com.google.android.exoplayer2.source.MediaSource
-import com.google.android.exoplayer2.source.MergingMediaSource
-import com.google.android.exoplayer2.source.ProgressiveMediaSource
-import com.google.android.exoplayer2.source.hls.HlsMediaSource
-import com.google.android.exoplayer2.source.dash.DashMediaSource
-import com.google.android.exoplayer2.upstream.DataSource
-import com.google.android.exoplayer2.upstream.DefaultDataSource
-import com.google.android.exoplayer2.upstream.DefaultHttpDataSource
 
 /**
  * Factory for creating MediaSources from NewPipe extractor data.
@@ -21,9 +28,10 @@ import com.google.android.exoplayer2.upstream.DefaultHttpDataSource
  *   automatic quality adaptation. Falls back to progressive if adaptive not available.
  * - For shorter videos: Use progressive streams with selected quality.
  *
- * NOTE: ExoPlayer's quality selection in settings menu ONLY works with adaptive streams (HLS/DASH).
+ * NOTE: Media3's quality selection in settings menu ONLY works with adaptive streams (HLS/DASH).
  * For progressive streams, quality selection is handled via custom UI.
  */
+@OptIn(UnstableApi::class)
 class MultiQualityMediaSourceFactory(private val context: Context) {
 
     private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
@@ -39,26 +47,26 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
     )
 
     // Cache factory to enable HTTP response caching for faster subsequent loads
-    private val cacheDataSourceFactory: DataSource.Factory = com.google.android.exoplayer2.upstream.cache.CacheDataSource.Factory()
+    private val cacheDataSourceFactory: DataSource.Factory = CacheDataSource.Factory()
         .setCache(getOrCreateCache(context))
         .setUpstreamDataSourceFactory(dataSourceFactory)
-        .setFlags(com.google.android.exoplayer2.upstream.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
     companion object {
         private const val TAG = "MultiQualityMediaSource"
         /** Videos >= 10 minutes use adaptive streaming when available */
         private const val LONG_VIDEO_THRESHOLD_SECONDS = 600
 
-        private var simpleCache: com.google.android.exoplayer2.upstream.cache.SimpleCache? = null
+        private var simpleCache: SimpleCache? = null
 
         @Synchronized
-        private fun getOrCreateCache(context: Context): com.google.android.exoplayer2.upstream.cache.SimpleCache {
+        private fun getOrCreateCache(context: Context): SimpleCache {
             if (simpleCache == null) {
-                val cacheDir = java.io.File(context.cacheDir, "exoplayer")
-                val databaseProvider = com.google.android.exoplayer2.database.StandaloneDatabaseProvider(context)
+                val cacheDir = java.io.File(context.cacheDir, "media3")
+                val databaseProvider = StandaloneDatabaseProvider(context)
                 // 100MB cache for video chunks
-                val evictor = com.google.android.exoplayer2.upstream.cache.LeastRecentlyUsedCacheEvictor(100 * 1024 * 1024L)
-                simpleCache = com.google.android.exoplayer2.upstream.cache.SimpleCache(cacheDir, evictor, databaseProvider)
+                val evictor = LeastRecentlyUsedCacheEvictor(100 * 1024 * 1024L)
+                simpleCache = SimpleCache(cacheDir, evictor, databaseProvider)
             }
             return simpleCache!!
         }
@@ -208,7 +216,7 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
             return try {
                 val mediaItem = MediaItem.Builder()
                     .setUri(hlsUrl)
-                    .setMimeType(com.google.android.exoplayer2.util.MimeTypes.APPLICATION_M3U8)
+                    .setMimeType(MimeTypes.APPLICATION_M3U8)
                     .build()
                 HlsMediaSource.Factory(dataSourceFactory)
                     .setAllowChunklessPreparation(true)
@@ -223,7 +231,7 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
             return try {
                 val mediaItem = MediaItem.Builder()
                     .setUri(dashUrl)
-                    .setMimeType(com.google.android.exoplayer2.util.MimeTypes.APPLICATION_MPD)
+                    .setMimeType(MimeTypes.APPLICATION_MPD)
                     .build()
                 DashMediaSource.Factory(dataSourceFactory)
                     .createMediaSource(mediaItem)
