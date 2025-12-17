@@ -1,6 +1,6 @@
 # Player & Playback Reliability Roadmap (Android)
 
-**Last Updated**: 2025-12-16
+**Last Updated**: 2025-12-17
 **Scope**: Android player stability, progressive/adaptive strategy, and extraction/refresh safety.
 
 > **Note**: Backend YouTube rate-limit remediation is tracked separately on branch `claude/fix-youtube-rate-limiting-clean` in `docs/status/YOUTUBE_RATE_LIMIT_PLAN.md`.
@@ -32,9 +32,9 @@
 ## Current Status (What's Done vs What's Left)
 
 ### Completed (in `main`)
-- **PR1 Done**: Adaptive-first selection, consistent DataSource settings + caching, fixed HLS→DASH fallback, accurate `PLAYBACK_START` logging.
+- **PR1 Done**: Adaptive-first selection for all videos (no duration gate), consistent DataSource settings + caching for both progressive AND adaptive streams, HLS→DASH fallback (fixed 2025-12-17), accurate `PLAYBACK_START` logging, source identity tracking via `MediaSourceResult.actualSourceUrl` (not just HLS preference), explicit DASH usage logging, sticky adaptive fallback flag to prevent rebuild loops when adaptive creation fails (fixed 2025-12-17).
 - **PR2 Done**: Freeze detection + auto-recovery ladder + state-driven recovery UI; tests pass under 300s policy.
-- **PR3 Done**: Progressive playback proactive downshift (buffer health monitoring) to reduce freezes by switching quality before stalls.
+- **PR3 Done**: Progressive playback proactive downshift (buffer health monitoring) to reduce freezes by switching quality before stalls (including when a user cap exists).
 - **PR4 Done**: Stream URL lifecycle hardening (URL generation timestamp + conservative TTL checks to avoid switching to expired progressive URLs).
 - **PR5 Done**: Android extraction/refresh rate-limit guardrails (`ExtractionRateLimiter` + wiring). Committed 2025-12-15.
 - **PR6 Pending Verification**: Media3 migration + MediaSessionService integration (background playback, controller security, lifecycle-safe binding). Code complete 2025-12-16, awaiting manual verification.
@@ -42,6 +42,19 @@
 ### Still required (mandatory validation)
 - **Manual visual verification** per `AGENTS.md`: phone + `sw600dp` tablet + `sw720dp` large tablet/TV + RTL Arabic locale.
 - **Manual verification**: lockscreen/Bluetooth/Android Auto controller behavior.
+
+---
+
+# Key Reliability Fixes (Why “progressive buffering feels stuck” happens)
+
+## Fix: Remove “long video” gate for adaptive
+Progressive is inherently single-bitrate and will stall whenever network throughput dips below the chosen bitrate. To make playback feel “adaptive-smooth”, the player must use **HLS/DASH whenever present**, regardless of video length or missing duration metadata.
+
+## Fix: Apply adaptive quality cap without rebuilding MediaSource
+For adaptive streams, quality changes are constraints on the **track selector**, not a different URL. Rebuilding the MediaSource on cap changes causes unnecessary rebuffering and makes playback feel “stuck”.
+
+## Fix: Progressive auto step-down must work even if user set a cap
+User “quality” is a **ceiling**. During stalls, the player must be able to temporarily step down **below the ceiling** (AUTO_RECOVERY) without overriding the saved user preference.
 
 ---
 
@@ -74,6 +87,18 @@
 
 **Acceptance**
 - Under throttling, fewer/shorter stalls than PR2-only; no reload loops.
+
+## PR3.1: Progressive/Adaptive Consistency — *Status: Done*
+
+**Goal**: Ensure the “cap-not-lock” model behaves correctly for both adaptive and progressive.
+
+- Adaptive: changing cap updates the track selector **in-place** (no MediaSource rebuild).
+- Progressive: AUTO_RECOVERY step-down uses the explicit stepped-down track even if a manual cap exists.
+- Default progressive-only start quality starts at a mid-range resolution (480p-720p) rather than highest available to avoid "never starts playing" on weaker networks.
+
+**Acceptance**
+- Manual quality changes don’t trigger unnecessary rebuffer loops on adaptive streams.
+- Progressive step-down triggers reliably under stalls even after a user chooses a cap.
 
 ## PR4: Android Stream URL Lifecycle Hardening — *Status: Done*
 
@@ -137,6 +162,68 @@
 - ✅ Background playback works via MediaSessionService.
 - ⏳ Manual verification: lockscreen/Bluetooth/Android Auto controller behavior under the chosen onConnect() policy.
 
+## PR6.1: Progressive "Synthetic DASH" (NewPipe-style) + Measurement Pass — *Status: Planned*
+
+**Goal**: Make progressive-only playback feel less “stuck” during seeks/restarts by wrapping eligible progressive streams in a **single-representation DASH MPD** (byte-range via `SegmentBase`), without claiming ABR and without adding extra extraction/network calls.
+
+**What this is / isn’t**
+- ✅ Improves seek/restart behavior via byte-range requests and a structured container index.
+- ❌ Does not provide “ABR smoothness”: progressive remains single-bitrate. PR3 proactive downshift remains essential for throughput dips.
+
+**Why this exists**
+- Real-world logs show many videos resolve with `hlsUrl/dashUrl` empty in NewPipeExtractor, yet still provide multiple `videoOnly` + `audio` streams.
+- NewPipeExtractor v0.24.8 ships `YoutubeProgressiveDashManifestCreator` (used by the NewPipe app) to generate a DASH MPD from a **`PROGRESSIVE_HTTP`** stream + `ItagItem` init/index range metadata.
+
+**Pre-flight measurement (mandatory before implementation)**
+- Sample ~20 video IDs (mix: normal videos, shorts, post-live/ended live, age-restricted if accessible, multiple channels/regions).
+- For the selected video + audio streams (and ideally a few alternates), record:
+  - `deliveryMethod` (`PROGRESSIVE_HTTP` vs `DASH` (OTF) vs `HLS`/etc)
+  - itag, codec, bitrate, WxH, fps, muxed vs video-only
+  - `initStart/initEnd/indexStart/indexEnd` (and whether all ≥ 0)
+  - duration usability (StreamInfo duration seconds OR `ItagItem.approxDurationMs`)
+- Go/no-go: Phase A proceeds only if **≥ 80%** of sampled **`PROGRESSIVE_HTTP`** video-only/audio streams have valid ranges, usable duration, and MPD generation succeeds.
+
+**Implementation (Phase A / proven path)**
+- Only apply synthetic DASH when:
+  - `deliveryMethod == PROGRESSIVE_HTTP`, AND
+  - stream is video-only or audio-only (keep muxed “legacy progressive” as `ProgressiveMediaSource`, matching NewPipe’s behavior).
+- Explicitly avoid OTF: `YoutubeOtfDashManifestCreator` performs an HTTP request to obtain initialization data; do not call it by default (rate-limit risk).
+- Generate MPD via `YoutubeProgressiveDashManifestCreator.fromProgressiveStreamingUrl(url, itagItem, durationSecondsFallback)`.
+- Parse MPD string and create Media3 `DashMediaSource`; merge video+audio sources when needed.
+- On any `CreationException`/parse failure: fall back to existing progressive path (always safe).
+
+**Out of scope (research)**
+- Multi-representation “ABR-like” synthetic DASH is unproven (NewPipe does not do this). Treat as R&D only.
+
+**Acceptance**
+- Seeks and “resume after error” are noticeably faster/more reliable on progressive-only videos (especially video-only+audio).
+- No new network calls beyond normal playback (no OTF creator; no extra extractor pass).
+- Progressive fallback remains correct and stable.
+
+## PR6.2: Extractor Adaptive-Manifest Backfill (Optional / Upstream) — *Status: Research*
+
+**Goal**: Reduce the remaining cases that fall back to progressive because the extractor did not provide HLS/DASH manifest URLs, without violating PR5’s rate-limit guardrails.
+
+**Reality**: This is primarily a NewPipeExtractor/YouTube behavior issue. Client-profile workarounds are fragile and can easily regress when YouTube changes responses.
+
+**Pre-flight Checklist** (before greenlight):
+- [ ] Verify whether a newer NPE version improves `dashMpdUrl/hlsUrl` availability for our target content.
+- [ ] Prefer upstream fixes (issue/PR to NPE) over app-layer Innertube hacks.
+- [ ] If an app-layer workaround is still desired: design it as opt-in, bounded, and strictly rate-limit safe.
+
+**Implementation (if pursued)**
+- Add metrics/logging for:
+  - % of videos missing manifests
+  - which stream types correlate (shorts/live/age-restricted/region-blocked)
+  - extractor exception categories
+- Bounded backfill strategy (strictly optional):
+  - At most one additional attempt per video ID (no loops), within PR5 limiter budgets.
+  - Prefer “version bump / upstream patch” over per-video multi-client probing.
+
+**Acceptance**
+- Improved manifest availability without causing rate-limit bursts.
+- No repeated extraction loops; progressive fallback remains acceptable.
+
 ## PR7: Notification Controls + Artwork — *Status: Planned*
 - Add media notification with artwork/metadata display.
 - Ensure notification actions (play/pause/next/prev/stop) work correctly.
@@ -164,7 +251,36 @@
 
 ---
 
-# Key Risk Controls (Non-negotiable for “rock solid”)
+# Implementation Notes
+
+## Caching Behavior
+- **100MB LRU cache** shared across progressive and adaptive streams.
+- **Scope**: Within-session benefit only. YouTube segment URLs are signed/ephemeral (typically ~6hr TTL), so caching helps seek-back/replay more than "later that day" reuse.
+- **Live HLS**: Not currently supported; playlist caching would be problematic for live streams.
+
+## TrackSelector Constraints
+- Constraints are cleared when switching to progressive playback to ensure clean state.
+- This prevents quality caps from a previous adaptive video accidentally influencing later playback.
+
+## Source Identity Tracking (Rebuild Prevention)
+- `MediaSourceResult` contains `actualSourceUrl` which tracks the real URL used (HLS manifest, DASH manifest, or progressive video URL).
+- `MediaSourceResult.AdaptiveType` explicitly identifies HLS vs DASH vs NONE (progressive).
+- Source identity comparison uses the actual URL returned by the factory, not what we "expect" based on manifest presence.
+- This prevents unnecessary MediaSource rebuilds when the user only changes the quality cap (which should update track selector, not rebuild).
+
+## Sticky Adaptive Fallback (`adaptiveFailedForCurrentStream`)
+- If adaptive MediaSource creation fails (despite manifests being present), the failure is recorded per-stream.
+- Subsequent state emissions for the same stream will skip adaptive attempts and go directly to progressive.
+- This prevents rebuild loops when manifests exist but adaptive creation consistently fails.
+- The flag is reset on:
+  - New stream (different `streamId`)
+  - Manual refresh button tap
+  - Manual recovery retry button tap
+- This ensures user actions can always retry adaptive, while automatic state updates don't cause repeated failures.
+
+---
+
+# Key Risk Controls (Non-negotiable for "rock solid")
 
 1. Proactive progressive downshift must be bounded (cooldowns + max attempts) to avoid reload loops.
 2. Recovery + proactive + error retry must be coordinated (single owner at a time).

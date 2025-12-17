@@ -1003,21 +1003,38 @@ enum class PlaybackStartReason(@StringRes val labelRes: Int) {
 
 /**
  * Smart quality selection based on available tracks.
- * Selects 720p as default for balance between quality and loading speed.
- * Users can manually switch to higher quality if needed.
+ * - When adaptive manifests are available (HLS/DASH): 720p is a good UI-default reference.
+ * - When only progressive is available: prefer a more conservative default (480p muxed) to reduce
+ *   startup stalls on slower connections (progressive cannot ABR).
  */
 private fun ResolvedStreams.toDefaultSelection(): PlaybackSelection? {
     if (videoTracks.isEmpty()) return null
 
-    // Smart quality selection: prefer 720p for faster loading, fallback to best available
-    val preferredVideo = videoTracks.firstOrNull { it.height == 720 && !it.isVideoOnly }
-        ?: videoTracks.firstOrNull { it.height == 480 && !it.isVideoOnly }
-        ?: videoTracks.firstOrNull { it.height == 720 }
-        ?: videoTracks.firstOrNull { it.height == 480 }
-        ?: videoTracks.maxWithOrNull(
-            compareBy<VideoTrack> { it.height ?: 0 }
-                .thenBy { it.bitrate ?: 0 }
-        )
+    val hasAdaptiveManifest = !hlsUrl.isNullOrBlank() || !dashUrl.isNullOrBlank()
+
+    val preferredVideo = if (hasAdaptiveManifest) {
+        // Smart quality selection: prefer 720p for balance; fallback to best available
+        videoTracks.firstOrNull { it.height == 720 && !it.isVideoOnly }
+            ?: videoTracks.firstOrNull { it.height == 480 && !it.isVideoOnly }
+            ?: videoTracks.firstOrNull { it.height == 720 }
+            ?: videoTracks.firstOrNull { it.height == 480 }
+            ?: videoTracks.maxWithOrNull(
+                compareBy<VideoTrack> { it.height ?: 0 }
+                    .thenBy { it.bitrate ?: 0 }
+            )
+    } else {
+        // Progressive-only: prefer conservative muxed tracks first to avoid startup buffering.
+        videoTracks.firstOrNull { it.height == 480 && !it.isVideoOnly }
+            ?: videoTracks.firstOrNull { it.height == 360 && !it.isVideoOnly }
+            ?: videoTracks.firstOrNull { it.height == 720 && !it.isVideoOnly }
+            ?: videoTracks.filter { !it.isVideoOnly && (it.height ?: 0) >= 240 }.minByOrNull { it.height ?: Int.MAX_VALUE }
+            ?: videoTracks.firstOrNull { it.height == 480 }
+            ?: videoTracks.firstOrNull { it.height == 360 }
+            ?: videoTracks.maxWithOrNull(
+                compareBy<VideoTrack> { it.height ?: 0 }
+                    .thenBy { it.bitrate ?: 0 }
+            )
+    }
 
     val preferredAudio = (audioTracks.maxByOrNull { it.bitrate ?: 0 }
         ?: preferredVideo?.let {

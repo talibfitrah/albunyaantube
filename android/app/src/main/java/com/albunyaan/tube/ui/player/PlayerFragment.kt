@@ -44,6 +44,7 @@ import com.albunyaan.tube.R
 import com.albunyaan.tube.databinding.FragmentPlayerBinding
 import dagger.hilt.android.AndroidEntryPoint
 import com.albunyaan.tube.data.extractor.PlaybackSelection
+import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.SubtitleTrack
 import com.albunyaan.tube.download.DownloadEntry
 import com.albunyaan.tube.download.DownloadStatus
@@ -71,7 +72,17 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private val viewModel: PlayerViewModel by viewModels()
     private val upNextAdapter = UpNextAdapter { item -> viewModel.playItem(item) }
     private var preparedStreamKey: Pair<String, Boolean>? = null
-    private var preparedStreamUrl: String? = null // Track the actual URL to detect quality changes
+    /**
+     * Tracks the currently prepared *source identity*:
+     * - Adaptive: manifest URL (HLS/DASH)
+     * - Progressive: selected video URL
+     * - Audio-only: selected audio URL
+     *
+     * This prevents unnecessary re-prepares (and rebuffering) when the user changes only the
+     * adaptive quality cap (track-selector constraint), which should not require rebuilding
+     * the MediaSource.
+     */
+    private var preparedStreamUrl: String? = null
     private var pendingResumeStreamId: String? = null
     private var pendingResumePositionMs: Long? = null
     private var pendingResumePlayWhenReady: Boolean? = null
@@ -82,6 +93,14 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private var exoPrevButton: View? = null
     /** Tracks whether current media source is adaptive (HLS/DASH) vs progressive */
     private var preparedIsAdaptive: Boolean = false
+    /** Last applied user cap for adaptive streams; used to update track selector without rebuilding. */
+    private var preparedQualityCapHeight: Int? = null
+    /**
+     * Sticky fallback flag: If adaptive creation failed for the current resolved streams,
+     * don't keep re-attempting adaptive on every PlayerState emission. Reset on new stream
+     * or manual refresh.
+     */
+    private var adaptiveFailedForCurrentStream: String? = null
 
     /** Manages automatic playback recovery for freeze detection and stall handling */
     private var recoveryManager: PlaybackRecoveryManager? = null
@@ -256,6 +275,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             viewModel.retryCurrentStream()
         }
         binding.playerRefreshStreamButton?.setOnClickListener {
+            // Reset adaptive fallback flag - manual refresh should retry adaptive
+            adaptiveFailedForCurrentStream = null
             // PR5: Show feedback if rate-limited
             if (!viewModel.forceRefreshCurrentStream()) {
                 Toast.makeText(requireContext(), R.string.player_refresh_rate_limited, Toast.LENGTH_SHORT).show()
@@ -267,6 +288,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // User manual retry - resets recovery state and forces stream refresh
             recoveryManager?.resetRecoveryState()
             viewModel.clearRecoveringState()
+            // Reset adaptive fallback flag - manual retry should retry adaptive
+            adaptiveFailedForCurrentStream = null
             // PR5: Show feedback if rate-limited
             if (!viewModel.forceRefreshCurrentStream()) {
                 Toast.makeText(requireContext(), R.string.player_refresh_rate_limited, Toast.LENGTH_SHORT).show()
@@ -341,6 +364,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         binding?.playerView?.player = null
         preparedStreamKey = null
         preparedStreamUrl = null
+        preparedQualityCapHeight = null
+        adaptiveFailedForCurrentStream = null
         player?.release()
         player = null
         binding = null
@@ -941,6 +966,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         preparedStreamKey = null
         preparedStreamUrl = null
+        preparedQualityCapHeight = null
         currentPlayer.stop()
 
         context?.let { ctx ->
@@ -993,6 +1019,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 player?.stop()
                 preparedStreamKey = null
                 preparedStreamUrl = null
+                preparedQualityCapHeight = null
             }
             return
         }
@@ -1011,22 +1038,62 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         }
 
         val key = streamState.streamId to state.audioOnly
-        // Track the actual video URL to detect quality changes
-        val currentVideoUrl = streamState.selection.video?.url
+        val selection = streamState.selection
+        val resolved = selection.resolved
+
+        // Compute expected source identity based on what we EXPECT to be prepared:
+        // - audio-only: audio URL (always progressive)
+        // - adaptive (if available): manifest URL
+        // - progressive: selected video URL
+        // Note: This is used for cache-hit detection. The actual prepared URL is set AFTER
+        // factory.createMediaSourceWithType() returns, based on whether adaptive succeeded.
+        val expectedSourceUrl = when {
+            state.audioOnly -> selection.audio.url
+            // If we're already prepared as adaptive, use manifest URL for comparison
+            // If not yet prepared, assume adaptive will be used if manifests exist
+            preparedIsAdaptive || (resolved.hlsUrl != null || resolved.dashUrl != null) ->
+                resolved.hlsUrl ?: resolved.dashUrl
+            else -> selection.video?.url
+        }
 
         // Check if we need to rebuild: same stream but different quality or audio mode
         val isSameStream = preparedStreamKey?.first == key.first
-        val isQualityChange = isSameStream && preparedStreamUrl != currentVideoUrl
+        val isQualityChange = isSameStream && preparedStreamUrl != expectedSourceUrl
         val isAudioModeChange = isSameStream && preparedStreamKey?.second != key.second
         val isQualitySwitch = isQualityChange || isAudioModeChange
 
-        // If it's the exact same stream AND same video URL, don't reload
-        if (preparedStreamKey == key && preparedStreamUrl == currentVideoUrl) {
-            android.util.Log.d("PlayerFragment", "Stream already prepared with same URL, skipping")
-            return
+        // Check if adaptive failed for this stream previously (sticky fallback)
+        val forceProgressive = adaptiveFailedForCurrentStream == streamState.streamId
+
+        // Check if the currently prepared source matches what we would create
+        when (val cacheHit = checkCacheHit(key, state, selection, resolved, forceProgressive)) {
+            is CacheHitResult.Hit -> {
+                // Apply quality cap if needed (for adaptive streams)
+                cacheHit.qualityCapToApply?.let { cap ->
+                    applyQualityCapToTrackSelector(cap)
+                    preparedQualityCapHeight = cap
+                } ?: run {
+                    // Check if we need to clear constraints (cap removed)
+                    if (preparedIsAdaptive && selection.userQualityCapHeight == null && preparedQualityCapHeight != null) {
+                        clearTrackSelectorConstraints()
+                        preparedQualityCapHeight = null
+                    }
+                }
+                android.util.Log.d("PlayerFragment", "Stream already prepared with same source, skipping")
+                return
+            }
+            is CacheHitResult.Miss -> {
+                // Continue to prepare new MediaSource
+            }
         }
 
-        android.util.Log.d("PlayerFragment", "Preparing stream: id=${key.first}, audioOnly=${key.second}, url=$currentVideoUrl, isQualitySwitch=$isQualitySwitch")
+        android.util.Log.d("PlayerFragment", "Preparing stream: id=${key.first}, audioOnly=${key.second}, expectedUrl=$expectedSourceUrl, isQualitySwitch=$isQualitySwitch")
+
+        // Reset sticky fallback flag when switching to a different stream
+        if (adaptiveFailedForCurrentStream != null && adaptiveFailedForCurrentStream != streamState.streamId) {
+            android.util.Log.d("PlayerFragment", "Clearing adaptive fallback flag (new stream)")
+            adaptiveFailedForCurrentStream = null
+        }
 
         val hasPendingResume = pendingResumeStreamId == streamState.streamId && pendingResumePositionMs != null
         if (pendingResumeStreamId != null && pendingResumeStreamId != streamState.streamId) {
@@ -1053,30 +1120,43 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         // Create multi-quality MediaSource from resolved streams
         // Apply user quality cap via track selector for adaptive streams, or select specific track for progressive
-        val mediaSource = try {
-            val selection = streamState.selection
+        val mediaSourceResult = try {
             val result = mediaSourceFactory.createMediaSourceWithType(
                 resolved = selection.resolved,
                 audioOnly = state.audioOnly,
                 selectedQuality = selection.video,
-                userQualityCapHeight = selection.userQualityCapHeight
+                userQualityCapHeight = selection.userQualityCapHeight,
+                selectionOrigin = selection.selectionOrigin,
+                forceProgressive = forceProgressive
             )
-            preparedIsAdaptive = result.second
-            android.util.Log.d("PlayerFragment", "Created media source: isAdaptive=$preparedIsAdaptive, qualityCap=${selection.userQualityCapHeight}p")
+            preparedIsAdaptive = result.isAdaptive
+            android.util.Log.d("PlayerFragment", "Created media source: isAdaptive=$preparedIsAdaptive, type=${result.adaptiveType}, qualityCap=${selection.userQualityCapHeight}p, actualUrl=${result.actualSourceUrl?.take(60)}...")
 
             // Apply quality cap to track selector for adaptive streams
             if (preparedIsAdaptive && selection.hasUserQualityCap) {
                 applyQualityCapToTrackSelector(selection.userQualityCapHeight!!)
-            } else if (preparedIsAdaptive) {
-                // No cap - allow ABR to choose freely
+                preparedQualityCapHeight = selection.userQualityCapHeight
+            } else {
+                // No cap (adaptive) or progressive - clear any lingering constraints.
+                // For progressive, constraints don't affect playback (direct URL), but clearing
+                // ensures clean state for future adaptive videos.
                 clearTrackSelectorConstraints()
+                preparedQualityCapHeight = null
             }
 
-            result.first
+            result
         } catch (e: Exception) {
+            android.util.Log.w("PlayerFragment", "MediaSource creation failed, using fallback: ${e.message}")
+            // Mark adaptive as failed for this stream to prevent rebuild loops
+            if (!forceProgressive && (resolved.hlsUrl != null || resolved.dashUrl != null)) {
+                adaptiveFailedForCurrentStream = streamState.streamId
+                android.util.Log.w("PlayerFragment", "Adaptive failed for ${streamState.streamId} - will use progressive for this stream")
+            }
             // Fallback to single quality if multi-quality fails
             // Progressive fallback - ensure preparedIsAdaptive is correctly set
             preparedIsAdaptive = false
+            preparedQualityCapHeight = null
+            clearTrackSelectorConstraints() // Clear any lingering constraints from previous adaptive video
             val trackPair = selectTrack(streamState.selection, state.audioOnly)
             if (trackPair == null) {
                 android.util.Log.e("PlayerFragment", "No video track available and audio-only not requested")
@@ -1092,13 +1172,20 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 .setUri(url)
                 .setMimeType(mimeType)
                 .build()
-            ProgressiveMediaSource.Factory(
+            val source = ProgressiveMediaSource.Factory(
                 DefaultDataSource.Factory(requireContext())
             ).createMediaSource(mediaItem)
+            // Create a fallback MediaSourceResult for the progressive source
+            com.albunyaan.tube.player.MediaSourceResult(
+                source = source,
+                isAdaptive = false,
+                actualSourceUrl = url,
+                adaptiveType = com.albunyaan.tube.player.MediaSourceResult.AdaptiveType.NONE
+            )
         }
 
         try {
-            currentPlayer.setMediaSource(mediaSource)
+            currentPlayer.setMediaSource(mediaSourceResult.source)
             currentPlayer.prepare()
 
             // Restore position for quality switching / stream refresh recovery.
@@ -1108,8 +1195,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
             currentPlayer.playWhenReady = shouldPlay
             preparedStreamKey = key
-            preparedStreamUrl = streamState.selection.video?.url
-            android.util.Log.d("PlayerFragment", "Stream prepared successfully: ${streamState.streamId}, isAdaptive=$preparedIsAdaptive")
+            // Use the actual URL from the MediaSourceResult - this is the true source identity
+            preparedStreamUrl = mediaSourceResult.actualSourceUrl
+            android.util.Log.d("PlayerFragment", "Stream prepared successfully: ${streamState.streamId}, isAdaptive=$preparedIsAdaptive, type=${mediaSourceResult.adaptiveType}, actualUrl=$preparedStreamUrl")
 
             // Notify recovery manager of new stream - pass streamId and adaptive flag
             recoveryManager?.onNewStream(streamState.streamId, preparedIsAdaptive)
@@ -1126,6 +1214,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             android.util.Log.e("PlayerFragment", "Failed to prepare stream: ${e.message}", e)
             preparedStreamKey = null
             preparedStreamUrl = null
+            preparedQualityCapHeight = null
         }
     }
 
@@ -1628,6 +1717,77 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             .build()
         selector.setParameters(params)
         android.util.Log.d("PlayerFragment", "Track selector: cleared constraints (ABR free)")
+    }
+
+    /**
+     * Result of cache-hit detection for stream preparation.
+     * Helps determine whether to skip rebuilding the MediaSource.
+     */
+    private sealed class CacheHitResult {
+        /** Same source is already prepared, skip preparation */
+        data class Hit(val qualityCapToApply: Int?) : CacheHitResult()
+        /** Different source or configuration, must prepare new MediaSource */
+        object Miss : CacheHitResult()
+    }
+
+    /**
+     * Determines if the currently prepared stream matches what we would create.
+     * Extracted for testability and reduced complexity in maybePrepareStream.
+     *
+     * @param key The stream key (streamId, audioOnly) we want to prepare
+     * @param state Current player state
+     * @param selection Current playback selection
+     * @param resolved Resolved streams with URLs
+     * @param forceProgressive Whether adaptive streaming failed and we're forcing progressive
+     * @return CacheHitResult indicating whether to skip preparation
+     */
+    private fun checkCacheHit(
+        key: Pair<String, Boolean>,
+        state: PlayerState,
+        selection: PlaybackSelection,
+        resolved: ResolvedStreams,
+        forceProgressive: Boolean
+    ): CacheHitResult {
+        // Not the same key - must prepare
+        if (preparedStreamKey != key || preparedStreamUrl == null) {
+            return CacheHitResult.Miss
+        }
+
+        // Check if the prepared source matches what we'd create now
+        // Include forceProgressive to prevent unnecessary rebuilds after adaptive fallback
+        val wouldUseAdaptive = !state.audioOnly && !forceProgressive && (resolved.hlsUrl != null || resolved.dashUrl != null)
+        val urlMatches = when {
+            preparedIsAdaptive && wouldUseAdaptive -> {
+                // Both are adaptive - manifest URL comparison
+                preparedStreamUrl == (resolved.hlsUrl ?: resolved.dashUrl)
+            }
+            !preparedIsAdaptive && !wouldUseAdaptive -> {
+                // Both are progressive - compare against correct URL (video or audio)
+                if (state.audioOnly) {
+                    preparedStreamUrl == selection.audio.url
+                } else {
+                    preparedStreamUrl == selection.video?.url
+                }
+            }
+            else -> {
+                // Mismatch: one is adaptive, other is progressive - must rebuild
+                false
+            }
+        }
+
+        if (!urlMatches) {
+            return CacheHitResult.Miss
+        }
+
+        // URL matches - check if quality cap needs updating for adaptive streams
+        val qualityCapToApply = if (preparedIsAdaptive) {
+            val desiredCap = selection.userQualityCapHeight
+            if (desiredCap != preparedQualityCapHeight) desiredCap else null
+        } else {
+            null
+        }
+
+        return CacheHitResult.Hit(qualityCapToApply)
     }
 
     private companion object {
