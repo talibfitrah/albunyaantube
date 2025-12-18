@@ -30,7 +30,14 @@ data class MediaSourceResult(
     /** The actual manifest/video/audio URL used (for identity tracking). May be null for audio-only mode. */
     val actualSourceUrl: String?,
     /** Which adaptive type was used, if any */
-    val adaptiveType: AdaptiveType = AdaptiveType.NONE
+    val adaptiveType: AdaptiveType = AdaptiveType.NONE,
+    /**
+     * The video track actually selected by the factory for progressive/synthetic DASH sources.
+     * Used by proactive downshift to know the true "current" quality (may differ from selection.video
+     * when factory applies DEFAULT_INITIAL_QUALITY_HEIGHT in AUTO mode).
+     * Null for adaptive HLS/DASH (ABR handles quality) or audio-only mode.
+     */
+    val selectedVideoTrack: VideoTrack? = null
 ) {
     enum class AdaptiveType { NONE, HLS, DASH, SYNTHETIC_DASH }
 }
@@ -74,6 +81,14 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
 
     companion object {
         private const val TAG = "MultiQualityMediaSource"
+
+        /**
+         * Default initial quality ceiling when no user cap is set.
+         * 720p is a good balance: decent quality while buffering quickly.
+         * For progressive streams (no ABR), this prevents starting at 4K which causes
+         * immediate buffer depletion.
+         */
+        private const val DEFAULT_INITIAL_QUALITY_HEIGHT = 720
 
         private var simpleCache: SimpleCache? = null
 
@@ -218,7 +233,8 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
                     source = syntheticResult.source,
                     isAdaptive = false, // Not true ABR - still single bitrate
                     actualSourceUrl = syntheticResult.url,
-                    adaptiveType = MediaSourceResult.AdaptiveType.SYNTHETIC_DASH
+                    adaptiveType = MediaSourceResult.AdaptiveType.SYNTHETIC_DASH,
+                    selectedVideoTrack = syntheticResult.selectedVideoTrack
                 )
             }
             android.util.Log.d(TAG, "Synthetic DASH not available, falling back to raw progressive")
@@ -231,11 +247,19 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
             // AUTO_RECOVERY should use the explicit stepped-down track even if a user cap exists.
             selectionOrigin == QualitySelectionOrigin.AUTO_RECOVERY && selectedQuality != null -> selectedQuality
             userQualityCapHeight != null -> {
-            // When quality cap is set, respect it: use lowest available if none under cap
-            findBestTrackUnderCap(resolved.videoTracks, userQualityCapHeight)
-                ?: resolved.videoTracks.minByOrNull { it.height ?: Int.MAX_VALUE }
+                // When quality cap is set, respect it: use lowest available if none under cap
+                findBestTrackUnderCap(resolved.videoTracks, userQualityCapHeight)
+                    ?: resolved.videoTracks.minByOrNull { it.height ?: Int.MAX_VALUE }
             }
-            else -> selectedQuality ?: resolved.videoTracks.maxByOrNull { it.height ?: 0 }
+            else -> {
+                // No user cap (AUTO mode): always use DEFAULT_INITIAL_QUALITY_HEIGHT (720p)
+                // to avoid starting at 4K which causes immediate buffer depletion.
+                // Don't trust selectedQuality here - it may be high-res from ViewModel fallback.
+                // Fallback chain: 1) ≤720p, 2) lowest with height, 3) first available (null heights)
+                findBestTrackUnderCap(resolved.videoTracks, DEFAULT_INITIAL_QUALITY_HEIGHT)
+                    ?: resolved.videoTracks.filter { it.height != null }.minByOrNull { it.height!! }
+                    ?: resolved.videoTracks.firstOrNull()
+            }
         }
 
         if (videoTrack == null) {
@@ -247,7 +271,8 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
             source = createVideoMediaSource(videoTrack, resolved),
             isAdaptive = false,
             actualSourceUrl = videoTrack.url,
-            adaptiveType = MediaSourceResult.AdaptiveType.NONE
+            adaptiveType = MediaSourceResult.AdaptiveType.NONE,
+            selectedVideoTrack = videoTrack
         )
     }
 
@@ -272,7 +297,9 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
     private data class AdaptiveSourceResult(
         val source: MediaSource,
         val url: String,
-        val type: MediaSourceResult.AdaptiveType
+        val type: MediaSourceResult.AdaptiveType,
+        /** For synthetic DASH, the video track that was selected. Null for true adaptive (HLS/DASH). */
+        val selectedVideoTrack: VideoTrack? = null
     )
 
     /**
@@ -354,11 +381,16 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
                 findBestVideoOnlyTrackUnderCap(resolved.videoTracks, userQualityCapHeight)
             }
             else -> {
-                // Prefer video-only for synthetic DASH, fall back to selectedQuality
-                selectedQuality?.takeIf { it.isVideoOnly }
+                // No user cap (AUTO mode): always use DEFAULT_INITIAL_QUALITY_HEIGHT (720p)
+                // to avoid starting at 4K which causes immediate buffer depletion.
+                // Don't trust selectedQuality here - it may be high-res from ViewModel fallback.
+                // Fallback chain: 1) ≤720p video-only, 2) lowest with height, 3) first eligible
+                findBestVideoOnlyTrackUnderCap(resolved.videoTracks, DEFAULT_INITIAL_QUALITY_HEIGHT)
                     ?: resolved.videoTracks
-                        .filter { it.isVideoOnly && it.syntheticDashMetadata?.hasValidRanges() == true }
-                        .maxByOrNull { it.height ?: 0 }
+                        .filter { it.isVideoOnly && it.height != null && it.syntheticDashMetadata?.hasValidRanges() == true }
+                        .minByOrNull { it.height!! }
+                    ?: resolved.videoTracks
+                        .firstOrNull { it.isVideoOnly && it.syntheticDashMetadata?.hasValidRanges() == true }
             }
         }
 
@@ -408,7 +440,8 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
         return AdaptiveSourceResult(
             source = mergedSource,
             url = videoTrack.url, // Use video URL for identity tracking
-            type = MediaSourceResult.AdaptiveType.SYNTHETIC_DASH
+            type = MediaSourceResult.AdaptiveType.SYNTHETIC_DASH,
+            selectedVideoTrack = videoTrack
         )
     }
 

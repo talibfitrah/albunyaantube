@@ -44,11 +44,14 @@ import com.albunyaan.tube.R
 import com.albunyaan.tube.databinding.FragmentPlayerBinding
 import dagger.hilt.android.AndroidEntryPoint
 import com.albunyaan.tube.data.extractor.PlaybackSelection
+import com.albunyaan.tube.data.extractor.QualitySelectionOrigin
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.SubtitleTrack
+import com.albunyaan.tube.data.extractor.VideoTrack
 import com.albunyaan.tube.download.DownloadEntry
 import com.albunyaan.tube.download.DownloadStatus
 import com.albunyaan.tube.player.BufferHealthMonitor
+import com.albunyaan.tube.player.MediaSourceResult
 import com.albunyaan.tube.player.PlaybackRecoveryManager
 import com.albunyaan.tube.player.PlaybackService
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -93,8 +96,20 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private var exoPrevButton: View? = null
     /** Tracks whether current media source is adaptive (HLS/DASH) vs progressive */
     private var preparedIsAdaptive: Boolean = false
+    /** Tracks the type of adaptive source prepared (SYNTHETIC_DASH needs special handling) */
+    private var preparedAdaptiveType: MediaSourceResult.AdaptiveType =
+        MediaSourceResult.AdaptiveType.NONE
     /** Last applied user cap for adaptive streams; used to update track selector without rebuilding. */
     private var preparedQualityCapHeight: Int? = null
+    /** For SYNTHETIC_DASH: The video track URL used by factory. Used for idempotent cache-hit detection. */
+    private var preparedSyntheticVideoUrl: String? = null
+    /**
+     * The actual video track selected by the factory. For progressive/SYNTHETIC_DASH, this may differ
+     * from selection.video when DEFAULT_INITIAL_QUALITY_HEIGHT is applied in AUTO mode.
+     * Used for accurate proactive downshift decisions (current quality = factory's choice, not ViewModel's).
+     * Null for adaptive HLS/DASH (ABR handles quality) or audio-only mode.
+     */
+    private var factorySelectedVideoTrack: VideoTrack? = null
     /**
      * Sticky fallback flag: If adaptive creation failed for the current resolved streams,
      * don't keep re-attempting adaptive on every PlayerState emission. Reset on new stream
@@ -374,7 +389,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         binding?.playerView?.player = null
         preparedStreamKey = null
         preparedStreamUrl = null
+        preparedIsAdaptive = false
+        preparedAdaptiveType = MediaSourceResult.AdaptiveType.NONE
         preparedQualityCapHeight = null
+        preparedSyntheticVideoUrl = null
+        factorySelectedVideoTrack = null
         adaptiveFailedForCurrentStream = null
 
         // Release player asynchronously to avoid ExoTimeoutException during fragment destruction.
@@ -1001,7 +1020,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         preparedStreamKey = null
         preparedStreamUrl = null
+        preparedIsAdaptive = false
+        preparedAdaptiveType = MediaSourceResult.AdaptiveType.NONE
         preparedQualityCapHeight = null
+        preparedSyntheticVideoUrl = null
+        factorySelectedVideoTrack = null
         currentPlayer.stop()
 
         context?.let { ctx ->
@@ -1054,7 +1077,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 player?.stop()
                 preparedStreamKey = null
                 preparedStreamUrl = null
+                preparedIsAdaptive = false
+                preparedAdaptiveType = MediaSourceResult.AdaptiveType.NONE
                 preparedQualityCapHeight = null
+                preparedSyntheticVideoUrl = null
+                factorySelectedVideoTrack = null
             }
             return
         }
@@ -1165,6 +1192,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 forceProgressive = forceProgressive
             )
             preparedIsAdaptive = result.isAdaptive
+            preparedAdaptiveType = result.adaptiveType
             android.util.Log.d(
                 "PlayerFragment",
                 "Created media source: isAdaptive=$preparedIsAdaptive, type=${result.adaptiveType}, qualityCap=${selection.userQualityCapHeight}p, actualSource=${sourceIdentityForLog(result.actualSourceUrl)}"
@@ -1174,12 +1202,24 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             if (preparedIsAdaptive && selection.hasUserQualityCap) {
                 applyQualityCapToTrackSelector(selection.userQualityCapHeight!!)
                 preparedQualityCapHeight = selection.userQualityCapHeight
+                preparedSyntheticVideoUrl = null // Not SYNTHETIC_DASH
+                factorySelectedVideoTrack = null // ABR handles quality selection
+            } else if (result.adaptiveType == MediaSourceResult.AdaptiveType.SYNTHETIC_DASH) {
+                // SYNTHETIC_DASH: Track the quality cap and video URL used by factory.
+                // These are needed by checkCacheHit() to detect changes that require rebuild.
+                // No track selector constraints needed (single-track synthetic manifest).
+                clearTrackSelectorConstraints()
+                preparedQualityCapHeight = selection.userQualityCapHeight
+                preparedSyntheticVideoUrl = result.actualSourceUrl
+                factorySelectedVideoTrack = result.selectedVideoTrack // Factory's actual choice
             } else {
-                // No cap (adaptive) or progressive - clear any lingering constraints.
+                // Progressive or no cap - clear any lingering constraints.
                 // For progressive, constraints don't affect playback (direct URL), but clearing
                 // ensures clean state for future adaptive videos.
                 clearTrackSelectorConstraints()
                 preparedQualityCapHeight = null
+                preparedSyntheticVideoUrl = null
+                factorySelectedVideoTrack = result.selectedVideoTrack // Factory's actual choice
             }
 
             result
@@ -1193,7 +1233,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // Fallback to single quality if multi-quality fails
             // Progressive fallback - ensure preparedIsAdaptive is correctly set
             preparedIsAdaptive = false
+            preparedAdaptiveType = MediaSourceResult.AdaptiveType.NONE
             preparedQualityCapHeight = null
+            preparedSyntheticVideoUrl = null
+            factorySelectedVideoTrack = null
             clearTrackSelectorConstraints() // Clear any lingering constraints from previous adaptive video
             val trackPair = selectTrack(streamState.selection, state.audioOnly)
             if (trackPair == null) {
@@ -1203,6 +1246,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 }
                 preparedStreamKey = null
                 preparedStreamUrl = null
+                preparedIsAdaptive = false
+                preparedAdaptiveType = MediaSourceResult.AdaptiveType.NONE
+                preparedQualityCapHeight = null
+                preparedSyntheticVideoUrl = null
+                factorySelectedVideoTrack = null
                 return
             }
             val (url, mimeType) = trackPair
@@ -1214,11 +1262,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 DefaultDataSource.Factory(requireContext())
             ).createMediaSource(mediaItem)
             // Create a fallback MediaSourceResult for the progressive source
-            com.albunyaan.tube.player.MediaSourceResult(
+            MediaSourceResult(
                 source = source,
                 isAdaptive = false,
                 actualSourceUrl = url,
-                adaptiveType = com.albunyaan.tube.player.MediaSourceResult.AdaptiveType.NONE
+                adaptiveType = MediaSourceResult.AdaptiveType.NONE
             )
         }
 
@@ -1255,7 +1303,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             android.util.Log.e("PlayerFragment", "Failed to prepare stream: ${e.message}", e)
             preparedStreamKey = null
             preparedStreamUrl = null
+            preparedIsAdaptive = false
+            preparedAdaptiveType = MediaSourceResult.AdaptiveType.NONE
             preparedQualityCapHeight = null
+            preparedSyntheticVideoUrl = null
+            factorySelectedVideoTrack = null
         }
     }
 
@@ -1316,8 +1368,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     is StreamState.RecoveryExhausted -> StreamState.Ready(s.streamId, s.selection)
                     else -> return false
                 }
+                // Use factory-selected track if available (may differ from selection.video in AUTO mode).
+                // This ensures downshift decisions are based on actual playing quality, not ViewModel's choice.
+                val currentTrack = factorySelectedVideoTrack ?: streamState.selection.video
                 val nextLower = findNextLowerQualityTrack(
-                    current = streamState.selection.video,
+                    current = currentTrack,
                     available = streamState.selection.resolved.videoTracks
                 )
                 return if (nextLower != null) {
@@ -1387,13 +1442,16 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     return false
                 }
 
+                // Use factory-selected track if available (may differ from selection.video in AUTO mode).
+                // This ensures downshift decisions are based on actual playing quality, not ViewModel's choice.
+                val currentTrack = factorySelectedVideoTrack ?: streamState.selection.video
                 val nextLower = findNextLowerQualityTrack(
-                    current = streamState.selection.video,
+                    current = currentTrack,
                     available = streamState.selection.resolved.videoTracks
                 )
 
                 return if (nextLower != null) {
-                    android.util.Log.i("PlayerFragment", "Proactive downshift: ${streamState.selection.video?.qualityLabel} -> ${nextLower.qualityLabel}")
+                    android.util.Log.i("PlayerFragment", "Proactive downshift: ${currentTrack?.qualityLabel} -> ${nextLower.qualityLabel}")
                     // Returns false if URLs expired and refresh triggered instead
                     viewModel.applyAutoQualityStepDown(nextLower)
                 } else {
@@ -1797,6 +1855,36 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         // Check if the prepared source matches what we'd create now
         // Include forceProgressive to prevent unnecessary rebuilds after adaptive fallback
         val wouldUseAdaptive = !state.audioOnly && !forceProgressive && (resolved.hlsUrl != null || resolved.dashUrl != null)
+
+        // SYNTHETIC_DASH special case: The factory selects a different video track (video-only)
+        // than what's in selection.video (typically muxed). For SYNTHETIC_DASH, we need to check:
+        // SYNTHETIC_DASH cache-hit logic:
+        // 1. Quality cap changes require rebuild (factory uses userQualityCapHeight for track selection)
+        // 2. Track changes (MANUAL or AUTO_RECOVERY) require rebuild
+        // 3. AUTO origin with same cap is idempotent (factory's choice is stable)
+        val isSyntheticDash = preparedAdaptiveType == MediaSourceResult.AdaptiveType.SYNTHETIC_DASH
+        if (isSyntheticDash && !state.audioOnly && !forceProgressive) {
+            // Quality cap change - factory uses this for track selection, must rebuild
+            if (selection.userQualityCapHeight != preparedQualityCapHeight) {
+                return CacheHitResult.Miss
+            }
+            // MANUAL or AUTO_RECOVERY: Check if the requested track URL differs from what we prepared.
+            // MANUAL: User explicitly selected a different quality - must honor their choice.
+            // AUTO_RECOVERY: BufferHealthMonitor requested downshift - must apply the change.
+            // This makes the check idempotent - once we've rebuilt with the new track,
+            // subsequent emissions with the same selection won't force more rebuilds.
+            if (selection.selectionOrigin == QualitySelectionOrigin.MANUAL ||
+                selection.selectionOrigin == QualitySelectionOrigin.AUTO_RECOVERY) {
+                val requestedVideoUrl = selection.video?.url
+                if (requestedVideoUrl != null && requestedVideoUrl != preparedSyntheticVideoUrl) {
+                    return CacheHitResult.Miss
+                }
+                // Already prepared with this track - don't rebuild
+            }
+            // Key matches, same cap, track matches (or AUTO with stable factory choice) - safe to reuse
+            return CacheHitResult.Hit(null)
+        }
+
         val urlMatches = when {
             preparedIsAdaptive && wouldUseAdaptive -> {
                 // Both are adaptive - manifest URL comparison
@@ -1807,7 +1895,24 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 if (state.audioOnly) {
                     preparedStreamUrl == selection.audio.url
                 } else {
-                    preparedStreamUrl == selection.video?.url
+                    // For video progressive: Compare URLs carefully based on selection origin.
+                    //
+                    // - AUTO: Factory may apply DEFAULT_INITIAL_QUALITY_HEIGHT and select a different
+                    //   track than selection.video. Use factorySelectedVideoTrack for idempotent detection
+                    //   (prevents rebuild loops when ViewModel emits same selection repeatedly).
+                    //
+                    // - MANUAL: User explicitly changed quality. MUST compare against selection.video
+                    //   to detect the change and trigger rebuild. Using factorySelectedVideoTrack here
+                    //   would incorrectly return "Hit" and block manual quality switches.
+                    //
+                    // - AUTO_RECOVERY: BufferHealthMonitor requested downshift. Same as MANUAL - must
+                    //   compare against the new selection.video to detect and apply the change.
+                    val effectiveVideoUrl = when (selection.selectionOrigin) {
+                        QualitySelectionOrigin.AUTO -> factorySelectedVideoTrack?.url ?: selection.video?.url
+                        QualitySelectionOrigin.MANUAL -> selection.video?.url
+                        QualitySelectionOrigin.AUTO_RECOVERY -> selection.video?.url
+                    }
+                    preparedStreamUrl == effectiveVideoUrl
                 }
             }
             else -> {
