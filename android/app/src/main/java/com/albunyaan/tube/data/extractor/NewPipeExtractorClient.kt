@@ -316,6 +316,22 @@ class NewPipeExtractorClient(
                 if (BuildConfig.DEBUG) {
                     android.util.Log.d("NewPipeExtractor", "Video stream: $properLabel (${stream.width}x${stream.height}), bitrate=${stream.bitrate}, videoOnly=${stream.isVideoOnly}")
                 }
+
+                // Extract SyntheticDashMetadata for video-only PROGRESSIVE_HTTP streams
+                val syntheticDashMeta = stream.itagItem?.let { itag ->
+                    if (stream.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && stream.isVideoOnly) {
+                        SyntheticDashMetadata(
+                            itag = stream.itag,
+                            initStart = stream.initStart.toLong(),
+                            initEnd = stream.initEnd.toLong(),
+                            indexStart = stream.indexStart.toLong(),
+                            indexEnd = stream.indexEnd.toLong(),
+                            approxDurationMs = itag.approxDurationMs,
+                            codec = stream.codec
+                        )
+                    } else null
+                }
+
                 VideoTrack(
                     url = stream.content,
                     mimeType = stream.format?.mimeType,
@@ -324,7 +340,8 @@ class NewPipeExtractorClient(
                     bitrate = stream.bitrate.takeIf { it > 0 },
                     qualityLabel = properLabel,
                     fps = stream.fps.takeIf { it > 0 },
-                    isVideoOnly = stream.isVideoOnly
+                    isVideoOnly = stream.isVideoOnly,
+                    syntheticDashMetadata = syntheticDashMeta
                 )
             }
             // No additional deduplication - preserve ALL streams for maximum step-down flexibility.
@@ -342,11 +359,27 @@ class NewPipeExtractorClient(
         val audioTracksRaw = audioStreams
             .filter { it.content.isNotBlank() }
             .map { stream ->
+                // Extract SyntheticDashMetadata for PROGRESSIVE_HTTP audio streams
+                val syntheticDashMeta = stream.itagItem?.let { itag ->
+                    if (stream.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP) {
+                        SyntheticDashMetadata(
+                            itag = stream.itag,
+                            initStart = stream.initStart.toLong(),
+                            initEnd = stream.initEnd.toLong(),
+                            indexStart = stream.indexStart.toLong(),
+                            indexEnd = stream.indexEnd.toLong(),
+                            approxDurationMs = itag.approxDurationMs,
+                            codec = stream.codec
+                        )
+                    } else null
+                }
+
                 AudioTrack(
                     url = stream.content,
                     mimeType = stream.format?.mimeType,
                     bitrate = stream.averageBitrate.takeIf { it > 0 },
-                    codec = stream.codec
+                    codec = stream.codec,
+                    syntheticDashMetadata = syntheticDashMeta
                 )
             }
 
@@ -371,13 +404,17 @@ class NewPipeExtractorClient(
         val hlsStreamUrl = hlsUrl?.takeIf { it.isNotBlank() }
         val dashStreamUrl = dashMpdUrl?.takeIf { it.isNotBlank() }
 
-        // Log adaptive stream availability for debugging (without exposing full URLs with tokens)
-        if (BuildConfig.DEBUG) {
-            android.util.Log.d("NewPipeExtractor", "Stream $streamId: HLS=${hlsStreamUrl != null}, DASH=${dashStreamUrl != null}")
-            if (hlsStreamUrl == null && dashStreamUrl == null) {
-                android.util.Log.w("NewPipeExtractor", "WARNING: No adaptive manifests for $streamId - will use progressive (may buffer)")
-            }
-        }
+        // PR6.2 Measurement: Log HLS/DASH availability for manifest backfill research
+        logAdaptiveAvailabilityMetrics(
+            streamId = streamId,
+            hasHls = hlsStreamUrl != null,
+            hasDash = dashStreamUrl != null,
+            streamType = streamType,
+            durationSec = durationSeconds,
+            videoTrackCount = videoTracks.size,
+            audioTrackCount = audioTracks.size,
+            hasVideoOnlyTracks = videoTracks.any { it.isVideoOnly }
+        )
 
         // TODO: Extract subtitle tracks from StreamInfo when NewPipe adds support
         return ResolvedStreams(
@@ -577,6 +614,65 @@ class NewPipeExtractorClient(
         )
     }
 
+    /**
+     * PR6.2 Measurement: Log HLS/DASH manifest availability for research.
+     *
+     * This helps understand:
+     * - What % of videos have native HLS/DASH manifests
+     * - Correlation with stream type (regular, live, shorts)
+     * - Correlation with duration
+     * - Whether having video-only tracks correlates with manifest availability
+     *
+     * Filter logcat with: adb logcat -s AdaptiveAvail
+     *
+     * Use this data to decide whether PR6.2 (manifest backfill) is worth pursuing.
+     */
+    private fun logAdaptiveAvailabilityMetrics(
+        streamId: String,
+        hasHls: Boolean,
+        hasDash: Boolean,
+        streamType: StreamType,
+        durationSec: Int?,
+        videoTrackCount: Int,
+        audioTrackCount: Int,
+        hasVideoOnlyTracks: Boolean
+    ) {
+        // Only run in debug builds
+        if (!BuildConfig.DEBUG) return
+
+        val adaptiveStatus = when {
+            hasHls && hasDash -> "BOTH"
+            hasHls -> "HLS_ONLY"
+            hasDash -> "DASH_ONLY"
+            else -> "NONE"
+        }
+
+        android.util.Log.d(
+            ADAPTIVE_AVAIL_TAG,
+            buildString {
+                append("{")
+                append("\"vid\":\"$streamId\",")
+                append("\"hasHls\":$hasHls,")
+                append("\"hasDash\":$hasDash,")
+                append("\"adaptive\":\"$adaptiveStatus\",")
+                append("\"streamType\":\"${streamType.name}\",")
+                append("\"durSec\":${durationSec ?: -1},")
+                append("\"videoTracks\":$videoTrackCount,")
+                append("\"audioTracks\":$audioTrackCount,")
+                append("\"hasVideoOnly\":$hasVideoOnlyTracks")
+                append("}")
+            }
+        )
+
+        // Log warning-level for videos without adaptive manifests (easier to spot in logs)
+        if (!hasHls && !hasDash) {
+            android.util.Log.w(
+                ADAPTIVE_AVAIL_TAG,
+                "NO_ADAPTIVE: vid=$streamId, type=${streamType.name}, dur=${durationSec ?: "unknown"}s"
+            )
+        }
+    }
+
     private fun initializeNewPipe() {
         synchronized(NewPipeExtractorClient::class.java) {
             val currentDownloader = runCatching { NewPipe.getDownloader() }.getOrNull()
@@ -596,5 +692,9 @@ class NewPipeExtractorClient(
         // PR6.1 Measurement: Log tag for synthetic DASH feasibility assessment
         // Filter with: adb logcat -s SyntheticDASH
         private const val SYNTHETIC_DASH_TAG = "SyntheticDASH"
+
+        // PR6.2 Measurement: Log tag for HLS/DASH manifest availability research
+        // Filter with: adb logcat -s AdaptiveAvail
+        private const val ADAPTIVE_AVAIL_TAG = "AdaptiveAvail"
     }
 }

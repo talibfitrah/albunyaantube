@@ -150,6 +150,7 @@ backend/src/generated/
 .cache/
 .parcel-cache/
 .npm/
+synthetic_dash_data.json
 .yarn/*
 !.yarn/patches
 !.yarn/plugins
@@ -167,4 +168,3 @@ backend/src/generated/
 # TestSprite test artifacts
 # -----------------------
 /testsprite_tests/
-

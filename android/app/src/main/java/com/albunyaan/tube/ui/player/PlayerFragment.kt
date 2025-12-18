@@ -115,6 +115,13 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     /** Tracks user's intended play state - used to preserve pause across lifecycle */
     private var userWantsToPlay = true
 
+    private fun sourceIdentityForLog(url: String?): String {
+        if (url.isNullOrBlank()) return "null"
+        val hash = Integer.toHexString(url.hashCode())
+        val host = runCatching { Uri.parse(url).host }.getOrNull()
+        return if (!host.isNullOrBlank()) "$host#$hash" else "hash#$hash"
+    }
+
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             playbackService = (binder as PlaybackService.LocalBinder).getService()
@@ -366,8 +373,32 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         preparedStreamUrl = null
         preparedQualityCapHeight = null
         adaptiveFailedForCurrentStream = null
-        player?.release()
-        player = null
+
+        // Release player asynchronously to avoid ExoTimeoutException during fragment destruction.
+        // The player's internal threads may be blocked (e.g., waiting for audio hardware),
+        // and synchronous release would block the main thread until timeout.
+        //
+        // We post release() to the player's application looper (the looper it was created on).
+        // This ensures thread safety while deferring execution. The key insight: onDestroyView()
+        // returns immediately, allowing fragment destruction to complete; release() runs on the
+        // next main loop iteration. This mitigates but doesn't fully eliminate UI jank if the
+        // underlying audio hardware is truly blocked - but at least the blocking happens after
+        // navigation completes rather than during it.
+        //
+        // If release() throws (extremely rare), it's caught and logged rather than crashing.
+        player?.let { playerToRelease ->
+            player = null
+            // Use the player's application looper to ensure we're on the correct thread
+            val looper = playerToRelease.applicationLooper
+            android.os.Handler(looper).post {
+                try {
+                    playerToRelease.release()
+                } catch (e: Exception) {
+                    android.util.Log.e("PlayerFragment", "Player release failed: ${e.message}", e)
+                }
+            }
+        }
+
         binding = null
         super.onDestroyView()
     }
@@ -1130,7 +1161,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 forceProgressive = forceProgressive
             )
             preparedIsAdaptive = result.isAdaptive
-            android.util.Log.d("PlayerFragment", "Created media source: isAdaptive=$preparedIsAdaptive, type=${result.adaptiveType}, qualityCap=${selection.userQualityCapHeight}p, actualUrl=${result.actualSourceUrl?.take(60)}...")
+            android.util.Log.d(
+                "PlayerFragment",
+                "Created media source: isAdaptive=$preparedIsAdaptive, type=${result.adaptiveType}, qualityCap=${selection.userQualityCapHeight}p, actualSource=${sourceIdentityForLog(result.actualSourceUrl)}"
+            )
 
             // Apply quality cap to track selector for adaptive streams
             if (preparedIsAdaptive && selection.hasUserQualityCap) {
@@ -1197,7 +1231,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             preparedStreamKey = key
             // Use the actual URL from the MediaSourceResult - this is the true source identity
             preparedStreamUrl = mediaSourceResult.actualSourceUrl
-            android.util.Log.d("PlayerFragment", "Stream prepared successfully: ${streamState.streamId}, isAdaptive=$preparedIsAdaptive, type=${mediaSourceResult.adaptiveType}, actualUrl=$preparedStreamUrl")
+            android.util.Log.d(
+                "PlayerFragment",
+                "Stream prepared successfully: ${streamState.streamId}, isAdaptive=$preparedIsAdaptive, type=${mediaSourceResult.adaptiveType}, actualSource=${sourceIdentityForLog(preparedStreamUrl)}"
+            )
 
             // Notify recovery manager of new stream - pass streamId and adaptive flag
             recoveryManager?.onNewStream(streamState.streamId, preparedIsAdaptive)

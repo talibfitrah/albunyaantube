@@ -29,7 +29,9 @@ import com.albunyaan.tube.data.source.RetrofitDownloadService
 import com.albunyaan.tube.data.source.api.ContentApi
 import com.albunyaan.tube.data.source.api.DownloadApi
 import com.albunyaan.tube.player.DefaultPlayerRepository
+import com.albunyaan.tube.player.ExtractionRateLimiter
 import com.albunyaan.tube.player.PlayerRepository
+import com.albunyaan.tube.player.StreamPrefetchService
 import com.albunyaan.tube.telemetry.LogTelemetryClient
 import com.albunyaan.tube.telemetry.TelemetryClient
 import dagger.Module
@@ -189,6 +191,15 @@ object DataModule {
     @Singleton
     fun providePlayerRepository(extractorClient: NewPipeExtractorClient): PlayerRepository {
         return DefaultPlayerRepository(extractorClient)
+    }
+
+    @Provides
+    @Singleton
+    fun provideStreamPrefetchService(
+        extractorClient: NewPipeExtractorClient,
+        rateLimiter: ExtractionRateLimiter
+    ): StreamPrefetchService {
+        return StreamPrefetchService(extractorClient, rateLimiter)
     }
 
     @Provides

@@ -15,6 +15,7 @@ import com.albunyaan.tube.download.DownloadRepository
 import com.albunyaan.tube.download.DownloadRequest
 import com.albunyaan.tube.player.ExtractionRateLimiter
 import com.albunyaan.tube.player.PlayerRepository
+import com.albunyaan.tube.player.StreamPrefetchService
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -37,7 +38,8 @@ class PlayerViewModel @Inject constructor(
     private val repository: PlayerRepository,
     private val downloadRepository: DownloadRepository,
     private val playlistDetailRepository: com.albunyaan.tube.data.playlist.PlaylistDetailRepository,
-    private val rateLimiter: ExtractionRateLimiter
+    private val rateLimiter: ExtractionRateLimiter,
+    private val prefetchService: StreamPrefetchService
 ) : ViewModel() {
 
     private val dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate
@@ -619,17 +621,33 @@ class PlayerViewModel @Inject constructor(
 
     /**
      * Resolve streams with exponential backoff retry.
-     * Checks prefetch cache first for instant playback (unless forceRefresh is true).
+     * Checks tap-to-prefetch service first (awaiting in-flight if needed), then local prefetch cache.
      * Attempts: 3 times with delays of 1s, 2s, 4s between attempts.
      *
      * @param forceRefresh If true, bypass all caches (prefetch and stream URL cache)
      */
     private suspend fun resolveWithRetry(item: UpNextItem, maxAttempts: Int, forceRefresh: Boolean = false) {
-        // Check prefetch cache first for instant playback (skip if forceRefresh)
+        // Check tap-to-prefetch service first (triggered when user taps video in list)
+        // This will await in-flight prefetch for up to 3 seconds, providing in-flight dedupe
+        if (!forceRefresh) {
+            val tapPrefetched = prefetchService.awaitOrConsumePrefetch(item.streamId)
+            if (tapPrefetched != null) {
+                android.util.Log.d("PlayerViewModel", "Using tap-prefetched stream for ${item.streamId}")
+                val selection = tapPrefetched.toDefaultSelection()
+                if (selection != null) {
+                    publishAnalytics(PlaybackAnalyticsEvent.StreamResolved(item.streamId, selection.video?.qualityLabel))
+                    updateState { it.copy(streamState = StreamState.Ready(tapPrefetched.streamId, selection), retryCount = 0) }
+                    return
+                }
+                android.util.Log.w("PlayerViewModel", "Tap-prefetched stream invalid, checking local cache")
+            }
+        }
+
+        // Check local prefetch cache (for queue items) - skip if forceRefresh
         if (!forceRefresh) {
             val prefetched = synchronized(prefetchCache) { prefetchCache.remove(item.streamId) }
             if (prefetched != null) {
-                android.util.Log.d("PlayerViewModel", "Using prefetched stream for ${item.streamId}")
+                android.util.Log.d("PlayerViewModel", "Using queue-prefetched stream for ${item.streamId}")
                 val selection = prefetched.toDefaultSelection()
                 if (selection != null) {
                     publishAnalytics(PlaybackAnalyticsEvent.StreamResolved(item.streamId, selection.video?.qualityLabel))
@@ -637,7 +655,7 @@ class PlayerViewModel @Inject constructor(
                     return
                 }
                 // Prefetch data was invalid, fall through to normal resolution
-                android.util.Log.w("PlayerViewModel", "Prefetched stream invalid, resolving fresh")
+                android.util.Log.w("PlayerViewModel", "Queue-prefetched stream invalid, resolving fresh")
             }
         } else {
             android.util.Log.d("PlayerViewModel", "Force refresh requested for ${item.streamId}, bypassing caches")

@@ -17,6 +17,7 @@ import com.albunyaan.tube.data.source.ContentService
 import com.albunyaan.tube.databinding.FragmentSimpleListBinding
 import com.albunyaan.tube.ui.adapters.VideoGridAdapter
 import com.albunyaan.tube.ui.utils.calculateGridSpanCount
+import com.albunyaan.tube.player.StreamPrefetchService
 import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -32,6 +33,9 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
     @Inject
     @Named("real")
     lateinit var contentService: ContentService
+
+    @Inject
+    lateinit var prefetchService: StreamPrefetchService
 
     private val viewModel: ContentListViewModel by viewModels {
         ContentListViewModel.Factory(
@@ -90,6 +94,9 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
     }
 
     private fun navigateToPlayer(video: ContentItem.Video) {
+        // Start prefetch immediately when user taps - hides latency behind navigation animation
+        prefetchService.triggerPrefetch(video.id, viewLifecycleOwner.lifecycleScope)
+
         val bundle = bundleOf(
             "videoId" to video.id,
             "title" to video.title,

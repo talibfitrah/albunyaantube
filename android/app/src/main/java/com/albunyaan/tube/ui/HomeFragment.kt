@@ -13,8 +13,10 @@ import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.model.ContentItem
+import com.albunyaan.tube.player.StreamPrefetchService
 import dagger.hilt.android.AndroidEntryPoint
 import com.albunyaan.tube.databinding.FragmentHomeNewBinding
+import javax.inject.Inject
 import com.albunyaan.tube.ui.adapters.HomeChannelAdapter
 import com.albunyaan.tube.ui.adapters.HomeFeaturedAdapter
 import com.albunyaan.tube.ui.adapters.HomePlaylistAdapter
@@ -27,6 +29,9 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
     private var binding: FragmentHomeNewBinding? = null
 
     private val viewModel: HomeViewModel by viewModels()
+
+    @Inject
+    lateinit var prefetchService: StreamPrefetchService
 
     private lateinit var featuredAdapter: HomeFeaturedAdapter
     private lateinit var channelAdapter: HomeChannelAdapter
@@ -104,18 +109,7 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
             when (item) {
                 is ContentItem.Video -> {
                     Log.d(TAG, "Featured video clicked: ${item.title}")
-                    findNavController().navigate(
-                        R.id.action_global_playerFragment,
-                        bundleOf(
-                            "videoId" to item.id,
-                            "title" to item.title,
-                            "channelName" to item.category,
-                            "thumbnailUrl" to item.thumbnailUrl,
-                            "description" to item.description,
-                            "durationSeconds" to item.durationSeconds,
-                            "viewCount" to (item.viewCount ?: -1L)
-                        )
-                    )
+                    navigateToPlayer(item)
                 }
                 is ContentItem.Playlist -> {
                     Log.d(TAG, "Featured playlist clicked: ${item.title}")
@@ -162,19 +156,26 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
 
         videoAdapter = HomeVideoAdapter { video ->
             Log.d(TAG, "Video clicked: ${video.title}")
-            findNavController().navigate(
-                R.id.action_global_playerFragment,
-                bundleOf(
-                    "videoId" to video.id,
-                    "title" to video.title,
-                    "channelName" to video.category,
-                    "thumbnailUrl" to video.thumbnailUrl,
-                    "description" to video.description,
-                    "durationSeconds" to video.durationSeconds,
-                    "viewCount" to (video.viewCount ?: -1L)
-                )
-            )
+            navigateToPlayer(video)
         }
+    }
+
+    private fun navigateToPlayer(video: ContentItem.Video) {
+        // Start prefetch immediately when user taps - hides latency behind navigation animation
+        prefetchService.triggerPrefetch(video.id, viewLifecycleOwner.lifecycleScope)
+
+        findNavController().navigate(
+            R.id.action_global_playerFragment,
+            bundleOf(
+                "videoId" to video.id,
+                "title" to video.title,
+                "channelName" to video.category,
+                "thumbnailUrl" to video.thumbnailUrl,
+                "description" to video.description,
+                "durationSeconds" to video.durationSeconds,
+                "viewCount" to (video.viewCount ?: -1L)
+            )
+        )
     }
 
     private fun setupRecyclerViews(binding: FragmentHomeNewBinding) {

@@ -16,6 +16,7 @@ import com.albunyaan.tube.R
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.databinding.FragmentSearchBinding
 import coil.ImageLoader
+import com.albunyaan.tube.player.StreamPrefetchService
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -35,6 +36,9 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
 
     @Inject
     lateinit var imageLoader: ImageLoader
+
+    @Inject
+    lateinit var prefetchService: StreamPrefetchService
 
     private val viewModel: SearchViewModel by viewModels()
 
@@ -261,6 +265,8 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
     private fun handleItemClick(item: ContentItem) {
         when (item) {
             is ContentItem.Video -> {
+                // Start prefetch immediately when user taps - hides latency behind navigation animation
+                prefetchService.triggerPrefetch(item.id, viewLifecycleOwner.lifecycleScope)
                 findNavController().navigate(
                     R.id.action_global_playerFragment,
                     android.os.Bundle().apply {

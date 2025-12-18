@@ -1,5 +1,26 @@
 package com.albunyaan.tube.data.extractor
 
+/**
+ * Metadata required for synthetic DASH MPD generation.
+ * Stored from NewPipe's ItagItem during extraction.
+ */
+data class SyntheticDashMetadata(
+    val itag: Int,
+    val initStart: Long,
+    val initEnd: Long,
+    val indexStart: Long,
+    val indexEnd: Long,
+    val approxDurationMs: Long?,
+    val codec: String?
+) {
+    /**
+     * Check if this metadata has valid byte ranges for synthetic DASH.
+     */
+    fun hasValidRanges(): Boolean =
+        initStart >= 0 && initEnd >= 0 && initStart <= initEnd &&
+        indexStart >= 0 && indexEnd >= 0 && indexStart <= indexEnd
+}
+
 data class VideoTrack(
     val url: String,
     val mimeType: String?,
@@ -8,14 +29,18 @@ data class VideoTrack(
     val bitrate: Int?,
     val qualityLabel: String?,
     val fps: Int?,
-    val isVideoOnly: Boolean
+    val isVideoOnly: Boolean,
+    /** Metadata for synthetic DASH generation (null if not eligible) */
+    val syntheticDashMetadata: SyntheticDashMetadata? = null
 )
 
 data class AudioTrack(
     val url: String,
     val mimeType: String?,
     val bitrate: Int?,
-    val codec: String?
+    val codec: String?,
+    /** Metadata for synthetic DASH generation (null if not eligible) */
+    val syntheticDashMetadata: SyntheticDashMetadata? = null
 )
 
 data class SubtitleTrack(

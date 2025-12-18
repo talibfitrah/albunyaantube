@@ -32,15 +32,16 @@ data class MediaSourceResult(
     /** Which adaptive type was used, if any */
     val adaptiveType: AdaptiveType = AdaptiveType.NONE
 ) {
-    enum class AdaptiveType { NONE, HLS, DASH }
+    enum class AdaptiveType { NONE, HLS, DASH, SYNTHETIC_DASH }
 }
 
 /**
  * Factory for creating MediaSources from NewPipe extractor data.
  *
- * Streaming strategy:
- * - Prefer HLS/DASH adaptive streaming whenever available (smooth ABR-like playback, better seeks).
- * - Fall back to progressive only when adaptive manifests are unavailable or explicitly forced.
+ * Streaming strategy (PR6.1 update):
+ * 1. Prefer HLS/DASH adaptive streaming whenever available (smooth ABR-like playback, better seeks).
+ * 2. Try synthetic DASH for video-only + audio progressive streams (improved seek behavior).
+ * 3. Fall back to raw progressive only when both adaptive and synthetic DASH fail.
  *
  * NOTE: Media3's quality selection in settings menu ONLY works with adaptive streams (HLS/DASH).
  * For progressive streams, quality selection is handled via custom UI.
@@ -65,6 +66,11 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
         .setCache(getOrCreateCache(context))
         .setUpstreamDataSourceFactory(dataSourceFactory)
         .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+
+    // PR6.1: Synthetic DASH factory for progressive stream wrapping
+    private val syntheticDashFactory by lazy {
+        SyntheticDashMediaSourceFactory(cacheDataSourceFactory)
+    }
 
     companion object {
         private const val TAG = "MultiQualityMediaSource"
@@ -201,12 +207,26 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
                     adaptiveType = adaptiveResult.type
                 )
             }
-            android.util.Log.d(TAG, "Adaptive streaming not available, falling back to progressive")
+            android.util.Log.d(TAG, "Adaptive streaming not available, trying synthetic DASH")
+
+            // PR6.1: Try synthetic DASH for video-only + audio progressive streams
+            val syntheticResult = tryCreateSyntheticDashSource(resolved, userQualityCapHeight, selectedQuality, selectionOrigin)
+            if (syntheticResult != null) {
+                val capInfo = userQualityCapHeight?.let { "${it}p cap" } ?: "no cap"
+                android.util.Log.d(TAG, "Using synthetic DASH streaming ($capInfo)")
+                return MediaSourceResult(
+                    source = syntheticResult.source,
+                    isAdaptive = false, // Not true ABR - still single bitrate
+                    actualSourceUrl = syntheticResult.url,
+                    adaptiveType = MediaSourceResult.AdaptiveType.SYNTHETIC_DASH
+                )
+            }
+            android.util.Log.d(TAG, "Synthetic DASH not available, falling back to raw progressive")
         } else {
             android.util.Log.d(TAG, "Adaptive streaming skipped (forceProgressive=true)")
         }
 
-        // Progressive streaming: select best track under quality cap
+        // Raw progressive streaming: select best track under quality cap
         val videoTrack = when {
             // AUTO_RECOVERY should use the explicit stepped-down track even if a user cap exists.
             selectionOrigin == QualitySelectionOrigin.AUTO_RECOVERY && selectedQuality != null -> selectedQuality
@@ -222,7 +242,7 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
             throw IllegalArgumentException("No video tracks available for playback")
         }
 
-        android.util.Log.d(TAG, "Using progressive streaming: ${videoTrack.qualityLabel} (${videoTrack.height}p)")
+        android.util.Log.d(TAG, "Using raw progressive streaming: ${videoTrack.qualityLabel} (${videoTrack.height}p)")
         return MediaSourceResult(
             source = createVideoMediaSource(videoTrack, resolved),
             isAdaptive = false,
@@ -305,6 +325,106 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
         }
 
         return null
+    }
+
+    /**
+     * PR6.1: Try to create a synthetic DASH MediaSource from progressive streams.
+     *
+     * This wraps video-only + audio progressive streams in synthetic DASH manifests
+     * for improved seek behavior while maintaining the same underlying URLs.
+     *
+     * Requirements for synthetic DASH:
+     * - Video track must be video-only (not muxed)
+     * - Both video and audio must have valid SyntheticDashMetadata
+     * - Duration must be available
+     *
+     * Falls back to null if any step fails (caller should use raw progressive).
+     */
+    private fun tryCreateSyntheticDashSource(
+        resolved: ResolvedStreams,
+        userQualityCapHeight: Int?,
+        selectedQuality: VideoTrack?,
+        selectionOrigin: QualitySelectionOrigin
+    ): AdaptiveSourceResult? {
+        // Select video track using same logic as progressive fallback
+        val videoTrack = when {
+            selectionOrigin == QualitySelectionOrigin.AUTO_RECOVERY && selectedQuality != null -> selectedQuality
+            userQualityCapHeight != null -> {
+                // For synthetic DASH, prefer video-only tracks (muxed can't be wrapped)
+                findBestVideoOnlyTrackUnderCap(resolved.videoTracks, userQualityCapHeight)
+            }
+            else -> {
+                // Prefer video-only for synthetic DASH, fall back to selectedQuality
+                selectedQuality?.takeIf { it.isVideoOnly }
+                    ?: resolved.videoTracks
+                        .filter { it.isVideoOnly && it.syntheticDashMetadata?.hasValidRanges() == true }
+                        .maxByOrNull { it.height ?: 0 }
+            }
+        }
+
+        // Video track must be video-only with valid metadata
+        if (videoTrack == null || !videoTrack.isVideoOnly) {
+            android.util.Log.d(TAG, "Synthetic DASH: no eligible video-only track")
+            return null
+        }
+
+        if (videoTrack.syntheticDashMetadata?.hasValidRanges() != true) {
+            android.util.Log.d(TAG, "Synthetic DASH: video track missing valid metadata")
+            return null
+        }
+
+        // Select best audio track with valid metadata
+        val audioTrack = resolved.audioTracks
+            .filter { it.syntheticDashMetadata?.hasValidRanges() == true }
+            .maxByOrNull { it.bitrate ?: 0 }
+
+        if (audioTrack == null) {
+            android.util.Log.d(TAG, "Synthetic DASH: no audio track with valid metadata")
+            return null
+        }
+
+        val durationSeconds = resolved.durationSeconds?.toLong()
+
+        // Create synthetic DASH video source
+        val videoResult = syntheticDashFactory.createVideoSource(videoTrack, durationSeconds)
+        if (videoResult is SyntheticDashMediaSourceFactory.Result.Failure) {
+            android.util.Log.d(TAG, "Synthetic DASH video failed: ${videoResult.reason}")
+            return null
+        }
+        val videoSource = (videoResult as SyntheticDashMediaSourceFactory.Result.Success).source
+
+        // Create synthetic DASH audio source
+        val audioResult = syntheticDashFactory.createAudioSource(audioTrack, durationSeconds)
+        if (audioResult is SyntheticDashMediaSourceFactory.Result.Failure) {
+            android.util.Log.d(TAG, "Synthetic DASH audio failed: ${audioResult.reason}")
+            return null
+        }
+        val audioSource = (audioResult as SyntheticDashMediaSourceFactory.Result.Success).source
+
+        // Merge video and audio synthetic DASH sources
+        val mergedSource = MergingMediaSource(videoSource, audioSource)
+
+        android.util.Log.d(TAG, "Synthetic DASH created: ${videoTrack.qualityLabel} + ${audioTrack.codec ?: "audio"}")
+        return AdaptiveSourceResult(
+            source = mergedSource,
+            url = videoTrack.url, // Use video URL for identity tracking
+            type = MediaSourceResult.AdaptiveType.SYNTHETIC_DASH
+        )
+    }
+
+    /**
+     * Find the best video-only track under the quality cap (for synthetic DASH).
+     * Only considers video-only tracks with valid SyntheticDashMetadata.
+     */
+    private fun findBestVideoOnlyTrackUnderCap(tracks: List<VideoTrack>, capHeight: Int): VideoTrack? {
+        return tracks
+            .filter {
+                it.isVideoOnly &&
+                it.height != null &&
+                it.height <= capHeight &&
+                it.syntheticDashMetadata?.hasValidRanges() == true
+            }
+            .maxByOrNull { it.height ?: 0 }
     }
 
     /**
