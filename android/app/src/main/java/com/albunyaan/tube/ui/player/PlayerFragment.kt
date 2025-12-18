@@ -1210,7 +1210,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 // No track selector constraints needed (single-track synthetic manifest).
                 clearTrackSelectorConstraints()
                 preparedQualityCapHeight = selection.userQualityCapHeight
-                preparedSyntheticVideoUrl = result.actualSourceUrl
+                // Store the video track URL (not the manifest data: URI) for cache-hit comparison.
+                // checkCacheHit() compares selection.video?.url against this value.
+                preparedSyntheticVideoUrl = result.selectedVideoTrack?.url
                 factorySelectedVideoTrack = result.selectedVideoTrack // Factory's actual choice
             } else {
                 // Progressive or no cap - clear any lingering constraints.
@@ -1868,18 +1870,22 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             if (selection.userQualityCapHeight != preparedQualityCapHeight) {
                 return CacheHitResult.Miss
             }
-            // MANUAL or AUTO_RECOVERY: Check if the requested track URL differs from what we prepared.
-            // MANUAL: User explicitly selected a different quality - must honor their choice.
-            // AUTO_RECOVERY: BufferHealthMonitor requested downshift - must apply the change.
-            // This makes the check idempotent - once we've rebuilt with the new track,
-            // subsequent emissions with the same selection won't force more rebuilds.
+            // MANUAL or AUTO_RECOVERY origin detection:
+            // For SYNTHETIC_DASH, the factory selects a video-only track (stored in factorySelectedVideoTrack)
+            // which differs from selection.video (often a muxed track). We can't compare URLs directly.
+            //
+            // Instead, for MANUAL/AUTO_RECOVERY, we compare selection.video HEIGHT against the prepared
+            // track height. If heights match, we've already prepared the correct quality.
+            // This is idempotent: once rebuilt with 360p, subsequent 360p MANUAL emissions return Hit.
             if (selection.selectionOrigin == QualitySelectionOrigin.MANUAL ||
                 selection.selectionOrigin == QualitySelectionOrigin.AUTO_RECOVERY) {
-                val requestedVideoUrl = selection.video?.url
-                if (requestedVideoUrl != null && requestedVideoUrl != preparedSyntheticVideoUrl) {
+                val requestedHeight = selection.video?.height
+                val preparedHeight = factorySelectedVideoTrack?.height
+                // If heights differ (including null cases indicating a change), must rebuild
+                if (requestedHeight != null && preparedHeight != null && requestedHeight != preparedHeight) {
                     return CacheHitResult.Miss
                 }
-                // Already prepared with this track - don't rebuild
+                // Heights match - already prepared with this quality, don't rebuild
             }
             // Key matches, same cap, track matches (or AUTO with stable factory choice) - safe to reuse
             return CacheHitResult.Hit(null)
