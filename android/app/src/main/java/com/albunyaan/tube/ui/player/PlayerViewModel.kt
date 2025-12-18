@@ -1410,42 +1410,4 @@ private fun ResolvedStreams.toDefaultSelection(): PlaybackSelection? {
     return PlaybackSelection(streamId, preferredVideo, preferredAudio, this)
 }
 
-private fun stubUpNextItems(): List<UpNextItem> = listOf(
-    UpNextItem(
-        id = "intro_foundations",
-        title = "Foundations Orientation",
-        channelName = "Albunyaan Institute",
-        durationSeconds = 630,
-        streamId = "M7lc1UVf-VE"
-    ),
-    UpNextItem(
-        id = "tafsir_baqara",
-        title = "Tafsir Series - Al-Baqarah",
-        channelName = "Albunyaan Institute",
-        durationSeconds = 900,
-        streamId = "aqz-KE-bpKQ"
-    ),
-    UpNextItem(
-        id = "youth_circle",
-        title = "Youth Circle Q&A",
-        channelName = "Albunyaan Youth",
-        durationSeconds = 780,
-        streamId = "ysz5S6PUM-U"
-    ),
-    UpNextItem(
-        id = "community_roundtable",
-        title = "Community Roundtable",
-        channelName = "Community Submissions",
-        durationSeconds = 540,
-        isExcluded = true,
-        exclusionReason = "Awaiting moderator approval",
-        streamId = "E7wJTI-1dvQ"
-    ),
-    UpNextItem(
-        id = "family_series",
-        title = "Family Series: Parenting Essentials",
-        channelName = "Albunyaan Family",
-        durationSeconds = 840,
-        streamId = "dQw4w9WgXcQ"
-    )
-)
+private fun stubUpNextItems(): List<UpNextItem> = emptyList()

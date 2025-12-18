@@ -101,8 +101,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         MediaSourceResult.AdaptiveType.NONE
     /** Last applied user cap for adaptive streams; used to update track selector without rebuilding. */
     private var preparedQualityCapHeight: Int? = null
-    /** For SYNTHETIC_DASH: The video track URL used by factory. Used for idempotent cache-hit detection. */
-    private var preparedSyntheticVideoUrl: String? = null
     /**
      * The actual video track selected by the factory. For progressive/SYNTHETIC_DASH, this may differ
      * from selection.video when DEFAULT_INITIAL_QUALITY_HEIGHT is applied in AUTO mode.
@@ -392,7 +390,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         preparedIsAdaptive = false
         preparedAdaptiveType = MediaSourceResult.AdaptiveType.NONE
         preparedQualityCapHeight = null
-        preparedSyntheticVideoUrl = null
         factorySelectedVideoTrack = null
         adaptiveFailedForCurrentStream = null
 
@@ -1023,7 +1020,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         preparedIsAdaptive = false
         preparedAdaptiveType = MediaSourceResult.AdaptiveType.NONE
         preparedQualityCapHeight = null
-        preparedSyntheticVideoUrl = null
         factorySelectedVideoTrack = null
         currentPlayer.stop()
 
@@ -1080,7 +1076,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 preparedIsAdaptive = false
                 preparedAdaptiveType = MediaSourceResult.AdaptiveType.NONE
                 preparedQualityCapHeight = null
-                preparedSyntheticVideoUrl = null
                 factorySelectedVideoTrack = null
             }
             return
@@ -1202,19 +1197,13 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             if (preparedIsAdaptive && selection.hasUserQualityCap) {
                 applyQualityCapToTrackSelector(selection.userQualityCapHeight!!)
                 preparedQualityCapHeight = selection.userQualityCapHeight
-                preparedSyntheticVideoUrl = null // Not SYNTHETIC_DASH
                 factorySelectedVideoTrack = null // ABR handles quality selection
             } else if (result.adaptiveType == MediaSourceResult.AdaptiveType.SYNTHETIC_DASH) {
-                // SYNTHETIC_DASH: Track the quality cap and video URL used by factory.
-                // These are needed by checkCacheHit() to detect changes that require rebuild.
+                // SYNTHETIC_DASH: Track the quality cap and selected track.
+                // checkCacheHit() uses height+bitrate comparison via factorySelectedVideoTrack.
                 // No track selector constraints needed (single-track synthetic manifest).
                 clearTrackSelectorConstraints()
                 preparedQualityCapHeight = selection.userQualityCapHeight
-                // Store the video track URL (not the manifest data: URI).
-                // For SYNTHETIC_DASH, checkCacheHit() uses height-based comparison for MANUAL/AUTO_RECOVERY
-                // origins (selection.video?.height vs factorySelectedVideoTrack?.height) since factory may
-                // select different tracks (e.g., video-only vs muxed) with the same resolution.
-                preparedSyntheticVideoUrl = result.selectedVideoTrack?.url
                 factorySelectedVideoTrack = result.selectedVideoTrack // Factory's actual choice
             } else {
                 // Progressive or no cap - clear any lingering constraints.
@@ -1222,7 +1211,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 // ensures clean state for future adaptive videos.
                 clearTrackSelectorConstraints()
                 preparedQualityCapHeight = null
-                preparedSyntheticVideoUrl = null
                 factorySelectedVideoTrack = result.selectedVideoTrack // Factory's actual choice
             }
 
@@ -1239,7 +1227,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             preparedIsAdaptive = false
             preparedAdaptiveType = MediaSourceResult.AdaptiveType.NONE
             preparedQualityCapHeight = null
-            preparedSyntheticVideoUrl = null
             factorySelectedVideoTrack = null
             clearTrackSelectorConstraints() // Clear any lingering constraints from previous adaptive video
             val trackPair = selectTrack(streamState.selection, state.audioOnly)
@@ -1253,7 +1240,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 preparedIsAdaptive = false
                 preparedAdaptiveType = MediaSourceResult.AdaptiveType.NONE
                 preparedQualityCapHeight = null
-                preparedSyntheticVideoUrl = null
                 factorySelectedVideoTrack = null
                 return
             }
@@ -1310,7 +1296,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             preparedIsAdaptive = false
             preparedAdaptiveType = MediaSourceResult.AdaptiveType.NONE
             preparedQualityCapHeight = null
-            preparedSyntheticVideoUrl = null
             factorySelectedVideoTrack = null
         }
     }
@@ -1876,19 +1861,36 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // For SYNTHETIC_DASH, the factory selects a video-only track (stored in factorySelectedVideoTrack)
             // which differs from selection.video (often a muxed track). We can't compare URLs directly.
             //
-            // Instead, for MANUAL/AUTO_RECOVERY, we compare selection.video HEIGHT against the prepared
-            // track height. If heights match, we've already prepared the correct quality.
-            // This is idempotent: once rebuilt with 360p, subsequent 360p MANUAL emissions return Hit.
-            if (selection.selectionOrigin == QualitySelectionOrigin.MANUAL ||
-                selection.selectionOrigin == QualitySelectionOrigin.AUTO_RECOVERY) {
+            // MANUAL: User explicitly selected a resolution. Compare heights only - the user selected
+            // a muxed track (e.g., 720p muxed) but factory uses video-only (720p video-only). These have
+            // different bitrates by nature, so bitrate comparison would cause rebuild loops.
+            //
+            // AUTO_RECOVERY: System downshift via QualityStepDownHelper. This may select same-height/
+            // lower-bitrate tracks, so we must compare both height AND bitrate to detect the change.
+            if (selection.selectionOrigin == QualitySelectionOrigin.MANUAL) {
                 val requestedHeight = selection.video?.height
                 val preparedHeight = factorySelectedVideoTrack?.height
                 // If heights differ or either is null (missing track info), must rebuild for safety.
-                // Null heights indicate missing data - safer to rebuild than assume a match.
                 if (requestedHeight == null || preparedHeight == null || requestedHeight != preparedHeight) {
                     return CacheHitResult.Miss
                 }
-                // Heights match - already prepared with this quality, don't rebuild
+                // Heights match - MANUAL selection at same resolution is idempotent
+            } else if (selection.selectionOrigin == QualitySelectionOrigin.AUTO_RECOVERY) {
+                val requestedHeight = selection.video?.height
+                val preparedHeight = factorySelectedVideoTrack?.height
+                // If heights differ or either is null (missing track info), must rebuild for safety.
+                if (requestedHeight == null || preparedHeight == null || requestedHeight != preparedHeight) {
+                    return CacheHitResult.Miss
+                }
+                // Heights match - also check bitrate for same-height downshifts.
+                // QualityStepDownHelper can select same-height/lower-bitrate tracks.
+                // Only compare when both have valid bitrates; skip if either is missing.
+                val requestedBitrate = selection.video?.bitrate?.takeIf { it > 0 }
+                val preparedBitrate = factorySelectedVideoTrack?.bitrate?.takeIf { it > 0 }
+                if (requestedBitrate != null && preparedBitrate != null && requestedBitrate != preparedBitrate) {
+                    return CacheHitResult.Miss
+                }
+                // Height and bitrate match - already prepared with this quality
             }
             // Key matches, same cap, track matches (or AUTO with stable factory choice) - safe to reuse
             return CacheHitResult.Hit(null)

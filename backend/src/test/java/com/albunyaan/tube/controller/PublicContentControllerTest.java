@@ -52,7 +52,7 @@ public class PublicContentControllerTest {
     void setUp() {
         testVideo = new Video();
         testVideo.setId("test-video-id");
-        testVideo.setYoutubeId("dQw4w9WgXcQ");
+        testVideo.setYoutubeId("EnfgPg0Ey3I");
         testVideo.setTitle("Test Video");
         testVideo.setDescription("Test description");
         testVideo.setThumbnailUrl("https://example.com/thumb.jpg");
@@ -69,10 +69,10 @@ public class PublicContentControllerTest {
                 .thenReturn(testVideo);
 
         // When & Then
-        mockMvc.perform(get("/api/v1/videos/{videoId}", "dQw4w9WgXcQ")
+        mockMvc.perform(get("/api/v1/videos/{videoId}", "EnfgPg0Ey3I")
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.youtubeId").value("dQw4w9WgXcQ"))
+                .andExpect(jsonPath("$.youtubeId").value("EnfgPg0Ey3I"))
                 .andExpect(jsonPath("$.title").value("Test Video"))
                 .andExpect(jsonPath("$.status").value("APPROVED"));
     }

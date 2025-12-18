@@ -59,7 +59,7 @@ class DownloadsFragmentTest {
     @Test
     fun pauseResumeCancelFlow_updatesRepository() {
         val entry = DownloadEntry(
-            request = DownloadRequest("download-1", "Sample Video", "M7lc1UVf-VE", audioOnly = true),
+            request = DownloadRequest("download-1", "Sample Video", "test_video_id", audioOnly = true),
             status = DownloadStatus.RUNNING,
             progress = 42
         )

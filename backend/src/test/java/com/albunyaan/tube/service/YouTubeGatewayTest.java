@@ -200,7 +200,7 @@ class YouTubeGatewayTest {
         @Test
         @DisplayName("Should get video URL from video ID")
         void getVideoUrl_validId() throws ExtractionException {
-            String videoId = "dQw4w9WgXcQ";
+            String videoId = "EnfgPg0Ey3I";
             String url = gateway.getVideoUrl(videoId);
 
             assertNotNull(url);
