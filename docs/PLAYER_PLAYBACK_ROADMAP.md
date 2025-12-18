@@ -175,6 +175,14 @@ User “quality” is a **ceiling**. During stalls, the player must be able to t
 - ✅ Improves seek/restart behavior via byte-range requests and a structured container index.
 - ❌ Does not provide "ABR smoothness": progressive remains single-bitrate. PR3 proactive downshift remains essential for throughput dips.
 
+**Bug Fix (2025-12-18): Origin-based cache-hit detection**
+- ✅ Fixed re-prepare loops in AUTO mode caused by divergence between ViewModel's `selection.video` and factory's actual selected track (`factorySelectedVideoTrack`).
+- ✅ Cache-hit logic now uses origin-based URL comparison:
+  - AUTO: compares against `factorySelectedVideoTrack?.url` (factory's 720p default choice)
+  - MANUAL: compares against `selection.video?.url` (user's requested quality)
+  - AUTO_RECOVERY: compares against `selection.video?.url` (recovery target)
+- ✅ SYNTHETIC_DASH rebuild check extended to include MANUAL origin (was only AUTO_RECOVERY).
+
 **Implementation Details (completed 2025-12-18)**
 - ✅ **Measurement pass completed**: Tested 36 videos with 100% success rate for both video (296/296) and audio (206/206) streams.
 - ✅ **SyntheticDashMetadata** added to `VideoTrack` and `AudioTrack` models to store itag, init/index ranges, and approx duration.
