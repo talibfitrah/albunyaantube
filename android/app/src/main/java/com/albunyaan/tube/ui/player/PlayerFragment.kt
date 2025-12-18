@@ -1210,8 +1210,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 // No track selector constraints needed (single-track synthetic manifest).
                 clearTrackSelectorConstraints()
                 preparedQualityCapHeight = selection.userQualityCapHeight
-                // Store the video track URL (not the manifest data: URI) for cache-hit comparison.
-                // checkCacheHit() compares selection.video?.url against this value.
+                // Store the video track URL (not the manifest data: URI).
+                // For SYNTHETIC_DASH, checkCacheHit() uses height-based comparison for MANUAL/AUTO_RECOVERY
+                // origins (selection.video?.height vs factorySelectedVideoTrack?.height) since factory may
+                // select different tracks (e.g., video-only vs muxed) with the same resolution.
                 preparedSyntheticVideoUrl = result.selectedVideoTrack?.url
                 factorySelectedVideoTrack = result.selectedVideoTrack // Factory's actual choice
             } else {
@@ -1881,8 +1883,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 selection.selectionOrigin == QualitySelectionOrigin.AUTO_RECOVERY) {
                 val requestedHeight = selection.video?.height
                 val preparedHeight = factorySelectedVideoTrack?.height
-                // If heights differ (including null cases indicating a change), must rebuild
-                if (requestedHeight != null && preparedHeight != null && requestedHeight != preparedHeight) {
+                // If heights differ or either is null (missing track info), must rebuild for safety.
+                // Null heights indicate missing data - safer to rebuild than assume a match.
+                if (requestedHeight == null || preparedHeight == null || requestedHeight != preparedHeight) {
                     return CacheHitResult.Miss
                 }
                 // Heights match - already prepared with this quality, don't rebuild
