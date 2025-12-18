@@ -1,6 +1,6 @@
 # Player & Playback Reliability Roadmap (Android)
 
-**Last Updated**: 2025-12-18 (PR6/PR6.5/PR6.6 verification completed)
+**Last Updated**: 2025-12-18 (PR6.7 early-stall prevention complete)
 **Scope**: Android player stability, progressive/adaptive strategy, and extraction/refresh safety.
 
 > **Note**: Backend YouTube rate-limit remediation is tracked separately on branch `claude/fix-youtube-rate-limiting-clean` in `docs/status/YOUTUBE_RATE_LIMIT_PLAN.md`.
@@ -43,6 +43,13 @@
 - **PR6.4 Done**: Deferred async player release. Mitigates `ExoTimeoutException: Player release timed out` by deferring release() via Handler.post() on the player's application looper with try-catch. This allows onDestroyView() to complete immediately; release() runs on the next main loop iteration. Mitigates but doesn't fully eliminate UI jank if audio hardware is blocked. Implemented 2025-12-18.
 - **PR6.5 Done**: Playback entry-point parity. Extended tap-to-prefetch to all remaining video entry points: Channel tabs (Videos/Live/Shorts), PlaylistDetailFragment, and FeaturedListFragment. Implemented 2025-12-18.
 - **PR6.6 Done**: Playlist playback reliability. Deep-start with `startVideoId` (bounded paging), lazy queue loader with `PlaylistPagingState`, async boundary fetch (no UI blocking), auto-skip for unplayable items, clean state transitions. 16 unit tests pass. Implemented 2025-12-18.
+- **PR6.7 Done**: Early-stall prevention for progressive playback. Addresses the "plays for a few seconds then buffers" problem with three improvements:
+  1. **Predictive downshift**: Calculates buffer depletion rate (using linear regression) and triggers downshift when projected to hit critical buffer within 30 seconds (before buffer becomes "low")
+  2. **Early-stall exception**: Allows ONE emergency downshift during grace period if buffer becomes critical (< 3s) AND not building, preventing the initial stall
+  3. **Synthetic DASH quality guard**: Skips synthetic DASH in favor of raw progressive when a higher-resolution muxed track is available under the same quality cap
+  - Also raised LOW_BUFFER_THRESHOLD from 5s to 10s for earlier proactive action
+  - 35 unit tests pass (25 BufferHealthMonitor + 10 SyntheticDashTrackSelection)
+  - Implemented 2025-12-18.
 
 ### Verification Completed (2025-12-18)
 - ✅ **Phone verification**: Physical device (Huawei) - playback, MediaSession, volume controls all working.
@@ -63,7 +70,20 @@ Progressive is inherently single-bitrate and will stall whenever network through
 For adaptive streams, quality changes are constraints on the **track selector**, not a different URL. Rebuilding the MediaSource on cap changes causes unnecessary rebuffering and makes playback feel “stuck”.
 
 ## Fix: Progressive auto step-down must work even if user set a cap
-User “quality” is a **ceiling**. During stalls, the player must be able to temporarily step down **below the ceiling** (AUTO_RECOVERY) without overriding the saved user preference.
+User "quality" is a **ceiling**. During stalls, the player must be able to temporarily step down **below the ceiling** (AUTO_RECOVERY) without overriding the saved user preference.
+
+## Fix: "Plays for a few seconds then buffers" (PR6.7)
+This pattern occurs when:
+1. Fast start with small buffer (2s `bufferForPlaybackMs`)
+2. Network throughput slightly below video bitrate
+3. Buffer depletes over 5-15 seconds until stall
+
+**Root cause**: The original buffer health monitor only acted when buffer hit "low" threshold (5s), which was too late—user already experienced a stall.
+
+**Solution (three-pronged)**:
+1. **Predictive downshift**: Calculate depletion rate (via linear regression) and project when buffer will hit critical. Trigger preemptive downshift when projected to stall within 30s, even if buffer is currently "healthy" (e.g., 80s). This catches the gradual drain pattern early.
+2. **Early-stall exception**: Bypass the 10s grace period for critical buffer situations. If buffer becomes critical (< 3s) during startup AND is not building, allow ONE emergency downshift immediately instead of waiting for grace period to expire. The "not building" check prevents false positives on merely-slow-to-build buffers.
+3. **Synthetic DASH quality guard**: Skip synthetic DASH in favor of raw progressive when a higher-resolution muxed track is available under the same quality cap. This prevents synthetic DASH from selecting a lower-quality video-only track when a better muxed option exists.
 
 ---
 

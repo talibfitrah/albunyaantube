@@ -84,9 +84,12 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
 
         /**
          * Default initial quality ceiling when no user cap is set.
-         * 720p is a good balance: decent quality while buffering quickly.
-         * For progressive streams (no ABR), this prevents starting at 4K which causes
-         * immediate buffer depletion.
+         * 720p offers a good balance of quality and bandwidth for most connections.
+         *
+         * For progressive/synthetic DASH streams (no ABR), if throughput can't keep up:
+         * - BufferHealthMonitor will detect declining buffer and trigger proactive downshift
+         * - Early-stall exception handles critical situations during grace period
+         * - Predictive downshift catches gradual depletion before stall
          */
         private const val DEFAULT_INITIAL_QUALITY_HEIGHT = 720
 
@@ -252,9 +255,8 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
                     ?: resolved.videoTracks.minByOrNull { it.height ?: Int.MAX_VALUE }
             }
             else -> {
-                // No user cap (AUTO mode): always use DEFAULT_INITIAL_QUALITY_HEIGHT (720p)
-                // to avoid starting at 4K which causes immediate buffer depletion.
-                // Don't trust selectedQuality here - it may be high-res from ViewModel fallback.
+                // No user cap (AUTO mode): use DEFAULT_INITIAL_QUALITY_HEIGHT (720p).
+                // BufferHealthMonitor handles quality adjustments via predictive/early-stall downshift.
                 // Fallback chain: 1) ≤720p, 2) lowest with height, 3) first available (null heights)
                 findBestTrackUnderCap(resolved.videoTracks, DEFAULT_INITIAL_QUALITY_HEIGHT)
                     ?: resolved.videoTracks.filter { it.height != null }.minByOrNull { it.height!! }
@@ -378,14 +380,13 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
             selectionOrigin == QualitySelectionOrigin.AUTO_RECOVERY && selectedQuality != null -> selectedQuality
             userQualityCapHeight != null -> {
                 // For synthetic DASH, prefer video-only tracks (muxed can't be wrapped)
-                findBestVideoOnlyTrackUnderCap(resolved.videoTracks, userQualityCapHeight)
+                SyntheticDashTrackSelector.findBestVideoOnlyTrackUnderCap(resolved.videoTracks, userQualityCapHeight)
             }
             else -> {
-                // No user cap (AUTO mode): always use DEFAULT_INITIAL_QUALITY_HEIGHT (720p)
-                // to avoid starting at 4K which causes immediate buffer depletion.
-                // Don't trust selectedQuality here - it may be high-res from ViewModel fallback.
+                // No user cap (AUTO mode): use DEFAULT_INITIAL_QUALITY_HEIGHT (720p).
+                // BufferHealthMonitor handles quality adjustments via predictive/early-stall downshift.
                 // Fallback chain: 1) ≤720p video-only, 2) lowest with height, 3) first eligible
-                findBestVideoOnlyTrackUnderCap(resolved.videoTracks, DEFAULT_INITIAL_QUALITY_HEIGHT)
+                SyntheticDashTrackSelector.findBestVideoOnlyTrackUnderCap(resolved.videoTracks, DEFAULT_INITIAL_QUALITY_HEIGHT)
                     ?: resolved.videoTracks
                         .filter { it.isVideoOnly && it.height != null && it.syntheticDashMetadata?.hasValidRanges() == true }
                         .minByOrNull { it.height!! }
@@ -402,6 +403,16 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
 
         if (videoTrack.syntheticDashMetadata?.hasValidRanges() != true) {
             android.util.Log.d(TAG, "Synthetic DASH: video track missing valid metadata")
+            return null
+        }
+
+        // Check if there's a higher-resolution muxed progressive track available.
+        // Synthetic DASH can only use video-only tracks, but if a better muxed option exists,
+        // we should fall back to raw progressive to use that higher-quality muxed stream.
+        val effectiveCap = userQualityCapHeight ?: DEFAULT_INITIAL_QUALITY_HEIGHT
+        if (SyntheticDashTrackSelector.shouldSkipSyntheticDash(videoTrack, resolved.videoTracks, effectiveCap)) {
+            val bestMuxedTrack = SyntheticDashTrackSelector.findBestMuxedTrackUnderCap(resolved.videoTracks, effectiveCap)
+            android.util.Log.d(TAG, "Synthetic DASH: muxed ${bestMuxedTrack?.height}p available, higher than video-only ${videoTrack.height}p - prefer raw progressive")
             return null
         }
 
@@ -443,21 +454,6 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
             type = MediaSourceResult.AdaptiveType.SYNTHETIC_DASH,
             selectedVideoTrack = videoTrack
         )
-    }
-
-    /**
-     * Find the best video-only track under the quality cap (for synthetic DASH).
-     * Only considers video-only tracks with valid SyntheticDashMetadata.
-     */
-    private fun findBestVideoOnlyTrackUnderCap(tracks: List<VideoTrack>, capHeight: Int): VideoTrack? {
-        return tracks
-            .filter {
-                it.isVideoOnly &&
-                it.height != null &&
-                it.height <= capHeight &&
-                it.syntheticDashMetadata?.hasValidRanges() == true
-            }
-            .maxByOrNull { it.height ?: 0 }
     }
 
     /**

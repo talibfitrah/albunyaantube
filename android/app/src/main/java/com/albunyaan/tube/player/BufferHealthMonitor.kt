@@ -15,11 +15,12 @@ import kotlinx.coroutines.launch
  * Strategy:
  * - Samples buffer (bufferedPosition - currentPosition) every SAMPLE_INTERVAL_MS
  * - Tracks buffer trend over the last TREND_WINDOW_SIZE samples
- * - When buffer is LOW and DECLINING for consecutive samples, triggers proactive downshift
+ * - PREDICTIVE: When buffer is declining and projected to hit critical in < PREDICTIVE_STALL_HORIZON_MS, trigger downshift
+ * - EARLY-STALL EXCEPTION: Allow one immediate downshift during grace period if buffer becomes critical
  * - Coordinates with PlaybackRecoveryManager: disabled during recovery states
  *
  * Guardrails:
- * - Grace period after stream start (GRACE_PERIOD_MS)
+ * - Grace period after stream start (GRACE_PERIOD_MS) - but bypassed for critical buffer situations
  * - Cooldown between proactive downshifts (DOWNSHIFT_COOLDOWN_MS)
  * - Maximum proactive downshifts per stream (MAX_PROACTIVE_DOWNSHIFTS)
  * - Only active for progressive streams (adaptive streams have ABR)
@@ -35,11 +36,11 @@ class BufferHealthMonitor(
         /** Sample buffer every 1 second */
         private const val SAMPLE_INTERVAL_MS = 1_000L
 
-        /** Consider buffer "low" when below 5 seconds */
-        private const val LOW_BUFFER_THRESHOLD_MS = 5_000L
+        /** Consider buffer "low" when below 10 seconds (increased from 5s for earlier action) */
+        private const val LOW_BUFFER_THRESHOLD_MS = 10_000L
 
         /** Critical buffer threshold - urgent action needed */
-        private const val CRITICAL_BUFFER_THRESHOLD_MS = 2_000L
+        private const val CRITICAL_BUFFER_THRESHOLD_MS = 3_000L
 
         /** Number of samples to track for trend detection */
         private const val TREND_WINDOW_SIZE = 5
@@ -50,7 +51,7 @@ class BufferHealthMonitor(
         /** Cooldown between proactive downshifts */
         private const val DOWNSHIFT_COOLDOWN_MS = 30_000L
 
-        /** Grace period after stream start before monitoring */
+        /** Grace period after stream start before monitoring (normal conditions) */
         private const val GRACE_PERIOD_MS = 10_000L
 
         /** Maximum proactive downshifts per stream */
@@ -58,6 +59,18 @@ class BufferHealthMonitor(
 
         /** Minimum buffer change to consider as "declining" (avoid noise) */
         private const val MIN_DECLINE_THRESHOLD_MS = 200L
+
+        /**
+         * Predictive stall horizon: trigger downshift when projected to hit critical buffer
+         * within this many milliseconds. This allows preemptive action before buffer gets low.
+         */
+        private const val PREDICTIVE_STALL_HORIZON_MS = 30_000L
+
+        /**
+         * Minimum consecutive declining samples required for predictive downshift.
+         * Higher threshold than low-buffer to avoid false positives.
+         */
+        private const val PREDICTIVE_DECLINING_THRESHOLD = 10
     }
 
     interface BufferHealthCallbacks {
@@ -88,6 +101,9 @@ class BufferHealthMonitor(
     private var lastDownshiftTimeMs = -1L
     private var proactiveDownshiftCount = 0
 
+    // Track if we've used our early-stall exception (one allowed per stream)
+    private var earlyStallExceptionUsed = false
+
     /**
      * Call when a new stream starts playing.
      * Resets all tracking state and starts monitoring if progressive.
@@ -106,6 +122,7 @@ class BufferHealthMonitor(
         streamStartTimeMs = clock()
         proactiveDownshiftCount = 0
         lastDownshiftTimeMs = -1L // Reset per stream - new video shouldn't inherit previous cooldown
+        earlyStallExceptionUsed = false
 
         // Only monitor progressive streams (adaptive has ABR)
         if (isProgressiveStream) {
@@ -188,11 +205,49 @@ class BufferHealthMonitor(
 
     private fun evaluateBufferHealth(currentBufferMs: Long) {
         val now = clock()
-
-        // Grace period check
         val elapsed = now - streamStartTimeMs
-        if (elapsed < GRACE_PERIOD_MS) {
-            Log.v(TAG, "Buffer: ${currentBufferMs}ms (grace period: ${GRACE_PERIOD_MS - elapsed}ms remaining)")
+        val isInGracePeriod = elapsed < GRACE_PERIOD_MS
+
+        // Check buffer levels
+        val isLowBuffer = currentBufferMs < LOW_BUFFER_THRESHOLD_MS
+        val isCriticalBuffer = currentBufferMs < CRITICAL_BUFFER_THRESHOLD_MS
+
+        // Check trend
+        val isDeclining = isBufferDeclining()
+        val depletionRateMs = calculateDepletionRate()
+
+        if (isDeclining) {
+            consecutiveDecliningCount++
+        } else {
+            consecutiveDecliningCount = 0
+        }
+
+        // Calculate projected time to critical (if depleting)
+        // Clamp to 0 if buffer is already below critical (avoid negative values)
+        // Multiply first, then divide to preserve precision in integer arithmetic
+        val projectedTimeToCriticalMs = if (depletionRateMs > 0 && currentBufferMs > CRITICAL_BUFFER_THRESHOLD_MS) {
+            ((currentBufferMs - CRITICAL_BUFFER_THRESHOLD_MS) * SAMPLE_INTERVAL_MS / depletionRateMs)
+        } else if (depletionRateMs > 0) {
+            0L // Already at or below critical
+        } else {
+            Long.MAX_VALUE
+        }
+
+        // EARLY-STALL EXCEPTION: During grace period, only act on critical buffer situations
+        // where buffer is NOT building (declining or flat). This prevents the "plays for a few
+        // seconds then stalls" problem while avoiding false positives on merely-slow-to-build buffers.
+        if (isInGracePeriod) {
+            // isNotBuilding: buffer is declining OR we have enough samples and it's not increasing
+            val isNotBuilding = isDeclining || (bufferSamples.size >= 2 && !isBufferIncreasing())
+            if (isCriticalBuffer && isNotBuilding && !earlyStallExceptionUsed && proactiveDownshiftCount < MAX_PROACTIVE_DOWNSHIFTS) {
+                Log.w(TAG, "EARLY-STALL EXCEPTION: Critical buffer (${currentBufferMs}ms) and not building during grace period - emergency downshift")
+                earlyStallExceptionUsed = true
+                requestProactiveDownshift()
+            } else if (isCriticalBuffer) {
+                Log.v(TAG, "Buffer: ${currentBufferMs}ms CRITICAL but building (grace period: ${GRACE_PERIOD_MS - elapsed}ms remaining)")
+            } else {
+                Log.v(TAG, "Buffer: ${currentBufferMs}ms (grace period: ${GRACE_PERIOD_MS - elapsed}ms remaining)")
+            }
             return
         }
 
@@ -209,25 +264,14 @@ class BufferHealthMonitor(
             return
         }
 
-        // Check buffer level
-        val isLowBuffer = currentBufferMs < LOW_BUFFER_THRESHOLD_MS
-        val isCriticalBuffer = currentBufferMs < CRITICAL_BUFFER_THRESHOLD_MS
-
-        // Check trend
-        val isDeclining = isBufferDeclining()
-
-        if (isDeclining) {
-            consecutiveDecliningCount++
-        } else {
-            consecutiveDecliningCount = 0
-        }
-
         Log.d(TAG, "Buffer: ${currentBufferMs}ms, low=$isLowBuffer, critical=$isCriticalBuffer, " +
-                "declining=$isDeclining, consecutiveDeclines=$consecutiveDecliningCount")
+                "declining=$isDeclining, consecutiveDeclines=$consecutiveDecliningCount, " +
+                "projectedToCritical=${if (projectedTimeToCriticalMs < Long.MAX_VALUE) "${projectedTimeToCriticalMs}ms" else "never"}")
 
-        // Decision logic:
-        // - Critical buffer AND declining: immediate action
-        // - Low buffer AND multiple consecutive declines: proactive action
+        // Decision logic (ordered by urgency):
+        // 1. Critical buffer AND declining: immediate action
+        // 2. Low buffer AND multiple consecutive declines: proactive action
+        // 3. PREDICTIVE: Buffer depleting and projected to hit critical within horizon
         val shouldDownshift = when {
             isCriticalBuffer && isDeclining -> {
                 Log.w(TAG, "CRITICAL: Buffer at ${currentBufferMs}ms and declining - requesting immediate downshift")
@@ -237,12 +281,63 @@ class BufferHealthMonitor(
                 Log.w(TAG, "PROACTIVE: Buffer low (${currentBufferMs}ms) with $consecutiveDecliningCount consecutive declines - requesting downshift")
                 true
             }
+            // PREDICTIVE: Even if buffer is not "low", if we're consistently depleting and
+            // projected to hit critical within horizon, take action early
+            consecutiveDecliningCount >= PREDICTIVE_DECLINING_THRESHOLD &&
+                    projectedTimeToCriticalMs < PREDICTIVE_STALL_HORIZON_MS -> {
+                Log.w(TAG, "PREDICTIVE: Buffer at ${currentBufferMs}ms, declining for $consecutiveDecliningCount samples, " +
+                        "projected to hit critical in ${projectedTimeToCriticalMs}ms - requesting preemptive downshift")
+                true
+            }
             else -> false
         }
 
         if (shouldDownshift) {
             requestProactiveDownshift()
         }
+    }
+
+    /**
+     * Calculate the buffer depletion rate in ms per sample interval using linear regression.
+     * Positive value means buffer is shrinking (net depletion).
+     * Returns 0 if not enough samples or buffer is not depleting overall.
+     *
+     * Uses simple linear regression: slope = (n*Σxy - Σx*Σy) / (n*Σx² - (Σx)²)
+     * where x = sample index, y = buffer value
+     * We negate the slope so positive = depletion
+     */
+    private fun calculateDepletionRate(): Long {
+        if (bufferSamples.size < 3) return 0L
+
+        val samples = bufferSamples.toList()
+        val n = samples.size
+
+        // Calculate sums for linear regression using Double to preserve precision
+        var sumX = 0.0
+        var sumY = 0.0
+        var sumXY = 0.0
+        var sumX2 = 0.0
+
+        for (i in samples.indices) {
+            val x = i.toDouble()
+            val y = samples[i].toDouble()
+            sumX += x
+            sumY += y
+            sumXY += x * y
+            sumX2 += x * x
+        }
+
+        // Calculate slope: (n*Σxy - Σx*Σy) / (n*Σx² - (Σx)²)
+        val denominator = n * sumX2 - sumX * sumX
+        if (denominator == 0.0) return 0L
+
+        val slope = (n * sumXY - sumX * sumY) / denominator
+
+        // Negate slope: positive slope means buffer increasing, we want positive = depletion
+        val depletionRate = -slope
+
+        // Only return positive depletion rates (buffer shrinking), rounded to Long
+        return if (depletionRate > 0) depletionRate.toLong() else 0L
     }
 
     /**
@@ -260,6 +355,22 @@ class BufferHealthMonitor(
         // Buffer is declining if it dropped by more than threshold
         val decline = previous - latest
         return decline > MIN_DECLINE_THRESHOLD_MS
+    }
+
+    /**
+     * Check if buffer is actively increasing (building).
+     * Used to avoid false positives on merely-slow-to-build buffers.
+     */
+    private fun isBufferIncreasing(): Boolean {
+        if (bufferSamples.size < 2) return false
+
+        val samples = bufferSamples.toList()
+        val latest = samples.last()
+        val previous = samples[samples.size - 2]
+
+        // Buffer is increasing if it grew by more than threshold
+        val increase = latest - previous
+        return increase > MIN_DECLINE_THRESHOLD_MS
     }
 
     private fun requestProactiveDownshift() {

@@ -277,10 +277,35 @@ class BufferHealthMonitorTest {
     // --- Timing Tests (using injected clock + coroutine advancement) ---
 
     @Test
-    fun `grace period blocks downshift within 10 seconds of stream start`() = testScope.runTest {
-        // Arrange: configure low buffer that would normally trigger downshift
+    fun `grace period blocks normal downshift but allows early-stall exception for critical declining buffer`() = testScope.runTest {
+        // Arrange: configure buffer that declines into critical zone (< 3s threshold)
+        // Start at 4,000ms so buffer stays positive throughout (4000 - 300*9 = 1300ms)
+        var bufferMs = 4_000L
         whenever(mockPlayer.currentPosition).thenReturn(0L)
-        whenever(mockPlayer.bufferedPosition).thenReturn(1_500L) // Critical buffer (< 2s)
+        whenever(mockPlayer.bufferedPosition).thenAnswer { bufferMs }
+
+        bufferMonitor.onNewStream("video1", isAdaptive = false)
+        bufferMonitor.onPlaybackStarted(mockPlayer)
+
+        // Act: advance time within grace period with declining buffer
+        repeat(9) { // 9 samples at 1s each
+            bufferMs -= 300L // Declining so early-stall exception triggers
+            advanceTimeBy(1_000L)
+            currentTime += 1_000L
+        }
+
+        // Assert: ONE downshift allowed during grace period for critical + declining buffer
+        verify(mockCallbacks, times(1)).onProactiveDownshiftRequested()
+
+        // Cleanup: release monitor to cancel coroutine
+        bufferMonitor.release()
+    }
+
+    @Test
+    fun `grace period blocks downshift for non-critical low buffer`() = testScope.runTest {
+        // Arrange: configure low but NOT critical buffer (5-10s range)
+        whenever(mockPlayer.currentPosition).thenReturn(0L)
+        whenever(mockPlayer.bufferedPosition).thenReturn(8_000L) // Low but not critical (8s)
 
         bufferMonitor.onNewStream("video1", isAdaptive = false)
         bufferMonitor.onPlaybackStarted(mockPlayer)
@@ -291,7 +316,7 @@ class BufferHealthMonitorTest {
             currentTime += 1_000L
         }
 
-        // Assert: no downshift during grace period despite critical buffer
+        // Assert: no downshift during grace period for non-critical buffer
         verify(mockCallbacks, never()).onProactiveDownshiftRequested()
 
         // Cleanup: release monitor to cancel coroutine
@@ -419,6 +444,101 @@ class BufferHealthMonitorTest {
 
         // No crash, clock is used
         assertEquals("Downshift count should still be 0", 0, bufferMonitor.getProactiveDownshiftCount())
+    }
+
+    @Test
+    fun `predictive downshift triggers when buffer projected to hit critical`() = testScope.runTest {
+        // Arrange: buffer starts high (100s) but depleting at ~1s/sample
+        // Projection: buffer will hit critical (3s) in ~97s
+        // With horizon of 30s, downshift should trigger when buffer reaches ~33s
+        var bufferMs = 100_000L // 100 seconds
+        whenever(mockPlayer.currentPosition).thenReturn(0L)
+        whenever(mockPlayer.bufferedPosition).thenAnswer { bufferMs }
+
+        bufferMonitor.onNewStream("video1", isAdaptive = false)
+        bufferMonitor.onPlaybackStarted(mockPlayer)
+
+        // Pass grace period (10s)
+        repeat(11) {
+            advanceTimeBy(1_000L)
+            currentTime += 1_000L
+        }
+
+        // Decline at ~1s/sample (1s buffer lost per second = throughput == bitrate)
+        // Need 10+ consecutive declines for predictive trigger
+        // And projected to hit critical in < 30s
+        repeat(80) { // Deplete buffer significantly
+            bufferMs -= 1_100L // Slightly faster than 1s/sample
+            advanceTimeBy(1_000L)
+            currentTime += 1_000L
+        }
+
+        // At this point, buffer should be ~12s (100s - 88s) and still declining
+        // Projection to critical (3s) = 9s / 1.1 ≈ 8s, which is < 30s horizon
+        // With 10+ consecutive declines, predictive should trigger
+
+        // Assert: at least one predictive downshift occurred
+        verify(mockCallbacks, atLeast(1)).onProactiveDownshiftRequested()
+
+        bufferMonitor.release()
+    }
+
+    @Test
+    fun `early stall exception only triggers once per stream`() = testScope.runTest {
+        // Arrange: configure critical buffer that is declining (not building)
+        var bufferMs = 2_000L
+        whenever(mockPlayer.currentPosition).thenReturn(0L)
+        whenever(mockPlayer.bufferedPosition).thenAnswer { bufferMs }
+
+        bufferMonitor.onNewStream("video1", isAdaptive = false)
+        bufferMonitor.onPlaybackStarted(mockPlayer)
+
+        // First few samples - declining buffer should trigger early-stall exception once
+        repeat(5) {
+            bufferMs -= 300L // Declining
+            advanceTimeBy(1_000L)
+            currentTime += 1_000L
+        }
+
+        // Verify exactly ONE downshift (the early-stall exception)
+        verify(mockCallbacks, times(1)).onProactiveDownshiftRequested()
+
+        // Continue in grace period with critical declining buffer - should NOT trigger again
+        bufferMs = 1_500L // Reset to critical
+        repeat(4) {
+            bufferMs -= 200L // Still declining
+            advanceTimeBy(1_000L)
+            currentTime += 1_000L
+        }
+
+        // Still only ONE downshift (early exception already used)
+        verify(mockCallbacks, times(1)).onProactiveDownshiftRequested()
+
+        bufferMonitor.release()
+    }
+
+    @Test
+    fun `critical but increasing buffer during grace period does NOT trigger early-stall exception`() = testScope.runTest {
+        // Arrange: buffer starts critical but is INCREASING (building)
+        // This simulates slow buffering at startup - we shouldn't downshift prematurely
+        var bufferMs = 1_000L // Critical buffer
+        whenever(mockPlayer.currentPosition).thenReturn(0L)
+        whenever(mockPlayer.bufferedPosition).thenAnswer { bufferMs }
+
+        bufferMonitor.onNewStream("video1", isAdaptive = false)
+        bufferMonitor.onPlaybackStarted(mockPlayer)
+
+        // Buffer is increasing (building) - should NOT trigger early-stall exception
+        repeat(9) {
+            bufferMs += 500L // Increasing by 500ms per sample
+            advanceTimeBy(1_000L)
+            currentTime += 1_000L
+        }
+
+        // Assert: NO downshift because buffer is building despite being critical initially
+        verify(mockCallbacks, never()).onProactiveDownshiftRequested()
+
+        bufferMonitor.release()
     }
 
 }
