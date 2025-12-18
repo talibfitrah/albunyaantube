@@ -39,8 +39,9 @@
 - **PR5 Done**: Android extraction/refresh rate-limit guardrails (`ExtractionRateLimiter` + wiring). Committed 2025-12-15.
 - **PR6 Pending Verification**: Media3 migration + MediaSessionService integration (background playback, controller security, lifecycle-safe binding). Code complete 2025-12-16, awaiting manual verification.
 - **PR6.1 Done**: Synthetic DASH for progressive streams. Measurement pass showed 100% success rate (36 videos, 296 video streams, 206 audio streams). Implementation wraps video-only + audio progressive streams in synthetic DASH manifests for improved seek behavior. Committed 2025-12-18.
-- **PR6.3 Done**: Tap-to-prefetch optimization. Stream extraction now starts when user taps a video in list screens (Home, Videos, Search), hiding 2-5 seconds of NewPipe extraction latency behind navigation animation. Uses internal CoroutineScope that survives fragment destruction. PlayerViewModel awaits in-flight prefetch for up to 3s, reducing (but not eliminating) duplicate extractions. Note: mis-taps/back-outs can still cause additional extractions. Implemented 2025-12-18.
+- **PR6.3 Done**: Tap-to-prefetch optimization. Stream extraction now starts when user taps a video in list screens (Home, Videos, Search), hiding 2-5 seconds of NewPipe extraction latency behind navigation animation. Uses internal CoroutineScope that survives fragment destruction. PlayerViewModel awaits in-flight prefetch for up to 3s, reducing (but not eliminating) duplicate extractions. Note: mis-taps/back-outs can still cause additional extractions. **Follow-up PR6.5 extends this to Channel + Playlist entry points.** Implemented 2025-12-18.
 - **PR6.4 Done**: Deferred async player release. Mitigates `ExoTimeoutException: Player release timed out` by deferring release() via Handler.post() on the player's application looper with try-catch. This allows onDestroyView() to complete immediately; release() runs on the next main loop iteration. Mitigates but doesn't fully eliminate UI jank if audio hardware is blocked. Implemented 2025-12-18.
+- **PR6.5 Done**: Playback entry-point parity. Extended tap-to-prefetch to all remaining video entry points: Channel tabs (Videos/Live/Shorts), PlaylistDetailFragment, and FeaturedListFragment. Implemented 2025-12-18.
 
 ### Still required (mandatory validation)
 - **Manual visual verification** per `AGENTS.md`: phone + `sw600dp` tablet + `sw720dp` large tablet/TV + RTL Arabic locale.
@@ -218,6 +219,82 @@ User “quality” is a **ceiling**. During stalls, the player must be able to t
 **Acceptance**
 - Improved manifest availability without causing rate-limit bursts.
 - No repeated extraction loops; progressive fallback remains acceptable.
+
+## PR6.5: Playback Entry-Point Parity (Channels + Playlists + Featured) — *Status: Done*
+
+**Goal**: Ensure the PR6.3 "tap-to-prefetch" latency hiding applies to **all** ways users start playback, not just Home/Videos/Search.
+
+**Problems this fixes**
+- Channel video taps still do "navigate → then extract" (perceived 2–5s lag).
+- Playlist item taps still do "navigate → load playlist page → then extract" (lag + higher chance of "stuck at 0" if playlist fetch stalls).
+
+**Implementation (completed 2025-12-18)**
+- ✅ Added `StreamPrefetchService` injection + `triggerPrefetch()` calls to:
+  - `ChannelVideosTabFragment`: Videos tab in channel detail
+  - `ChannelLiveTabFragment`: Live streams tab in channel detail
+  - `ChannelShortsTabFragment`: Shorts tab in channel detail
+  - `PlaylistDetailFragment`: Individual video item taps
+  - `FeaturedListFragment`: Featured content video taps
+- ✅ Added prefetch for "Play All" button in playlist (best-effort: only runs if items already loaded)
+- ✅ Shuffle button cannot prefetch (order unknown until player starts)
+- ✅ All prefetch calls use `PREFETCH` priority (lowest) and respect PR5 rate-limit guardrails
+
+**Files Modified**
+- `ChannelVideosTabFragment.kt`: Added `@Inject prefetchService` + prefetch call
+- `ChannelLiveTabFragment.kt`: Added `@Inject prefetchService` + prefetch call
+- `ChannelShortsTabFragment.kt`: Added `@Inject prefetchService` + prefetch call
+- `PlaylistDetailFragment.kt`: Added `@Inject prefetchService` + prefetch calls for item tap + Play All
+- `FeaturedListFragment.kt`: Added `@Inject prefetchService` + prefetch call for video taps
+
+**Important Notes**
+- **Scope parameter ignored**: `StreamPrefetchService.triggerPrefetch()` uses its own internal `SupervisorJob` scope, so the passed `viewLifecycleOwner.lifecycleScope` is only for API consistency—do not assume cancellation semantics from the caller's scope.
+- **Play All is best-effort**: Prefetch only triggers if `itemsState` is already `Loaded`; no prefetch if items are still loading.
+- **Playlist correctness**: Prefetch helps perceived latency, but playlist "wrong start" and "Next broken" issues remain until PR6.6 (which fixes deep starts and lazy queue loading).
+- **Rate limiter consideration**: Expanding prefetch to more entry points increases pressure on the global rate limiter. In heavy "tap around" scenarios, prefetch can consume global window permits. Future refinement could make global budgets kind-aware so PREFETCH doesn't starve recovery.
+
+**Acceptance (expected behavior)**
+- Logcat (`StreamPrefetch`) shows "Starting prefetch …" for channel + playlist + featured item taps.
+- Opening a video from any entry point hides 2-5s extraction latency behind navigation.
+- No extraction bursts: prefetch remains `PREFETCH`-priority and respects PR5 guardrails.
+
+**Testing**
+- ✅ Code compiles successfully
+- ✅ All unit tests pass
+- Pending: Manual verification per `AGENTS.md`: phone + `sw600dp` + `sw720dp` + RTL Arabic.
+
+## PR6.6: Playlist Playback Reliability (Full Queue + Next/Prev + Deep Starts) — *Status: Planned*
+
+**Goal**: Playlist playback behaves like a real queue: start at the correct item (even deep), and Next/Prev works until the actual end of the playlist.
+
+**Problems this fixes**
+- Player currently loads only the first playlist page; `startIndex` is clamped, causing “wrong video starts” and Next becomes disabled early.
+- “Stuck at the beginning” can occur because playlist item fetch has no timeout in the player path (can hang before any stream resolve).
+
+**Plan**
+- Change playlist start semantics:
+  - Prefer `startVideoId` when provided; treat `startIndex` as a hint (best-effort).
+  - Page through playlist items until the target video is found (bounded) or end reached.
+- Implement a **lazy playlist queue loader** inside the player:
+  - Keep `nextPage` + `nextItemOffset` and a `hasMore` flag.
+  - Append additional playlist pages when the queue is low or when the user taps Next at the boundary.
+  - Update state so “Next enabled” reflects `queueNotEmpty || playlistHasMore` (not just current in-memory queue).
+- Add strict timeouts + bounded retries for playlist page fetches in the player path (separate from stream extraction timeouts).
+- Handle unplayable items robustly:
+  - If stream resolve fails after retries in playlist mode, auto-skip to the next item (bounded consecutive failures) and surface a clear message.
+
+**Acceptance**
+- Tapping a deep item in a long playlist starts *that* item (no clamping to first-page tail).
+- Next/Prev buttons remain usable across playlist boundaries (and don’t disable while `hasMore` exists).
+- Playlist fetch hangs are bounded (timeout + retry), never leaving the player stuck indefinitely at 0.
+- Rate-limit safe: playlist paging does not spam NewPipe/YouTube endpoints.
+
+**Testing**
+- Unit tests for the playlist queue loader:
+  - “startVideoId found on page N”
+  - “startIndex beyond first page loads more”
+  - “next at boundary fetches + advances”
+  - “resolve failure auto-skips (bounded)”
+- Manual verification per `AGENTS.md`: phone + `sw600dp` + `sw720dp` + RTL Arabic, including player controls (Next/Prev) behavior.
 
 ## PR7: Notification Controls + Artwork — *Status: Planned*
 - Add media notification with artwork/metadata display.

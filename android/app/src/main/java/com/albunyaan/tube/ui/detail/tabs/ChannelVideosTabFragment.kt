@@ -8,11 +8,13 @@ import androidx.recyclerview.widget.RecyclerView
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.channel.ChannelTab
 import com.albunyaan.tube.data.channel.ChannelVideo
+import com.albunyaan.tube.player.StreamPrefetchService
 import com.albunyaan.tube.ui.detail.ChannelDetailViewModel
 import com.albunyaan.tube.ui.detail.adapters.ChannelVideoAdapter
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.lifecycle.withCreationCallback
 import kotlinx.coroutines.flow.StateFlow
+import javax.inject.Inject
 
 /**
  * Fragment for the Videos tab in Channel Detail.
@@ -20,6 +22,9 @@ import kotlinx.coroutines.flow.StateFlow
  */
 @AndroidEntryPoint
 class ChannelVideosTabFragment : BaseChannelListTabFragment<ChannelVideo>() {
+
+    @Inject
+    lateinit var prefetchService: StreamPrefetchService
 
     override val tab: ChannelTab = ChannelTab.VIDEOS
     override val emptyMessageRes: Int = R.string.channel_videos_empty
@@ -41,6 +46,10 @@ class ChannelVideosTabFragment : BaseChannelListTabFragment<ChannelVideo>() {
 
     private val adapter by lazy {
         ChannelVideoAdapter { video ->
+            // Trigger prefetch before navigation (hides 2-5s extraction latency)
+            // Use lifecycleScope (not viewLifecycleOwner) so prefetch survives navigation
+            prefetchService.triggerPrefetch(video.id, lifecycleScope)
+
             // Navigate to video player
             findNavController().navigate(
                 R.id.action_global_playerFragment,

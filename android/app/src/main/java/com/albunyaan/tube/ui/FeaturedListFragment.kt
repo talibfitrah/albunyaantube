@@ -15,13 +15,18 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.databinding.FragmentFeaturedListBinding
+import com.albunyaan.tube.player.StreamPrefetchService
 import com.albunyaan.tube.ui.adapters.FeaturedListAdapter
 import com.albunyaan.tube.ui.detail.ChannelDetailFragment
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class FeaturedListFragment : Fragment(R.layout.fragment_featured_list) {
+
+    @Inject
+    lateinit var prefetchService: StreamPrefetchService
 
     private var binding: FragmentFeaturedListBinding? = null
 
@@ -53,6 +58,9 @@ class FeaturedListFragment : Fragment(R.layout.fragment_featured_list) {
             when (item) {
                 is ContentItem.Video -> {
                     Log.d(TAG, "Video clicked: ${item.id}")
+                    // Trigger prefetch before navigation (hides 2-5s extraction latency)
+                    // Use lifecycleScope (not viewLifecycleOwner) so prefetch survives navigation
+                    prefetchService.triggerPrefetch(item.id, lifecycleScope)
                     findNavController().navigate(
                         R.id.action_global_playerFragment,
                         bundleOf(

@@ -26,6 +26,7 @@ import com.albunyaan.tube.download.DownloadPolicy
 import com.albunyaan.tube.download.DownloadRepository
 import com.albunyaan.tube.download.DownloadStatus
 import com.albunyaan.tube.download.PlaylistDownloadItem
+import com.albunyaan.tube.player.StreamPrefetchService
 import com.albunyaan.tube.ui.detail.adapters.PlaylistVideosAdapter
 import com.google.android.material.chip.Chip
 import dagger.hilt.android.AndroidEntryPoint
@@ -44,6 +45,9 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
 
     @Inject
     lateinit var downloadRepository: DownloadRepository
+
+    @Inject
+    lateinit var prefetchService: StreamPrefetchService
 
     // Navigation arguments
     private val playlistId: String by lazy { arguments?.getString(ARG_PLAYLIST_ID).orEmpty() }
@@ -119,6 +123,9 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
     private fun setupRecyclerView() {
         videosAdapter = PlaylistVideosAdapter { item, position ->
             Log.d(TAG, "Video clicked: ${item.title} at position $position")
+            // Trigger prefetch before navigation (hides 2-5s extraction latency)
+            // Use lifecycleScope (not viewLifecycleOwner) so prefetch survives navigation
+            prefetchService.triggerPrefetch(item.videoId, lifecycleScope)
             navigateToPlayer(item.videoId, position)
         }
 
@@ -142,10 +149,13 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
     private fun setupActionButtons() {
         binding?.apply {
             playAllButton.setOnClickListener {
+                // Prefetch first video for smoother start
+                prefetchFirstPlaylistItem()
                 viewModel.onPlayAllClicked()
             }
 
             shuffleButton.setOnClickListener {
+                // Note: Can't prefetch shuffle since we don't know the order until player starts
                 viewModel.onShuffleClicked()
             }
 
@@ -479,6 +489,18 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
             getString(R.string.playlist_download_started, enqueuedCount, event.playlistTitle),
             Toast.LENGTH_LONG
         ).show()
+    }
+
+    /**
+     * Prefetch the first video in the playlist for smoother "Play All" start.
+     */
+    private fun prefetchFirstPlaylistItem() {
+        val state = viewModel.itemsState.value
+        if (state is PlaylistDetailViewModel.PaginatedState.Loaded && state.items.isNotEmpty()) {
+            val firstItem = state.items.first()
+            // Use lifecycleScope (not viewLifecycleOwner) so prefetch survives navigation
+            prefetchService.triggerPrefetch(firstItem.videoId, lifecycleScope)
+        }
     }
 
     private fun navigateToPlayer(videoId: String? = null, startIndex: Int = 0, shuffled: Boolean = false) {

@@ -13,11 +13,13 @@ import com.albunyaan.tube.R
 import com.albunyaan.tube.data.channel.ChannelShort
 import com.albunyaan.tube.data.channel.ChannelTab
 import com.albunyaan.tube.databinding.FragmentChannelShortsTabBinding
+import com.albunyaan.tube.player.StreamPrefetchService
 import com.albunyaan.tube.ui.detail.ChannelDetailViewModel
 import com.albunyaan.tube.ui.detail.adapters.ChannelShortsAdapter
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.lifecycle.withCreationCallback
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 /**
  * Fragment for the Shorts tab in Channel Detail.
@@ -25,6 +27,9 @@ import kotlinx.coroutines.launch
  */
 @AndroidEntryPoint
 class ChannelShortsTabFragment : Fragment(R.layout.fragment_channel_shorts_tab) {
+
+    @Inject
+    lateinit var prefetchService: StreamPrefetchService
 
     private var binding: FragmentChannelShortsTabBinding? = null
 
@@ -49,6 +54,10 @@ class ChannelShortsTabFragment : Fragment(R.layout.fragment_channel_shorts_tab) 
 
     private val adapter by lazy {
         ChannelShortsAdapter { short ->
+            // Trigger prefetch before navigation (hides 2-5s extraction latency)
+            // Use lifecycleScope (not viewLifecycleOwner) so prefetch survives navigation
+            prefetchService.triggerPrefetch(short.id, lifecycleScope)
+
             // Navigate to video player for shorts
             findNavController().navigate(
                 R.id.action_global_playerFragment,
