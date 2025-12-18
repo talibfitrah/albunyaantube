@@ -15,7 +15,19 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Service for prefetching stream data before navigation to the player.
+ * Interface for stream prefetching to enable testing.
+ */
+interface StreamPrefetchService {
+    fun triggerPrefetch(videoId: String, scope: CoroutineScope)
+    suspend fun awaitOrConsumePrefetch(videoId: String): ResolvedStreams?
+    fun consumePrefetch(videoId: String): ResolvedStreams?
+    fun isPrefetchInFlight(videoId: String): Boolean
+    fun cancelPrefetch(videoId: String)
+    fun clearAll()
+}
+
+/**
+ * Default implementation of StreamPrefetchService.
  *
  * This optimizes perceived load time by starting stream resolution when the user
  * taps a video item, rather than waiting until the player screen is fully loaded.
@@ -36,10 +48,10 @@ import javax.inject.Singleton
  * - Deferred pattern allows both immediate consumption AND awaiting in-flight jobs
  */
 @Singleton
-class StreamPrefetchService @Inject constructor(
+class DefaultStreamPrefetchService @Inject constructor(
     private val extractorClient: NewPipeExtractorClient,
     private val rateLimiter: ExtractionRateLimiter
-) {
+) : StreamPrefetchService {
     companion object {
         private const val TAG = "StreamPrefetch"
         private const val PREFETCH_TIMEOUT_MS = 8000L // Max wait for prefetch extraction
@@ -70,7 +82,7 @@ class StreamPrefetchService @Inject constructor(
      * to ensure prefetch completes even if the calling fragment is destroyed during navigation.
      */
     @Suppress("UNUSED_PARAMETER")
-    fun triggerPrefetch(videoId: String, scope: CoroutineScope) {
+    override fun triggerPrefetch(videoId: String, scope: CoroutineScope) {
         // Don't start duplicate prefetches - check both in-flight and completed
         if (prefetchJobs.containsKey(videoId) || prefetchResults.containsKey(videoId)) {
             Log.d(TAG, "Prefetch already in progress or completed for $videoId")
@@ -127,7 +139,7 @@ class StreamPrefetchService @Inject constructor(
      * @return The prefetched ResolvedStreams if available, null otherwise.
      *         Consumes the result (removes from cache).
      */
-    suspend fun awaitOrConsumePrefetch(videoId: String): ResolvedStreams? {
+    override suspend fun awaitOrConsumePrefetch(videoId: String): ResolvedStreams? {
         // First check if result is already ready (fastest path)
         prefetchResults.remove(videoId)?.let { result ->
             insertionOrder.remove(videoId) // Clean up order tracking
@@ -166,7 +178,7 @@ class StreamPrefetchService @Inject constructor(
      * @return The prefetched ResolvedStreams if already available and ready, null otherwise.
      *         Consumes the result (removes from cache).
      */
-    fun consumePrefetch(videoId: String): ResolvedStreams? {
+    override fun consumePrefetch(videoId: String): ResolvedStreams? {
         return prefetchResults.remove(videoId)?.also {
             insertionOrder.remove(videoId) // Clean up order tracking
             Log.d(TAG, "Prefetch consumed for $videoId")
@@ -177,7 +189,7 @@ class StreamPrefetchService @Inject constructor(
      * Check if a prefetch is currently in-flight for the given video ID.
      * Used to avoid starting duplicate extractions in PlayerViewModel.
      */
-    fun isPrefetchInFlight(videoId: String): Boolean {
+    override fun isPrefetchInFlight(videoId: String): Boolean {
         return prefetchJobs.containsKey(videoId)
     }
 
@@ -185,7 +197,7 @@ class StreamPrefetchService @Inject constructor(
      * Cancel any in-flight prefetch for a video ID.
      * Call this if the user navigates away before prefetch completes.
      */
-    fun cancelPrefetch(videoId: String) {
+    override fun cancelPrefetch(videoId: String) {
         prefetchJobs.remove(videoId)?.cancel()
         prefetchResults.remove(videoId)
         insertionOrder.remove(videoId) // Clean up order tracking
@@ -194,7 +206,7 @@ class StreamPrefetchService @Inject constructor(
     /**
      * Clear all prefetches. Call on app background or memory pressure.
      */
-    fun clearAll() {
+    override fun clearAll() {
         prefetchJobs.values.forEach { it.cancel() }
         prefetchJobs.clear()
         prefetchResults.clear()

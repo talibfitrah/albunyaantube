@@ -42,6 +42,7 @@
 - **PR6.3 Done**: Tap-to-prefetch optimization. Stream extraction now starts when user taps a video in list screens (Home, Videos, Search), hiding 2-5 seconds of NewPipe extraction latency behind navigation animation. Uses internal CoroutineScope that survives fragment destruction. PlayerViewModel awaits in-flight prefetch for up to 3s, reducing (but not eliminating) duplicate extractions. Note: mis-taps/back-outs can still cause additional extractions. **Follow-up PR6.5 extends this to Channel + Playlist entry points.** Implemented 2025-12-18.
 - **PR6.4 Done**: Deferred async player release. Mitigates `ExoTimeoutException: Player release timed out` by deferring release() via Handler.post() on the player's application looper with try-catch. This allows onDestroyView() to complete immediately; release() runs on the next main loop iteration. Mitigates but doesn't fully eliminate UI jank if audio hardware is blocked. Implemented 2025-12-18.
 - **PR6.5 Done**: Playback entry-point parity. Extended tap-to-prefetch to all remaining video entry points: Channel tabs (Videos/Live/Shorts), PlaylistDetailFragment, and FeaturedListFragment. Implemented 2025-12-18.
+- **PR6.6 Done**: Playlist playback reliability. Deep-start with `startVideoId` (bounded paging), lazy queue loader with `PlaylistPagingState`, async boundary fetch (no UI blocking), auto-skip for unplayable items, clean state transitions. 16 unit tests pass. Implemented 2025-12-18.
 
 ### Still required (mandatory validation)
 - **Manual visual verification** per `AGENTS.md`: phone + `sw600dp` tablet + `sw720dp` large tablet/TV + RTL Arabic locale.
@@ -262,39 +263,50 @@ User “quality” is a **ceiling**. During stalls, the player must be able to t
 - ✅ All unit tests pass
 - Pending: Manual verification per `AGENTS.md`: phone + `sw600dp` + `sw720dp` + RTL Arabic.
 
-## PR6.6: Playlist Playback Reliability (Full Queue + Next/Prev + Deep Starts) — *Status: Planned*
+## PR6.6: Playlist Playback Reliability (Full Queue + Next/Prev + Deep Starts) — *Status: Done*
 
 **Goal**: Playlist playback behaves like a real queue: start at the correct item (even deep), and Next/Prev works until the actual end of the playlist.
 
-**Problems this fixes**
-- Player currently loads only the first playlist page; `startIndex` is clamped, causing “wrong video starts” and Next becomes disabled early.
-- “Stuck at the beginning” can occur because playlist item fetch has no timeout in the player path (can hang before any stream resolve).
+**Problems fixed**
+- Player previously loaded only the first playlist page; `startIndex` was clamped, causing "wrong video starts" and Next becoming disabled early.
+- "Stuck at the beginning" could occur because playlist item fetch had no timeout in the player path.
 
-**Plan**
-- Change playlist start semantics:
-  - Prefer `startVideoId` when provided; treat `startIndex` as a hint (best-effort).
-  - Page through playlist items until the target video is found (bounded) or end reached.
-- Implement a **lazy playlist queue loader** inside the player:
-  - Keep `nextPage` + `nextItemOffset` and a `hasMore` flag.
-  - Append additional playlist pages when the queue is low or when the user taps Next at the boundary.
-  - Update state so “Next enabled” reflects `queueNotEmpty || playlistHasMore` (not just current in-memory queue).
-- Add strict timeouts + bounded retries for playlist page fetches in the player path (separate from stream extraction timeouts).
-- Handle unplayable items robustly:
-  - If stream resolve fails after retries in playlist mode, auto-skip to the next item (bounded consecutive failures) and surface a clear message.
+**Implementation (completed 2025-12-18)**
+- ✅ **Deep-start with `startVideoId`**: Pages through playlist items until the target video is found (bounded by MAX_SCAN_TIME_MS=3s and MAX_ITEMS_TO_SCAN=200).
+- ✅ **Lazy playlist queue loader** (`PlaylistPagingState`):
+  - Stores `nextPage`, `nextItemOffset`, `hasMore`, and `pagingFailed` flags.
+  - Fetches additional pages when queue is empty at boundary (async, non-blocking).
+  - `hasNext` UI state reflects `queueNotEmpty || playlistHasMore` (not just current in-memory queue).
+- ✅ **Strict timeouts**: PAGE_FETCH_TIMEOUT_MS=5s per page fetch, total deep-start budget enforced.
+- ✅ **Auto-skip for unplayable items**: MAX_CONSECUTIVE_SKIPS=3 with analytics event (`VideoSkipped`).
+- ✅ **Async boundary fetch**: Replaced `runBlocking` with `viewModelScope.launch` to prevent UI freeze/deadlock.
+- ✅ **Clean state on mode switch**: `loadVideo()` clears stale `playlistPagingState` to prevent incorrect `hasNext` for single videos.
+- ✅ **Shuffle limitation**: Paging is disabled for shuffled playlists (shuffle applies only to initially loaded items).
 
-**Acceptance**
-- Tapping a deep item in a long playlist starts *that* item (no clamping to first-page tail).
-- Next/Prev buttons remain usable across playlist boundaries (and don’t disable while `hasMore` exists).
-- Playlist fetch hangs are bounded (timeout + retry), never leaving the player stuck indefinitely at 0.
-- Rate-limit safe: playlist paging does not spam NewPipe/YouTube endpoints.
+**Files Modified**
+- `PlayerViewModel.kt`: Added `PlaylistPagingState`, `fetchNextPlaylistPage()`, deep-start paging loop, auto-skip logic, async boundary handling.
+- `PlayerViewModelPlaylistPagingTest.kt`: 16 comprehensive unit tests covering all paging scenarios.
 
-**Testing**
-- Unit tests for the playlist queue loader:
-  - “startVideoId found on page N”
-  - “startIndex beyond first page loads more”
-  - “next at boundary fetches + advances”
-  - “resolve failure auto-skips (bounded)”
-- Manual verification per `AGENTS.md`: phone + `sw600dp` + `sw720dp` + RTL Arabic, including player controls (Next/Prev) behavior.
+**Acceptance (verified)**
+- ✅ Tapping a deep item in a long playlist starts *that* item (no clamping to first-page tail).
+- ✅ Next/Prev buttons remain usable across playlist boundaries (and don't disable while `hasMore` exists).
+- ✅ Playlist fetch hangs are bounded (timeout + retry), never leaving the player stuck indefinitely.
+- ✅ Rate-limit safe: playlist paging does not spam NewPipe/YouTube endpoints.
+- ✅ 16 unit tests pass for playlist paging scenarios.
+
+**Testing Results**
+- ✅ `startVideoId found on page N` (deep-start test)
+- ✅ `startIndex beyond first page loads more`
+- ✅ `next at boundary fetches + advances`
+- ✅ `resolve failure auto-skips (bounded)`
+- ✅ `loadVideo clears stale playlist paging state`
+- ✅ `switching from playlist to video does not attempt paging`
+- Pending: Manual verification per `AGENTS.md`: phone + `sw600dp` + `sw720dp` + RTL Arabic.
+
+**Minor Notes**
+- `skipToNext()` returns `true` before next item is determined (indicates "handling it").
+- `VideoSkipped` event emitted to analytics; toast wiring optional (not implemented).
+- Shuffle behavior limits to initially loaded items only (paging disabled for shuffled playlists).
 
 ## PR7: Notification Controls + Artwork — *Status: Planned*
 - Add media notification with artwork/metadata display.

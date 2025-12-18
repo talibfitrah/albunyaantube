@@ -18,6 +18,8 @@ import com.albunyaan.tube.player.PlayerRepository
 import com.albunyaan.tube.player.StreamPrefetchService
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
+import com.albunyaan.tube.data.channel.Page
+import com.albunyaan.tube.data.playlist.PlaylistItem
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -28,6 +30,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
 /**
@@ -68,6 +73,14 @@ class PlayerViewModel @Inject constructor(
     // Playlist playback state
     private var currentPlaylistId: String? = null
     private var isPlaylistMode: Boolean = false
+
+    // PR6.6: Playlist paging state for lazy loading
+    private var playlistPagingState: PlaylistPagingState? = null
+    private val pagingMutex = Mutex()
+    private var pagingJob: Job? = null
+
+    // PR6.6: Auto-skip tracking for unplayable items in playlist mode
+    private var consecutiveSkips = 0
 
     private val _analyticsEvents = MutableSharedFlow<PlaybackAnalyticsEvent>(
         replay = 0,
@@ -360,8 +373,13 @@ class PlayerViewModel @Inject constructor(
         pendingRefreshJob?.cancel()
         pendingRefreshJob = null
 
+        // PR6.6: Clear playlist mode and paging state to prevent stale hasNext
         isPlaylistMode = false
         currentPlaylistId = null
+        pagingJob?.cancel()
+        pagingJob = null
+        playlistPagingState = null
+        consecutiveSkips = 0
 
         // Create item immediately from nav args - no backend fetch needed
         val item = UpNextItem(
@@ -389,83 +407,229 @@ class PlayerViewModel @Inject constructor(
     /**
      * Load and play a playlist from the specified position.
      *
+     * PR6.6: Now supports deep starts via targetVideoId. Will page through playlist
+     * until target video is found (bounded by MAX_ITEMS_TO_SCAN and MAX_SCAN_TIME_MS).
+     *
      * @param playlistId YouTube playlist ID
-     * @param startIndex 0-based index of the video to start playing
+     * @param targetVideoId The video ID to start playing (authoritative), or null to use startIndex
+     * @param startIndexHint 0-based index hint for optimization (used if targetVideoId matches)
      * @param shuffled If true, randomize the order of videos in the queue
      */
-    fun loadPlaylist(playlistId: String, startIndex: Int = 0, shuffled: Boolean = false) {
+    fun loadPlaylist(
+        playlistId: String,
+        targetVideoId: String? = null,
+        startIndexHint: Int = 0,
+        shuffled: Boolean = false
+    ) {
         isPlaylistMode = true
         currentPlaylistId = playlistId
+        consecutiveSkips = 0  // Reset auto-skip counter
 
         viewModelScope.launch(dispatcher) {
             updateState { it.copy(streamState = StreamState.Loading) }
 
             try {
-                // Fetch playlist items from NewPipe via repository
-                val page = playlistDetailRepository.getItems(playlistId, page = null, itemOffset = 1)
-                var items = page.items
-
-                if (items.isEmpty()) {
-                    updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_unavailable)) }
-                    return@launch
-                }
-
-                // If shuffled, randomize the order but preserve the starting video
-                if (shuffled) {
-                    val startItem = items.getOrNull(startIndex)
-                    items = items.shuffled()
-                    // Move the starting video to the front if it was specified
-                    if (startItem != null) {
-                        items = listOf(startItem) + items.filter { it.videoId != startItem.videoId }
-                    }
-                }
-
-                // Convert to UpNextItems
-                val upNextItems = items.mapIndexed { index, playlistItem ->
-                    UpNextItem(
-                        id = playlistItem.videoId,
-                        title = playlistItem.title,
-                        channelName = playlistItem.channelName ?: "",
-                        durationSeconds = playlistItem.durationSeconds ?: 0,
-                        streamId = playlistItem.videoId,
-                        thumbnailUrl = playlistItem.thumbnailUrl,
-                        viewCount = playlistItem.viewCount
-                    )
-                }
-
-                // Set up the queue - put videos after startIndex in the queue
-                queue.clear()
-                previousItems.clear()
-                val effectiveStartIndex = if (shuffled) 0 else startIndex.coerceIn(0, upNextItems.lastIndex)
-
-                // Current item is the video at startIndex
-                currentItem = upNextItems.getOrNull(effectiveStartIndex)
-
-                // Queue is everything after the current item
-                if (effectiveStartIndex + 1 < upNextItems.size) {
-                    queue.addAll(upNextItems.subList(effectiveStartIndex + 1, upNextItems.size))
-                }
-                // Note: Items before startIndex are NOT added to history because they haven't been played.
-                // History is only populated when the user actually plays/skips items during the session.
-
-                applyQueueState()
-
-                currentItem?.let { item ->
-                    publishAnalytics(
-                        PlaybackAnalyticsEvent.PlaybackStarted(
-                            item,
-                            PlaybackStartReason.USER_SELECTED
-                        )
-                    )
-                    resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
-                } ?: run {
-                    updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_unavailable)) }
-                }
+                loadPlaylistWithTarget(playlistId, targetVideoId, startIndexHint, shuffled)
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 android.util.Log.e("PlayerViewModel", "Failed to load playlist: $playlistId", e)
                 updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_error)) }
             }
+        }
+    }
+
+    /**
+     * PR6.6: Internal implementation for loading playlist with deep start support.
+     * Pages through playlist until targetVideoId is found or bounds are exceeded.
+     *
+     * Time budget: MAX_SCAN_TIME_MS applies to the TOTAL deep-start operation, not per-page.
+     * Each subsequent page fetch gets min(PAGE_FETCH_TIMEOUT_MS, remainingBudget).
+     */
+    private suspend fun loadPlaylistWithTarget(
+        playlistId: String,
+        targetVideoId: String?,
+        startIndexHint: Int,
+        shuffled: Boolean
+    ) {
+        val startTime = System.currentTimeMillis()
+        val allItems = mutableListOf<PlaylistItem>()
+        var nextPage: Page? = null
+        var nextItemOffset = 1
+
+        // Load first page (always allowed full timeout - not part of deep-start budget)
+        val firstPage = try {
+            withTimeoutOrNull(PAGE_FETCH_TIMEOUT_MS) {
+                playlistDetailRepository.getItems(playlistId, page = null, itemOffset = 1)
+            }
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            android.util.Log.e("PlayerViewModel", "Playlist first page fetch failed: ${e.message}")
+            null
+        }
+
+        if (firstPage == null) {
+            android.util.Log.e("PlayerViewModel", "Playlist first page fetch timed out or failed")
+            updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_error)) }
+            return
+        }
+
+        allItems.addAll(firstPage.items)
+        nextPage = firstPage.nextPage
+        nextItemOffset = firstPage.nextItemOffset
+
+        if (allItems.isEmpty()) {
+            updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_unavailable)) }
+            return
+        }
+
+        // Fast path: check if startIndexHint matches targetVideoId on first page
+        if (targetVideoId != null && startIndexHint in allItems.indices) {
+            if (allItems[startIndexHint].videoId == targetVideoId) {
+                android.util.Log.d("PlayerViewModel", "Fast path: targetVideoId found at hinted index $startIndexHint")
+                initializePlaylistQueue(playlistId, allItems, startIndexHint, shuffled, nextPage, nextItemOffset)
+                return
+            }
+        }
+
+        // Search loaded items for targetVideoId
+        var foundIndex = if (targetVideoId != null) {
+            allItems.indexOfFirst { it.videoId == targetVideoId }
+        } else {
+            -1
+        }
+
+        // Deep-start: page through until found or bounds hit (only if we have a targetVideoId to find)
+        // Time budget enforcement: each page fetch gets min(PAGE_FETCH_TIMEOUT_MS, remainingBudget)
+        while (targetVideoId != null && foundIndex == -1 && nextPage != null) {
+            val elapsed = System.currentTimeMillis() - startTime
+            val remainingBudget = MAX_SCAN_TIME_MS - elapsed
+
+            // Check bounds AFTER computing remaining budget
+            if (remainingBudget <= 0 || allItems.size >= MAX_ITEMS_TO_SCAN) {
+                android.util.Log.d("PlayerViewModel", "Deep start: bounds exceeded (elapsed=${elapsed}ms, items=${allItems.size})")
+                break
+            }
+
+            android.util.Log.d("PlayerViewModel", "Deep start: paging for targetVideoId=$targetVideoId, loaded=${allItems.size} items, budget=${remainingBudget}ms")
+
+            // Use remaining budget as timeout (clamped to PAGE_FETCH_TIMEOUT_MS)
+            val pageTimeout = minOf(PAGE_FETCH_TIMEOUT_MS, remainingBudget)
+            val morePage = try {
+                withTimeoutOrNull(pageTimeout) {
+                    playlistDetailRepository.getItems(playlistId, nextPage, nextItemOffset)
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                android.util.Log.w("PlayerViewModel", "Deep start: page fetch error ${e.message}, using loaded items")
+                null
+            }
+
+            if (morePage == null) {
+                android.util.Log.w("PlayerViewModel", "Deep start: page fetch timed out or failed, using loaded items")
+                break
+            }
+
+            allItems.addAll(morePage.items)
+            nextPage = morePage.nextPage
+            nextItemOffset = morePage.nextItemOffset
+
+            foundIndex = allItems.indexOfFirst { it.videoId == targetVideoId }
+        }
+
+        // Determine effective start index
+        val effectiveStartIndex = when {
+            foundIndex >= 0 -> {
+                android.util.Log.d("PlayerViewModel", "Deep start: found targetVideoId at index $foundIndex")
+                foundIndex
+            }
+            targetVideoId != null -> {
+                // Target not found - fall back to startIndexHint or 0
+                android.util.Log.w("PlayerViewModel", "Deep start: targetVideoId not found after loading ${allItems.size} items, using hint $startIndexHint")
+                startIndexHint.coerceIn(0, allItems.lastIndex.coerceAtLeast(0))
+            }
+            else -> {
+                // No targetVideoId provided - use startIndexHint
+                startIndexHint.coerceIn(0, allItems.lastIndex.coerceAtLeast(0))
+            }
+        }
+
+        initializePlaylistQueue(playlistId, allItems, effectiveStartIndex, shuffled, nextPage, nextItemOffset)
+    }
+
+    /**
+     * PR6.6: Initialize the queue from loaded playlist items.
+     */
+    private fun initializePlaylistQueue(
+        playlistId: String,
+        items: List<PlaylistItem>,
+        startIndex: Int,
+        shuffled: Boolean,
+        nextPage: Page?,
+        nextItemOffset: Int
+    ) {
+        var orderedItems = items
+
+        // If shuffled, randomize the order but preserve the starting video
+        if (shuffled) {
+            val startItem = orderedItems.getOrNull(startIndex)
+            orderedItems = orderedItems.shuffled()
+            // Move the starting video to the front if it was specified
+            if (startItem != null) {
+                orderedItems = listOf(startItem) + orderedItems.filter { it.videoId != startItem.videoId }
+            }
+        }
+
+        // Convert to UpNextItems
+        val upNextItems = orderedItems.map { playlistItem ->
+            UpNextItem(
+                id = playlistItem.videoId,
+                title = playlistItem.title,
+                channelName = playlistItem.channelName ?: "",
+                durationSeconds = playlistItem.durationSeconds ?: 0,
+                streamId = playlistItem.videoId,
+                thumbnailUrl = playlistItem.thumbnailUrl,
+                viewCount = playlistItem.viewCount
+            )
+        }
+
+        // Set up the queue
+        queue.clear()
+        previousItems.clear()
+        val effectiveStartIndex = if (shuffled) 0 else startIndex.coerceIn(0, upNextItems.lastIndex.coerceAtLeast(0))
+
+        // Current item is the video at startIndex
+        currentItem = upNextItems.getOrNull(effectiveStartIndex)
+
+        // Queue is everything after the current item
+        if (effectiveStartIndex + 1 < upNextItems.size) {
+            queue.addAll(upNextItems.subList(effectiveStartIndex + 1, upNextItems.size))
+        }
+
+        // PR6.6: Store paging state for lazy loading
+        val hasMore = nextPage != null && !shuffled  // Disable paging for shuffled playlists
+        playlistPagingState = PlaylistPagingState(
+            playlistId = playlistId,
+            nextPage = nextPage,
+            nextItemOffset = nextItemOffset,
+            hasMore = hasMore,
+            pagingFailed = false,
+            lastPageFetchMs = System.currentTimeMillis()
+        )
+
+        android.util.Log.d("PlayerViewModel", "Playlist initialized: ${upNextItems.size} items, startIndex=$effectiveStartIndex, hasMore=$hasMore")
+
+        applyQueueState()
+
+        currentItem?.let { item ->
+            publishAnalytics(
+                PlaybackAnalyticsEvent.PlaybackStarted(
+                    item,
+                    PlaybackStartReason.USER_SELECTED
+                )
+            )
+            resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
+        } ?: run {
+            updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_unavailable)) }
         }
     }
 
@@ -500,12 +664,16 @@ class PlayerViewModel @Inject constructor(
     }
 
     private fun applyQueueState() {
+        // PR6.6: hasNext is true if queue has items OR if more pages can be loaded
+        val pagingState = playlistPagingState
+        val hasMorePages = pagingState?.hasMore == true && !pagingState.pagingFailed
+
         updateState { state ->
             state.copy(
                 currentItem = currentItem,
                 upNext = queue.toList(),
                 currentDownload = findDownloadFor(currentItem, latestDownloads),
-                hasNext = queue.isNotEmpty(),
+                hasNext = queue.isNotEmpty() || hasMorePages,
                 hasPrevious = previousItems.isNotEmpty()
             )
         }
@@ -620,6 +788,32 @@ class PlayerViewModel @Inject constructor(
     }
 
     /**
+     * PR6.6: Handle stream resolution failure with auto-skip in playlist mode.
+     * If in playlist mode and consecutive skip limit not reached, auto-advances to next item.
+     *
+     * @param item The item that failed to resolve
+     * @return true if auto-skip was triggered, false if error state should be shown
+     */
+    private fun handleStreamResolutionFailure(item: UpNextItem): Boolean {
+        if (!isPlaylistMode) return false
+
+        consecutiveSkips++
+        if (consecutiveSkips > MAX_CONSECUTIVE_SKIPS) {
+            android.util.Log.w("PlayerViewModel", "Auto-skip limit reached ($MAX_CONSECUTIVE_SKIPS consecutive failures)")
+            consecutiveSkips = 0  // Reset for next attempt
+            return false
+        }
+
+        android.util.Log.d("PlayerViewModel", "Auto-skipping unplayable video ${item.streamId} ($consecutiveSkips/$MAX_CONSECUTIVE_SKIPS)")
+
+        // Emit UI event for toast
+        _analyticsEvents.tryEmit(PlaybackAnalyticsEvent.VideoSkipped(item, consecutiveSkips))
+
+        // Advance to next item
+        return advanceToNext(PlaybackStartReason.AUTO, markComplete = false)
+    }
+
+    /**
      * Resolve streams with exponential backoff retry.
      * Checks tap-to-prefetch service first (awaiting in-flight if needed), then local prefetch cache.
      * Attempts: 3 times with delays of 1s, 2s, 4s between attempts.
@@ -688,9 +882,12 @@ class PlayerViewModel @Inject constructor(
                     kotlinx.coroutines.delay(delayMs)
                     continue
                 } else {
-                    // All retries exhausted
-                    updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_error)) }
+                    // All retries exhausted - try auto-skip in playlist mode
                     publishAnalytics(PlaybackAnalyticsEvent.StreamFailed(item.streamId))
+                    if (handleStreamResolutionFailure(item)) {
+                        return  // Auto-skipped to next item
+                    }
+                    updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_error)) }
                     return
                 }
             }
@@ -702,8 +899,12 @@ class PlayerViewModel @Inject constructor(
                     kotlinx.coroutines.delay(delayMs)
                     continue
                 } else {
-                    updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_unavailable)) }
+                    // All retries exhausted - try auto-skip in playlist mode
                     publishAnalytics(PlaybackAnalyticsEvent.StreamFailed(item.streamId))
+                    if (handleStreamResolutionFailure(item)) {
+                        return  // Auto-skipped to next item
+                    }
+                    updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_unavailable)) }
                     return
                 }
             }
@@ -806,6 +1007,14 @@ class PlayerViewModel @Inject constructor(
         private const val MAX_RETRY_ATTEMPTS = 3
         private const val RETRY_BASE_DELAY_MS = 1000L
         private const val EXTRACTOR_TIMEOUT_MS = 20000L // 20s timeout for extraction (NewPipe can be slow)
+
+        // PR6.6: Playlist paging constants
+        private const val PAGE_FETCH_TIMEOUT_MS = 10000L  // 10s timeout per page fetch
+        private const val PAGE_FETCH_COOLDOWN_MS = 2000L  // 2s minimum gap between page fetches
+        private const val MAX_ITEMS_TO_SCAN = 250         // Max items to scan for deep start
+        private const val MAX_SCAN_TIME_MS = 3000L        // Max time for deep start scanning
+        private const val QUEUE_PREFETCH_THRESHOLD = 5    // Trigger background fetch when queue drops below this
+        private const val MAX_CONSECUTIVE_SKIPS = 3       // Max auto-skips for unplayable items
     }
 
     private fun findDownloadFor(item: UpNextItem?, entries: List<DownloadEntry>): DownloadEntry? {
@@ -831,17 +1040,136 @@ class PlayerViewModel @Inject constructor(
         if (markComplete) {
             publishAnalytics(PlaybackAnalyticsEvent.PlaybackCompleted(finished))
         }
+
+        // PR6.6: If queue is empty but more pages exist, fetch asynchronously (no runBlocking)
+        if (queue.isEmpty() && playlistPagingState?.hasMore == true && !playlistPagingState!!.pagingFailed) {
+            android.util.Log.d("PlayerViewModel", "advanceToNext: queue empty, fetching more items async")
+            addToHistory(finished)
+            currentItem = null
+            updateState { it.copy(streamState = StreamState.Loading, currentItem = null) }
+
+            // Launch async page fetch, then continue playback
+            viewModelScope.launch(dispatcher) {
+                val loaded = fetchNextPlaylistPage()
+                if (loaded && queue.isNotEmpty()) {
+                    val next = queue.removeAt(0)
+                    currentItem = next
+                    consecutiveSkips = 0
+                    applyQueueState()
+                    publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(next, reason))
+                    resolveStreamFor(next, reason)
+                } else {
+                    // Failed to load more or still empty - end of playlist
+                    android.util.Log.w("PlayerViewModel", "advanceToNext: async fetch failed or empty")
+                    applyQueueState()
+                    updateState { it.copy(streamState = StreamState.Idle) }
+                }
+            }
+            return true // Indicate we're handling the advance asynchronously
+        }
+
         val next = if (queue.isNotEmpty()) queue.removeAt(0) else null
         currentItem = next
         addToHistory(finished)
         applyQueueState()
+
+        // PR6.6: Trigger background prefetch if queue is getting low
+        if (queue.size <= QUEUE_PREFETCH_THRESHOLD && playlistPagingState?.hasMore == true) {
+            triggerBackgroundPageFetch()
+        }
+
         return if (next != null) {
+            consecutiveSkips = 0  // Reset on successful advance
             publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(next, reason))
             resolveStreamFor(next, reason)
             true
         } else {
             updateState { state -> state.copy(streamState = StreamState.Idle) }
             false
+        }
+    }
+
+    /**
+     * PR6.6: Trigger background page fetch if queue is running low.
+     * Single-flight: only one fetch at a time.
+     */
+    private fun triggerBackgroundPageFetch() {
+        if (pagingJob?.isActive == true) return  // Already fetching
+
+        pagingJob = viewModelScope.launch(dispatcher) {
+            fetchNextPlaylistPage()
+        }
+    }
+
+    /**
+     * PR6.6: Fetch the next page of playlist items.
+     * Thread-safe via pagingMutex. Updates queue and paging state.
+     *
+     * @return true if page was fetched and items added, false otherwise
+     */
+    private suspend fun fetchNextPlaylistPage(): Boolean {
+        val state = playlistPagingState ?: return false
+        if (state.nextPage == null || state.pagingFailed) return false
+
+        // Simple cooldown check
+        val now = System.currentTimeMillis()
+        val timeSinceLastFetch = now - state.lastPageFetchMs
+        if (timeSinceLastFetch < PAGE_FETCH_COOLDOWN_MS) {
+            kotlinx.coroutines.delay(PAGE_FETCH_COOLDOWN_MS - timeSinceLastFetch)
+        }
+
+        return pagingMutex.withLock {
+            // Re-check state after acquiring lock (may have changed)
+            val currentState = playlistPagingState ?: return@withLock false
+            if (currentState.nextPage == null || currentState.pagingFailed) return@withLock false
+
+            android.util.Log.d("PlayerViewModel", "fetchNextPlaylistPage: loading more items, offset=${currentState.nextItemOffset}")
+
+            val page = try {
+                withTimeoutOrNull(PAGE_FETCH_TIMEOUT_MS) {
+                    playlistDetailRepository.getItems(
+                        currentState.playlistId,
+                        currentState.nextPage,
+                        currentState.nextItemOffset
+                    )
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                android.util.Log.w("PlayerViewModel", "fetchNextPlaylistPage: error ${e.message}")
+                null
+            }
+
+            if (page == null) {
+                android.util.Log.w("PlayerViewModel", "fetchNextPlaylistPage: failed (timeout or error)")
+                playlistPagingState = currentState.copy(pagingFailed = true)
+                applyQueueState()
+                return@withLock false
+            }
+
+            // Convert and add to queue
+            val newItems = page.items.map { playlistItem ->
+                UpNextItem(
+                    id = playlistItem.videoId,
+                    title = playlistItem.title,
+                    channelName = playlistItem.channelName ?: "",
+                    durationSeconds = playlistItem.durationSeconds ?: 0,
+                    streamId = playlistItem.videoId,
+                    thumbnailUrl = playlistItem.thumbnailUrl,
+                    viewCount = playlistItem.viewCount
+                )
+            }
+
+            queue.addAll(newItems)
+            playlistPagingState = currentState.copy(
+                nextPage = page.nextPage,
+                nextItemOffset = page.nextItemOffset,
+                hasMore = page.nextPage != null,
+                lastPageFetchMs = System.currentTimeMillis()
+            )
+
+            android.util.Log.d("PlayerViewModel", "fetchNextPlaylistPage: added ${newItems.size} items, queue now ${queue.size}, hasMore=${page.nextPage != null}")
+            applyQueueState()
+            true
         }
     }
 
@@ -988,6 +1316,19 @@ data class QualityOption(
     val track: VideoTrack
 )
 
+/**
+ * PR6.6: Tracks playlist paging state for lazy loading.
+ * Enables Next/Prev to work across playlist page boundaries.
+ */
+data class PlaylistPagingState(
+    val playlistId: String,
+    val nextPage: Page?,
+    val nextItemOffset: Int,
+    val hasMore: Boolean,
+    val pagingFailed: Boolean,
+    val lastPageFetchMs: Long
+)
+
 sealed class PlaybackAnalyticsEvent {
     data class QueueHydrated(
         val totalItems: Int,
@@ -1011,6 +1352,9 @@ sealed class PlaybackAnalyticsEvent {
     data class QualityChanged(val qualityLabel: String) : PlaybackAnalyticsEvent()
 
     data class SubtitleChanged(val languageName: String) : PlaybackAnalyticsEvent()
+
+    /** PR6.6: Emitted when an unplayable video is auto-skipped in playlist mode */
+    data class VideoSkipped(val item: UpNextItem, val consecutiveSkipCount: Int) : PlaybackAnalyticsEvent()
 }
 
 enum class PlaybackStartReason(@StringRes val labelRes: Int) {

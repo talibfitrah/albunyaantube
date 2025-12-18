@@ -185,6 +185,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         val videoId = arguments?.getString("videoId")
         val startIndex = arguments?.getInt("startIndex", 0) ?: 0
         val shuffled = arguments?.getBoolean("shuffled", false) ?: false
+        // PR6.6: targetVideoId is the authoritative video to start at; startIndex is an optimization hint
+        val targetVideoId = arguments?.getString("targetVideoId")
 
         // Extract metadata from nav args for fast-path playback (no backend fetch needed)
         val videoTitle = arguments?.getString("title") ?: "Video"
@@ -196,8 +198,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         when {
             !playlistId.isNullOrEmpty() -> {
-                // Playlist playback mode - load playlist and start from specified index
-                viewModel.loadPlaylist(playlistId, startIndex, shuffled)
+                // Playlist playback mode - load playlist and start from specified video
+                // PR6.6: Pass targetVideoId as authoritative, startIndex as hint for fast path
+                viewModel.loadPlaylist(playlistId, targetVideoId, startIndex, shuffled)
             }
             !videoId.isNullOrEmpty() -> {
                 // Single video playback mode - fast path with metadata from nav args
@@ -888,6 +891,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             is PlaybackAnalyticsEvent.StreamFailed -> getString(R.string.player_event_stream_failed)
             is PlaybackAnalyticsEvent.QualityChanged -> "Quality changed to ${event.qualityLabel}"
             is PlaybackAnalyticsEvent.SubtitleChanged -> "Subtitles: ${event.languageName}"
+            is PlaybackAnalyticsEvent.VideoSkipped -> "Skipped unavailable video (${event.consecutiveSkipCount}/3)"
         }
     }
 

@@ -503,9 +503,10 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
         }
     }
 
-    private fun navigateToPlayer(videoId: String? = null, startIndex: Int = 0, shuffled: Boolean = false) {
+    private fun navigateToPlayer(targetVideoId: String? = null, startIndex: Int = 0, shuffled: Boolean = false) {
         val bundle = Bundle().apply {
-            videoId?.let { putString("videoId", it) }
+            // PR6.6: Pass targetVideoId as authoritative identifier, startIndex as optimization hint
+            targetVideoId?.let { putString("targetVideoId", it) }
             putString("playlistId", playlistId)
             putInt("startIndex", startIndex)
             putBoolean("shuffled", shuffled)

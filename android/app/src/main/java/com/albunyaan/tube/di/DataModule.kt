@@ -31,6 +31,7 @@ import com.albunyaan.tube.data.source.api.DownloadApi
 import com.albunyaan.tube.player.DefaultPlayerRepository
 import com.albunyaan.tube.player.ExtractionRateLimiter
 import com.albunyaan.tube.player.PlayerRepository
+import com.albunyaan.tube.player.DefaultStreamPrefetchService
 import com.albunyaan.tube.player.StreamPrefetchService
 import com.albunyaan.tube.telemetry.LogTelemetryClient
 import com.albunyaan.tube.telemetry.TelemetryClient
@@ -199,7 +200,7 @@ object DataModule {
         extractorClient: NewPipeExtractorClient,
         rateLimiter: ExtractionRateLimiter
     ): StreamPrefetchService {
-        return StreamPrefetchService(extractorClient, rateLimiter)
+        return DefaultStreamPrefetchService(extractorClient, rateLimiter)
     }
 
     @Provides
