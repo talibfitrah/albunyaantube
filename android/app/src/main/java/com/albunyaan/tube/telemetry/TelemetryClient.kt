@@ -37,6 +37,11 @@ sealed class TelemetryEvent(val name: String) {
         val reason: String
     ) : TelemetryEvent("download.failed")
 
+    data class FavoriteToggleFailed(
+        val videoId: String,
+        val reason: String
+    ) : TelemetryEvent("favorite.toggle_failed")
+
     fun toJson(): String {
         val json = JSONObject()
         json.put("event", name)
@@ -58,6 +63,10 @@ sealed class TelemetryEvent(val name: String) {
             }
             is DownloadFailed -> {
                 json.put("downloadId", downloadId)
+                json.put("videoId", videoId)
+                json.put("reason", reason)
+            }
+            is FavoriteToggleFailed -> {
                 json.put("videoId", videoId)
                 json.put("reason", reason)
             }

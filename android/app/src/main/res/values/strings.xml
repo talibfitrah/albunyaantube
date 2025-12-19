@@ -184,6 +184,7 @@
     <string name="player_action_favorited">Favorited</string>
     <string name="player_added_to_favorites">Added to favorites</string>
     <string name="player_removed_from_favorites">Removed from favorites</string>
+    <string name="player_favorite_toggle_error">Failed to update favorites. Please try again.</string>
     <string name="player_action_share">Share video</string>
     <string name="share_watch_in_app">Watch in Albunyaan Tube:</string>
     <string name="share_app_promo">Get Albunyaan Tube for ad-free Islamic content!</string>

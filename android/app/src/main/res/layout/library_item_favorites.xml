@@ -18,7 +18,7 @@
         android:padding="@dimen/spacing_sm"
         android:src="@drawable/ic_favorite"
         android:background="@drawable/onboarding_icon_bg"
-        android:contentDescription="@null"
+        android:contentDescription="@string/favorites_icon_description"
         app:tint="@color/primary_green"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"

@@ -156,6 +156,10 @@
     <dimen name="playlist_hero_height">200dp</dimen>
     <dimen name="playlist_hero_thumbnail_max_width">320dp</dimen>
 
+    <!-- Error State Component -->
+    <dimen name="error_body_max_width">300dp</dimen>
+    <dimen name="button_min_width">120dp</dimen>
+
     <!-- Typography sizes -->
     <dimen name="text_headline">20sp</dimen>
     <dimen name="text_section_title">18sp</dimen>

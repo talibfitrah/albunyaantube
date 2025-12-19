@@ -94,4 +94,8 @@
 
     <!-- Channel Shorts Grid (TV) -->
     <integer name="channel_shorts_span_count">5</integer>
+
+    <!-- Error State Component (Large Tablet / TV) -->
+    <dimen name="error_body_max_width">480dp</dimen>
+    <dimen name="button_min_width">160dp</dimen>
 </resources>

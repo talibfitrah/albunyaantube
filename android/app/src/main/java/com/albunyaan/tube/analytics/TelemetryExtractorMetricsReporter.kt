@@ -92,4 +92,14 @@ class TelemetryExtractorMetricsReporter(
         downloadSizes.remove(downloadId)
         delegate.onDownloadFailed(downloadId, throwable)
     }
+
+    override fun onFavoriteToggleFailed(videoId: String, throwable: Throwable) {
+        telemetryClient.send(
+            TelemetryEvent.FavoriteToggleFailed(
+                videoId = videoId,
+                reason = throwable.message ?: throwable::class.java.simpleName
+            )
+        )
+        delegate.onFavoriteToggleFailed(videoId, throwable)
+    }
 }

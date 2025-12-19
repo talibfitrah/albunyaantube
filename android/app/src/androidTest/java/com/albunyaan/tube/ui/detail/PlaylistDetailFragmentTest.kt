@@ -91,16 +91,14 @@ class PlaylistDetailFragmentTest {
     // ========== Loading State Tests ==========
 
     @Test
-    fun loadingState_showsSkeletons_beforeDataLoads() {
+    fun loadingState_showsHeaderSkeleton_beforeDataLoads() {
         repository.useDeferredLoading = true
         launchFragment()
 
-        // Header skeleton should be visible
+        // Header skeleton should be visible during initial loading.
+        // Note: Items loading typically doesn't start until header loads,
+        // so listSkeletonContainer visibility depends on the ViewModel's loading sequence.
         onView(withId(R.id.headerSkeleton))
-            .check(matches(isDisplayed()))
-
-        // List skeleton should be visible
-        onView(withId(R.id.listSkeletonContainer))
             .check(matches(isDisplayed()))
 
         // Complete loading to clean up
@@ -176,11 +174,13 @@ class PlaylistDetailFragmentTest {
     }
 
     @Test
-    fun successState_displaysBanner() {
+    fun successState_displaysHeroThumbnail() {
         repository.headerToReturn = FakePlaylistDetailRepository.createDefaultHeader()
         launchFragment()
 
-        onView(withId(R.id.playlistBanner))
+        // Note: playlistBanner is a legacy ID kept for backward compatibility (GONE).
+        // The actual visible hero image is heroThumbnail inside heroThumbnailCard.
+        onView(withId(R.id.heroThumbnail))
             .check(matches(isDisplayed()))
     }
 

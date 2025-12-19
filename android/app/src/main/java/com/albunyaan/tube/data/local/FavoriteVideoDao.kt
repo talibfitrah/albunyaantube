@@ -39,7 +39,7 @@ interface FavoriteVideoDao {
      * Add a video to favorites.
      * Uses REPLACE strategy to update if already exists.
      */
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun addFavorite(video: FavoriteVideo)
 
     /**

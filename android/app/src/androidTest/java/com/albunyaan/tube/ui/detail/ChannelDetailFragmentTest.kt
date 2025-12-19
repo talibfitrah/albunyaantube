@@ -302,7 +302,8 @@ class ChannelDetailFragmentTest {
         launchFragment()
         waitForHeaderLoaded()
 
-        onView(withId(R.id.errorState))
+        // Note: Layout uses @+id/contentErrorState for the error include
+        onView(withId(R.id.contentErrorState))
             .check(matches(isDisplayed()))
     }
 

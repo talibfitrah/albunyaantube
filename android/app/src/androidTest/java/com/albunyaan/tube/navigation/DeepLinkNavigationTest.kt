@@ -115,6 +115,22 @@ class DeepLinkNavigationTest {
         // a brief moment to process the stopService() before we finish the activity.
         Thread.sleep(50)
 
+        // Reset the activity's intent before finishing.
+        // This fixes ActivityScenario.close() timeouts that occur when onNewIntent()
+        // changes the intent (via setIntent()), causing ActivityScenario to lose track
+        // of lifecycle events due to intent mismatch.
+        try {
+            scenario?.onActivity { activity ->
+                // Reset to a neutral intent that matches the original launch intent structure
+                val resetIntent = Intent(context, MainActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                }
+                activity.intent = resetIntent
+            }
+        } catch (_: Exception) {
+            // Scenario may already be closed or activity gone
+        }
+
         // Finish the activity
         try {
             scenario?.onActivity { activity ->

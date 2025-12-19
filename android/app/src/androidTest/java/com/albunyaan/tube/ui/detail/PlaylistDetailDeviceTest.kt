@@ -152,7 +152,8 @@ class PlaylistDetailDeviceTest {
         launchFragment()
 
         // Verify basic header elements are displayed
-        onView(withId(R.id.playlistBanner)).check(matches(isDisplayed()))
+        // Note: playlistBanner is a legacy ID (GONE); heroThumbnail is the actual visible image
+        onView(withId(R.id.heroThumbnail)).check(matches(isDisplayed()))
         onView(withId(R.id.playlistTitle)).check(matches(isDisplayed()))
         onView(withId(R.id.channelName)).check(matches(isDisplayed()))
         onView(withId(R.id.playlistMetadata)).check(matches(isDisplayed()))
@@ -184,7 +185,8 @@ class PlaylistDetailDeviceTest {
         launchFragment()
 
         // Verify tablet header elements
-        onView(withId(R.id.playlistBanner)).check(matches(isDisplayed()))
+        // Note: playlistBanner is a legacy ID (GONE); heroThumbnail is the actual visible image
+        onView(withId(R.id.heroThumbnail)).check(matches(isDisplayed()))
         onView(withId(R.id.playlistTitle)).check(matches(isDisplayed()))
         onView(withId(R.id.channelName)).check(matches(isDisplayed()))
         onView(withId(R.id.playlistMetadata)).check(matches(isDisplayed()))
@@ -217,7 +219,8 @@ class PlaylistDetailDeviceTest {
         launchFragment()
 
         // Verify TV header elements
-        onView(withId(R.id.playlistBanner)).check(matches(isDisplayed()))
+        // Note: playlistBanner is a legacy ID (GONE); heroThumbnail is the actual visible image
+        onView(withId(R.id.heroThumbnail)).check(matches(isDisplayed()))
         onView(withId(R.id.playlistTitle)).check(matches(isDisplayed()))
     }
 

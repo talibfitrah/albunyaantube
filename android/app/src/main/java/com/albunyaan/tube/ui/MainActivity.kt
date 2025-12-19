@@ -42,10 +42,12 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
         navController // trigger lazy init if toolbar needed later
 
-        // Handle intent (both deep links and service intents)
-        intent?.let { pendingIntent ->
-            binding.root.post {
-                handleIntent(pendingIntent)
+        // Handle intent only on fresh launch (not recreation)
+        if (savedInstanceState == null) {
+            intent?.let { pendingIntent ->
+                binding.root.post {
+                    handleIntent(pendingIntent)
+                }
             }
         }
 
@@ -129,7 +131,7 @@ class MainActivity : AppCompatActivity() {
      */
     private fun handleDeepLink(intent: Intent) {
         val uri = intent.data ?: return
-        android.util.Log.d("MainActivity", "Handling deep link: $uri")
+        android.util.Log.d("MainActivity", "Handling deep link: ${uri.scheme}://${uri.host}/...")
 
         try {
             val currentDest = navController.currentDestination?.id

@@ -83,4 +83,8 @@
     <!-- Playlist Hero Component (Tablet) -->
     <dimen name="playlist_hero_height">280dp</dimen>
     <dimen name="playlist_hero_thumbnail_max_width">480dp</dimen>
+
+    <!-- Error State Component (Tablet) -->
+    <dimen name="error_body_max_width">400dp</dimen>
+    <dimen name="button_min_width">140dp</dimen>
 </resources>

@@ -147,10 +147,11 @@ class PlaylistDetailRtlTest {
     }
 
     @Test
-    fun playlistBanner_isDisplayed_inRtl() {
+    fun heroThumbnail_isDisplayed_inRtl() {
         launchFragment()
 
-        onView(withId(R.id.playlistBanner))
+        // Note: playlistBanner is a legacy ID (GONE); heroThumbnail is the actual visible image
+        onView(withId(R.id.heroThumbnail))
             .check(matches(isDisplayed()))
     }
 

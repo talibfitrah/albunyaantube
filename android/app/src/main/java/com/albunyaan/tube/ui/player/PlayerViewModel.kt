@@ -4,6 +4,7 @@ import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.albunyaan.tube.R
+import com.albunyaan.tube.analytics.ExtractorMetricsReporter
 import com.albunyaan.tube.data.extractor.AudioTrack
 import com.albunyaan.tube.data.extractor.PlaybackSelection
 import com.albunyaan.tube.data.extractor.QualitySelectionOrigin
@@ -31,6 +32,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -51,13 +53,24 @@ class PlayerViewModel @Inject constructor(
     private val playlistDetailRepository: com.albunyaan.tube.data.playlist.PlaylistDetailRepository,
     private val rateLimiter: ExtractionRateLimiter,
     private val prefetchService: StreamPrefetchService,
-    private val favoritesRepository: FavoritesRepository
+    private val favoritesRepository: FavoritesRepository,
+    private val metricsReporter: ExtractorMetricsReporter
 ) : ViewModel() {
 
     private val dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate
 
     private val _state = MutableStateFlow(PlayerState())
     val state: StateFlow<PlayerState> = _state
+
+    /**
+     * UI events for user feedback (errors, confirmations).
+     * Uses SharedFlow with extraBufferCapacity to ensure events aren't dropped.
+     */
+    private val _uiEvents = MutableSharedFlow<PlayerUiEvent>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val uiEvents: SharedFlow<PlayerUiEvent> = _uiEvents.asSharedFlow()
 
     private val queue = mutableListOf<UpNextItem>()
     private val previousItems = mutableListOf<UpNextItem>()
@@ -134,6 +147,7 @@ class PlayerViewModel @Inject constructor(
 
     /**
      * Toggle favorite status for the current video.
+     * Emits UI event on failure for toast/snackbar display.
      */
     fun toggleFavorite() {
         val item = _state.value.currentItem ?: return
@@ -150,6 +164,18 @@ class PlayerViewModel @Inject constructor(
                 android.util.Log.d("PlayerViewModel", "Toggled favorite for ${item.streamId}: $isNowFavorite")
             } catch (e: Exception) {
                 android.util.Log.e("PlayerViewModel", "Failed to toggle favorite for ${item.streamId}", e)
+
+                // Report error to analytics/telemetry for monitoring
+                metricsReporter.onFavoriteToggleFailed(item.streamId, e)
+
+                // Emit UI event for user feedback (toast/snackbar)
+                _uiEvents.tryEmit(
+                    PlayerUiEvent.FavoriteToggleFailed(
+                        videoId = item.streamId,
+                        messageRes = R.string.player_favorite_toggle_error,
+                        canRetry = true
+                    )
+                )
             }
         }
     }
@@ -1475,3 +1501,22 @@ private fun ResolvedStreams.toDefaultSelection(): PlaybackSelection? {
 }
 
 private fun stubUpNextItems(): List<UpNextItem> = emptyList()
+
+/**
+ * UI events emitted by PlayerViewModel for user feedback.
+ * Collected by PlayerFragment to show toasts/snackbars.
+ */
+sealed class PlayerUiEvent {
+    /**
+     * Emitted when toggling favorite status fails.
+     *
+     * @param videoId The video ID that failed to toggle
+     * @param messageRes String resource ID for localized error message
+     * @param canRetry True if user can retry the operation
+     */
+    data class FavoriteToggleFailed(
+        val videoId: String,
+        @StringRes val messageRes: Int,
+        val canRetry: Boolean
+    ) : PlayerUiEvent()
+}

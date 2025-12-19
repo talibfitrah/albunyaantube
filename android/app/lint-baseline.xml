@@ -3993,28 +3993,6 @@
 
     <issue
         id="HardcodedText"
-        message="Hardcoded string &quot;Saved&quot;, should use `@string` resource"
-        errorLine1="            android:text=&quot;Saved&quot;"
-        errorLine2="            ~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/res/layout/library_item_saved.xml"
-            line="40"
-            column="13"/>
-    </issue>
-
-    <issue
-        id="HardcodedText"
-        message="Hardcoded string &quot;0 videos&quot;, should use `@string` resource"
-        errorLine1="            android:text=&quot;0 videos&quot;"
-        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/res/layout/library_item_saved.xml"
-            line="49"
-            column="13"/>
-    </issue>
-
-    <issue
-        id="HardcodedText"
         message="Hardcoded string &quot;Audio-only&quot;, should use `@string` resource"
         errorLine1="            android:text=&quot;Audio-only&quot;"
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~">

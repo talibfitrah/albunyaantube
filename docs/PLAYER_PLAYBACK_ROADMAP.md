@@ -70,7 +70,7 @@
     - `waitForMainShellReady()` uses `CountDownLatch` + `OnDestinationChangedListener` on main NavController for `mainShellFragment`.
     - `waitForDestination()` uses `CountDownLatch` + `OnDestinationChangedListener` on nested NavController.
     - `decorView.post()` ensures nested NavHost fragment view creation completes before asserting.
-  - Result: Test suite time reduced from 153s to ~12s; zero flakiness from timing issues.
+  - Result: Test suite time reduced from 153s to ~12s; significantly reduced flakiness from timing issues.
 - ✅ **Design tokens in library_item_favorites.xml** (renamed from `library_item_saved.xml`): Replaced hardcoded `40dp`/`8dp`/`24dp` values with `@dimen/library_icon_size`, `@dimen/spacing_sm`, `@dimen/icon_small`.
 - ✅ **300-second test gate**: Connected test suite now completes in ~124 seconds (down from 408 seconds), well within the 300s policy.
 

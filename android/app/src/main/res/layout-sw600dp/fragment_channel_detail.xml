@@ -41,7 +41,7 @@
                     android:id="@+id/exclusionBanner"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:padding="12dp"
+                    android:padding="@dimen/spacing_md"
                     android:background="@color/accent_red"
                     android:textColor="@android:color/white"
                     android:text="@string/detail_excluded_banner"

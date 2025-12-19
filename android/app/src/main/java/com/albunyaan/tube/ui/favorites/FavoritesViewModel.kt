@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.albunyaan.tube.data.local.FavoriteVideo
 import com.albunyaan.tube.data.local.FavoritesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -33,7 +34,10 @@ class FavoritesViewModel @Inject constructor(
         object AllFavoritesCleared : UiEvent()
     }
 
-    private val _uiEvents = MutableSharedFlow<UiEvent>()
+    private val _uiEvents = MutableSharedFlow<UiEvent>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
     val uiEvents: SharedFlow<UiEvent> = _uiEvents.asSharedFlow()
 
     /**

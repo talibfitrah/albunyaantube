@@ -17,6 +17,9 @@ interface ExtractorMetricsReporter {
     fun onDownloadSizeKnown(downloadId: String, sizeBytes: Long) {}
     fun onDownloadCompleted(downloadId: String, filePath: String) {}
     fun onDownloadFailed(downloadId: String, throwable: Throwable) {}
+
+    /** Called when toggling favorite status fails for a video */
+    fun onFavoriteToggleFailed(videoId: String, throwable: Throwable) {}
 }
 
 class LogExtractorMetricsReporter : ExtractorMetricsReporter {
@@ -63,6 +66,10 @@ class LogExtractorMetricsReporter : ExtractorMetricsReporter {
 
     override fun onDownloadFailed(downloadId: String, throwable: Throwable) {
         Log.w(TAG, "download_failed id=$downloadId", throwable)
+    }
+
+    override fun onFavoriteToggleFailed(videoId: String, throwable: Throwable) {
+        Log.w(TAG, "favorite_toggle_failed videoId=$videoId", throwable)
     }
 
     private companion object {
