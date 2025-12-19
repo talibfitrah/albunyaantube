@@ -71,11 +71,11 @@
     - `waitForDestination()` uses `CountDownLatch` + `OnDestinationChangedListener` on nested NavController.
     - `decorView.post()` ensures nested NavHost fragment view creation completes before asserting.
   - Result: Test suite time reduced from 153s to ~12s; zero flakiness from timing issues.
-- ✅ **Design tokens in library_item_saved.xml**: Replaced hardcoded `40dp`/`8dp`/`24dp` values with `@dimen/library_icon_size`, `@dimen/spacing_sm`, `@dimen/icon_small`.
+- ✅ **Design tokens in library_item_favorites.xml** (renamed from `library_item_saved.xml`): Replaced hardcoded `40dp`/`8dp`/`24dp` values with `@dimen/library_icon_size`, `@dimen/spacing_sm`, `@dimen/icon_small`.
 - ✅ **300-second test gate**: Connected test suite now completes in ~124 seconds (down from 408 seconds), well within the 300s policy.
 
 ### Code Review Fixes (2025-12-19)
-- ✅ **MediaSession artwork race condition**: `MediaSessionMetadataManager.currentMetadataToken` now uses `AtomicLong` for thread-safety. Token increments atomically with `incrementAndGet()` and reads use `get()` to ensure safe reads/writes if metadata updates ever occur off-main concurrently.
+- ✅ **MediaSession artwork race condition**: `MediaSessionMetadataManager.currentMetadataToken` now uses `AtomicLong` for safe token identity gating. Token increments atomically with `incrementAndGet()` and reads use `get()`. Note: AtomicLong provides safety for the token specifically; the class as a whole assumes main-thread access for other mutable state (cache fields, artworkLoadJob).
 - ✅ **RTL alignment in downloads layouts**: Added explicit `textAlignment="viewStart"` to section headers and storage info text in phone layout (`fragment_downloads.xml`) and `textAlignment="center"` to empty state text in both phone and tablet layouts for consistency.
 - ✅ **Tokenized library items**: Fixed hardcoded values in `library_item_recently_watched.xml` and `library_item_history.xml`:
   - Replaced `40dp`/`8dp`/`24dp`/`16sp`/`14sp`/`2dp` with `@dimen/library_icon_size`, `@dimen/spacing_sm`, `@dimen/icon_small`, `@dimen/text_subtitle`, `@dimen/text_body`, `@dimen/spacing_xs`

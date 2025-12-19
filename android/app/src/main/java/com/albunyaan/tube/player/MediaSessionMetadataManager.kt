@@ -49,13 +49,15 @@ class MediaSessionMetadataManager @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var artworkLoadJob: Job? = null
 
-    // Cache the last loaded artwork URL to avoid redundant loads
+    // Cache the last loaded artwork URL to avoid redundant loads.
+    // Note: These fields are only accessed from main thread; no synchronization needed.
     private var lastArtworkUrl: String? = null
     private var lastArtworkBytes: ByteArray? = null
 
     // Stable identity token for the current metadata update request.
     // Used to detect context changes during async artwork loading (safer than index-based checks).
-    // AtomicLong ensures thread-safe reads/writes if metadata updates ever occur off-main concurrently.
+    // AtomicLong provides safe increment/read for the token specifically; the class as a whole
+    // assumes main-thread access for other mutable state (cache fields, artworkLoadJob).
     private val currentMetadataToken = AtomicLong(0)
 
     /**
