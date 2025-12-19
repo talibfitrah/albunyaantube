@@ -38,6 +38,7 @@
                 android:textSize="@dimen/text_section_title"
                 android:textStyle="bold"
                 android:textColor="?attr/colorOnSurface"
+                android:textAlignment="viewStart"
                 android:layout_marginBottom="@dimen/spacing_sm"/>
 
             <com.google.android.material.card.MaterialCardView
@@ -85,7 +86,8 @@
                             android:layout_marginTop="@dimen/spacing_md"
                             android:text="@string/downloads_empty_title"
                             android:textSize="@dimen/text_subtitle"
-                            android:textColor="?attr/colorOnSurfaceVariant"/>
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:textAlignment="center"/>
 
                         <TextView
                             android:layout_width="wrap_content"
@@ -94,6 +96,7 @@
                             android:text="@string/downloads_empty_subtitle"
                             android:textSize="@dimen/text_body"
                             android:textColor="?attr/colorOnSurfaceVariant"
+                            android:textAlignment="center"
                             android:alpha="0.7"/>
 
                     </LinearLayout>
@@ -113,6 +116,7 @@
                             android:text="@string/downloads_storage_used"
                             android:textSize="@dimen/text_body"
                             android:textColor="?attr/colorOnSurface"
+                            android:textAlignment="viewStart"
                             android:textStyle="bold"/>
 
                         <TextView
@@ -122,7 +126,8 @@
                             android:layout_marginTop="@dimen/spacing_xs"
                             android:text="@string/downloads_storage_calculating"
                             android:textSize="@dimen/text_body"
-                            android:textColor="?attr/colorOnSurfaceVariant"/>
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:textAlignment="viewStart"/>
 
                         <ProgressBar
                             android:id="@+id/storageProgress"
@@ -147,6 +152,7 @@
                 android:textSize="@dimen/text_section_title"
                 android:textStyle="bold"
                 android:textColor="?attr/colorOnSurface"
+                android:textAlignment="viewStart"
                 android:layout_marginBottom="@dimen/spacing_sm"/>
 
             <com.google.android.material.card.MaterialCardView
