@@ -369,9 +369,9 @@
                 android:gravity="center"
                 android:weightSum="4">
 
-                <!-- Like Button -->
+                <!-- Favorite Button -->
                 <LinearLayout
-                    android:id="@+id/likeButton"
+                    android:id="@+id/favoriteButton"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
@@ -381,19 +381,21 @@
                     android:clickable="true"
                     android:focusable="true"
                     android:padding="12dp"
-                    android:contentDescription="@string/player_action_like">
+                    android:contentDescription="@string/player_action_favorite">
 
                     <ImageView
+                        android:id="@+id/favoriteIcon"
                         android:layout_width="24dp"
                         android:layout_height="24dp"
-                        android:src="@drawable/ic_like"
+                        android:src="@drawable/ic_favorite_border"
                         app:tint="@color/primary_green" />
 
                     <TextView
+                        android:id="@+id/favoriteLabel"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
-                        android:text="Like"
+                        android:text="@string/player_action_favorite"
                         android:textColor="@color/primary_green"
                         android:textSize="12sp" />
 
@@ -423,7 +425,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
-                        android:text="Share"
+                        android:text="@string/player_action_share"
                         android:textColor="@color/primary_green"
                         android:textSize="12sp" />
 
@@ -453,7 +455,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
-                        android:text="Download"
+                        android:text="@string/player_button_download"
                         android:textColor="@color/primary_green"
                         android:textSize="12sp" />
 
@@ -483,7 +485,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
-                        android:text="Audio"
+                        android:text="@string/player_action_audio"
                         android:textColor="@color/primary_green"
                         android:textSize="12sp" />
 

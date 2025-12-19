@@ -12,12 +12,12 @@
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
-        android:background="@android:color/white"
-        android:elevation="2dp"
+        android:background="?attr/colorSurface"
+        android:elevation="@dimen/elevation_sm"
         app:navigationIcon="?attr/homeAsUpIndicator"
         app:title="@string/downloads_library_title"
         app:titleTextAppearance="@style/TextAppearance.MaterialComponents.Headline6"
-        app:titleTextColor="@android:color/black"/>
+        app:titleTextColor="?attr/colorOnSurface"/>
 
     <ScrollView
         android:layout_width="match_parent"
@@ -40,9 +40,9 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/downloads_section_title"
-                android:textSize="18sp"
+                android:textSize="@dimen/text_section_title"
                 android:textStyle="bold"
-                android:textColor="@android:color/black"
+                android:textColor="?attr/colorOnSurface"
                 android:textAlignment="viewStart"
                 android:layout_marginBottom="@dimen/spacing_sm"/>
 
@@ -50,7 +50,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="@dimen/spacing_lg"
-                app:cardBackgroundColor="@android:color/white"
+                app:cardBackgroundColor="?attr/colorSurface"
                 app:cardCornerRadius="@dimen/corner_radius_medium"
                 app:cardElevation="0dp">
 
@@ -90,16 +90,16 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/spacing_md"
                             android:text="@string/downloads_empty_title"
-                            android:textSize="16sp"
-                            android:textColor="@color/icon_gray"/>
+                            android:textSize="@dimen/text_subtitle"
+                            android:textColor="?attr/colorOnSurfaceVariant"/>
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/spacing_xs"
                             android:text="@string/downloads_empty_subtitle"
-                            android:textSize="14sp"
-                            android:textColor="@color/icon_gray"
+                            android:textSize="@dimen/text_body"
+                            android:textColor="?attr/colorOnSurfaceVariant"
                             android:alpha="0.7"/>
 
                     </LinearLayout>
@@ -117,8 +117,8 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/downloads_storage_used"
-                            android:textSize="14sp"
-                            android:textColor="@android:color/black"
+                            android:textSize="@dimen/text_body"
+                            android:textColor="?attr/colorOnSurface"
                             android:textAlignment="viewStart"
                             android:textStyle="bold"/>
 
@@ -128,9 +128,9 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/spacing_xs"
                             android:text="@string/downloads_storage_calculating"
-                            android:textSize="14sp"
+                            android:textSize="@dimen/text_body"
                             android:textAlignment="viewStart"
-                            android:textColor="@color/icon_gray"/>
+                            android:textColor="?attr/colorOnSurfaceVariant"/>
 
                         <ProgressBar
                             android:id="@+id/storageProgress"
@@ -152,16 +152,16 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/library_section_title"
-                android:textSize="18sp"
+                android:textSize="@dimen/text_section_title"
                 android:textStyle="bold"
-                android:textColor="@android:color/black"
+                android:textColor="?attr/colorOnSurface"
                 android:textAlignment="viewStart"
                 android:layout_marginBottom="@dimen/spacing_sm"/>
 
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                app:cardBackgroundColor="@android:color/white"
+                app:cardBackgroundColor="?attr/colorSurface"
                 app:cardCornerRadius="@dimen/corner_radius_medium"
                 app:cardElevation="0dp">
 
@@ -170,8 +170,8 @@
                     android:layout_height="wrap_content"
                     android:orientation="vertical">
 
-                    <!-- Saved -->
-                    <include layout="@layout/library_item_saved"/>
+                    <!-- Favorites -->
+                    <include layout="@layout/library_item_favorites"/>
 
                     <View
                         android:layout_width="match_parent"

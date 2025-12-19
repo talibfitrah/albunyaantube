@@ -48,6 +48,14 @@
                     android:scheme="albunyaantube"
                     android:host="playlist" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="albunyaantube"
+                    android:host="video" />
+            </intent-filter>
         </activity>
 
         <!-- Media3 MediaSessionService for background playback and media controls -->

@@ -266,7 +266,7 @@
         android:layout_marginTop="?attr/actionBarSize"
         android:orientation="vertical"
         android:background="?attr/colorSurface"
-        android:elevation="8dp"
+        android:elevation="@dimen/elevation_lg"
         android:visibility="visible"
         tools:visibility="gone">
 

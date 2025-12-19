@@ -19,7 +19,7 @@
         android:layout_height="@dimen/bottom_nav_height"
         android:layout_gravity="bottom"
         android:background="@color/background_gray"
-        android:elevation="8dp"
+        android:elevation="@dimen/elevation_lg"
         app:itemIconTint="@color/bottom_nav_item_color"
         app:itemTextColor="@color/bottom_nav_item_color"
         app:itemRippleColor="@android:color/transparent"

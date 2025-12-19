@@ -4,6 +4,8 @@ import com.albunyaan.tube.data.channel.Page
 import com.albunyaan.tube.data.extractor.AudioTrack
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.VideoTrack
+import com.albunyaan.tube.data.local.FavoriteVideo
+import com.albunyaan.tube.data.local.FavoritesRepository
 import com.albunyaan.tube.data.playlist.PlaylistDetailRepository
 import com.albunyaan.tube.data.playlist.PlaylistHeader
 import com.albunyaan.tube.data.playlist.PlaylistItem
@@ -18,8 +20,11 @@ import com.albunyaan.tube.player.PlayerRepository
 import com.albunyaan.tube.player.StreamPrefetchService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -58,6 +63,7 @@ class PlayerViewModelPlaylistPagingTest {
     private lateinit var fakePlaylistRepository: FakePlaylistDetailRepository
     private lateinit var rateLimiter: ExtractionRateLimiter
     private lateinit var fakePrefetchService: FakePrefetchService
+    private lateinit var fakeFavoritesRepository: FakeFavoritesRepository
 
     @Before
     fun setup() {
@@ -67,6 +73,7 @@ class PlayerViewModelPlaylistPagingTest {
         fakePlaylistRepository = FakePlaylistDetailRepository()
         rateLimiter = ExtractionRateLimiter()  // Use real rate limiter
         fakePrefetchService = FakePrefetchService()
+        fakeFavoritesRepository = FakeFavoritesRepository()
     }
 
     @After
@@ -80,7 +87,8 @@ class PlayerViewModelPlaylistPagingTest {
             downloadRepository = fakeDownloadRepository,
             playlistDetailRepository = fakePlaylistRepository,
             rateLimiter = rateLimiter,
-            prefetchService = fakePrefetchService
+            prefetchService = fakePrefetchService,
+            favoritesRepository = fakeFavoritesRepository
         )
     }
 
@@ -668,5 +676,66 @@ class PlayerViewModelPlaylistPagingTest {
         override fun isPrefetchInFlight(videoId: String): Boolean = false
         override fun cancelPrefetch(videoId: String) {}
         override fun clearAll() {}
+    }
+
+    /**
+     * Fake favorites repository for testing.
+     * Stores favorites in memory.
+     */
+    private class FakeFavoritesRepository : FavoritesRepository {
+        private val favorites = MutableStateFlow<List<FavoriteVideo>>(emptyList())
+
+        override fun getAllFavorites(): Flow<List<FavoriteVideo>> = favorites
+
+        override fun isFavorite(videoId: String): Flow<Boolean> {
+            return favorites.map { list -> list.any { it.videoId == videoId } }
+        }
+
+        override suspend fun isFavoriteOnce(videoId: String): Boolean {
+            return favorites.value.any { it.videoId == videoId }
+        }
+
+        override suspend fun addFavorite(
+            videoId: String,
+            title: String,
+            channelName: String,
+            thumbnailUrl: String?,
+            durationSeconds: Int
+        ) {
+            val video = FavoriteVideo(
+                videoId = videoId,
+                title = title,
+                channelName = channelName,
+                thumbnailUrl = thumbnailUrl,
+                durationSeconds = durationSeconds
+            )
+            favorites.value = favorites.value + video
+        }
+
+        override suspend fun removeFavorite(videoId: String) {
+            favorites.value = favorites.value.filter { it.videoId != videoId }
+        }
+
+        override suspend fun toggleFavorite(
+            videoId: String,
+            title: String,
+            channelName: String,
+            thumbnailUrl: String?,
+            durationSeconds: Int
+        ): Boolean {
+            val isFav = favorites.value.any { it.videoId == videoId }
+            if (isFav) {
+                removeFavorite(videoId)
+            } else {
+                addFavorite(videoId, title, channelName, thumbnailUrl, durationSeconds)
+            }
+            return !isFav
+        }
+
+        override fun getFavoriteCount(): Flow<Int> = favorites.map { it.size }
+
+        override suspend fun clearAll() {
+            favorites.value = emptyList()
+        }
     }
 }

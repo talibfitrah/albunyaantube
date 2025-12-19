@@ -2,7 +2,10 @@ package com.albunyaan.tube.player
 
 import android.os.SystemClock
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import java.util.concurrent.ConcurrentHashMap
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * Rate limiter for YouTube stream extraction/refresh operations.
@@ -26,9 +29,22 @@ import java.util.concurrent.ConcurrentHashMap
  * - Auto-recovery gets 2 reserved attempts even if manual budget exhausted
  * - Backoff: Exponential delay after repeated attempts (2s, 4s, 8s, 16s, 32s, capped at 60s)
  */
-class ExtractionRateLimiter(
-    private val clock: () -> Long = { SystemClock.elapsedRealtime() }
-) {
+@Singleton
+class ExtractionRateLimiter @Inject constructor() {
+
+    // Clock provider for testability - uses SystemClock by default
+    // Can be overridden using setTestClock() for unit tests
+    // @Volatile ensures visibility of updates across threads
+    @Volatile
+    private var clock: () -> Long = { SystemClock.elapsedRealtime() }
+
+    /**
+     * For testing only: Override the clock provider.
+     */
+    @VisibleForTesting
+    fun setTestClock(testClock: () -> Long) {
+        clock = testClock
+    }
     companion object {
         private const val TAG = "ExtractionRateLimiter"
 

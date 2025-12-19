@@ -50,7 +50,16 @@
     <fragment
         android:id="@+id/downloadsFragment"
         android:name="com.albunyaan.tube.ui.download.DownloadsFragment"
-        android:label="Downloads" />
+        android:label="Downloads">
+        <action
+            android:id="@+id/action_downloadsFragment_to_favoritesFragment"
+            app:destination="@id/favoritesFragment"/>
+    </fragment>
+
+    <fragment
+        android:id="@+id/favoritesFragment"
+        android:name="com.albunyaan.tube.ui.favorites.FavoritesFragment"
+        android:label="@string/favorites_title" />
 
     <fragment
         android:id="@+id/channelDetailFragment"
@@ -160,6 +169,8 @@
             app:argType="string"
             app:nullable="true"
             android:defaultValue="@null" />
+        <deepLink
+            app:uri="albunyaantube://video/{videoId}" />
     </fragment>
 
     <!-- Global actions for navigation from anywhere -->

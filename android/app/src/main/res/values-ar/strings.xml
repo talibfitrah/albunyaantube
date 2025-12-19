@@ -45,6 +45,9 @@
     <string name="player_action_enter_pip">صورة داخل صورة</string>
     <string name="player_action_play_pause">تشغيل/إيقاف</string>
     <string name="player_no_current_item">لا يوجد فيديو قيد التشغيل حالياً.</string>
+    <string name="player_default_title">فيديو</string>
+    <string name="player_no_views">لا توجد مشاهدات بعد</string>
+    <string name="player_no_description">لا يوجد وصف متاح</string>
     <string name="player_mark_current_complete">وضع علامة اكتمال</string>
     <string name="player_up_next_header">التالي</string>
     <string name="player_up_next_meta">%1$s • %2$s</string>
@@ -147,6 +150,7 @@
     <string name="player_action_like">إعجاب بالفيديو</string>
     <string name="player_action_share">مشاركة الفيديو</string>
     <string name="player_action_download">تنزيل الفيديو</string>
+    <string name="player_button_download">تنزيل</string>
     <string name="home_select_category">اختيار تصنيف المحتوى</string>
     <string name="home_see_all_channels">عرض كل القنوات</string>
     <string name="home_see_all_playlists">عرض كل قوائم التشغيل</string>
@@ -168,12 +172,23 @@
     <string name="navigate_back">رجوع</string>
     <string name="channel_tab_about">حول</string>
     <string name="player_action_quality">الجودة</string>
+    <string name="player_quality_dialog_title">جودة الفيديو</string>
+    <string name="player_quality_select_title">اختر الجودة</string>
+    <string name="player_quality_switching">جارٍ التبديل إلى %1$s…</string>
+    <string name="player_quality_unavailable">لا تتوفر خيارات جودة</string>
     <string name="player_action_captions">الترجمة</string>
+    <string name="player_captions_dialog_title">اختر الترجمة</string>
+    <string name="player_captions_off">إيقاف</string>
+    <string name="player_captions_auto_generated">%1$s (مُنشأ تلقائياً)</string>
+    <string name="player_video_not_ready">الفيديو غير جاهز بعد</string>
     <string name="player_action_minimize">تصغير المشغل</string>
     <string name="player_action_fullscreen">ملء الشاشة</string>
     <string name="player_action_settings">إعدادات المشغل</string>
     <string name="player_action_next">تشغيل الفيديو التالي</string>
     <string name="player_action_cast">البث إلى التلفاز</string>
+    <string name="player_cast_started">جارٍ البث إلى %1$s</string>
+    <string name="player_cast_failed">فشل البث: %1$s</string>
+    <string name="player_cast_device_default">الجهاز</string>
     <string name="loading">جارٍ التحميل…</string>
     <string name="section_featured">المميز</string>
 
@@ -356,9 +371,13 @@
     <string name="settings_wifi_only_desc">التنزيل عبر شبكة واي فاي فقط</string>
     <string name="settings_download_quality">جودة التنزيل</string>
     <string name="settings_download_quality_desc">اختر جودة التنزيل المفضلة</string>
+    <string name="settings_download_quality_title">جودة التنزيل</string>
     <string name="settings_quality_low">منخفضة (360p)</string>
+    <string name="settings_quality_low_desc">منخفضة (360p) - توفير البيانات</string>
     <string name="settings_quality_medium">متوسطة (720p)</string>
+    <string name="settings_quality_medium_desc">متوسطة (720p) - متوازنة</string>
     <string name="settings_quality_high">عالية (1080p)</string>
+    <string name="settings_quality_high_desc">عالية (1080p) - أفضل جودة</string>
     <string name="settings_quality_changed">تم تعيين جودة التنزيل إلى %1$s</string>
     <string name="settings_content">المحتوى</string>
     <string name="settings_safe_mode">الوضع الآمن</string>
@@ -366,6 +385,7 @@
     <string name="settings_appearance">المظهر</string>
     <string name="settings_language">اللغة</string>
     <string name="settings_language_desc">اختر لغتك المفضلة</string>
+    <string name="settings_language_select_title">اختر اللغة</string>
     <string name="settings_language_changed">تم تغيير اللغة. سيتم إعادة تشغيل التطبيق.</string>
     <string name="settings_theme">السمة</string>
     <string name="settings_theme_desc">اختر سمة التطبيق</string>
@@ -405,4 +425,47 @@
 
     <!-- Home Overflow Menu -->
     <string name="menu_settings">الإعدادات</string>
+
+    <!-- Favorites Screen -->
+    <string name="favorites_title">المفضلة</string>
+    <string name="favorites_empty_title">لا توجد مفضلات بعد</string>
+    <string name="favorites_empty_subtitle">اضغط على أيقونة القلب في أي فيديو لإضافته إلى المفضلة</string>
+    <string name="favorites_remove">إزالة من المفضلة</string>
+    <string name="favorites_clear_all">مسح الكل</string>
+    <string name="favorites_clear_all_title">مسح كل المفضلات؟</string>
+    <string name="favorites_clear_all_message">سيتم إزالة جميع الفيديوهات من مفضلتك. لا يمكن التراجع عن هذا الإجراء.</string>
+    <string name="favorites_clear_all_confirm">مسح الكل</string>
+    <string name="favorites_remove_description">إزالة %1$s من المفضلة</string>
+
+    <!-- Favorites Player Actions -->
+    <string name="player_action_favorite">المفضلة</string>
+    <string name="player_action_favorited">مُضاف للمفضلة</string>
+    <string name="player_added_to_favorites">تمت الإضافة إلى المفضلة</string>
+    <string name="player_removed_from_favorites">تمت الإزالة من المفضلة</string>
+    <string name="player_action_audio">صوت</string>
+
+    <!-- Share -->
+    <string name="share_watch_in_app">شاهد في البنيان تيوب:</string>
+    <string name="share_app_promo">حمّل البنيان تيوب للمحتوى الإسلامي بدون إعلانات!</string>
+    <string name="share_video_chooser">مشاركة الفيديو</string>
+
+    <!-- Download Quality Dialog -->
+    <string name="download_quality_title">اختر جودة التنزيل</string>
+    <string name="download_quality_audio_only">صوت فقط (M4A)</string>
+    <string name="download_quality_4k">4K (%1$dp)</string>
+    <string name="download_quality_2k">2K (%1$dp)</string>
+    <string name="download_quality_video">%1$dp</string>
+
+    <!-- Player Error/Recovery -->
+    <string name="player_error_title">تعذر تشغيل الفيديو</string>
+    <string name="player_error_message">حدثت مشكلة في تحميل هذا الفيديو. يرجى المحاولة مرة أخرى.</string>
+    <string name="player_retry">إعادة المحاولة</string>
+    <string name="player_refresh_stream">تحديث البث</string>
+    <string name="player_retrying">جارٍ إعادة المحاولة… (المحاولة %1$d من %2$d)</string>
+    <string name="player_recovering">جارٍ استعادة التشغيل…</string>
+    <string name="player_recovering_attempt">جارٍ الاستعادة… (المحاولة %1$d من %2$d)</string>
+    <string name="player_recovery_exhausted">فشلت استعادة التشغيل</string>
+    <string name="player_recovery_exhausted_message">تعذر استعادة التشغيل تلقائياً. يرجى المحاولة مرة أخرى.</string>
+    <string name="player_refresh_rate_limited">يرجى الانتظار لحظة قبل التحديث مرة أخرى</string>
+    <string name="player_auto_audio_stall">تم التبديل إلى الصوت فقط بسبب بطء الاتصال</string>
 </resources>

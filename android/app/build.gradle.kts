@@ -95,6 +95,11 @@ android {
         jvmTarget = "17"
     }
 
+    ksp {
+        // Room schema export location for migration testing
+        arg("room.schemaLocation", "$projectDir/schemas")
+    }
+
     java {
         toolchain {
             languageVersion.set(JavaLanguageVersion.of(17))
@@ -181,6 +186,13 @@ dependencies {
     implementation("io.github.trongnhan136:ffmpeg-kit-min-gpl:7.1.2")
     implementation("com.arthenica:smart-exception-java:0.2.1")
 
+    // Room Database for local persistence (favorites, watch history)
+    val roomVersion = "2.6.1"
+    implementation("androidx.room:room-runtime:$roomVersion")
+    implementation("androidx.room:room-ktx:$roomVersion")
+    ksp("androidx.room:room-compiler:$roomVersion")
+    testImplementation("androidx.room:room-testing:$roomVersion")
+
     // Core library desugaring for Java 10+ APIs (including java.nio for NewPipeExtractor compatibility)
     // Using desugar_jdk_libs_nio to include URLEncoder.encode(String, Charset) support
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.4")
@@ -199,6 +211,7 @@ dependencies {
     androidTestImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     androidTestImplementation("androidx.test:rules:1.5.0")
     androidTestImplementation("com.google.dagger:hilt-android-testing:2.51.1")
+    androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
     kspAndroidTest("com.google.dagger:hilt-compiler:2.51.1")
     debugImplementation("androidx.fragment:fragment-testing:1.6.2")
 }

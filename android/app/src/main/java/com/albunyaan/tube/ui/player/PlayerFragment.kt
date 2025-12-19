@@ -51,9 +51,11 @@ import com.albunyaan.tube.data.extractor.VideoTrack
 import com.albunyaan.tube.download.DownloadEntry
 import com.albunyaan.tube.download.DownloadStatus
 import com.albunyaan.tube.player.BufferHealthMonitor
+import com.albunyaan.tube.player.MediaSessionMetadataManager
 import com.albunyaan.tube.player.MediaSourceResult
 import com.albunyaan.tube.player.PlaybackRecoveryManager
 import com.albunyaan.tube.player.PlaybackService
+import javax.inject.Inject
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -68,6 +70,8 @@ import java.io.File
 @AndroidEntryPoint
 @OptIn(UnstableApi::class)
 class PlayerFragment : Fragment(R.layout.fragment_player) {
+
+    @Inject lateinit var metadataManager: MediaSessionMetadataManager
 
     private var binding: FragmentPlayerBinding? = null
     private var player: ExoPlayer? = null
@@ -127,6 +131,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private var bindingRequested = false
     /** Tracks user's intended play state - used to preserve pause across lifecycle */
     private var userWantsToPlay = true
+    /** Tracks the last item synced to MediaSession metadata to avoid redundant updates */
+    private var lastMetadataSyncedItemId: String? = null
 
     private fun sourceIdentityForLog(url: String?): String {
         if (url.isNullOrBlank()) return "null"
@@ -202,7 +208,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         val targetVideoId = arguments?.getString("targetVideoId")
 
         // Extract metadata from nav args for fast-path playback (no backend fetch needed)
-        val videoTitle = arguments?.getString("title") ?: "Video"
+        val videoTitle = arguments?.getString("title") ?: getString(R.string.player_default_title)
         val channelName = arguments?.getString("channelName") ?: ""
         val thumbnailUrl = arguments?.getString("thumbnailUrl")
         val description = arguments?.getString("description")
@@ -258,8 +264,16 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         }
 
         // Setup action buttons
-        binding.likeButton?.setOnClickListener {
-            Toast.makeText(requireContext(), R.string.player_like_coming_soon, Toast.LENGTH_SHORT).show()
+        binding.favoriteButton?.setOnClickListener {
+            val wasFavorite = viewModel.state.value.isFavorite
+            viewModel.toggleFavorite()
+            // Show toast feedback - state will be inverted after toggle
+            val messageRes = if (wasFavorite) {
+                R.string.player_removed_from_favorites
+            } else {
+                R.string.player_added_to_favorites
+            }
+            Toast.makeText(requireContext(), messageRes, Toast.LENGTH_SHORT).show()
         }
 
         binding.shareButton?.setOnClickListener {
@@ -270,9 +284,20 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             binding.audioOnlyToggle.isChecked = !binding.audioOnlyToggle.isChecked
         }
 
-        // Download button - downloads are always allowed (no EULA gating)
+        // Download button - shows quality picker, downloads are always allowed (no EULA gating)
         binding.downloadButton?.setOnClickListener {
-            val started = viewModel.downloadCurrent()
+            showDownloadQualityPicker()
+        }
+
+        // Register Fragment Result listener for download quality selection (survives process death)
+        childFragmentManager.setFragmentResultListener(
+            DownloadQualityDialog.REQUEST_KEY,
+            viewLifecycleOwner
+        ) { _, result ->
+            val targetHeight = result.getInt(DownloadQualityDialog.RESULT_TARGET_HEIGHT)
+                .takeIf { it != DownloadQualityDialog.NO_HEIGHT }
+            val isAudioOnly = result.getBoolean(DownloadQualityDialog.RESULT_IS_AUDIO_ONLY)
+            val started = viewModel.downloadCurrent(targetHeight, isAudioOnly)
             if (started) {
                 Toast.makeText(requireContext(), R.string.download_started, Toast.LENGTH_SHORT).show()
             }
@@ -392,6 +417,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         preparedQualityCapHeight = null
         factorySelectedVideoTrack = null
         adaptiveFailedForCurrentStream = null
+        lastMetadataSyncedItemId = null
+
+        // Cancel any pending artwork loading
+        metadataManager.cancelArtworkLoading()
 
         // Release player asynchronously to avoid ExoTimeoutException during fragment destruction.
         // The player's internal threads may be blocked (e.g., waiting for audio hardware),
@@ -698,24 +727,32 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
                     // Format view count and time
                     val viewText = currentItem.viewCount?.let { count ->
-                        val formatted = if (count >= 1_000_000) {
-                            String.format("%.1fM", count / 1_000_000.0)
-                        } else if (count >= 1_000) {
-                            String.format("%.1fK", count / 1_000.0)
-                        } else {
-                            count.toString()
+                        when {
+                            count >= 1_000_000 -> getString(R.string.views_count_millions, count / 1_000_000.0)
+                            count >= 1_000 -> getString(R.string.views_count_thousands, count / 1_000.0)
+                            else -> getString(R.string.views_count, count.toInt())
                         }
-                        "$formatted views"
-                    } ?: "No views yet"
+                    } ?: getString(R.string.player_no_views)
 
                     binding.videoStats?.text = viewText
-                    binding.videoDescription?.text = currentItem.description ?: "No description available"
+                    binding.videoDescription?.text = currentItem.description ?: getString(R.string.player_no_description)
+
+                    // Note: MediaSession metadata sync moved to maybePrepareStream()
+                    // to ensure player has a valid media source before updating metadata.
                 } else {
-                    binding.videoTitle?.text = "No video playing"
+                    binding.videoTitle?.text = getString(R.string.player_no_current_item)
                     binding.authorName?.text = ""
                     binding.videoStats?.text = ""
-                    binding.videoDescription?.text = "No description available"
+                    binding.videoDescription?.text = getString(R.string.player_no_description)
                 }
+
+                // Update favorite button UI based on state
+                binding.favoriteIcon?.setImageResource(
+                    if (state.isFavorite) R.drawable.ic_favorite else R.drawable.ic_favorite_border
+                )
+                binding.favoriteLabel?.text = getString(
+                    if (state.isFavorite) R.string.player_action_favorited else R.string.player_action_favorite
+                )
 
             binding.currentlyPlaying.text = currentItem?.let {
                 getString(R.string.player_current_item, it.title)
@@ -765,7 +802,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         android.util.Log.d("PlayerFragment", "showQualitySelector: streamState = $streamState")
 
         if (streamState !is StreamState.Ready) {
-            Toast.makeText(requireContext(), "Video not ready yet", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), R.string.player_video_not_ready, Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -779,7 +816,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         android.util.Log.d("PlayerFragment", "getAvailableQualities returned: ${allQualities.size} qualities")
 
         if (allQualities.isEmpty()) {
-            Toast.makeText(requireContext(), "No quality options available (videoTracks=${videoTracks.size})", Toast.LENGTH_LONG).show()
+            Toast.makeText(requireContext(), R.string.player_quality_unavailable, Toast.LENGTH_LONG).show()
             return
         }
 
@@ -803,15 +840,37 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         val currentIndex = sortedQualities.indexOfFirst { it.label == currentQuality }
 
         MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Video Quality")
+            .setTitle(R.string.player_quality_dialog_title)
             .setSingleChoiceItems(labels, currentIndex) { dialog, which ->
                 val selectedQuality = sortedQualities[which]
                 viewModel.selectQuality(selectedQuality.track)
-                Toast.makeText(requireContext(), "Switching to ${selectedQuality.label}...", Toast.LENGTH_SHORT).show()
+                Toast.makeText(requireContext(), getString(R.string.player_quality_switching, selectedQuality.label), Toast.LENGTH_SHORT).show()
                 dialog.dismiss()
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(android.R.string.cancel, null)
             .show()
+    }
+
+    /**
+     * Shows a quality picker dialog for downloading the current video.
+     *
+     * Displays available video qualities from the resolved streams.
+     * When a quality is selected, starts the download with the chosen targetHeight.
+     *
+     * Uses Fragment Result API for process-death safety. The listener is registered
+     * in onViewCreated() so it survives configuration changes and process death.
+     */
+    private fun showDownloadQualityPicker() {
+        val streamState = viewModel.state.value.streamState
+
+        if (streamState !is StreamState.Ready) {
+            Toast.makeText(requireContext(), R.string.player_stream_error, Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        DownloadQualityDialog.newInstance(
+            resolvedStreams = streamState.selection.resolved
+        ).show(childFragmentManager, DownloadQualityDialog.TAG)
     }
 
     // Overlay controls are now always visible - removed toggle functionality
@@ -821,10 +880,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         val subtitles = viewModel.getAvailableSubtitles()
 
         // Add "Off" option at the beginning
-        val options = mutableListOf("Off")
+        val options = mutableListOf(getString(R.string.player_captions_off))
         options.addAll(subtitles.map { track: SubtitleTrack ->
             if (track.isAutoGenerated) {
-                "${track.languageName} (Auto-generated)"
+                getString(R.string.player_captions_auto_generated, track.languageName)
             } else {
                 track.languageName
             }
@@ -838,7 +897,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         }
 
         MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Select Captions")
+            .setTitle(R.string.player_captions_dialog_title)
             .setSingleChoiceItems(options.toTypedArray(), currentIndex) { dialog, which ->
                 if (which == 0) {
                     // "Off" selected
@@ -849,7 +908,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 }
                 dialog.dismiss()
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(android.R.string.cancel, null)
             .show()
     }
 
@@ -992,11 +1051,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 button.setOnClickListener(null)
             }
             else -> {
+                // No active download - show quality picker for new downloads
                 button.isEnabled = true
                 button.setOnClickListener {
-                    viewModel.downloadCurrent()
+                    showDownloadQualityPicker()
                 }
-                // Status text no longer shown in new UI
             }
         }
     }
@@ -1284,6 +1343,12 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // Notify buffer health monitor of new stream - only monitors progressive streams
             bufferHealthMonitor?.onNewStream(streamState.streamId, preparedIsAdaptive)
 
+            // Sync MediaSession metadata now that player has a valid media source.
+            // This must happen after setMediaSource/prepare to ensure currentMediaItem exists.
+            state.currentItem?.let { item ->
+                syncMediaSessionMetadata(item)
+            }
+
             if (hasPendingResume) {
                 pendingResumeStreamId = null
                 pendingResumePositionMs = null
@@ -1462,14 +1527,14 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         android.util.Log.d("PlayerFragment", "openDownloadedFile called with entry: ${entry.request.videoId}")
         val filePath = entry.filePath ?: run {
             android.util.Log.e("PlayerFragment", "No filePath in entry")
-            Toast.makeText(requireContext(), "No file path available", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), R.string.downloads_no_file, Toast.LENGTH_SHORT).show()
             return
         }
         android.util.Log.d("PlayerFragment", "File path: $filePath")
         val file = File(filePath)
         if (!file.exists()) {
             android.util.Log.e("PlayerFragment", "File does not exist: $filePath")
-            Toast.makeText(requireContext(), "File not found: ${file.name}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.downloads_file_not_found, file.name), Toast.LENGTH_SHORT).show()
             return
         }
         android.util.Log.d("PlayerFragment", "File exists, size: ${file.length()} bytes")
@@ -1505,11 +1570,12 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 android.util.Log.d("PlayerFragment", "Activity started successfully")
             } catch (e: Exception) {
                 android.util.Log.e("PlayerFragment", "Failed to start activity", e)
-                Toast.makeText(requireContext(), "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                val errorMessage = e.localizedMessage ?: getString(R.string.error_unknown)
+                Toast.makeText(requireContext(), getString(R.string.downloads_open_error, errorMessage), Toast.LENGTH_LONG).show()
             }
         } else {
             android.util.Log.e("PlayerFragment", "No apps found to handle video")
-            Toast.makeText(requireContext(), "No video player found", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), R.string.downloads_no_player, Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -1532,8 +1598,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             }
         } ?: ""
 
-        // Build share message with YouTube URL (since we don't have a domain yet)
-        val videoUrl = "https://www.youtube.com/watch?v=${currentItem.streamId}"
+        // Use app deep link instead of YouTube URL
+        // This encourages users to install our app rather than visiting YouTube
+        val videoDeepLink = "albunyaantube://video/${currentItem.streamId}"
 
         val shareMessage = buildString {
             append(title)
@@ -1542,10 +1609,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 append(description)
             }
             append("\n\n")
-            append("Watch this video:\n")
-            append(videoUrl)
+            append(getString(R.string.share_watch_in_app))
+            append("\n")
+            append(videoDeepLink)
             append("\n\n")
-            append("Get Albunyaan Tube app for ad-free Islamic content!")
+            append(getString(R.string.share_app_promo))
         }
 
         // For now, share text only (thumbnail sharing requires downloading the image first)
@@ -1555,7 +1623,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             putExtra(Intent.EXTRA_TEXT, shareMessage)
         }
 
-        startActivity(Intent.createChooser(shareIntent, "Share video"))
+        startActivity(Intent.createChooser(shareIntent, getString(R.string.share_video_chooser)))
     }
 
     private fun toggleFullscreen() {
@@ -1718,15 +1786,17 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // Pause local playback
             player?.playWhenReady = false
 
+            val deviceName = castSession.castDevice?.friendlyName
+                ?: getString(R.string.player_cast_device_default)
             Toast.makeText(
                 requireContext(),
-                "Casting to ${castSession.castDevice?.friendlyName ?: "device"}",
+                getString(R.string.player_cast_started, deviceName),
                 Toast.LENGTH_SHORT
             ).show()
         } catch (e: Exception) {
             Toast.makeText(
                 requireContext(),
-                "Failed to cast: ${e.message}",
+                getString(R.string.player_cast_failed, e.message ?: ""),
                 Toast.LENGTH_SHORT
             ).show()
         }
@@ -1945,6 +2015,30 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         }
 
         return CacheHitResult.Hit(qualityCapToApply)
+    }
+
+    /**
+     * Syncs the current item's metadata to MediaSession for notification and lockscreen display.
+     *
+     * This only updates when the item changes (tracked by lastMetadataSyncedItemId) to avoid
+     * redundant updates from repeated state emissions.
+     */
+    private fun syncMediaSessionMetadata(item: UpNextItem) {
+        // Skip if we already synced this item
+        if (lastMetadataSyncedItemId == item.id) return
+
+        val currentPlayer = player ?: return
+
+        // Update MediaSession metadata (handles artwork loading asynchronously)
+        metadataManager.updateMetadata(
+            player = currentPlayer,
+            title = item.title,
+            artist = item.channelName,
+            thumbnailUrl = item.thumbnailUrl
+        )
+
+        lastMetadataSyncedItemId = item.id
+        android.util.Log.d("PlayerFragment", "Synced MediaSession metadata for: ${item.title}")
     }
 
     private companion object {

@@ -7,7 +7,7 @@ import android.text.format.Formatter
 import android.view.View
 import android.widget.ProgressBar
 import android.widget.TextView
-import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
@@ -16,6 +16,7 @@ import com.albunyaan.tube.databinding.FragmentSettingsBinding
 import com.albunyaan.tube.download.DownloadStorage
 import com.albunyaan.tube.locale.LocaleManager
 import com.albunyaan.tube.preferences.SettingsPreferences
+import android.widget.Toast
 import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.first
@@ -38,9 +39,63 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
         preferences = SettingsPreferences(requireContext())
 
         setupToolbar()
+        setupFragmentResultListeners()
         loadPreferences()
         setupListeners()
         setupStorageManagement()
+    }
+
+    /**
+     * Set up Fragment Result API listeners for dialog results.
+     * This pattern survives process death unlike callback-based approaches.
+     */
+    private fun setupFragmentResultListeners() {
+        // Language selection result
+        childFragmentManager.setFragmentResultListener(
+            LanguageSelectionDialog.REQUEST_KEY,
+            viewLifecycleOwner
+        ) { _, result ->
+            // Only process if user made a selection (not cancelled)
+            val selectedLanguage = result.getString(LanguageSelectionDialog.RESULT_LANGUAGE)
+                ?: return@setFragmentResultListener
+            try {
+                LocaleManager.saveAndApplyLocale(requireContext(), selectedLanguage)
+                // Use Toast instead of Snackbar because locale change triggers Activity recreation,
+                // which would destroy the Snackbar before it's visible. Toast survives recreation.
+                Toast.makeText(requireContext(), R.string.settings_language_changed, Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                android.util.Log.e("SettingsFragment", "Failed to change language", e)
+                Toast.makeText(requireContext(), R.string.settings_language_change_failed, Toast.LENGTH_LONG).show()
+            }
+        }
+
+        // Quality selection result
+        childFragmentManager.setFragmentResultListener(
+            QualitySelectionDialog.REQUEST_KEY,
+            viewLifecycleOwner
+        ) { _, result ->
+            // Only process if user made a selection (not cancelled)
+            val selectedQuality = result.getString(QualitySelectionDialog.RESULT_QUALITY)
+                ?: return@setFragmentResultListener
+            viewLifecycleOwner.lifecycleScope.launch {
+                try {
+                    preferences.setDownloadQuality(selectedQuality)
+                    binding?.root?.let { view ->
+                        val qualityLabel = when (selectedQuality) {
+                            "low" -> getString(R.string.settings_quality_low)
+                            "high" -> getString(R.string.settings_quality_high)
+                            else -> getString(R.string.settings_quality_medium)
+                        }
+                        Snackbar.make(view, getString(R.string.settings_quality_changed, qualityLabel), Snackbar.LENGTH_SHORT).show()
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("SettingsFragment", "Failed to change quality", e)
+                    binding?.root?.let { view ->
+                        Snackbar.make(view, R.string.settings_quality_change_failed, Snackbar.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
     }
 
     private fun setupToolbar() {
@@ -132,13 +187,7 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
         viewLifecycleOwner.lifecycleScope.launch {
             val currentLanguage = preferences.locale.first()
             val dialog = LanguageSelectionDialog.newInstance(currentLanguage)
-            dialog.setOnLanguageSelectedListener { selectedLanguage ->
-                LocaleManager.saveAndApplyLocale(requireContext(), selectedLanguage)
-                binding?.root?.let { view ->
-                    Snackbar.make(view, R.string.settings_language_changed, Snackbar.LENGTH_LONG).show()
-                }
-            }
-            dialog.show(childFragmentManager, "language_selection")
+            dialog.show(childFragmentManager, LanguageSelectionDialog.TAG)
         }
     }
 
@@ -146,20 +195,7 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
         viewLifecycleOwner.lifecycleScope.launch {
             val currentQuality = preferences.downloadQuality.first()
             val dialog = QualitySelectionDialog.newInstance(currentQuality)
-            dialog.setOnQualitySelectedListener { selectedQuality ->
-                viewLifecycleOwner.lifecycleScope.launch {
-                    preferences.setDownloadQuality(selectedQuality)
-                    binding?.root?.let { view ->
-                        val qualityLabel = when (selectedQuality) {
-                            "low" -> getString(R.string.settings_quality_low)
-                            "high" -> getString(R.string.settings_quality_high)
-                            else -> getString(R.string.settings_quality_medium)
-                        }
-                        Snackbar.make(view, getString(R.string.settings_quality_changed, qualityLabel), Snackbar.LENGTH_SHORT).show()
-                    }
-                }
-            }
-            dialog.show(childFragmentManager, "quality_selection")
+            dialog.show(childFragmentManager, QualitySelectionDialog.TAG)
         }
     }
 
@@ -228,7 +264,7 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
         )
         val currentSelection = 0 // Internal storage is default
 
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.settings_download_location)
             .setSingleChoiceItems(options, currentSelection) { dialog, which ->
                 when (which) {
@@ -250,7 +286,7 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
     }
 
     private fun showClearDownloadsConfirmation() {
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.settings_clear_downloads_title)
             .setMessage(R.string.settings_clear_downloads_message)
             .setPositiveButton(R.string.settings_clear_downloads_confirm) { _, _ ->

@@ -10,6 +10,7 @@ import com.albunyaan.tube.data.extractor.QualitySelectionOrigin
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.SubtitleTrack
 import com.albunyaan.tube.data.extractor.VideoTrack
+import com.albunyaan.tube.data.local.FavoritesRepository
 import com.albunyaan.tube.download.DownloadEntry
 import com.albunyaan.tube.download.DownloadRepository
 import com.albunyaan.tube.download.DownloadRequest
@@ -25,10 +26,15 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -44,7 +50,8 @@ class PlayerViewModel @Inject constructor(
     private val downloadRepository: DownloadRepository,
     private val playlistDetailRepository: com.albunyaan.tube.data.playlist.PlaylistDetailRepository,
     private val rateLimiter: ExtractionRateLimiter,
-    private val prefetchService: StreamPrefetchService
+    private val prefetchService: StreamPrefetchService,
+    private val favoritesRepository: FavoritesRepository
 ) : ViewModel() {
 
     private val dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate
@@ -98,6 +105,53 @@ class PlayerViewModel @Inject constructor(
     init {
         hydrateQueue()
         observeDownloads()
+        observeFavoriteStatus()
+    }
+
+    /**
+     * Observe favorite status for the current video.
+     * Uses flatMapLatest to correctly switch to new favorite Flows when currentItem changes.
+     * Updates state.isFavorite reactively when favorites change.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun observeFavoriteStatus() {
+        viewModelScope.launch(dispatcher) {
+            _state
+                .map { it.currentItem?.streamId }
+                .distinctUntilChanged()
+                .flatMapLatest { videoId ->
+                    if (videoId != null) {
+                        favoritesRepository.isFavorite(videoId)
+                    } else {
+                        flowOf(false)
+                    }
+                }
+                .collect { isFavorite ->
+                    updateState { it.copy(isFavorite = isFavorite) }
+                }
+        }
+    }
+
+    /**
+     * Toggle favorite status for the current video.
+     */
+    fun toggleFavorite() {
+        val item = _state.value.currentItem ?: return
+        viewModelScope.launch(dispatcher) {
+            try {
+                val isNowFavorite = favoritesRepository.toggleFavorite(
+                    videoId = item.streamId,
+                    title = item.title,
+                    channelName = item.channelName,
+                    thumbnailUrl = item.thumbnailUrl,
+                    durationSeconds = item.durationSeconds
+                )
+                // State will be updated by observeFavoriteStatus collector
+                android.util.Log.d("PlayerViewModel", "Toggled favorite for ${item.streamId}: $isNowFavorite")
+            } catch (e: Exception) {
+                android.util.Log.e("PlayerViewModel", "Failed to toggle favorite for ${item.streamId}", e)
+            }
+        }
     }
 
     fun setAudioOnly(audioOnly: Boolean) {
@@ -140,14 +194,22 @@ class PlayerViewModel @Inject constructor(
         return true
     }
 
-    fun downloadCurrent(): Boolean {
+    /**
+     * Downloads the current video with specified quality.
+     *
+     * @param targetHeight Maximum video height (720, 1080, etc.) or null for audio-only
+     * @param audioOnly True if user explicitly requested audio-only download
+     * @return True if download was started, false if no current item
+     */
+    fun downloadCurrent(targetHeight: Int? = null, audioOnly: Boolean = false): Boolean {
         val state = _state.value
         val item = state.currentItem ?: return false
         val request = DownloadRequest(
             id = item.streamId + "_" + System.currentTimeMillis(),
             title = item.title,
             videoId = item.streamId,
-            audioOnly = _state.value.audioOnly
+            audioOnly = audioOnly,
+            targetHeight = targetHeight
         )
         downloadRepository.enqueue(request)
         return true
@@ -1258,7 +1320,9 @@ data class PlayerState(
     val hasNext: Boolean = false,
     val hasPrevious: Boolean = false,
     /** Current retry attempt (0 = first attempt, 1 = first retry, etc.) */
-    val retryCount: Int = 0
+    val retryCount: Int = 0,
+    /** Whether the current video is in favorites */
+    val isFavorite: Boolean = false
 )
 
 data class UpNextItem(

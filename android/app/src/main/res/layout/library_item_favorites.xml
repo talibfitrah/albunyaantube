@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:id="@+id/savedItem"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/favoritesItem"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:padding="@dimen/spacing_md"
@@ -11,11 +12,11 @@
 
     <!-- Icon -->
     <ImageView
-        android:id="@+id/savedIcon"
-        android:layout_width="40dp"
-        android:layout_height="40dp"
-        android:padding="8dp"
-        android:src="@android:drawable/ic_menu_save"
+        android:id="@+id/favoritesIcon"
+        android:layout_width="@dimen/library_icon_size"
+        android:layout_height="@dimen/library_icon_size"
+        android:padding="@dimen/spacing_sm"
+        android:src="@drawable/ic_favorite"
         android:background="@drawable/onboarding_icon_bg"
         android:contentDescription="@null"
         app:tint="@color/primary_green"
@@ -29,34 +30,36 @@
         android:layout_height="wrap_content"
         android:layout_marginStart="@dimen/spacing_md"
         android:orientation="vertical"
-        app:layout_constraintStart_toEndOf="@id/savedIcon"
-        app:layout_constraintEnd_toStartOf="@id/savedChevron"
+        app:layout_constraintStart_toEndOf="@id/favoritesIcon"
+        app:layout_constraintEnd_toStartOf="@id/favoritesChevron"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toBottomOf="parent">
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Saved"
-            android:textSize="16sp"
-            android:textColor="@android:color/black"/>
+            android:text="@string/favorites_title"
+            android:textSize="@dimen/text_subtitle"
+            android:textColor="?attr/colorOnSurface"
+            android:textAlignment="viewStart"/>
 
         <TextView
-            android:id="@+id/savedCount"
+            android:id="@+id/favoritesCount"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:text="0 videos"
-            android:textSize="14sp"
-            android:textColor="@color/icon_gray"/>
+            android:layout_marginTop="@dimen/spacing_xs"
+            android:textSize="@dimen/text_body"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:textAlignment="viewStart"
+            tools:text="0 videos"/>
 
     </LinearLayout>
 
     <!-- Chevron -->
     <ImageView
-        android:id="@+id/savedChevron"
-        android:layout_width="24dp"
-        android:layout_height="24dp"
+        android:id="@+id/favoritesChevron"
+        android:layout_width="@dimen/icon_small"
+        android:layout_height="@dimen/icon_small"
         android:src="@drawable/ic_chevron_right"
         android:contentDescription="@null"
         app:tint="@color/icon_gray"

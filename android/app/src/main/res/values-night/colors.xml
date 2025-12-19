@@ -43,4 +43,16 @@
 
     <!-- Hero overlays for playlist/channel detail (stronger in dark mode) -->
     <color name="hero_overlay">#66000000</color>
+
+    <!-- Additional colors (dark mode overrides) -->
+    <color name="background_gray">#121212</color>
+    <color name="icon_gray">#9E9E9E</color>
+
+    <!-- Skeleton/Loading colors (dark mode) -->
+    <color name="skeleton_background">#2A2A2A</color>
+    <color name="skeleton_shimmer_start">#2A2A2A</color>
+    <color name="skeleton_shimmer_end">#383838</color>
+
+    <!-- Shimmer for loading skeletons (dark mode) -->
+    <color name="shimmer_background_color">#2A2A2A</color>
 </resources>

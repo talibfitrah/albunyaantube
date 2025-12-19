@@ -45,10 +45,21 @@
     <string name="player_notification_channel_name">Afspelen</string>
     <string name="player_notification_channel_desc">Beheert afspelen wanneer de app op de achtergrond draait.</string>
     <string name="player_action_quality">Kwaliteit</string>
+    <string name="player_quality_dialog_title">Videokwaliteit</string>
+    <string name="player_quality_select_title">Kwaliteit selecteren</string>
+    <string name="player_quality_switching">Overschakelen naar %1$s…</string>
+    <string name="player_quality_unavailable">Geen kwaliteitsopties beschikbaar</string>
     <string name="player_action_captions">Ondertitels</string>
+    <string name="player_captions_dialog_title">Ondertitels selecteren</string>
+    <string name="player_captions_off">Uit</string>
+    <string name="player_captions_auto_generated">%1$s (Automatisch gegenereerd)</string>
+    <string name="player_video_not_ready">Video nog niet klaar</string>
     <string name="player_action_enter_pip">Beeld-in-beeld</string>
     <string name="player_action_play_pause">Afspelen/Pauzeren</string>
     <string name="player_no_current_item">Er wordt momenteel geen video afgespeeld.</string>
+    <string name="player_default_title">Video</string>
+    <string name="player_no_views">Nog geen weergaven</string>
+    <string name="player_no_description">Geen beschrijving beschikbaar</string>
     <string name="player_mark_current_complete">Markeer als voltooid</string>
     <string name="player_up_next_header">Volgende</string>
     <string name="player_up_next_meta">%1$s • %2$s</string>
@@ -153,11 +164,15 @@
     <string name="player_action_like">Video liken</string>
     <string name="player_action_share">Video delen</string>
     <string name="player_action_download">Video downloaden</string>
+    <string name="player_button_download">Downloaden</string>
     <string name="player_action_minimize">Speler minimaliseren</string>
     <string name="player_action_fullscreen">Volledig scherm wisselen</string>
     <string name="player_action_settings">Spelerinstellingen</string>
     <string name="player_action_next">Volgende video afspelen</string>
     <string name="player_action_cast">Casten naar TV</string>
+    <string name="player_cast_started">Casten naar %1$s</string>
+    <string name="player_cast_failed">Casten mislukt: %1$s</string>
+    <string name="player_cast_device_default">apparaat</string>
     <string name="home_select_category">Inhoudscategorie selecteren</string>
     <string name="home_see_all_featured">Alle uitgelichte inhoud bekijken</string>
     <string name="home_see_all_channels">Alle kanalen bekijken</string>
@@ -306,9 +321,13 @@
     <string name="settings_wifi_only_desc">Alleen downloaden via WiFi-verbindingen</string>
     <string name="settings_download_quality">Downloadkwaliteit</string>
     <string name="settings_download_quality_desc">Selecteer gewenste downloadkwaliteit</string>
+    <string name="settings_download_quality_title">Downloadkwaliteit</string>
     <string name="settings_quality_low">Laag (360p)</string>
+    <string name="settings_quality_low_desc">Laag (360p) - Bespaar data</string>
     <string name="settings_quality_medium">Gemiddeld (720p)</string>
+    <string name="settings_quality_medium_desc">Gemiddeld (720p) - Gebalanceerd</string>
     <string name="settings_quality_high">Hoog (1080p)</string>
+    <string name="settings_quality_high_desc">Hoog (1080p) - Beste kwaliteit</string>
     <string name="settings_quality_changed">Downloadkwaliteit ingesteld op %1$s</string>
     <string name="settings_content">Inhoud</string>
     <string name="settings_safe_mode">Veilige modus</string>
@@ -316,6 +335,7 @@
     <string name="settings_appearance">Uiterlijk</string>
     <string name="settings_language">Taal</string>
     <string name="settings_language_desc">Kies uw voorkeurstaal</string>
+    <string name="settings_language_select_title">Taal selecteren</string>
     <string name="settings_language_changed">Taal gewijzigd. App wordt opnieuw gestart.</string>
     <string name="settings_theme">Thema</string>
     <string name="settings_theme_desc">Kies app-thema</string>
@@ -354,4 +374,72 @@
 
     <!-- Home Overflow Menu -->
     <string name="menu_settings">Instellingen</string>
+
+    <!-- Favorites Screen -->
+    <string name="favorites_title">Favorieten</string>
+    <string name="favorites_empty_title">Nog geen favorieten</string>
+    <string name="favorites_empty_subtitle">Tik op het hartpictogram bij een video om het toe te voegen aan uw favorieten</string>
+    <string name="favorites_remove">Verwijderen uit favorieten</string>
+    <string name="favorites_clear_all">Alles wissen</string>
+    <string name="favorites_clear_all_title">Alle favorieten wissen?</string>
+    <string name="favorites_clear_all_message">Dit verwijdert alle video\'s uit uw favorieten. Deze actie kan niet ongedaan worden gemaakt.</string>
+    <string name="favorites_clear_all_confirm">Alles wissen</string>
+    <string name="favorites_remove_description">%1$s verwijderen uit favorieten</string>
+
+    <!-- Favorites Player Actions -->
+    <string name="player_action_favorite">Favoriet</string>
+    <string name="player_action_favorited">Toegevoegd aan favorieten</string>
+    <string name="player_added_to_favorites">Toegevoegd aan favorieten</string>
+    <string name="player_removed_from_favorites">Verwijderd uit favorieten</string>
+    <string name="player_action_audio">Audio</string>
+
+    <!-- Share -->
+    <string name="share_watch_in_app">Bekijk in Albunyaan Tube:</string>
+    <string name="share_app_promo">Download Albunyaan Tube voor advertentievrije islamitische content!</string>
+    <string name="share_video_chooser">Video delen</string>
+
+    <!-- Download Quality Dialog -->
+    <string name="download_quality_title">Downloadkwaliteit selecteren</string>
+    <string name="download_quality_audio_only">Alleen audio (M4A)</string>
+    <string name="download_quality_4k">4K (%1$dp)</string>
+    <string name="download_quality_2k">2K (%1$dp)</string>
+    <string name="download_quality_video">%1$dp</string>
+
+    <!-- Plurals missing -->
+    <plurals name="playlist_item_count">
+        <item quantity="one">%d item</item>
+        <item quantity="other">%d items</item>
+    </plurals>
+    <plurals name="video_views">
+        <item quantity="one">%s weergave</item>
+        <item quantity="other">%s weergaven</item>
+    </plurals>
+    <plurals name="time_ago_weeks">
+        <item quantity="one">%d week geleden</item>
+        <item quantity="other">%d weken geleden</item>
+    </plurals>
+    <plurals name="time_ago_months">
+        <item quantity="one">%d maand geleden</item>
+        <item quantity="other">%d maanden geleden</item>
+    </plurals>
+    <plurals name="time_ago_years">
+        <item quantity="one">%d jaar geleden</item>
+        <item quantity="other">%d jaar geleden</item>
+    </plurals>
+
+    <!-- Player Error/Recovery -->
+    <string name="player_error_title">Kan video niet afspelen</string>
+    <string name="player_error_message">Er is een probleem opgetreden bij het laden van deze video. Probeer het opnieuw.</string>
+    <string name="player_retry">Opnieuw proberen</string>
+    <string name="player_refresh_stream">Stream vernieuwen</string>
+    <string name="player_retrying">Opnieuw proberen... (poging %1$d van %2$d)</string>
+    <string name="player_recovering">Afspelen herstellen…</string>
+    <string name="player_recovering_attempt">Herstellen… (poging %1$d van %2$d)</string>
+    <string name="player_recovery_exhausted">Afspelen herstellen mislukt</string>
+    <string name="player_recovery_exhausted_message">Kan afspelen niet automatisch herstellen. Probeer het opnieuw.</string>
+    <string name="player_refresh_rate_limited">Wacht even voordat u opnieuw vernieuwt</string>
+    <string name="player_auto_audio_stall">Overgeschakeld naar alleen audio vanwege trage verbinding</string>
+
+    <!-- Search error missing -->
+    <string name="search_error_generic">Zoeken mislukt. Probeer het opnieuw.</string>
 </resources>

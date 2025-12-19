@@ -383,9 +383,9 @@
                     android:gravity="center"
                     android:weightSum="4">
 
-                    <!-- Like Button -->
+                    <!-- Favorite Button -->
                     <LinearLayout
-                        android:id="@+id/likeButton"
+                        android:id="@+id/favoriteButton"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
@@ -395,19 +395,21 @@
                         android:clickable="true"
                         android:focusable="true"
                         android:padding="@dimen/spacing_md"
-                        android:contentDescription="@string/player_action_like">
+                        android:contentDescription="@string/player_action_favorite">
 
                         <ImageView
+                            android:id="@+id/favoriteIcon"
                             android:layout_width="@dimen/icon_medium"
                             android:layout_height="@dimen/icon_medium"
-                            android:src="@drawable/ic_like"
+                            android:src="@drawable/ic_favorite_border"
                             app:tint="@color/primary_green" />
 
                         <TextView
+                            android:id="@+id/favoriteLabel"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/spacing_xs"
-                            android:text="Like"
+                            android:text="@string/player_action_favorite"
                             android:textColor="@color/primary_green"
                             android:textSize="14sp" />
 
@@ -437,7 +439,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/spacing_xs"
-                            android:text="Share"
+                            android:text="@string/player_action_share"
                             android:textColor="@color/primary_green"
                             android:textSize="14sp" />
 
@@ -467,7 +469,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/spacing_xs"
-                            android:text="Download"
+                            android:text="@string/player_button_download"
                             android:textColor="@color/primary_green"
                             android:textSize="14sp" />
 
@@ -497,7 +499,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/spacing_xs"
-                            android:text="Audio"
+                            android:text="@string/player_action_audio"
                             android:textColor="@color/primary_green"
                             android:textSize="14sp" />
 

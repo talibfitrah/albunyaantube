@@ -18,7 +18,9 @@ class ExtractionRateLimiterTest {
     @Before
     fun setUp() {
         currentTime = 1000L // Start at 1000ms to avoid edge case with lastAttemptTime > 0 check
-        limiter = ExtractionRateLimiter(clock = { currentTime })
+        limiter = ExtractionRateLimiter().apply {
+            setTestClock { currentTime }
+        }
     }
 
     // --- Basic Acquire/Allow Tests ---

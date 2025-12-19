@@ -5,17 +5,21 @@ import android.net.Uri
 import android.os.Bundle
 import android.text.format.Formatter
 import android.view.View
+import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.R
 import com.albunyaan.tube.databinding.FragmentDownloadsBinding
+import com.albunyaan.tube.data.local.FavoritesRepository
 import com.albunyaan.tube.download.DownloadEntry
 import com.albunyaan.tube.download.DownloadStorage
 import dagger.hilt.android.AndroidEntryPoint
@@ -37,6 +41,9 @@ class DownloadsFragment : Fragment(R.layout.fragment_downloads) {
     @Inject
     lateinit var downloadStorage: DownloadStorage
 
+    @Inject
+    lateinit var favoritesRepository: FavoritesRepository
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         val binding = FragmentDownloadsBinding.bind(view).also { binding = it }
@@ -46,31 +53,33 @@ class DownloadsFragment : Fragment(R.layout.fragment_downloads) {
         setupLibraryItems()
 
         viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.downloads.collectLatest { entries ->
-                adapter.submitList(entries)
-                binding.emptyDownloads.visibility = if (entries.isEmpty()) View.VISIBLE else View.GONE
-                binding.downloadsRecyclerView.visibility = if (entries.isEmpty()) View.GONE else View.VISIBLE
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.downloads.collectLatest { entries ->
+                    adapter.submitList(entries)
+                    binding.emptyDownloads.visibility = if (entries.isEmpty()) View.VISIBLE else View.GONE
+                    binding.downloadsRecyclerView.visibility = if (entries.isEmpty()) View.GONE else View.VISIBLE
 
-                // Update storage info with real data from DownloadStorage
-                val downloadCount = entries.size
-                val usedBytes = downloadStorage.getCurrentDownloadSize()
-                val availableBytes = downloadStorage.getAvailableDeviceStorage()
-                val totalBytes = downloadStorage.getTotalDeviceStorage()
+                    // Update storage info with real data from DownloadStorage
+                    val downloadCount = entries.size
+                    val usedBytes = downloadStorage.getCurrentDownloadSize()
+                    val availableBytes = downloadStorage.getAvailableDeviceStorage()
+                    val totalBytes = downloadStorage.getTotalDeviceStorage()
 
-                val usedStr = Formatter.formatShortFileSize(requireContext(), usedBytes)
-                val availableStr = Formatter.formatShortFileSize(requireContext(), availableBytes)
+                    val usedStr = Formatter.formatShortFileSize(requireContext(), usedBytes)
+                    val availableStr = Formatter.formatShortFileSize(requireContext(), availableBytes)
 
-                binding.storageText.text = getString(R.string.downloads_storage_format, downloadCount, usedStr, availableStr)
+                    binding.storageText.text = getString(R.string.downloads_storage_format, downloadCount, usedStr, availableStr)
 
-                // Progress shows download usage as percentage of total device storage.
-                // Using total storage (not available) provides a stable baseline that
-                // doesn't fluctuate as other apps consume device storage.
-                val progress = if (totalBytes > 0) {
-                    ((usedBytes.toDouble() / totalBytes) * 100).toInt().coerceIn(0, 100)
-                } else {
-                    0
+                    // Progress shows download usage as percentage of total device storage.
+                    // Using total storage (not available) provides a stable baseline that
+                    // doesn't fluctuate as other apps consume device storage.
+                    val progress = if (totalBytes > 0) {
+                        ((usedBytes.toDouble() / totalBytes) * 100).toInt().coerceIn(0, 100)
+                    } else {
+                        0
+                    }
+                    binding.storageProgress.progress = progress
                 }
-                binding.storageProgress.progress = progress
             }
         }
     }
@@ -93,12 +102,25 @@ class DownloadsFragment : Fragment(R.layout.fragment_downloads) {
 
     private fun setupLibraryItems() {
         binding?.root?.let { view ->
-            val savedItem = view.findViewById<View>(R.id.savedItem)
+            val favoritesItem = view.findViewById<View>(R.id.favoritesItem)
+            val favoritesCount = view.findViewById<TextView>(R.id.favoritesCount)
             val recentlyWatchedItem = view.findViewById<View>(R.id.recentlyWatchedItem)
             val historyItem = view.findViewById<View>(R.id.historyItem)
 
-            savedItem?.setOnClickListener {
-                Toast.makeText(requireContext(), R.string.library_saved_coming_soon, Toast.LENGTH_SHORT).show()
+            // Navigate to Favorites
+            favoritesItem?.setOnClickListener {
+                findNavController().navigate(R.id.action_downloadsFragment_to_favoritesFragment)
+            }
+
+            // Observe favorites count and update the count text
+            favoritesCount?.let { countView ->
+                viewLifecycleOwner.lifecycleScope.launch {
+                    viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                        favoritesRepository.getFavoriteCount().collectLatest { count ->
+                            countView.text = resources.getQuantityString(R.plurals.video_count, count, count)
+                        }
+                    }
+                }
             }
 
             recentlyWatchedItem?.setOnClickListener {
@@ -178,7 +200,8 @@ class DownloadsFragment : Fragment(R.layout.fragment_downloads) {
                 android.util.Log.d("DownloadsFragment", "Activity started successfully")
             } catch (e: Exception) {
                 android.util.Log.e("DownloadsFragment", "Failed to start activity", e)
-                Toast.makeText(requireContext(), getString(R.string.downloads_open_error, e.message), Toast.LENGTH_LONG).show()
+                val errorMessage = e.localizedMessage ?: getString(R.string.error_unknown)
+                Toast.makeText(requireContext(), getString(R.string.downloads_open_error, errorMessage), Toast.LENGTH_LONG).show()
             }
         } else {
             android.util.Log.e("DownloadsFragment", "No apps found to handle video")
