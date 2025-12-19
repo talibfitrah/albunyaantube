@@ -18,6 +18,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -54,7 +55,8 @@ class MediaSessionMetadataManager @Inject constructor(
 
     // Stable identity token for the current metadata update request.
     // Used to detect context changes during async artwork loading (safer than index-based checks).
-    private var currentMetadataToken: Long = 0
+    // AtomicLong ensures thread-safe reads/writes if metadata updates ever occur off-main concurrently.
+    private val currentMetadataToken = AtomicLong(0)
 
     /**
      * Updates the player's current media item with metadata for notification display.
@@ -80,8 +82,8 @@ class MediaSessionMetadataManager @Inject constructor(
         artworkLoadJob?.cancel()
         artworkLoadJob = null
 
-        // Increment token for this update request (used by async artwork loader)
-        val thisToken = ++currentMetadataToken
+        // Increment token atomically for this update request (used by async artwork loader)
+        val thisToken = currentMetadataToken.incrementAndGet()
 
         // Build initial metadata without artwork (fast path for immediate update)
         val metadataBuilder = MediaMetadata.Builder()
@@ -184,7 +186,7 @@ class MediaSessionMetadataManager @Inject constructor(
                     if (artworkBytes != null) {
                         // Verify this request is still current using stable token.
                         // This is more reliable than index-based checks for single-item timelines.
-                        if (currentMetadataToken != requestToken) {
+                        if (currentMetadataToken.get() != requestToken) {
                             Log.d(TAG, "Metadata context changed during artwork load (token mismatch), skipping update")
                             return@launch
                         }
