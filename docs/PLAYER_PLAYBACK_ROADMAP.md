@@ -1,6 +1,6 @@
 # Player & Playback Reliability Roadmap (Android)
 
-**Last Updated**: 2025-12-19 (All implementation PRs complete: PR1–PR12; PR6.2 remains Research/Optional; DeepLinkNavigationTest fixed)
+**Last Updated**: 2025-12-19 (All implementation PRs complete: PR1–PR12; PR6.2 remains Research/Optional; Code review fixes applied)
 **Scope**: Android player stability, progressive/adaptive strategy, and extraction/refresh safety.
 
 > **Note**: Backend YouTube rate-limit remediation is tracked separately on branch `claude/fix-youtube-rate-limiting-clean` in `docs/status/YOUTUBE_RATE_LIMIT_PLAN.md`.
@@ -73,6 +73,17 @@
   - Result: Test suite time reduced from 153s to ~12s; zero flakiness from timing issues.
 - ✅ **Design tokens in library_item_saved.xml**: Replaced hardcoded `40dp`/`8dp`/`24dp` values with `@dimen/library_icon_size`, `@dimen/spacing_sm`, `@dimen/icon_small`.
 - ✅ **300-second test gate**: Connected test suite now completes in ~124 seconds (down from 408 seconds), well within the 300s policy.
+
+### Code Review Fixes (2025-12-19)
+- ✅ **MediaSession artwork race condition**: `MediaSessionMetadataManager.currentMetadataToken` now uses `AtomicLong` for thread-safety. Token increments atomically with `incrementAndGet()` and reads use `get()` to ensure safe reads/writes if metadata updates ever occur off-main concurrently.
+- ✅ **RTL alignment in downloads layouts**: Added explicit `textAlignment="viewStart"` to section headers and storage info text in phone layout (`fragment_downloads.xml`) and `textAlignment="center"` to empty state text in both phone and tablet layouts for consistency.
+- ✅ **Tokenized library items**: Fixed hardcoded values in `library_item_recently_watched.xml` and `library_item_history.xml`:
+  - Replaced `40dp`/`8dp`/`24dp`/`16sp`/`14sp`/`2dp` with `@dimen/library_icon_size`, `@dimen/spacing_sm`, `@dimen/icon_small`, `@dimen/text_subtitle`, `@dimen/text_body`, `@dimen/spacing_xs`
+  - Replaced hardcoded text ("Recently Watched", "History") with `@string/library_recently_watched`, `@string/library_history`
+  - Replaced `@android:color/black` with `?attr/colorOnSurface` (night mode compatible)
+  - Replaced `@color/icon_gray` with `?attr/colorOnSurfaceVariant` where applicable
+  - Added explicit `textAlignment="viewStart"` for RTL support
+- ✅ **RTL chevron auto-mirroring**: `ic_chevron_right.xml` already has `android:autoMirrored="true"` (no fix needed).
 
 ---
 
@@ -359,11 +370,13 @@ This pattern occurs when:
 
 **Goal**: Add media notification with artwork/metadata display for background playback.
 
-**Implementation (completed 2025-12-18)**:
+**Implementation (completed 2025-12-18, enhanced 2025-12-19)**:
 - ✅ **MediaSessionMetadataManager**: New singleton that manages metadata sync to MediaSession.
   - Loads artwork bitmaps asynchronously via Coil (512px for notification/lockscreen).
   - Caches last loaded artwork to avoid redundant loads on repeated state emissions.
   - Converts bitmap to PNG bytes for `MediaMetadata.artworkData`.
+  - Token-based identity tracking (`currentMetadataToken` as `AtomicLong`) for thread-safe async artwork completion.
+  - Artwork job cancellation at START of `updateMetadata()` (critical when thumbnailUrl is null to prevent stale artwork).
 - ✅ **PlayerFragment integration**: Syncs metadata when `currentItem` changes via `syncMediaSessionMetadata()`.
   - Uses `lastMetadataSyncedItemId` to avoid redundant updates.
   - Clears metadata state in `onDestroyView()`.
@@ -380,6 +393,7 @@ This pattern occurs when:
 - ✅ Notification shows video title, channel name, and artwork.
 - ✅ Controls work reliably in background/lockscreen/headset.
 - ✅ Artwork loads asynchronously without blocking playback.
+- ✅ Race condition on rapid item changes prevented via token matching.
 - ✅ 5 unit tests pass.
 
 ## PR8: Fullscreen + Orientation Policy (Phone + Tablet) — *Status: Done*
