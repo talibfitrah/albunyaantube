@@ -240,7 +240,7 @@ class FavoriteVideoDaoTest {
         title: String,
         channelName: String = "Test Channel",
         thumbnailUrl: String? = "https://example.com/thumb.jpg",
-        durationSeconds: Long = 180L,
+        durationSeconds: Int = 180,
         addedAt: Long = System.currentTimeMillis()
     ) = FavoriteVideo(
         videoId = videoId,
