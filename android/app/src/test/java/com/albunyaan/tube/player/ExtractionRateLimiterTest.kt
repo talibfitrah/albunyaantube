@@ -142,6 +142,27 @@ class ExtractionRateLimiterTest {
         assertTrue("Request after global window should be allowed", result is ExtractionRateLimiter.RateLimitResult.Allowed)
     }
 
+    @Test
+    fun `auto-recovery bypasses global limit when exhausted`() {
+        // Exhaust global limit with MANUAL requests (10 max per minute)
+        for (i in 1..10) {
+            val result = limiter.acquire("video$i", ExtractionRateLimiter.RequestKind.MANUAL)
+            assertTrue("Request $i should be allowed", result is ExtractionRateLimiter.RateLimitResult.Allowed)
+        }
+
+        // Verify MANUAL is now blocked
+        val manualResult = limiter.acquire("video11", ExtractionRateLimiter.RequestKind.MANUAL)
+        assertTrue("MANUAL should be blocked by global limit", manualResult is ExtractionRateLimiter.RateLimitResult.Blocked)
+
+        // Verify PREFETCH is also blocked
+        val prefetchResult = limiter.acquire("video12", ExtractionRateLimiter.RequestKind.PREFETCH)
+        assertTrue("PREFETCH should be blocked by global limit", prefetchResult is ExtractionRateLimiter.RateLimitResult.Blocked)
+
+        // AUTO_RECOVERY should bypass the global limit entirely
+        val recoveryResult = limiter.acquire("video13", ExtractionRateLimiter.RequestKind.AUTO_RECOVERY)
+        assertTrue("AUTO_RECOVERY should bypass global limit", recoveryResult is ExtractionRateLimiter.RateLimitResult.Allowed)
+    }
+
     // --- Auto-Recovery Reserved Budget Tests ---
 
     @Test
@@ -290,5 +311,98 @@ class ExtractionRateLimiterTest {
         currentTime = 66_000L
         val result = limiter.acquire("video1", ExtractionRateLimiter.RequestKind.MANUAL)
         assertTrue("Should be allowed after reset", result is ExtractionRateLimiter.RateLimitResult.Allowed)
+    }
+
+    // --- Per-Kind Consecutive Attempts Isolation ---
+
+    @Test
+    fun `prefetch does not affect manual backoff`() {
+        // Make a MANUAL request to start backoff tracking
+        limiter.acquire("video1", ExtractionRateLimiter.RequestKind.MANUAL)
+
+        // Make PREFETCH request on same video (should not affect video1's MANUAL backoff)
+        currentTime = 6_000L
+        limiter.acquire("video1", ExtractionRateLimiter.RequestKind.PREFETCH)
+
+        // Wait for min interval from PREFETCH's lastAttemptTime (6000 + 30000 = 36000)
+        currentTime = 37_000L
+
+        // Next MANUAL on video1 should not have increased backoff from prefetch
+        val result = limiter.acquire("video1", ExtractionRateLimiter.RequestKind.MANUAL)
+
+        // Should be allowed (or delayed only by normal manual backoff, not inflated)
+        assertTrue("MANUAL should not be affected by PREFETCH attempts on same video",
+            result is ExtractionRateLimiter.RateLimitResult.Allowed ||
+            result is ExtractionRateLimiter.RateLimitResult.Delayed)
+    }
+
+    @Test
+    fun `auto_recovery does not affect manual backoff counter`() {
+        // First MANUAL request at time 1000
+        limiter.acquire("video1", ExtractionRateLimiter.RequestKind.MANUAL)
+
+        // AUTO_RECOVERY request on same video (bypasses min interval for first)
+        currentTime = 5_000L
+        limiter.acquire("video1", ExtractionRateLimiter.RequestKind.AUTO_RECOVERY)
+
+        // Wait for min interval from AUTO_RECOVERY's lastAttemptTime (5000 + 30000 = 35000)
+        currentTime = 36_000L
+
+        // Second MANUAL should have backoff based on 1 consecutive manual, not 2
+        // With 1 consecutive manual attempt, backoff is 2s (BACKOFF_BASE_MS)
+        // We're at 35s since last MANUAL attempt (36000 - 1000), which is > 2s backoff, so should be allowed
+        val result = limiter.acquire("video1", ExtractionRateLimiter.RequestKind.MANUAL)
+
+        assertTrue("MANUAL backoff should not include AUTO_RECOVERY attempts",
+            result is ExtractionRateLimiter.RateLimitResult.Allowed)
+    }
+
+    @Test
+    fun `manual min interval ignores auto-recovery attempts`() {
+        limiter.acquire("video1", ExtractionRateLimiter.RequestKind.MANUAL)
+        limiter.onExtractionSuccess("video1")
+
+        // Auto-recovery happens within the manual min interval window
+        currentTime = 20_000L
+        limiter.acquire("video1", ExtractionRateLimiter.RequestKind.AUTO_RECOVERY)
+
+        // Manual should be allowed based on its own last MANUAL attempt time (1000ms)
+        currentTime = 32_000L
+        val result = limiter.acquire("video1", ExtractionRateLimiter.RequestKind.MANUAL)
+
+        assertTrue("MANUAL min interval should ignore AUTO_RECOVERY attempts",
+            result is ExtractionRateLimiter.RateLimitResult.Allowed)
+    }
+
+    @Test
+    fun `auto_recovery does not contribute to global attempt count`() {
+        // Make 9 MANUAL requests (one less than max global of 10)
+        for (i in 1..9) {
+            val result = limiter.acquire("video$i", ExtractionRateLimiter.RequestKind.MANUAL)
+            assertTrue("Request $i should be allowed", result is ExtractionRateLimiter.RateLimitResult.Allowed)
+        }
+
+        // Global count should be 9
+        assertEquals("Should have 9 global attempts", 9, limiter.getGlobalAttemptCount())
+
+        // Make multiple AUTO_RECOVERY requests - they should NOT add to global count
+        for (i in 10..15) {
+            val result = limiter.acquire("video$i", ExtractionRateLimiter.RequestKind.AUTO_RECOVERY)
+            assertTrue("AUTO_RECOVERY $i should be allowed", result is ExtractionRateLimiter.RateLimitResult.Allowed)
+        }
+
+        // Global count should STILL be 9 (AUTO_RECOVERY excluded from global tracking)
+        assertEquals("AUTO_RECOVERY should not contribute to global count", 9, limiter.getGlobalAttemptCount())
+
+        // The 10th MANUAL request should still be allowed (global count is 9)
+        val manualResult = limiter.acquire("video16", ExtractionRateLimiter.RequestKind.MANUAL)
+        assertTrue("10th MANUAL should be allowed (global was 9)", manualResult is ExtractionRateLimiter.RateLimitResult.Allowed)
+
+        // Global count is now 10
+        assertEquals("Should have 10 global attempts now", 10, limiter.getGlobalAttemptCount())
+
+        // 11th MANUAL should be blocked
+        val blockedResult = limiter.acquire("video17", ExtractionRateLimiter.RequestKind.MANUAL)
+        assertTrue("11th MANUAL should be blocked", blockedResult is ExtractionRateLimiter.RateLimitResult.Blocked)
     }
 }

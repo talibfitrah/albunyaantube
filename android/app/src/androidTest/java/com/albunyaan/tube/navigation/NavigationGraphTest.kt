@@ -2,9 +2,12 @@ package com.albunyaan.tube.navigation
 
 import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso.onView
-import androidx.test.espresso.action.ViewActions.click
+import android.view.View
+import androidx.test.espresso.UiController
+import androidx.test.espresso.ViewAction
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
+import androidx.test.espresso.matcher.ViewMatchers.isDisplayingAtLeast
 import androidx.test.espresso.matcher.ViewMatchers.withId
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
@@ -59,7 +62,7 @@ class NavigationGraphTest {
     @Test
     fun bottomNavigation_navigatesToDownloads() {
         // Click downloads tab
-        onView(withId(R.id.downloadsFragment)).perform(click())
+        clickNavItem(R.id.downloadsFragment)
 
         // Verify downloads fragment is displayed via empty state (shown when no downloads)
         onView(withId(R.id.emptyDownloads))
@@ -68,10 +71,25 @@ class NavigationGraphTest {
 
     @Test
     fun bottomNavigation_allTabsClickable() {
-        onView(withId(R.id.homeFragment)).perform(click())
-        onView(withId(R.id.channelsFragment)).perform(click())
-        onView(withId(R.id.playlistsFragment)).perform(click())
-        onView(withId(R.id.videosFragment)).perform(click())
-        onView(withId(R.id.downloadsFragment)).perform(click())
+        clickNavItem(R.id.homeFragment)
+        clickNavItem(R.id.channelsFragment)
+        clickNavItem(R.id.playlistsFragment)
+        clickNavItem(R.id.videosFragment)
+        clickNavItem(R.id.downloadsFragment)
+    }
+
+    private fun clickNavItem(itemId: Int) {
+        onView(withId(itemId)).perform(clickWhenVisible())
+    }
+
+    private fun clickWhenVisible(): ViewAction {
+        return object : ViewAction {
+            override fun getConstraints() = isDisplayingAtLeast(1)
+            override fun getDescription() = "click when at least 1% visible"
+            override fun perform(uiController: UiController, view: View) {
+                view.performClick()
+                uiController.loopMainThreadUntilIdle()
+            }
+        }
     }
 }

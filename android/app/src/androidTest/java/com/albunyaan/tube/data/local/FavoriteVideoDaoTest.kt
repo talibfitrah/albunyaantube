@@ -60,16 +60,43 @@ class FavoriteVideoDaoTest {
     }
 
     @Test
-    fun addFavorite_withReplace_updatesExisting() = runTest {
+    fun addFavorite_withIgnore_ignoresDuplicate() = runTest {
         val video1 = createTestVideo("v1", "Original Title")
         val video2 = createTestVideo("v1", "Updated Title")
 
         dao.addFavorite(video1)
-        dao.addFavorite(video2)
+        dao.addFavorite(video2) // Should be ignored due to IGNORE strategy
 
         val favorites = dao.getAllFavorites().first()
         assertEquals(1, favorites.size)
-        assertEquals("Updated Title", favorites[0].title)
+        assertEquals("Original Title", favorites[0].title) // Original preserved
+    }
+
+    @Test
+    fun upsertFavorite_updatesMetadataButPreservesAddedAt() = runTest {
+        val originalAddedAt = 1000L
+        val video1 = createTestVideo("v1", "Original Title", addedAt = originalAddedAt)
+        val video2 = createTestVideo("v1", "Updated Title", addedAt = 9999L) // Different addedAt
+
+        dao.addFavorite(video1)
+        dao.upsertFavorite(video2) // Should update metadata but preserve addedAt
+
+        val favorites = dao.getAllFavorites().first()
+        assertEquals(1, favorites.size)
+        assertEquals("Updated Title", favorites[0].title) // Metadata updated
+        assertEquals(originalAddedAt, favorites[0].addedAt) // Original addedAt preserved
+    }
+
+    @Test
+    fun upsertFavorite_insertsNewVideo() = runTest {
+        val video = createTestVideo("v1", "Test Video")
+
+        dao.upsertFavorite(video)
+
+        val favorites = dao.getAllFavorites().first()
+        assertEquals(1, favorites.size)
+        assertEquals("v1", favorites[0].videoId)
+        assertEquals("Test Video", favorites[0].title)
     }
 
     @Test

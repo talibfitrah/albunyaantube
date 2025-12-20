@@ -64,9 +64,6 @@ class QualityTrackSelector(
      * Gets a human-readable label for a video format.
      */
     fun getQualityLabel(format: Format): String {
-        // Check for custom tag from our MediaSource factory
-        val tag = format.metadata
-
         val height = format.height
         val width = format.width
         val bitrate = format.bitrate

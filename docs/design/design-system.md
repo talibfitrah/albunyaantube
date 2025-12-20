@@ -111,6 +111,9 @@ This document provides the complete UI/UX design specifications for both the Adm
 <dimen name="spacing_md">16dp</dimen>
 <dimen name="spacing_lg">24dp</dimen>
 <dimen name="spacing_xl">32dp</dimen>
+<dimen name="spacing_xxl">48dp</dimen>
+<dimen name="spacing_xxxl">96dp</dimen>
+<dimen name="divider_thickness">1dp</dimen>
 ```
 
 ### Corner Radius
@@ -173,6 +176,9 @@ This document provides the complete UI/UX design specifications for both the Adm
 <dimen name="spacing_md">16dp</dimen>
 <dimen name="spacing_lg">24dp</dimen>
 <dimen name="spacing_xl">32dp</dimen>
+<dimen name="spacing_xxl">48dp</dimen>
+<dimen name="spacing_xxxl">96dp</dimen>  <!-- For large margins/gaps -->
+<dimen name="divider_thickness">1dp</dimen>
 ```
 
 #### Touch Targets

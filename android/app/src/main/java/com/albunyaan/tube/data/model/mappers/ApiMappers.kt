@@ -19,8 +19,8 @@ import com.albunyaan.tube.data.model.api.models.ContentItemDto as ApiContentItem
  */
 fun ApiCategory.toDomain(): DomainCategory {
     return DomainCategory(
-        id = this.id ?: "",
-        name = this.name ?: "",
+        id = this.id,
+        name = this.name,
         slug = this.slug,
         parentId = this.parentCategoryId,
         hasSubcategories = false, // Will be computed by repository

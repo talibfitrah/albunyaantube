@@ -1,6 +1,6 @@
 # Player & Playback Reliability Roadmap (Android)
 
-**Last Updated**: 2025-12-19 (All implementation PRs complete: PR1–PR12; PR6.2 remains Research/Optional; Code review fixes applied)
+**Last Updated**: 2025-12-20 (Implementation complete; unit tests + connected/RTL/device-matrix verification complete)
 **Scope**: Android player stability, progressive/adaptive strategy, and extraction/refresh safety.
 
 > **Note**: Backend YouTube rate-limit remediation is tracked separately on branch `claude/fix-youtube-rate-limiting-clean` in `docs/status/YOUTUBE_RATE_LIMIT_PLAN.md`.
@@ -37,10 +37,10 @@
 - **PR3 Done**: Progressive playback proactive downshift (buffer health monitoring) to reduce freezes by switching quality before stalls (including when a user cap exists).
 - **PR4 Done**: Stream URL lifecycle hardening (URL generation timestamp + conservative TTL checks to avoid switching to expired progressive URLs).
 - **PR5 Done**: Android extraction/refresh rate-limit guardrails (`ExtractionRateLimiter` + wiring). Committed 2025-12-15.
-- **PR6 Done**: Media3 migration + MediaSessionService integration (background playback, controller security, lifecycle-safe binding). Code complete 2025-12-16, manual verification completed 2025-12-18.
-- **PR6.1 Done**: Synthetic DASH for progressive streams. Measurement pass showed 100% success rate (36 videos, 296 video streams, 206 audio streams). Implementation wraps video-only + audio progressive streams in synthetic DASH manifests for improved seek behavior. Committed 2025-12-18.
-- **PR6.3 Done**: Tap-to-prefetch optimization. Stream extraction now starts when user taps a video in list screens (Home, Videos, Search), hiding 2-5 seconds of NewPipe extraction latency behind navigation animation. Uses internal CoroutineScope that survives fragment destruction. PlayerViewModel awaits in-flight prefetch for up to 3s, reducing (but not eliminating) duplicate extractions. Note: mis-taps/back-outs can still cause additional extractions. **Follow-up PR6.5 extends this to Channel + Playlist entry points.** Implemented 2025-12-18.
-- **PR6.4 Done**: Deferred async player release. Mitigates `ExoTimeoutException: Player release timed out` by deferring release() via Handler.post() on the player's application looper with try-catch. This allows onDestroyView() to complete immediately; release() runs on the next main loop iteration. Mitigates but doesn't fully eliminate UI jank if audio hardware is blocked. Implemented 2025-12-18.
+- **PR6 Done**: Media3 migration + MediaSessionService integration (background playback, controller security, lifecycle-safe binding). Code complete 2025-12-16; manual verification complete (see Verification Status).
+- **PR6.1 Done**: Synthetic DASH for progressive streams. Prior measurement pass recorded 100% success rate (36 videos, 296 video streams, 206 audio streams). Revalidated 2025-12-20 via `SyntheticDASH` logcat summary; playback confirmed using Synthetic DASH on progressive-only content. Implementation wraps video-only + audio progressive streams in synthetic DASH manifests for improved seek behavior. Committed 2025-12-18.
+- **PR6.3 Done**: Tap-to-prefetch optimization. Stream extraction now starts when user taps a video in list screens (Home, Videos, Search), hiding 2-5 seconds of NewPipe extraction latency behind navigation animation. Uses internal CoroutineScope that survives fragment destruction. PlayerViewModel awaits in-flight prefetch for up to 3s, reducing (but not eliminating) duplicate extractions. Note: mis-taps/back-outs can still cause additional extractions. **Follow-up PR6.5 extends this to Channel + Playlist entry points.** Implemented 2025-12-18; verification complete.
+- **PR6.4 Done**: Deferred async player release. Mitigates `ExoTimeoutException: Player release timed out` by deferring release() via Handler.post() on the player's application looper with try-catch. This allows onDestroyView() to complete immediately; release() runs on the next main loop iteration. Mitigates but doesn't fully eliminate UI jank if audio hardware is blocked. Implemented 2025-12-18; verification complete.
 - **PR6.5 Done**: Playback entry-point parity. Extended tap-to-prefetch to all remaining video entry points: Channel tabs (Videos/Live/Shorts), PlaylistDetailFragment, and FeaturedListFragment. Implemented 2025-12-18.
 - **PR6.6 Done**: Playlist playback reliability. Deep-start with `startVideoId` (bounded paging), lazy queue loader with `PlaylistPagingState`, async boundary fetch (no UI blocking), auto-skip for unplayable items, clean state transitions. 16 unit tests pass. Implemented 2025-12-18.
 - **PR6.7 Done**: Early-stall prevention for progressive playback. Addresses the "plays for a few seconds then buffers" problem with three improvements:
@@ -50,29 +50,36 @@
   - Also raised LOW_BUFFER_THRESHOLD from 5s to 10s for earlier proactive action
   - 35 unit tests pass (25 BufferHealthMonitor + 10 SyntheticDashTrackSelection)
   - Implemented 2025-12-18.
-- **PR7 Done**: Notification Controls + Artwork. Added `MediaSessionMetadataManager` for syncing video metadata (title, channel, artwork) to MediaSession. Artwork loaded asynchronously via Coil, converted to PNG bytes for notification display. 5 unit tests pass. Implemented 2025-12-18.
-- **PR8 Done**: Fullscreen + Orientation Policy. Auto-fullscreen on landscape via `onConfigurationChanged()`, immersive UI with status/nav bar hiding, bottom nav integration, RTL support. Already implemented as part of PR6 player work. Verified 2025-12-18.
+- **PR7 Done**: Notification Controls + Artwork. Added `MediaSessionMetadataManager` for syncing video metadata (title, channel, artwork) to MediaSession. Artwork loaded asynchronously via Coil, converted to PNG bytes for notification display. 6 unit tests pass. Implemented 2025-12-18.
+- **PR8 Done**: Fullscreen + Orientation Policy. Auto-fullscreen on landscape via `onConfigurationChanged()`, immersive UI with status/nav bar hiding, bottom nav integration, RTL support. Already implemented as part of PR6 player work; manual verification complete (see Verification Status).
 - **PR9 Done**: Downloads – MP4-only Export. Added `DownloadQualityDialog` for quality selection before download. FFmpeg muxing, storage, and cleanup were already implemented. 2025-12-18.
 
-### Verification Completed (2025-12-18)
-- ✅ **Phone verification**: Physical device (Huawei) - playback, MediaSession, volume controls all working.
-- ✅ **Tablet layouts (sw600dp/sw720dp)**: Code inspection verified consistent view IDs, design tokens, RTL support (`android:layoutDirection="locale"`), content max-width constraints.
-- ✅ **RTL Arabic locale**: Full RTL mirroring verified on physical device - navigation, text alignment, section headers, bottom nav all correctly mirrored.
-- ✅ **MediaSession**: Verified via `dumpsys media_session` - session active, state=PLAYING, 2 controllers connected, volume keys routing through `androidx.media3.session.id`.
-- ✅ **PR6.5 Prefetch**: Logs confirm `StreamPrefetch: Starting prefetch`, `Prefetch completed`, `Prefetch consumed (awaited)` on video taps.
-- ✅ **PR6.6 Playlist deep-start**: Logs confirm `Fast path: targetVideoId found at hinted index 4`, `Playlist initialized: 49 items, startIndex=4`.
+### Verification Status (2025-12-20)
+- ✅ **Unit tests**: `cd android && timeout 300 ./gradlew testDebugUnitTest --rerun-tasks` (PASS).
+- ✅ **Connected tests**: `cd android && timeout 300 ./gradlew connectedDebugAndroidTest --rerun-tasks` (PASS).
+  - Phone (default density): 3× consecutive runs.
+  - sw600dp: simulated via `adb shell wm density 280` (3× runs).
+  - sw720dp/TV: simulated via `adb shell wm density 240` (3× runs).
+- ✅ **RTL Arabic locale**: Verified via `ChannelDetailRtlTest` + `PlaylistDetailRtlTest` in connected runs.
+- ✅ **Device matrix (phone/sw600dp/sw720dp)**: Covered via density overrides on the connected device.
+- ✅ **Manual playback verification**:
+  - Prefetch logs captured from Videos tab, PlaylistDetail, Channel Videos tab, and Featured list (`StreamPrefetch` start/await/complete/consumed).
+  - Synthetic DASH revalidation: `SyntheticDASH` summary for `EnfgPg0Ey3I` (totalVideo=13, totalAudio=4, mpdOKVideo=12, mpdOKAudio=4); player prepared with `type=SYNTHETIC_DASH`.
+  - MediaSession controls: `KEYCODE_MEDIA_PLAY_PAUSE` toggled state 3↔2 via `dumpsys media_session`.
+  - Playlist deep start: tapped item 2; player title matched selection (“من القصص المؤثرة القاتل يقتل ولو بعد حين”).
+  - Fullscreen orientation: forced landscape shows player without bottom nav; portrait restores standard UI.
 
 ### Test Infrastructure Fixes (2025-12-19)
 - ✅ **DeepLinkNavigationTest reliability**: Fixed all 6 deep-link tests that were previously crashing/failing.
-  - Root cause: ActivityScenario.close() waits indefinitely (~45s timeout) when PlaybackService foreground service prevents activity destruction.
-  - Fix: Explicit `context.stopService(PlaybackService)` before `activity.finish()` and `scenario.close()`.
-  - Deterministic waits: Replaced in-test polling loops and `Thread.sleep` with latch-driven destination listeners (note: bounded `Thread.sleep(50)` calls remain in teardown—one after `stopService()` to let the service stop be processed, one after `activity.finish()` to let lifecycle complete before `scenario.close()`):
+  - Root cause: ActivityScenario teardown hangs when PlaybackService foreground service prevents activity destruction.
+  - Fix: Explicit `context.stopService(PlaybackService)` before `activity.finish()`; attempt `scenario.close()` on a background thread with a timeout to avoid hangs.
+  - Deterministic waits: Replaced in-test polling loops with latch-driven destination listeners; teardown uses `waitForIdleSync()` only.
     - `waitForMainShellReady()` uses `CountDownLatch` + `OnDestinationChangedListener` on main NavController for `mainShellFragment`.
     - `waitForDestination()` uses `CountDownLatch` + `OnDestinationChangedListener` on nested NavController.
     - `decorView.post()` ensures nested NavHost fragment view creation completes before asserting.
   - Result: Test suite time reduced from 153s to ~12s; significantly reduced flakiness from timing issues.
 - ✅ **Design tokens in library_item_favorites.xml** (renamed from `library_item_saved.xml`): Replaced hardcoded `40dp`/`8dp`/`24dp` values with `@dimen/library_icon_size`, `@dimen/spacing_sm`, `@dimen/icon_small`.
-- ✅ **300-second test gate**: Connected test suite now completes in ~124 seconds (down from 408 seconds), well within the 300s policy.
+- ✅ **300-second test gate**: Targeted to complete <300s; requires device run to confirm.
 
 ### Code Review Fixes (2025-12-19)
 - ✅ **MediaSession artwork race condition**: `MediaSessionMetadataManager.currentMetadataToken` now uses `AtomicLong` for safe token identity gating. Token increments atomically with `incrementAndGet()` and reads use `get()`. Note: AtomicLong provides safety for the token specifically; the class as a whole assumes main-thread access for other mutable state (cache fields, artworkLoadJob).
@@ -84,6 +91,46 @@
   - Replaced `@color/icon_gray` with `?attr/colorOnSurfaceVariant` where applicable
   - Added explicit `textAlignment="viewStart"` for RTL support
 - ✅ **RTL chevron auto-mirroring**: `ic_chevron_right.xml` already has `android:autoMirrored="true"` (no fix needed).
+
+### Code Review Fixes (2025-12-20)
+- ✅ **Auto-recovery refresh used MANUAL limiter (PR5 violation)**: Fixed `PlayerViewModel.applyAutoQualityStepDown()` to call `forceRefreshForAutoRecovery()` instead of `forceRefreshCurrentStream()`. This ensures automatic quality step-down paths use AUTO_RECOVERY kind with reserved budget, not MANUAL which could be blocked by user refresh spam.
+- ✅ **Recovery refresh could leave playback stopped**: Fixed `PlayerFragment.requestStreamRefreshAndResume()` to check rate limiter return value BEFORE stopping the player. Previously, the player would be stopped first, then refresh could be blocked, leaving playback in a stuck state. Now if refresh is blocked, playback continues uninterrupted with a toast notification.
+- ✅ **Rebuild recovery blocked handling**: Fixed `PlayerFragment.onRequestPlayerRebuild()` to call `viewModel.setRecoveryExhaustedState()` when rebuild refresh is blocked by rate limiter. Rebuild is the last recovery step—if blocked, transitioning to exhausted state gives the user a retry button.
+- ✅ **Design token compliance in player layouts**: Replaced hardcoded dp/sp values with design tokens in `fragment_player.xml` and `fragment_player.xml` (sw600dp variant):
+  - `12dp`/`16dp`/`24dp` → `@dimen/spacing_sm`/`@dimen/spacing_md`/`@dimen/icon_small`
+  - `14sp`/`16sp`/`12sp` → `@dimen/text_body`/`@dimen/text_subtitle`/`@dimen/text_caption`
+  - Hardcoded strings → `@string/player_description`, `@string/player_no_description`
+  - Added `android:textAlignment="viewStart"` and `android:textAlignment="center"` for RTL support
+- ✅ **Theme colors in fragment_subcategories.xml**: Replaced hardcoded colors:
+  - `@color/background_gray` → `?attr/colorSurfaceVariant`
+  - `@android:color/white` → `?attr/colorSurface`
+  - `@android:color/black` → `?attr/colorOnSurface`
+  - Hardcoded "Subcategories" → `@string/subcategories_title` (with AR/NL translations)
+- ✅ **Design tokens in fragment_featured_list.xml**: Replaced `100dp` with `@dimen/spacing_xxxl` (96dp—semantically correct for spacing), added `textAlignment="center"` for error text RTL support.
+- ✅ **Design tokens in fragment_channel_detail.xml (base)**: Replaced hardcoded `strokeWidth="3dp"` with `@dimen/channel_avatar_stroke` and `textSize="14sp"` with `@dimen/text_body` to match tablet layouts.
+- ✅ **AUTO_RECOVERY global limit bypass**: Fixed `ExtractionRateLimiter.checkGlobalLimit()` to allow AUTO_RECOVERY requests to bypass the global rate limit entirely. This ensures playback recovery is never blocked by MANUAL/PREFETCH request storms.
+- ✅ **Per-kind timestamp tracking in ExtractionRateLimiter**: Min-interval/backoff now keys off MANUAL timestamps so AUTO_RECOVERY/PREFETCH no longer delay manual refresh; AUTO_RECOVERY window uses its own timestamps.
+- ✅ **DeepLinkNavigationTest teardown sync**: Removed all `Thread.sleep` calls; teardown now relies on `waitForIdleSync()` only.
+- ✅ **URL TTL time-source mismatch (HIGH severity)**: Fixed `NewPipeExtractorClient.kt` to use `SystemClock.elapsedRealtime()` instead of `System.currentTimeMillis()` for URL generation timestamps. This aligns with `StreamModels.areUrlsExpired()` which also uses `elapsedRealtime()`, ensuring URL TTL checks work correctly regardless of wall-clock changes (device time adjustments, timezone changes, NTP sync).
+- ✅ **DeepLinkNavigationTest teardown hanging**: Fixed `tearDown()` to navigate away from playerFragment, stop PlaybackService, call `activity.finish()`, and attempt `scenario.close()` on a background thread with a timeout to avoid hangs when MediaSessionService blocks activity destruction.
+- ✅ **AUTO_RECOVERY global counter contribution**: Fixed `ExtractionRateLimiter.acquire()` to exclude AUTO_RECOVERY requests from `globalAttemptTimestamps`. Previously, AUTO_RECOVERY bypassed the global limit check but still contributed to the counter, starving subsequent MANUAL/PREFETCH requests. Now AUTO_RECOVERY neither checks nor contributes to global counters.
+- ✅ **Deferred player release on rebuild**: Recovery rebuild path now uses async `player.release()` on the player looper (consistent with PR6.4 onDestroyView deferral).
+- ✅ **RTL container direction**: Added `android:layoutDirection="locale"` to Channel/Playlist `headerContent` + `contentContainer` across layout variants for RTL test compliance.
+- ✅ **Design token cleanup (Downloads/About/Categories)**: Replaced `@color/background_gray` with `?attr/colorSurfaceVariant`, and `1dp` dividers with `@dimen/divider_thickness` (new token).
+- ✅ **Build hygiene**: Replaced deprecated NewPipe `VideoStream.isVideoOnly` field usage with `isVideoOnly()` and removed unused parameters/vars + redundant initializers across player/download/test code.
+- ✅ **MenuProvider migration in PlayerFragment**: PlayerFragment now uses the MenuProvider API (`requireActivity().addMenuProvider(menuProvider, viewLifecycleOwner, Lifecycle.State.RESUMED)`) instead of deprecated `setHasOptionsMenu(true)`/`onCreateOptionsMenu`/`onOptionsItemSelected` pattern. This aligns with AndroidX best practices for fragment menu handling.
+- ✅ **Async release safety**: `releasePlayerAsync()` now stops playback before deferring `release()` to prevent overlap during rebuild/teardown.
+- ✅ **ResolvedStreams timebase guard**: Added `urlTimebaseVersion` and expired-on-mismatch behavior to avoid TTL errors if timebase changes; unit test added.
+- ✅ **Sleep-free pagination tests**: `PlaylistDetailViewModel` now exposes a test clock; removed `Thread.sleep` from `PlaylistDetailViewModelTest`.
+- ✅ **NavRail test stability**: `NavigationGraphTest` uses a relaxed click action so rail items remain clickable when only partially visible in sw600/sw720 configs.
+- ✅ **Hilt test stability**: `launchFragmentInHiltContainer` now uses `commitNowAllowingStateLoss()` to avoid state-loss crashes during instrumentation.
+
+### Device/RTL Verification (2025-12-20)
+- ✅ **Phone layout verification**: Connected tests on default density (3× runs).
+- ✅ **sw600dp tablet layout verification**: Connected tests with density override 280 (3× runs).
+- ✅ **sw720dp large tablet/TV layout verification**: Connected tests with density override 240 (3× runs).
+- ✅ **RTL Arabic support verification**: RTL tests pass in connected runs.
+- ✅ **Instrumentation flakiness check (3× runs)**: Completed for phone + sw600dp + sw720dp configurations.
 
 ---
 
@@ -115,15 +162,25 @@ This pattern occurs when:
 
 # PR-by-PR Plan (From Scratch, with statuses)
 
+## PR1: Adaptive-First Selection + Source Identity — *Status: Done (verified)*
+
+**Goal**: Prefer adaptive manifests for all videos, apply consistent caching, and prevent rebuild loops by tracking actual source identity.
+
+- Adaptive-first selection with no duration gate (HLS → DASH → Synthetic DASH → Progressive).
+- Consistent DataSource configuration + caching for adaptive and progressive.
+- Source identity tracking via `MediaSourceResult.actualSourceUrl` + `AdaptiveType` to avoid rebuild loops.
+- Sticky adaptive fallback flag to prevent repeated adaptive creation failures until manual retry.
+
+**Acceptance**
+- Adaptive streams are preferred whenever available; progressive fallback is stable and loop-free.
+- Quality cap changes do not trigger unnecessary MediaSource rebuilds.
+
 ## PR2 (Finalize Gate + Merge) — *Status: Done (merged to main)*
 
 **Goal**: Lock in "never permanently stuck" behavior.
 
 - ✅ Merged: commit `17e9ebb` on 2025-12-15
-- ✅ Manual verification completed:
-  - Phone layout: recovery overlay, exhausted retry UI, error overlay.
-  - Tablet (`sw600dp`) layout: same behaviors and consistent view IDs.
-  - Large tablet/TV (`sw720dp`) layout: verify scale (dimen overrides), focus/touch targets, and consistent view IDs.
+- Manual verification complete (see Verification Status).
 - Run: `cd android && timeout 300 ./gradlew testDebugUnitTest`
 
 **Acceptance**
@@ -182,11 +239,11 @@ This pattern occurs when:
 - Prefer local progressive quality switching over refresh when possible; refresh only when URLs are invalid/expired.
 
 ### Tests
-- ✅ Unit tests for limiter logic (injected clock) - 18 tests in `ExtractionRateLimiterTest.kt`
+- ✅ Unit tests for limiter logic (injected clock) - 23 tests in `ExtractionRateLimiterTest.kt`
 - ✅ Unit tests for recovery manager (injected clock) - 23 tests in `PlaybackRecoveryManagerTest.kt`
-- ✅ Unit tests for buffer health monitor (injected clock) - 22 tests in `BufferHealthMonitorTest.kt`
+- ✅ Unit tests for buffer health monitor (injected clock) - 25 tests in `BufferHealthMonitorTest.kt`
 - ✅ Unit tests for quality step-down helper - 14 tests in `QualityStepDownHelperTest.kt`
-- Total: 77 player tests, all passing
+- Total: 85 player tests, all passing
 - Manual: repeated refresh taps and recovery scenarios should not create bursts.
 
 **Acceptance**
@@ -215,7 +272,7 @@ This pattern occurs when:
 **Acceptance**
 - ✅ Feature parity; no regressions in recovery/proactive behavior (adaptive + progressive + audio-only).
 - ✅ Background playback works via MediaSessionService.
-- ✅ Manual verification completed 2025-12-18: lockscreen/Bluetooth controller behavior verified.
+- Manual verification complete: media button play/pause toggled state via `dumpsys media_session`.
 
 ## PR6.1: Progressive "Synthetic DASH" (NewPipe-style) — *Status: Done*
 
@@ -235,6 +292,7 @@ This pattern occurs when:
 
 **Implementation Details (completed 2025-12-18)**
 - ✅ **Measurement pass completed**: Tested 36 videos with 100% success rate for both video (296/296) and audio (206/206) streams.
+- ✅ **Revalidated 2025-12-20**: `SyntheticDASH` summary for `EnfgPg0Ey3I` (totalVideo=13, totalAudio=4, mpdOKVideo=12, mpdOKAudio=4); playback used `type=SYNTHETIC_DASH`.
 - ✅ **SyntheticDashMetadata** added to `VideoTrack` and `AudioTrack` models to store itag, init/index ranges, and approx duration.
 - ✅ **SyntheticDashMediaSourceFactory** created to generate DASH MPD from progressive streams using `YoutubeProgressiveDashManifestCreator`.
 - ✅ **Integrated into MultiQualityMediaSourceFactory**: Strategy is now HLS → DASH → Synthetic DASH → Raw Progressive.
@@ -247,7 +305,7 @@ This pattern occurs when:
 - `SyntheticDashMediaSourceFactory.kt`: New factory for creating synthetic DASH sources
 - `MultiQualityMediaSourceFactory.kt`: Integrated synthetic DASH into media source selection chain
 
-**Acceptance (verified)**
+**Acceptance (expected)**
 - ✅ Seeks and "resume after error" are faster/more reliable on progressive-only videos (especially video-only+audio).
 - ✅ No new network calls beyond normal playback (MPD is generated locally from metadata).
 - ✅ Progressive fallback remains correct and stable for muxed streams and edge cases.
@@ -278,6 +336,33 @@ This pattern occurs when:
 **Acceptance**
 - Improved manifest availability without causing rate-limit bursts.
 - No repeated extraction loops; progressive fallback remains acceptable.
+
+## PR6.3: Tap-to-Prefetch (Home/Videos/Search) — *Status: Done (verified)*
+
+**Goal**: Hide extractor latency by starting stream resolution when users tap a video in list screens.
+
+**Implementation**
+- `StreamPrefetchService` triggered from Home, Videos, and Search list item taps.
+- Prefetch runs in a long-lived internal scope; caller scope is for API consistency only.
+- PlayerViewModel awaits in-flight prefetch (up to 3s) before resolving again.
+- PREFETCH priority respects PR5 rate limiter budgets.
+
+**Acceptance**
+- Logcat shows `StreamPrefetch: Starting prefetch`, `Prefetch completed`, `Prefetch consumed (awaited)` on taps.
+- Navigation hides 2–5s extraction latency without increasing refresh bursts.
+- Manual verification complete (see Verification Status).
+
+## PR6.4: Deferred Async Player Release — *Status: Done (verified)*
+
+**Goal**: Prevent UI stalls and `ExoTimeoutException` on player teardown/rebuild by deferring release off the critical path.
+
+**Implementation**
+- `onDestroyView()` posts `player.release()` to the player’s application looper.
+- Recovery rebuild path also uses deferred release before re-creating the player.
+
+**Acceptance**
+- Fragment teardown and recovery rebuilds complete without blocking the main thread.
+- Manual verification complete (see Verification Status).
 
 ## PR6.5: Playback Entry-Point Parity (Channels + Playlists + Featured) — *Status: Done*
 
@@ -319,7 +404,7 @@ This pattern occurs when:
 **Testing**
 - ✅ Code compiles successfully
 - ✅ All unit tests pass
-- ✅ Manual verification completed 2025-12-18: Logs confirm `StreamPrefetch: Starting prefetch`, `Prefetch completed`, `Prefetch consumed (awaited)` on video taps from various entry points.
+- Manual verification complete: `StreamPrefetch` logs confirmed for playlist item taps, channel videos, and featured list.
 
 ## PR6.6: Playlist Playback Reliability (Full Queue + Next/Prev + Deep Starts) — *Status: Done*
 
@@ -330,12 +415,12 @@ This pattern occurs when:
 - "Stuck at the beginning" could occur because playlist item fetch had no timeout in the player path.
 
 **Implementation (completed 2025-12-18)**
-- ✅ **Deep-start with `startVideoId`**: Pages through playlist items until the target video is found (bounded by MAX_SCAN_TIME_MS=3s and MAX_ITEMS_TO_SCAN=200).
+- ✅ **Deep-start with `startVideoId`**: Pages through playlist items until the target video is found (bounded by MAX_SCAN_TIME_MS=3s and MAX_ITEMS_TO_SCAN=250).
 - ✅ **Lazy playlist queue loader** (`PlaylistPagingState`):
   - Stores `nextPage`, `nextItemOffset`, `hasMore`, and `pagingFailed` flags.
   - Fetches additional pages when queue is empty at boundary (async, non-blocking).
   - `hasNext` UI state reflects `queueNotEmpty || playlistHasMore` (not just current in-memory queue).
-- ✅ **Strict timeouts**: PAGE_FETCH_TIMEOUT_MS=5s per page fetch, total deep-start budget enforced.
+- ✅ **Strict timeouts**: PAGE_FETCH_TIMEOUT_MS=10s per page fetch, total deep-start budget enforced.
 - ✅ **Auto-skip for unplayable items**: MAX_CONSECUTIVE_SKIPS=3 with analytics event (`VideoSkipped`).
 - ✅ **Async boundary fetch**: Replaced `runBlocking` with `viewModelScope.launch` to prevent UI freeze/deadlock.
 - ✅ **Clean state on mode switch**: `loadVideo()` clears stale `playlistPagingState` to prevent incorrect `hasNext` for single videos.
@@ -345,7 +430,7 @@ This pattern occurs when:
 - `PlayerViewModel.kt`: Added `PlaylistPagingState`, `fetchNextPlaylistPage()`, deep-start paging loop, auto-skip logic, async boundary handling.
 - `PlayerViewModelPlaylistPagingTest.kt`: 16 comprehensive unit tests covering all paging scenarios.
 
-**Acceptance (verified)**
+**Acceptance (expected)**
 - ✅ Tapping a deep item in a long playlist starts *that* item (no clamping to first-page tail).
 - ✅ Next/Prev buttons remain usable across playlist boundaries (and don't disable while `hasMore` exists).
 - ✅ Playlist fetch hangs are bounded (timeout + retry), never leaving the player stuck indefinitely.
@@ -359,12 +444,29 @@ This pattern occurs when:
 - ✅ `resolve failure auto-skips (bounded)`
 - ✅ `loadVideo clears stale playlist paging state`
 - ✅ `switching from playlist to video does not attempt paging`
-- ✅ Manual verification completed 2025-12-18: Logs confirm `Fast path: targetVideoId found at hinted index 4`, `Playlist initialized: 49 items, startIndex=4` when tapping deep in playlist.
+- Manual verification complete: tapped item 2 in playlist; player started with selected title and queue remained intact.
 
 **Minor Notes**
 - `skipToNext()` returns `true` before next item is determined (indicates "handling it").
 - `VideoSkipped` event emitted to analytics; toast wiring optional (not implemented).
 - Shuffle behavior limits to initially loaded items only (paging disabled for shuffled playlists).
+
+## PR6.7: Early-Stall Prevention (Predictive Downshift) — *Status: Done (verified)*
+
+**Goal**: Prevent the “plays for a few seconds then buffers” pattern on progressive streams.
+
+**Implementation**
+- Predictive buffer depletion modeling (linear regression) with preemptive downshift.
+- Early-stall exception: allow one emergency downshift during grace window if buffer becomes critical and not building.
+- Synthetic DASH guard: prefer muxed tracks when available under the same cap.
+- Buffer thresholds tuned (LOW_BUFFER_THRESHOLD = 10s).
+
+**Testing**
+- 35 unit tests pass (25 `BufferHealthMonitorTest` + 10 `SyntheticDashTrackSelectionTest`).
+
+**Acceptance**
+- Fewer early stalls on progressive playback; downshift is bounded and coordinated with recovery.
+- Manual verification complete: BufferHealthMonitor started and sampling logs observed during progressive playback.
 
 ## PR7: Notification Controls + Artwork — *Status: Done*
 
@@ -387,31 +489,31 @@ This pattern occurs when:
 **Files Added/Modified**:
 - `MediaSessionMetadataManager.kt`: New manager for metadata + artwork loading.
 - `PlayerFragment.kt`: Added `@Inject metadataManager` and `syncMediaSessionMetadata()` helper.
-- `MediaSessionMetadataManagerTest.kt`: 5 unit tests for metadata structure validation.
+- `MediaSessionMetadataManagerTest.kt`: 6 unit tests for metadata structure validation.
 
-**Acceptance (verified)**:
+**Acceptance (expected)**:
 - ✅ Notification shows video title, channel name, and artwork.
 - ✅ Controls work reliably in background/lockscreen/headset.
 - ✅ Artwork loads asynchronously without blocking playback.
 - ✅ Race condition on rapid item changes prevented via token matching.
-- ✅ 5 unit tests pass.
+- ✅ 6 unit tests pass.
 
 ## PR8: Fullscreen + Orientation Policy (Phone + Tablet) — *Status: Done*
 
 **Goal**: Automatic fullscreen in landscape with immersive UI.
 
 **Implementation (already in place)**:
-- ✅ **Auto-fullscreen on landscape**: `onConfigurationChanged()` triggers `toggleFullscreen()` when orientation changes.
+- ✅ **Auto-fullscreen on landscape**: `onConfigurationChanged()` syncs fullscreen state and calls `updateFullscreenUi()` when orientation changes (no recursive toggle).
 - ✅ **Immersive mode**: Uses `SYSTEM_UI_FLAG_FULLSCREEN | SYSTEM_UI_FLAG_IMMERSIVE_STICKY` to hide status/nav bars.
 - ✅ **Bottom navigation integration**: `MainActivity.setBottomNavVisibility()` hides/shows bottom nav during fullscreen.
 - ✅ **RTL support**: Fullscreen button uses `layout_gravity="bottom|end"` (RTL-aware).
 - ✅ **Tablet support**: Responsive player sizing via `@dimen/player_portrait_height` (240dp phone, 360dp tablet).
 - ✅ **Manual toggle**: Fullscreen button with icon swap (ic_fullscreen ↔ ic_fullscreen_exit).
 
-**Acceptance (verified)**:
+**Acceptance (expected)**:
 - ✅ Landscape → fullscreen automatically; portrait → normal player screen.
 - ✅ Immersive UI works on phone and tablet.
-- ✅ RTL layout verified via `android:layoutDirection="locale"`.
+- RTL verification complete; layoutDirection assertions pass on device tests.
 - ✅ No code changes needed - already implemented as part of PR6 player work.
 
 ## PR9: Downloads – MP4-only Export, Always With Audio — *Status: Done*
@@ -435,7 +537,7 @@ This pattern occurs when:
 **Note**: FFmpeg muxing, download storage, and cleanup infrastructure were already fully implemented.
 Only the UI for quality selection in the player was missing.
 
-**Acceptance (verified)**:
+**Acceptance (expected)**:
 - ✅ User can select quality before downloading from player.
 - ✅ Downloads include audio (muxed or progressive).
 - ✅ All unit tests pass.
@@ -477,7 +579,7 @@ Only the UI for quality selection in the player was missing.
 - `res/drawable/ic_close.xml`: Close/remove icon
 - `res/drawable/duration_background.xml`: Duration badge background
 
-**Acceptance (verified)**:
+**Acceptance (expected)**:
 - ✅ Favorites persist locally across app restarts.
 - ✅ Toggle works in player with visual feedback.
 - ✅ Favorites list shows all saved videos.
@@ -514,7 +616,7 @@ Get Albunyaan Tube for ad-free Islamic content!
 - `ui/player/PlayerFragment.kt`: Updated `shareCurrentVideo()` to use deep link
 - `res/values/strings.xml`: Added share-related strings
 
-**Acceptance (verified)**:
+**Acceptance (expected)**:
 - ✅ Shared content uses `albunyaantube://video/` scheme.
 - ✅ No YouTube URLs in shared text.
 - ✅ App can receive and handle video deep links.

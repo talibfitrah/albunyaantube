@@ -1,11 +1,13 @@
 package com.albunyaan.tube.ui.player
 
+import com.albunyaan.tube.analytics.ExtractorMetricsReporter
 import com.albunyaan.tube.data.channel.Page
 import com.albunyaan.tube.data.extractor.AudioTrack
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.VideoTrack
 import com.albunyaan.tube.data.local.FavoriteVideo
 import com.albunyaan.tube.data.local.FavoritesRepository
+import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.playlist.PlaylistDetailRepository
 import com.albunyaan.tube.data.playlist.PlaylistHeader
 import com.albunyaan.tube.data.playlist.PlaylistItem
@@ -64,6 +66,7 @@ class PlayerViewModelPlaylistPagingTest {
     private lateinit var rateLimiter: ExtractionRateLimiter
     private lateinit var fakePrefetchService: FakePrefetchService
     private lateinit var fakeFavoritesRepository: FakeFavoritesRepository
+    private lateinit var fakeMetricsReporter: FakeExtractorMetricsReporter
 
     @Before
     fun setup() {
@@ -74,6 +77,7 @@ class PlayerViewModelPlaylistPagingTest {
         rateLimiter = ExtractionRateLimiter()  // Use real rate limiter
         fakePrefetchService = FakePrefetchService()
         fakeFavoritesRepository = FakeFavoritesRepository()
+        fakeMetricsReporter = FakeExtractorMetricsReporter()
     }
 
     @After
@@ -88,7 +92,8 @@ class PlayerViewModelPlaylistPagingTest {
             playlistDetailRepository = fakePlaylistRepository,
             rateLimiter = rateLimiter,
             prefetchService = fakePrefetchService,
-            favoritesRepository = fakeFavoritesRepository
+            favoritesRepository = fakeFavoritesRepository,
+            metricsReporter = fakeMetricsReporter
         )
     }
 
@@ -556,7 +561,8 @@ class PlayerViewModelPlaylistPagingTest {
         durationSeconds = 300,
         hlsUrl = null,
         dashUrl = null,
-        urlGeneratedAt = System.currentTimeMillis()
+        urlGeneratedAt = 0L,
+        urlTimebaseVersion = ResolvedStreams.URL_TIMEBASE_VERSION
     )
 
     // =============================================================================
@@ -737,5 +743,15 @@ class PlayerViewModelPlaylistPagingTest {
         override suspend fun clearAll() {
             favorites.value = emptyList()
         }
+    }
+
+    /**
+     * No-op metrics reporter for testing.
+     */
+    private class FakeExtractorMetricsReporter : ExtractorMetricsReporter {
+        override fun onCacheHit(type: ContentType, hitCount: Int) {}
+        override fun onCacheMiss(type: ContentType, missCount: Int) {}
+        override fun onFetchSuccess(type: ContentType, fetchedCount: Int, durationMillis: Long) {}
+        override fun onFetchFailure(type: ContentType, ids: List<String>, throwable: Throwable) {}
     }
 }

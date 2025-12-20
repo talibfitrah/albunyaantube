@@ -244,7 +244,7 @@ class NewPipeChannelDetailRepository @Inject constructor(
             joinedDate = null,
             totalViews = null,
             isVerified = isVerified,
-            tags = tags ?: emptyList()
+            tags = tags
         )
     }
 

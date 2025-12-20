@@ -29,6 +29,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
+import androidx.test.platform.app.InstrumentationRegistry
 
 /**
  * Deep-link navigation instrumentation tests (6 tests total).
@@ -62,6 +63,8 @@ class DeepLinkNavigationTest {
     companion object {
         /** Maximum time to wait for navigation to complete (seconds) */
         private const val NAVIGATION_TIMEOUT_SECONDS = 15L
+        /** Maximum time to wait for ActivityScenario.close() before giving up */
+        private const val CLOSE_TIMEOUT_SECONDS = 5L
     }
 
     @get:Rule
@@ -99,10 +102,31 @@ class DeepLinkNavigationTest {
 
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
 
-        // Stop the PlaybackService explicitly BEFORE finishing the activity.
-        // This removes the foreground notification and allows the activity to be destroyed.
-        // Without this, the foreground service keeps the activity alive and ActivityScenario.close()
-        // times out waiting for the activity to be destroyed.
+        // For tests that navigated to playerFragment, navigate away first to trigger
+        // proper fragment cleanup (onDestroyView -> unbind service).
+        try {
+            scenario?.onActivity { activity ->
+                val navController = getNestedNavController(activity)
+                navController?.let {
+                    // Only navigate if we're on playerFragment - prevents loops
+                    if (it.currentDestination?.id == R.id.playerFragment) {
+                        try {
+                            it.popBackStack(R.id.homeFragment, false)
+                        } catch (_: Exception) {
+                            // Navigation may fail if graph is in bad state
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            // Scenario may already be closed or activity gone
+        }
+
+        // Wait for navigation and fragment lifecycle
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+
+        // Stop the PlaybackService explicitly.
+        // This removes the foreground notification which can block activity destruction.
         try {
             val serviceIntent = Intent(context, PlaybackService::class.java)
             context.stopService(serviceIntent)
@@ -110,28 +134,10 @@ class DeepLinkNavigationTest {
             // Service may not be running, that's fine
         }
 
-        // Short sleep to let the service stop message be processed.
-        // This is bounded and acceptable in teardown - we're just giving the system
-        // a brief moment to process the stopService() before we finish the activity.
-        Thread.sleep(50)
+        // Wait for service stop to be processed
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync()
 
-        // Reset the activity's intent before finishing.
-        // This fixes ActivityScenario.close() timeouts that occur when onNewIntent()
-        // changes the intent (via setIntent()), causing ActivityScenario to lose track
-        // of lifecycle events due to intent mismatch.
-        try {
-            scenario?.onActivity { activity ->
-                // Reset to a neutral intent that matches the original launch intent structure
-                val resetIntent = Intent(context, MainActivity::class.java).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                }
-                activity.intent = resetIntent
-            }
-        } catch (_: Exception) {
-            // Scenario may already be closed or activity gone
-        }
-
-        // Finish the activity
+        // Finish the activity - this triggers cleanup in fragments
         try {
             scenario?.onActivity { activity ->
                 activity.finish()
@@ -140,17 +146,29 @@ class DeepLinkNavigationTest {
             // Scenario may already be closed or activity gone
         }
 
-        // Brief pause to let activity lifecycle process the finish
-        Thread.sleep(50)
+        // Wait for the main thread to process pending messages
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync()
 
-        // Now close the scenario - activity should be able to destroy cleanly
-        try {
-            scenario?.close()
-        } catch (_: Exception) {
-            // If close fails for any reason, just proceed with cleanup
-        } finally {
-            scenario = null
+        // Attempt to close the scenario without risking a hang (MediaSessionService can block).
+        closeScenarioSafely()
+        scenario = null
+    }
+
+    private fun closeScenarioSafely() {
+        val scenarioToClose = scenario ?: return
+        val closeLatch = CountDownLatch(1)
+        val closeThread = Thread {
+            try {
+                scenarioToClose.close()
+            } catch (_: Throwable) {
+                // Ignore close failures; cleanup best-effort
+            } finally {
+                closeLatch.countDown()
+            }
         }
+        closeThread.isDaemon = true
+        closeThread.start()
+        closeLatch.await(CLOSE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
     }
 
     // region Cold Start Tests

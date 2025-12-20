@@ -364,7 +364,9 @@ class PlayerViewModel @Inject constructor(
         // PR4: URL Lifecycle Hardening - check if progressive URLs are expired
         if (isProgressiveStream && resolved.areUrlsExpired()) {
             android.util.Log.w("PlayerViewModel", "applyAutoQualityStepDown: URLs expired, forcing stream refresh instead of step-down")
-            forceRefreshCurrentStream()
+            // PR5: Use AUTO_RECOVERY for automatic quality step-down paths - ensures recovery
+            // is not blocked by manual refresh limits
+            forceRefreshForAutoRecovery()
             return false
         }
 
@@ -541,8 +543,8 @@ class PlayerViewModel @Inject constructor(
     ) {
         val startTime = System.currentTimeMillis()
         val allItems = mutableListOf<PlaylistItem>()
-        var nextPage: Page? = null
-        var nextItemOffset = 1
+        var nextPage: Page?
+        var nextItemOffset: Int
 
         // Load first page (always allowed full timeout - not part of deep-start budget)
         val firstPage = try {
@@ -867,7 +869,11 @@ class PlayerViewModel @Inject constructor(
         retryCurrentStream()
     }
 
-    private fun resolveStreamFor(item: UpNextItem, reason: PlaybackStartReason, forceRefresh: Boolean = false) {
+    private fun resolveStreamFor(
+        item: UpNextItem,
+        @Suppress("UNUSED_PARAMETER") reason: PlaybackStartReason,
+        forceRefresh: Boolean = false
+    ) {
         resolveJob?.cancel()
         updateState { it.copy(streamState = StreamState.Loading, retryCount = 0) }
         resolveJob = viewModelScope.launch(dispatcher) {
@@ -943,8 +949,6 @@ class PlayerViewModel @Inject constructor(
             android.util.Log.d("PlayerViewModel", "Force refresh requested for ${item.streamId}, bypassing caches")
         }
 
-        var lastError: Throwable? = null
-
         for (attempt in 1..maxAttempts) {
             updateState { it.copy(retryCount = attempt - 1) }
 
@@ -956,7 +960,6 @@ class PlayerViewModel @Inject constructor(
                 }
             } catch (t: Throwable) {
                 if (t is kotlinx.coroutines.CancellationException) throw t
-                lastError = t
                 val errorMessage = when (t) {
                     is kotlinx.coroutines.TimeoutCancellationException -> "Timed out after ${EXTRACTOR_TIMEOUT_MS/1000}s"
                     else -> t.message

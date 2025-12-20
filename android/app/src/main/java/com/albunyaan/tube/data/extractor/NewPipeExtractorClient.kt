@@ -1,5 +1,6 @@
 package com.albunyaan.tube.data.extractor
 
+import android.os.SystemClock
 import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.analytics.ExtractorMetricsReporter
 import com.albunyaan.tube.data.extractor.cache.MetadataCache
@@ -30,7 +31,21 @@ class NewPipeExtractorClient(
     private val downloader: OkHttpDownloader,
     private val cache: MetadataCache,
     private val metrics: ExtractorMetricsReporter,
-    private val clock: () -> Long = { System.currentTimeMillis() }
+    /**
+     * Clock provider for timestamps. Uses SystemClock.elapsedRealtime() by default
+     * to match StreamModels.areUrlsExpired() which also uses elapsedRealtime().
+     * This ensures URL TTL checks work correctly regardless of wall-clock changes.
+     *
+     * IMPORTANT: If the clock implementation is changed (e.g., from System.currentTimeMillis()
+     * to SystemClock.elapsedRealtime()), increment [CACHE_TIMEBASE_VERSION] to invalidate
+     * existing cache entries. Different time bases produce incompatible timestamps that
+     * can cause incorrect TTL comparisons.
+     *
+     * For tests that inject a custom clock, ensure the injected clock uses a consistent
+     * time base. The timebase version check in cache lookup will automatically invalidate
+     * entries created with a different version.
+     */
+    private val clock: () -> Long = { SystemClock.elapsedRealtime() }
 ) : ExtractorClient {
 
     private val youtubeService = ServiceList.YouTube
@@ -54,9 +69,12 @@ class NewPipeExtractorClient(
     suspend fun resolveStreams(videoId: String, forceRefresh: Boolean = false): ResolvedStreams? = withContext(Dispatchers.IO) {
         if (!YOUTUBE_ID_PATTERN.matcher(videoId).matches()) return@withContext null
         val now = clock()
-        // Only use cache if not forcing refresh
+        // Only use cache if not forcing refresh and entry has matching timebase version
         if (!forceRefresh) {
-            streamCache[videoId]?.takeIf { now - it.timestamp <= STREAM_CACHE_TTL_MILLIS }?.let {
+            streamCache[videoId]?.takeIf { entry ->
+                entry.timebaseVersion == CACHE_TIMEBASE_VERSION &&
+                    (now - entry.timestamp) <= STREAM_CACHE_TTL_MILLIS
+            }?.let {
                 metrics.onCacheHit(ContentType.VIDEOS, 1)
                 return@withContext it.value
             }
@@ -314,12 +332,12 @@ class NewPipeExtractorClient(
                     else -> stream.quality // Fallback to NewPipe's label
                 }
                 if (BuildConfig.DEBUG) {
-                    android.util.Log.d("NewPipeExtractor", "Video stream: $properLabel (${stream.width}x${stream.height}), bitrate=${stream.bitrate}, videoOnly=${stream.isVideoOnly}")
+                    android.util.Log.d("NewPipeExtractor", "Video stream: $properLabel (${stream.width}x${stream.height}), bitrate=${stream.bitrate}, videoOnly=${stream.isVideoOnly()}")
                 }
 
                 // Extract SyntheticDashMetadata for video-only PROGRESSIVE_HTTP streams
                 val syntheticDashMeta = stream.itagItem?.let { itag ->
-                    if (stream.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && stream.isVideoOnly) {
+                    if (stream.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && stream.isVideoOnly()) {
                         SyntheticDashMetadata(
                             itag = stream.itag,
                             initStart = stream.initStart.toLong(),
@@ -340,7 +358,7 @@ class NewPipeExtractorClient(
                     bitrate = stream.bitrate.takeIf { it > 0 },
                     qualityLabel = properLabel,
                     fps = stream.fps.takeIf { it > 0 },
-                    isVideoOnly = stream.isVideoOnly,
+                    isVideoOnly = stream.isVideoOnly(),
                     syntheticDashMetadata = syntheticDashMeta
                 )
             }
@@ -425,7 +443,8 @@ class NewPipeExtractorClient(
             durationSeconds = durationSeconds,
             hlsUrl = hlsStreamUrl,
             dashUrl = dashStreamUrl,
-            urlGeneratedAt = generatedAt
+            urlGeneratedAt = generatedAt,
+            urlTimebaseVersion = ResolvedStreams.URL_TIMEBASE_VERSION
         )
     }
 
@@ -435,7 +454,19 @@ class NewPipeExtractorClient(
         else -> toInt()
     }
 
-    private data class CacheEntry<T>(val value: T, val timestamp: Long)
+    /**
+     * Cache entry with timebase version tracking.
+     *
+     * @param value The cached value
+     * @param timestamp Timestamp when the entry was created (in the current clock's time base)
+     * @param timebaseVersion Version of the clock implementation used. Entries with mismatched
+     *        versions are treated as expired to prevent incorrect TTL comparisons.
+     */
+    private data class CacheEntry<T>(
+        val value: T,
+        val timestamp: Long,
+        val timebaseVersion: Int = CACHE_TIMEBASE_VERSION
+    )
 
     /**
      * PR6.1 Measurement Pass: Log stream metadata for synthetic DASH feasibility assessment.
@@ -476,7 +507,7 @@ class NewPipeExtractorClient(
 
             val streamData = SyntheticDashEligibility.StreamData(
                 deliveryMethod = stream.deliveryMethod,
-                isVideoOnly = stream.isVideoOnly,
+                isVideoOnly = stream.isVideoOnly(),
                 hasItagItem = itagItem != null,
                 initStart = stream.initStart.toLong(),
                 initEnd = stream.initEnd.toLong(),
@@ -514,7 +545,7 @@ class NewPipeExtractorClient(
                     append("\"w\":${stream.width},")
                     append("\"h\":${stream.height},")
                     append("\"fps\":${stream.fps},")
-                    append("\"muxed\":${!stream.isVideoOnly},")
+                    append("\"muxed\":${!stream.isVideoOnly()},")
                     append("\"hasItag\":${itagItem != null},")
                     append("\"initS\":${stream.initStart},")
                     append("\"initE\":${stream.initEnd},")
@@ -592,7 +623,7 @@ class NewPipeExtractorClient(
         val progressiveVideoCount = playableVideoStreams.count { it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP }
         val progressiveAudioCount = playableAudioStreams.count { it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP }
         val videoOnlyProgressiveCount = playableVideoStreams.count {
-            it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.isVideoOnly
+            it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.isVideoOnly()
         }
 
         android.util.Log.d(
@@ -688,6 +719,23 @@ class NewPipeExtractorClient(
         // YouTube stream URLs typically expire after 6 hours
         private const val STREAM_CACHE_TTL_MILLIS = 30 * 60 * 1000L
         private val YOUTUBE_ID_PATTERN: Pattern = Pattern.compile("^[a-zA-Z0-9_-]{11}")
+
+        /**
+         * Cache timebase version. Increment this constant whenever the clock implementation changes
+         * (e.g., switching from System.currentTimeMillis() to SystemClock.elapsedRealtime()).
+         *
+         * Different time bases produce incompatible timestamps:
+         * - System.currentTimeMillis(): ~1734700000000 (epoch millis)
+         * - SystemClock.elapsedRealtime(): ~123456 (millis since boot)
+         *
+         * Cache entries created with a different timebase version are treated as expired
+         * to prevent incorrect TTL comparisons that could cause entries to appear
+         * valid forever or expire immediately.
+         *
+         * Version history:
+         * - 1: Initial version using SystemClock.elapsedRealtime() (monotonic time)
+         */
+        private const val CACHE_TIMEBASE_VERSION = 1
 
         // PR6.1 Measurement: Log tag for synthetic DASH feasibility assessment
         // Filter with: adb logcat -s SyntheticDASH

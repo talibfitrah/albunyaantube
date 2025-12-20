@@ -32,6 +32,7 @@
                 android:id="@+id/headerContent"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layoutDirection="locale"
                 android:orientation="vertical"
                 app:layout_collapseMode="parallax"
                 app:layout_collapseParallaxMultiplier="0.5">
@@ -313,6 +314,7 @@
         android:id="@+id/contentContainer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:layoutDirection="locale"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
         <!-- Constrained width container for tablet -->

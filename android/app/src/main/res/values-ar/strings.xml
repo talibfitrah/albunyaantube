@@ -47,6 +47,7 @@
     <string name="player_no_current_item">لا يوجد فيديو قيد التشغيل حالياً.</string>
     <string name="player_default_title">فيديو</string>
     <string name="player_no_views">لا توجد مشاهدات بعد</string>
+    <string name="player_description">الوصف</string>
     <string name="player_no_description">لا يوجد وصف متاح</string>
     <string name="player_mark_current_complete">وضع علامة اكتمال</string>
     <string name="player_up_next_header">التالي</string>
@@ -130,6 +131,7 @@
     <string name="see_all">عرض الكل</string>
     <string name="search">بحث</string>
     <string name="categories">التصنيفات</string>
+    <string name="subcategories_title">التصنيفات الفرعية</string>
     <string name="menu">القائمة</string>
     <string name="settings">الإعدادات</string>
     <string name="downloads">التنزيلات</string>
@@ -407,9 +409,20 @@
     <string name="settings_storage_external_not_implemented">التخزين الخارجي غير متاح بعد</string>
     <string name="settings_support">الدعم</string>
     <string name="settings_about_support">حول والدعم</string>
+    <string name="about_title">حول</string>
+    <string name="about_links">الروابط</string>
+    <string name="about_legal">القانونية</string>
+    <string name="about_website">الموقع الإلكتروني</string>
+    <string name="about_github">جيت هاب</string>
+    <string name="about_privacy_policy">سياسة الخصوصية</string>
+    <string name="about_terms_of_service">شروط الخدمة</string>
+    <string name="about_open_source_licenses">تراخيص المصادر المفتوحة</string>
     <string name="settings_support_center">مركز المساعدة</string>
     <string name="settings_support_center_desc">احصل على المساعدة وأرسل ملاحظاتك</string>
     <string name="cancel">إلغاء</string>
+
+    <!-- Favorites -->
+    <string name="favorites_icon_description">المفضلة</string>
 
     <!-- Search Screen -->
     <string name="search_hint">البحث في القنوات وقوائم التشغيل والفيديوهات…</string>

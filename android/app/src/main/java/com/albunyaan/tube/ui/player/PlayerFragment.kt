@@ -3,6 +3,7 @@ package com.albunyaan.tube.ui.player
 import android.app.PictureInPictureParams
 import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.ServiceConnection
 import android.net.Uri
 import android.os.Build
@@ -15,6 +16,8 @@ import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import androidx.core.view.MenuProvider
+import androidx.lifecycle.Lifecycle
 import android.widget.Toast
 import androidx.annotation.OptIn
 import androidx.core.view.GestureDetectorCompat
@@ -75,6 +78,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
     private var binding: FragmentPlayerBinding? = null
     private var player: ExoPlayer? = null
+    private var playbackListener: Player.Listener? = null
     private var trackSelector: DefaultTrackSelector? = null
     private val viewModel: PlayerViewModel by viewModels()
     private val upNextAdapter = UpNextAdapter { item -> viewModel.playItem(item) }
@@ -189,7 +193,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        setHasOptionsMenu(true)
+        // Use MenuProvider API instead of deprecated setHasOptionsMenu(true)
+        requireActivity().addMenuProvider(menuProvider, viewLifecycleOwner, Lifecycle.State.RESUMED)
         val binding = FragmentPlayerBinding.bind(view).also { binding = it }
 
         // Initialize Cast context
@@ -257,14 +262,14 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         }
 
         // Setup description dropdown
-        binding.descriptionHeader?.setOnClickListener {
-            val isExpanded = binding.videoDescription?.isVisible == true
-            binding.videoDescription?.isVisible = !isExpanded
-            binding.descriptionArrow?.rotation = if (isExpanded) 0f else 180f
+        binding.descriptionHeader.setOnClickListener {
+            val isExpanded = binding.videoDescription.isVisible
+            binding.videoDescription.isVisible = !isExpanded
+            binding.descriptionArrow.rotation = if (isExpanded) 0f else 180f
         }
 
         // Setup action buttons
-        binding.favoriteButton?.setOnClickListener {
+        binding.favoriteButton.setOnClickListener {
             val wasFavorite = viewModel.state.value.isFavorite
             viewModel.toggleFavorite()
             // Show toast feedback - state will be inverted after toggle
@@ -276,16 +281,16 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             Toast.makeText(requireContext(), messageRes, Toast.LENGTH_SHORT).show()
         }
 
-        binding.shareButton?.setOnClickListener {
+        binding.shareButton.setOnClickListener {
             shareCurrentVideo()
         }
 
-        binding.audioButton?.setOnClickListener {
+        binding.audioButton.setOnClickListener {
             binding.audioOnlyToggle.isChecked = !binding.audioOnlyToggle.isChecked
         }
 
         // Download button - shows quality picker, downloads are always allowed (no EULA gating)
-        binding.downloadButton?.setOnClickListener {
+        binding.downloadButton.setOnClickListener {
             showDownloadQualityPicker()
         }
 
@@ -303,26 +308,26 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             }
         }
 
-        binding.minimizeButton?.setOnClickListener {
+        binding.minimizeButton.setOnClickListener {
             // Use navigateUp for predictable navigation back to previous screen
             findNavController().navigateUp()
         }
 
-        binding.fullscreenButton?.setOnClickListener {
+        binding.fullscreenButton.setOnClickListener {
             toggleFullscreen()
         }
 
-        binding.qualityButton?.setOnClickListener {
+        binding.qualityButton.setOnClickListener {
             showQualitySelector()
         }
 
         // Overlay controls are always visible now - no click listener needed
 
         // Setup error retry buttons
-        binding.playerRetryButton?.setOnClickListener {
+        binding.playerRetryButton.setOnClickListener {
             viewModel.retryCurrentStream()
         }
-        binding.playerRefreshStreamButton?.setOnClickListener {
+        binding.playerRefreshStreamButton.setOnClickListener {
             // Reset adaptive fallback flag - manual refresh should retry adaptive
             adaptiveFailedForCurrentStream = null
             // PR5: Show feedback if rate-limited
@@ -332,7 +337,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         }
 
         // Setup recovery retry button (shown when auto-recovery exhausted)
-        binding.playerRecoveryRetryButton?.setOnClickListener {
+        binding.playerRecoveryRetryButton.setOnClickListener {
             // User manual retry - resets recovery state and forces stream refresh
             recoveryManager?.resetRecoveryState()
             viewModel.clearRecoveringState()
@@ -345,14 +350,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         }
 
         // Configure Cast button
-        castContext?.let { context ->
-            binding.castButton?.let { button ->
-                androidx.mediarouter.media.MediaControlIntent.CATEGORY_LIVE_VIDEO
-                com.google.android.gms.cast.framework.CastButtonFactory.setUpMediaRouteButton(
-                    requireContext().applicationContext,
-                    button
-                )
-            }
+        castContext?.let {
+            com.google.android.gms.cast.framework.CastButtonFactory.setUpMediaRouteButton(
+                requireContext().applicationContext,
+                binding.castButton
+            )
         }
 
         setupUpNextList(binding)
@@ -381,14 +383,19 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
-        // Auto-enter fullscreen in landscape, exit in portrait
-        val shouldBeFullscreen = newConfig.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-        if (shouldBeFullscreen != isFullscreen) {
-            toggleFullscreen()
+        // Sync fullscreen state with actual orientation
+        // This handles both user-initiated rotation and programmatic rotation
+        val isLandscape = newConfig.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        if (isLandscape != isFullscreen) {
+            // Update state and UI without re-requesting orientation (already changed)
+            isFullscreen = isLandscape
+            updateFullscreenUi()
         }
     }
 
     override fun onDestroyView() {
+        // Reset orientation to allow normal rotation when leaving player
+        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         // Clean up recovery manager
         recoveryManager?.cancel()
         recoveryManager = null
@@ -436,15 +443,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         // If release() throws (extremely rare), it's caught and logged rather than crashing.
         player?.let { playerToRelease ->
             player = null
-            // Use the player's application looper to ensure we're on the correct thread
-            val looper = playerToRelease.applicationLooper
-            android.os.Handler(looper).post {
-                try {
-                    playerToRelease.release()
-                } catch (e: Exception) {
-                    android.util.Log.e("PlayerFragment", "Player release failed: ${e.message}", e)
-                }
-            }
+            releasePlayerAsync(playerToRelease, "onDestroyView")
         }
 
         binding = null
@@ -523,7 +522,51 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         )
 
         // Add listener to auto-hide controls when playback starts and handle errors
-        player.addListener(object : Player.Listener {
+        playbackListener = createPlaybackListener(player)
+        playbackListener?.let { player.addListener(it) }
+
+        // Configure auto-hide controls
+        binding.playerView.apply {
+            setControllerAutoShow(true)
+            setControllerHideOnTouch(true)
+            controllerShowTimeoutMs = 5000 // 5 seconds
+            setShowFastForwardButton(true)
+            setShowNextButton(true)
+            setShowPreviousButton(true)
+
+            // Sync custom overlay controls with Media3 controller visibility
+            setControllerVisibilityListener(
+                PlayerView.ControllerVisibilityListener { visibility ->
+                    android.util.Log.d("PlayerFragment", "Controller visibility changed: $visibility")
+                    binding.playerOverlayControls.visibility = visibility
+
+                    // Re-apply our custom prev/next button states when controller becomes visible
+                    // This prevents Media3 from overriding our button configuration
+                    if (visibility == View.VISIBLE) {
+                        val state = viewModel.state.value
+                        updatePlaylistNavigationButtons(state.hasPrevious, state.hasNext)
+                    }
+                }
+            )
+        }
+
+        // Keep overlay controls visible initially (user needs to see quality button)
+        binding.playerOverlayControls.visibility = View.VISIBLE
+
+        // Setup gesture detector for brightness/volume/seek gestures
+        val window = requireActivity().window
+        val playerGesture = PlayerGestureDetector(requireContext(), player, window)
+        gestureDetector = GestureDetectorCompat(requireContext(), playerGesture)
+
+        // Attach gestures to player view
+        binding.playerView.setOnTouchListener { _, event ->
+            gestureDetector.onTouchEvent(event)
+            false // Allow ExoPlayer to handle other touches
+        }
+    }
+
+    private fun createPlaybackListener(player: ExoPlayer): Player.Listener {
+        return object : Player.Listener {
             private var hasAutoHidden = false
             private var retryCount = 0
             private val maxRetries = 3
@@ -538,7 +581,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     recoveryManager?.onPlaybackStarted()
 
                     // Notify buffer health monitor to start monitoring (progressive streams only)
-                    player?.let { bufferHealthMonitor?.onPlaybackStarted(it) }
+                    bufferHealthMonitor?.onPlaybackStarted(player)
 
                     // PR5: Reset rate limiter backoff for successful playback
                     viewModel.state.value.currentItem?.streamId?.let { streamId ->
@@ -553,12 +596,13 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         // Prefetch next items in queue when current video starts playing
                         viewModel.prefetchNextItems()
 
-                        binding.playerView.postDelayed({
-                            if (player?.isPlaying == true) {
+                        binding?.playerView?.postDelayed({
+                            val currentBinding = binding ?: return@postDelayed
+                            if (player.isPlaying) {
                                 android.util.Log.d("PlayerFragment", "Auto-hiding controls now")
-                                binding.playerView.hideController()
+                                currentBinding.playerView.hideController()
                                 // Also explicitly hide overlay controls
-                                binding.playerOverlayControls?.visibility = View.GONE
+                                currentBinding.playerOverlayControls.visibility = View.GONE
                             }
                         }, 3000) // 3 seconds delay to give user time to see controls
                     }
@@ -572,7 +616,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 android.util.Log.d("PlayerFragment", "onPlaybackStateChanged: state=$playbackState")
 
                 // Delegate to recovery manager for freeze detection
-                player?.let { p -> recoveryManager?.onPlaybackStateChanged(p, playbackState) }
+                recoveryManager?.onPlaybackStateChanged(player, playbackState)
 
                 // When a new video loads, reset the auto-hide flag
                 if (playbackState == Player.STATE_IDLE) {
@@ -589,7 +633,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 if (playbackState == Player.STATE_ENDED) {
                     val advanced = viewModel.markCurrentComplete()
                     if (advanced) {
-                        player?.playWhenReady = true
+                        player.playWhenReady = true
                     }
                 }
             }
@@ -601,7 +645,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     userWantsToPlay = playWhenReady
                 }
                 // Delegate to recovery manager for stuck-in-ready detection
-                player?.let { p -> recoveryManager?.onPlayWhenReadyChanged(p, playWhenReady) }
+                recoveryManager?.onPlayWhenReadyChanged(player, playWhenReady)
             }
 
             override fun onPlayerError(error: PlaybackException) {
@@ -611,6 +655,12 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     "Player error: ${error.errorCodeName}, retryCount=$retryCount, streamRefreshCount=$streamRefreshCount, http=$httpResponseCode",
                     error
                 )
+
+                val lifecycleOwner = viewLifecycleOwnerLiveData.value
+                if (lifecycleOwner == null) {
+                    android.util.Log.w("PlayerFragment", "Skipping error recovery: view lifecycle not available")
+                    return
+                }
 
                 // Handle different error types
                 when (error.errorCode) {
@@ -623,12 +673,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                             val delayMs = retryCount * 1500L
                             android.util.Log.d("PlayerFragment", "Retrying playback in ${delayMs}ms (attempt $retryCount)")
                             // Use lifecycle-aware coroutine to prevent crashes if fragment is destroyed
-                            viewLifecycleOwner.lifecycleScope.launch {
+                            lifecycleOwner.lifecycleScope.launch {
                                 kotlinx.coroutines.delay(delayMs)
-                                player?.let {
-                                    it.prepare()
-                                    it.playWhenReady = true
-                                }
+                                player.prepare()
+                                player.playWhenReady = true
                             }
                         } else {
                             // If prepare retries are exhausted, try re-resolving stream URLs as a last resort.
@@ -671,45 +719,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     }
                 }
             }
-        })
-
-        // Configure auto-hide controls
-        binding.playerView.apply {
-            setControllerAutoShow(true)
-            setControllerHideOnTouch(true)
-            controllerShowTimeoutMs = 5000 // 5 seconds
-            setShowFastForwardButton(true)
-            setShowNextButton(true)
-            setShowPreviousButton(true)
-
-            // Sync custom overlay controls with Media3 controller visibility
-            setControllerVisibilityListener(
-                PlayerView.ControllerVisibilityListener { visibility ->
-                    android.util.Log.d("PlayerFragment", "Controller visibility changed: $visibility")
-                    binding.playerOverlayControls?.visibility = visibility
-
-                    // Re-apply our custom prev/next button states when controller becomes visible
-                    // This prevents Media3 from overriding our button configuration
-                    if (visibility == View.VISIBLE) {
-                        val state = viewModel.state.value
-                        updatePlaylistNavigationButtons(state.hasPrevious, state.hasNext)
-                    }
-                }
-            )
-        }
-
-        // Keep overlay controls visible initially (user needs to see quality button)
-        binding.playerOverlayControls?.visibility = View.VISIBLE
-
-        // Setup gesture detector for brightness/volume/seek gestures
-        val window = requireActivity().window
-        val playerGesture = PlayerGestureDetector(requireContext(), player, window)
-        gestureDetector = GestureDetectorCompat(requireContext(), playerGesture)
-
-        // Attach gestures to player view
-        binding.playerView.setOnTouchListener { _, event ->
-            gestureDetector.onTouchEvent(event)
-            false // Allow ExoPlayer to handle other touches
         }
     }
 
@@ -722,8 +731,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
                 // Update new UI elements with real metadata
                 if (currentItem != null) {
-                    binding.videoTitle?.text = currentItem.title
-                    binding.authorName?.text = currentItem.channelName
+                    binding.videoTitle.text = currentItem.title
+                    binding.authorName.text = currentItem.channelName
 
                     // Format view count and time
                     val viewText = currentItem.viewCount?.let { count ->
@@ -734,23 +743,23 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         }
                     } ?: getString(R.string.player_no_views)
 
-                    binding.videoStats?.text = viewText
-                    binding.videoDescription?.text = currentItem.description ?: getString(R.string.player_no_description)
+                    binding.videoStats.text = viewText
+                    binding.videoDescription.text = currentItem.description ?: getString(R.string.player_no_description)
 
                     // Note: MediaSession metadata sync moved to maybePrepareStream()
                     // to ensure player has a valid media source before updating metadata.
                 } else {
-                    binding.videoTitle?.text = getString(R.string.player_no_current_item)
-                    binding.authorName?.text = ""
-                    binding.videoStats?.text = ""
-                    binding.videoDescription?.text = getString(R.string.player_no_description)
+                    binding.videoTitle.text = getString(R.string.player_no_current_item)
+                    binding.authorName.text = ""
+                    binding.videoStats.text = ""
+                    binding.videoDescription.text = getString(R.string.player_no_description)
                 }
 
                 // Update favorite button UI based on state
-                binding.favoriteIcon?.setImageResource(
+                binding.favoriteIcon.setImageResource(
                     if (state.isFavorite) R.drawable.ic_favorite else R.drawable.ic_favorite_border
                 )
-                binding.favoriteLabel?.text = getString(
+                binding.favoriteLabel.text = getString(
                     if (state.isFavorite) R.string.player_action_favorited else R.string.player_action_favorite
                 )
 
@@ -779,21 +788,27 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         }
     }
 
-    override fun onCreateOptionsMenu(menu: Menu, inflater: MenuInflater) {
-        inflater.inflate(R.menu.player_menu, menu)
-    }
+    /**
+     * MenuProvider implementation for options menu handling.
+     * Replaces deprecated setHasOptionsMenu(true) / onCreateOptionsMenu / onOptionsItemSelected pattern.
+     */
+    private val menuProvider = object : MenuProvider {
+        override fun onCreateMenu(menu: Menu, menuInflater: MenuInflater) {
+            menuInflater.inflate(R.menu.player_menu, menu)
+        }
 
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        return when (item.itemId) {
-            R.id.action_captions -> {
-                showCaptionSelector()
-                true
+        override fun onMenuItemSelected(menuItem: MenuItem): Boolean {
+            return when (menuItem.itemId) {
+                R.id.action_captions -> {
+                    showCaptionSelector()
+                    true
+                }
+                R.id.action_enter_pip -> {
+                    enterPictureInPicture()
+                    true
+                }
+                else -> false
             }
-            R.id.action_enter_pip -> {
-                enterPictureInPicture()
-                true
-            }
-            else -> super.onOptionsItemSelected(item)
         }
     }
 
@@ -974,8 +989,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         when (val streamState = state.streamState) {
             StreamState.Idle -> {
                 binding.playerStatus.text = getString(R.string.player_status_initializing)
-                binding.playerErrorOverlay?.visibility = View.GONE
-                binding.playerRecoveryOverlay?.visibility = View.GONE
+                binding.playerErrorOverlay.visibility = View.GONE
+                binding.playerRecoveryOverlay.visibility = View.GONE
             }
             StreamState.Loading -> {
                 binding.playerStatus.text = if (state.retryCount > 0) {
@@ -983,44 +998,44 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 } else {
                     getString(R.string.player_status_resolving)
                 }
-                binding.playerErrorOverlay?.visibility = View.GONE
-                binding.playerRecoveryOverlay?.visibility = View.GONE
+                binding.playerErrorOverlay.visibility = View.GONE
+                binding.playerRecoveryOverlay.visibility = View.GONE
             }
             is StreamState.Error -> {
                 binding.playerStatus.text = getString(streamState.messageRes)
                 // Show error overlay with retry options
-                binding.playerErrorOverlay?.visibility = View.VISIBLE
-                binding.playerErrorMessage?.text = getString(streamState.messageRes)
-                binding.playerRecoveryOverlay?.visibility = View.GONE
+                binding.playerErrorOverlay.visibility = View.VISIBLE
+                binding.playerErrorMessage.text = getString(streamState.messageRes)
+                binding.playerRecoveryOverlay.visibility = View.GONE
             }
             is StreamState.Ready -> {
                 binding.playerStatus.text = when {
                     state.audioOnly -> getString(R.string.player_status_audio_only)
                     else -> getString(R.string.player_status_video_playing)
                 }
-                binding.playerErrorOverlay?.visibility = View.GONE
-                binding.playerRecoveryOverlay?.visibility = View.GONE
+                binding.playerErrorOverlay.visibility = View.GONE
+                binding.playerRecoveryOverlay.visibility = View.GONE
             }
             is StreamState.Recovering -> {
                 // Show recovery overlay with progress
-                binding.playerRecoveryOverlay?.visibility = View.VISIBLE
-                binding.playerRecoveryProgress?.visibility = View.VISIBLE
-                binding.playerRecoveryMessage?.text = getString(
+                binding.playerRecoveryOverlay.visibility = View.VISIBLE
+                binding.playerRecoveryProgress.visibility = View.VISIBLE
+                binding.playerRecoveryMessage.text = getString(
                     R.string.player_recovering_attempt,
                     streamState.attempt,
                     PlaybackRecoveryManager.MAX_RECOVERY_ATTEMPTS
                 )
-                binding.playerRecoveryRetryButton?.visibility = View.GONE
-                binding.playerErrorOverlay?.visibility = View.GONE
+                binding.playerRecoveryRetryButton.visibility = View.GONE
+                binding.playerErrorOverlay.visibility = View.GONE
                 binding.playerStatus.text = getString(R.string.player_recovering)
             }
             is StreamState.RecoveryExhausted -> {
                 // Show recovery overlay with retry button (exhausted state)
-                binding.playerRecoveryOverlay?.visibility = View.VISIBLE
-                binding.playerRecoveryProgress?.visibility = View.GONE
-                binding.playerRecoveryMessage?.text = getString(R.string.player_recovery_exhausted_message)
-                binding.playerRecoveryRetryButton?.visibility = View.VISIBLE
-                binding.playerErrorOverlay?.visibility = View.GONE
+                binding.playerRecoveryOverlay.visibility = View.VISIBLE
+                binding.playerRecoveryProgress.visibility = View.GONE
+                binding.playerRecoveryMessage.text = getString(R.string.player_recovery_exhausted_message)
+                binding.playerRecoveryRetryButton.visibility = View.VISIBLE
+                binding.playerErrorOverlay.visibility = View.GONE
                 binding.playerStatus.text = getString(R.string.player_recovery_exhausted)
             }
         }
@@ -1065,14 +1080,31 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         val currentPlayer = player ?: return
 
         val resumePosition = currentPlayer.currentPosition.coerceAtLeast(0L)
-        pendingResumeStreamId = currentItem.streamId
-        pendingResumePositionMs = resumePosition.takeIf { it > 0L }
-        pendingResumePlayWhenReady = currentPlayer.playWhenReady
+        val wasPlayWhenReady = currentPlayer.playWhenReady
 
         android.util.Log.w(
             "PlayerFragment",
             "Refreshing stream for ${currentItem.streamId} at ${resumePosition}ms: $reason"
         )
+
+        // PR5: Check if refresh is allowed BEFORE stopping player to avoid leaving playback stuck.
+        // AUTO_RECOVERY has reserved budget that won't be blocked by manual limits.
+        val refreshAllowed = viewModel.forceRefreshForAutoRecovery()
+
+        if (!refreshAllowed) {
+            // Rate-limited: don't stop player, show toast and let current playback continue.
+            // This prevents the player from being stuck in stopped state when refresh is blocked.
+            android.util.Log.w("PlayerFragment", "Stream refresh blocked by rate limiter, continuing playback")
+            context?.let { ctx ->
+                Toast.makeText(ctx, R.string.player_refresh_rate_limited, Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
+
+        // Refresh is proceeding - now safe to stop player and clear state
+        pendingResumeStreamId = currentItem.streamId
+        pendingResumePositionMs = resumePosition.takeIf { it > 0L }
+        pendingResumePlayWhenReady = wasPlayWhenReady
 
         preparedStreamKey = null
         preparedStreamUrl = null
@@ -1085,10 +1117,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         context?.let { ctx ->
             Toast.makeText(ctx, R.string.player_status_resolving, Toast.LENGTH_SHORT).show()
         }
-
-        // PR5: Use auto-recovery method - this is called from error handlers and recovery ladder,
-        // not from user buttons. AUTO_RECOVERY has reserved budget that won't be blocked by manual limits.
-        viewModel.forceRefreshForAutoRecovery()
     }
 
     private fun findHttpResponseCode(throwable: Throwable?): Int? {
@@ -1456,13 +1484,43 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 recoveryManager = null
 
                 // Release and recreate player (setupPlayer creates new recoveryManager)
-                player?.release()
-                player = null
+                player?.let { playerToRelease ->
+                    player = null
+                    releasePlayerAsync(playerToRelease, "rebuild")
+                }
                 binding?.let { setupPlayer(it) }
 
                 // PR5: Force stream refresh using auto-recovery method - this is the final recovery step,
                 // uses reserved budget that won't be blocked by manual limits.
-                viewModel.forceRefreshForAutoRecovery()
+                val refreshAllowed = viewModel.forceRefreshForAutoRecovery()
+                if (!refreshAllowed) {
+                    // Rebuild is the last recovery step - if blocked, transition to exhausted state
+                    android.util.Log.w("PlayerFragment", "Rebuild refresh blocked, setting recovery exhausted")
+                    viewModel.setRecoveryExhaustedState()
+                }
+            }
+        }
+    }
+
+    private fun releasePlayerAsync(playerToRelease: ExoPlayer, reason: String) {
+        // Remove listeners immediately to avoid duplicate callbacks while release is deferred.
+        playerToRelease.removeListener(viewModel.playerListener)
+        playbackListener?.let { playerToRelease.removeListener(it) }
+        playbackListener = null
+        // Stop playback immediately to avoid overlap while release() is deferred.
+        try {
+            playerToRelease.playWhenReady = false
+            playerToRelease.stop()
+        } catch (e: Exception) {
+            android.util.Log.w("PlayerFragment", "Player stop failed ($reason): ${e.message}", e)
+        }
+        // Use the player's application looper to ensure we're on the correct thread
+        val looper = playerToRelease.applicationLooper
+        android.os.Handler(looper).post {
+            try {
+                playerToRelease.release()
+            } catch (e: Exception) {
+                android.util.Log.e("PlayerFragment", "Player release failed ($reason): ${e.message}", e)
             }
         }
     }
@@ -1582,32 +1640,21 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private fun shareCurrentVideo() {
         val currentItem = viewModel.state.value.currentItem ?: return
 
-        // Truncate title and description to 2 lines max (approximately 80 chars per line)
-        val maxChars = 160
-        val title = if (currentItem.title.length > maxChars) {
-            currentItem.title.take(maxChars - 3) + "..."
+        // Truncate title to 2 lines max (approximately 80 chars per line)
+        val maxTitleChars = 160
+        val title = if (currentItem.title.length > maxTitleChars) {
+            currentItem.title.take(maxTitleChars - 3) + "..."
         } else {
             currentItem.title
         }
 
-        val description = currentItem.description?.let { desc ->
-            if (desc.length > maxChars) {
-                desc.take(maxChars - 3) + "..."
-            } else {
-                desc
-            }
-        } ?: ""
-
-        // Use app deep link instead of YouTube URL
-        // This encourages users to install our app rather than visiting YouTube
+        // Use app deep link - directs users to install/open our app
         val videoDeepLink = "albunyaantube://video/${currentItem.streamId}"
 
+        // Simple, clean share message - title, deep link, and app promo
+        // Skip description as it often contains HTML tags (<br>, etc.)
         val shareMessage = buildString {
             append(title)
-            if (description.isNotEmpty()) {
-                append("\n\n")
-                append(description)
-            }
             append("\n\n")
             append(getString(R.string.share_watch_in_app))
             append("\n")
@@ -1616,7 +1663,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             append(getString(R.string.share_app_promo))
         }
 
-        // For now, share text only (thumbnail sharing requires downloading the image first)
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
             putExtra(Intent.EXTRA_SUBJECT, title)
@@ -1626,37 +1672,71 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         startActivity(Intent.createChooser(shareIntent, getString(R.string.share_video_chooser)))
     }
 
+    /**
+     * Toggle fullscreen mode - called when user taps fullscreen button.
+     * Requests orientation change which will trigger onConfigurationChanged -> updateFullscreenUi.
+     */
     private fun toggleFullscreen() {
-        val binding = this.binding ?: return
         isFullscreen = !isFullscreen
+
+        if (isFullscreen) {
+            // Request landscape orientation - will trigger onConfigurationChanged
+            requireActivity().requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        } else {
+            // Request portrait orientation - will trigger onConfigurationChanged
+            requireActivity().requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
+
+        // Update UI immediately (don't wait for orientation change callback)
+        updateFullscreenUi()
+
+        // If exiting fullscreen, allow sensor-based rotation again after a short delay
+        if (!isFullscreen) {
+            viewLifecycleOwner.lifecycleScope.launch {
+                kotlinx.coroutines.delay(500)
+                if (isAdded) {
+                    requireActivity().requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                }
+            }
+        }
+    }
+
+    /**
+     * Update fullscreen UI state without changing orientation.
+     * Called from both toggleFullscreen() and onConfigurationChanged().
+     */
+    private fun updateFullscreenUi() {
+        val binding = this.binding ?: return
 
         if (isFullscreen) {
             // Hide bottom navigation FIRST (this sets it to View.GONE)
             (requireActivity() as? com.albunyaan.tube.ui.MainActivity)?.setBottomNavVisibility(false)
 
             // Enter fullscreen - Use system UI flags for status bar and system navigation
-            // Don't use HIDE_NAVIGATION flag as it conflicts with our custom bottom nav
+            // Hide navigation bar as well for true immersive fullscreen
             @Suppress("DEPRECATION")
             requireActivity().window.decorView.systemUiVisibility = (
                 View.SYSTEM_UI_FLAG_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
                 or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
                 or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
                 or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
             )
 
             // Hide scrollable content
-            binding.playerScrollView?.visibility = View.GONE
+            binding.playerScrollView.visibility = View.GONE
 
             // Expand AppBar to fill screen (do this before player container manipulation)
-            binding.appBarLayout?.layoutParams?.let { params ->
+            binding.appBarLayout.layoutParams?.let { params ->
                 if (params is androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams) {
                     params.height = ViewGroup.LayoutParams.MATCH_PARENT
                 }
-                binding.appBarLayout?.layoutParams = params
+                binding.appBarLayout.layoutParams = params
             }
 
             // Center the player container (FrameLayout) within AppBarLayout
-            binding.playerView?.parent?.let { parent ->
+            binding.playerView.parent?.let { parent ->
                 if (parent is android.widget.FrameLayout) {
                     parent.layoutParams?.let { frameParams ->
                         if (frameParams is com.google.android.material.appbar.AppBarLayout.LayoutParams) {
@@ -1671,20 +1751,20 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             }
 
             // Set player to wrap content (aspect ratio) and center it
-            binding.playerView?.layoutParams?.let { playerParams ->
+            binding.playerView.layoutParams?.let { playerParams ->
                 if (playerParams is android.widget.FrameLayout.LayoutParams) {
                     playerParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
                     playerParams.width = ViewGroup.LayoutParams.MATCH_PARENT
                     playerParams.gravity = android.view.Gravity.CENTER
                 }
-                binding.playerView?.layoutParams = playerParams
+                binding.playerView.layoutParams = playerParams
             }
 
             // Make player resize mode to FIT for proper aspect ratio
-            binding.playerView?.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+            binding.playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
 
             // Update button icon
-            binding.fullscreenButton?.setImageResource(R.drawable.ic_fullscreen_exit)
+            binding.fullscreenButton.setImageResource(R.drawable.ic_fullscreen_exit)
         } else {
             // Exit fullscreen - Clear system UI flags
             @Suppress("DEPRECATION")
@@ -1694,18 +1774,18 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             (requireActivity() as? com.albunyaan.tube.ui.MainActivity)?.setBottomNavVisibility(true)
 
             // Show scrollable content
-            binding.playerScrollView?.visibility = View.VISIBLE
+            binding.playerScrollView.visibility = View.VISIBLE
 
             // Restore AppBar to normal size
-            binding.appBarLayout?.layoutParams?.let { params ->
+            binding.appBarLayout.layoutParams?.let { params ->
                 if (params is androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams) {
                     params.height = ViewGroup.LayoutParams.WRAP_CONTENT
                 }
-                binding.appBarLayout?.layoutParams = params
+                binding.appBarLayout.layoutParams = params
             }
 
             // Restore player container (FrameLayout) to normal size
-            binding.playerView?.parent?.let { parent ->
+            binding.playerView.parent?.let { parent ->
                 if (parent is android.widget.FrameLayout) {
                     parent.layoutParams?.let { frameParams ->
                         if (frameParams is com.google.android.material.appbar.AppBarLayout.LayoutParams) {
@@ -1720,20 +1800,20 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             }
 
             // Restore player to normal size
-            binding.playerView?.layoutParams?.let { playerParams ->
+            binding.playerView.layoutParams?.let { playerParams ->
                 if (playerParams is android.widget.FrameLayout.LayoutParams) {
                     playerParams.height = resources.getDimensionPixelSize(R.dimen.player_portrait_height)
                     playerParams.width = ViewGroup.LayoutParams.MATCH_PARENT
                     playerParams.gravity = android.view.Gravity.NO_GRAVITY
                 }
-                binding.playerView?.layoutParams = playerParams
+                binding.playerView.layoutParams = playerParams
             }
 
             // Restore resize mode
-            binding.playerView?.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+            binding.playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
 
             // Update button icon
-            binding.fullscreenButton?.setImageResource(R.drawable.ic_fullscreen)
+            binding.fullscreenButton.setImageResource(R.drawable.ic_fullscreen)
         }
     }
 
@@ -1760,7 +1840,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // Build Cast media metadata
             val metadata = com.google.android.gms.cast.MediaMetadata(com.google.android.gms.cast.MediaMetadata.MEDIA_TYPE_MOVIE)
             metadata.putString(com.google.android.gms.cast.MediaMetadata.KEY_TITLE, currentItem.title)
-            metadata.putString(com.google.android.gms.cast.MediaMetadata.KEY_SUBTITLE, currentItem.channelName ?: "")
+            metadata.putString(com.google.android.gms.cast.MediaMetadata.KEY_SUBTITLE, currentItem.channelName)
 
             // Add thumbnail if available
             currentItem.thumbnailUrl?.let { thumbUrl ->
@@ -1938,16 +2018,20 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // AUTO_RECOVERY: System downshift via QualityStepDownHelper. This may select same-height/
             // lower-bitrate tracks, so we must compare both height AND bitrate to detect the change.
             if (selection.selectionOrigin == QualitySelectionOrigin.MANUAL) {
-                val requestedHeight = selection.video?.height
-                val preparedHeight = factorySelectedVideoTrack?.height
+                val requestedVideo = selection.video ?: return CacheHitResult.Miss
+                val preparedVideo = factorySelectedVideoTrack ?: return CacheHitResult.Miss
+                val requestedHeight = requestedVideo.height
+                val preparedHeight = preparedVideo.height
                 // If heights differ or either is null (missing track info), must rebuild for safety.
                 if (requestedHeight == null || preparedHeight == null || requestedHeight != preparedHeight) {
                     return CacheHitResult.Miss
                 }
                 // Heights match - MANUAL selection at same resolution is idempotent
             } else if (selection.selectionOrigin == QualitySelectionOrigin.AUTO_RECOVERY) {
-                val requestedHeight = selection.video?.height
-                val preparedHeight = factorySelectedVideoTrack?.height
+                val requestedVideo = selection.video ?: return CacheHitResult.Miss
+                val preparedVideo = factorySelectedVideoTrack ?: return CacheHitResult.Miss
+                val requestedHeight = requestedVideo.height
+                val preparedHeight = preparedVideo.height
                 // If heights differ or either is null (missing track info), must rebuild for safety.
                 if (requestedHeight == null || preparedHeight == null || requestedHeight != preparedHeight) {
                     return CacheHitResult.Miss
@@ -1955,8 +2039,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 // Heights match - also check bitrate for same-height downshifts.
                 // QualityStepDownHelper can select same-height/lower-bitrate tracks.
                 // Only compare when both have valid bitrates; skip if either is missing.
-                val requestedBitrate = selection.video?.bitrate?.takeIf { it > 0 }
-                val preparedBitrate = factorySelectedVideoTrack?.bitrate?.takeIf { it > 0 }
+                val requestedBitrate = requestedVideo.bitrate?.takeIf { it > 0 }
+                val preparedBitrate = preparedVideo.bitrate?.takeIf { it > 0 }
                 if (requestedBitrate != null && preparedBitrate != null && requestedBitrate != preparedBitrate) {
                     return CacheHitResult.Miss
                 }
@@ -1968,8 +2052,17 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         val urlMatches = when {
             preparedIsAdaptive && wouldUseAdaptive -> {
-                // Both are adaptive - manifest URL comparison
-                preparedStreamUrl == (resolved.hlsUrl ?: resolved.dashUrl)
+                // Both are adaptive - compare against the actual URL we prepared with.
+                // Use preparedAdaptiveType to match the correct manifest URL.
+                // This prevents rebuild loops when HLS fails and we fall back to DASH:
+                // preparedStreamUrl=DASH, but (resolved.hlsUrl ?: resolved.dashUrl)=HLS would mismatch.
+                val expectedAdaptiveUrl = when (preparedAdaptiveType) {
+                    MediaSourceResult.AdaptiveType.HLS -> resolved.hlsUrl
+                    MediaSourceResult.AdaptiveType.DASH -> resolved.dashUrl
+                    // SYNTHETIC_DASH is handled above; for safety, fall back to preference order
+                    else -> resolved.hlsUrl ?: resolved.dashUrl
+                }
+                preparedStreamUrl == expectedAdaptiveUrl
             }
             !preparedIsAdaptive && !wouldUseAdaptive -> {
                 // Both are progressive - compare against correct URL (video or audio)

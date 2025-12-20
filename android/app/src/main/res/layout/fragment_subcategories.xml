@@ -4,19 +4,19 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/background_gray">
+    android:background="?attr/colorSurfaceVariant">
 
     <!-- Toolbar with back button -->
     <com.google.android.material.appbar.MaterialToolbar
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
-        android:background="@android:color/white"
+        android:background="?attr/colorSurface"
         android:elevation="@dimen/elevation_sm"
         app:navigationIcon="?attr/homeAsUpIndicator"
-        app:title="Subcategories"
+        app:title="@string/subcategories_title"
         app:titleTextAppearance="@style/TextAppearance.MaterialComponents.Headline6"
-        app:titleTextColor="@android:color/black"/>
+        app:titleTextColor="?attr/colorOnSurface"/>
 
     <!-- Subcategories List -->
     <androidx.recyclerview.widget.RecyclerView

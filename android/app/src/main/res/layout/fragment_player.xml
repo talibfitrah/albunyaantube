@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="?attr/colorSurface">
@@ -264,46 +265,49 @@
                 android:id="@+id/videoTitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:padding="16dp"
-                android:text="Video Title"
+                android:padding="@dimen/spacing_md"
+                android:textAlignment="viewStart"
                 android:textColor="?attr/colorOnSurface"
-                android:textSize="18sp"
-                android:textStyle="bold" />
+                android:textSize="@dimen/text_section_title"
+                android:textStyle="bold"
+                tools:text="Video Title" />
 
             <!-- Author Name -->
             <TextView
                 android:id="@+id/authorName"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:text="Author Name"
+                android:paddingStart="@dimen/spacing_md"
+                android:paddingEnd="@dimen/spacing_md"
+                android:textAlignment="viewStart"
                 android:textColor="@color/primary_green"
-                android:textSize="14sp" />
+                android:textSize="@dimen/text_body"
+                tools:text="Author Name" />
 
             <!-- Views and Date -->
             <TextView
                 android:id="@+id/videoStats"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:paddingStart="16dp"
-                android:paddingTop="4dp"
-                android:paddingEnd="16dp"
-                android:paddingBottom="8dp"
-                android:text="0 views • Jan 1, 2025"
+                android:paddingStart="@dimen/spacing_md"
+                android:paddingTop="@dimen/spacing_xs"
+                android:paddingEnd="@dimen/spacing_md"
+                android:paddingBottom="@dimen/spacing_sm"
+                android:textAlignment="viewStart"
                 android:textColor="?android:attr/textColorSecondary"
-                android:textSize="12sp" />
+                android:textSize="@dimen/text_caption"
+                tools:text="0 views • Jan 1, 2025" />
 
             <!-- Description Card -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/descriptionCard"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="16dp"
-                android:layout_marginTop="8dp"
-                android:layout_marginEnd="16dp"
-                android:layout_marginBottom="8dp"
-                app:cardCornerRadius="8dp"
+                android:layout_marginStart="@dimen/spacing_md"
+                android:layout_marginTop="@dimen/spacing_sm"
+                android:layout_marginEnd="@dimen/spacing_md"
+                android:layout_marginBottom="@dimen/spacing_sm"
+                app:cardCornerRadius="@dimen/thumbnail_corner_radius"
                 app:cardElevation="0dp"
                 app:strokeWidth="0dp">
 
@@ -321,22 +325,23 @@
                         android:clickable="true"
                         android:focusable="true"
                         android:orientation="horizontal"
-                        android:padding="12dp"
+                        android:padding="@dimen/spacing_sm"
                         android:contentDescription="@string/player_toggle_description">
 
                         <TextView
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="Description"
+                            android:text="@string/player_description"
+                            android:textAlignment="viewStart"
                             android:textColor="?attr/colorOnSurface"
-                            android:textSize="14sp"
+                            android:textSize="@dimen/text_body"
                             android:textStyle="bold" />
 
                         <ImageView
                             android:id="@+id/descriptionArrow"
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
+                            android:layout_width="@dimen/icon_small"
+                            android:layout_height="@dimen/icon_small"
                             android:src="@drawable/ic_expand_more"
                             app:tint="?attr/colorOnSurface"
                             android:importantForAccessibility="no" />
@@ -348,12 +353,13 @@
                         android:id="@+id/videoDescription"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:paddingStart="12dp"
-                        android:paddingEnd="12dp"
-                        android:paddingBottom="12dp"
-                        android:text="No description available"
+                        android:paddingStart="@dimen/spacing_sm"
+                        android:paddingEnd="@dimen/spacing_sm"
+                        android:paddingBottom="@dimen/spacing_sm"
+                        android:text="@string/player_no_description"
+                        android:textAlignment="viewStart"
                         android:textColor="?attr/colorOnSurface"
-                        android:textSize="14sp"
+                        android:textSize="@dimen/text_body"
                         android:visibility="gone" />
 
                 </LinearLayout>
@@ -365,7 +371,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:padding="16dp"
+                android:padding="@dimen/spacing_md"
                 android:gravity="center"
                 android:weightSum="4">
 
@@ -380,13 +386,13 @@
                     android:background="?attr/selectableItemBackground"
                     android:clickable="true"
                     android:focusable="true"
-                    android:padding="12dp"
+                    android:padding="@dimen/spacing_sm"
                     android:contentDescription="@string/player_action_favorite">
 
                     <ImageView
                         android:id="@+id/favoriteIcon"
-                        android:layout_width="24dp"
-                        android:layout_height="24dp"
+                        android:layout_width="@dimen/icon_small"
+                        android:layout_height="@dimen/icon_small"
                         android:src="@drawable/ic_favorite_border"
                         app:tint="@color/primary_green" />
 
@@ -394,10 +400,11 @@
                         android:id="@+id/favoriteLabel"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
+                        android:layout_marginTop="@dimen/spacing_xs"
                         android:text="@string/player_action_favorite"
+                        android:textAlignment="center"
                         android:textColor="@color/primary_green"
-                        android:textSize="12sp" />
+                        android:textSize="@dimen/text_caption" />
 
                 </LinearLayout>
 
@@ -412,22 +419,23 @@
                     android:background="?attr/selectableItemBackground"
                     android:clickable="true"
                     android:focusable="true"
-                    android:padding="12dp"
+                    android:padding="@dimen/spacing_sm"
                     android:contentDescription="@string/player_action_share">
 
                     <ImageView
-                        android:layout_width="24dp"
-                        android:layout_height="24dp"
+                        android:layout_width="@dimen/icon_small"
+                        android:layout_height="@dimen/icon_small"
                         android:src="@drawable/ic_share"
                         app:tint="@color/primary_green" />
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
+                        android:layout_marginTop="@dimen/spacing_xs"
                         android:text="@string/player_action_share"
+                        android:textAlignment="center"
                         android:textColor="@color/primary_green"
-                        android:textSize="12sp" />
+                        android:textSize="@dimen/text_caption" />
 
                 </LinearLayout>
 
@@ -442,22 +450,23 @@
                     android:background="?attr/selectableItemBackground"
                     android:clickable="true"
                     android:focusable="true"
-                    android:padding="12dp"
+                    android:padding="@dimen/spacing_sm"
                     android:contentDescription="@string/player_action_download">
 
                     <ImageView
-                        android:layout_width="24dp"
-                        android:layout_height="24dp"
+                        android:layout_width="@dimen/icon_small"
+                        android:layout_height="@dimen/icon_small"
                         android:src="@drawable/outline_download_24"
                         app:tint="@color/primary_green" />
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
+                        android:layout_marginTop="@dimen/spacing_xs"
                         android:text="@string/player_button_download"
+                        android:textAlignment="center"
                         android:textColor="@color/primary_green"
-                        android:textSize="12sp" />
+                        android:textSize="@dimen/text_caption" />
 
                 </LinearLayout>
 
@@ -472,22 +481,23 @@
                     android:background="?attr/selectableItemBackground"
                     android:clickable="true"
                     android:focusable="true"
-                    android:padding="12dp"
+                    android:padding="@dimen/spacing_sm"
                     android:contentDescription="@string/player_audio_only_label">
 
                     <ImageView
-                        android:layout_width="24dp"
-                        android:layout_height="24dp"
+                        android:layout_width="@dimen/icon_small"
+                        android:layout_height="@dimen/icon_small"
                         android:src="@drawable/ic_headphones"
                         app:tint="@color/primary_green" />
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
+                        android:layout_marginTop="@dimen/spacing_xs"
                         android:text="@string/player_action_audio"
+                        android:textAlignment="center"
                         android:textColor="@color/primary_green"
-                        android:textSize="12sp" />
+                        android:textSize="@dimen/text_caption" />
 
                 </LinearLayout>
 
@@ -504,10 +514,11 @@
         android:id="@+id/upNextHeader"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:padding="16dp"
+        android:padding="@dimen/spacing_md"
         android:text="@string/player_up_next_header"
+        android:textAlignment="viewStart"
         android:textColor="?attr/colorOnSurface"
-        android:textSize="16sp"
+        android:textSize="@dimen/text_subtitle"
         android:textStyle="bold" />
 
             <androidx.recyclerview.widget.RecyclerView
@@ -515,7 +526,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:nestedScrollingEnabled="false"
-                android:paddingBottom="16dp" />
+                android:paddingBottom="@dimen/spacing_md" />
 
             <!-- Hidden Views for Compatibility -->
             <TextView

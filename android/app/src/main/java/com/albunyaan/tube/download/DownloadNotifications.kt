@@ -17,11 +17,11 @@ class DownloadNotifications(private val context: Context) {
 
     fun createForegroundInfo(downloadId: String, title: String, progress: Int): ForegroundInfo {
         ensureChannel()
-        val notification = buildNotification(downloadId, title, progress)
+        val notification = buildNotification(title, progress)
         return ForegroundInfo(NOTIFICATION_ID_BASE + downloadId.hashCode(), notification)
     }
 
-    private fun buildNotification(downloadId: String, title: String, progress: Int): Notification {
+    private fun buildNotification(title: String, progress: Int): Notification {
         val contentIntent = PendingIntent.getActivity(
             context,
             0,
@@ -56,7 +56,7 @@ class DownloadNotifications(private val context: Context) {
      */
     fun updateProgress(downloadId: String, title: String, progress: Int) {
         ensureChannel()
-        val notification = buildNotification(downloadId, title, progress)
+        val notification = buildNotification(title, progress)
         NotificationManagerCompat.from(context)
             .notify(NOTIFICATION_ID_BASE + downloadId.hashCode(), notification)
     }

@@ -1,6 +1,7 @@
 package com.albunyaan.tube.ui.detail
 
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.albunyaan.tube.data.channel.Page
@@ -63,6 +64,13 @@ class PlaylistDetailViewModel @AssistedInject constructor(
 
     // Pagination controller
     private val paginationController = PaginationController()
+    @Volatile
+    private var clock: () -> Long = { System.currentTimeMillis() }
+
+    @VisibleForTesting
+    fun setClockForTesting(clock: () -> Long) {
+        this.clock = clock
+    }
 
     init {
         loadHeader()
@@ -157,7 +165,7 @@ class PlaylistDetailViewModel @AssistedInject constructor(
             return
         }
 
-        val now = System.currentTimeMillis()
+        val now = clock()
         if (now - paginationController.lastAppendRequestMs < MIN_APPEND_INTERVAL_MS) {
             Log.d(TAG, "Skipping loadNextPage - rate limited")
             return
@@ -275,8 +283,8 @@ class PlaylistDetailViewModel @AssistedInject constructor(
 
                 // Collect all items first (paginating through the playlist)
                 val allItems = mutableListOf<PlaylistItem>()
-                var currentPage: Page? = null
-                var nextItemOffset = 1
+                var currentPage: Page?
+                var nextItemOffset: Int
                 var pageCount = 0
 
                 // Get items from current state first if available
@@ -494,7 +502,7 @@ class PlaylistDetailViewModel @AssistedInject constructor(
 
     companion object {
         private const val TAG = "PlaylistDetailVM"
-        private const val MIN_APPEND_INTERVAL_MS = 1000L // Rate limit: 1 second between requests
+        internal const val MIN_APPEND_INTERVAL_MS = 1000L // Rate limit: 1 second between requests
         private const val PAGINATION_THRESHOLD = 5 // Trigger pagination when 5 items from end
         private const val MAX_DOWNLOAD_ITEMS_CAP = 500 // Max items to download in a playlist
         private const val PAGINATION_DELAY_MS = 500L // Delay between pages when collecting for download

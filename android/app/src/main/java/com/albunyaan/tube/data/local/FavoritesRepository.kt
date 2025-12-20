@@ -100,7 +100,8 @@ class FavoritesRepositoryImpl @Inject constructor(
             thumbnailUrl = thumbnailUrl,
             durationSeconds = durationSeconds
         )
-        favoriteVideoDao.addFavorite(favorite)
+        // Use upsert to update metadata while preserving addedAt for existing favorites
+        favoriteVideoDao.upsertFavorite(favorite)
     }
 
     override suspend fun removeFavorite(videoId: String) {

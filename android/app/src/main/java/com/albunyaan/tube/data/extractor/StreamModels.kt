@@ -1,5 +1,7 @@
 package com.albunyaan.tube.data.extractor
 
+import android.os.SystemClock
+
 /**
  * Metadata required for synthetic DASH MPD generation.
  * Stored from NewPipe's ItagItem during extraction.
@@ -62,11 +64,17 @@ data class ResolvedStreams(
     /** DASH manifest URL for adaptive streaming (alternative to HLS) */
     val dashUrl: String? = null,
     /**
-     * Timestamp when the stream URLs were generated (System.currentTimeMillis).
+     * Monotonic timestamp when the stream URLs were generated (SystemClock.elapsedRealtime).
+     * Uses monotonic time to avoid issues with user clock changes.
      * YouTube stream URLs typically expire after ~6 hours, but we use a conservative
      * 1-hour TTL to ensure quality switches use fresh URLs.
      */
-    val urlGeneratedAt: Long = System.currentTimeMillis()
+    val urlGeneratedAt: Long = SystemClock.elapsedRealtime(),
+    /**
+     * Version marker for the urlGeneratedAt timebase.
+     * Bump if the time source changes to avoid comparing incompatible timestamps.
+     */
+    val urlTimebaseVersion: Int = URL_TIMEBASE_VERSION
 ) {
     companion object {
         /**
@@ -75,14 +83,21 @@ data class ResolvedStreams(
          * preventing playback failures during quality switches.
          */
         const val URL_TTL_MS = 60 * 60 * 1000L // 1 hour
+        /** Timebase version for urlGeneratedAt timestamps. */
+        const val URL_TIMEBASE_VERSION = 1
     }
 
     /**
      * Check if the stream URLs are likely expired based on urlGeneratedAt.
-     * @param nowMs Current time in milliseconds (default: System.currentTimeMillis())
+     * Uses monotonic time (SystemClock.elapsedRealtime) to avoid issues with
+     * user clock changes that could cause false expiry. If the clock moves
+     * backwards (e.g., process restore with stale data), treat URLs as expired.
+     * @param nowMs Current monotonic time in milliseconds (default: SystemClock.elapsedRealtime())
      * @return true if URLs are likely expired and should be refreshed
      */
-    fun areUrlsExpired(nowMs: Long = System.currentTimeMillis()): Boolean {
+    fun areUrlsExpired(nowMs: Long = SystemClock.elapsedRealtime()): Boolean {
+        if (urlTimebaseVersion != URL_TIMEBASE_VERSION) return true
+        if (nowMs < urlGeneratedAt) return true
         return (nowMs - urlGeneratedAt) > URL_TTL_MS
     }
 }

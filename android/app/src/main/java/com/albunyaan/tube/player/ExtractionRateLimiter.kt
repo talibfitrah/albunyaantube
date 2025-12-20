@@ -24,10 +24,10 @@ import javax.inject.Singleton
  * - Applies exponential backoff for repeated force refreshes
  *
  * Guardrails:
- * - Per-video: Max 3 attempts per 5 minutes
- * - Global: Max 10 attempts per minute across all videos
- * - Auto-recovery gets 2 reserved attempts even if manual budget exhausted
- * - Backoff: Exponential delay after repeated attempts (2s, 4s, 8s, 16s, 32s, capped at 60s)
+ * - Per-video: Manual attempts capped at 3 per 5 minutes (auto-recovery has reserved budget)
+ * - Global: Max 10 attempts per minute across all videos (auto-recovery bypasses)
+ * - Auto-recovery gets 2 reserved attempts even if manual budget exhausted (may exceed manual cap)
+ * - Backoff: Exponential delay after repeated manual attempts (2s, 4s, 8s, 16s, 32s, capped at 60s)
  */
 @Singleton
 class ExtractionRateLimiter @Inject constructor() {
@@ -48,13 +48,13 @@ class ExtractionRateLimiter @Inject constructor() {
     companion object {
         private const val TAG = "ExtractionRateLimiter"
 
-        /** Minimum interval between extractions for the same video */
+        /** Minimum interval between extractions for the same video and request kind */
         private const val MIN_EXTRACTION_INTERVAL_MS = 30_000L // 30 seconds
 
         /** Time window for per-video rate limiting */
         private const val PER_VIDEO_WINDOW_MS = 5 * 60 * 1000L // 5 minutes
 
-        /** Maximum attempts per video within the window (all kinds combined) */
+        /** Manual attempts per video within the window (auto-recovery has reserved budget) */
         private const val MAX_ATTEMPTS_PER_VIDEO = 3
 
         /** Time window for global rate limiting */
@@ -91,9 +91,14 @@ class ExtractionRateLimiter @Inject constructor() {
     /** Tracks extraction history per video ID */
     private data class ExtractionRecord(
         val attemptTimestamps: MutableList<Long> = mutableListOf(),
-        var consecutiveAttempts: Int = 0,
-        var lastAttemptTime: Long = 0L,
-        var autoRecoveryAttemptsInWindow: Int = 0
+        /** Consecutive MANUAL attempts for exponential backoff. Only MANUAL increments this. */
+        var consecutiveManualAttempts: Int = 0,
+        var lastManualAttemptTime: Long = 0L,
+        var lastAutoRecoveryAttemptTime: Long = 0L,
+        var lastPrefetchAttemptTime: Long = 0L,
+        val manualAttemptTimestamps: MutableList<Long> = mutableListOf(),
+        val autoRecoveryAttemptTimestamps: MutableList<Long> = mutableListOf(),
+        val prefetchAttemptTimestamps: MutableList<Long> = mutableListOf()
     )
 
     private val perVideoRecords = ConcurrentHashMap<String, ExtractionRecord>()
@@ -127,31 +132,37 @@ class ExtractionRateLimiter @Inject constructor() {
         val now = clock()
         maybeCleanup(now)
 
-        // Check global rate limit first
-        val globalResult = checkGlobalLimit(now)
+        // Check global rate limit with kind-awareness.
+        // AUTO_RECOVERY has highest priority - it bypasses global limits to ensure
+        // playback recovery is never blocked by manual/prefetch request storms.
+        // This is critical because blocking recovery would leave users stuck on broken playback.
+        val globalResult = checkGlobalLimit(now, kind)
         if (globalResult !is RateLimitResult.Allowed) {
             Log.w(TAG, "Global rate limit hit for $videoId ($kind): $globalResult")
             return globalResult
         }
 
         // Check per-video rate limit
-        val record = perVideoRecords.getOrPut(videoId) { ExtractionRecord() }
+        val record = perVideoRecords.computeIfAbsent(videoId) { ExtractionRecord() }
         synchronized(record) {
             // Clean old timestamps
             record.attemptTimestamps.removeAll { now - it > PER_VIDEO_WINDOW_MS }
+            record.manualAttemptTimestamps.removeAll { now - it > PER_VIDEO_WINDOW_MS }
+            record.autoRecoveryAttemptTimestamps.removeAll { now - it > PER_VIDEO_WINDOW_MS }
+            record.prefetchAttemptTimestamps.removeAll { now - it > PER_VIDEO_WINDOW_MS }
 
-            // Reset auto-recovery counter if window expired
-            if (record.attemptTimestamps.isEmpty()) {
-                record.autoRecoveryAttemptsInWindow = 0
+            // Check minimum interval (per request kind)
+            val lastAttemptTimeForKind = when (kind) {
+                RequestKind.MANUAL -> record.lastManualAttemptTime
+                RequestKind.AUTO_RECOVERY -> record.lastAutoRecoveryAttemptTime
+                RequestKind.PREFETCH -> record.lastPrefetchAttemptTime
             }
-
-            // Check minimum interval (applies to all kinds)
-            if (record.lastAttemptTime > 0) {
-                val timeSinceLastAttempt = now - record.lastAttemptTime
+            if (lastAttemptTimeForKind > 0) {
+                val timeSinceLastAttempt = now - lastAttemptTimeForKind
                 if (timeSinceLastAttempt < MIN_EXTRACTION_INTERVAL_MS) {
                     // Auto-recovery gets a pass on minimum interval for first attempt
                     val isFirstAutoRecovery = kind == RequestKind.AUTO_RECOVERY &&
-                            record.autoRecoveryAttemptsInWindow == 0
+                            record.autoRecoveryAttemptTimestamps.isEmpty()
                     if (!isFirstAutoRecovery) {
                         val delayMs = MIN_EXTRACTION_INTERVAL_MS - timeSinceLastAttempt
                         Log.d(TAG, "Min interval not elapsed for $videoId ($kind): ${delayMs}ms remaining")
@@ -162,11 +173,12 @@ class ExtractionRateLimiter @Inject constructor() {
 
             // Check per-video limit with kind-specific handling
             val attemptsInWindow = record.attemptTimestamps.size
+            val autoRecoveryAttemptsInWindow = record.autoRecoveryAttemptTimestamps.size
 
             when (kind) {
                 RequestKind.AUTO_RECOVERY -> {
                     // Auto-recovery has reserved budget - can proceed even if manual exhausted
-                    if (record.autoRecoveryAttemptsInWindow >= AUTO_RECOVERY_RESERVED_ATTEMPTS) {
+                    if (autoRecoveryAttemptsInWindow >= AUTO_RECOVERY_RESERVED_ATTEMPTS) {
                         // Check if we're also over total budget
                         if (attemptsInWindow >= MAX_ATTEMPTS_PER_VIDEO) {
                             val oldestInWindow = record.attemptTimestamps.minOrNull() ?: now
@@ -192,12 +204,12 @@ class ExtractionRateLimiter @Inject constructor() {
                     }
 
                     // Apply exponential backoff for manual force refreshes
-                    if (record.consecutiveAttempts > 0) {
-                        val backoffMs = calculateBackoff(record.consecutiveAttempts)
-                        val timeSinceLastAttempt = now - record.lastAttemptTime
+                    if (record.consecutiveManualAttempts > 0) {
+                        val backoffMs = calculateBackoff(record.consecutiveManualAttempts)
+                        val timeSinceLastAttempt = now - record.lastManualAttemptTime
                         if (timeSinceLastAttempt < backoffMs) {
                             val delayMs = backoffMs - timeSinceLastAttempt
-                            Log.d(TAG, "Backoff for $videoId: attempt=${record.consecutiveAttempts}, delay=${delayMs}ms")
+                            Log.d(TAG, "Backoff for $videoId: attempt=${record.consecutiveManualAttempts}, delay=${delayMs}ms")
                             return RateLimitResult.Delayed(delayMs, "exponential backoff")
                         }
                     }
@@ -216,16 +228,30 @@ class ExtractionRateLimiter @Inject constructor() {
 
             // RECORD THE ATTEMPT NOW (before extraction call)
             record.attemptTimestamps.add(now)
-            record.lastAttemptTime = now
-            record.consecutiveAttempts++
+            // Only MANUAL requests increment the consecutive counter for backoff.
+            // PREFETCH/AUTO_RECOVERY should not affect manual backoff timing.
+            if (kind == RequestKind.MANUAL) {
+                record.consecutiveManualAttempts++
+                record.lastManualAttemptTime = now
+                record.manualAttemptTimestamps.add(now)
+            }
             if (kind == RequestKind.AUTO_RECOVERY) {
-                record.autoRecoveryAttemptsInWindow++
+                record.lastAutoRecoveryAttemptTime = now
+                record.autoRecoveryAttemptTimestamps.add(now)
+            }
+            if (kind == RequestKind.PREFETCH) {
+                record.lastPrefetchAttemptTime = now
+                record.prefetchAttemptTimestamps.add(now)
             }
         }
 
-        // Record global attempt
-        synchronized(globalAttemptTimestamps) {
-            globalAttemptTimestamps.add(now)
+        // Record global attempt - AUTO_RECOVERY is excluded to prevent recovery
+        // requests from starving manual/prefetch requests. Since AUTO_RECOVERY
+        // bypasses the global limit check, it should also not contribute to it.
+        if (kind != RequestKind.AUTO_RECOVERY) {
+            synchronized(globalAttemptTimestamps) {
+                globalAttemptTimestamps.add(now)
+            }
         }
 
         Log.d(TAG, "Permit acquired for $videoId ($kind)")
@@ -239,7 +265,7 @@ class ExtractionRateLimiter @Inject constructor() {
     fun onExtractionSuccess(videoId: String) {
         perVideoRecords[videoId]?.let { record ->
             synchronized(record) {
-                record.consecutiveAttempts = 0
+                record.consecutiveManualAttempts = 0
             }
         }
         Log.d(TAG, "Extraction success for $videoId - backoff reset")
@@ -252,7 +278,7 @@ class ExtractionRateLimiter @Inject constructor() {
     fun resetForVideo(videoId: String) {
         perVideoRecords[videoId]?.let { record ->
             synchronized(record) {
-                record.consecutiveAttempts = 0
+                record.consecutiveManualAttempts = 0
             }
         }
         Log.d(TAG, "Reset rate limit state for $videoId")
@@ -290,7 +316,26 @@ class ExtractionRateLimiter @Inject constructor() {
         }
     }
 
-    private fun checkGlobalLimit(now: Long): RateLimitResult {
+    /**
+     * Check global rate limit with kind-awareness.
+     *
+     * AUTO_RECOVERY bypasses the global limit entirely to ensure playback recovery
+     * is never blocked. This is critical because:
+     * 1. Users can spam manual refresh or rapidly tap videos (exhausting global budget)
+     * 2. Prefetch requests add to global pressure
+     * 3. Recovery must always succeed to unstick broken playback
+     *
+     * @param now Current timestamp
+     * @param kind Request kind - AUTO_RECOVERY bypasses global limits
+     * @return RateLimitResult.Allowed or Blocked
+     */
+    private fun checkGlobalLimit(now: Long, kind: RequestKind): RateLimitResult {
+        // AUTO_RECOVERY always bypasses global limits to ensure recovery is never blocked
+        if (kind == RequestKind.AUTO_RECOVERY) {
+            Log.d(TAG, "AUTO_RECOVERY bypasses global rate limit check")
+            return RateLimitResult.Allowed
+        }
+
         synchronized(globalAttemptTimestamps) {
             // Clean old timestamps
             globalAttemptTimestamps.removeAll { now - it > GLOBAL_WINDOW_MS }

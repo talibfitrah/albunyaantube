@@ -5,7 +5,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/background_gray">
+    android:background="?attr/colorSurfaceVariant">
 
     <!-- Toolbar -->
     <com.google.android.material.appbar.MaterialToolbar
@@ -113,7 +113,7 @@
                         android:orientation="vertical"
                         android:layout_marginTop="@dimen/spacing_md"
                         android:padding="@dimen/spacing_md"
-                        android:background="@color/background_gray">
+                        android:background="?attr/colorSurfaceVariant">
 
                         <TextView
                             android:layout_width="wrap_content"
@@ -177,8 +177,8 @@
 
                     <View
                         android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:background="@color/background_gray"
+                        android:layout_height="@dimen/divider_thickness"
+                        android:background="?attr/colorSurfaceVariant"
                         android:layout_marginStart="@dimen/spacing_lg"/>
 
                     <!-- Recently Watched -->
@@ -186,8 +186,8 @@
 
                     <View
                         android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:background="@color/background_gray"
+                        android:layout_height="@dimen/divider_thickness"
+                        android:background="?attr/colorSurfaceVariant"
                         android:layout_marginStart="@dimen/spacing_lg"/>
 
                     <!-- History -->

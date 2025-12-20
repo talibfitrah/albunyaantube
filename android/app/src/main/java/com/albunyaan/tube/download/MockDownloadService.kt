@@ -92,6 +92,7 @@ class MockDownloadService {
      * Checks if video allows downloads
      * In real implementation, this would call backend policy endpoint
      */
+    @Suppress("UNUSED_PARAMETER")
     fun checkDownloadPolicy(videoId: String): DownloadPolicyResult {
         return DownloadPolicyResult(
             allowed = true,

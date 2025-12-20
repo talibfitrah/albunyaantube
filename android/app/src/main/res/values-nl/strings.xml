@@ -59,6 +59,7 @@
     <string name="player_no_current_item">Er wordt momenteel geen video afgespeeld.</string>
     <string name="player_default_title">Video</string>
     <string name="player_no_views">Nog geen weergaven</string>
+    <string name="player_description">Beschrijving</string>
     <string name="player_no_description">Geen beschrijving beschikbaar</string>
     <string name="player_mark_current_complete">Markeer als voltooid</string>
     <string name="player_up_next_header">Volgende</string>
@@ -144,6 +145,7 @@
     <string name="see_all">Alles bekijken</string>
     <string name="search">Zoeken</string>
     <string name="categories">Categorieën</string>
+    <string name="subcategories_title">Subcategorieën</string>
     <string name="menu">Menu</string>
     <string name="settings">Instellingen</string>
     <string name="downloads">Downloads</string>
@@ -357,9 +359,20 @@
     <string name="settings_storage_external_not_implemented">Externe opslag nog niet geïmplementeerd</string>
     <string name="settings_support">Ondersteuning</string>
     <string name="settings_about_support">Over &amp; Ondersteuning</string>
+    <string name="about_title">Over</string>
+    <string name="about_links">Links</string>
+    <string name="about_legal">Juridisch</string>
+    <string name="about_website">Website</string>
+    <string name="about_github">GitHub</string>
+    <string name="about_privacy_policy">Privacybeleid</string>
+    <string name="about_terms_of_service">Servicevoorwaarden</string>
+    <string name="about_open_source_licenses">Open source-licenties</string>
     <string name="settings_support_center">Helpcentrum</string>
     <string name="settings_support_center_desc">Krijg hulp en stuur feedback</string>
     <string name="cancel">Annuleren</string>
+
+    <!-- Favorites -->
+    <string name="favorites_icon_description">Favorieten</string>
 
     <!-- Search Screen -->
     <string name="search_hint">Zoek kanalen, afspeellijsten, video\'s…</string>

@@ -2,7 +2,6 @@ package com.albunyaan.tube.accessibility
 
 import android.content.Context
 import android.view.View
-import android.view.accessibility.AccessibilityNodeInfo
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso.onView
@@ -118,12 +117,15 @@ class AccessibilityTest {
             override fun getConstraints(): Matcher<View> = isDisplayed()
             override fun getDescription() = "verify has content description"
             override fun perform(uiController: UiController, view: View) {
-                val nodeInfo = AccessibilityNodeInfo.obtain()
-                view.onInitializeAccessibilityNodeInfo(nodeInfo)
-                val hasDescription = !nodeInfo.contentDescription.isNullOrEmpty() ||
-                                   !nodeInfo.text.isNullOrEmpty()
-                assertTrue("View should have content description or text", hasDescription)
-                nodeInfo.recycle()
+                val nodeInfo = view.createAccessibilityNodeInfo()
+                try {
+                    val hasDescription = !nodeInfo.contentDescription.isNullOrEmpty() ||
+                                       !nodeInfo.text.isNullOrEmpty()
+                    assertTrue("View should have content description or text", hasDescription)
+                } finally {
+                    @Suppress("DEPRECATION")
+                    nodeInfo.recycle()
+                }
             }
         }
     }
@@ -134,9 +136,6 @@ class AccessibilityTest {
             override fun getConstraints(): Matcher<View> = isDisplayed()
             override fun getDescription() = "verify children have minimum size $minDp dp"
             override fun perform(uiController: UiController, view: View) {
-                val density = view.context.resources.displayMetrics.density
-                val minPx = (minDp * density).toInt()
-
                 // For BottomNavigationView, we just verify it's displayed
                 // The actual touch targets are managed by Material Components
                 assertTrue("BottomNavigationView is displayed", view.isShown)

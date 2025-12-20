@@ -28,6 +28,7 @@
     <dimen name="spacing_md">24dp</dimen>  <!-- was 16dp on phone, 20dp on tablet -->
     <dimen name="spacing_lg">40dp</dimen>  <!-- was 24dp on phone, 32dp on tablet -->
     <dimen name="spacing_xl">64dp</dimen>  <!-- was 32dp on phone, 48dp on tablet -->
+    <dimen name="spacing_xxxl">128dp</dimen>  <!-- was 96dp on phone, 112dp on tablet -->
 
     <!-- Touch Targets (larger for TV D-pad navigation) -->
     <dimen name="touch_target_min">56dp</dimen>  <!-- was 48dp -->
@@ -37,6 +38,7 @@
     <dimen name="icon_medium">40dp</dimen>  <!-- was 32dp on phone, 36dp on tablet -->
     <dimen name="icon_large">64dp</dimen>  <!-- was 48dp on phone, 56dp on tablet -->
     <dimen name="icon_xlarge">128dp</dimen>  <!-- was 96dp -->
+    <dimen name="badge_icon_size">28dp</dimen>  <!-- was 20dp on phone, 24dp on tablet -->
 
     <!-- Avatar Sizes (larger) -->
     <dimen name="avatar_medium">72dp</dimen>  <!-- was 56dp on phone, 64dp on tablet -->

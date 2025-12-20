@@ -453,7 +453,9 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
         }
     }
 
-    private fun showDownloadQualitySheet(event: PlaylistDetailViewModel.PlaylistUiEvent.ShowDownloadQualitySheet) {
+    private fun showDownloadQualitySheet(
+        @Suppress("UNUSED_PARAMETER") event: PlaylistDetailViewModel.PlaylistUiEvent.ShowDownloadQualitySheet
+    ) {
         // Simple quality selection dialog
         val qualities = PlaylistQualityOption.entries.toTypedArray()
         val qualityNames = qualities.map { it.label }.toTypedArray()

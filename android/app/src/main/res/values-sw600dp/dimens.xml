@@ -28,10 +28,12 @@
     <dimen name="spacing_md">20dp</dimen>  <!-- was 16dp -->
     <dimen name="spacing_lg">32dp</dimen>  <!-- was 24dp -->
     <dimen name="spacing_xl">48dp</dimen>  <!-- was 32dp -->
+    <dimen name="spacing_xxxl">112dp</dimen>  <!-- was 96dp on phone -->
 
     <!-- Icons (slightly larger) -->
     <dimen name="icon_medium">36dp</dimen>  <!-- was 32dp -->
     <dimen name="icon_large">56dp</dimen>  <!-- was 48dp -->
+    <dimen name="badge_icon_size">24dp</dimen>  <!-- was 20dp on phone -->
 
     <!-- Avatar Sizes (larger) -->
     <dimen name="avatar_medium">64dp</dimen>  <!-- was 56dp -->

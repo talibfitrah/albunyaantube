@@ -2,6 +2,7 @@
 <!-- Tablet portrait player layout (7"+ devices) -->
 <androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="?attr/colorSurface">
@@ -279,10 +280,11 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:padding="@dimen/spacing_md"
-                    android:text="Video Title"
+                    android:textAlignment="viewStart"
                     android:textColor="?attr/colorOnSurface"
-                    android:textSize="20sp"
-                    android:textStyle="bold" />
+                    android:textSize="@dimen/text_section_title"
+                    android:textStyle="bold"
+                    tools:text="Video Title" />
 
                 <!-- Author Name -->
                 <TextView
@@ -291,9 +293,10 @@
                     android:layout_height="wrap_content"
                     android:paddingStart="@dimen/spacing_md"
                     android:paddingEnd="@dimen/spacing_md"
-                    android:text="Author Name"
+                    android:textAlignment="viewStart"
                     android:textColor="@color/primary_green"
-                    android:textSize="16sp" />
+                    android:textSize="@dimen/text_body"
+                    tools:text="Author Name" />
 
                 <!-- Views and Date -->
                 <TextView
@@ -304,9 +307,10 @@
                     android:paddingTop="@dimen/spacing_xs"
                     android:paddingEnd="@dimen/spacing_md"
                     android:paddingBottom="@dimen/spacing_sm"
-                    android:text="0 views • Jan 1, 2025"
+                    android:textAlignment="viewStart"
                     android:textColor="?android:attr/textColorSecondary"
-                    android:textSize="14sp" />
+                    android:textSize="@dimen/text_caption"
+                    tools:text="0 views • Jan 1, 2025" />
 
                 <!-- Description Card -->
                 <com.google.android.material.card.MaterialCardView
@@ -342,15 +346,16 @@
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                android:text="Description"
+                                android:text="@string/player_description"
+                                android:textAlignment="viewStart"
                                 android:textColor="?attr/colorOnSurface"
-                                android:textSize="16sp"
+                                android:textSize="@dimen/text_body"
                                 android:textStyle="bold" />
 
                             <ImageView
                                 android:id="@+id/descriptionArrow"
-                                android:layout_width="24dp"
-                                android:layout_height="24dp"
+                                android:layout_width="@dimen/icon_small"
+                                android:layout_height="@dimen/icon_small"
                                 android:src="@drawable/ic_expand_more"
                                 app:tint="?attr/colorOnSurface"
                                 android:importantForAccessibility="no" />
@@ -365,9 +370,10 @@
                             android:paddingStart="@dimen/spacing_md"
                             android:paddingEnd="@dimen/spacing_md"
                             android:paddingBottom="@dimen/spacing_md"
-                            android:text="No description available"
+                            android:text="@string/player_no_description"
+                            android:textAlignment="viewStart"
                             android:textColor="?attr/colorOnSurface"
-                            android:textSize="14sp"
+                            android:textSize="@dimen/text_caption"
                             android:visibility="gone" />
 
                     </LinearLayout>
@@ -410,8 +416,9 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/spacing_xs"
                             android:text="@string/player_action_favorite"
+                            android:textAlignment="center"
                             android:textColor="@color/primary_green"
-                            android:textSize="14sp" />
+                            android:textSize="@dimen/text_caption" />
 
                     </LinearLayout>
 
@@ -440,8 +447,9 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/spacing_xs"
                             android:text="@string/player_action_share"
+                            android:textAlignment="center"
                             android:textColor="@color/primary_green"
-                            android:textSize="14sp" />
+                            android:textSize="@dimen/text_caption" />
 
                     </LinearLayout>
 
@@ -470,8 +478,9 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/spacing_xs"
                             android:text="@string/player_button_download"
+                            android:textAlignment="center"
                             android:textColor="@color/primary_green"
-                            android:textSize="14sp" />
+                            android:textSize="@dimen/text_caption" />
 
                     </LinearLayout>
 
@@ -500,8 +509,9 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/spacing_xs"
                             android:text="@string/player_action_audio"
+                            android:textAlignment="center"
                             android:textColor="@color/primary_green"
-                            android:textSize="14sp" />
+                            android:textSize="@dimen/text_caption" />
 
                     </LinearLayout>
 
@@ -520,8 +530,9 @@
         android:layout_height="wrap_content"
         android:padding="@dimen/spacing_md"
         android:text="@string/player_up_next_header"
+        android:textAlignment="viewStart"
         android:textColor="?attr/colorOnSurface"
-        android:textSize="18sp"
+        android:textSize="@dimen/text_subtitle"
         android:textStyle="bold" />
 
                 <androidx.recyclerview.widget.RecyclerView

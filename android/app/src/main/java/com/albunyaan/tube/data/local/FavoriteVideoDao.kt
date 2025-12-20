@@ -37,10 +37,43 @@ interface FavoriteVideoDao {
 
     /**
      * Add a video to favorites.
-     * Uses REPLACE strategy to update if already exists.
+     * Uses IGNORE strategy to prevent overwriting an existing favorite's addedAt timestamp.
+     * For updating metadata on an existing favorite, use upsertFavorite() instead.
      */
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun addFavorite(video: FavoriteVideo)
+
+    /**
+     * Update metadata for an existing favorite without changing addedAt.
+     * This preserves the original "favorited at" timestamp.
+     */
+    @Query("""
+        UPDATE favorite_videos
+        SET title = :title, channelName = :channelName, thumbnailUrl = :thumbnailUrl, durationSeconds = :durationSeconds
+        WHERE videoId = :videoId
+    """)
+    suspend fun updateMetadata(
+        videoId: String,
+        title: String,
+        channelName: String,
+        thumbnailUrl: String?,
+        durationSeconds: Int
+    )
+
+    /**
+     * Insert or update a favorite video.
+     * - If the video is new: inserts with current timestamp
+     * - If already exists: updates only metadata, preserving original addedAt
+     */
+    @Transaction
+    suspend fun upsertFavorite(video: FavoriteVideo) {
+        val exists = isFavoriteOnce(video.videoId)
+        if (exists) {
+            updateMetadata(video.videoId, video.title, video.channelName, video.thumbnailUrl, video.durationSeconds)
+        } else {
+            addFavorite(video)
+        }
+    }
 
     /**
      * Remove a video from favorites by ID.

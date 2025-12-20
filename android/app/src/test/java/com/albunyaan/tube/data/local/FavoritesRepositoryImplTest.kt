@@ -206,10 +206,42 @@ class FavoritesRepositoryImplTest {
 
         override suspend fun addFavorite(video: FavoriteVideo) {
             val current = favoritesFlow.value.toMutableList()
-            // REPLACE behavior
-            current.removeAll { it.videoId == video.videoId }
-            current.add(video)
-            favoritesFlow.value = current
+            // IGNORE behavior - don't add if already exists
+            if (current.none { it.videoId == video.videoId }) {
+                current.add(video)
+                favoritesFlow.value = current
+            }
+        }
+
+        override suspend fun updateMetadata(
+            videoId: String,
+            title: String,
+            channelName: String,
+            thumbnailUrl: String?,
+            durationSeconds: Int
+        ) {
+            val current = favoritesFlow.value.toMutableList()
+            val index = current.indexOfFirst { it.videoId == videoId }
+            if (index >= 0) {
+                val existing = current[index]
+                current[index] = existing.copy(
+                    title = title,
+                    channelName = channelName,
+                    thumbnailUrl = thumbnailUrl,
+                    durationSeconds = durationSeconds
+                    // addedAt is preserved from existing
+                )
+                favoritesFlow.value = current
+            }
+        }
+
+        override suspend fun upsertFavorite(video: FavoriteVideo) {
+            val exists = isFavoriteOnce(video.videoId)
+            if (exists) {
+                updateMetadata(video.videoId, video.title, video.channelName, video.thumbnailUrl, video.durationSeconds)
+            } else {
+                addFavorite(video)
+            }
         }
 
         override suspend fun removeFavorite(videoId: String) {

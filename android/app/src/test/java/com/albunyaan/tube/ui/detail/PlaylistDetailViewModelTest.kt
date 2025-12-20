@@ -30,6 +30,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Unit tests for PlaylistDetailViewModel.
@@ -347,6 +348,8 @@ class PlaylistDetailViewModelTest {
             downloadPolicy = DownloadPolicy.ENABLED,
             excluded = false
         )
+        val clock = AtomicLong(0L)
+        viewModel.setClockForTesting { clock.get() }
         advanceUntilIdle()
 
         // Verify page 1
@@ -355,9 +358,8 @@ class PlaylistDetailViewModelTest {
         assertEquals(1, state.items.first().position)
         assertEquals(5, state.items.last().position)
 
-        // Wait past rate limit interval (MIN_APPEND_INTERVAL_MS = 500ms)
-        // Use Thread.sleep because the rate limiter uses System.currentTimeMillis()
-        Thread.sleep(600)
+        // Advance past rate limit interval
+        clock.addAndGet(PlaylistDetailViewModel.MIN_APPEND_INTERVAL_MS + 1)
 
         // Load page 2
         viewModel.loadNextPage()
@@ -444,14 +446,16 @@ class PlaylistDetailViewModelTest {
             downloadPolicy = DownloadPolicy.ENABLED,
             excluded = false
         )
+        val clock = AtomicLong(0L)
+        trackingViewModel.setClockForTesting { clock.get() }
         advanceUntilIdle()
 
         // Verify first page loaded with offset 1
         assertTrue(trackingViewModel.itemsState.value is PlaylistDetailViewModel.PaginatedState.Loaded)
         assertEquals("First page should receive offset 1", 1, receivedOffsets.first())
 
-        // Wait past rate limit interval
-        Thread.sleep(600)
+        // Advance past rate limit interval
+        clock.addAndGet(PlaylistDetailViewModel.MIN_APPEND_INTERVAL_MS + 1)
 
         // Load next page - should receive offset 6 (from first page's nextItemOffset)
         trackingViewModel.loadNextPage()
