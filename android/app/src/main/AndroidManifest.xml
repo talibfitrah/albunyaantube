@@ -4,9 +4,10 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <!-- FOREGROUND_SERVICE required for Android 9 (API 28); _MEDIA_PLAYBACK for Android 10+ -->
+    <!-- FOREGROUND_SERVICE required for Android 9 (API 28); typed permissions for Android 14+ (API 34) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
@@ -96,6 +97,12 @@
                 android:value="androidx.startup"
                 tools:node="remove" />
         </provider>
+
+        <!-- WorkManager foreground service for downloads (Android 14+ requires foregroundServiceType) -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
     </application>
 
 </manifest>

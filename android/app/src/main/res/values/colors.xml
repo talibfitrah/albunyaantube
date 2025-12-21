@@ -52,6 +52,13 @@
     <color name="skeleton_shimmer_start">#E0E0E0</color>
     <color name="skeleton_shimmer_end">#F5F5F5</color>
 
+    <!-- Navigation Rail/Bottom Nav colors -->
+    <color name="nav_item_inactive">#757575</color>  <!-- Medium gray for light mode -->
+    <color name="nav_item_focused">#424242</color>  <!-- Darker gray when focused (more prominent) -->
+    <color name="nav_item_inactive_tv">#616161</color>  <!-- Darker for TV light mode legibility -->
+    <color name="nav_item_focused_tv">#424242</color>  <!-- Focused state for TV -->
+    <color name="nav_item_selected_focused_tv">#35C491</color>  <!-- Brighter primary for selected+focused on TV (D-pad highlight) -->
+
     <!-- Dividers -->
     <color name="divider_light">#1A000000</color>
     <color name="divider_dark">#1AFFFFFF</color>

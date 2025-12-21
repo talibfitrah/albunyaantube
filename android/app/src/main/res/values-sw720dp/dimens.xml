@@ -2,9 +2,11 @@
 <resources>
     <!-- Large Tablet / TV (10"+ devices, 1080p TV boxes) - Responsive Dimensions -->
 
-    <!-- Navigation (TV/Large Tablets) -->
+    <!-- Navigation (TV/Large Tablets - optimized for 10-foot viewing) -->
     <dimen name="bottom_nav_height">0dp</dimen>
-    <dimen name="navigation_rail_width">80dp</dimen>  <!-- NavigationRail width for large tablets/TV -->
+    <dimen name="navigation_rail_width">96dp</dimen>  <!-- Wider rail for TV D-pad navigation -->
+    <dimen name="navigation_rail_icon_size">32dp</dimen>  <!-- Larger icons for 10-foot viewing -->
+    <dimen name="navigation_rail_label_size">14sp</dimen>  <!-- Larger labels for TV readability -->
 
     <!-- Grid (more columns for larger screens) -->
     <dimen name="grid_gutter">32dp</dimen>

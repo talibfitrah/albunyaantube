@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TV/Large Tablet style overrides for 10-foot viewing experience -->
+<!-- Note: Theme.Albunyaan is NOT redefined here - it inherits from base values/themes.xml -->
+<!-- Only the NavigationRail style is overridden with TV-optimized values -->
+<!-- Other nav attributes (itemIconTint, itemTextColor, itemActiveIndicatorStyle) are set in layout XML -->
+<resources>
+    <!-- TV-optimized Navigation Rail Style (overrides base) -->
+    <!-- Note: itemIconTint/itemTextColor are set in layout XML to avoid duplication -->
+    <style name="Widget.Albunyaan.NavigationRailView" parent="Widget.Material3.NavigationRailView">
+        <!-- Larger icons for 10-foot viewing -->
+        <item name="itemIconSize">@dimen/navigation_rail_icon_size</item>
+        <!-- Always show labels for clarity -->
+        <item name="labelVisibilityMode">labeled</item>
+        <!-- Larger text for TV readability -->
+        <item name="itemTextAppearanceInactive">@style/TextAppearance.Albunyaan.NavigationRail.Label.TV</item>
+        <item name="itemTextAppearanceActive">@style/TextAppearance.Albunyaan.NavigationRail.Label.TV</item>
+    </style>
+
+    <!-- Label text appearance for TV -->
+    <style name="TextAppearance.Albunyaan.NavigationRail.Label.TV" parent="TextAppearance.Material3.LabelMedium">
+        <item name="android:textSize">@dimen/navigation_rail_label_size</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+</resources>

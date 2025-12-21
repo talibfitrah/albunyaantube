@@ -72,6 +72,7 @@
 
     <!-- Navigation -->
     <dimen name="navigation_rail_width">0dp</dimen>  <!-- not used on phones -->
+    <dimen name="navigation_rail_icon_size">24dp</dimen>  <!-- default, overridden on tablet/TV -->
 
     <!-- Onboarding -->
     <dimen name="skip_button_margin_bottom">120dp</dimen>

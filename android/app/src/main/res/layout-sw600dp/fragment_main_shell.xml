@@ -7,6 +7,9 @@
     android:layoutDirection="locale">
 
     <!-- NavigationRail for tablets (left side, menu items centered via menuGravity) -->
+    <!-- Note: itemActiveIndicatorStyle=null disables the pill indicator to match phone BottomNav behavior -->
+    <!-- IMPORTANT: itemIconTint/itemTextColor must be set here (not in theme) to be single source of truth.
+         Any new NavigationRailView layouts must also set these attributes. -->
     <com.google.android.material.navigationrail.NavigationRailView
         android:id="@+id/mainBottomNav"
         android:layout_width="@dimen/navigation_rail_width"
@@ -19,7 +22,7 @@
         app:menuGravity="center"
         app:itemIconTint="@color/bottom_nav_item_color"
         app:itemTextColor="@color/bottom_nav_item_color"
-        app:itemRippleColor="@android:color/transparent"
+        app:itemActiveIndicatorStyle="@null"
         app:labelVisibilityMode="labeled"
         app:menu="@menu/bottom_nav_menu" />
 

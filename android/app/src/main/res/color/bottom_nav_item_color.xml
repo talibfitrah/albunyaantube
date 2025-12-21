@@ -1,5 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Navigation item colors - works in both light and dark mode -->
+<!-- Order matters: more specific states must come first -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Selected AND focused: primary brand color (selected takes priority) -->
+    <item android:color="@color/primary" android:state_checked="true" android:state_focused="true"/>
+    <!-- Selected/checked: primary brand color -->
     <item android:color="@color/primary" android:state_checked="true"/>
-    <item android:color="@color/filter_chip_selected_text" android:alpha="0.5"/>
+    <!-- Focused but not selected: slightly brighter than inactive for visibility -->
+    <item android:color="@color/nav_item_focused" android:state_focused="true"/>
+    <!-- Unselected: theme-aware gray that's visible in both modes -->
+    <item android:color="@color/nav_item_inactive"/>
 </selector>

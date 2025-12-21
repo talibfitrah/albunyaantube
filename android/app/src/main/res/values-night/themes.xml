@@ -11,5 +11,20 @@
         <!-- Status Bar -->
         <item name="android:statusBarColor" tools:targetApi="l">@android:color/transparent</item>
         <item name="android:windowLightStatusBar" tools:targetApi="m">false</item>
+
+        <!-- Shape Theme (must match base theme) -->
+        <item name="shapeAppearanceSmallComponent">@style/ShapeAppearance.Albunyaan.SmallComponent</item>
+        <item name="shapeAppearanceMediumComponent">@style/ShapeAppearance.Albunyaan.MediumComponent</item>
+        <item name="shapeAppearanceLargeComponent">@style/ShapeAppearance.Albunyaan.LargeComponent</item>
+
+        <!-- Bottom Navigation -->
+        <item name="bottomNavigationStyle">@style/Widget.Albunyaan.BottomNavigationView</item>
+
+        <!-- Navigation Rail (for tablets/TV) -->
+        <item name="navigationRailStyle">@style/Widget.Albunyaan.NavigationRailView</item>
+
+        <!-- Popup Menu Style -->
+        <item name="popupMenuStyle">@style/Widget.Albunyaan.PopupMenu</item>
+        <item name="android:popupMenuStyle">@style/Widget.Albunyaan.PopupMenu</item>
     </style>
 </resources>

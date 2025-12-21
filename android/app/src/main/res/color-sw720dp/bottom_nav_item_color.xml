@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TV-specific navigation colors with higher contrast for 10-foot viewing -->
+<!-- Order matters: more specific states must come first -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Selected AND focused: TV-specific highlight (brighter than primary for D-pad visibility) -->
+    <item android:color="@color/nav_item_selected_focused_tv" android:state_checked="true" android:state_focused="true"/>
+    <!-- Selected/checked item: primary brand color -->
+    <item android:color="@color/primary" android:state_checked="true"/>
+    <!-- Focused but not selected: distinct color for D-pad navigation visibility -->
+    <item android:color="@color/nav_item_focused_tv" android:state_focused="true"/>
+    <!-- Unselected items: higher contrast than tablet for TV visibility -->
+    <item android:color="@color/nav_item_inactive_tv"/>
+</selector>

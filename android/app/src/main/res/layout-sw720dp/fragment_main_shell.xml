@@ -6,7 +6,10 @@
     android:layout_height="match_parent"
     android:layoutDirection="locale">
 
-    <!-- NavigationRail for large tablets/TV (left side, menu items centered via menuGravity) -->
+    <!-- NavigationRail for large tablets/TV (optimized for 10-foot D-pad navigation) -->
+    <!-- Note: itemActiveIndicatorStyle=null disables the pill indicator to match phone BottomNav behavior -->
+    <!-- IMPORTANT: itemIconTint/itemTextColor must be set here (not in theme) to be single source of truth.
+         Any new NavigationRailView layouts must also set these attributes. -->
     <com.google.android.material.navigationrail.NavigationRailView
         android:id="@+id/mainBottomNav"
         android:layout_width="@dimen/navigation_rail_width"
@@ -14,12 +17,12 @@
         android:layout_gravity="start"
         android:background="@color/background_gray"
         android:elevation="@dimen/elevation_lg"
-        android:paddingTop="@dimen/spacing_none"
-        android:paddingBottom="@dimen/spacing_none"
+        android:paddingTop="@dimen/spacing_md"
+        android:paddingBottom="@dimen/spacing_md"
         app:menuGravity="center"
         app:itemIconTint="@color/bottom_nav_item_color"
         app:itemTextColor="@color/bottom_nav_item_color"
-        app:itemRippleColor="@android:color/transparent"
+        app:itemActiveIndicatorStyle="@null"
         app:labelVisibilityMode="labeled"
         app:menu="@menu/bottom_nav_menu" />
 

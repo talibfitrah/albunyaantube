@@ -20,6 +20,9 @@
         <!-- Bottom Navigation -->
         <item name="bottomNavigationStyle">@style/Widget.Albunyaan.BottomNavigationView</item>
 
+        <!-- Navigation Rail (for tablets/TV) -->
+        <item name="navigationRailStyle">@style/Widget.Albunyaan.NavigationRailView</item>
+
         <!-- Popup Menu Style -->
         <item name="popupMenuStyle">@style/Widget.Albunyaan.PopupMenu</item>
         <item name="android:popupMenuStyle">@style/Widget.Albunyaan.PopupMenu</item>
@@ -58,5 +61,12 @@
     <style name="ShapeAppearance.Albunyaan.Circle" parent="">
         <item name="cornerFamily">rounded</item>
         <item name="cornerSize">50%</item>
+    </style>
+
+    <!-- Navigation Rail Style (base - used on tablets) -->
+    <!-- Note: itemIconTint/itemTextColor are set in layout XML to avoid duplication -->
+    <style name="Widget.Albunyaan.NavigationRailView" parent="Widget.Material3.NavigationRailView">
+        <item name="itemIconSize">@dimen/navigation_rail_icon_size</item>
+        <item name="labelVisibilityMode">labeled</item>
     </style>
 </resources>
