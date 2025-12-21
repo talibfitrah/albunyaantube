@@ -42,8 +42,12 @@
     <string name="player_stream_unavailable">هذا الفيديو غير متاح للتشغيل.</string>
     <string name="player_notification_channel_name">التشغيل</string>
     <string name="player_notification_channel_desc">يتحكم بالتشغيل عندما يكون التطبيق في الخلفية.</string>
+    <string name="player_notification_loading">جارٍ التحميل…</string>
     <string name="player_action_enter_pip">صورة داخل صورة</string>
     <string name="player_action_play_pause">تشغيل/إيقاف</string>
+    <string name="player_action_play">تشغيل</string>
+    <string name="player_action_pause">إيقاف مؤقت</string>
+    <string name="player_action_previous">تشغيل الفيديو السابق</string>
     <string name="player_no_current_item">لا يوجد فيديو قيد التشغيل حالياً.</string>
     <string name="player_default_title">فيديو</string>
     <string name="player_no_views">لا توجد مشاهدات بعد</string>
@@ -82,6 +86,11 @@
     <string name="download_action_resume">استئناف</string>
     <string name="download_action_cancel">إلغاء</string>
     <string name="download_action_open">فتح</string>
+    <string name="download_action_retry">إعادة المحاولة</string>
+    <string name="download_action_remove">إزالة</string>
+    <string name="download_action_delete">حذف</string>
+    <string name="download_deleted">تم حذف التنزيل</string>
+    <string name="download_delete_failed">فشل حذف التنزيل</string>
     <string name="download_status_queued">في الانتظار</string>
     <string name="download_status_running">جارٍ التنزيل</string>
     <string name="download_status_paused">متوقف مؤقتاً</string>
@@ -96,6 +105,17 @@
     <string name="download_notification_title">جارٍ تنزيل %1$s</string>
     <string name="download_notification_progress">%1$d%% مكتمل</string>
     <string name="download_notification_complete">اكتمل التنزيل.</string>
+
+    <!-- Download error messages (mapped from error codes) -->
+    <string name="download_error_http_403">تم رفض الوصول - قد يكون رابط البث منتهي الصلاحية</string>
+    <string name="download_error_http_429">تم تجاوز الحد - حاول مرة أخرى لاحقاً</string>
+    <string name="download_error_network">خطأ في الشبكة - تحقق من اتصالك</string>
+    <string name="download_error_merge">فشل الدمج - خطأ FFmpeg</string>
+    <string name="download_error_no_stream">لا يوجد بث متاح - قد يكون الفيديو غير متوفر</string>
+    <string name="download_error_no_compatible_video">لا يوجد تنسيق فيديو متوافق - VP9/WebM فقط متاح</string>
+    <string name="download_error_video_audio_mismatch">تعذر تنزيل الفيديو - لا يوجد مسار صوتي متوافق للدمج</string>
+    <string name="download_error_invalid_input">خطأ في إعدادات التنزيل</string>
+    <string name="download_error_unknown">فشل التنزيل</string>
 
     <!-- Navigation -->
     <string name="nav_home">الرئيسية</string>

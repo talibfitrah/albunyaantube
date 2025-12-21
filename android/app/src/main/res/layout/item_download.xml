@@ -1,42 +1,74 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:padding="12dp"
+    android:padding="@dimen/spacing_md"
     android:background="@drawable/download_item_background"
-    android:layout_marginBottom="12dp">
+    android:layout_marginBottom="@dimen/spacing_sm">
 
-    <TextView
-        android:id="@+id/downloadTitle"
+    <!-- Content row: thumbnail + details -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1"
-        android:text="Download title" />
+        android:orientation="horizontal">
 
-    <TextView
-        android:id="@+id/downloadStatus"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingTop="4dp"
-        android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
-        android:text="Status" />
+        <!-- Thumbnail with 16:9 aspect ratio -->
+        <com.google.android.material.imageview.ShapeableImageView
+            android:id="@+id/downloadThumbnail"
+            android:layout_width="@dimen/favorite_thumbnail_width"
+            android:layout_height="@dimen/favorite_thumbnail_height"
+            android:scaleType="centerCrop"
+            android:contentDescription="@string/cd_video_thumbnail"
+            app:shapeAppearanceOverlay="@style/ShapeAppearance.Albunyaan.SmallComponent"
+            tools:src="@tools:sample/backgrounds/scenic" />
 
-    <TextView
-        android:id="@+id/downloadDetails"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingTop="2dp"
-        android:textAppearance="@style/TextAppearance.MaterialComponents.Caption"
-        android:visibility="gone"
-        android:text="Details" />
+        <!-- Text content -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:layout_marginStart="@dimen/spacing_sm"
+            android:layout_gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/downloadTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1"
+                android:maxLines="2"
+                android:ellipsize="end"
+                tools:text="Download title goes here with long text" />
+
+            <TextView
+                android:id="@+id/downloadStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="@dimen/spacing_xs"
+                android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
+                tools:text="Downloading" />
+
+            <TextView
+                android:id="@+id/downloadDetails"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="@dimen/spacing_xxs"
+                android:textAppearance="@style/TextAppearance.MaterialComponents.Caption"
+                android:visibility="gone"
+                tools:text="45 MB • 2 hours ago"
+                tools:visibility="visible" />
+
+        </LinearLayout>
+    </LinearLayout>
 
     <com.google.android.material.progressindicator.LinearProgressIndicator
         android:id="@+id/downloadProgress"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="@dimen/spacing_sm"
         android:progress="0"
         app:showAnimationBehavior="inward"/>
 
@@ -44,7 +76,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="@dimen/spacing_sm"
         android:gravity="end">
 
         <Button
@@ -54,18 +86,43 @@
             android:text="@string/download_action_pause"/>
 
         <Button
+            android:id="@+id/downloadRetry"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/spacing_sm"
+            android:text="@string/download_action_retry"
+            android:visibility="gone"
+            tools:visibility="visible"/>
+
+        <Button
+            android:id="@+id/downloadRemove"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/spacing_sm"
+            android:text="@string/download_action_remove"
+            android:visibility="gone"/>
+
+        <Button
             android:id="@+id/downloadCancel"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
+            android:layout_marginStart="@dimen/spacing_sm"
             android:text="@string/download_action_cancel"/>
 
         <Button
             android:id="@+id/downloadOpen"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
+            android:layout_marginStart="@dimen/spacing_sm"
             android:text="@string/download_action_open"
+            android:visibility="gone"/>
+
+        <Button
+            android:id="@+id/downloadDelete"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/spacing_sm"
+            android:text="@string/download_action_delete"
             android:visibility="gone"/>
     </LinearLayout>
 

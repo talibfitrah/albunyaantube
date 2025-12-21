@@ -392,7 +392,6 @@ children's ability to learn Islam independently.
 - Comprehensive JSON schema validation
 - Firestore security rules hardening
 - Audit log immutable storage
-- Signed download URLs
 - HSTS headers
 - Argon2id password hashing (Firebase default is sufficient for MVP)
 
@@ -476,9 +475,10 @@ children's ability to learn Islam independently.
    - Mitigation: Implement auto-approval rules for trusted channels in v1.1;
      recruit volunteer moderators
 
-2. **Download Storage Abuse**: Users may download excessive content, impacting backend bandwidth
-   - Mitigation: Monitor download patterns; implement reasonable rate limits (e.g., max 10 concurrent downloads) in v1.1 if abuse detected
-   - Note: No artificial storage quota - user's device storage is the natural limit
+2. **Download Storage Abuse**: Users may download excessive content consuming device storage
+   - Architecture: Downloads happen entirely on-device using NewPipe extractor - no backend bandwidth impact
+   - Mitigation: User's device storage is the natural limit; max 3 concurrent downloads enforced to prevent device/network overload
+   - Note: Backend only manages curated content IDs; stream URLs resolved on-device
 
 3. **Arabic Translation Quality**: Machine-translated Islamic content may
    contain theological inaccuracies

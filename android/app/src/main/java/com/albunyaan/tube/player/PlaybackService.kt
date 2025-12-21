@@ -1,8 +1,11 @@
 package com.albunyaan.tube.player
 
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.graphics.Bitmap
+import androidx.core.app.NotificationCompat
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -12,6 +15,7 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.annotation.OptIn
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession
@@ -45,6 +49,28 @@ class PlaybackService : MediaSessionService() {
     @Volatile
     private var mediaSession: MediaSession? = null
     private val binder = LocalBinder()
+    private var playerListener: Player.Listener? = null
+    /** Cached artwork bitmap for notification (loaded by MediaSessionMetadataManager) */
+    @Volatile
+    private var cachedArtwork: Bitmap? = null
+    /** Current video ID being played - used for notification tap intent */
+    @Volatile
+    private var currentVideoId: String? = null
+
+    /**
+     * Tracks whether the player UI is currently visible.
+     * When true, the notification should be hidden to avoid banner intrusion.
+     * When false (app in background), notification is shown for media controls.
+     */
+    @Volatile
+    private var isPlayerUiVisible: Boolean = false
+
+    /**
+     * Session-unique token for validating dismiss intents.
+     * Prevents third-party apps from sending spoofed ACTION_DISMISS intents.
+     * Generated once per service instance; changes on service recreation.
+     */
+    private val dismissToken: Long = System.nanoTime()
 
     inner class LocalBinder : Binder() {
         fun getService(): PlaybackService = this@PlaybackService
@@ -52,8 +78,98 @@ class PlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "PlaybackService created")
+        Log.i(TAG, "PlaybackService created (Android ${Build.VERSION.SDK_INT})")
         createNotificationChannel()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.d(TAG, "onStartCommand called (action=${intent?.action}, flags=$flags, startId=$startId)")
+
+        // Handle notification action intents
+        when (intent?.action) {
+            ACTION_PLAY -> {
+                Log.d(TAG, "ACTION_PLAY received")
+                mediaSession?.player?.let { player ->
+                    player.play()
+                    // After starting playback, update foreground state
+                    // This enters foreground mode if UI is not visible
+                    updateForegroundState(player)
+                }
+            }
+            ACTION_PAUSE -> {
+                Log.d(TAG, "ACTION_PAUSE received")
+                mediaSession?.player?.let { player ->
+                    player.pause()
+                    // After pausing, update foreground state
+                    // This updates notification to show play button
+                    updateForegroundState(player)
+                }
+            }
+            ACTION_SKIP_PREV -> {
+                Log.d(TAG, "ACTION_SKIP_PREV received")
+                mediaSession?.player?.let { player ->
+                    if (player.hasPreviousMediaItem()) {
+                        player.seekToPreviousMediaItem()
+                    } else {
+                        player.seekTo(0)
+                    }
+                }
+            }
+            ACTION_SKIP_NEXT -> {
+                Log.d(TAG, "ACTION_SKIP_NEXT received")
+                mediaSession?.player?.let { player ->
+                    if (player.hasNextMediaItem()) {
+                        player.seekToNextMediaItem()
+                    }
+                }
+            }
+            ACTION_DISMISS -> {
+                // Validate token to prevent spoofed dismiss intents from third-party apps
+                val intentToken = intent.getLongExtra(EXTRA_DISMISS_TOKEN, 0L)
+                if (intentToken != dismissToken) {
+                    Log.w(TAG, "ACTION_DISMISS rejected: invalid or missing token")
+                    return START_NOT_STICKY
+                }
+                // User swiped away the paused notification
+                // Stop service since there's no playback and no way to resume
+                Log.d(TAG, "ACTION_DISMISS received - notification swiped away, stopping service")
+                mediaSession?.player?.stop()
+                stopSelf()
+                return START_NOT_STICKY
+            }
+        }
+
+        // CRITICAL: On Android 8+, when started via startForegroundService(), we MUST call
+        // startForeground() within 5 seconds or the app will crash with:
+        // "Context.startForegroundService() did not then call Service.startForeground()"
+        //
+        // MediaSessionService only calls startForeground() when a player is attached AND playing.
+        // If the player isn't ready yet (still loading), the crash occurs. To prevent this,
+        // we immediately start foreground with a placeholder notification, which MediaSessionService
+        // will replace with the proper media notification once the player starts.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && mediaSession == null) {
+            Log.d(TAG, "Starting foreground immediately with placeholder notification (no session yet)")
+            startForeground(NOTIFICATION_ID, createPlaceholderNotification())
+        }
+
+        // Delegate to MediaSessionService which handles the full media notification
+        // when a player is attached and playing
+        return super.onStartCommand(intent, flags, startId)
+    }
+
+    /**
+     * Creates a minimal placeholder notification for foreground service compliance.
+     * This is shown briefly until MediaSessionService replaces it with the proper
+     * media notification once the player is attached and playing.
+     */
+    private fun createPlaceholderNotification(): Notification {
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_play)
+            .setContentTitle(getString(R.string.player_notification_loading))
+            .setContentIntent(createPlayerPendingIntent())
+            .setSilent(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
     }
 
     override fun onBind(intent: Intent?): IBinder? {
@@ -95,15 +211,218 @@ class PlaybackService : MediaSessionService() {
             }
             // Different player - release old session first
             Log.d(TAG, "Releasing old session for new player")
+            removePlayerListener()
             mediaSession?.release()
             mediaSession = null
         }
 
-        Log.d(TAG, "Initializing MediaSession with player")
-        mediaSession = MediaSession.Builder(this, player)
-            .setSessionActivity(createPlayerPendingIntent())
-            .setCallback(MediaSessionCallback())
+        Log.d(TAG, "Initializing MediaSession with player (playWhenReady=${player.playWhenReady}, state=${player.playbackState})")
+        try {
+            mediaSession = MediaSession.Builder(this, player)
+                .setSessionActivity(createPlayerPendingIntent())
+                .setCallback(MediaSessionCallback())
+                .build()
+
+            // Add listener to update notification when playback state or metadata changes
+            addPlayerListener(player)
+
+            Log.i(TAG, "MediaSession initialized successfully - notification should appear when playback starts")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to initialize MediaSession", e)
+        }
+    }
+
+    /**
+     * Set the artwork bitmap for notification display.
+     * Called by MediaSessionMetadataManager when artwork is loaded.
+     */
+    fun setArtwork(bitmap: Bitmap?) {
+        cachedArtwork = bitmap
+        // Trigger notification update with new artwork
+        mediaSession?.player?.let { player ->
+            if (player.isPlaying || player.playbackState == Player.STATE_READY) {
+                updateMediaNotification(player)
+            }
+        }
+    }
+
+    private fun addPlayerListener(player: Player) {
+        removePlayerListener()
+        playerListener = object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                Log.d(TAG, "onIsPlayingChanged: isPlaying=$isPlaying, uiVisible=$isPlayerUiVisible")
+                // Update foreground state based on new play state
+                // This handles: playback started/stopped from any source (notification, Bluetooth, etc.)
+                updateForegroundState(player)
+            }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                Log.d(TAG, "onPlaybackStateChanged: state=$playbackState, playWhenReady=${player.playWhenReady}")
+                // Update foreground state when playback state changes
+                // Covers buffering→ready transitions where playback may start/resume
+                updateForegroundState(player)
+            }
+
+            override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {
+                Log.d(TAG, "onMediaMetadataChanged: title=${mediaMetadata.title}")
+                // Metadata change only needs notification update, not foreground state change
+                if (!isPlayerUiVisible && (player.isPlaying || player.playbackState == Player.STATE_READY)) {
+                    updateMediaNotification(player)
+                }
+            }
+        }
+        player.addListener(playerListener!!)
+    }
+
+    private fun removePlayerListener() {
+        playerListener?.let { listener ->
+            mediaSession?.player?.removeListener(listener)
+        }
+        playerListener = null
+    }
+
+    /**
+     * Build a MediaStyle notification with current player state.
+     * Common helper used by both updateMediaNotification and enterForegroundMode.
+     *
+     * @param player The player to get state from
+     * @param includeDeleteIntent Whether to include delete intent for swipe-to-dismiss (when paused)
+     */
+    private fun buildMediaNotification(player: Player, includeDeleteIntent: Boolean): Notification? {
+        val session = mediaSession ?: return null
+
+        val metadata = player.mediaMetadata
+        val title = metadata.title?.toString() ?: getString(R.string.player_default_title)
+        val artist = metadata.artist?.toString() ?: metadata.albumArtist?.toString() ?: ""
+
+        @Suppress("DEPRECATION")
+        val sessionToken = session.sessionCompatToken
+
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_play)
+            .setContentTitle(title)
+            .setContentText(artist)
+            .setContentIntent(createPlayerPendingIntent())
+            .setOngoing(player.isPlaying)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setStyle(
+                androidx.media.app.NotificationCompat.MediaStyle()
+                    .setMediaSession(sessionToken)
+                    .setShowActionsInCompactView(0, 1, 2)
+            )
+            .addAction(createSkipPrevAction())
+            .addAction(if (player.isPlaying) createPauseAction() else createPlayAction())
+            .addAction(createSkipNextAction())
+            .apply {
+                cachedArtwork?.let { bitmap -> setLargeIcon(bitmap) }
+                if (includeDeleteIntent && !player.isPlaying) {
+                    setDeleteIntent(createDismissPendingIntent())
+                }
+            }
             .build()
+    }
+
+    /**
+     * Update the foreground notification with proper media controls.
+     * This replaces the placeholder "Loading..." notification with a full media notification.
+     *
+     * Uses MediaStyle notification for proper media control integration with the system.
+     * Actions dispatch directly to this service which handles them via onStartCommand.
+     *
+     * Note: Notification is only shown when player UI is NOT visible (background playback).
+     */
+    private fun updateMediaNotification(player: Player) {
+        // Don't show notification if player UI is visible - user has direct controls
+        if (isPlayerUiVisible) {
+            Log.d(TAG, "Skipping notification update - UI is visible")
+            return
+        }
+
+        val notification = buildMediaNotification(player, includeDeleteIntent = true) ?: return
+
+        Log.d(TAG, "Updating media notification: isPlaying=${player.isPlaying}")
+
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(NOTIFICATION_ID, notification)
+
+        Log.d(TAG, "Media notification updated successfully")
+    }
+
+    private fun createPlayAction(): NotificationCompat.Action {
+        val intent = Intent(this, PlaybackService::class.java).apply {
+            action = ACTION_PLAY
+        }
+        val pendingIntent = PendingIntent.getService(
+            this, REQUEST_CODE_PLAY, intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        return NotificationCompat.Action.Builder(
+            R.drawable.ic_play,
+            getString(R.string.player_action_play),
+            pendingIntent
+        ).build()
+    }
+
+    private fun createPauseAction(): NotificationCompat.Action {
+        val intent = Intent(this, PlaybackService::class.java).apply {
+            action = ACTION_PAUSE
+        }
+        val pendingIntent = PendingIntent.getService(
+            this, REQUEST_CODE_PAUSE, intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        return NotificationCompat.Action.Builder(
+            R.drawable.ic_pause,
+            getString(R.string.player_action_pause),
+            pendingIntent
+        ).build()
+    }
+
+    private fun createSkipPrevAction(): NotificationCompat.Action {
+        val intent = Intent(this, PlaybackService::class.java).apply {
+            action = ACTION_SKIP_PREV
+        }
+        val pendingIntent = PendingIntent.getService(
+            this, REQUEST_CODE_SKIP_PREV, intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        return NotificationCompat.Action.Builder(
+            R.drawable.ic_skip_previous,
+            getString(R.string.player_action_previous),
+            pendingIntent
+        ).build()
+    }
+
+    private fun createSkipNextAction(): NotificationCompat.Action {
+        val intent = Intent(this, PlaybackService::class.java).apply {
+            action = ACTION_SKIP_NEXT
+        }
+        val pendingIntent = PendingIntent.getService(
+            this, REQUEST_CODE_SKIP_NEXT, intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        return NotificationCompat.Action.Builder(
+            R.drawable.ic_skip_next,
+            getString(R.string.player_action_next),
+            pendingIntent
+        ).build()
+    }
+
+    /**
+     * Create PendingIntent for notification dismiss (swipe-away).
+     * Used as deleteIntent when notification is dismissible (paused state).
+     * Includes a session-unique token to prevent spoofed dismiss intents.
+     */
+    private fun createDismissPendingIntent(): PendingIntent {
+        val intent = Intent(this, PlaybackService::class.java).apply {
+            action = ACTION_DISMISS
+            putExtra(EXTRA_DISMISS_TOKEN, dismissToken)
+        }
+        return PendingIntent.getService(
+            this, REQUEST_CODE_DISMISS, intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
     }
 
     /**
@@ -114,6 +433,8 @@ class PlaybackService : MediaSessionService() {
      */
     fun releaseSession() {
         Log.d(TAG, "Releasing MediaSession")
+        removePlayerListener()
+        cachedArtwork = null
         mediaSession?.release()
         mediaSession = null
     }
@@ -121,6 +442,8 @@ class PlaybackService : MediaSessionService() {
     override fun onDestroy() {
         Log.d(TAG, "PlaybackService destroyed")
         releaseSession()
+        // Clear static field when service is destroyed
+        activeVideoId = null
         super.onDestroy()
     }
 
@@ -139,22 +462,202 @@ class PlaybackService : MediaSessionService() {
             Intent(this, MainActivity::class.java).apply {
                 action = ACTION_OPEN_PLAYER
                 flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                // Include videoId so PlayerFragment can display the currently playing video
+                currentVideoId?.let { putExtra(EXTRA_VIDEO_ID, it) }
             },
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
     }
 
+    /**
+     * Get the current video ID being played.
+     * Used by MainActivity to check if notification tap should navigate or just bring to foreground.
+     */
+    fun getCurrentVideoId(): String? = currentVideoId
+
+    /**
+     * Set the current video ID for notification intents.
+     * Called by PlayerFragment when the current item changes.
+     */
+    fun setCurrentVideoId(videoId: String?) {
+        if (currentVideoId != videoId) {
+            currentVideoId = videoId
+            // Also update static field for MainActivity access without binding
+            activeVideoId = videoId
+            Log.d(TAG, "setCurrentVideoId: $videoId")
+            // Update notification to use new intent with videoId
+            mediaSession?.player?.let { player ->
+                if (player.isPlaying || player.playbackState == Player.STATE_READY) {
+                    updateMediaNotification(player)
+                }
+            }
+        }
+    }
+
+    /**
+     * Set whether the player UI is currently visible.
+     *
+     * When UI is visible:
+     * - Stop foreground mode and hide notification (user has direct controls)
+     * - Service continues running via binding
+     *
+     * When UI is not visible (background):
+     * - Start foreground mode with notification for media controls
+     * - This is required for background playback on Android O+
+     *
+     * @param visible true if PlayerFragment is on-screen, false if in background
+     */
+    fun setPlayerUiVisible(visible: Boolean) {
+        if (isPlayerUiVisible == visible) return
+        isPlayerUiVisible = visible
+        Log.d(TAG, "setPlayerUiVisible: $visible")
+
+        // Use unified foreground state management
+        // This handles all visibility transitions consistently
+        mediaSession?.player?.let { player ->
+            updateForegroundState(player)
+        }
+    }
+
+    /**
+     * Enter foreground mode with proper notification.
+     * Called when app goes to background with active playback.
+     */
+    private fun enterForegroundMode(player: Player) {
+        val notification = buildMediaNotification(player, includeDeleteIntent = false) ?: return
+
+        Log.d(TAG, "Entering foreground mode")
+
+        // Use startForeground() to properly enter foreground state
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
+        Log.d(TAG, "Foreground mode started")
+    }
+
+    /**
+     * Exit foreground mode and remove notification.
+     * Called when player UI becomes visible.
+     */
+    private fun exitForegroundMode() {
+        // STOP_FOREGROUND_REMOVE removes the notification and demotes from foreground
+        // This is the proper way to hide notification without violating FGS rules
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
+        Log.d(TAG, "Foreground mode stopped (UI visible)")
+    }
+
+    /**
+     * Exit foreground mode but keep the notification visible.
+     * Called when paused in background - demotes from FGS to save battery
+     * while keeping a non-FGS notification for quick resume.
+     */
+    private fun exitForegroundModeKeepNotification(player: Player) {
+        // STOP_FOREGROUND_DETACH demotes from FGS but keeps notification visible
+        // The notification becomes a regular (non-foreground) notification
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_DETACH)
+        } else {
+            // Pre-N: stopForeground(false) keeps notification but demotes from FGS
+            @Suppress("DEPRECATION")
+            stopForeground(false)
+        }
+        // Update notification to show paused state (play button instead of pause)
+        updateMediaNotification(player)
+        Log.d(TAG, "Foreground mode stopped (paused in background), notification retained")
+    }
+
+    /**
+     * Unified foreground state management.
+     *
+     * This is the single source of truth for determining if the service should be in foreground mode.
+     * Called from: notification actions, player listener callbacks, UI visibility changes.
+     *
+     * **Decision logic:**
+     * - If UI is visible → exit foreground (user has direct controls)
+     * - If UI is NOT visible AND playback is active → enter foreground (background playback)
+     * - If UI is NOT visible AND playback is NOT active → demote from foreground, show paused notification
+     *
+     * "Playback active" = isPlaying OR (STATE_READY/BUFFERING AND playWhenReady)
+     *
+     * **Paused-in-background policy:**
+     * When paused while backgrounded, we demote from FGS but post a regular notification.
+     * This saves battery (no FGS overhead) while allowing quick resume via notification.
+     * Android may eventually dismiss the notification if user swipes away or system reclaims.
+     */
+    private fun updateForegroundState(player: Player) {
+        val isPlaybackActive = player.isPlaying ||
+            ((player.playbackState == Player.STATE_READY || player.playbackState == Player.STATE_BUFFERING)
+                && player.playWhenReady)
+
+        Log.d(TAG, "updateForegroundState: uiVisible=$isPlayerUiVisible, playbackActive=$isPlaybackActive, " +
+            "isPlaying=${player.isPlaying}, state=${player.playbackState}, playWhenReady=${player.playWhenReady}")
+
+        when {
+            isPlayerUiVisible -> {
+                // UI is visible - don't need foreground, user has direct controls
+                exitForegroundMode()
+            }
+            isPlaybackActive -> {
+                // Background with active playback - must be in foreground
+                enterForegroundMode(player)
+            }
+            else -> {
+                // Background but not playing - demote from FGS and show paused notification
+                // This conserves battery while allowing quick resume via notification tap
+                exitForegroundModeKeepNotification(player)
+            }
+        }
+    }
+
+    /**
+     * Creates the notification channel for playback notifications.
+     *
+     * **Important**: We do NOT delete existing channels even if the user changed importance.
+     * Android respects user channel settings, so if the user changed importance (causing heads-up
+     * banners), we should not override their choice. Instead, they can adjust it in system settings.
+     *
+     * The channel is created with IMPORTANCE_LOW to avoid heads-up banners by default.
+     * If users see intrusive banners, they can:
+     * 1. Long-press the notification → Settings → set to "Silent" or "Low"
+     * 2. Go to App Info → Notifications → Playback → reduce importance
+     */
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val existingChannel = manager.getNotificationChannel(CHANNEL_ID)
+            if (existingChannel != null) {
+                // Channel already exists - respect user's settings, don't recreate.
+                // If importance is high, it may be due to user choice or OS upgrade.
+                // We log it but do not delete the channel.
+                if (existingChannel.importance > NotificationManager.IMPORTANCE_LOW) {
+                    Log.i(TAG, "Notification channel '$CHANNEL_ID' has elevated importance (${existingChannel.importance}). " +
+                        "User can adjust in system notification settings to reduce banner intrusiveness.")
+                }
+                return
+            }
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 getString(R.string.player_notification_channel_name),
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = getString(R.string.player_notification_channel_desc)
+                // Explicitly disable heads-up/peek behavior
+                setShowBadge(false)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             }
             manager.createNotificationChannel(channel)
+            Log.i(TAG, "Created notification channel '$CHANNEL_ID' with IMPORTANCE_LOW")
         }
     }
 
@@ -218,9 +721,56 @@ class PlaybackService : MediaSessionService() {
     companion object {
         private const val TAG = "PlaybackService"
         private const val CHANNEL_ID = "playback"
+        /** Notification ID for foreground service - must be unique and non-zero */
+        private const val NOTIFICATION_ID = 1001
         const val ACTION_OPEN_PLAYER = "com.albunyaan.tube.OPEN_PLAYER"
+        /** Extra key for videoId in notification tap intent */
+        const val EXTRA_VIDEO_ID = "video_id"
         /** Action for local in-app binding (distinguishes from MediaSession binding) */
         const val ACTION_LOCAL_BIND = "com.albunyaan.tube.LOCAL_BIND"
+
+        /**
+         * Static reference to the currently playing video ID.
+         * Updated by setCurrentVideoId() for quick access from MainActivity
+         * without needing to bind to the service.
+         *
+         * **Thread safety:**
+         * - PlaybackService is a singleton (only one instance runs)
+         * - Updated on main thread via setCurrentVideoId()
+         * - Read on main thread by MainActivity's handleOpenPlayerIntent()
+         *
+         * **Process death behavior:**
+         * This is in-memory state that does NOT survive process death.
+         * After process death, activeVideoId will be null. This is intentional:
+         * - ExoPlayer state is lost on process death anyway
+         * - Fragment's ViewModel doesn't persist playback position
+         * - MainActivity handles null gracefully (brings app to foreground without navigation)
+         *
+         * If "resume after process death" is ever required, playback state would need
+         * to be persisted to disk (SharedPreferences/Room) and restored on service creation.
+         * This is not currently implemented as it adds complexity for minimal user benefit.
+         */
+        @Volatile
+        @JvmStatic
+        var activeVideoId: String? = null
+            private set
+
+        // Notification action intents
+        private const val ACTION_PLAY = "com.albunyaan.tube.ACTION_PLAY"
+        private const val ACTION_PAUSE = "com.albunyaan.tube.ACTION_PAUSE"
+        private const val ACTION_SKIP_PREV = "com.albunyaan.tube.ACTION_SKIP_PREV"
+        private const val ACTION_SKIP_NEXT = "com.albunyaan.tube.ACTION_SKIP_NEXT"
+        private const val ACTION_DISMISS = "com.albunyaan.tube.ACTION_DISMISS"
+
+        // Request codes for PendingIntents (must be unique)
+        private const val REQUEST_CODE_PLAY = 1
+        private const val REQUEST_CODE_PAUSE = 2
+        private const val REQUEST_CODE_SKIP_PREV = 3
+        private const val REQUEST_CODE_SKIP_NEXT = 4
+        private const val REQUEST_CODE_DISMISS = 5
+
+        /** Extra key for dismiss token validation (prevents spoofed dismiss intents) */
+        private const val EXTRA_DISMISS_TOKEN = "dismiss_token"
 
         /**
          * Determine the access level for a media session controller.

@@ -626,6 +626,16 @@ class PlaylistDetailViewModelTest {
             // No-op for tests
         }
 
+        override fun remove(requestId: String) {
+            // No-op for tests
+        }
+
+        override fun retry(requestId: String) {
+            // No-op for tests
+        }
+
+        override fun delete(requestId: String): Boolean = true
+
         override fun enqueuePlaylist(
             playlistId: String,
             playlistTitle: String,

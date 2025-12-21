@@ -2,6 +2,7 @@ package com.albunyaan.tube.player
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Log
 import androidx.media3.common.MediaItem
@@ -29,6 +30,7 @@ import javax.inject.Singleton
  * - Creating MediaMetadata objects from playback item info
  * - Loading artwork bitmaps asynchronously via Coil
  * - Updating the player's MediaItem with metadata so MediaSession reflects it
+ * - Notifying PlaybackService when artwork is loaded for notification display
  *
  * **Why this exists**: Media3's MediaSessionService automatically publishes
  * notification content from the player's current MediaItem's MediaMetadata.
@@ -49,10 +51,22 @@ class MediaSessionMetadataManager @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var artworkLoadJob: Job? = null
 
-    // Cache the last loaded artwork URL to avoid redundant loads.
+    // Cache the last loaded artwork URL and bytes to avoid redundant loads.
     // Note: These fields are only accessed from main thread; no synchronization needed.
+    //
+    // Memory trade-off: We store only the compressed PNG bytes (lastArtworkBytes), not the
+    // uncompressed Bitmap. This reduces memory footprint since PNG bytes are typically 10-50x
+    // smaller than uncompressed ARGB_8888 bitmaps. Bitmaps are decoded on-demand for callbacks
+    // and immediately discarded. The decode cost (~5-10ms for 512px artwork) is acceptable
+    // since callbacks are infrequent (track changes, not every frame).
     private var lastArtworkUrl: String? = null
     private var lastArtworkBytes: ByteArray? = null
+
+    /**
+     * Callback to notify when artwork is loaded.
+     * Used by PlayerFragment to pass artwork to PlaybackService for notification.
+     */
+    var artworkCallback: ((Bitmap?) -> Unit)? = null
 
     // Stable identity token for the current metadata update request.
     // Used to detect context changes during async artwork loading (safer than index-based checks).
@@ -99,8 +113,14 @@ class MediaSessionMetadataManager @Inject constructor(
         }
 
         // Include cached artwork if URL matches
-        if (thumbnailUrl == lastArtworkUrl && lastArtworkBytes != null) {
-            metadataBuilder.setArtworkData(lastArtworkBytes, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+        val cachedBytes = lastArtworkBytes
+        if (thumbnailUrl == lastArtworkUrl && cachedBytes != null) {
+            metadataBuilder.setArtworkData(cachedBytes, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+            // Decode bitmap on-demand for callback, then discard immediately
+            decodeBitmapFromBytes(cachedBytes)?.let { bitmap ->
+                artworkCallback?.invoke(bitmap)
+                // Bitmap is not retained - callback recipient must copy if needed
+            }
             Log.d(TAG, "Using cached artwork for: $thumbnailUrl")
         }
 
@@ -132,6 +152,7 @@ class MediaSessionMetadataManager @Inject constructor(
         imageLoader.shutdown()
         lastArtworkUrl = null
         lastArtworkBytes = null
+        artworkCallback = null
     }
 
     /**
@@ -193,9 +214,13 @@ class MediaSessionMetadataManager @Inject constructor(
                             return@launch
                         }
 
-                        // Cache for reuse
+                        // Cache bytes for reuse (not the bitmap - see memory trade-off comment)
                         lastArtworkUrl = thumbnailUrl
                         lastArtworkBytes = artworkBytes
+
+                        // Notify callback with bitmap, then let it be GC'd
+                        // (callback recipient must copy if it needs to retain)
+                        artworkCallback?.invoke(bitmap)
 
                         // Build metadata with artwork
                         val metadataWithArt = MediaMetadata.Builder()
@@ -249,6 +274,19 @@ class MediaSessionMetadataManager @Inject constructor(
             stream.toByteArray()
         } catch (e: Exception) {
             Log.e(TAG, "Bitmap to bytes error: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Decodes a Bitmap from PNG bytes for on-demand callback use.
+     * The returned Bitmap should not be retained long-term by the caller.
+     */
+    private fun decodeBitmapFromBytes(bytes: ByteArray): Bitmap? {
+        return try {
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        } catch (e: Exception) {
+            Log.e(TAG, "Bitmap decode error: ${e.message}")
             null
         }
     }

@@ -4,8 +4,10 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.os.bundleOf
 import androidx.navigation.NavController
 import androidx.navigation.fragment.NavHostFragment
+import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.R
 import com.albunyaan.tube.databinding.ActivityMainBinding
 import com.albunyaan.tube.locale.LocaleManager
@@ -98,30 +100,77 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * Handle ACTION_OPEN_PLAYER from PlaybackService notification.
+     *
+     * Uses PlaybackService.activeVideoId (the actual playing video) to determine behavior.
+     *
+     * **Behavior:**
+     * - If PlayerFragment is already showing → just bring app to foreground (ViewModel has state)
+     * - If activeVideoId is available → navigate to player with videoId arg
+     * - If activeVideoId is null (process death, race condition) → don't navigate, just bring to foreground
+     *
+     * **Process death handling:**
+     * After process death, activeVideoId will be null since it's in-memory state.
+     * In this case, we don't navigate to an empty player. The user will see the last
+     * visible screen (likely home) and can start fresh playback. This is intentional:
+     * media playback state doesn't survive process death in this architecture.
      */
     private fun handleOpenPlayerIntent() {
         try {
+            // Get the actual currently playing video from service state
+            val activeVideoId = PlaybackService.activeVideoId
+            if (BuildConfig.DEBUG) {
+                android.util.Log.d("MainActivity", "handleOpenPlayerIntent: hasActiveVideo=${!activeVideoId.isNullOrBlank()}")
+            }
+
+            // If no active video, don't navigate - just bring app to foreground
+            // This handles process death gracefully (user sees last screen, not empty player)
+            if (activeVideoId.isNullOrBlank()) {
+                if (BuildConfig.DEBUG) {
+                    android.util.Log.d("MainActivity", "No active video, just bringing app to foreground")
+                }
+                return
+            }
+
+            // Create args bundle with the active video ID
+            val args = bundleOf("videoId" to activeVideoId)
+
             val currentDest = navController.currentDestination?.id
             if (currentDest == R.id.mainShellFragment) {
-                // We're in the app, navigate to player via nested nav controller
                 val nestedNav = getNestedNavController()
                 if (nestedNav != null) {
-                    nestedNav.navigate(R.id.playerFragment)
+                    // Check if already on PlayerFragment
+                    if (nestedNav.currentDestination?.id == R.id.playerFragment) {
+                        // Already on player - ViewModel maintains playback state.
+                        // Just bring to foreground, no navigation needed.
+                        if (BuildConfig.DEBUG) {
+                            android.util.Log.d("MainActivity", "Already on player, bringing to foreground")
+                        }
+                        return
+                    }
+                    // Navigate to player with activeVideoId to resume session
+                    if (BuildConfig.DEBUG) {
+                        android.util.Log.d("MainActivity", "Navigating to player with video")
+                    }
+                    nestedNav.navigate(R.id.playerFragment, args)
                 } else {
                     // Nested nav not ready yet, wait for it
-                    android.util.Log.d("MainActivity", "Nested nav not ready, waiting for controller")
+                    if (BuildConfig.DEBUG) {
+                        android.util.Log.d("MainActivity", "Nested nav not ready, waiting for controller")
+                    }
                     waitForNestedNavControllerThenExecute(
-                        action = { controller -> controller.navigate(R.id.playerFragment) }
+                        action = { controller -> controller.navigate(R.id.playerFragment, args) }
                     )
                 }
             } else {
                 // Not on mainShell (splash/onboarding/transition), wait for mainShell then navigate
                 waitForMainShellThenNavigate { nestedNavController ->
-                    nestedNavController.navigate(R.id.playerFragment)
+                    nestedNavController.navigate(R.id.playerFragment, args)
                 }
             }
         } catch (e: Exception) {
-            android.util.Log.e("MainActivity", "Failed to navigate to player", e)
+            if (BuildConfig.DEBUG) {
+                android.util.Log.e("MainActivity", "Failed to navigate to player", e)
+            }
         }
     }
 
@@ -131,7 +180,10 @@ class MainActivity : AppCompatActivity() {
      */
     private fun handleDeepLink(intent: Intent) {
         val uri = intent.data ?: return
-        android.util.Log.d("MainActivity", "Handling deep link: ${uri.scheme}://${uri.host}/...")
+        if (BuildConfig.DEBUG) {
+            // Log scheme and host only, not the path which may contain user-specific IDs
+            android.util.Log.d("MainActivity", "Handling deep link: ${uri.scheme}://${uri.host}/...")
+        }
 
         try {
             val currentDest = navController.currentDestination?.id
@@ -142,7 +194,9 @@ class MainActivity : AppCompatActivity() {
                     nestedNav.handleDeepLink(intent)
                 } else {
                     // Nested nav not ready yet, wait for it
-                    android.util.Log.d("MainActivity", "Nested nav not ready for deep link, waiting")
+                    if (BuildConfig.DEBUG) {
+                        android.util.Log.d("MainActivity", "Nested nav not ready for deep link, waiting")
+                    }
                     waitForNestedNavControllerThenExecute(
                         action = { controller -> controller.handleDeepLink(intent) }
                     )
@@ -154,13 +208,18 @@ class MainActivity : AppCompatActivity() {
                 }
             } else {
                 // Fallback: wait for nested controller to be ready then handle
-                android.util.Log.d("MainActivity", "Deep link in transition state, waiting for nested nav")
+                if (BuildConfig.DEBUG) {
+                    android.util.Log.d("MainActivity", "Deep link in transition state, waiting for nested nav")
+                }
                 waitForNestedNavControllerThenExecute(
                     action = { nestedNavController -> nestedNavController.handleDeepLink(intent) }
                 )
             }
         } catch (e: Exception) {
-            android.util.Log.e("MainActivity", "Failed to handle deep link: $uri", e)
+            if (BuildConfig.DEBUG) {
+                // Only log URI scheme/host in debug, not full path with IDs
+                android.util.Log.e("MainActivity", "Failed to handle deep link: ${uri.scheme}://${uri.host}/...", e)
+            }
         }
     }
 
@@ -219,7 +278,9 @@ class MainActivity : AppCompatActivity() {
 
         // Guard against activity being destroyed during async wait
         if (isFinishing || isDestroyed) {
-            android.util.Log.d("MainActivity", "Activity finishing/destroyed, skipping nested nav wait")
+            if (BuildConfig.DEBUG) {
+                android.util.Log.d("MainActivity", "Activity finishing/destroyed, skipping nested nav wait")
+            }
             return
         }
 
@@ -227,7 +288,9 @@ class MainActivity : AppCompatActivity() {
         window.decorView.post {
             // Re-check lifecycle state inside posted runnable
             if (isFinishing || isDestroyed) {
-                android.util.Log.d("MainActivity", "Activity finishing/destroyed during wait, aborting")
+                if (BuildConfig.DEBUG) {
+                    android.util.Log.d("MainActivity", "Activity finishing/destroyed during wait, aborting")
+                }
                 return@post
             }
 
@@ -237,13 +300,19 @@ class MainActivity : AppCompatActivity() {
                     action(nestedNavController)
                 } else if (retryCount < maxRetries) {
                     // Nested nav not ready yet, retry after next frame
-                    android.util.Log.d("MainActivity", "Nested nav not ready, retry ${retryCount + 1}/$maxRetries")
+                    if (BuildConfig.DEBUG) {
+                        android.util.Log.d("MainActivity", "Nested nav not ready, retry ${retryCount + 1}/$maxRetries")
+                    }
                     waitForNestedNavControllerThenExecute(action, retryCount + 1)
                 } else {
-                    android.util.Log.e("MainActivity", "Nested nav controller not available after $maxRetries retries")
+                    if (BuildConfig.DEBUG) {
+                        android.util.Log.e("MainActivity", "Nested nav controller not available after $maxRetries retries")
+                    }
                 }
             } catch (e: Exception) {
-                android.util.Log.e("MainActivity", "Navigation failed after waiting for mainShell", e)
+                if (BuildConfig.DEBUG) {
+                    android.util.Log.e("MainActivity", "Navigation failed after waiting for mainShell", e)
+                }
             }
         }
     }

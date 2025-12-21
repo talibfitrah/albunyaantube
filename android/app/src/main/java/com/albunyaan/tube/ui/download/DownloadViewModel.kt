@@ -30,5 +30,11 @@ class DownloadViewModel @Inject constructor(
 
     fun cancel(id: String) = repository.cancel(id)
 
+    fun remove(id: String) = repository.remove(id)
+
+    fun retry(id: String) = repository.retry(id)
+
+    fun delete(id: String): Boolean = repository.delete(id)
+
     fun fileFor(entry: DownloadEntry): File? = entry.filePath?.let { File(it) }
 }

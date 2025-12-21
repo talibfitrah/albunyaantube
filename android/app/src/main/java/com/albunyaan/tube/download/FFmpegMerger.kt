@@ -29,21 +29,23 @@ class FFmpegMerger @Inject constructor() {
      * @param audioFile The audio-only input file
      * @param outputFile The merged output file
      * @param onProgress Optional progress callback (0-100)
-     * @return true if merge succeeded, false otherwise
+     * @throws FFmpegMergeException if the merge operation fails
+     * @throws FFmpegMergeException if input files don't exist
+     * @throws IOException if output directory can't be created
      */
     suspend fun merge(
         videoFile: File,
         audioFile: File,
         outputFile: File,
         onProgress: ((Int) -> Unit)? = null
-    ): Boolean = withContext(Dispatchers.IO) {
+    ): Unit = withContext(Dispatchers.IO) {
         if (!videoFile.exists()) {
             Log.e(TAG, "Video file does not exist: ${videoFile.absolutePath}")
-            return@withContext false
+            throw FFmpegMergeException("Video file does not exist: ${videoFile.absolutePath}")
         }
         if (!audioFile.exists()) {
             Log.e(TAG, "Audio file does not exist: ${audioFile.absolutePath}")
-            return@withContext false
+            throw FFmpegMergeException("Audio file does not exist: ${audioFile.absolutePath}")
         }
 
         // Ensure output directory exists
@@ -68,6 +70,7 @@ class FFmpegMerger @Inject constructor() {
             "-c", "copy",
             "-map", "0:v:0",
             "-map", "1:a:0",
+            "-f", "mp4",  // Explicit output format (required for .tmp extension)
             "-movflags", "+faststart",
             "-y",
             outputFile.absolutePath
@@ -82,18 +85,25 @@ class FFmpegMerger @Inject constructor() {
             ReturnCode.isSuccess(returnCode) -> {
                 Log.i(TAG, "Merge completed successfully: ${outputFile.absolutePath}")
                 onProgress?.invoke(100)
-                true
             }
             ReturnCode.isCancel(returnCode) -> {
                 Log.w(TAG, "Merge cancelled")
                 outputFile.delete()
-                false
+                throw FFmpegMergeException(
+                    message = "FFmpeg merge was cancelled",
+                    returnCode = returnCode.value,
+                    ffmpegOutput = session.output
+                )
             }
             else -> {
                 Log.e(TAG, "Merge failed with return code: ${returnCode.value}")
                 Log.e(TAG, "FFmpeg output: ${session.output}")
                 outputFile.delete()
-                false
+                throw FFmpegMergeException(
+                    message = "FFmpeg merge failed with return code ${returnCode.value}",
+                    returnCode = returnCode.value,
+                    ffmpegOutput = session.output
+                )
             }
         }
     }

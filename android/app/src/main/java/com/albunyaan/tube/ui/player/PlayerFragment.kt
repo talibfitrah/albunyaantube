@@ -150,12 +150,24 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             playbackService = (binder as PlaybackService.LocalBinder).getService()
             // Initialize MediaSession with our player once service is bound
             player?.let { playbackService?.initializeSession(it) }
+            // Mark UI as visible now that we have the service reference.
+            // This handles the case where service connects after onStart() has already run.
+            if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+                playbackService?.setPlayerUiVisible(true)
+            }
+            // Wire artwork callback: when MetadataManager loads artwork, pass to PlaybackService
+            val service = playbackService
+            metadataManager.artworkCallback = { bitmap ->
+                service?.setArtwork(bitmap)
+            }
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
             // Called when service crashes or is killed - not during normal unbind
             playbackService = null
             bindingRequested = false
+            // Clear artwork callback since service is gone
+            metadataManager.artworkCallback = null
 
             // Attempt immediate rebind only if fragment is visible (started state)
             // This handles service death while user is actively watching video
@@ -369,13 +381,23 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         // Guard: only bind once per view lifecycle to prevent stacking binds on repeated start/stop
         if (!bindingRequested) {
             bindingRequested = PlaybackService.bind(requireContext(), serviceConnection)
+            // Start as foreground service for background playback capability.
+            // Note: The service manages its own notification visibility based on UI state.
+            startPlaybackServiceForForeground()
         }
+
+        // Mark player UI as visible - this hides the notification to prevent banner intrusion
+        playbackService?.setPlayerUiVisible(true)
+
         // Restore user's intended play state - don't force resume if user had paused
         player?.playWhenReady = userWantsToPlay
         castContext?.sessionManager?.addSessionManagerListener(castSessionListener, com.google.android.gms.cast.framework.CastSession::class.java)
     }
 
     override fun onStop() {
+        // Mark player UI as not visible - this shows the notification for background control
+        playbackService?.setPlayerUiVisible(false)
+
         // Don't pause playback - allow background audio
         castContext?.sessionManager?.removeSessionManagerListener(castSessionListener, com.google.android.gms.cast.framework.CastSession::class.java)
         super.onStop()
@@ -433,8 +455,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         adaptiveFailedForCurrentStream = null
         lastMetadataSyncedItemId = null
 
-        // Cancel any pending artwork loading
+        // Cancel any pending artwork loading and clear callback
         metadataManager.cancelArtworkLoading()
+        metadataManager.artworkCallback = null
 
         // Release player asynchronously to avoid ExoTimeoutException during fragment destruction.
         // The player's internal threads may be blocked (e.g., waiting for audio hardware),
@@ -584,6 +607,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 android.util.Log.d("PlayerFragment", "onIsPlayingChanged: isPlaying=$isPlaying, hasAutoHidden=$hasAutoHidden")
                 if (isPlaying) {
+                    // Note: PlaybackService is started as foreground in onStart() to satisfy
+                    // Android's 5-second rule. MediaSessionService shows notification automatically
+                    // once the MediaSession has a playing player attached.
+
                     // Notify recovery manager that playback is healthy
                     recoveryManager?.onPlaybackStarted()
 
@@ -816,6 +843,27 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 }
                 else -> false
             }
+        }
+    }
+
+    /**
+     * Start PlaybackService as a foreground service to enable media notification.
+     *
+     * MediaSessionService requires startForegroundService() (not just bindService) to properly
+     * transition to foreground mode and show notifications. This is called when playback starts.
+     */
+    private fun startPlaybackServiceForForeground() {
+        val context = context ?: return
+        try {
+            val intent = Intent(context, PlaybackService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+            android.util.Log.d("PlayerFragment", "Started PlaybackService for foreground notification")
+        } catch (e: Exception) {
+            android.util.Log.w("PlayerFragment", "Failed to start PlaybackService for foreground", e)
         }
     }
 
@@ -2190,6 +2238,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             artist = item.channelName,
             thumbnailUrl = item.thumbnailUrl
         )
+
+        // Update PlaybackService with current video ID for notification tap intent
+        playbackService?.setCurrentVideoId(item.streamId)
 
         lastMetadataSyncedItemId = item.id
         android.util.Log.d("PlayerFragment", "Synced MediaSession metadata for: ${item.title}")

@@ -35,7 +35,14 @@ import javax.inject.Inject
 class DownloadsFragment : Fragment(R.layout.fragment_downloads) {
 
     private var binding: FragmentDownloadsBinding? = null
-    private val adapter = DownloadsAdapter(::onPauseResumeClicked, ::onCancelClicked, ::onOpenClicked)
+    private val adapter = DownloadsAdapter(
+        onPauseResume = ::onPauseResumeClicked,
+        onCancel = ::onCancelClicked,
+        onOpen = ::onOpenClicked,
+        onRetry = ::onRetryClicked,
+        onRemove = ::onRemoveClicked,
+        onDelete = ::onDeleteClicked
+    )
     private val viewModel: DownloadViewModel by viewModels()
 
     @Inject
@@ -149,6 +156,23 @@ class DownloadsFragment : Fragment(R.layout.fragment_downloads) {
 
     private fun onCancelClicked(entry: DownloadEntry) {
         viewModel.cancel(entry.request.id)
+    }
+
+    private fun onRetryClicked(entry: DownloadEntry) {
+        android.util.Log.d("DownloadsFragment", "Retry clicked for: ${entry.request.videoId}")
+        viewModel.retry(entry.request.id)
+    }
+
+    private fun onRemoveClicked(entry: DownloadEntry) {
+        android.util.Log.d("DownloadsFragment", "Remove clicked for: ${entry.request.videoId}")
+        viewModel.remove(entry.request.id)
+    }
+
+    private fun onDeleteClicked(entry: DownloadEntry) {
+        android.util.Log.d("DownloadsFragment", "Delete clicked for: ${entry.request.videoId}")
+        val success = viewModel.delete(entry.request.id)
+        val messageRes = if (success) R.string.download_deleted else R.string.download_delete_failed
+        Toast.makeText(requireContext(), messageRes, Toast.LENGTH_SHORT).show()
     }
 
     private fun onOpenClicked(entry: DownloadEntry) {

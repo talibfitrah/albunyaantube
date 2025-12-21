@@ -20,6 +20,7 @@ import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.VideoTrack
 import com.albunyaan.tube.data.extractor.QualitySelectionOrigin
+import com.albunyaan.tube.util.HttpConstants
 
 /**
  * Result of creating a MediaSource. Contains the source, type info, and actual URL used.
@@ -57,7 +58,7 @@ data class MediaSourceResult(
 class MultiQualityMediaSourceFactory(private val context: Context) {
 
     private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-        .setUserAgent("Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36")
+        .setUserAgent(HttpConstants.YOUTUBE_USER_AGENT)
         // Timeouts balanced for reliability and responsiveness
         .setConnectTimeoutMs(15000)  // 15s connect timeout
         .setReadTimeoutMs(20000)     // 20s read timeout (balances reliability with responsiveness)

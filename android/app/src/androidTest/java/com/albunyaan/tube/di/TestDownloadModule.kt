@@ -107,6 +107,19 @@ class FakeDownloadRepository : DownloadRepository {
         actions += "cancel:$requestId"
     }
 
+    override fun remove(requestId: String) {
+        actions += "remove:$requestId"
+    }
+
+    override fun retry(requestId: String) {
+        actions += "retry:$requestId"
+    }
+
+    override fun delete(requestId: String): Boolean {
+        actions += "delete:$requestId"
+        return true
+    }
+
     override fun enqueuePlaylist(
         playlistId: String,
         playlistTitle: String,

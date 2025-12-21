@@ -235,7 +235,8 @@ class PlayerViewModel @Inject constructor(
             title = item.title,
             videoId = item.streamId,
             audioOnly = audioOnly,
-            targetHeight = targetHeight
+            targetHeight = targetHeight,
+            thumbnailUrl = item.thumbnailUrl
         )
         downloadRepository.enqueue(request)
         return true

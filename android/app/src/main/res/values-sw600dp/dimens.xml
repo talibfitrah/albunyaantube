@@ -89,4 +89,8 @@
     <!-- Error State Component (Tablet) -->
     <dimen name="error_body_max_width">400dp</dimen>
     <dimen name="button_min_width">140dp</dimen>
+
+    <!-- Download/Favorite List Item Thumbnail (Tablet - larger for readability) -->
+    <dimen name="favorite_thumbnail_width">160dp</dimen>
+    <dimen name="favorite_thumbnail_height">90dp</dimen>
 </resources>

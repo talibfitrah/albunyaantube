@@ -473,7 +473,8 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
             PlaylistDownloadItem(
                 videoId = item.videoId,
                 title = item.title,
-                indexInPlaylist = item.position
+                indexInPlaylist = item.position,
+                thumbnailUrl = item.thumbnailUrl
             )
         }
 

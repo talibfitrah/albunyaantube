@@ -27,6 +27,10 @@ class DownloadScheduler(
         // Add target height for quality selection (0 = best available)
         request.targetHeight?.let { inputBuilder.putInt(KEY_TARGET_HEIGHT, it) }
 
+        // Note: thumbnail URL is NOT passed via WorkManager input data.
+        // It's persisted via DownloadStorage.saveExtendedMetadata() in DownloadRepository
+        // before scheduling, and read back from the .meta file when needed.
+
         // Add optional playlist context
         request.playlistId?.let { inputBuilder.putString(KEY_PLAYLIST_ID, it) }
         request.playlistTitle?.let { inputBuilder.putString(KEY_PLAYLIST_TITLE, it) }
@@ -106,6 +110,8 @@ class DownloadScheduler(
         internal const val KEY_PLAYLIST_SIZE = "playlist_size"
         // Target video height for quality selection (0 for audio-only or best available)
         internal const val KEY_TARGET_HEIGHT = "target_height"
+        // Error reason for failed downloads
+        internal const val KEY_ERROR_REASON = "error_reason"
 
         private val NETWORK_CONSTRAINTS = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)

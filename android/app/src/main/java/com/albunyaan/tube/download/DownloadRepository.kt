@@ -4,9 +4,10 @@ import androidx.lifecycle.asFlow
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.albunyaan.tube.analytics.ExtractorMetricsReporter
+import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_COMPLETED_AT
+import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_ERROR_REASON
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_FILE_PATH
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_FILE_SIZE
-import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_COMPLETED_AT
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_MIME_TYPE
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_PROGRESS
 import java.util.UUID
@@ -29,6 +30,23 @@ interface DownloadRepository {
     fun pause(requestId: String)
     fun resume(requestId: String)
     fun cancel(requestId: String)
+
+    /**
+     * Remove a failed or cancelled download entry from the list.
+     * Clears the entry and any associated temp files.
+     */
+    fun remove(requestId: String)
+
+    /**
+     * Retry a failed download by re-enqueuing the original request.
+     */
+    fun retry(requestId: String)
+
+    /**
+     * Delete a completed download (removes file and clears entry).
+     * @return true if deletion was successful, false if entry not found or not completed
+     */
+    fun delete(requestId: String): Boolean
 
     /**
      * Enqueue all videos in a playlist for download.
@@ -62,7 +80,8 @@ interface DownloadRepository {
 data class PlaylistDownloadItem(
     val videoId: String,
     val title: String,
-    val indexInPlaylist: Int
+    val indexInPlaylist: Int,
+    val thumbnailUrl: String? = null
 )
 
 class DefaultDownloadRepository(
@@ -75,6 +94,7 @@ class DefaultDownloadRepository(
 ) : DownloadRepository {
 
     private val entries = MutableStateFlow<List<DownloadEntry>>(emptyList())
+    private val entriesLock = Any() // Synchronization lock for entries read-modify-write
     private val workIds = ConcurrentHashMap<String, UUID>()
     private val paused = ConcurrentHashMap.newKeySet<String>()
 
@@ -179,11 +199,19 @@ class DefaultDownloadRepository(
 
     private fun restoreDownloadsFromWorkManager() {
         scope.launch {
-            // Scan filesystem for completed downloads
+            // First, restore in-progress downloads from WorkManager
+            restoreRunningDownloads()
+
+            // Then scan filesystem for completed downloads
             val downloadFiles = storage.listAllDownloads()
             android.util.Log.d("DownloadRepository", "Found ${downloadFiles.size} download files on disk")
 
             for ((downloadId, file) in downloadFiles) {
+                // Skip if already restored from WorkManager (in-progress or completed)
+                if (entries.value.any { it.request.id == downloadId }) {
+                    continue
+                }
+
                 // Parse downloadId to extract videoId
                 // Supports two formats:
                 // 1. Playlist format: "playlistId|qualityLabel|videoId" (new)
@@ -191,14 +219,13 @@ class DefaultDownloadRepository(
                 val videoId = parseVideoIdFromDownloadId(downloadId)
                 val audioOnly = file.name.endsWith(".m4a")
 
-                // Try to fetch actual title from metadata extractor
-                val title = try {
-                    val extractedTitle = fetchVideoTitle(videoId)
-                    extractedTitle ?: videoId
-                } catch (e: Exception) {
-                    android.util.Log.w("DownloadRepository", "Failed to fetch title for $videoId", e)
-                    videoId  // Fallback to videoId
-                }
+                // Load extended metadata from storage (title, thumbnailUrl)
+                // This was saved when the download was enqueued
+                val storedMetadata = storage.metadataFor(downloadId, audioOnly)
+
+                // Use stored title, fallback to videoId only if not available
+                val title = storedMetadata?.title ?: videoId
+                val thumbnailUrl = storedMetadata?.thumbnailUrl
 
                 // Extract playlist metadata if present
                 val playlistMetadata = parsePlaylistMetadataFromDownloadId(downloadId)
@@ -208,11 +235,12 @@ class DefaultDownloadRepository(
                     title = title,
                     videoId = videoId,
                     audioOnly = audioOnly,
+                    thumbnailUrl = thumbnailUrl,
                     playlistId = playlistMetadata?.first,
                     playlistQualityLabel = playlistMetadata?.second
                 )
 
-                val metadata = DownloadFileMetadata(
+                val metadata = storedMetadata ?: DownloadFileMetadata(
                     sizeBytes = file.length(),
                     completedAtMillis = file.lastModified(),
                     mimeType = if (audioOnly) "audio/mp4" else "video/mp4"
@@ -228,7 +256,97 @@ class DefaultDownloadRepository(
                 }
             }
 
-            android.util.Log.d("DownloadRepository", "Restored ${entries.value.size} completed downloads")
+            android.util.Log.d("DownloadRepository", "Restored ${entries.value.size} total downloads")
+        }
+    }
+
+    /**
+     * Restore running/queued downloads from WorkManager after app restart.
+     * Queries WorkManager for active downloads tagged with our download tag,
+     * reconstructs DownloadRequest from stored metadata, and re-observes progress.
+     */
+    private suspend fun restoreRunningDownloads() {
+        try {
+            // Query all work with our download tag - use withContext to safely block
+            val workInfos = withContext(Dispatchers.IO) {
+                workManager.getWorkInfosByTag("com.albunyaan.tube.download").get()
+            }
+
+            var restoredCount = 0
+
+            for (info in workInfos) {
+                // Only restore non-finished work
+                if (info.state.isFinished) continue
+
+                // Extract download ID from tags (format: "download_${downloadId}")
+                // WorkInfo doesn't expose input data, but tags are preserved
+                val downloadTag = info.tags.firstOrNull { it.startsWith("download_") }
+                val downloadId = downloadTag?.removePrefix("download_")
+
+                if (downloadId.isNullOrEmpty()) {
+                    android.util.Log.w("DownloadRepository", "Could not extract downloadId from WorkInfo tags")
+                    continue
+                }
+
+                // Skip if already have this entry
+                if (entries.value.any { it.request.id == downloadId }) {
+                    android.util.Log.d("DownloadRepository", "Skipping already tracked download: $downloadId")
+                    continue
+                }
+
+                // Parse metadata
+                val videoId = parseVideoIdFromDownloadId(downloadId)
+                val storedMetadata = storage.getExtendedMetadata(downloadId)
+                val title = storedMetadata?.first ?: videoId
+                val thumbnailUrl = storedMetadata?.second
+
+                android.util.Log.d("DownloadRepository", "Restoring download: id=$downloadId, title=$title, thumbnailUrl=${thumbnailUrl != null}")
+
+                // Determine audio only from stored metadata or downloadId pattern
+                val audioOnly = storage.isAudioOnlyDownload(downloadId)
+
+                // Extract playlist metadata if present
+                val playlistMetadata = parsePlaylistMetadataFromDownloadId(downloadId)
+
+                val request = DownloadRequest(
+                    id = downloadId,
+                    title = title,
+                    videoId = videoId,
+                    audioOnly = audioOnly,
+                    thumbnailUrl = thumbnailUrl,
+                    playlistId = playlistMetadata?.first,
+                    playlistQualityLabel = playlistMetadata?.second
+                )
+
+                // Determine status based on WorkInfo state
+                val status = when (info.state) {
+                    WorkInfo.State.RUNNING -> DownloadStatus.RUNNING
+                    WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> DownloadStatus.QUEUED
+                    else -> DownloadStatus.QUEUED
+                }
+
+                // Get progress if available
+                val progress = info.progress.getInt(DownloadScheduler.KEY_PROGRESS, 0)
+
+                // Store workId and start observing
+                workIds[request.id] = info.id
+
+                updateEntry(request) {
+                    it.copy(status = status, progress = progress)
+                }
+
+                // Re-observe this work for progress updates
+                observeWork(info.id, request)
+
+                restoredCount++
+                android.util.Log.d("DownloadRepository", "Restored running download: $downloadId (status=$status, progress=$progress%)")
+            }
+
+            if (restoredCount > 0) {
+                android.util.Log.i("DownloadRepository", "Restored $restoredCount running/queued downloads from WorkManager")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("DownloadRepository", "Failed to restore running downloads", e)
         }
     }
 
@@ -268,6 +386,10 @@ class DefaultDownloadRepository(
     }
 
     override fun enqueue(request: DownloadRequest) {
+        // Save extended metadata (title, thumbnailUrl) before scheduling
+        // This ensures the metadata is available for display after app restart
+        storage.saveExtendedMetadata(request.id, request.title, request.thumbnailUrl)
+
         val workId = scheduler.schedule(request)
         workIds[request.id] = workId
         updateEntry(request) {
@@ -317,6 +439,63 @@ class DefaultDownloadRepository(
         }
     }
 
+    override fun remove(requestId: String) {
+        val entry = entries.value.firstOrNull { it.request.id == requestId } ?: return
+        // Cancel any pending work
+        val workId = workIds[requestId]
+        if (workId != null) {
+            workManager.cancelWorkById(workId)
+            workIds.remove(requestId)
+        }
+        paused -= requestId
+        // Delete any temp files
+        storage.delete(entry.request.id, entry.request.audioOnly)
+        // Remove entry from list
+        removeEntry(requestId)
+        android.util.Log.d("DownloadRepository", "Removed download entry: $requestId")
+    }
+
+    override fun retry(requestId: String) {
+        val entry = entries.value.firstOrNull { it.request.id == requestId } ?: return
+        if (entry.status !in listOf(DownloadStatus.FAILED, DownloadStatus.CANCELLED)) {
+            android.util.Log.w("DownloadRepository", "Cannot retry download with status: ${entry.status}")
+            return
+        }
+        android.util.Log.d("DownloadRepository", "Retrying download: $requestId")
+        // Re-enqueue with the same request
+        enqueue(entry.request)
+    }
+
+    override fun delete(requestId: String): Boolean {
+        synchronized(entriesLock) {
+            val entry = entries.value.firstOrNull { it.request.id == requestId }
+            if (entry == null) {
+                android.util.Log.w("DownloadRepository", "Cannot delete: entry not found: $requestId")
+                return false
+            }
+            if (entry.status != DownloadStatus.COMPLETED) {
+                android.util.Log.w("DownloadRepository", "Cannot delete non-completed download: ${entry.status}")
+                return false
+            }
+            // Delete the file
+            storage.delete(entry.request.id, entry.request.audioOnly)
+            // Remove entry from list (already inside lock, so use direct mutation)
+            val current = entries.value.toMutableList()
+            current.removeAll { it.request.id == requestId }
+            entries.value = current
+            android.util.Log.d("DownloadRepository", "Deleted completed download: $requestId")
+            return true
+        }
+    }
+
+    private fun removeEntry(requestId: String) {
+        synchronized(entriesLock) {
+            val current = entries.value.toMutableList()
+            current.removeAll { it.request.id == requestId }
+            entries.value = current
+        }
+    }
+
     override fun enqueuePlaylist(
         playlistId: String,
         playlistTitle: String,
@@ -355,6 +534,7 @@ class DefaultDownloadRepository(
                 videoId = item.videoId,
                 audioOnly = audioOnly,
                 targetHeight = targetHeight,
+                thumbnailUrl = item.thumbnailUrl,
                 playlistId = playlistId,
                 playlistTitle = playlistTitle,
                 playlistQualityLabel = qualityLabel,
@@ -413,10 +593,12 @@ class DefaultDownloadRepository(
                         }
                         WorkInfo.State.FAILED -> {
                             workIds.remove(request.id)
+                            val errorMessage = info.outputData.getString(KEY_ERROR_REASON)
+                                ?: "Download failed"
                             updateEntry(request) {
-                                it.copy(status = DownloadStatus.FAILED, message = null, filePath = null, metadata = null)
+                                it.copy(status = DownloadStatus.FAILED, message = errorMessage, filePath = null, metadata = null)
                             }
-                            metrics.onDownloadFailed(request.id, IllegalStateException("Download failed"))
+                            metrics.onDownloadFailed(request.id, IllegalStateException(errorMessage))
                         }
                         WorkInfo.State.CANCELLED -> {
                             workIds.remove(request.id)
@@ -438,23 +620,27 @@ class DefaultDownloadRepository(
     }
 
     private fun updateEntry(requestId: String, transform: (DownloadEntry) -> DownloadEntry) {
-        val current = entries.value.toMutableList()
-        val index = current.indexOfFirst { it.request.id == requestId }
-        if (index >= 0) {
-            current[index] = transform(current[index])
+        synchronized(entriesLock) {
+            val current = entries.value.toMutableList()
+            val index = current.indexOfFirst { it.request.id == requestId }
+            if (index >= 0) {
+                current[index] = transform(current[index])
+            }
+            entries.value = current
         }
-        entries.value = current
     }
 
     private fun updateEntry(request: DownloadRequest, transform: (DownloadEntry) -> DownloadEntry) {
-        val current = entries.value.toMutableList()
-        val index = current.indexOfFirst { it.request.id == request.id }
-        if (index >= 0) {
-            current[index] = transform(current[index])
-        } else {
-            current += transform(DownloadEntry(request, DownloadStatus.QUEUED))
+        synchronized(entriesLock) {
+            val current = entries.value.toMutableList()
+            val index = current.indexOfFirst { it.request.id == request.id }
+            if (index >= 0) {
+                current[index] = transform(current[index])
+            } else {
+                current += transform(DownloadEntry(request, DownloadStatus.QUEUED))
+            }
+            entries.value = current
         }
-        entries.value = current
     }
 
     private operator fun MutableCollection<String>.plusAssign(value: String) {

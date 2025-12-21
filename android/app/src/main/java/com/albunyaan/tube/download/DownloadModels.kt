@@ -7,6 +7,8 @@ data class DownloadRequest(
     val audioOnly: Boolean = true,
     /** Target video height for quality selection (null = best available or audio-only) */
     val targetHeight: Int? = null,
+    /** Thumbnail URL for display in downloads list (optional) */
+    val thumbnailUrl: String? = null,
     // Optional playlist context for playlist downloads
     val playlistId: String? = null,
     val playlistTitle: String? = null,
@@ -25,7 +27,11 @@ enum class DownloadPolicy { ENABLED, QUEUED, DISABLED }
 data class DownloadFileMetadata(
     val sizeBytes: Long,
     val completedAtMillis: Long,
-    val mimeType: String
+    val mimeType: String,
+    /** Persisted title for display after app restart */
+    val title: String? = null,
+    /** Persisted thumbnail URL for display after app restart */
+    val thumbnailUrl: String? = null
 )
 
 data class DownloadEntry(

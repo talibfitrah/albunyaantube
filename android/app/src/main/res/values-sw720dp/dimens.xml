@@ -100,4 +100,8 @@
     <!-- Error State Component (Large Tablet / TV) -->
     <dimen name="error_body_max_width">480dp</dimen>
     <dimen name="button_min_width">160dp</dimen>
+
+    <!-- Download/Favorite List Item Thumbnail (Large Tablet - larger for readability) -->
+    <dimen name="favorite_thumbnail_width">200dp</dimen>
+    <dimen name="favorite_thumbnail_height">112dp</dimen>
 </resources>

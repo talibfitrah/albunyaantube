@@ -601,6 +601,9 @@ class PlayerViewModelPlaylistPagingTest {
         override fun pause(requestId: String) {}
         override fun resume(requestId: String) {}
         override fun cancel(requestId: String) {}
+        override fun remove(requestId: String) {}
+        override fun retry(requestId: String) {}
+        override fun delete(requestId: String): Boolean = true
         override fun enqueuePlaylist(
             playlistId: String,
             playlistTitle: String,

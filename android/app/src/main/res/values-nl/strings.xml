@@ -44,6 +44,7 @@
     <string name="player_stream_unavailable">Deze video is niet beschikbaar voor afspelen.</string>
     <string name="player_notification_channel_name">Afspelen</string>
     <string name="player_notification_channel_desc">Beheert afspelen wanneer de app op de achtergrond draait.</string>
+    <string name="player_notification_loading">Laden…</string>
     <string name="player_action_quality">Kwaliteit</string>
     <string name="player_quality_dialog_title">Videokwaliteit</string>
     <string name="player_quality_select_title">Kwaliteit selecteren</string>
@@ -56,6 +57,9 @@
     <string name="player_video_not_ready">Video nog niet klaar</string>
     <string name="player_action_enter_pip">Beeld-in-beeld</string>
     <string name="player_action_play_pause">Afspelen/Pauzeren</string>
+    <string name="player_action_play">Afspelen</string>
+    <string name="player_action_pause">Pauzeren</string>
+    <string name="player_action_previous">Vorige video afspelen</string>
     <string name="player_no_current_item">Er wordt momenteel geen video afgespeeld.</string>
     <string name="player_default_title">Video</string>
     <string name="player_no_views">Nog geen weergaven</string>
@@ -94,6 +98,11 @@
     <string name="download_action_resume">Hervatten</string>
     <string name="download_action_cancel">Annuleren</string>
     <string name="download_action_open">Openen</string>
+    <string name="download_action_retry">Opnieuw proberen</string>
+    <string name="download_action_remove">Uit lijst verwijderen</string>
+    <string name="download_action_delete">Bestand verwijderen</string>
+    <string name="download_deleted">Download verwijderd</string>
+    <string name="download_delete_failed">Verwijderen van download mislukt</string>
     <string name="download_status_queued">In wachtrij</string>
     <string name="download_status_running">Downloaden</string>
     <string name="download_status_paused">Gepauzeerd</string>
@@ -108,6 +117,17 @@
     <string name="download_notification_title">Downloaden %1$s</string>
     <string name="download_notification_progress">%1$d%% voltooid</string>
     <string name="download_notification_complete">Download voltooid.</string>
+
+    <!-- Download error messages (mapped from error codes) -->
+    <string name="download_error_http_403">Toegang geweigerd - stream URL mogelijk verlopen</string>
+    <string name="download_error_http_429">Snelheidslimiet bereikt - probeer het later opnieuw</string>
+    <string name="download_error_network">Netwerkfout - controleer uw verbinding</string>
+    <string name="download_error_merge">Samenvoegen mislukt - FFmpeg fout</string>
+    <string name="download_error_no_stream">Geen stream beschikbaar - video mogelijk niet beschikbaar</string>
+    <string name="download_error_no_compatible_video">Geen compatibel videoformaat - alleen VP9/WebM beschikbaar</string>
+    <string name="download_error_video_audio_mismatch">Kan video niet downloaden - geen compatibele audiotrack voor samenvoegen</string>
+    <string name="download_error_invalid_input">Downloadconfiguratiefout</string>
+    <string name="download_error_unknown">Download mislukt</string>
 
     <!-- Navigation -->
     <string name="nav_home">Start</string>

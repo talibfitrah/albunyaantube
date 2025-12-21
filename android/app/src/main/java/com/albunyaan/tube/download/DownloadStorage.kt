@@ -7,6 +7,27 @@ import java.util.Properties
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.max
 
+/**
+ * Download storage manager using app-private internal storage.
+ *
+ * **Storage Strategy Decision:**
+ * - Uses app-private storage (`context.filesDir/downloads`) instead of public Downloads folder
+ * - Benefits: No WRITE_EXTERNAL_STORAGE permission needed, automatic cleanup on uninstall,
+ *   isolated from other apps, works on all Android versions without scoped storage issues
+ * - Trade-offs: Files not visible in system file managers or media library, requires in-app
+ *   management (delete button, expiry cleanup)
+ *
+ * **File Lifecycle:**
+ * - 30-day automatic expiry via [DownloadExpiryPolicy] and [DownloadExpiryWorker]
+ * - Manual delete via in-app Delete button (calls [delete])
+ * - Completion timestamp stored in metadata files as source of truth for expiry
+ *
+ * **Format:**
+ * - Video: `{downloadId}.mp4`
+ * - Audio: `{downloadId}.m4a`
+ * - Temp: `{downloadId}.tmp` (deleted on completion or failure)
+ * - Metadata: `metadata/{downloadId}.meta` (stores completedAtMillis)
+ */
 class DownloadStorage(
     private val context: Context
 ) {
@@ -97,9 +118,38 @@ class DownloadStorage(
      * This is the source of truth for download expiry, not file.lastModified().
      */
     private fun saveCompletionTimestamp(downloadId: String, completedAtMillis: Long) {
+        // Load existing metadata to preserve title/thumbnailUrl if already set
+        val props = loadMetadataProperties(downloadId)
+        props.setProperty(META_KEY_COMPLETED_AT, completedAtMillis.toString())
+        saveMetadataProperties(downloadId, props)
+    }
+
+    /**
+     * Save extended metadata (title, thumbnailUrl) for display after app restart.
+     * Called when download is enqueued, before completion.
+     */
+    fun saveExtendedMetadata(downloadId: String, title: String, thumbnailUrl: String?) {
+        val props = loadMetadataProperties(downloadId)
+        props.setProperty(META_KEY_TITLE, title)
+        thumbnailUrl?.let { props.setProperty(META_KEY_THUMBNAIL_URL, it) }
+        saveMetadataProperties(downloadId, props)
+    }
+
+    private fun loadMetadataProperties(downloadId: String): Properties {
         val metadataFile = File(metadataDir, "$downloadId.meta")
         val props = Properties()
-        props.setProperty(META_KEY_COMPLETED_AT, completedAtMillis.toString())
+        if (metadataFile.exists()) {
+            runCatching {
+                metadataFile.inputStream().use { input ->
+                    props.load(input)
+                }
+            }
+        }
+        return props
+    }
+
+    private fun saveMetadataProperties(downloadId: String, props: Properties) {
+        val metadataFile = File(metadataDir, "$downloadId.meta")
         runCatching {
             metadataFile.outputStream().use { out ->
                 props.store(out, "Download metadata")
@@ -156,6 +206,9 @@ class DownloadStorage(
                 currentSize.addAndGet(-size)
             }
         }
+        // Clean up metadata file
+        val metadataFile = File(metadataDir, "$downloadId.meta")
+        metadataFile.delete()
     }
 
     /**
@@ -193,11 +246,45 @@ class DownloadStorage(
     fun metadataFor(downloadId: String, audioOnly: Boolean): DownloadFileMetadata? {
         val file = targetFile(downloadId, audioOnly)
         if (!file.exists()) return null
+        val props = loadMetadataProperties(downloadId)
         return DownloadFileMetadata(
             sizeBytes = file.length(),
-            completedAtMillis = file.lastModified(),
-            mimeType = if (audioOnly) AUDIO_MIME else VIDEO_MIME
+            completedAtMillis = props.getProperty(META_KEY_COMPLETED_AT)?.toLongOrNull()
+                ?: file.lastModified(),
+            mimeType = if (audioOnly) AUDIO_MIME else VIDEO_MIME,
+            title = props.getProperty(META_KEY_TITLE),
+            thumbnailUrl = props.getProperty(META_KEY_THUMBNAIL_URL)
         )
+    }
+
+    /**
+     * Get extended metadata (title, thumbnailUrl) from stored metadata file.
+     * Used to restore download info after app restart.
+     *
+     * @return Pair of (title, thumbnailUrl) or null if metadata not found
+     */
+    fun getExtendedMetadata(downloadId: String): Pair<String, String?>? {
+        val props = loadMetadataProperties(downloadId)
+        val title = props.getProperty(META_KEY_TITLE) ?: return null
+        val thumbnailUrl = props.getProperty(META_KEY_THUMBNAIL_URL)
+        return Pair(title, thumbnailUrl)
+    }
+
+    /**
+     * Determine if a download is audio-only based on stored metadata or existing files.
+     * Used when restoring downloads where only the downloadId is known.
+     */
+    fun isAudioOnlyDownload(downloadId: String): Boolean {
+        // Check if audio file exists
+        val audioFile = targetFile(downloadId, audioOnly = true)
+        if (audioFile.exists()) return true
+
+        // Check if video file exists
+        val videoFile = targetFile(downloadId, audioOnly = false)
+        if (videoFile.exists()) return false
+
+        // Default to video if unknown (temp files or no file found)
+        return false
     }
 
     fun listAllDownloads(): Map<String, java.io.File> {
@@ -269,5 +356,7 @@ class DownloadStorage(
         private const val VIDEO_MIME = "video/mp4"
         private const val TEMP_SUFFIX = ".tmp"
         private const val META_KEY_COMPLETED_AT = "completedAtMillis"
+        private const val META_KEY_TITLE = "title"
+        private const val META_KEY_THUMBNAIL_URL = "thumbnailUrl"
     }
 }

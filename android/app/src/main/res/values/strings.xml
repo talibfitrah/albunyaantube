@@ -45,6 +45,7 @@
     <string name="player_stream_unavailable">This video is not available for playback.</string>
     <string name="player_notification_channel_name">Playback</string>
     <string name="player_notification_channel_desc">Controls playback while the app is in the background.</string>
+    <string name="player_notification_loading">Loading…</string>
     <string name="player_action_quality">Quality</string>
     <string name="player_quality_dialog_title">Video Quality</string>
     <string name="player_quality_select_title">Select Quality</string>
@@ -106,12 +107,27 @@
     <string name="download_action_resume">Resume</string>
     <string name="download_action_cancel">Cancel</string>
     <string name="download_action_open">Open</string>
+    <string name="download_action_retry">Retry</string>
+    <string name="download_action_remove">Remove</string>
+    <string name="download_action_delete">Delete</string>
+    <string name="download_deleted">Download deleted</string>
+    <string name="download_delete_failed">Failed to delete download</string>
     <string name="download_status_queued">Queued</string>
     <string name="download_status_running">Downloading</string>
     <string name="download_status_paused">Paused</string>
     <string name="download_status_completed">Completed</string>
     <string name="download_status_failed">Failed</string>
     <string name="download_status_cancelled">Cancelled</string>
+    <!-- Download error messages (mapped from error codes) -->
+    <string name="download_error_http_403">Access denied - stream URL may have expired</string>
+    <string name="download_error_http_429">Rate limited - try again later</string>
+    <string name="download_error_network">Network error - check your connection</string>
+    <string name="download_error_merge">Merge failed - FFmpeg error</string>
+    <string name="download_error_no_stream">No stream available - video may be unavailable</string>
+    <string name="download_error_no_compatible_video">No compatible video format - only VP9/WebM available</string>
+    <string name="download_error_video_audio_mismatch">Cannot download video - no compatible audio track for merge</string>
+    <string name="download_error_invalid_input">Download configuration error</string>
+    <string name="download_error_unknown">Download failed</string>
     <string name="download_item_content_description">Download %1$s. Status %2$s. %3$d%% complete.</string>
     <string name="download_details_format">%1$s • %2$s</string>
     <string name="download_toast_no_viewer">Unable to open this file on your device.</string>
@@ -196,6 +212,9 @@
     <string name="player_action_minimize">Minimize player</string>
     <string name="player_action_fullscreen">Toggle fullscreen</string>
     <string name="player_action_settings">Player settings</string>
+    <string name="player_action_play">Play</string>
+    <string name="player_action_pause">Pause</string>
+    <string name="player_action_previous">Play previous video</string>
     <string name="player_action_next">Play next video</string>
     <string name="player_action_cast">Cast to TV</string>
     <string name="player_cast_started">Casting to %1$s</string>

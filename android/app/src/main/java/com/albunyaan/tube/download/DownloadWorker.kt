@@ -6,12 +6,11 @@ import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
-import com.albunyaan.tube.analytics.ExtractorMetricsReporter
 import com.albunyaan.tube.data.extractor.VideoTrack
-import com.albunyaan.tube.data.source.RetrofitDownloadService
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_AUDIO_ONLY
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_COMPLETED_AT
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_DOWNLOAD_ID
+import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_ERROR_REASON
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_FILE_PATH
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_FILE_SIZE
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_MIME_TYPE
@@ -20,6 +19,7 @@ import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_TARGET_HEIGHT
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_TITLE
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_VIDEO_ID
 import com.albunyaan.tube.player.PlayerRepository
+import com.albunyaan.tube.util.HttpConstants
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.io.File
@@ -27,6 +27,8 @@ import java.io.IOException
 import kotlin.math.max
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.concurrent.CancellationException
+import java.util.concurrent.TimeUnit
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
@@ -38,14 +40,33 @@ class DownloadWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted params: WorkerParameters,
     private val storage: DownloadStorage,
-    private val downloadService: RetrofitDownloadService,
     private val repository: PlayerRepository,
-    private val metrics: ExtractorMetricsReporter,
     private val ffmpegMerger: FFmpegMerger
 ) : CoroutineWorker(appContext, params) {
 
     private val notifications = DownloadNotifications(appContext)
-    private val httpClient by lazy { OkHttpClient.Builder().build() }
+
+    /**
+     * OkHttpClient configured for large file downloads.
+     *
+     * - User-Agent: YouTube may block requests without a proper User-Agent (HTTP 403)
+     * - Extended timeouts: Large video files may take time to download, especially on
+     *   slower connections. Default OkHttp timeout (10s) is too aggressive for downloads.
+     *   Read timeout is set longer since data transfer can stall during download.
+     */
+    private val httpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)  // Connection establishment
+            .readTimeout(60, TimeUnit.SECONDS)     // Data read during download
+            .writeTimeout(30, TimeUnit.SECONDS)    // Request body write (minimal for downloads)
+            .addInterceptor { chain ->
+                val request = chain.request().newBuilder()
+                    .header("User-Agent", HttpConstants.YOUTUBE_USER_AGENT)
+                    .build()
+                chain.proceed(request)
+            }
+            .build()
+    }
 
     /**
      * Resolved stream information for download.
@@ -58,8 +79,10 @@ class DownloadWorker @AssistedInject constructor(
     }
 
     override suspend fun doWork(): Result {
-        val downloadId = inputData.getString(KEY_DOWNLOAD_ID) ?: return Result.failure()
-        val videoId = inputData.getString(KEY_VIDEO_ID) ?: return Result.failure()
+        val downloadId = inputData.getString(KEY_DOWNLOAD_ID)
+            ?: return Result.failure(workDataOf(KEY_ERROR_REASON to DownloadErrorCode.INVALID_INPUT))
+        val videoId = inputData.getString(KEY_VIDEO_ID)
+            ?: return Result.failure(workDataOf(KEY_ERROR_REASON to DownloadErrorCode.INVALID_INPUT))
         val title = inputData.getString(KEY_TITLE) ?: videoId
         val audioOnly = inputData.getBoolean(KEY_AUDIO_ONLY, true)
         // Target height for quality selection (0 means not specified - use best available)
@@ -68,15 +91,12 @@ class DownloadWorker @AssistedInject constructor(
         setForegroundAsync(notifications.createForegroundInfo(downloadId, title, 0))
 
         return runCatching {
-            val resolvedStream = resolveStream(videoId, audioOnly, targetHeight) ?: return@runCatching Result.failure()
-
-            // Track download started only after policy/token validation succeeds
-            runCatching {
-                downloadService.trackDownloadStarted(
+            val resolvedStream = resolveStream(videoId, audioOnly, targetHeight)
+                ?: throw NoStreamException(
                     videoId = videoId,
-                    quality = if (audioOnly) "audio" else "video"
+                    errorCode = DownloadErrorCode.NO_STREAM,
+                    message = "Failed to resolve stream for $videoId"
                 )
-            }
 
             val finalFile = when (resolvedStream) {
                 is ResolvedStream.Progressive -> {
@@ -90,15 +110,6 @@ class DownloadWorker @AssistedInject constructor(
             val mimeType = if (audioOnly) "audio/mp4" else "video/mp4"
             notifications.notifyCompletion(downloadId, title)
 
-            // Track download completed
-            runCatching {
-                downloadService.trackDownloadCompleted(
-                    videoId = videoId,
-                    quality = if (audioOnly) "audio" else "video",
-                    fileSize = finalFile.length()
-                )
-            }
-
             Result.success(
                 workDataOf(
                     KEY_FILE_PATH to finalFile.absolutePath,
@@ -109,17 +120,42 @@ class DownloadWorker @AssistedInject constructor(
                 )
             )
         }.getOrElse { throwable ->
-            metrics.onDownloadFailed(downloadId, throwable)
-
-            // Track download failed
-            runCatching {
-                downloadService.trackDownloadFailed(
-                    videoId = videoId,
-                    errorReason = throwable.message ?: "Unknown error"
-                )
+            // If CancellationException, re-throw immediately so WorkManager reports CANCELLED
+            if (throwable is CancellationException) {
+                Log.d(TAG, "Download cancelled by user for $videoId")
+                throw throwable
             }
 
-            Result.retry()
+            // Double-check: if worker was stopped but exception isn't CancellationException,
+            // convert it so WorkManager reports CANCELLED state instead of FAILED
+            if (isStopped) {
+                Log.d(TAG, "Download stopped (converting to cancel) for $videoId")
+                throw CancellationException("Download cancelled by user")
+            }
+
+            Log.e(TAG, "Download failed for $videoId", throwable)
+
+            // Determine error code for UI localization
+            // Uses type-safe exception checks - no fragile string matching
+            // These codes are mapped to localized strings in DownloadsAdapter
+            val errorCode = when (throwable) {
+                // Type-safe HTTP status code detection
+                is DownloadHttpException -> when {
+                    throwable.isForbidden -> DownloadErrorCode.HTTP_403
+                    throwable.isRateLimited -> DownloadErrorCode.HTTP_429
+                    else -> DownloadErrorCode.NETWORK
+                }
+                // Type-safe exception classification (no brittle string matching)
+                is FFmpegMergeException -> DownloadErrorCode.MERGE
+                // NoStreamException carries its own error code for specific failure reason
+                is NoStreamException -> throwable.errorCode
+                // General network errors (IOException but not our specific subtypes)
+                is IOException -> DownloadErrorCode.NETWORK
+                else -> DownloadErrorCode.UNKNOWN
+            }
+
+            // Return failure with error code (UI maps to localized string)
+            Result.failure(workDataOf(KEY_ERROR_REASON to errorCode))
         }
     }
 
@@ -185,11 +221,8 @@ class DownloadWorker @AssistedInject constructor(
             setProgress(workDataOf(KEY_PROGRESS to 80))
             notifications.updateProgress(downloadId, title, 80)
 
-            val mergeSuccess = ffmpegMerger.merge(videoTempFile, audioTempFile, mergedTempFile)
-
-            if (!mergeSuccess) {
-                throw IOException("FFmpeg merge failed")
-            }
+            // merge() throws FFmpegMergeException on failure
+            ffmpegMerger.merge(videoTempFile, audioTempFile, mergedTempFile)
 
             // Commit merged file
             val finalFile = storage.commit(downloadId, audioOnly = false, mergedTempFile)
@@ -210,96 +243,35 @@ class DownloadWorker @AssistedInject constructor(
     }
 
     /**
-     * Resolve stream URLs from backend API or fallback to local extractor.
+     * Resolve stream URLs using local NewPipe extractor.
+     *
+     * Uses the on-device extractor directly - no backend calls needed.
+     * The backend only manages curated content lists (IDs), not stream extraction.
+     * This approach scales to millions of users from a single VPS.
      *
      * @param videoId YouTube video ID
      * @param audioOnly Whether to download audio only
      * @param targetHeight Target video height for quality selection (null = best available)
      */
     private suspend fun resolveStream(videoId: String, audioOnly: Boolean, targetHeight: Int?): ResolvedStream? {
-        return try {
-            // Check download policy first
-            val policy = downloadService.checkDownloadPolicy(videoId)
-            if (!policy.allowed) {
-                Log.w(TAG, "Download not allowed for $videoId: ${policy.reason}")
-                return null
-            }
-
-            // Generate download token (required for manifest endpoint)
-            val downloadToken = downloadService.generateDownloadToken(videoId, eulaAccepted = true)
-
-            // Get download manifest with stream URLs (requires token)
-            // Pass FFmpeg availability so backend only returns split streams if client can merge
-            // Pass audioOnly and targetHeight for proper stream selection
-            val supportsMerging = ffmpegMerger.isAvailable()
-            val manifest = downloadService.getDownloadManifest(
-                videoId = videoId,
-                token = downloadToken.token,
-                supportsMerging = supportsMerging,
-                audioOnly = audioOnly,
-                targetHeight = targetHeight
-            )
-            val stream = manifest.selectedStream
-
-            // Get URL based on stream type
-            when {
-                stream.requiresMerging -> {
-                    // P4-T4: Check FFmpeg availability before returning split stream
-                    if (!ffmpegMerger.isAvailable()) {
-                        Log.w(TAG, "FFmpeg not available, falling back to progressive stream for $videoId")
-                        // Fall back to progressive URL if available
-                        val progressiveUrl = stream.progressiveUrl
-                        if (!progressiveUrl.isNullOrBlank()) {
-                            Log.d(TAG, "Using progressive fallback: ${stream.qualityLabel}")
-                            return ResolvedStream.Progressive(progressiveUrl)
-                        }
-                        // If no progressive available, try audio-only as last resort
-                        val audioUrl = stream.audioUrl
-                        if (!audioUrl.isNullOrBlank() && audioOnly) {
-                            Log.d(TAG, "Using audio-only fallback")
-                            return ResolvedStream.Progressive(audioUrl)
-                        }
-                        // No fallback available - fail the download
-                        Log.e(TAG, "FFmpeg unavailable and no progressive fallback for $videoId")
-                        return null
-                    }
-
-                    // FFmpeg available - return split stream for merging
-                    val videoUrl = stream.videoUrl
-                    val audioUrl = stream.audioUrl
-                    if (videoUrl.isNullOrBlank() || audioUrl.isNullOrBlank()) {
-                        Log.w(TAG, "Missing video or audio URL for merge: video=$videoUrl, audio=$audioUrl")
-                        return null
-                    }
-                    Log.d(TAG, "Resolved split stream for merge: ${stream.qualityLabel}")
-                    ResolvedStream.Split(videoUrl, audioUrl)
-                }
-                audioOnly -> {
-                    val url = stream.audioUrl ?: stream.progressiveUrl
-                    if (url.isNullOrBlank()) {
-                        Log.w(TAG, "No audio URL available in manifest for $videoId")
-                        return null
-                    }
-                    ResolvedStream.Progressive(url)
-                }
-                else -> {
-                    val url = stream.progressiveUrl
-                    if (url.isNullOrBlank()) {
-                        Log.w(TAG, "No progressive URL available in manifest for $videoId")
-                        return null
-                    }
-                    ResolvedStream.Progressive(url)
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to resolve stream via backend API for $videoId", e)
-            // Fall back to extractor if backend fails
-            resolveStreamViaExtractor(videoId, audioOnly, targetHeight)
-        }
+        return resolveStreamViaExtractor(videoId, audioOnly, targetHeight)
     }
 
     /**
-     * Fallback: resolve stream via local NewPipe extractor.
+     * Resolve stream via local NewPipe extractor.
+     *
+     * Stream Selection Strategy:
+     * 1. Audio-only: Use best audio track (progressive)
+     * 2. Video: Prefer muxed (audio+video) tracks when available at target quality
+     * 3. If best quality is video-only: Pair with best audio for FFmpeg merge
+     *
+     * **MP4 Compatibility for FFmpeg Merge:**
+     * When using -c copy (stream copy, no re-encoding), we must ensure codecs are MP4-compatible:
+     * - Video: H.264 (AVC) - mimeType contains "video/mp4" or "avc"
+     * - Audio: AAC/M4A - mimeType contains "audio/mp4" or "m4a" (NOT OPUS/WebM)
+     *
+     * If incompatible codecs (VP9/WebM video or OPUS/WebM audio), fall back to muxed track
+     * to avoid FFmpeg merge failures.
      *
      * @param videoId YouTube video ID
      * @param audioOnly Whether to download audio only
@@ -311,42 +283,145 @@ class DownloadWorker @AssistedInject constructor(
         targetHeight: Int?
     ): ResolvedStream? {
         val resolved = repository.resolveStreams(videoId) ?: return null
-        val audioTrack = resolved.audioTracks.maxByOrNull { it.bitrate ?: 0 }
 
-        // Select video track based on target height
-        val videoTrack = if (targetHeight != null) {
-            // Find track closest to (but not exceeding) target height
-            // Exclude tracks with null height from targeted selection
-            resolved.videoTracks
-                .filter { it.height != null && it.height <= targetHeight }
-                .maxWithOrNull(
-                    compareBy<VideoTrack> { it.height ?: 0 }
-                        .thenBy { it.bitrate ?: 0 }
-                )
-                // Fallback to best available (excluding null heights)
-                ?: resolved.videoTracks
-                    .filter { it.height != null }
-                    .maxWithOrNull(
-                        compareBy<VideoTrack> { it.height ?: 0 }
-                            .thenBy { it.bitrate ?: 0 }
-                    )
-        } else {
-            // No target height - use best available (excluding null heights)
-            resolved.videoTracks
-                .filter { it.height != null }
-                .maxWithOrNull(
-                    compareBy<VideoTrack> { it.height ?: 0 }
-                        .thenBy { it.bitrate ?: 0 }
-                )
+        // For audio-only, prefer AAC/M4A but fall back to any audio if not available
+        val mp4CompatibleAudio = resolved.audioTracks.filter { isAudioMp4Compatible(it) }
+        val bestMp4Audio = mp4CompatibleAudio.maxByOrNull { it.bitrate ?: 0 }
+        val bestAnyAudio = resolved.audioTracks.maxByOrNull { it.bitrate ?: 0 }
+
+        // Audio-only download: return progressive audio stream
+        if (audioOnly) {
+            // Prefer MP4-compatible audio, but any audio works for progressive download
+            return (bestMp4Audio ?: bestAnyAudio)?.url?.let { ResolvedStream.Progressive(it) }
         }
 
-        val url = if (audioOnly) {
-            audioTrack?.url
+        // Video download: prefer muxed tracks, fall back to video-only + audio merge
+
+        // Comparator for video quality (height first, then bitrate)
+        val videoQualityComparator = compareBy<VideoTrack> { it.height ?: 0 }
+            .thenBy { it.bitrate ?: 0 }
+
+        // Filter tracks by target height if specified
+        val eligibleTracks = if (targetHeight != null) {
+            resolved.videoTracks.filter { it.height != null && it.height <= targetHeight }
+                .ifEmpty { resolved.videoTracks.filter { it.height != null } }
         } else {
-            videoTrack?.url ?: audioTrack?.url
+            resolved.videoTracks.filter { it.height != null }
         }
 
-        return url?.let { ResolvedStream.Progressive(it) }
+        // Separate muxed and video-only tracks
+        val muxedTracks = eligibleTracks.filter { !it.isVideoOnly }
+        val videoOnlyTracks = eligibleTracks.filter { it.isVideoOnly }
+
+        // For merge, filter to MP4-compatible video-only tracks (H.264)
+        val mp4VideoOnlyTracks = videoOnlyTracks.filter { isVideoMp4Compatible(it) }
+
+        // Get best of each type
+        val bestMuxedTrack = muxedTracks.maxWithOrNull(videoQualityComparator)
+        val bestMp4VideoOnlyTrack = mp4VideoOnlyTracks.maxWithOrNull(videoQualityComparator)
+
+        // Decision logic:
+        // 1. If we have MP4-compatible video-only at higher quality than muxed AND MP4-compatible audio, merge
+        // 2. If muxed track available at acceptable quality, use it (no codec concerns)
+        // 3. Fall back to any video-only as mute if nothing else works
+
+        val muxedHeight = bestMuxedTrack?.height ?: 0
+        val mp4VideoOnlyHeight = bestMp4VideoOnlyTrack?.height ?: 0
+
+        return when {
+            // MP4-compatible video-only is higher quality and we have MP4-compatible audio for merge
+            bestMp4VideoOnlyTrack != null && bestMp4Audio != null && mp4VideoOnlyHeight > muxedHeight -> {
+                Log.d(TAG, "Using MP4-compatible video-only (${mp4VideoOnlyHeight}p) + AAC audio merge (muxed available: ${muxedHeight}p)")
+                ResolvedStream.Split(bestMp4VideoOnlyTrack.url, bestMp4Audio.url)
+            }
+            // Muxed track available - use progressive download (always works, no codec concerns)
+            bestMuxedTrack != null -> {
+                Log.d(TAG, "Using muxed track (${muxedHeight}p)")
+                ResolvedStream.Progressive(bestMuxedTrack.url)
+            }
+            // MP4-compatible video-only with MP4-compatible audio - merge even if muxed not available
+            bestMp4VideoOnlyTrack != null && bestMp4Audio != null -> {
+                Log.d(TAG, "Only MP4-compatible video-only available (${mp4VideoOnlyHeight}p), using AAC audio merge")
+                ResolvedStream.Split(bestMp4VideoOnlyTrack.url, bestMp4Audio.url)
+            }
+            // Non-MP4 video-only (e.g., VP9) - can't merge safely, fail with clear error
+            videoOnlyTracks.isNotEmpty() -> {
+                val bestAny = videoOnlyTracks.maxWithOrNull(videoQualityComparator)
+                val reason = if (bestMp4Audio == null) "no AAC audio available" else "VP9/WebM video codec"
+                val errorCode = if (bestMp4Audio == null) {
+                    DownloadErrorCode.VIDEO_AUDIO_MISMATCH
+                } else {
+                    DownloadErrorCode.NO_COMPATIBLE_VIDEO
+                }
+                Log.e(TAG, "Cannot download video for $videoId: $reason (would result in muted video). " +
+                    "Available: ${bestAny?.height}p ${bestAny?.mimeType}. Error code: $errorCode")
+                throw NoStreamException(
+                    videoId = videoId,
+                    errorCode = errorCode,
+                    message = "Cannot download video: $reason. Video-only stream (${bestAny?.height}p) " +
+                        "cannot be merged with audio."
+                )
+            }
+            // No video tracks at all - fail with clear error (user requested video, not audio)
+            bestAnyAudio != null -> {
+                Log.e(TAG, "No video tracks available for $videoId, only audio. " +
+                    "Error code: ${DownloadErrorCode.NO_COMPATIBLE_VIDEO}")
+                throw NoStreamException(
+                    videoId = videoId,
+                    errorCode = DownloadErrorCode.NO_COMPATIBLE_VIDEO,
+                    message = "No video tracks available for download. Only audio streams found."
+                )
+            }
+            // No streams at all
+            else -> null
+        }
+    }
+
+    /**
+     * Check if a video track is MP4/H.264 compatible for FFmpeg stream copy.
+     * H.264 (AVC) works with -c copy to MP4 container.
+     * VP9/WebM does not.
+     */
+    private fun isVideoMp4Compatible(track: VideoTrack): Boolean {
+        val mimeType = track.mimeType?.lowercase() ?: return false
+        val codec = track.syntheticDashMetadata?.codec?.lowercase()
+
+        // Check mimeType first (most reliable)
+        if (mimeType.contains("video/mp4") || mimeType.contains("video/3gpp")) {
+            return true
+        }
+
+        // Check codec if available (avc = H.264, hvc/hev = H.265)
+        if (codec != null && (codec.startsWith("avc") || codec.startsWith("hvc") || codec.startsWith("hev"))) {
+            return true
+        }
+
+        // WebM/VP9 is not compatible
+        return false
+    }
+
+    /**
+     * Check if an audio track is MP4/AAC compatible for FFmpeg stream copy.
+     * AAC/M4A works with -c copy to MP4 container.
+     * OPUS/WebM does not.
+     */
+    private fun isAudioMp4Compatible(track: com.albunyaan.tube.data.extractor.AudioTrack): Boolean {
+        val mimeType = track.mimeType?.lowercase() ?: return false
+        val codec = track.codec?.lowercase()
+
+        // Check mimeType first (most reliable)
+        if (mimeType.contains("audio/mp4") || mimeType.contains("audio/m4a") ||
+            mimeType.contains("audio/aac") || mimeType.contains("audio/3gpp")) {
+            return true
+        }
+
+        // Check codec if available
+        if (codec != null && (codec.startsWith("mp4a") || codec.startsWith("aac"))) {
+            return true
+        }
+
+        // OPUS/WebM is not compatible with MP4 container
+        return false
     }
 
     private suspend fun fetchContentLength(url: String): Long? = withContext(Dispatchers.IO) {
@@ -375,7 +450,9 @@ class DownloadWorker @AssistedInject constructor(
     ) = withContext(Dispatchers.IO) {
         val request = Request.Builder().url(url).build()
         httpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw IOException("Unexpected code $response")
+            if (!response.isSuccessful) {
+                throw DownloadHttpException(response.code, "HTTP ${response.code}: ${response.message}")
+            }
             val body = response.body ?: throw IOException("Empty body")
             val totalBytes = max(contentLength ?: -1, body.contentLength())
             val input = body.byteStream()
@@ -385,7 +462,8 @@ class DownloadWorker @AssistedInject constructor(
                 var downloaded = 0L
                 var lastProgress = -1
                 while (input.read(buffer).also { read = it } != -1) {
-                    if (isStopped) throw IOException("Download cancelled")
+                    // Throw CancellationException directly so WorkManager reports CANCELLED (not FAILED)
+                    if (isStopped) throw CancellationException("Download cancelled by user")
                     output.write(buffer, 0, read)
                     downloaded += read
                     if (totalBytes > 0) {
@@ -394,7 +472,6 @@ class DownloadWorker @AssistedInject constructor(
                         if (scaledProgress != lastProgress) {
                             lastProgress = scaledProgress
                             setProgress(workDataOf(KEY_PROGRESS to scaledProgress))
-                            metrics.onDownloadProgress(downloadId, scaledProgress)
                             setForegroundAsync(notifications.createForegroundInfo(downloadId, title, scaledProgress))
                         }
                     }
@@ -402,7 +479,6 @@ class DownloadWorker @AssistedInject constructor(
                 // Report completion of this segment
                 val finalProgress = progressOffset + (100 * progressScale).toInt()
                 setProgress(workDataOf(KEY_PROGRESS to finalProgress))
-                metrics.onDownloadProgress(downloadId, finalProgress)
             }
         }
     }
