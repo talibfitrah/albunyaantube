@@ -114,13 +114,15 @@ class MainShellFragment : Fragment(R.layout.fragment_main_shell) {
         // then let requestApplyInsets() restore legitimate system insets.
         if (visible) {
             nav.post {
+                // Guard against view lifecycle - check if fragment is still attached
+                if (!isAdded || view == null) return@post
+
                 // Reset all padding to zero - insets will be reapplied correctly
                 nav.setPaddingRelative(zeroDimen, zeroDimen, zeroDimen, zeroDimen)
                 nav.requestLayout()
                 view?.requestLayout()
 
                 // Request insets to be reapplied to restore legitimate system bar padding
-                // Note: requestApplyInsets() is available since API 20, no version gate needed
                 nav.requestApplyInsets()
             }
         }
