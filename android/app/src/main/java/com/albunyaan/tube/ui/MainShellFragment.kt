@@ -90,19 +90,38 @@ class MainShellFragment : Fragment(R.layout.fragment_main_shell) {
      * On tablets, also adjusts the content margin to fill the space.
      */
     fun setBottomNavVisibility(visible: Boolean) {
-        navigationView?.visibility = if (visible) View.VISIBLE else View.GONE
+        val nav = navigationView ?: return
+        nav.visibility = if (visible) View.VISIBLE else View.GONE
 
         // On tablets (NavigationRail), adjust content margin when hiding/showing
         val isTablet = resources.getBoolean(R.bool.is_tablet)
+        val zeroDimen = resources.getDimensionPixelSize(R.dimen.spacing_none)
         if (isTablet) {
             navHostFragment?.let { host ->
                 val params = host.layoutParams as? CoordinatorLayout.LayoutParams
                 params?.marginStart = if (visible) {
                     resources.getDimensionPixelSize(R.dimen.navigation_rail_width)
                 } else {
-                    0
+                    zeroDimen
                 }
                 host.layoutParams = params
+            }
+        }
+
+        // When showing navigation after fullscreen exit, reset ALL padding that
+        // may have been added by window insets and force a clean layout pass.
+        // We reset all padding (including top/bottom) to prevent accumulation,
+        // then let requestApplyInsets() restore legitimate system insets.
+        if (visible) {
+            nav.post {
+                // Reset all padding to zero - insets will be reapplied correctly
+                nav.setPaddingRelative(zeroDimen, zeroDimen, zeroDimen, zeroDimen)
+                nav.requestLayout()
+                view?.requestLayout()
+
+                // Request insets to be reapplied to restore legitimate system bar padding
+                // Note: requestApplyInsets() is available since API 20, no version gate needed
+                nav.requestApplyInsets()
             }
         }
     }

@@ -19,5 +19,5 @@
     <item
         android:id="@+id/downloadsFragment"
         android:icon="@android:drawable/stat_sys_download"
-        android:title="Downloads"/>
+        android:title="@string/nav_downloads"/>
 </menu>

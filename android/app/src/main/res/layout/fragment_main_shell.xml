@@ -20,9 +20,12 @@
         android:layout_gravity="bottom"
         android:background="@color/background_gray"
         android:elevation="@dimen/elevation_lg"
+        android:paddingStart="@dimen/spacing_none"
+        android:paddingEnd="@dimen/spacing_none"
         app:itemIconTint="@color/bottom_nav_item_color"
         app:itemTextColor="@color/bottom_nav_item_color"
         app:itemRippleColor="@android:color/transparent"
+        app:itemHorizontalTranslationEnabled="false"
         app:labelVisibilityMode="labeled"
         app:menu="@menu/bottom_nav_menu" />
 

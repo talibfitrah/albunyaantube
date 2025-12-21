@@ -396,6 +396,13 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     override fun onDestroyView() {
         // Reset orientation to allow normal rotation when leaving player
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+
+        // CRITICAL: If leaving while in fullscreen, restore system bars and bottom nav
+        // This prevents the fullscreen state from "leaking" to other screens
+        if (isFullscreen) {
+            restoreSystemUiOnExit()
+        }
+
         // Clean up recovery manager
         recoveryManager?.cancel()
         recoveryManager = null
@@ -1707,22 +1714,32 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
      */
     private fun updateFullscreenUi() {
         val binding = this.binding ?: return
+        val activity = requireActivity()
+        val window = activity.window
 
         if (isFullscreen) {
             // Hide bottom navigation FIRST (this sets it to View.GONE)
-            (requireActivity() as? com.albunyaan.tube.ui.MainActivity)?.setBottomNavVisibility(false)
+            (activity as? com.albunyaan.tube.ui.MainActivity)?.setBottomNavVisibility(false)
 
-            // Enter fullscreen - Use system UI flags for status bar and system navigation
-            // Hide navigation bar as well for true immersive fullscreen
-            @Suppress("DEPRECATION")
-            requireActivity().window.decorView.systemUiVisibility = (
-                View.SYSTEM_UI_FLAG_FULLSCREEN
-                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-            )
+            // Enter fullscreen - Use WindowInsetsController on API 30+, fall back to legacy flags
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                window.setDecorFitsSystemWindows(false)
+                window.insetsController?.let { controller ->
+                    controller.hide(android.view.WindowInsets.Type.systemBars())
+                    controller.systemBarsBehavior =
+                        android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                window.decorView.systemUiVisibility = (
+                    View.SYSTEM_UI_FLAG_FULLSCREEN
+                    or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                )
+            }
 
             // Hide scrollable content
             binding.playerScrollView.visibility = View.GONE
@@ -1766,12 +1783,17 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // Update button icon
             binding.fullscreenButton.setImageResource(R.drawable.ic_fullscreen_exit)
         } else {
-            // Exit fullscreen - Clear system UI flags
-            @Suppress("DEPRECATION")
-            requireActivity().window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+            // Exit fullscreen - Restore system UI using WindowInsetsController on API 30+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                window.setDecorFitsSystemWindows(true)
+                window.insetsController?.show(android.view.WindowInsets.Type.systemBars())
+            } else {
+                @Suppress("DEPRECATION")
+                window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+            }
 
-            // Show bottom navigation FIRST
-            (requireActivity() as? com.albunyaan.tube.ui.MainActivity)?.setBottomNavVisibility(true)
+            // Show bottom navigation
+            (activity as? com.albunyaan.tube.ui.MainActivity)?.setBottomNavVisibility(true)
 
             // Show scrollable content
             binding.playerScrollView.visibility = View.VISIBLE
@@ -1814,6 +1836,45 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
             // Update button icon
             binding.fullscreenButton.setImageResource(R.drawable.ic_fullscreen)
+
+            // Force insets to be reapplied after restoring system UI
+            // This ensures the bottom nav gets correct insets after setDecorFitsSystemWindows(true)
+            // Note: requestApplyInsets() is available since API 20, no version gate needed
+            window.decorView.post {
+                window.decorView.requestApplyInsets()
+            }
+
+            // Force layout refresh to ensure bottom nav and content are properly measured
+            binding.root.requestLayout()
+        }
+    }
+
+    /**
+     * Restore system UI state when leaving PlayerFragment while in fullscreen.
+     * This is called from onDestroyView() to prevent fullscreen state from leaking.
+     * Unlike updateFullscreenUi(), this doesn't require binding and handles the case
+     * where we're cleaning up during fragment destruction.
+     */
+    private fun restoreSystemUiOnExit() {
+        val activity = activity ?: return
+        val window = activity.window
+
+        // Restore system bars using modern API or legacy flags
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(true)
+            window.insetsController?.show(android.view.WindowInsets.Type.systemBars())
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+        }
+
+        // Show bottom navigation
+        (activity as? com.albunyaan.tube.ui.MainActivity)?.setBottomNavVisibility(true)
+
+        // Force insets to be reapplied after restoring system UI
+        // Note: requestApplyInsets() is available since API 20, no version gate needed
+        window.decorView.post {
+            window.decorView.requestApplyInsets()
         }
     }
 
