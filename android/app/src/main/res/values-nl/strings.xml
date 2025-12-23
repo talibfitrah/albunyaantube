@@ -42,6 +42,8 @@
     <string name="player_status_resolving">Stream oplossen…</string>
     <string name="player_stream_error">Afspelen niet beschikbaar. Probeer het later opnieuw.</string>
     <string name="player_stream_unavailable">Deze video is niet beschikbaar voor afspelen.</string>
+    <string name="player_resize_mode_zoom">Scherm vullen</string>
+    <string name="player_resize_mode_fit">Aanpassen aan scherm</string>
     <string name="player_notification_channel_name">Afspelen</string>
     <string name="player_notification_channel_desc">Beheert afspelen wanneer de app op de achtergrond draait.</string>
     <string name="player_notification_loading">Laden…</string>
@@ -459,6 +461,11 @@
         <item quantity="one">%d jaar geleden</item>
         <item quantity="other">%d jaar geleden</item>
     </plurals>
+
+    <!-- Player Decoder Error Recovery -->
+    <string name="player_decoder_stepping_down">Videocodec niet ondersteund. Overschakelen naar %1$s…</string>
+    <string name="player_decoder_audio_error">Audioafspeelfout. Probeer het opnieuw.</string>
+    <string name="player_decoder_no_compatible_quality">Geen compatibele videokwaliteit beschikbaar voor dit apparaat.</string>
 
     <!-- Player Error/Recovery -->
     <string name="player_error_title">Kan video niet afspelen</string>

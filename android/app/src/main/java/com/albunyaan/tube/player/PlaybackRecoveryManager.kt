@@ -3,6 +3,7 @@ package com.albunyaan.tube.player
 import android.util.Log
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import com.albunyaan.tube.BuildConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -32,16 +33,35 @@ class PlaybackRecoveryManager(
     companion object {
         private const val TAG = "PlaybackRecovery"
 
-        // Stall thresholds
+        // Stall thresholds for VOD
         private const val BUFFERING_STALL_THRESHOLD_MS = 15_000L
+        // Live streams buffer more due to real-time data - use longer threshold
+        private const val LIVE_BUFFERING_STALL_THRESHOLD_MS = 45_000L
         private const val STUCK_READY_CHECK_INTERVAL_MS = 3_000L
         private const val STUCK_READY_THRESHOLD_MS = 6_000L // Position not advancing for 6s while READY
+        // Live streams can have position stalls during buffering
+        private const val LIVE_STUCK_READY_THRESHOLD_MS = 15_000L
         private const val MIN_POSITION_ADVANCE_MS = 500L // Minimum expected progress in check interval
 
         // Recovery limits
         /** Maximum number of automatic recovery attempts before showing manual retry */
         const val MAX_RECOVERY_ATTEMPTS = 5
         private const val RECOVERY_BACKOFF_BASE_MS = 2_000L
+
+        // Buffer health monitoring for live streams
+        /** Minimum buffer growth per check interval to consider stream progressing */
+        private const val MIN_HEALTHY_BUFFER_GROWTH_MS = 1000L
+        /** Check buffer growth every 5 seconds during live stream buffering */
+        private const val BUFFER_CHECK_INTERVAL_MS = 5000L
+        /** Minimum buffer duration (ms ahead of playback) to consider stream healthy.
+         *  Even if buffer is growing, if we have less than this buffered, we're not healthy yet. */
+        private const val MIN_HEALTHY_BUFFER_DURATION_MS = 3000L
+        /** Number of consecutive healthy checks required before declaring stream healthy.
+         *  Prevents premature "healthy" declaration on marginal networks with brief spikes. */
+        private const val SUSTAINED_HEALTHY_CHECKS_REQUIRED = 2
+        /** Number of consecutive zero-growth checks before declaring stream dead.
+         *  3 checks × 5s = 15s of no growth triggers early recovery (vs waiting full 45s). */
+        private const val DEAD_STREAM_ZERO_GROWTH_CHECKS = 3
     }
 
     // State tracking (use -1L as sentinel to avoid edge cases when clock starts at 0)
@@ -50,6 +70,7 @@ class PlaybackRecoveryManager(
     private var positionStuckSince: Long = -1L
     private var currentStreamId: String? = null
     private var isAdaptive: Boolean = false
+    private var isLive: Boolean = false
 
     // Recovery tracking (use -1L as sentinel for lastRecoveryTime)
     private val recoveryAttempt = AtomicInteger(0)
@@ -96,12 +117,16 @@ class PlaybackRecoveryManager(
 
     /**
      * Call when a new stream starts playing. Resets all tracking state.
+     * @param streamId Unique identifier for the stream
+     * @param isAdaptiveStream Whether the stream uses adaptive bitrate (HLS/DASH)
+     * @param isLiveStream Whether this is a live stream (uses longer stall thresholds)
      */
-    fun onNewStream(streamId: String, isAdaptiveStream: Boolean) {
-        Log.d(TAG, "New stream: $streamId, isAdaptive=$isAdaptiveStream")
+    fun onNewStream(streamId: String, isAdaptiveStream: Boolean, isLiveStream: Boolean = false) {
+        if (BuildConfig.DEBUG) Log.d(TAG, "New stream: $streamId, isAdaptive=$isAdaptiveStream, isLive=$isLiveStream")
         cancelAllJobs()
         currentStreamId = streamId
         isAdaptive = isAdaptiveStream
+        isLive = isLiveStream
         resetTrackingState()
         resetRecoveryStateInternal()
     }
@@ -204,29 +229,165 @@ class PlaybackRecoveryManager(
 
     // --- Private implementation ---
 
+    // Buffer tracking for smarter live stream stall detection
+    // Uses buffer duration (bufferedPosition - currentPosition) for more stable metric
+    private var lastBufferDuration: Long = -1L
+
     private fun startBufferingStallDetection(player: ExoPlayer) {
         if (bufferingStartTime == -1L) {
             bufferingStartTime = clock()
-            Log.d(TAG, "Buffering started")
+            // Use buffer duration ahead (more stable than absolute bufferedPosition)
+            lastBufferDuration = (player.bufferedPosition - player.currentPosition).coerceAtLeast(0)
+            if (BuildConfig.DEBUG) Log.d(TAG, "Buffering started (isLive=$isLive, initialBufferDuration=${lastBufferDuration}ms)")
         }
+
+        // Use longer threshold for live streams - they buffer more due to real-time data
+        val threshold = if (isLive) LIVE_BUFFERING_STALL_THRESHOLD_MS else BUFFERING_STALL_THRESHOLD_MS
 
         bufferingStallJob?.cancel()
         bufferingStallJob = scope.launch {
-            delay(BUFFERING_STALL_THRESHOLD_MS)
-            if (player.playbackState == Player.STATE_BUFFERING) {
-                val duration = clock() - bufferingStartTime
-                Log.w(TAG, "Buffering stall detected: ${duration}ms")
-                initiateRecovery(player, "buffering stall (${duration}ms)")
+            // For live streams, use iterative monitoring loop to check buffer growth
+            // This avoids job-inside-job complexity and is more robust
+            if (isLive) {
+                monitorLiveBuffering(player, threshold)
+            } else {
+                // VOD streams: simple one-shot check after threshold
+                monitorVodBuffering(player, threshold)
             }
         }
+    }
+
+    /**
+     * Monitor VOD stream buffering - simple one-shot check after threshold.
+     */
+    private suspend fun monitorVodBuffering(player: ExoPlayer, threshold: Long) {
+        delay(threshold)
+
+        // Re-check state after delay - player might have transitioned out of buffering
+        if (player.playbackState != Player.STATE_BUFFERING) {
+            if (BuildConfig.DEBUG) Log.d(TAG, "Player no longer buffering after threshold wait - skipping recovery")
+            return
+        }
+
+        // CRITICAL: If player.isPlaying is true, playback is active despite buffering state
+        if (player.isPlaying) {
+            if (BuildConfig.DEBUG) Log.d(TAG, "Player is playing despite buffering state - skipping recovery")
+            stopBufferingStallDetection()
+            return
+        }
+
+        val duration = clock() - bufferingStartTime
+        Log.w(TAG, "Buffering stall detected: ${duration}ms (threshold=${threshold}ms)")
+        initiateRecovery(player, "buffering stall (${duration}ms)")
+    }
+
+    /**
+     * Monitor live stream buffering with iterative buffer duration checks.
+     * Uses buffer duration ahead (bufferedPosition - currentPosition) for more stable metric.
+     * Uses a single loop instead of nested jobs for robustness.
+     *
+     * Requires BOTH:
+     * 1. Sustained buffer growth (SUSTAINED_HEALTHY_CHECKS_REQUIRED consecutive healthy checks)
+     * 2. Minimum buffer duration floor (MIN_HEALTHY_BUFFER_DURATION_MS)
+     * This prevents false "healthy" declarations on marginal networks.
+     *
+     * Early exit for dead streams:
+     * If buffer shows zero growth for DEAD_STREAM_ZERO_GROWTH_CHECKS consecutive intervals,
+     * triggers recovery early (15s) instead of waiting the full threshold (45s).
+     */
+    private suspend fun monitorLiveBuffering(player: ExoPlayer, threshold: Long) {
+        var stallCheckCount = 0
+        var consecutiveHealthyChecks = 0
+        var consecutiveZeroGrowthChecks = 0
+        val maxStallChecks = (threshold / BUFFER_CHECK_INTERVAL_MS).toInt().coerceAtLeast(1)
+
+        while (stallCheckCount < maxStallChecks) {
+            delay(BUFFER_CHECK_INTERVAL_MS)
+            stallCheckCount++
+
+            // Exit conditions: no longer buffering or actively playing
+            if (player.playbackState != Player.STATE_BUFFERING) {
+                if (BuildConfig.DEBUG) Log.d(TAG, "Player exited buffering state during monitoring")
+                return
+            }
+            if (player.isPlaying) {
+                if (BuildConfig.DEBUG) Log.d(TAG, "Player is playing despite buffering state - stream is healthy")
+                stopBufferingStallDetection()
+                return
+            }
+
+            // Check buffer duration growth (more stable than absolute bufferedPosition for live)
+            // Buffer duration = how much we have buffered ahead of current position
+            val currentBufferDuration = (player.bufferedPosition - player.currentPosition).coerceAtLeast(0)
+            val bufferGrowth = currentBufferDuration - lastBufferDuration
+
+            // Check if this interval is healthy: buffer is growing AND we have enough buffered
+            val isHealthyInterval = bufferGrowth > MIN_HEALTHY_BUFFER_GROWTH_MS &&
+                                    currentBufferDuration >= MIN_HEALTHY_BUFFER_DURATION_MS
+
+            // Track zero-growth for early dead stream detection
+            val isZeroGrowth = bufferGrowth <= 0
+
+            if (isHealthyInterval) {
+                consecutiveHealthyChecks++
+                consecutiveZeroGrowthChecks = 0
+                if (BuildConfig.DEBUG) Log.d(TAG, "Live buffer healthy: duration=${currentBufferDuration}ms (+${bufferGrowth}ms), " +
+                    "consecutiveHealthy=$consecutiveHealthyChecks/$SUSTAINED_HEALTHY_CHECKS_REQUIRED")
+
+                // Only declare truly healthy after sustained growth AND sufficient buffer
+                if (consecutiveHealthyChecks >= SUSTAINED_HEALTHY_CHECKS_REQUIRED) {
+                    if (BuildConfig.DEBUG) Log.d(TAG, "Live stream sustained healthy - resetting stall tracking")
+                    lastBufferDuration = currentBufferDuration
+                    bufferingStartTime = clock()
+                    stallCheckCount = 0
+                    consecutiveHealthyChecks = 0
+                }
+            } else {
+                // Not healthy - reset consecutive counter but don't reset stall tracking
+                if (consecutiveHealthyChecks > 0) {
+                    if (BuildConfig.DEBUG) Log.d(TAG, "Live buffer health interrupted: duration=${currentBufferDuration}ms (+${bufferGrowth}ms)")
+                }
+                consecutiveHealthyChecks = 0
+
+                // Track zero-growth for early exit on dead streams
+                if (isZeroGrowth) {
+                    consecutiveZeroGrowthChecks++
+                    if (BuildConfig.DEBUG) Log.d(TAG, "Live buffer zero growth: duration=${currentBufferDuration}ms, " +
+                        "consecutiveZero=$consecutiveZeroGrowthChecks/$DEAD_STREAM_ZERO_GROWTH_CHECKS")
+
+                    // Early exit: stream is likely dead if no growth for multiple intervals
+                    if (consecutiveZeroGrowthChecks >= DEAD_STREAM_ZERO_GROWTH_CHECKS) {
+                        Log.w(TAG, "Live stream dead (zero growth for ${consecutiveZeroGrowthChecks * BUFFER_CHECK_INTERVAL_MS}ms)")
+                        initiateRecovery(player, "dead stream (no buffer growth)")
+                        return
+                    }
+                } else {
+                    // Some growth but not healthy - reset zero counter
+                    consecutiveZeroGrowthChecks = 0
+                    if (BuildConfig.DEBUG) Log.d(TAG, "Live buffer stagnant: duration=${currentBufferDuration}ms (+${bufferGrowth}ms) " +
+                        "(stall $stallCheckCount/$maxStallChecks)")
+                }
+            }
+
+            // Always update last buffer duration for next comparison
+            lastBufferDuration = currentBufferDuration
+        }
+
+        // Exhausted all stall checks - buffer hasn't sustained healthy growth, trigger recovery
+        val duration = clock() - bufferingStartTime
+        val currentBufferDuration = (player.bufferedPosition - player.currentPosition).coerceAtLeast(0)
+
+        Log.w(TAG, "Live stream buffering stall detected: ${duration}ms, bufferDuration=${currentBufferDuration}ms (threshold=${threshold}ms)")
+        initiateRecovery(player, "buffering stall (buffer stagnant)")
     }
 
     private fun stopBufferingStallDetection() {
         if (bufferingStartTime != -1L) {
             val duration = clock() - bufferingStartTime
-            Log.d(TAG, "Buffering ended after ${duration}ms")
+            if (BuildConfig.DEBUG) Log.d(TAG, "Buffering ended after ${duration}ms")
         }
         bufferingStartTime = -1L
+        lastBufferDuration = -1L
         bufferingStallJob?.cancel()
         bufferingStallJob = null
     }
@@ -244,18 +405,34 @@ class PlaybackRecoveryManager(
                     break
                 }
 
+                // CRITICAL: If player.isPlaying is true, playback is healthy - don't trigger recovery.
+                // isPlaying being true means audio/video is actively rendering.
+                // This prevents false positives for live streams where position might not advance
+                // exactly as expected but playback is actually working fine.
+                if (player.isPlaying) {
+                    // Reset stuck tracking - playback is healthy
+                    if (positionStuckSince != -1L) {
+                        if (BuildConfig.DEBUG) Log.d(TAG, "Player is playing - resetting stuck detection")
+                    }
+                    positionStuckSince = -1L
+                    lastKnownPosition = player.currentPosition
+                    continue
+                }
+
                 val currentPosition = player.currentPosition
                 val expectedMinAdvance = MIN_POSITION_ADVANCE_MS
 
                 if (currentPosition <= lastKnownPosition + expectedMinAdvance) {
-                    // Position not advancing
+                    // Position not advancing AND player reports not playing
                     if (positionStuckSince == -1L) {
                         positionStuckSince = clock()
-                        Log.d(TAG, "Position appears stuck at ${currentPosition}ms")
+                        if (BuildConfig.DEBUG) Log.d(TAG, "Position appears stuck at ${currentPosition}ms (isLive=$isLive, isPlaying=false)")
                     } else {
                         val stuckDuration = clock() - positionStuckSince
-                        if (stuckDuration >= STUCK_READY_THRESHOLD_MS) {
-                            Log.w(TAG, "Stuck in READY detected: position=${currentPosition}ms, stuck for ${stuckDuration}ms")
+                        // Use longer threshold for live streams
+                        val threshold = if (isLive) LIVE_STUCK_READY_THRESHOLD_MS else STUCK_READY_THRESHOLD_MS
+                        if (stuckDuration >= threshold) {
+                            Log.w(TAG, "Stuck in READY detected: position=${currentPosition}ms, stuck for ${stuckDuration}ms (threshold=${threshold}ms, isLive=$isLive)")
                             initiateRecovery(player, "stuck in READY (position not advancing)")
                             break
                         }
@@ -263,7 +440,7 @@ class PlaybackRecoveryManager(
                 } else {
                     // Position is advancing - reset stuck tracking
                     if (positionStuckSince != -1L) {
-                        Log.d(TAG, "Position advancing again: $lastKnownPosition -> $currentPosition")
+                        if (BuildConfig.DEBUG) Log.d(TAG, "Position advancing again: $lastKnownPosition -> $currentPosition")
                     }
                     positionStuckSince = -1L
                     lastKnownPosition = currentPosition
@@ -300,7 +477,7 @@ class PlaybackRecoveryManager(
         val timeSinceLastRecovery = now - lastRecovery
         if (lastRecovery != -1L && timeSinceLastRecovery < requiredBackoff) {
             val delayMs = requiredBackoff - timeSinceLastRecovery
-            Log.d(TAG, "Backoff not elapsed - scheduling recovery in ${delayMs}ms")
+            if (BuildConfig.DEBUG) Log.d(TAG, "Backoff not elapsed - scheduling recovery in ${delayMs}ms")
 
             // Schedule delayed recovery instead of just returning
             pendingRecoveryJob?.cancel()
@@ -311,7 +488,7 @@ class PlaybackRecoveryManager(
                     (player.playbackState == Player.STATE_READY && !player.isPlaying && player.playWhenReady)) {
                     initiateRecovery(player, "$reason (after backoff)")
                 } else {
-                    Log.d(TAG, "Playback recovered during backoff - skipping scheduled recovery")
+                    if (BuildConfig.DEBUG) Log.d(TAG, "Playback recovered during backoff - skipping scheduled recovery")
                 }
             }
             return
@@ -361,7 +538,7 @@ class PlaybackRecoveryManager(
             RecoveryStep.QUALITY_DOWNSHIFT -> {
                 if (isAdaptive) {
                     // For adaptive, ABR should handle this - just re-prepare
-                    Log.d(TAG, "Adaptive stream - re-preparing (ABR handles quality)")
+                    if (BuildConfig.DEBUG) Log.d(TAG, "Adaptive stream - re-preparing (ABR handles quality)")
                     player.prepare()
                     player.playWhenReady = true
                 } else {
@@ -369,7 +546,7 @@ class PlaybackRecoveryManager(
                     val stepped = callbacks.onRequestQualityDownshift()
                     if (!stepped) {
                         // No lower quality available - escalate to next step
-                        Log.d(TAG, "No lower quality available - escalating to URL refresh")
+                        if (BuildConfig.DEBUG) Log.d(TAG, "No lower quality available - escalating to URL refresh")
                         executeRecoveryStep(player, RecoveryStep.REFRESH_URLS)
                     }
                 }

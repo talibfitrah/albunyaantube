@@ -359,7 +359,8 @@ class NewPipeExtractorClient(
                     qualityLabel = properLabel,
                     fps = stream.fps.takeIf { it > 0 },
                     isVideoOnly = stream.isVideoOnly(),
-                    syntheticDashMetadata = syntheticDashMeta
+                    syntheticDashMetadata = syntheticDashMeta,
+                    codec = stream.codec?.takeIf { it.isNotBlank() }
                 )
             }
             // No additional deduplication - preserve ALL streams for maximum step-down flexibility.
@@ -434,6 +435,10 @@ class NewPipeExtractorClient(
             hasVideoOnlyTracks = videoTracks.any { it.isVideoOnly }
         )
 
+        // Detect live streams (LIVE_STREAM or AUDIO_LIVE_STREAM)
+        val isLiveStream = streamType == StreamType.LIVE_STREAM ||
+            streamType == StreamType.AUDIO_LIVE_STREAM
+
         // TODO: Extract subtitle tracks from StreamInfo when NewPipe adds support
         return ResolvedStreams(
             streamId = streamId,
@@ -443,6 +448,7 @@ class NewPipeExtractorClient(
             durationSeconds = durationSeconds,
             hlsUrl = hlsStreamUrl,
             dashUrl = dashStreamUrl,
+            isLive = isLiveStream,
             urlGeneratedAt = generatedAt,
             urlTimebaseVersion = ResolvedStreams.URL_TIMEBASE_VERSION
         )

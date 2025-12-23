@@ -40,6 +40,11 @@
     <string name="player_status_resolving">حل البث…</string>
     <string name="player_stream_error">التشغيل غير متاح. يرجى المحاولة لاحقاً.</string>
     <string name="player_stream_unavailable">هذا الفيديو غير متاح للتشغيل.</string>
+    <string name="player_resize_mode_zoom">ملء الشاشة</string>
+    <string name="player_resize_mode_fit">ملاءمة الشاشة</string>
+    <string name="player_decoder_stepping_down">ترميز الفيديو غير مدعوم. جارٍ التبديل إلى %1$s…</string>
+    <string name="player_decoder_audio_error">خطأ في تشغيل الصوت. يرجى المحاولة مرة أخرى.</string>
+    <string name="player_decoder_no_compatible_quality">لا توجد جودة فيديو متوافقة مع هذا الجهاز.</string>
     <string name="player_notification_channel_name">التشغيل</string>
     <string name="player_notification_channel_desc">يتحكم بالتشغيل عندما يكون التطبيق في الخلفية.</string>
     <string name="player_notification_loading">جارٍ التحميل…</string>

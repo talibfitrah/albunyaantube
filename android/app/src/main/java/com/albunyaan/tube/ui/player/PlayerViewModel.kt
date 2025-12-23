@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -90,6 +91,9 @@ class PlayerViewModel @Inject constructor(
     // PR5: Pending refresh job for cancellation when video changes or new refresh requested
     private var pendingRefreshJob: Job? = null
 
+    // Live stream proactive refresh: job that schedules URL refresh before expiration
+    private var liveRefreshJob: Job? = null
+
     // Playlist playback state
     private var currentPlaylistId: String? = null
     private var isPlaylistMode: Boolean = false
@@ -101,6 +105,9 @@ class PlayerViewModel @Inject constructor(
 
     // PR6.6: Auto-skip tracking for unplayable items in playlist mode
     private var consecutiveSkips = 0
+
+    // Quality switching debounce: prevents rapid re-prepares when user quickly changes quality
+    private var qualitySwitchJob: Job? = null
 
     private val _analyticsEvents = MutableSharedFlow<PlaybackAnalyticsEvent>(
         replay = 0,
@@ -194,6 +201,9 @@ class PlayerViewModel @Inject constructor(
         // PR5: Cancel any pending delayed refresh for the old video
         pendingRefreshJob?.cancel()
         pendingRefreshJob = null
+        // Cancel live stream refresh for the old video
+        liveRefreshJob?.cancel()
+        liveRefreshJob = null
         current?.let { addToHistory(it) }
         currentItem = item
         applyQueueState()
@@ -211,6 +221,9 @@ class PlayerViewModel @Inject constructor(
         // PR5: Cancel any pending delayed refresh for the old video
         pendingRefreshJob?.cancel()
         pendingRefreshJob = null
+        // Cancel live stream refresh for the old video
+        liveRefreshJob?.cancel()
+        liveRefreshJob = null
         val previous = previousItems.removeLast()
         queue.add(0, current)
         currentItem = previous
@@ -292,10 +305,46 @@ class PlayerViewModel @Inject constructor(
      *
      * For adaptive streaming (HLS/DASH): Applied via track selector constraints
      * For progressive streaming: Selects the best track under the cap
+     *
+     * Uses debouncing to prevent crashes from rapid quality switches (user clicking
+     * multiple qualities quickly). Only the last selection within the debounce window
+     * is applied.
      */
     fun setUserQualityCap(track: VideoTrack) {
+        // Cancel any pending quality switch - only the latest selection wins
+        qualitySwitchJob?.cancel()
+
+        // Capture current streamId to verify after debounce - prevents applying
+        // a quality cap to a different video if the user navigated away
+        val targetStreamId = (_state.value.streamState as? StreamState.Ready)?.streamId
+
+        qualitySwitchJob = viewModelScope.launch(dispatcher) {
+            // Debounce: wait before applying to coalesce rapid clicks
+            delay(QUALITY_SWITCH_DEBOUNCE_MS)
+            applyQualityCapInternal(track, targetStreamId)
+        }
+    }
+
+    /**
+     * Internal implementation of quality cap application (called after debounce).
+     *
+     * @param track The video track representing the quality cap
+     * @param targetStreamId The streamId that was active when the user requested the quality change.
+     *        If this doesn't match the current streamId, the quality change is discarded
+     *        to prevent applying settings to the wrong video.
+     */
+    private fun applyQualityCapInternal(track: VideoTrack, targetStreamId: String?) {
         val streamState = _state.value.streamState
         if (streamState !is StreamState.Ready) return
+
+        // Verify we're still on the same video - user may have navigated during debounce
+        if (targetStreamId != null && streamState.streamId != targetStreamId) {
+            android.util.Log.d(
+                "PlayerViewModel",
+                "applyQualityCapInternal: streamId changed ($targetStreamId -> ${streamState.streamId}), discarding quality change"
+            )
+            return
+        }
 
         val resolved = streamState.selection.resolved
         val isProgressiveStream = resolved.hlsUrl == null && resolved.dashUrl == null
@@ -387,6 +436,53 @@ class PlayerViewModel @Inject constructor(
     }
 
     /**
+     * Handle decoder error by stepping down quality AND clamping the user's cap.
+     *
+     * Unlike [applyAutoQualityStepDown] which preserves the user's cap for network-based
+     * step-downs (where higher quality can recover), decoder errors indicate the device
+     * CANNOT play the current quality at all. We must clamp the cap to prevent the
+     * track selector from immediately re-selecting the undecodable quality.
+     *
+     * @param track The lower quality track to use
+     * @return true if step-down was applied, false if stream state was invalid
+     */
+    fun applyDecoderErrorStepDown(track: VideoTrack): Boolean {
+        val streamState = _state.value.streamState
+        if (streamState !is StreamState.Ready) return false
+
+        val resolved = streamState.selection.resolved
+        val isProgressiveStream = resolved.hlsUrl == null && resolved.dashUrl == null
+
+        // PR4: URL Lifecycle Hardening - check if progressive URLs are expired
+        if (isProgressiveStream && resolved.areUrlsExpired()) {
+            android.util.Log.w("PlayerViewModel", "applyDecoderErrorStepDown: URLs expired, forcing stream refresh")
+            forceRefreshForAutoRecovery()
+            return false
+        }
+
+        val newCapHeight = track.height
+        val oldCap = streamState.selection.userQualityCapHeight
+
+        // Clamp the cap to the new track's height - prevents track selector from
+        // re-selecting the undecodable quality when using adaptive manifests
+        val newSelection = PlaybackSelection(
+            streamId = streamState.streamId,
+            video = track,
+            audio = streamState.selection.audio,
+            resolved = resolved,
+            userQualityCapHeight = newCapHeight,
+            selectionOrigin = QualitySelectionOrigin.AUTO_RECOVERY
+        )
+
+        updateState { it.copy(streamState = StreamState.Ready(streamState.streamId, newSelection)) }
+        android.util.Log.i(
+            "PlayerViewModel",
+            "Decoder error step-down to ${track.qualityLabel}: cap changed from ${oldCap}p to ${newCapHeight}p"
+        )
+        return true
+    }
+
+    /**
      * Legacy method - delegates to setUserQualityCap for backward compatibility.
      * @deprecated Use setUserQualityCap instead
      */
@@ -463,6 +559,9 @@ class PlayerViewModel @Inject constructor(
         // PR5: Cancel any pending delayed refresh for the old video
         pendingRefreshJob?.cancel()
         pendingRefreshJob = null
+        // Cancel live stream refresh for the old video
+        liveRefreshJob?.cancel()
+        liveRefreshJob = null
 
         // PR6.6: Clear playlist mode and paging state to prevent stale hasNext
         isPlaylistMode = false
@@ -1015,6 +1114,9 @@ class PlayerViewModel @Inject constructor(
             publishAnalytics(PlaybackAnalyticsEvent.StreamResolved(item.streamId, selection.video?.qualityLabel))
             updateState { it.copy(streamState = StreamState.Ready(resolved.streamId, selection), retryCount = 0) }
 
+            // Schedule proactive URL refresh for live streams
+            scheduleLiveStreamRefresh(resolved, selection)
+
             // Apply pending quality cap if set (stored when URLs expired during quality switch)
             val pendingCap = pendingQualityCap
             if (pendingCap != null) {
@@ -1025,6 +1127,105 @@ class PlayerViewModel @Inject constructor(
             }
             return
         }
+    }
+
+    /**
+     * Schedule proactive URL refresh for live streams before they expire.
+     * This fetches fresh URLs in the background and emits an event for seamless swap.
+     */
+    private fun scheduleLiveStreamRefresh(resolved: ResolvedStreams, currentSelection: PlaybackSelection) {
+        // Cancel any existing refresh job
+        liveRefreshJob?.cancel()
+
+        // Only schedule for live streams
+        if (!resolved.isLive) return
+
+        val delayMs = resolved.timeUntilProactiveRefreshMs() ?: return
+        if (delayMs <= 0) {
+            // Already time to refresh - do it immediately in a coroutine
+            android.util.Log.d("PlayerViewModel", "Live stream: immediate proactive refresh needed")
+            liveRefreshJob = viewModelScope.launch(Dispatchers.IO) {
+                performLiveStreamRefresh(resolved.streamId, currentSelection)
+            }
+            return
+        }
+
+        android.util.Log.d("PlayerViewModel", "Live stream: scheduling proactive refresh in ${delayMs / 1000}s")
+
+        liveRefreshJob = viewModelScope.launch(Dispatchers.IO) {
+            kotlinx.coroutines.delay(delayMs)
+
+            // Verify we're still playing the same stream
+            val currentState = _state.value.streamState
+            if (currentState !is StreamState.Ready || currentState.streamId != resolved.streamId) {
+                android.util.Log.d("PlayerViewModel", "Live stream: skipping refresh, stream changed")
+                return@launch
+            }
+
+            performLiveStreamRefresh(resolved.streamId, currentState.selection)
+        }
+    }
+
+    /**
+     * Perform the actual live stream URL refresh in the background.
+     */
+    private suspend fun performLiveStreamRefresh(streamId: String, currentSelection: PlaybackSelection) {
+        android.util.Log.d("PlayerViewModel", "Live stream: proactively refreshing URLs for $streamId")
+
+        try {
+            // Force refresh to get new URLs
+            val freshStreams = repository.resolveStreams(streamId, forceRefresh = true)
+            if (freshStreams == null || !freshStreams.isLive) {
+                android.util.Log.w("PlayerViewModel", "Live stream: refresh failed or stream no longer live")
+                return
+            }
+
+            // Build selection maintaining current audio-only and quality preferences
+            val freshSelection = buildFreshSelection(freshStreams, currentSelection)
+            if (freshSelection == null) {
+                android.util.Log.w("PlayerViewModel", "Live stream: failed to build fresh selection")
+                return
+            }
+
+            android.util.Log.d("PlayerViewModel", "Live stream: fresh URLs ready, emitting event")
+            _uiEvents.emit(PlayerUiEvent.LiveStreamRefreshReady(streamId, freshSelection))
+
+            // Schedule next refresh
+            scheduleLiveStreamRefresh(freshStreams, freshSelection)
+
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            android.util.Log.e("PlayerViewModel", "Live stream: proactive refresh failed", e)
+            // Will fall back to error-based refresh when URLs actually expire
+        }
+    }
+
+    /**
+     * Build a fresh PlaybackSelection maintaining current preferences.
+     */
+    private fun buildFreshSelection(
+        freshStreams: ResolvedStreams,
+        currentSelection: PlaybackSelection
+    ): PlaybackSelection? {
+        // Try to find matching video quality
+        val video = if (currentSelection.video != null) {
+            freshStreams.videoTracks.find { it.height == currentSelection.video.height }
+                ?: freshStreams.videoTracks.maxByOrNull { it.height ?: 0 }
+        } else null
+
+        // Try to find matching audio (audio is non-null in PlaybackSelection)
+        val audio = freshStreams.audioTracks.find { it.bitrate == currentSelection.audio.bitrate }
+            ?: freshStreams.audioTracks.maxByOrNull { it.bitrate ?: 0 }
+            ?: return null
+
+        return PlaybackSelection(
+            streamId = freshStreams.streamId,
+            video = video,
+            audio = audio,
+            resolved = freshStreams,
+            userQualityCapHeight = currentSelection.userQualityCapHeight,
+            selectionOrigin = currentSelection.selectionOrigin
+        )
     }
 
     /**
@@ -1099,6 +1300,7 @@ class PlayerViewModel @Inject constructor(
         private const val MAX_RETRY_ATTEMPTS = 3
         private const val RETRY_BASE_DELAY_MS = 1000L
         private const val EXTRACTOR_TIMEOUT_MS = 20000L // 20s timeout for extraction (NewPipe can be slow)
+        private const val QUALITY_SWITCH_DEBOUNCE_MS = 300L // Debounce delay for quality switches
 
         // PR6.6: Playlist paging constants
         private const val PAGE_FETCH_TIMEOUT_MS = 10000L  // 10s timeout per page fetch
@@ -1129,6 +1331,9 @@ class PlayerViewModel @Inject constructor(
         // PR5: Cancel any pending delayed refresh for the old video
         pendingRefreshJob?.cancel()
         pendingRefreshJob = null
+        // Cancel live stream refresh for the old video
+        liveRefreshJob?.cancel()
+        liveRefreshJob = null
         if (markComplete) {
             publishAnalytics(PlaybackAnalyticsEvent.PlaybackCompleted(finished))
         }
@@ -1522,5 +1727,17 @@ sealed class PlayerUiEvent {
         val videoId: String,
         @StringRes val messageRes: Int,
         val canRetry: Boolean
+    ) : PlayerUiEvent()
+
+    /**
+     * Emitted when fresh URLs are ready for a live stream.
+     * PlayerFragment should seamlessly swap to the new source without stopping playback.
+     *
+     * @param streamId The stream ID for verification
+     * @param newSelection The new PlaybackSelection with fresh URLs
+     */
+    data class LiveStreamRefreshReady(
+        val streamId: String,
+        val newSelection: PlaybackSelection
     ) : PlayerUiEvent()
 }

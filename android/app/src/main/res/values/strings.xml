@@ -43,6 +43,9 @@
     <string name="player_status_resolving">Resolving stream…</string>
     <string name="player_stream_error">Playback unavailable. Please try again later.</string>
     <string name="player_stream_unavailable">This video is not available for playback.</string>
+    <string name="player_decoder_stepping_down">Video codec not supported. Switching to %1$s…</string>
+    <string name="player_decoder_audio_error">Audio playback error. Please try again.</string>
+    <string name="player_decoder_no_compatible_quality">No compatible video quality available for this device.</string>
     <string name="player_notification_channel_name">Playback</string>
     <string name="player_notification_channel_desc">Controls playback while the app is in the background.</string>
     <string name="player_notification_loading">Loading…</string>
@@ -211,6 +214,8 @@
     <string name="player_button_download">Download</string>
     <string name="player_action_minimize">Minimize player</string>
     <string name="player_action_fullscreen">Toggle fullscreen</string>
+    <string name="player_resize_mode_zoom">Fill screen</string>
+    <string name="player_resize_mode_fit">Fit to screen</string>
     <string name="player_action_settings">Player settings</string>
     <string name="player_action_play">Play</string>
     <string name="player_action_pause">Pause</string>

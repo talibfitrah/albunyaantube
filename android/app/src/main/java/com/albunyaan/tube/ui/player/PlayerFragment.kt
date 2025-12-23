@@ -99,6 +99,16 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private var pendingResumePlayWhenReady: Boolean? = null
     private lateinit var gestureDetector: GestureDetectorCompat
     private var isFullscreen = false
+    /** Current resize mode in fullscreen: FIT (letterbox, default) or ZOOM (fills screen, crops). Toggled by double-tap. */
+    private var fullscreenResizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+    /** Tracks whether we programmatically locked orientation (to avoid unlocking locks set by other code) */
+    private var weLockedOrientation = false
+    /** The target orientation we requested when locking (LANDSCAPE or PORTRAIT) */
+    private var targetOrientationIsLandscape: Boolean? = null
+    /** Handler for orientation unlock timeout (uses main looper for null-safe view operations) */
+    private val orientationHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    /** Pending runnable for orientation unlock (fallback if config change doesn't fire) */
+    private var orientationUnlockRunnable: Runnable? = null
     private var castContext: com.google.android.gms.cast.framework.CastContext? = null
     private var exoNextButton: View? = null
     private var exoPrevButton: View? = null
@@ -372,6 +382,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         setupUpNextList(binding)
         setupPlayer(binding)
         collectViewState(binding)
+        collectUiEvents()
     }
 
     override fun onStart() {
@@ -395,7 +406,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     }
 
     override fun onStop() {
-        // Mark player UI as not visible - this shows the notification for background control
+        // Mark player UI as not visible - PlaybackService uses this combined with its own
+        // ProcessLifecycleOwner observer to determine notification policy:
+        // - Notification hidden only when: app foreground AND player UI visible
+        // - Notification shown when: app background OR player UI not visible
         playbackService?.setPlayerUiVisible(false)
 
         // Don't pause playback - allow background audio
@@ -408,16 +422,55 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         // Sync fullscreen state with actual orientation
         // This handles both user-initiated rotation and programmatic rotation
         val isLandscape = newConfig.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-        if (isLandscape != isFullscreen) {
-            // Update state and UI without re-requesting orientation (already changed)
+        val orientationChanged = isLandscape != isFullscreen
+        if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onConfigurationChanged: isLandscape=$isLandscape, isFullscreen=$isFullscreen, orientationChanged=$orientationChanged")
+
+        if (orientationChanged) {
+            // Update state and UI when orientation changes
             isFullscreen = isLandscape
+            if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onConfigurationChanged: calling updateFullscreenUi (orientation changed)")
             updateFullscreenUi()
+        } else if (isFullscreen) {
+            // Even if orientation didn't change (e.g., 180° rotation while in landscape),
+            // reapply fullscreen UI to ensure system bars and layout remain correct.
+            // Some devices/skins may reset UI state on configuration changes.
+            if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onConfigurationChanged: calling updateFullscreenUi (already fullscreen)")
+            updateFullscreenUi()
+        }
+
+        // Only release orientation lock when EXITING fullscreen and we've reached portrait.
+        // When ENTERING fullscreen, we keep the lock active (SENSOR_LANDSCAPE) to prevent
+        // the phone from rotating back to portrait while user is watching fullscreen.
+        if (weLockedOrientation && targetOrientationIsLandscape != null) {
+            val reachedTarget = (targetOrientationIsLandscape == true && isLandscape) ||
+                               (targetOrientationIsLandscape == false && !isLandscape)
+            if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onConfigurationChanged: weLockedOrientation=true, target=${if (targetOrientationIsLandscape == true) "LANDSCAPE" else "PORTRAIT"}, reachedTarget=$reachedTarget")
+            if (reachedTarget) {
+                // Only schedule unlock when exiting fullscreen (target=PORTRAIT)
+                // When entering fullscreen (target=LANDSCAPE), keep the lock active
+                if (targetOrientationIsLandscape == false) {
+                    // Cancel fallback timeout since config change fired successfully
+                    // Reschedule with shorter delay to allow orientation to stabilize
+                    scheduleOrientationUnlock(ORIENTATION_UNLOCK_DELAY_MS)
+                } else {
+                    // Entering fullscreen - reached landscape, clear flags but keep locked
+                    if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onConfigurationChanged: reached fullscreen landscape, keeping lock active")
+                    weLockedOrientation = false
+                    targetOrientationIsLandscape = null
+                    // Note: requestedOrientation remains SENSOR_LANDSCAPE
+                }
+            }
         }
     }
 
     override fun onDestroyView() {
-        // Reset orientation to allow normal rotation when leaving player
+        // Cancel any pending orientation unlock
+        cancelOrientationUnlock()
+
+        // Reset orientation state to allow normal rotation when leaving player
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        weLockedOrientation = false
+        targetOrientationIsLandscape = null
 
         // CRITICAL: If leaving while in fullscreen, restore system bars and bottom nav
         // This prevents the fullscreen state from "leaking" to other screens
@@ -567,7 +620,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // Sync custom overlay controls with Media3 controller visibility
             setControllerVisibilityListener(
                 PlayerView.ControllerVisibilityListener { visibility ->
-                    android.util.Log.d("PlayerFragment", "Controller visibility changed: $visibility")
+                    if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Controller visibility changed: $visibility, " +
+                        "playerView.resizeMode=$resizeMode, playerView.width=$width, playerView.height=$height")
                     binding.playerOverlayControls.visibility = visibility
 
                     // Re-apply our custom prev/next button states when controller becomes visible
@@ -576,6 +630,12 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         val state = viewModel.state.value
                         updatePlaylistNavigationButtons(state.hasPrevious, state.hasNext)
                     }
+
+                    // DEBUG: Log after layout pass
+                    post {
+                        if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "After controller visibility change layout: " +
+                            "resizeMode=$resizeMode, width=$width, height=$height")
+                    }
                 }
             )
         }
@@ -583,9 +643,15 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         // Keep overlay controls visible initially (user needs to see quality button)
         binding.playerOverlayControls.visibility = View.VISIBLE
 
-        // Setup gesture detector for brightness/volume/seek gestures
-        val window = requireActivity().window
-        val playerGesture = PlayerGestureDetector(requireContext(), player, window)
+        // Setup gesture detector for seek gestures + resize mode toggle
+        // Brightness/volume gestures removed to reduce complexity
+        val playerGesture = PlayerGestureDetector(
+            context = requireContext(),
+            player = player,
+            onCenterDoubleTap = { tryToggleFullscreenResizeMode() },
+            // Use actual player view width for gesture zones (correct in split-screen, multi-window)
+            viewWidthProvider = { binding.playerView.width }
+        )
         gestureDetector = GestureDetectorCompat(requireContext(), playerGesture)
 
         // Attach gestures to player view
@@ -605,7 +671,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             private var lastStreamIdForRetries: String? = null
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                android.util.Log.d("PlayerFragment", "onIsPlayingChanged: isPlaying=$isPlaying, hasAutoHidden=$hasAutoHidden")
+                if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onIsPlayingChanged: isPlaying=$isPlaying, hasAutoHidden=$hasAutoHidden")
                 if (isPlaying) {
                     // Note: PlaybackService is started as foreground in onStart() to satisfy
                     // Android's 5-second rule. MediaSessionService shows notification automatically
@@ -633,10 +699,16 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         binding?.playerView?.postDelayed({
                             val currentBinding = binding ?: return@postDelayed
                             if (player.isPlaying) {
-                                android.util.Log.d("PlayerFragment", "Auto-hiding controls now")
+                                val pv = currentBinding.playerView
+                                if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Auto-hiding controls: BEFORE - resizeMode=${pv.resizeMode}, " +
+                                    "width=${pv.width}, height=${pv.height}")
                                 currentBinding.playerView.hideController()
                                 // Also explicitly hide overlay controls
                                 currentBinding.playerOverlayControls.visibility = View.GONE
+                                pv.post {
+                                    if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Auto-hiding controls: AFTER - resizeMode=${pv.resizeMode}, " +
+                                        "width=${pv.width}, height=${pv.height}")
+                                }
                             }
                         }, 3000) // 3 seconds delay to give user time to see controls
                     }
@@ -647,7 +719,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
-                android.util.Log.d("PlayerFragment", "onPlaybackStateChanged: state=$playbackState")
+                if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onPlaybackStateChanged: state=$playbackState")
 
                 // Delegate to recovery manager for freeze detection
                 recoveryManager?.onPlaybackStateChanged(player, playbackState)
@@ -682,6 +754,22 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 recoveryManager?.onPlayWhenReadyChanged(player, playWhenReady)
             }
 
+            override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
+                if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onVideoSizeChanged: width=${videoSize.width}, height=${videoSize.height}, " +
+                    "pixelWidthHeightRatio=${videoSize.pixelWidthHeightRatio}, " +
+                    "playerViewResizeMode=${binding?.playerView?.resizeMode}")
+
+                // Force resize mode to stay at FIT (or user's fullscreen preference) after video size changes
+                // This prevents any internal ExoPlayer behavior from changing the aspect ratio handling
+                val targetResizeMode = if (isFullscreen) fullscreenResizeMode else AspectRatioFrameLayout.RESIZE_MODE_FIT
+                binding?.playerView?.let { pv ->
+                    if (pv.resizeMode != targetResizeMode) {
+                        if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Forcing resize mode from ${pv.resizeMode} to $targetResizeMode")
+                        pv.resizeMode = targetResizeMode
+                    }
+                }
+            }
+
             override fun onPlayerError(error: PlaybackException) {
                 val httpResponseCode = findHttpResponseCode(error.cause)
                 android.util.Log.e(
@@ -705,7 +793,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         if (retryCount < maxRetries) {
                             retryCount++
                             val delayMs = retryCount * 1500L
-                            android.util.Log.d("PlayerFragment", "Retrying playback in ${delayMs}ms (attempt $retryCount)")
+                            if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Retrying playback in ${delayMs}ms (attempt $retryCount)")
                             // Use lifecycle-aware coroutine to prevent crashes if fragment is destroyed
                             lifecycleOwner.lifecycleScope.launch {
                                 kotlinx.coroutines.delay(delayMs)
@@ -744,6 +832,16 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                                 Toast.makeText(ctx, R.string.player_stream_unavailable, Toast.LENGTH_SHORT).show()
                             }
                         }
+                    }
+                    // Decoder errors - 4K/VP9/AV1 may not be supported on all devices
+                    // Auto step-down to lower quality that the device can decode
+                    PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+                    PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED,
+                    PlaybackException.ERROR_CODE_DECODING_FAILED,
+                    PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES,
+                    PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED -> {
+                        android.util.Log.w("PlayerFragment", "Decoder error: ${error.errorCodeName} - attempting quality step-down")
+                        handleDecoderError(player, error)
                     }
                     else -> {
                         // Other errors - show message with safe context access
@@ -823,6 +921,96 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     }
 
     /**
+     * Collect UI events from ViewModel (errors, live stream refresh, etc).
+     * Handles one-shot events that shouldn't be part of persistent state.
+     */
+    private fun collectUiEvents() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.uiEvents.collect { event ->
+                when (event) {
+                    is PlayerUiEvent.FavoriteToggleFailed -> {
+                        Toast.makeText(
+                            requireContext(),
+                            getString(event.messageRes),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                    is PlayerUiEvent.LiveStreamRefreshReady -> {
+                        handleLiveStreamRefresh(event)
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Handle seamless live stream URL refresh without stopping playback.
+     * Saves current position, swaps media source, and resumes at same position.
+     */
+    private fun handleLiveStreamRefresh(event: PlayerUiEvent.LiveStreamRefreshReady) {
+        val currentPlayer = player ?: return
+        val currentStreamState = viewModel.state.value.streamState
+
+        // Verify we're still playing the same stream
+        if (currentStreamState !is StreamState.Ready || currentStreamState.streamId != event.streamId) {
+            if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Live refresh: stream changed, ignoring")
+            return
+        }
+
+        if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Live refresh: seamlessly swapping to fresh URLs for ${event.streamId}")
+
+        // Save current playback state
+        val currentPosition = currentPlayer.currentPosition
+        val wasPlaying = currentPlayer.playWhenReady
+        val audioOnly = viewModel.state.value.audioOnly
+
+        // Create new media source with fresh URLs
+        val resolved = event.newSelection.resolved
+        val mediaSourceResult = try {
+            mediaSourceFactory.createMediaSourceWithType(
+                resolved = resolved,
+                audioOnly = audioOnly,
+                selectedQuality = event.newSelection.video,
+                userQualityCapHeight = event.newSelection.userQualityCapHeight,
+                selectionOrigin = event.newSelection.selectionOrigin,
+                forceProgressive = false // Live streams use adaptive
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("PlayerFragment", "Live refresh: failed to create media source", e)
+            return
+        }
+
+        // Seamless swap: set new source, prepare, seek to position, continue playing
+        try {
+            currentPlayer.setMediaSource(mediaSourceResult.source)
+            currentPlayer.prepare()
+
+            // For live streams, don't seek to old position if it's stale
+            // Live streams may have moved forward; seekTo(currentPosition) could fail
+            // Let the player start at the live edge instead
+            if (!resolved.isLive && currentPosition > 0) {
+                currentPlayer.seekTo(currentPosition)
+            }
+
+            currentPlayer.playWhenReady = wasPlaying
+
+            // Update prepared state
+            preparedStreamUrl = mediaSourceResult.actualSourceUrl
+            preparedIsAdaptive = mediaSourceResult.isAdaptive
+            preparedAdaptiveType = mediaSourceResult.adaptiveType
+
+            // Force sync MediaSession metadata after source swap (setMediaSource may reset it)
+            viewModel.state.value.currentItem?.let { item ->
+                syncMediaSessionMetadata(item, force = true)
+            }
+
+            if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Live refresh: seamless swap completed")
+        } catch (e: Exception) {
+            android.util.Log.e("PlayerFragment", "Live refresh: swap failed", e)
+        }
+    }
+
+    /**
      * MenuProvider implementation for options menu handling.
      * Replaces deprecated setHasOptionsMenu(true) / onCreateOptionsMenu / onOptionsItemSelected pattern.
      */
@@ -861,7 +1049,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             } else {
                 context.startService(intent)
             }
-            android.util.Log.d("PlayerFragment", "Started PlaybackService for foreground notification")
+            if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Started PlaybackService for foreground notification")
         } catch (e: Exception) {
             android.util.Log.w("PlayerFragment", "Failed to start PlaybackService for foreground", e)
         }
@@ -869,7 +1057,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
     private fun showQualitySelector() {
         val streamState = viewModel.state.value.streamState
-        android.util.Log.d("PlayerFragment", "showQualitySelector: streamState = $streamState")
+        if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "showQualitySelector: streamState = $streamState")
 
         if (streamState !is StreamState.Ready) {
             Toast.makeText(requireContext(), R.string.player_video_not_ready, Toast.LENGTH_SHORT).show()
@@ -877,13 +1065,15 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         }
 
         val videoTracks = streamState.selection.resolved.videoTracks
-        android.util.Log.d("PlayerFragment", "Available video tracks: ${videoTracks.size}")
-        videoTracks.forEachIndexed { index, track ->
-            android.util.Log.d("PlayerFragment", "Track $index: height=${track.height}, qualityLabel=${track.qualityLabel}")
+        if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Available video tracks: ${videoTracks.size}")
+        if (BuildConfig.DEBUG) {
+            videoTracks.forEachIndexed { index, track ->
+                android.util.Log.d("PlayerFragment", "Track $index: height=${track.height}, qualityLabel=${track.qualityLabel}")
+            }
         }
 
         val allQualities = viewModel.getAvailableQualities()
-        android.util.Log.d("PlayerFragment", "getAvailableQualities returned: ${allQualities.size} qualities")
+        if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "getAvailableQualities returned: ${allQualities.size} qualities")
 
         if (allQualities.isEmpty()) {
             Toast.makeText(requireContext(), R.string.player_quality_unavailable, Toast.LENGTH_LONG).show()
@@ -902,10 +1092,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             }
         }.toTypedArray()
 
-        android.util.Log.d("PlayerFragment", "Quality labels: ${labels.joinToString()}")
+        if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Quality labels: ${labels.joinToString()}")
 
         val currentQuality = streamState.selection.video?.qualityLabel
-        android.util.Log.d("PlayerFragment", "Current quality: $currentQuality")
+        if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Current quality: $currentQuality")
 
         val currentIndex = sortedQualities.indexOfFirst { it.label == currentQuality }
 
@@ -1185,6 +1375,278 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     }
 
     /**
+     * Extract the Format from a PlaybackException's cause chain.
+     * This is more authoritative than currentTracks during decoder-init failures
+     * when tracks may not yet be populated.
+     *
+     * Searches for ExoPlaybackException which contains the rendererFormat that failed to decode.
+     */
+    private fun extractFormatFromException(error: PlaybackException): androidx.media3.common.Format? {
+        var current: Throwable? = error
+        while (current != null) {
+            // ExoPlaybackException contains rendererFormat for renderer (decoder) errors
+            val exoException = current as? androidx.media3.exoplayer.ExoPlaybackException
+            if (exoException != null && exoException.rendererFormat != null) {
+                return exoException.rendererFormat
+            }
+            current = current.cause
+        }
+        return null
+    }
+
+    /**
+     * Handle decoder errors (4K/VP9/AV1 not supported) by stepping down to a lower quality.
+     *
+     * When a video fails to decode (e.g., device doesn't support VP9 4K or AV1),
+     * automatically tries the next lower quality that's more likely to be decodable
+     * (e.g., 1080p H.264 instead of 4K VP9).
+     *
+     * @param player The ExoPlayer instance
+     * @param error The PlaybackException that triggered this handler - used to extract
+     *              the failing Format when currentTracks is empty/lagging
+     */
+    private fun handleDecoderError(player: ExoPlayer, error: PlaybackException) {
+        val streamState = viewModel.state.value.streamState
+        if (streamState !is StreamState.Ready) {
+            android.util.Log.w("PlayerFragment", "handleDecoderError: no stream ready")
+            context?.let { ctx ->
+                Toast.makeText(ctx, R.string.player_stream_error, Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
+
+        val currentSelection = streamState.selection
+        val currentVideo = factorySelectedVideoTrack ?: currentSelection.video
+        val availableTracks = currentSelection.resolved.videoTracks
+
+        if (currentVideo == null || availableTracks.isEmpty()) {
+            android.util.Log.w("PlayerFragment", "handleDecoderError: no video track to step down from")
+            context?.let { ctx ->
+                Toast.makeText(ctx, R.string.player_stream_error, Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
+
+        // Find an alternative track to try, preferring H.264/AVC (most compatible codec)
+        // Strategy: First try same-resolution with more compatible codec, then fall back to lower resolution
+        //
+        // NOTE: For adaptive HLS/DASH playback, codec swaps may be limited since
+        // MultiQualityMediaSourceFactory applies constraints via DefaultTrackSelector height cap
+        // rather than direct track selection. A same-height "swap" may be a no-op if the manifest
+        // doesn't offer the desired codec at that resolution. This recovery is most effective for
+        // progressive (URL-selected) playback.
+        //
+        // Height resolution priority (updated for adaptive correctness):
+        // 1. Format from PlaybackException.cause - actual failing format (most authoritative)
+        // 2. player.currentTracks selected video Format - current playback format
+        // 3. selection.video.height - our track metadata (may be default selection, not ABR variant)
+        // 4. player.videoSize.height - last resort (can be stale from previous item)
+        //
+        // IMPORTANT: For adaptive HLS/DASH, currentVideo.height may be the default selection (e.g., 720p)
+        // while ABR is actually playing a higher variant (e.g., 2160p). The errorFormat from the exception
+        // is the most authoritative source for what actually failed to decode, so prefer it first.
+
+        // Extract Format from PlaybackException.cause chain - most authoritative for decoder errors
+        // This is the actual Format that failed to decode, not our default selection
+        val errorFormat = extractFormatFromException(error)
+
+        // Verify errorFormat is a video format before doing video-quality step-down
+        // Decoder errors can also be audio-renderer errors; don't "fix" audio errors with video step-down
+        if (errorFormat != null) {
+            val sampleMime = errorFormat.sampleMimeType?.lowercase(java.util.Locale.ROOT) ?: ""
+            if (!sampleMime.startsWith("video/")) {
+                android.util.Log.w("PlayerFragment", "handleDecoderError: errorFormat is not video (mime=$sampleMime), skipping video step-down")
+                context?.let { ctx ->
+                    // Use dedicated audio error message if it's an audio format, otherwise generic error
+                    val messageRes = if (sampleMime.startsWith("audio/")) {
+                        R.string.player_decoder_audio_error
+                    } else {
+                        R.string.player_stream_error
+                    }
+                    Toast.makeText(ctx, messageRes, Toast.LENGTH_SHORT).show()
+                }
+                return
+            }
+        }
+
+        // Get selected format from currentTracks (optimized: early-exit loop, no intermediate lists)
+        val selectedVideoFormat: androidx.media3.common.Format? = run {
+            for (group in player.currentTracks.groups) {
+                if (group.type != androidx.media3.common.C.TRACK_TYPE_VIDEO) continue
+                for (i in 0 until group.length) {
+                    if (group.isTrackSelected(i)) {
+                        return@run group.getTrackFormat(i)
+                    }
+                }
+            }
+            null
+        }
+
+        // Priority: errorFormat (actual failing format) > selectedVideoFormat (current playback) >
+        // currentVideo (our selection metadata) > videoSize (fallback, may be stale)
+        val currentHeight = errorFormat?.height?.takeIf { it > 0 }
+            ?: selectedVideoFormat?.height?.takeIf { it > 0 }
+            ?: currentVideo.height?.takeIf { it > 0 }
+            ?: player.videoSize.height.takeIf { it > 0 }
+        if (currentHeight == null || currentHeight <= 0) {
+            android.util.Log.w("PlayerFragment", "handleDecoderError: no valid height from exception, currentTracks, selection, or videoSize")
+            context?.let { ctx ->
+                Toast.makeText(ctx, R.string.player_decoder_no_compatible_quality, Toast.LENGTH_LONG).show()
+            }
+            return
+        }
+
+        // Extract failing codec from errorFormat for adaptive correctness
+        // For adaptive HLS/DASH, currentVideo.codec may be from the default selection, not the actual failing variant
+        // Prefer codecs, but fall back to sampleMimeType which can be informative (e.g., video/avc, x-vnd.on2.vp9)
+        val failingCodec: String? = errorFormat?.codecs?.takeIf { it.isNotBlank() }
+            ?: errorFormat?.sampleMimeType?.takeIf { it.isNotBlank() }
+            ?: selectedVideoFormat?.codecs?.takeIf { it.isNotBlank() }
+            ?: selectedVideoFormat?.sampleMimeType?.takeIf { it.isNotBlank() }
+            ?: currentVideo.codec
+
+        // Helper to check if string contains actual codec hints (not just container type)
+        // Accepts already-lowercased input for internal use to avoid double normalization
+        fun hasCodecHintsLower(lower: String): Boolean {
+            return lower.contains("avc") || lower.contains("h264") ||
+                lower.contains("hvc") || lower.contains("hev") || lower.contains("hevc") || lower.contains("h265") ||
+                lower.contains("vp9") || lower.contains("vp09") ||
+                lower.contains("av1") || lower.contains("av01")
+        }
+
+        // Public version - case-insensitive to avoid footgun if caller forgets to lowercase
+        fun hasCodecHints(str: String): Boolean = hasCodecHintsLower(str.lowercase(java.util.Locale.ROOT))
+
+        // Helper to get codec compatibility score from raw codec string (lower = more compatible)
+        // Common codec identifiers:
+        // - H.264/AVC: "avc1", "avc", "h264"
+        // - HEVC/H.265: "hvc1", "hev1", "hevc", "h265"
+        // - VP9: "vp9", "vp09"
+        // - AV1: "av1", "av01"
+        fun getCodecScoreFromString(codecStr: String?): Int {
+            val codec = codecStr?.lowercase(java.util.Locale.ROOT) ?: ""
+            return when {
+                // Check audio/* first - audio mime types should never reach here, but be safe
+                // (prevents hypothetical "audio/vp9" from being mis-scored as VP9 video)
+                codec.startsWith("audio/") -> 2
+                codec.contains("avc") || codec.contains("h264") -> 0  // Most compatible
+                codec.contains("hvc") || codec.contains("hev") || codec.contains("hevc") || codec.contains("h265") -> 1
+                codec.contains("vp9") || codec.contains("vp09") -> 2
+                codec.contains("av1") || codec.contains("av01") -> 3  // Least compatible (newest)
+                codec.isBlank() -> 2 // Unknown codec - treat conservatively (VP9-level, try to swap away)
+                // Container-only mime types (video/* without codec hints) lack codec info - treat as unknown
+                // Use hasCodecHintsLower since codec is already lowercased above
+                codec.startsWith("video/") && !hasCodecHintsLower(codec) -> 2
+                else -> 1 // Non-blank codec string with actual codec info, treat as mid-level compatibility
+            }
+        }
+
+        // Helper to extract codec string from VideoTrack with mimeType fallback
+        fun extractCodecString(track: VideoTrack): String {
+            // Prefer track.codec (always populated) over syntheticDashMetadata.codec (only for video-only progressive)
+            val codecStr = track.codec ?: track.syntheticDashMetadata?.codec ?: ""
+            if (codecStr.isNotBlank()) return codecStr
+
+            // Only fall back to mimeType if it contains actual codec hints (not just container type)
+            // hasCodecHints() lowercases internally, so we pass the original mimeType
+            val mime = track.mimeType ?: ""
+            return if (hasCodecHints(mime)) mime else ""
+        }
+
+        fun getCodecScore(track: VideoTrack): Int = getCodecScoreFromString(extractCodecString(track))
+
+        // Log unknown codecs once before sorting to avoid spam during sorting loops
+        // Only log in debug builds for development monitoring
+        if (BuildConfig.DEBUG) {
+            availableTracks.filter { it.codec.isNullOrBlank() && extractCodecString(it).isBlank() }
+                .distinctBy { it.url } // Deduplicate by URL to log each track once
+                .forEach { track ->
+                    android.util.Log.d("PlayerFragment", "Unknown codec for track: height=${track.height}, mime=${track.mimeType}, label=${track.qualityLabel}")
+                }
+        }
+
+        // Compute currentCodecScore from the actual failing codec (errorFormat/selectedVideoFormat)
+        // not currentVideo which may be the default selection for adaptive streams
+        val currentCodecScore = getCodecScoreFromString(failingCodec)
+
+        // First: Try same resolution with a MORE COMPATIBLE codec (lower score = more compatible)
+        // Prefer muxed streams and higher bitrate for quality
+        val sameResolutionAlternative = availableTracks
+            .filter { track ->
+                val trackHeight = track.height ?: 0
+                val trackCodecScore = getCodecScore(track)
+                // Same resolution, but different and more compatible codec
+                trackHeight == currentHeight &&
+                    trackHeight > 0 &&
+                    trackCodecScore < currentCodecScore
+            }
+            .sortedWith(
+                compareBy<VideoTrack> { getCodecScore(it) }  // Most compatible codec first
+                    .thenBy { it.isVideoOnly }  // Prefer muxed (false < true)
+                    .thenByDescending { it.bitrate ?: 0 }  // Higher bitrate preferred
+            )
+            .firstOrNull()
+
+        // Second: Fall back to lower resolution if no same-resolution alternative
+        val lowerResolutionTrack = availableTracks
+            .filter { track ->
+                val trackHeight = track.height ?: 0
+                // Must be lower resolution than current
+                trackHeight < currentHeight && trackHeight > 0
+            }
+            .sortedWith(
+                compareByDescending<VideoTrack> { it.height ?: 0 } // Prefer highest resolution under current
+                    .thenBy { getCodecScore(it) } // Prefer more compatible codec
+                    .thenBy { it.isVideoOnly } // Prefer muxed streams
+                    .thenByDescending { it.bitrate ?: 0 } // Higher bitrate preferred
+            )
+            .firstOrNull()
+
+        // Prefer same-resolution codec swap, fall back to lower resolution
+        val lowerQualityTrack = sameResolutionAlternative ?: lowerResolutionTrack
+
+        if (lowerQualityTrack == null) {
+            android.util.Log.w("PlayerFragment", "handleDecoderError: no lower quality available")
+            context?.let { ctx ->
+                Toast.makeText(ctx, R.string.player_decoder_no_compatible_quality, Toast.LENGTH_LONG).show()
+            }
+            return
+        }
+
+        val isCodecSwap = sameResolutionAlternative != null
+        val actionDesc = if (isCodecSwap) "codec swap" else "resolution step-down"
+        // Log the actual failing format details for adaptive streams, not just currentVideo.qualityLabel
+        // which may be the default selection rather than the failing variant
+        val fromDesc = if (errorFormat != null) {
+            val heightStr = errorFormat.height.takeIf { it > 0 }?.let { "${it}p" } ?: "?p"
+            val codecStr = errorFormat.codecs?.takeIf { it.isNotBlank() }
+                ?: errorFormat.sampleMimeType?.takeIf { it.isNotBlank() }
+                ?: "unknown"
+            "$heightStr/$codecStr"
+        } else {
+            currentVideo.qualityLabel ?: "${currentHeight}p"
+        }
+        android.util.Log.i(
+            "PlayerFragment",
+            "handleDecoderError: $actionDesc from $fromDesc to ${lowerQualityTrack.qualityLabel}"
+        )
+
+        // Show toast to inform user
+        context?.let { ctx ->
+            Toast.makeText(
+                ctx,
+                getString(R.string.player_decoder_stepping_down, lowerQualityTrack.qualityLabel ?: "lower quality"),
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+
+        // Apply the decoder error step-down via ViewModel
+        // This clamps the user's quality cap to prevent track selector from re-selecting
+        // the undecodable quality (unlike network step-down which preserves the cap)
+        viewModel.applyDecoderErrorStepDown(lowerQualityTrack)
+    }
+
+    /**
      * Find the next lower quality track to step down to.
      * Delegates to [com.albunyaan.tube.player.QualityStepDownHelper] for testability.
      */
@@ -1198,11 +1660,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             val resultHeight = result.height ?: 0
             when {
                 current.isVideoOnly && !result.isVideoOnly && resultHeight == currentHeight ->
-                    android.util.Log.d("PlayerFragment", "Step-down: video-only -> muxed at ${currentHeight}p")
+                    if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Step-down: video-only -> muxed at ${currentHeight}p")
                 resultHeight == currentHeight ->
-                    android.util.Log.d("PlayerFragment", "Step-down: lower bitrate at ${currentHeight}p (${current.bitrate} -> ${result.bitrate})")
+                    if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Step-down: lower bitrate at ${currentHeight}p (${current.bitrate} -> ${result.bitrate})")
                 else ->
-                    android.util.Log.d("PlayerFragment", "Step-down: ${currentHeight}p -> ${resultHeight}p")
+                    if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Step-down: ${currentHeight}p -> ${resultHeight}p")
             }
         }
         return result
@@ -1278,7 +1740,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         preparedQualityCapHeight = null
                     }
                 }
-                android.util.Log.d("PlayerFragment", "Stream already prepared with same source, skipping")
+                if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Stream already prepared with same source, skipping")
                 return
             }
             is CacheHitResult.Miss -> {
@@ -1286,12 +1748,23 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             }
         }
 
-        android.util.Log.d("PlayerFragment", "Preparing stream: id=${key.first}, audioOnly=${key.second}, expectedUrl=$expectedSourceUrl, isQualitySwitch=$isQualitySwitch")
+        if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Preparing stream: id=${key.first}, audioOnly=${key.second}, expectedUrl=$expectedSourceUrl, isQualitySwitch=$isQualitySwitch")
 
-        // Reset sticky fallback flag when switching to a different stream
-        if (adaptiveFailedForCurrentStream != null && adaptiveFailedForCurrentStream != streamState.streamId) {
-            android.util.Log.d("PlayerFragment", "Clearing adaptive fallback flag (new stream)")
-            adaptiveFailedForCurrentStream = null
+        // Reset state when switching to a different stream (not quality switch)
+        if (!isSameStream) {
+            // Reset sticky fallback flag for adaptive streams
+            if (adaptiveFailedForCurrentStream != null) {
+                if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Clearing adaptive fallback flag (new stream)")
+                adaptiveFailedForCurrentStream = null
+            }
+            // Reset fullscreen resize mode to FIT (default) - each video starts fresh
+            if (fullscreenResizeMode != AspectRatioFrameLayout.RESIZE_MODE_FIT) {
+                fullscreenResizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                // Apply immediately if currently in fullscreen
+                if (isFullscreen) {
+                    binding?.playerView?.resizeMode = fullscreenResizeMode
+                }
+            }
         }
 
         val hasPendingResume = pendingResumeStreamId == streamState.streamId && pendingResumePositionMs != null
@@ -1330,7 +1803,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             )
             preparedIsAdaptive = result.isAdaptive
             preparedAdaptiveType = result.adaptiveType
-            android.util.Log.d(
+            if (BuildConfig.DEBUG) android.util.Log.d(
                 "PlayerFragment",
                 "Created media source: isAdaptive=$preparedIsAdaptive, type=${result.adaptiveType}, qualityCap=${selection.userQualityCapHeight}p, actualSource=${sourceIdentityForLog(result.actualSourceUrl)}"
             )
@@ -1415,21 +1888,23 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             preparedStreamKey = key
             // Use the actual URL from the MediaSourceResult - this is the true source identity
             preparedStreamUrl = mediaSourceResult.actualSourceUrl
-            android.util.Log.d(
+            if (BuildConfig.DEBUG) android.util.Log.d(
                 "PlayerFragment",
                 "Stream prepared successfully: ${streamState.streamId}, isAdaptive=$preparedIsAdaptive, type=${mediaSourceResult.adaptiveType}, actualSource=${sourceIdentityForLog(preparedStreamUrl)}"
             )
 
-            // Notify recovery manager of new stream - pass streamId and adaptive flag
-            recoveryManager?.onNewStream(streamState.streamId, preparedIsAdaptive)
+            // Notify recovery manager of new stream - pass streamId, adaptive flag, and live flag
+            // Live streams use longer stall thresholds since they buffer more due to real-time data
+            recoveryManager?.onNewStream(streamState.streamId, preparedIsAdaptive, resolved.isLive)
 
             // Notify buffer health monitor of new stream - only monitors progressive streams
             bufferHealthMonitor?.onNewStream(streamState.streamId, preparedIsAdaptive)
 
             // Sync MediaSession metadata now that player has a valid media source.
             // This must happen after setMediaSource/prepare to ensure currentMediaItem exists.
+            // Force sync because setMediaSource may have reset MediaSession metadata.
             state.currentItem?.let { item ->
-                syncMediaSessionMetadata(item)
+                syncMediaSessionMetadata(item, force = true)
             }
 
             if (hasPendingResume) {
@@ -1605,7 +2080,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
                 // Only process when in Ready state (not during recovery)
                 if (streamState !is StreamState.Ready) {
-                    android.util.Log.d("PlayerFragment", "Proactive downshift skipped: not in Ready state")
+                    if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Proactive downshift skipped: not in Ready state")
                     return false
                 }
 
@@ -1618,11 +2093,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 )
 
                 return if (nextLower != null) {
-                    android.util.Log.i("PlayerFragment", "Proactive downshift: ${currentTrack?.qualityLabel} -> ${nextLower.qualityLabel}")
+                    if (BuildConfig.DEBUG) android.util.Log.i("PlayerFragment", "Proactive downshift: ${currentTrack?.qualityLabel} -> ${nextLower.qualityLabel}")
                     // Returns false if URLs expired and refresh triggered instead
                     viewModel.applyAutoQualityStepDown(nextLower)
                 } else {
-                    android.util.Log.d("PlayerFragment", "Proactive downshift: no lower quality available")
+                    if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Proactive downshift: no lower quality available")
                     false
                 }
             }
@@ -1637,20 +2112,20 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     }
 
     private fun openDownloadedFile(entry: DownloadEntry) {
-        android.util.Log.d("PlayerFragment", "openDownloadedFile called with entry: ${entry.request.videoId}")
+        if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "openDownloadedFile called with entry: ${entry.request.videoId}")
         val filePath = entry.filePath ?: run {
             android.util.Log.e("PlayerFragment", "No filePath in entry")
             Toast.makeText(requireContext(), R.string.downloads_no_file, Toast.LENGTH_SHORT).show()
             return
         }
-        android.util.Log.d("PlayerFragment", "File path: $filePath")
+        if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "File path: $filePath")
         val file = File(filePath)
         if (!file.exists()) {
             android.util.Log.e("PlayerFragment", "File does not exist: $filePath")
             Toast.makeText(requireContext(), getString(R.string.downloads_file_not_found, file.name), Toast.LENGTH_SHORT).show()
             return
         }
-        android.util.Log.d("PlayerFragment", "File exists, size: ${file.length()} bytes")
+        if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "File exists, size: ${file.length()} bytes")
         val uri: Uri = FileProvider.getUriForFile(
             requireContext(),
             "${BuildConfig.APPLICATION_ID}.downloads.provider",
@@ -1665,10 +2140,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         // Grant temporary read permission to all apps that can handle this intent
         val resolvedActivities = requireContext().packageManager.queryIntentActivities(intent, 0)
-        android.util.Log.d("PlayerFragment", "Found ${resolvedActivities.size} apps that can handle video")
+        if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Found ${resolvedActivities.size} apps that can handle video")
         for (resolvedInfo in resolvedActivities) {
             val packageName = resolvedInfo.activityInfo.packageName
-            android.util.Log.d("PlayerFragment", "Granting permission to: $packageName")
+            if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Granting permission to: $packageName")
             requireContext().grantUriPermission(
                 packageName,
                 uri,
@@ -1677,10 +2152,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         }
 
         if (resolvedActivities.isNotEmpty()) {
-            android.util.Log.d("PlayerFragment", "Starting activity with intent")
+            if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Starting activity with intent")
             try {
                 startActivity(intent)
-                android.util.Log.d("PlayerFragment", "Activity started successfully")
+                if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Activity started successfully")
             } catch (e: Exception) {
                 android.util.Log.e("PlayerFragment", "Failed to start activity", e)
                 val errorMessage = e.localizedMessage ?: getString(R.string.error_unknown)
@@ -1730,30 +2205,116 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     /**
      * Toggle fullscreen mode - called when user taps fullscreen button.
      * Requests orientation change which will trigger onConfigurationChanged -> updateFullscreenUi.
+     *
+     * **Orientation Lock Strategy:**
+     * - Entering fullscreen: Lock to SENSOR_LANDSCAPE (allows 180° flip but not portrait).
+     *   The lock remains until user explicitly exits fullscreen. This prevents the phone
+     *   from rotating back to portrait due to sensor while user is watching fullscreen.
+     * - Exiting fullscreen: Lock to PORTRAIT briefly, then unlock to UNSPECIFIED after
+     *   stabilization. This allows natural rotation after exit.
      */
     private fun toggleFullscreen() {
         isFullscreen = !isFullscreen
 
+        // Cancel any pending unlock from previous toggle
+        cancelOrientationUnlock()
+
+        val currentConfig = resources.configuration
+        val isCurrentlyLandscape = currentConfig.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+
         if (isFullscreen) {
             // Request landscape orientation - will trigger onConfigurationChanged
+            // Mark that WE locked orientation - but DON'T schedule unlock for fullscreen entry.
+            // We keep it locked to SENSOR_LANDSCAPE until user exits fullscreen.
+            weLockedOrientation = true
+            targetOrientationIsLandscape = true
+            if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "toggleFullscreen: lock set, target=LANDSCAPE, current=${if (isCurrentlyLandscape) "LANDSCAPE" else "PORTRAIT"} (no unlock scheduled)")
             requireActivity().requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            // NO scheduleOrientationUnlock() - lock stays until user exits fullscreen
         } else {
             // Request portrait orientation - will trigger onConfigurationChanged
+            weLockedOrientation = true
+            targetOrientationIsLandscape = false
+            if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "toggleFullscreen: lock set, target=PORTRAIT, current=${if (isCurrentlyLandscape) "LANDSCAPE" else "PORTRAIT"}")
             requireActivity().requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+
+            // Check if already in target orientation - onConfigurationChanged may not fire
+            val alreadyInTarget = !isCurrentlyLandscape
+            if (alreadyInTarget) {
+                // Already in target orientation, use shorter delay since no rotation needed
+                if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "toggleFullscreen: already in target, scheduling quick unlock")
+                scheduleOrientationUnlock(ORIENTATION_UNLOCK_DELAY_MS)
+            } else {
+                // Schedule fallback unlock in case onConfigurationChanged doesn't fire
+                // (e.g., sensor/display issue, or config change suppressed)
+                scheduleOrientationUnlock(ORIENTATION_UNLOCK_FALLBACK_MS)
+            }
         }
 
         // Update UI immediately (don't wait for orientation change callback)
         updateFullscreenUi()
+    }
 
-        // If exiting fullscreen, allow sensor-based rotation again after a short delay
-        if (!isFullscreen) {
-            viewLifecycleOwner.lifecycleScope.launch {
-                kotlinx.coroutines.delay(500)
-                if (isAdded) {
-                    requireActivity().requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-                }
+    /**
+     * Schedule orientation unlock after a delay.
+     * Uses main looper handler so it survives view detachment (unlike view.postDelayed).
+     * Used both as fallback (longer delay) and after reaching target (shorter delay).
+     */
+    private fun scheduleOrientationUnlock(delayMs: Long) {
+        cancelOrientationUnlock()
+        if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "scheduleOrientationUnlock: scheduling in ${delayMs}ms")
+        orientationUnlockRunnable = Runnable {
+            // Use activity reference safely - may be null if fragment is detached
+            val act = activity
+            if (weLockedOrientation && act != null && !act.isFinishing) {
+                if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "orientationUnlock: executing")
+                act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                weLockedOrientation = false
+                targetOrientationIsLandscape = null
+            } else if (weLockedOrientation) {
+                if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "orientationUnlock: skipped (activity null or finishing), weLockedOrientation reset")
+                // Still reset our flags even if we can't unlock activity
+                weLockedOrientation = false
+                targetOrientationIsLandscape = null
             }
         }
+        orientationHandler.postDelayed(orientationUnlockRunnable!!, delayMs)
+    }
+
+    /**
+     * Cancel any pending orientation unlock.
+     */
+    private fun cancelOrientationUnlock() {
+        orientationUnlockRunnable?.let { orientationHandler.removeCallbacks(it) }
+        orientationUnlockRunnable = null
+    }
+
+    /**
+     * Toggle resize mode between ZOOM and FIT when in fullscreen.
+     * Called on double-tap in center area of player.
+     * @return true if the gesture was handled (in fullscreen), false otherwise
+     */
+    private fun tryToggleFullscreenResizeMode(): Boolean {
+        if (!isFullscreen) return false
+
+        val binding = this.binding ?: return false
+
+        fullscreenResizeMode = if (fullscreenResizeMode == AspectRatioFrameLayout.RESIZE_MODE_ZOOM) {
+            AspectRatioFrameLayout.RESIZE_MODE_FIT
+        } else {
+            AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+        }
+
+        binding.playerView.resizeMode = fullscreenResizeMode
+
+        // Show a brief toast to indicate the mode change
+        val modeName = if (fullscreenResizeMode == AspectRatioFrameLayout.RESIZE_MODE_ZOOM) {
+            getString(R.string.player_resize_mode_zoom)
+        } else {
+            getString(R.string.player_resize_mode_fit)
+        }
+        Toast.makeText(requireContext(), modeName, Toast.LENGTH_SHORT).show()
+        return true
     }
 
     /**
@@ -1761,6 +2322,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
      * Called from both toggleFullscreen() and onConfigurationChanged().
      */
     private fun updateFullscreenUi() {
+        if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "updateFullscreenUi: isFullscreen=$isFullscreen, fullscreenResizeMode=$fullscreenResizeMode", Exception("Stack trace"))
         val binding = this.binding ?: return
         val activity = requireActivity()
         val window = activity.window
@@ -1789,6 +2351,14 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 )
             }
 
+            // Handle display cutout (notch) - draw content into the cutout area
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                window.attributes = window.attributes.apply {
+                    layoutInDisplayCutoutMode =
+                        android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                }
+            }
+
             // Hide scrollable content
             binding.playerScrollView.visibility = View.GONE
 
@@ -1800,33 +2370,43 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 binding.appBarLayout.layoutParams = params
             }
 
-            // Center the player container (FrameLayout) within AppBarLayout
-            binding.playerView.parent?.let { parent ->
-                if (parent is android.widget.FrameLayout) {
-                    parent.layoutParams?.let { frameParams ->
-                        if (frameParams is com.google.android.material.appbar.AppBarLayout.LayoutParams) {
-                            frameParams.height = ViewGroup.LayoutParams.MATCH_PARENT
-                            frameParams.width = ViewGroup.LayoutParams.MATCH_PARENT
-                        }
-                        parent.layoutParams = frameParams
-                    }
-                    // Set gravity on the FrameLayout itself to center its children
-                    (parent as? android.widget.FrameLayout)?.foregroundGravity = android.view.Gravity.CENTER
+            // Expand CollapsingToolbarLayout to fill AppBarLayout
+            binding.collapsingToolbar.layoutParams?.let { params ->
+                if (params is com.google.android.material.appbar.AppBarLayout.LayoutParams) {
+                    params.height = ViewGroup.LayoutParams.MATCH_PARENT
                 }
+                binding.collapsingToolbar.layoutParams = params
             }
 
-            // Set player to wrap content (aspect ratio) and center it
+            // Expand the player container (ConstraintLayout) within CollapsingToolbarLayout
+            binding.playerContainer.layoutParams?.let { containerParams ->
+                containerParams.height = ViewGroup.LayoutParams.MATCH_PARENT
+                containerParams.width = ViewGroup.LayoutParams.MATCH_PARENT
+                binding.playerContainer.layoutParams = containerParams
+            }
+
+            // Set player to fill the screen in fullscreen mode
+            // PlayerView is inside ConstraintLayout, so use ConstraintLayout.LayoutParams
+            // Use 0dp (match_constraint) with full constraints - NOT MATCH_PARENT
             binding.playerView.layoutParams?.let { playerParams ->
-                if (playerParams is android.widget.FrameLayout.LayoutParams) {
-                    playerParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
-                    playerParams.width = ViewGroup.LayoutParams.MATCH_PARENT
-                    playerParams.gravity = android.view.Gravity.CENTER
+                if (playerParams is androidx.constraintlayout.widget.ConstraintLayout.LayoutParams) {
+                    // Use 0dp (match_constraint) for proper ConstraintLayout behavior
+                    playerParams.height = 0
+                    playerParams.width = 0
+                    // Constrain to all edges of parent to fill the screen
+                    playerParams.topToTop = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
+                    playerParams.bottomToBottom = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
+                    playerParams.startToStart = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
+                    playerParams.endToEnd = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
+                    // Remove dimension ratio constraint in fullscreen (constraints fill the space)
+                    playerParams.dimensionRatio = null
                 }
                 binding.playerView.layoutParams = playerParams
             }
 
-            // Make player resize mode to FIT for proper aspect ratio
-            binding.playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+            // Use saved resize mode (FIT by default, toggled to ZOOM by double-tap center)
+            if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "updateFullscreenUi: applying resizeMode=$fullscreenResizeMode (FIT=${AspectRatioFrameLayout.RESIZE_MODE_FIT}, ZOOM=${AspectRatioFrameLayout.RESIZE_MODE_ZOOM})")
+            binding.playerView.resizeMode = fullscreenResizeMode
 
             // Update button icon
             binding.fullscreenButton.setImageResource(R.drawable.ic_fullscreen_exit)
@@ -1836,11 +2416,35 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 window.setDecorFitsSystemWindows(true)
                 window.insetsController?.show(android.view.WindowInsets.Type.systemBars())
             } else {
+                // On pre-API 30, we need to properly restore system UI flags.
+                // LIGHT_STATUS_BAR should only be set in light theme (dark icons on light background).
+                // In dark theme, we want light icons on dark background (no LIGHT_STATUS_BAR flag).
+                val isNightMode = (resources.configuration.uiMode and
+                    android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                    android.content.res.Configuration.UI_MODE_NIGHT_YES
+
                 @Suppress("DEPRECATION")
-                window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+                val baseFlags = View.SYSTEM_UI_FLAG_VISIBLE or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                @Suppress("DEPRECATION")
+                window.decorView.systemUiVisibility = if (isNightMode) {
+                    baseFlags  // Dark theme: light icons (no LIGHT_STATUS_BAR)
+                } else {
+                    baseFlags or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR  // Light theme: dark icons
+                }
+                // Also clear status bar flags to restore normal appearance
+                @Suppress("DEPRECATION")
+                window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN)
             }
 
-            // Show bottom navigation
+            // Restore default cutout mode
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                window.attributes = window.attributes.apply {
+                    layoutInDisplayCutoutMode =
+                        android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
+                }
+            }
+
+            // Show bottom navigation - do this AFTER restoring system UI to avoid layout issues
             (activity as? com.albunyaan.tube.ui.MainActivity)?.setBottomNavVisibility(true)
 
             // Show scrollable content
@@ -1854,27 +2458,37 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 binding.appBarLayout.layoutParams = params
             }
 
-            // Restore player container (FrameLayout) to normal size
-            binding.playerView.parent?.let { parent ->
-                if (parent is android.widget.FrameLayout) {
-                    parent.layoutParams?.let { frameParams ->
-                        if (frameParams is com.google.android.material.appbar.AppBarLayout.LayoutParams) {
-                            frameParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
-                            frameParams.width = ViewGroup.LayoutParams.MATCH_PARENT
-                        }
-                        parent.layoutParams = frameParams
-                    }
-                    // Remove gravity
-                    (parent as? android.widget.FrameLayout)?.foregroundGravity = android.view.Gravity.NO_GRAVITY
+            // Restore CollapsingToolbarLayout to normal size
+            binding.collapsingToolbar.layoutParams?.let { params ->
+                if (params is com.google.android.material.appbar.AppBarLayout.LayoutParams) {
+                    params.height = ViewGroup.LayoutParams.WRAP_CONTENT
                 }
+                binding.collapsingToolbar.layoutParams = params
             }
 
-            // Restore player to normal size
+            // Restore player container (ConstraintLayout) to normal wrap_content size
+            // The 16:9 aspect ratio is enforced by the child PlayerView's dimension ratio
+            binding.playerContainer.layoutParams?.let { containerParams ->
+                containerParams.height = ViewGroup.LayoutParams.WRAP_CONTENT
+                containerParams.width = ViewGroup.LayoutParams.MATCH_PARENT
+                binding.playerContainer.layoutParams = containerParams
+            }
+
+            // Restore player to constraint-based size with 16:9 aspect ratio
+            // Use 0dp (match_constraint) with full constraints - NOT MATCH_PARENT
             binding.playerView.layoutParams?.let { playerParams ->
-                if (playerParams is android.widget.FrameLayout.LayoutParams) {
-                    playerParams.height = resources.getDimensionPixelSize(R.dimen.player_portrait_height)
-                    playerParams.width = ViewGroup.LayoutParams.MATCH_PARENT
-                    playerParams.gravity = android.view.Gravity.NO_GRAVITY
+                if (playerParams is androidx.constraintlayout.widget.ConstraintLayout.LayoutParams) {
+                    // Restore constraint dimensions (0dp = match_constraint)
+                    playerParams.height = 0
+                    playerParams.width = 0
+                    // Restore all constraints to parent edges (required for 0dp to work)
+                    playerParams.topToTop = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
+                    playerParams.startToStart = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
+                    playerParams.endToEnd = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
+                    // bottomToBottom is NOT set - 16:9 ratio determines height
+                    playerParams.bottomToBottom = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.UNSET
+                    // Restore 16:9 aspect ratio
+                    playerParams.dimensionRatio = "16:9"
                 }
                 binding.playerView.layoutParams = playerParams
             }
@@ -1912,8 +2526,31 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             window.setDecorFitsSystemWindows(true)
             window.insetsController?.show(android.view.WindowInsets.Type.systemBars())
         } else {
+            // On pre-API 30, we need to properly restore system UI flags.
+            // LIGHT_STATUS_BAR should only be set in light theme (dark icons on light background).
+            // In dark theme, we want light icons on dark background (no LIGHT_STATUS_BAR flag).
+            val isNightMode = (resources.configuration.uiMode and
+                android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                android.content.res.Configuration.UI_MODE_NIGHT_YES
+
             @Suppress("DEPRECATION")
-            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+            val baseFlags = View.SYSTEM_UI_FLAG_VISIBLE or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = if (isNightMode) {
+                baseFlags  // Dark theme: light icons (no LIGHT_STATUS_BAR)
+            } else {
+                baseFlags or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR  // Light theme: dark icons
+            }
+            @Suppress("DEPRECATION")
+            window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN)
+        }
+
+        // Restore default cutout mode (prevents leak to other screens)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode =
+                    android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
+            }
         }
 
         // Show bottom navigation
@@ -2050,7 +2687,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             .setForceHighestSupportedBitrate(false)      // Allow ABR to choose
             .build()
         selector.setParameters(params)
-        android.util.Log.d("PlayerFragment", "Track selector: applied quality cap ${capHeight}p")
+        if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Track selector: applied quality cap ${capHeight}p")
     }
 
     /**
@@ -2063,7 +2700,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             .setForceHighestSupportedBitrate(false)
             .build()
         selector.setParameters(params)
-        android.util.Log.d("PlayerFragment", "Track selector: cleared constraints (ABR free)")
+        if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Track selector: cleared constraints (ABR free)")
     }
 
     /**
@@ -2224,10 +2861,15 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
      *
      * This only updates when the item changes (tracked by lastMetadataSyncedItemId) to avoid
      * redundant updates from repeated state emissions.
+     *
+     * @param item The current playing item
+     * @param force Force metadata sync even if we already synced this item. Use this after
+     *              stream rebuilds (e.g., setMediaSource/prepare) where MediaSession metadata
+     *              may have been lost.
      */
-    private fun syncMediaSessionMetadata(item: UpNextItem) {
-        // Skip if we already synced this item
-        if (lastMetadataSyncedItemId == item.id) return
+    private fun syncMediaSessionMetadata(item: UpNextItem, force: Boolean = false) {
+        // Skip if we already synced this item (unless forced)
+        if (!force && lastMetadataSyncedItemId == item.id) return
 
         val currentPlayer = player ?: return
 
@@ -2243,11 +2885,17 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         playbackService?.setCurrentVideoId(item.streamId)
 
         lastMetadataSyncedItemId = item.id
-        android.util.Log.d("PlayerFragment", "Synced MediaSession metadata for: ${item.title}")
+        if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Synced MediaSession metadata for: ${item.title}${if (force) " (forced)" else ""}")
     }
 
     private companion object {
         private const val DEFAULT_AUDIO_MIME = "audio/mp4"
         private const val DEFAULT_VIDEO_MIME = "video/mp4"
+
+        /** Delay before unlocking orientation after reaching target (allows stabilization) */
+        private const val ORIENTATION_UNLOCK_DELAY_MS = 500L
+        /** Fallback timeout to unlock orientation if config change doesn't fire.
+         *  Set to 3s to accommodate slow devices/TVs where rotation animation takes longer. */
+        private const val ORIENTATION_UNLOCK_FALLBACK_MS = 3000L
     }
 }

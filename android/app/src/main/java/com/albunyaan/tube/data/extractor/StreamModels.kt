@@ -33,7 +33,14 @@ data class VideoTrack(
     val fps: Int?,
     val isVideoOnly: Boolean,
     /** Metadata for synthetic DASH generation (null if not eligible) */
-    val syntheticDashMetadata: SyntheticDashMetadata? = null
+    val syntheticDashMetadata: SyntheticDashMetadata? = null,
+    /**
+     * Codec string (e.g., "avc1.64001f", "vp9", "av01.0.05M.08").
+     * Always populated from NewPipe's stream.codec when available.
+     * Use this for codec detection instead of syntheticDashMetadata.codec
+     * since syntheticDashMetadata may be null for muxed/HLS/DASH streams.
+     */
+    val codec: String? = null
 )
 
 data class AudioTrack(
@@ -63,6 +70,8 @@ data class ResolvedStreams(
     val hlsUrl: String? = null,
     /** DASH manifest URL for adaptive streaming (alternative to HLS) */
     val dashUrl: String? = null,
+    /** Whether this is a live stream (LIVE_STREAM or AUDIO_LIVE_STREAM) */
+    val isLive: Boolean = false,
     /**
      * Monotonic timestamp when the stream URLs were generated (SystemClock.elapsedRealtime).
      * Uses monotonic time to avoid issues with user clock changes.
@@ -83,6 +92,16 @@ data class ResolvedStreams(
          * preventing playback failures during quality switches.
          */
         const val URL_TTL_MS = 60 * 60 * 1000L // 1 hour
+
+        /**
+         * For live streams, proactively refresh URLs before they expire.
+         * This allows fetching new URLs in the background while playback continues,
+         * enabling seamless handoff without interruption.
+         *
+         * Set to 50 minutes - gives 10 minutes buffer before the 1-hour TTL.
+         */
+        const val LIVE_PROACTIVE_REFRESH_MS = 50 * 60 * 1000L // 50 minutes
+
         /** Timebase version for urlGeneratedAt timestamps. */
         const val URL_TIMEBASE_VERSION = 1
     }
@@ -99,6 +118,32 @@ data class ResolvedStreams(
         if (urlTimebaseVersion != URL_TIMEBASE_VERSION) return true
         if (nowMs < urlGeneratedAt) return true
         return (nowMs - urlGeneratedAt) > URL_TTL_MS
+    }
+
+    /**
+     * For live streams, check if we should proactively refresh URLs before expiration.
+     * This allows fetching new URLs in the background for seamless handoff.
+     * @param nowMs Current monotonic time in milliseconds
+     * @return true if this is a live stream and URLs should be proactively refreshed
+     */
+    fun shouldProactivelyRefresh(nowMs: Long = SystemClock.elapsedRealtime()): Boolean {
+        if (!isLive) return false
+        if (urlTimebaseVersion != URL_TIMEBASE_VERSION) return true
+        if (nowMs < urlGeneratedAt) return true
+        return (nowMs - urlGeneratedAt) > LIVE_PROACTIVE_REFRESH_MS
+    }
+
+    /**
+     * Time remaining until proactive refresh is needed (for live streams).
+     * Returns null for non-live streams, or 0L if refresh is already needed.
+     */
+    fun timeUntilProactiveRefreshMs(nowMs: Long = SystemClock.elapsedRealtime()): Long? {
+        if (!isLive) return null
+        if (urlTimebaseVersion != URL_TIMEBASE_VERSION) return 0L
+        if (nowMs < urlGeneratedAt) return 0L
+        val elapsed = nowMs - urlGeneratedAt
+        val remaining = LIVE_PROACTIVE_REFRESH_MS - elapsed
+        return if (remaining > 0) remaining else 0L
     }
 }
 

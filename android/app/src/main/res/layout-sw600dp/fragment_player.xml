@@ -25,19 +25,25 @@
             app:contentScrim="@android:color/black"
             app:toolbarId="@+id/playerToolbarPlaceholder">
 
-            <FrameLayout
+            <!-- ConstraintLayout wrapper to enforce 16:9 aspect ratio for the player -->
+            <androidx.constraintlayout.widget.ConstraintLayout
+                android:id="@+id/playerContainer"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                app:layout_collapseMode="parallax"
-                app:layout_collapseParallaxMultiplier="0.5">
+                app:layout_collapseMode="none">
 
-                <!-- Player uses responsive dimension (360dp on tablets vs 240dp on phones) -->
                 <androidx.media3.ui.PlayerView
                     android:id="@+id/playerView"
-                    android:layout_width="match_parent"
-                    android:layout_height="@dimen/player_portrait_height"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
                     android:keepScreenOn="true"
                     android:contentDescription="@string/player_video_player"
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintEnd_toEndOf="parent"
+                    app:layout_constraintDimensionRatio="16:9"
+                    app:resize_mode="fit"
+                    app:shutter_background_color="@android:color/black"
                     app:show_buffering="when_playing"
                     app:use_controller="true"
                     app:show_subtitle_button="true"
@@ -46,17 +52,26 @@
                     app:auto_show="true"
                     app:hide_on_touch="true" />
 
-            </FrameLayout>
+            </androidx.constraintlayout.widget.ConstraintLayout>
 
             <!-- Error Overlay - shown when stream resolution fails -->
-            <FrameLayout
+            <!-- Uses ConstraintLayout wrapper for 16:9 aspect ratio matching the player -->
+            <androidx.constraintlayout.widget.ConstraintLayout
                 android:id="@+id/playerErrorOverlay"
                 android:layout_width="match_parent"
-                android:layout_height="@dimen/player_portrait_height"
-                android:background="@color/player_error_overlay"
-                android:layoutDirection="locale"
+                android:layout_height="wrap_content"
                 android:visibility="gone"
-                app:layout_collapseMode="parallax">
+                app:layout_collapseMode="none">
+
+                <FrameLayout
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    android:background="@color/player_error_overlay"
+                    android:layoutDirection="locale"
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintEnd_toEndOf="parent"
+                    app:layout_constraintDimensionRatio="16:9">
 
                 <LinearLayout
                     android:layout_width="wrap_content"
@@ -119,17 +134,28 @@
 
                 </LinearLayout>
 
-            </FrameLayout>
+                </FrameLayout>
+
+            </androidx.constraintlayout.widget.ConstraintLayout>
 
             <!-- Recovery Overlay - shown during automatic recovery attempts -->
-            <FrameLayout
+            <!-- Uses ConstraintLayout wrapper for 16:9 aspect ratio matching the player -->
+            <androidx.constraintlayout.widget.ConstraintLayout
                 android:id="@+id/playerRecoveryOverlay"
                 android:layout_width="match_parent"
-                android:layout_height="@dimen/player_portrait_height"
-                android:background="@color/player_recovery_overlay"
-                android:layoutDirection="locale"
+                android:layout_height="wrap_content"
                 android:visibility="gone"
-                app:layout_collapseMode="parallax">
+                app:layout_collapseMode="none">
+
+                <FrameLayout
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    android:background="@color/player_recovery_overlay"
+                    android:layoutDirection="locale"
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintEnd_toEndOf="parent"
+                    app:layout_constraintDimensionRatio="16:9">
 
                 <LinearLayout
                     android:layout_width="wrap_content"
@@ -166,7 +192,9 @@
 
                 </LinearLayout>
 
-            </FrameLayout>
+                </FrameLayout>
+
+            </androidx.constraintlayout.widget.ConstraintLayout>
 
             <!-- Invisible toolbar placeholder for CollapsingToolbarLayout -->
             <androidx.appcompat.widget.Toolbar

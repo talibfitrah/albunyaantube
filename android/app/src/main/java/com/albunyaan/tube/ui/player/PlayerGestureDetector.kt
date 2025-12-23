@@ -1,70 +1,69 @@
 package com.albunyaan.tube.ui.player
 
 import android.content.Context
-import android.media.AudioManager
-import android.provider.Settings
 import android.view.GestureDetector
 import android.view.MotionEvent
-import android.view.Window
-import android.view.WindowManager
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
-import kotlin.math.abs
 
 /**
  * Gesture detector for player controls:
- * - Swipe up/down on left side: Brightness
- * - Swipe up/down on right side: Volume
- * - Double tap left/right: Seek backward/forward
+ * - Double tap left: Seek backward 10 seconds
+ * - Double tap right: Seek forward 10 seconds
+ * - Double tap center (fullscreen only): Toggle resize mode (ZOOM/FIT)
+ *
+ * Brightness/volume gestures removed to reduce complexity and touch conflicts.
+ * Users can control these via system UI.
+ *
+ * Note: Zone calculations use the actual touched view's width (passed via viewWidthProvider)
+ * rather than screen width, which correctly handles split-screen, multi-window, tablets
+ * with insets, and any case where the player view isn't full-width.
  */
 @OptIn(UnstableApi::class)
 class PlayerGestureDetector(
-    context: Context,
+    private val context: Context,
     private val player: ExoPlayer?,
-    private val window: Window?
+    /**
+     * Callback for center double-tap. Returns true if the gesture was handled
+     * (e.g., resize mode toggled in fullscreen), false if not handled (e.g., not in fullscreen).
+     * When false is returned, the gesture is not consumed, avoiding a "dead zone".
+     */
+    private val onCenterDoubleTap: (() -> Boolean)? = null,
+    /** Provider for the actual player view width - more accurate than screen width for gesture zones */
+    private val viewWidthProvider: (() -> Int)? = null
 ) : GestureDetector.SimpleOnGestureListener() {
 
-    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-    private val screenWidth = context.resources.displayMetrics.widthPixels
-    private val maxVolume = audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: 15
     private val seekIncrement = 10000L // 10 seconds in milliseconds
+
+    /**
+     * Get effective width for gesture zone calculations.
+     * Prefers actual view width (handles split-screen, multi-window, insets) over screen width.
+     */
+    private val effectiveWidth: Int
+        get() = viewWidthProvider?.invoke()?.takeIf { it > 0 }
+            ?: context.resources.displayMetrics.widthPixels
 
     override fun onDown(e: MotionEvent): Boolean = true
 
-    override fun onScroll(
-        e1: MotionEvent?,
-        e2: MotionEvent,
-        distanceX: Float,
-        distanceY: Float
-    ): Boolean {
-        if (e1 == null) return false
+    override fun onDoubleTap(e: MotionEvent): Boolean {
+        val x = e.x
 
-        val deltaY = e1.y - e2.y
-        val absDeltaY = abs(deltaY)
+        // Calculate zones dynamically based on actual view width (handles split-screen, multi-window)
+        val width = effectiveWidth
+        val leftThird = width / 3
+        val rightThird = width * 2 / 3
 
-        // Only handle vertical swipes (more vertical than horizontal)
-        if (absDeltaY < abs(distanceX)) return false
-
-        // Determine if swipe is on left or right side
-        val isLeftSide = e1.x < screenWidth / 2
-
-        if (isLeftSide) {
-            // Left side: Brightness control
-            adjustBrightness(deltaY / 1000f)
-        } else {
-            // Right side: Volume control
-            adjustVolume(deltaY.toInt() / 50)
+        // Center zone: Toggle resize mode (ZOOM/FIT) - handled by callback
+        // Callback returns true if handled (in fullscreen), false if not (not in fullscreen)
+        // When not handled, we return false to avoid consuming the event (no dead zone)
+        if (x >= leftThird && x <= rightThird) {
+            return onCenterDoubleTap?.invoke() ?: false
         }
 
-        return true
-    }
-
-    override fun onDoubleTap(e: MotionEvent): Boolean {
+        // Left/right zones: Seek backward/forward
         val player = this.player ?: return false
-
-        // Determine if double tap is on left or right side
-        val isLeftSide = e.x < screenWidth / 2
+        val isLeftSide = x < leftThird
 
         if (isLeftSide) {
             // Left side: Seek backward
@@ -80,43 +79,5 @@ class PlayerGestureDetector(
         }
 
         return true
-    }
-
-    private fun adjustBrightness(delta: Float) {
-        val window = this.window ?: return
-        val layoutParams = window.attributes
-
-        // Current brightness (-1 = auto, 0-1 = manual)
-        var brightness = layoutParams.screenBrightness
-        if (brightness < 0) {
-            // Get system brightness
-            brightness = try {
-                Settings.System.getInt(
-                    window.context.contentResolver,
-                    Settings.System.SCREEN_BRIGHTNESS
-                ) / 255f
-            } catch (e: Exception) {
-                0.5f
-            }
-        }
-
-        // Adjust brightness (clamp between 0.01 and 1.0)
-        brightness = (brightness + delta).coerceIn(0.01f, 1.0f)
-
-        layoutParams.screenBrightness = brightness
-        window.attributes = layoutParams
-    }
-
-    private fun adjustVolume(delta: Int) {
-        val audioManager = this.audioManager ?: return
-
-        val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-        val newVolume = (currentVolume + delta).coerceIn(0, maxVolume)
-
-        audioManager.setStreamVolume(
-            AudioManager.STREAM_MUSIC,
-            newVolume,
-            0 // No UI flags
-        )
     }
 }

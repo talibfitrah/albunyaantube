@@ -311,8 +311,20 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
      *
      * Fallback order: HLS → DASH → null
      * If HLS creation fails, attempts DASH before giving up.
+     *
+     * For live streams, uses non-caching DataSource to prevent stale manifest issues.
+     * For VOD, uses caching DataSource for faster subsequent loads.
      */
     private fun tryCreateAdaptiveSource(resolved: ResolvedStreams): AdaptiveSourceResult? {
+        // Use non-caching factory for live streams to prevent stale manifests
+        // that cause playback to stop after a few seconds
+        val adaptiveDataSourceFactory = if (resolved.isLive) {
+            android.util.Log.d(TAG, "Using non-caching data source for live stream")
+            dataSourceFactory
+        } else {
+            cacheDataSourceFactory
+        }
+
         // Try HLS first (better compatibility)
         val hlsResult = resolved.hlsUrl?.let { hlsUrl ->
             try {
@@ -320,7 +332,7 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
                     .setUri(hlsUrl)
                     .setMimeType(MimeTypes.APPLICATION_M3U8)
                     .build()
-                val source = HlsMediaSource.Factory(cacheDataSourceFactory)
+                val source = HlsMediaSource.Factory(adaptiveDataSourceFactory)
                     .setAllowChunklessPreparation(true)
                     .createMediaSource(mediaItem)
                 AdaptiveSourceResult(source, hlsUrl, MediaSourceResult.AdaptiveType.HLS)
@@ -330,7 +342,7 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
             }
         }
         if (hlsResult != null) {
-            android.util.Log.d(TAG, "Using HLS adaptive streaming")
+            android.util.Log.d(TAG, "Using HLS adaptive streaming (isLive=${resolved.isLive})")
             return hlsResult
         }
 
@@ -341,7 +353,7 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
                     .setUri(dashUrl)
                     .setMimeType(MimeTypes.APPLICATION_MPD)
                     .build()
-                val source = DashMediaSource.Factory(cacheDataSourceFactory)
+                val source = DashMediaSource.Factory(adaptiveDataSourceFactory)
                     .createMediaSource(mediaItem)
                 AdaptiveSourceResult(source, dashUrl, MediaSourceResult.AdaptiveType.DASH)
             } catch (e: Exception) {
@@ -350,7 +362,7 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
             }
         }
         if (dashResult != null) {
-            android.util.Log.d(TAG, "Using DASH adaptive streaming (HLS unavailable or failed)")
+            android.util.Log.d(TAG, "Using DASH adaptive streaming (HLS unavailable or failed, isLive=${resolved.isLive})")
             return dashResult
         }
 

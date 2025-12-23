@@ -148,6 +148,7 @@ dependencies {
     implementation("androidx.navigation:navigation-ui-ktx:2.7.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+    implementation("androidx.lifecycle:lifecycle-process:2.7.0")
     implementation("androidx.fragment:fragment-ktx:1.6.2")
     implementation("androidx.paging:paging-runtime-ktx:3.2.1")
     implementation("androidx.viewpager2:viewpager2:1.0.0")

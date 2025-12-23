@@ -15,6 +15,10 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.annotation.OptIn
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -58,12 +62,47 @@ class PlaybackService : MediaSessionService() {
     private var currentVideoId: String? = null
 
     /**
-     * Tracks whether the player UI is currently visible.
+     * Tracks whether the app is in the foreground (any activity visible).
+     * Updated by ProcessLifecycleOwner which reliably detects app-level foreground/background.
      * When true, the notification should be hidden to avoid banner intrusion.
      * When false (app in background), notification is shown for media controls.
      */
     @Volatile
+    private var isAppInForeground: Boolean = true
+
+    /**
+     * Tracks whether the player UI (PlayerFragment) is currently visible.
+     * Set by PlayerFragment via setPlayerUiVisible() in onStart/onStop.
+     * Used in combination with isAppInForeground to determine notification policy:
+     * - Hide notification only when BOTH app is foreground AND player UI is visible
+     * - Show notification when app is background OR user navigated away from player
+     */
+    @Volatile
     private var isPlayerUiVisible: Boolean = false
+
+    /**
+     * Observes app-level lifecycle to detect foreground/background transitions.
+     * Combined with isPlayerUiVisible to implement notification policy:
+     * - ProcessLifecycleOwner detects when app goes to background (show notification)
+     * - isPlayerUiVisible distinguishes player-visible vs in-app navigation
+     */
+    private val appLifecycleObserver = object : DefaultLifecycleObserver {
+        override fun onStart(owner: LifecycleOwner) {
+            // App came to foreground
+            Log.d(TAG, "App moved to foreground (ProcessLifecycleOwner.onStart)")
+            isAppInForeground = true
+            // Hide notification when app is in foreground
+            mediaSession?.player?.let { updateForegroundState(it) }
+        }
+
+        override fun onStop(owner: LifecycleOwner) {
+            // App went to background
+            Log.d(TAG, "App moved to background (ProcessLifecycleOwner.onStop)")
+            isAppInForeground = false
+            // Show notification when app is in background (if playing)
+            mediaSession?.player?.let { updateForegroundState(it) }
+        }
+    }
 
     /**
      * Session-unique token for validating dismiss intents.
@@ -80,6 +119,16 @@ class PlaybackService : MediaSessionService() {
         super.onCreate()
         Log.i(TAG, "PlaybackService created (Android ${Build.VERSION.SDK_INT})")
         createNotificationChannel()
+
+        // Register for app-level lifecycle events to detect foreground/background
+        ProcessLifecycleOwner.get().lifecycle.addObserver(appLifecycleObserver)
+
+        // Sync initial state: observer callbacks only fire on TRANSITIONS, not current state.
+        // If service starts while app is already foregrounded, onStart() won't be called.
+        // Explicitly check current state to ensure correct initial value.
+        val appLifecycle = ProcessLifecycleOwner.get().lifecycle
+        isAppInForeground = appLifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+        Log.d(TAG, "Initial app foreground state: $isAppInForeground")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -441,6 +490,8 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         Log.d(TAG, "PlaybackService destroyed")
+        // Unregister lifecycle observer to prevent leaks
+        ProcessLifecycleOwner.get().lifecycle.removeObserver(appLifecycleObserver)
         releaseSession()
         // Clear static field when service is destroyed
         activeVideoId = null
@@ -581,14 +632,18 @@ class PlaybackService : MediaSessionService() {
      * Unified foreground state management.
      *
      * This is the single source of truth for determining if the service should be in foreground mode.
-     * Called from: notification actions, player listener callbacks, UI visibility changes.
+     * Called from: notification actions, player listener callbacks, app lifecycle changes.
      *
      * **Decision logic:**
-     * - If UI is visible → exit foreground (user has direct controls)
-     * - If UI is NOT visible AND playback is active → enter foreground (background playback)
-     * - If UI is NOT visible AND playback is NOT active → demote from foreground, show paused notification
+     * - If app is in foreground → exit foreground (user has direct controls)
+     * - If app is in background AND playback is active → enter foreground (background playback)
+     * - If app is in background AND playback is NOT active → demote from foreground, show paused notification
      *
      * "Playback active" = isPlaying OR (STATE_READY/BUFFERING AND playWhenReady)
+     *
+     * **App foreground detection:**
+     * Uses ProcessLifecycleOwner (isAppInForeground) which reliably detects app-level
+     * foreground/background state regardless of which fragment is visible.
      *
      * **Paused-in-background policy:**
      * When paused while backgrounded, we demote from FGS but post a regular notification.
@@ -600,12 +655,20 @@ class PlaybackService : MediaSessionService() {
             ((player.playbackState == Player.STATE_READY || player.playbackState == Player.STATE_BUFFERING)
                 && player.playWhenReady)
 
-        Log.d(TAG, "updateForegroundState: uiVisible=$isPlayerUiVisible, playbackActive=$isPlaybackActive, " +
-            "isPlaying=${player.isPlaying}, state=${player.playbackState}, playWhenReady=${player.playWhenReady}")
+        // Combined policy: hide notification only when BOTH conditions are met:
+        // 1. App is in foreground (ProcessLifecycleOwner)
+        // 2. Player UI is visible (PlayerFragment.setPlayerUiVisible)
+        // This ensures notification shows when:
+        // - App is in background (regardless of player UI state)
+        // - App is in foreground but user navigated away from player
+        val shouldHideNotification = isAppInForeground && isPlayerUiVisible
+
+        Log.d(TAG, "updateForegroundState: appInForeground=$isAppInForeground, playerUiVisible=$isPlayerUiVisible, " +
+            "playbackActive=$isPlaybackActive, isPlaying=${player.isPlaying}, state=${player.playbackState}")
 
         when {
-            isPlayerUiVisible -> {
-                // UI is visible - don't need foreground, user has direct controls
+            shouldHideNotification -> {
+                // App is in foreground - don't need foreground service, user has direct controls
                 exitForegroundMode()
             }
             isPlaybackActive -> {
@@ -623,29 +686,24 @@ class PlaybackService : MediaSessionService() {
     /**
      * Creates the notification channel for playback notifications.
      *
-     * **Important**: We do NOT delete existing channels even if the user changed importance.
-     * Android respects user channel settings, so if the user changed importance (causing heads-up
-     * banners), we should not override their choice. Instead, they can adjust it in system settings.
-     *
-     * The channel is created with IMPORTANCE_LOW to avoid heads-up banners by default.
-     * If users see intrusive banners, they can:
-     * 1. Long-press the notification → Settings → set to "Silent" or "Low"
-     * 2. Go to App Info → Notifications → Playback → reduce importance
+     * The channel is created with IMPORTANCE_LOW to avoid heads-up banners.
+     * We NEVER delete existing channels as that would override user preferences.
+     * If the channel already exists, we respect whatever importance the user has set.
      */
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+            // Check if current channel exists
             val existingChannel = manager.getNotificationChannel(CHANNEL_ID)
             if (existingChannel != null) {
-                // Channel already exists - respect user's settings, don't recreate.
-                // If importance is high, it may be due to user choice or OS upgrade.
-                // We log it but do not delete the channel.
-                if (existingChannel.importance > NotificationManager.IMPORTANCE_LOW) {
-                    Log.i(TAG, "Notification channel '$CHANNEL_ID' has elevated importance (${existingChannel.importance}). " +
-                        "User can adjust in system notification settings to reduce banner intrusiveness.")
-                }
+                // Channel exists - respect user's settings, don't modify or delete
+                // If user changed importance, that's their choice to keep
+                Log.d(TAG, "Notification channel '$CHANNEL_ID' exists with importance ${existingChannel.importance}")
                 return
             }
+
+            // Create new channel with LOW importance
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 getString(R.string.player_notification_channel_name),
@@ -655,6 +713,9 @@ class PlaybackService : MediaSessionService() {
                 // Explicitly disable heads-up/peek behavior
                 setShowBadge(false)
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                // Disable vibration and sound for media playback notifications
+                enableVibration(false)
+                setSound(null, null)
             }
             manager.createNotificationChannel(channel)
             Log.i(TAG, "Created notification channel '$CHANNEL_ID' with IMPORTANCE_LOW")
