@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Large Tablet / TV layout for Settings screen (sw720dp) -->
+<!-- Optimized for D-pad navigation with larger touch targets and focus indicators -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -6,7 +8,7 @@
     android:orientation="vertical"
     android:background="@color/background_gray">
 
-    <!-- Toolbar -->
+    <!-- Toolbar with focusable back button for D-pad -->
     <com.google.android.material.appbar.MaterialToolbar
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
@@ -18,18 +20,31 @@
         app:titleTextAppearance="@style/TextAppearance.MaterialComponents.Headline6"
         app:titleTextColor="?attr/colorOnSurface"/>
 
+    <!-- ScrollView focus behavior for TV D-pad navigation:
+         - focusable="false": Prevents ScrollView from receiving D-pad focus
+         - focusableInTouchMode="false": Prevents focus capture on touch devices
+         - descendantFocusability="afterDescendants": Focus goes to children first
+         This ensures D-pad navigates directly to settings items, not the container. -->
     <ScrollView
         android:id="@+id/settingsScrollView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:clipToPadding="false"
-        android:paddingBottom="@dimen/bottom_nav_height">
+        android:paddingBottom="@dimen/spacing_lg"
+        android:scrollbarStyle="outsideOverlay"
+        android:focusable="false"
+        android:focusableInTouchMode="false"
+        android:descendantFocusability="afterDescendants">
 
+        <!-- TV/Large Tablet: Constrained width with increased padding -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="@dimen/spacing_md">
+            android:paddingStart="@dimen/spacing_xl"
+            android:paddingEnd="@dimen/spacing_xl"
+            android:paddingTop="@dimen/spacing_md"
+            android:paddingBottom="@dimen/spacing_md">
 
             <!-- General Section -->
             <TextView

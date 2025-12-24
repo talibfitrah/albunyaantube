@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/storageLocationItem"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
@@ -10,11 +11,11 @@
     android:focusable="true">
 
     <ImageView
-        android:layout_width="24dp"
-        android:layout_height="24dp"
+        android:layout_width="@dimen/icon_small"
+        android:layout_height="@dimen/icon_small"
         android:src="@android:drawable/ic_menu_save"
         android:contentDescription="@null"
-        android:tint="@color/icon_gray"/>
+        app:tint="?attr/colorOnSurfaceVariant"/>
 
     <LinearLayout
         android:layout_width="0dp"
@@ -26,27 +27,29 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Storage Location"
-            android:textSize="16sp"
-            android:textColor="@android:color/black"/>
+            android:text="@string/settings_storage_location"
+            android:textSize="@dimen/text_subtitle"
+            android:textColor="?attr/colorOnSurface"
+            android:textAlignment="viewStart"/>
 
         <TextView
             android:id="@+id/storageLocationValue"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Internal Storage"
-            android:textSize="14sp"
-            android:textColor="@color/icon_gray"
+            android:text="@string/settings_storage_internal"
+            android:textSize="@dimen/text_body"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:textAlignment="viewStart"
             android:layout_marginTop="@dimen/spacing_xs"/>
 
     </LinearLayout>
 
     <ImageView
-        android:layout_width="24dp"
-        android:layout_height="24dp"
+        android:layout_width="@dimen/icon_small"
+        android:layout_height="@dimen/icon_small"
         android:src="@android:drawable/ic_menu_more"
         android:contentDescription="@null"
-        android:tint="@color/icon_gray"
+        app:tint="?attr/colorOnSurfaceVariant"
         android:rotation="270"/>
 
 </LinearLayout>

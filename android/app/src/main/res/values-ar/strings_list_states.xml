@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="list_error_title">تعذر تحميل المحتوى</string>
+    <string name="list_error_description">تحقق من اتصالك أو عدّل الفلاتر، ثم حاول مرة أخرى.</string>
+    <string name="list_error_offline_title">أنت غير متصل</string>
+    <string name="list_error_offline_body">أعد الاتصال لمشاهدة أحدث المقاطع. سنستمر في عرض العناصر المخزنة مؤقتاً عند توفرها.</string>
+    <string name="list_error_server_body">حدث خطأ من جانبنا. حاول مرة أخرى بعد لحظات.</string>
+    <string name="list_retry">إعادة المحاولة</string>
+    <string name="list_empty_title">لا توجد نتائج بعد</string>
+    <string name="list_empty_body">جرب تصنيفاً مختلفاً أو قم بالتحديث لمشاهدة مقاطع جديدة.</string>
+    <string name="list_empty_clear">مسح الفلاتر</string>
+    <!-- Arabic has 6 plural forms: zero, one, two, few (3-10), many (11-99), other (100+) -->
+    <plurals name="list_footer_status">
+        <item quantity="zero">لا توجد عناصر</item>
+        <item quantity="one">عرض عنصر واحد</item>
+        <item quantity="two">عرض عنصران</item>
+        <item quantity="few">عرض %1$d عناصر</item>
+        <item quantity="many">عرض %1$d عنصرًا</item>
+        <item quantity="other">عرض %1$d عنصر</item>
+    </plurals>
+    <string name="list_footer_freshness">آخر تحديث الآن</string>
+</resources>

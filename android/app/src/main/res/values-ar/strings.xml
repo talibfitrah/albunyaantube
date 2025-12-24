@@ -406,6 +406,7 @@
     <string name="settings_quality_high">عالية (1080p)</string>
     <string name="settings_quality_high_desc">عالية (1080p) - أفضل جودة</string>
     <string name="settings_quality_changed">تم تعيين جودة التنزيل إلى %1$s</string>
+    <string name="settings_quality_change_failed">فشل تغيير جودة التنزيل. يرجى المحاولة مرة أخرى.</string>
     <string name="settings_content">المحتوى</string>
     <string name="settings_safe_mode">الوضع الآمن</string>
     <string name="settings_safe_mode_desc">عرض المحتوى المناسب للعائلة فقط</string>
@@ -413,10 +414,20 @@
     <string name="settings_language">اللغة</string>
     <string name="settings_language_desc">اختر لغتك المفضلة</string>
     <string name="settings_language_select_title">اختر اللغة</string>
+    <string name="settings_language_system_default">الافتراضي</string>
+    <string name="settings_language_system_resolved">الافتراضي (%1$s)</string>
     <string name="settings_language_changed">تم تغيير اللغة. سيتم إعادة تشغيل التطبيق.</string>
+    <string name="settings_language_change_failed">فشل تغيير اللغة. يرجى المحاولة مرة أخرى.</string>
     <string name="settings_theme">السمة</string>
     <string name="settings_theme_desc">اختر سمة التطبيق</string>
     <string name="settings_theme_coming_soon">اختيار السمة قريباً</string>
+    <string name="settings_theme_system">النظام الافتراضي</string>
+    <string name="settings_theme_system_resolved">النظام الافتراضي (%1$s)</string>
+    <string name="settings_theme_light">فاتح</string>
+    <string name="settings_theme_dark">داكن</string>
+    <string name="settings_theme_select_title">اختر السمة</string>
+    <string name="settings_theme_changed">تم تغيير السمة</string>
+    <string name="settings_theme_change_failed">فشل تغيير السمة. يرجى المحاولة مرة أخرى.</string>
     <string name="settings_storage">التخزين</string>
     <string name="settings_storage_location">موقع التخزين</string>
     <string name="settings_storage_location_desc">اختر مكان حفظ التنزيلات</string>
@@ -444,6 +455,7 @@
     <string name="about_open_source_licenses">تراخيص المصادر المفتوحة</string>
     <string name="settings_support_center">مركز المساعدة</string>
     <string name="settings_support_center_desc">احصل على المساعدة وأرسل ملاحظاتك</string>
+    <string name="settings_icon_safe_mode">أيقونة إعداد الوضع الآمن</string>
     <string name="cancel">إلغاء</string>
 
     <!-- Favorites -->
@@ -481,6 +493,7 @@
     <string name="player_added_to_favorites">تمت الإضافة إلى المفضلة</string>
     <string name="player_removed_from_favorites">تمت الإزالة من المفضلة</string>
     <string name="player_action_audio">صوت</string>
+    <string name="player_favorite_toggle_error">فشل تحديث المفضلة. يرجى المحاولة مرة أخرى.</string>
 
     <!-- Share -->
     <string name="share_watch_in_app">شاهد في البنيان تيوب:</string>

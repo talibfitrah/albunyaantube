@@ -417,11 +417,20 @@
     <string name="settings_language">Language</string>
     <string name="settings_language_desc">Choose your preferred language</string>
     <string name="settings_language_select_title">Select Language</string>
+    <string name="settings_language_system_default">System default</string>
+    <string name="settings_language_system_resolved">System default (%1$s)</string>
     <string name="settings_language_changed">Language changed. App will restart.</string>
     <string name="settings_language_change_failed">Failed to change language. Please try again.</string>
     <string name="settings_theme">Theme</string>
     <string name="settings_theme_desc">Choose app theme</string>
     <string name="settings_theme_coming_soon">Theme selection coming soon</string>
+    <string name="settings_theme_system">System default</string>
+    <string name="settings_theme_system_resolved">System default (%1$s)</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_theme_select_title">Select Theme</string>
+    <string name="settings_theme_changed">Theme changed</string>
+    <string name="settings_theme_change_failed">Failed to change theme. Please try again.</string>
     <string name="settings_storage">Storage</string>
     <string name="settings_storage_location">Storage Location</string>
     <string name="settings_storage_location_desc">Choose where to save downloads</string>
@@ -449,6 +458,9 @@
     <string name="about_open_source_licenses">Open Source Licenses</string>
     <string name="settings_support_center">Support Center</string>
     <string name="settings_support_center_desc">Get help and send feedback</string>
+    <string name="settings_icon_wifi">WiFi only setting icon</string>
+    <string name="settings_icon_background_play">Background play setting icon</string>
+    <string name="settings_icon_safe_mode">Safe mode setting icon</string>
     <string name="cancel">Cancel</string>
 
     <!-- Search Screen -->

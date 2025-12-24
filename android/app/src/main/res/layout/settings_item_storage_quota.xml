@@ -1,16 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
     android:padding="@dimen/spacing_md">
 
     <ImageView
-        android:layout_width="24dp"
-        android:layout_height="24dp"
+        android:layout_width="@dimen/icon_small"
+        android:layout_height="@dimen/icon_small"
         android:src="@android:drawable/ic_menu_info_details"
         android:contentDescription="@null"
-        android:tint="@color/icon_gray"/>
+        app:tint="?attr/colorOnSurfaceVariant"/>
 
     <LinearLayout
         android:layout_width="0dp"
@@ -22,17 +23,19 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Device Storage"
-            android:textSize="16sp"
-            android:textColor="@android:color/black"/>
+            android:text="@string/downloads_storage_used"
+            android:textSize="@dimen/text_subtitle"
+            android:textColor="?attr/colorOnSurface"
+            android:textAlignment="viewStart"/>
 
         <TextView
             android:id="@+id/storageQuotaValue"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Downloads: 0 MB • Available: 0 GB of 0 GB"
-            android:textSize="14sp"
-            android:textColor="@color/icon_gray"
+            android:text="@string/downloads_storage_calculating"
+            android:textSize="@dimen/text_body"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:textAlignment="viewStart"
             android:layout_marginTop="@dimen/spacing_xs"/>
 
         <ProgressBar
@@ -43,7 +46,7 @@
             style="?android:attr/progressBarStyleHorizontal"
             android:progress="0"
             android:max="100"
-            android:progressTint="@color/primary_green"/>
+            android:progressTint="?attr/colorPrimary"/>
 
     </LinearLayout>
 

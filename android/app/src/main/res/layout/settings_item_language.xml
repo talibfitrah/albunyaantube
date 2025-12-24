@@ -12,13 +12,13 @@
     <!-- Icon -->
     <ImageView
         android:id="@+id/languageIcon"
-        android:layout_width="40dp"
-        android:layout_height="40dp"
-        android:padding="8dp"
+        android:layout_width="@dimen/library_icon_size"
+        android:layout_height="@dimen/library_icon_size"
+        android:padding="@dimen/spacing_sm"
         android:src="@android:drawable/ic_dialog_info"
         android:background="@drawable/onboarding_icon_bg"
         android:contentDescription="@null"
-        app:tint="@color/primary_green"
+        app:tint="?attr/colorPrimary"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toBottomOf="parent"/>
@@ -29,9 +29,10 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginStart="@dimen/spacing_md"
-        android:text="Language"
-        android:textSize="16sp"
-        android:textColor="@android:color/black"
+        android:text="@string/settings_language"
+        android:textSize="@dimen/text_subtitle"
+        android:textColor="?attr/colorOnSurface"
+        android:textAlignment="viewStart"
         app:layout_constraintStart_toEndOf="@id/languageIcon"
         app:layout_constraintEnd_toStartOf="@id/languageChevron"
         app:layout_constraintTop_toTopOf="parent"/>
@@ -41,10 +42,11 @@
         android:id="@+id/languageValue"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginTop="2dp"
-        android:text="English"
-        android:textSize="14sp"
-        android:textColor="@color/primary_green"
+        android:layout_marginTop="@dimen/spacing_xxs"
+        android:text=""
+        android:textSize="@dimen/text_body"
+        android:textColor="?attr/colorPrimary"
+        android:textAlignment="viewStart"
         app:layout_constraintStart_toStartOf="@id/languageTitle"
         app:layout_constraintEnd_toStartOf="@id/languageChevron"
         app:layout_constraintTop_toBottomOf="@id/languageTitle"/>
@@ -52,11 +54,11 @@
     <!-- Chevron -->
     <ImageView
         android:id="@+id/languageChevron"
-        android:layout_width="24dp"
-        android:layout_height="24dp"
+        android:layout_width="@dimen/icon_small"
+        android:layout_height="@dimen/icon_small"
         android:src="@drawable/ic_chevron_right"
         android:contentDescription="@null"
-        app:tint="@color/icon_gray"
+        app:tint="?attr/colorOnSurfaceVariant"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toBottomOf="parent"/>

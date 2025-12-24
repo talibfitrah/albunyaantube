@@ -353,6 +353,7 @@
     <string name="settings_quality_high">Hoog (1080p)</string>
     <string name="settings_quality_high_desc">Hoog (1080p) - Beste kwaliteit</string>
     <string name="settings_quality_changed">Downloadkwaliteit ingesteld op %1$s</string>
+    <string name="settings_quality_change_failed">Downloadkwaliteit wijzigen mislukt. Probeer het opnieuw.</string>
     <string name="settings_content">Inhoud</string>
     <string name="settings_safe_mode">Veilige modus</string>
     <string name="settings_safe_mode_desc">Toon alleen gezinsvriendelijke inhoud</string>
@@ -360,10 +361,20 @@
     <string name="settings_language">Taal</string>
     <string name="settings_language_desc">Kies uw voorkeurstaal</string>
     <string name="settings_language_select_title">Taal selecteren</string>
+    <string name="settings_language_system_default">Systeemstandaard</string>
+    <string name="settings_language_system_resolved">Systeemstandaard (%1$s)</string>
     <string name="settings_language_changed">Taal gewijzigd. App wordt opnieuw gestart.</string>
+    <string name="settings_language_change_failed">Taal wijzigen mislukt. Probeer het opnieuw.</string>
     <string name="settings_theme">Thema</string>
     <string name="settings_theme_desc">Kies app-thema</string>
     <string name="settings_theme_coming_soon">Thema selectie komt binnenkort</string>
+    <string name="settings_theme_system">Systeemstandaard</string>
+    <string name="settings_theme_system_resolved">Systeemstandaard (%1$s)</string>
+    <string name="settings_theme_light">Licht</string>
+    <string name="settings_theme_dark">Donker</string>
+    <string name="settings_theme_select_title">Thema selecteren</string>
+    <string name="settings_theme_changed">Thema gewijzigd</string>
+    <string name="settings_theme_change_failed">Thema wijzigen mislukt. Probeer het opnieuw.</string>
     <string name="settings_storage">Opslag</string>
     <string name="settings_storage_location">Opslaglocatie</string>
     <string name="settings_storage_location_desc">Kies waar downloads worden opgeslagen</string>
@@ -391,6 +402,7 @@
     <string name="about_open_source_licenses">Open source-licenties</string>
     <string name="settings_support_center">Helpcentrum</string>
     <string name="settings_support_center_desc">Krijg hulp en stuur feedback</string>
+    <string name="settings_icon_safe_mode">Icoon veilige modus instelling</string>
     <string name="cancel">Annuleren</string>
 
     <!-- Favorites -->
@@ -427,6 +439,7 @@
     <string name="player_added_to_favorites">Toegevoegd aan favorieten</string>
     <string name="player_removed_from_favorites">Verwijderd uit favorieten</string>
     <string name="player_action_audio">Audio</string>
+    <string name="player_favorite_toggle_error">Favorieten bijwerken mislukt. Probeer het opnieuw.</string>
 
     <!-- Share -->
     <string name="share_watch_in_app">Bekijk in Albunyaan Tube:</string>

@@ -48,7 +48,7 @@ class QualitySelectionDialog : DialogFragment() {
                 )
                 dialogInterface.dismiss()
             }
-            .setNegativeButton(android.R.string.cancel, null)
+            .setNegativeButton(R.string.cancel, null)
             .create()
     }
 

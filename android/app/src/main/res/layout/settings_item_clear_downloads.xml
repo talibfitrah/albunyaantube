@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/clearDownloadsItem"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
@@ -10,11 +11,11 @@
     android:focusable="true">
 
     <ImageView
-        android:layout_width="24dp"
-        android:layout_height="24dp"
+        android:layout_width="@dimen/icon_small"
+        android:layout_height="@dimen/icon_small"
         android:src="@android:drawable/ic_menu_delete"
         android:contentDescription="@null"
-        android:tint="@android:color/holo_red_dark"/>
+        app:tint="@color/accent_red"/>
 
     <LinearLayout
         android:layout_width="0dp"
@@ -26,16 +27,18 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Clear All Downloads"
-            android:textSize="16sp"
-            android:textColor="@android:color/holo_red_dark"/>
+            android:text="@string/settings_clear_downloads"
+            android:textSize="@dimen/text_subtitle"
+            android:textColor="@color/accent_red"
+            android:textAlignment="viewStart"/>
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Delete all downloaded videos and audio"
-            android:textSize="14sp"
-            android:textColor="@color/icon_gray"
+            android:text="@string/settings_clear_downloads_desc"
+            android:textSize="@dimen/text_body"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:textAlignment="viewStart"
             android:layout_marginTop="@dimen/spacing_xs"/>
 
     </LinearLayout>

@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Footer view for lists showing item count and freshness.
+     Note: paginationStatus text must be set programmatically using
+     resources.getQuantityString(R.plurals.list_footer_status, count, count) -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
@@ -11,7 +15,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
-        android:text="@string/list_footer_status"/>
+        tools:text="Showing 10 items"/>
 
     <TextView
         android:id="@+id/cacheFreshness"

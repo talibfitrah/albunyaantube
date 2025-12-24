@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="list_error_title">Kan inhoud niet laden</string>
+    <string name="list_error_description">Controleer je verbinding of pas filters aan, en probeer het opnieuw.</string>
+    <string name="list_error_offline_title">Je bent offline</string>
+    <string name="list_error_offline_body">Maak opnieuw verbinding om de nieuwste clips te zien. We blijven gecachte items tonen indien beschikbaar.</string>
+    <string name="list_error_server_body">Er ging iets mis aan onze kant. Probeer het later opnieuw.</string>
+    <string name="list_retry">Opnieuw proberen</string>
+    <string name="list_empty_title">Nog geen resultaten</string>
+    <string name="list_empty_body">Probeer een andere categorie of vernieuw om nieuwe clips te zien.</string>
+    <string name="list_empty_clear">Filters wissen</string>
+    <plurals name="list_footer_status">
+        <item quantity="one">%1$d item weergegeven</item>
+        <item quantity="other">%1$d items weergegeven</item>
+    </plurals>
+    <string name="list_footer_freshness">Zojuist ververst</string>
+</resources>

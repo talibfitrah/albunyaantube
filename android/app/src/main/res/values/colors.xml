@@ -73,4 +73,7 @@
     <!-- Player overlays -->
     <color name="player_error_overlay">#CC000000</color>
     <color name="player_recovery_overlay">#99000000</color>
+
+    <!-- Settings icon backgrounds (theme-aware) -->
+    <color name="settings_icon_bg">#F0F0F0</color>
 </resources>

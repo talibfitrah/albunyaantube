@@ -828,10 +828,11 @@ val chip = Chip(context).apply {
 **File**: `res/drawable/onboarding_icon_bg.xml`
 ```xml
 <shape android:shape="oval">
-    <solid android:color="@color/primary_green"/>
-    <size android:width="40dp" android:height="40dp"/>
+    <solid android:color="@color/settings_icon_bg"/>
 </shape>
 ```
+Note: Uses `@color/settings_icon_bg` (semantic color) for theme compatibility.
+For branded backgrounds, use `@color/primary_green` directly.
 
 ---
 
@@ -843,9 +844,10 @@ val chip = Chip(context).apply {
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:text="@string/section_title"
-    android:textSize="18sp"
+    android:textSize="@dimen/text_section_title"
     android:textStyle="bold"
-    android:textColor="@android:color/black"
+    android:textColor="?attr/colorOnSurface"
+    android:textAlignment="viewStart"
     android:layout_marginBottom="@dimen/spacing_sm"/>
 ```
 
@@ -853,7 +855,7 @@ val chip = Chip(context).apply {
 ```xml
 <View
     android:layout_width="match_parent"
-    android:layout_height="1dp"
+    android:layout_height="@dimen/divider_thickness"
     android:background="@color/background_gray"
     android:layout_marginStart="@dimen/spacing_lg"/>
 ```
@@ -864,10 +866,10 @@ val chip = Chip(context).apply {
 - **Gray**: Secondary text (descriptions, metadata)
 
 #### Spacing Guidelines
-- Screen padding: 16dp
-- Section margins: 16dp between sections
-- Item spacing: 8-16dp
-- Card padding: 16dp
+- Screen padding: `@dimen/spacing_md` (16dp)
+- Section margins: `@dimen/spacing_md` between sections
+- Item spacing: `@dimen/spacing_sm` to `@dimen/spacing_md` (8-16dp)
+- Card padding: `@dimen/spacing_md` (16dp)
 
 ---
 
@@ -882,18 +884,18 @@ val chip = Chip(context).apply {
 ### 5.2 Android Components (Implemented)
 
 #### List Card Pattern
-**Height**: 80dp
+**Height**: `@dimen/playlist_thumbnail_size` (80dp)
 **Layout**:
 ```
-├── Avatar/Thumbnail (left, 48-56dp)
+├── Avatar/Thumbnail (left, @dimen/icon_large or @dimen/avatar_medium)
 ├── Title (Body, bold)
 ├── Subtitle (Caption, secondary)
-└── Chevron (optional, 24dp)
+└── Chevron (optional, @dimen/icon_small)
 ```
 
 #### Grid Card Pattern
 **Aspect Ratio**: 16:9
-**Border Radius**: 16dp
+**Border Radius**: `@dimen/corner_radius_medium` (16dp)
 ```
 ├── Thumbnail (top)
 ├── Title (Body, bold, 2 lines max)
@@ -919,9 +921,9 @@ val chip = Chip(context).apply {
 ### Android Accessibility (Implemented)
 
 #### Touch Targets
-- Minimum: 48dp × 48dp
+- Minimum: `@dimen/icon_large` × `@dimen/icon_large` (48dp × 48dp)
 - All interactive elements meet this standard
-- Bottom nav tabs: 56dp height
+- Bottom nav tabs: 56dp height (Material Design standard)
 
 #### Content Descriptions
 - All images and icons have `contentDescription`

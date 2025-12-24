@@ -62,4 +62,7 @@
     <color name="nav_item_inactive_tv">#D0D0D0</color>  <!-- Even lighter for TV 10-foot viewing in dark mode -->
     <color name="nav_item_focused_tv">#F0F0F0</color>  <!-- Focused state for TV in dark mode -->
     <color name="nav_item_selected_focused_tv">#5BDEAE</color>  <!-- Brighter mint for selected+focused on TV (D-pad highlight in dark mode) -->
+
+    <!-- Settings icon backgrounds (theme-aware, dark mode) -->
+    <color name="settings_icon_bg">#2A3530</color>
 </resources>

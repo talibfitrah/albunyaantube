@@ -9,6 +9,10 @@
     <string name="list_empty_title">No results yet</string>
     <string name="list_empty_body">Try a different category or refresh to see new clips.</string>
     <string name="list_empty_clear">Clear filters</string>
-    <string name="list_footer_status">Showing %1$d items</string>
+    <!-- Use resources.getQuantityString(R.plurals.list_footer_status, count, count) -->
+    <plurals name="list_footer_status">
+        <item quantity="one">Showing %1$d item</item>
+        <item quantity="other">Showing %1$d items</item>
+    </plurals>
     <string name="list_footer_freshness">Last refreshed just now</string>
 </resources>

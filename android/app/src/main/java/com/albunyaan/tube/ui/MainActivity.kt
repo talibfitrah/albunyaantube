@@ -4,7 +4,9 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.bundleOf
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
 import androidx.navigation.fragment.NavHostFragment
 import com.albunyaan.tube.BuildConfig
@@ -12,7 +14,10 @@ import com.albunyaan.tube.R
 import com.albunyaan.tube.databinding.ActivityMainBinding
 import com.albunyaan.tube.locale.LocaleManager
 import com.albunyaan.tube.player.PlaybackService
+import com.albunyaan.tube.preferences.SettingsPreferences
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 /**
  * P3-T2: Main activity with Hilt DI support
@@ -35,9 +40,15 @@ class MainActivity : AppCompatActivity() {
     // Track pending navigation listener to prevent memory leaks
     private var pendingNavigationListener: NavController.OnDestinationChangedListener? = null
 
+    // Track initial theme/locale applied at startup for correction check
+    private var startupTheme: String? = null
+    private var startupLocale: String? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Apply stored locale before super.onCreate to ensure proper locale is applied
-        LocaleManager.applyStoredLocale(this)
+        // Apply stored locale and theme before super.onCreate to ensure proper settings
+        // These use timeouts to avoid blocking cold start - values may be defaults if DataStore was slow
+        startupLocale = LocaleManager.applyStoredLocaleWithResult(this)
+        startupTheme = applyStoredThemeWithResult()
 
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -324,8 +335,134 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Verify that startup theme/locale are correct (in case timeout caused fallback)
+        // This happens after the initial fast startup, so we can take more time to read DataStore
+        verifyAndCorrectStartupSettings()
+    }
+
     override fun onSupportNavigateUp(): Boolean {
         return navController.navigateUp() || super.onSupportNavigateUp()
+    }
+
+    /**
+     * Verify startup settings and correct if the cache gave wrong values.
+     * This runs in onResume() which is after the Activity is visible, so any correction
+     * will cause a brief flash but ensures the user's preferred settings are applied.
+     *
+     * Uses lifecycleScope to avoid blocking the main thread while visible.
+     * We only do this check once per Activity instance (startupTheme/startupLocale are nulled after check).
+     *
+     * Safety considerations:
+     * - Lifecycle checks before each operation to prevent crashes if activity is finishing
+     * - Cache is updated after reading from DataStore to prevent recreation loops
+     * - Recreation only happens if stored value differs from what was applied at startup
+     */
+    private fun verifyAndCorrectStartupSettings() {
+        val appliedTheme = startupTheme
+        val appliedLocale = startupLocale
+
+        // Only check once per Activity instance (prevents concurrent coroutines on rapid pause/resume)
+        if (appliedTheme == null && appliedLocale == null) return
+
+        // Clear the startup values immediately to prevent race conditions
+        startupTheme = null
+        startupLocale = null
+
+        val preferences = SettingsPreferences(this)
+
+        // Read actual stored values asynchronously to avoid blocking UI
+        lifecycleScope.launch {
+            try {
+                // Check activity is still valid before reading DataStore
+                if (isFinishing || isDestroyed) return@launch
+
+                // Check theme
+                if (appliedTheme != null) {
+                    val storedTheme = preferences.theme.first()
+
+                    // Update cache to prevent future mismatches (even if values match)
+                    SettingsPreferences.updateThemeCache(this@MainActivity, storedTheme)
+
+                    if (storedTheme != appliedTheme) {
+                        // Recheck lifecycle before applying (applyTheme may trigger recreation)
+                        if (isFinishing || isDestroyed) return@launch
+
+                        if (BuildConfig.DEBUG) {
+                            android.util.Log.d("MainActivity", "Correcting theme: applied=$appliedTheme, stored=$storedTheme")
+                        }
+                        applyTheme(storedTheme)
+                        // Activity may be recreated here - don't continue
+                        return@launch
+                    }
+                }
+
+                // Check locale (only if theme didn't trigger recreation)
+                if (appliedLocale != null) {
+                    // Recheck lifecycle in case theme correction was skipped but activity state changed
+                    if (isFinishing || isDestroyed) return@launch
+
+                    val storedLocale = preferences.effectiveLocale.first()
+
+                    // Update cache to prevent future mismatches (even if values match)
+                    SettingsPreferences.updateLocaleCache(this@MainActivity, storedLocale)
+
+                    if (storedLocale != appliedLocale) {
+                        // Recheck lifecycle before applying (applyLocale may trigger recreation)
+                        if (isFinishing || isDestroyed) return@launch
+
+                        if (BuildConfig.DEBUG) {
+                            android.util.Log.d("MainActivity", "Correcting locale: applied=$appliedLocale, stored=$storedLocale")
+                        }
+                        LocaleManager.applyLocale(storedLocale)
+                        // Activity may be recreated here
+                    }
+                }
+            } catch (e: Exception) {
+                // DataStore read failed - not critical, user's settings will apply on next launch
+                if (BuildConfig.DEBUG) {
+                    android.util.Log.e("MainActivity", "Failed to verify startup settings", e)
+                }
+            }
+        }
+    }
+
+    /**
+     * Apply the stored theme preference synchronously from SharedPreferences cache.
+     * Called early in onCreate() before super to ensure theme is set before views inflate.
+     *
+     * Reads from a synchronous SharedPreferences cache (not DataStore) to avoid blocking
+     * the main thread. The cache is updated whenever theme is changed via DataStore.
+     * On first launch (cache miss), defaults to THEME_SYSTEM (follow device setting).
+     * The async verification in onResume() will correct any stale cache values.
+     *
+     * @return The theme value that was applied (for later verification)
+     *
+     * Theme modes:
+     * - THEME_SYSTEM: Uses MODE_NIGHT_FOLLOW_SYSTEM to automatically follow device theme
+     * - THEME_LIGHT: Forces light mode with MODE_NIGHT_NO
+     * - THEME_DARK: Forces dark mode with MODE_NIGHT_YES
+     */
+    private fun applyStoredThemeWithResult(): String {
+        // Read from synchronous cache (fast, no blocking)
+        val themeSelection = SettingsPreferences.getCachedTheme(this)
+            ?: SettingsPreferences.THEME_SYSTEM  // Default to system on cache miss
+
+        applyTheme(themeSelection)
+        return themeSelection
+    }
+
+    /**
+     * Apply a theme selection.
+     */
+    private fun applyTheme(themeSelection: String) {
+        val mode = when (themeSelection) {
+            SettingsPreferences.THEME_SYSTEM -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+            SettingsPreferences.THEME_DARK -> AppCompatDelegate.MODE_NIGHT_YES
+            else -> AppCompatDelegate.MODE_NIGHT_NO
+        }
+        AppCompatDelegate.setDefaultNightMode(mode)
     }
 
     /**
