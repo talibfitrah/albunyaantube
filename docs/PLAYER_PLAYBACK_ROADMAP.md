@@ -1,6 +1,6 @@
 # Player & Playback Reliability Roadmap (Android)
 
-**Last Updated**: 2025-12-20 (Implementation complete; unit tests + connected/RTL/device-matrix verification complete)
+**Last Updated**: 2025-12-25 (PR6.2 implemented; unit tests pass; manual regression checklist updated)
 **Scope**: Android player stability, progressive/adaptive strategy, and extraction/refresh safety.
 
 > **Note**: Backend YouTube rate-limit remediation is tracked separately on branch `claude/fix-youtube-rate-limiting-clean` in `docs/status/YOUTUBE_RATE_LIMIT_PLAN.md`.
@@ -39,6 +39,7 @@
 - **PR5 Done**: Android extraction/refresh rate-limit guardrails (`ExtractionRateLimiter` + wiring). Committed 2025-12-15.
 - **PR6 Done**: Media3 migration + MediaSessionService integration (background playback, controller security, lifecycle-safe binding). Code complete 2025-12-16; manual verification complete (see Verification Status).
 - **PR6.1 Done**: Synthetic DASH for progressive streams. Prior measurement pass recorded 100% success rate (36 videos, 296 video streams, 206 audio streams). Revalidated 2025-12-20 via `SyntheticDASH` logcat summary; playback confirmed using Synthetic DASH on progressive-only content. Implementation wraps video-only + audio progressive streams in synthetic DASH manifests for improved seek behavior. Committed 2025-12-18.
+- **PR6.2 Done**: Adaptive manifest recovery via NewPipeExtractor iOS client fetch (feature-flagged, default OFF). Adds iOS User-Agent for HLS playback to prevent 403 storms, hardens ForegroundService start to avoid `ForegroundServiceDidNotStartInTimeException`, and keeps refresh bounded under PR5 rate-limit guardrails. See PR6.2 section + `docs/plans/PR6_2_PLAN.md`.
 - **PR6.3 Done**: Tap-to-prefetch optimization. Stream extraction now starts when user taps a video in list screens (Home, Videos, Search), hiding 2-5 seconds of NewPipe extraction latency behind navigation animation. Uses internal CoroutineScope that survives fragment destruction. PlayerViewModel awaits in-flight prefetch for up to 3s, reducing (but not eliminating) duplicate extractions. Note: mis-taps/back-outs can still cause additional extractions. **Follow-up PR6.5 extends this to Channel + Playlist entry points.** Implemented 2025-12-18; verification complete.
 - **PR6.4 Done**: Deferred async player release. Mitigates `ExoTimeoutException: Player release timed out` by deferring release() via Handler.post() on the player's application looper with try-catch. This allows onDestroyView() to complete immediately; release() runs on the next main loop iteration. Mitigates but doesn't fully eliminate UI jank if audio hardware is blocked. Implemented 2025-12-18; verification complete.
 - **PR6.5 Done**: Playback entry-point parity. Extended tap-to-prefetch to all remaining video entry points: Channel tabs (Videos/Live/Shorts), PlaylistDetailFragment, and FeaturedListFragment. Implemented 2025-12-18.
@@ -310,32 +311,32 @@ This pattern occurs when:
 - ✅ No new network calls beyond normal playback (MPD is generated locally from metadata).
 - ✅ Progressive fallback remains correct and stable for muxed streams and edge cases.
 
-## PR6.2: Extractor Adaptive-Manifest Backfill (Optional / Upstream) — *Status: Research*
+## PR6.2: Extractor Adaptive-Manifest Backfill (Optional / Upstream) — *Status: Done (verified)*
 
-**Goal**: Reduce the remaining cases that fall back to progressive because the extractor did not provide HLS/DASH manifest URLs, without violating PR5's rate-limit guardrails.
+**Goal**: Reduce progressive fallback caused by missing HLS/DASH manifest URLs, without violating PR5 rate-limit guardrails.
 
-**Reality**: This is primarily a NewPipeExtractor/YouTube behavior issue. Client-profile workarounds are fragile and can easily regress when YouTube changes responses.
+**Key Finding**: For many VODs, WEB/ANDROID player responses omit `dashManifestUrl`/`hlsManifestUrl`. Enabling NewPipeExtractor iOS client fetch returns `streamingData.hlsManifestUrl` for the same IDs (HLS-only). DASH remains largely absent for VODs.
 
-**Measurement Logging (Added 2025-12-18)**:
-- ✅ HLS/DASH availability metrics added to `NewPipeExtractorClient.kt`
-- Filter logcat: `adb logcat -s AdaptiveAvail`
-- Logs: `hasHls`, `hasDash`, `streamType`, `duration`, track counts
-- Warning-level log for videos with NO adaptive manifests
+**Implementation (Completed)**
+- ✅ **Measurement logging**: `AdaptiveAvail` in `NewPipeExtractorClient.kt`; baseline + findings recorded in:
+  - `docs/plans/PR6_2_BASELINE.md`
+  - `docs/plans/PR6_2_IOS_FINDINGS.md`
+  - `docs/plans/PR6_2_PLAN.md` (Section 9 regression checklist)
+- ✅ **Primary fix (preferred)**: iOS client fetch via NPE public API, feature-flagged (default OFF):
+  - BuildConfig flag: `ENABLE_NPE_IOS_FETCH` (enable via `local.properties`: `npe.ios.fetch.enabled=true`)
+  - NPE hook: `YoutubeStreamExtractor.setFetchIosClient(...)` at app init
+- ✅ **Playback compatibility + stability hardening**:
+  - HLS requests use YouTube iOS app User-Agent to prevent HLS segment 403 storms when iOS fetch is enabled.
+  - ForegroundService start hardened to prevent `ForegroundServiceDidNotStartInTimeException` during rapid navigation.
+  - 403-aware recovery remains bounded (max refresh count + PR5 limiter budgets; AUTO_RECOVERY protected).
 
-**Pre-flight Checklist** (before greenlight):
-- [ ] Collect data from measurement logging to understand % with/without manifests
-- [ ] Verify whether a newer NPE version improves `dashMpdUrl/hlsUrl` availability for our target content.
-- [ ] Prefer upstream fixes (issue/PR to NPE) over app-layer Innertube hacks.
-- [ ] If an app-layer workaround is still desired: design it as opt-in, bounded, and strictly rate-limit safe.
-
-**Implementation (if pursued)**
-- Bounded backfill strategy (strictly optional):
-  - At most one additional attempt per video ID (no loops), within PR5 limiter budgets.
-  - Prefer "version bump / upstream patch" over per-video multi-client probing.
+**Rate-limit safety**
+- No app-layer multi-client probing loops; iOS fetch adds at most one extra internal youtubei request per extraction.
+- PREFETCH remains lowest priority; AUTO_RECOVERY keeps reserved budget and bypasses global limits.
 
 **Acceptance**
-- Improved manifest availability without causing rate-limit bursts.
-- No repeated extraction loops; progressive fallback remains acceptable.
+- VOD: materially higher HLS manifest availability with iOS fetch enabled; fewer progressive fallbacks.
+- No repeated extraction loops; no ForegroundService crashes; no uncontrolled 403 refresh storms.
 
 ## PR6.3: Tap-to-Prefetch (Home/Videos/Search) — *Status: Done (verified)*
 

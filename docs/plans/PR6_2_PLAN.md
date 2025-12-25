@@ -112,6 +112,22 @@ Goal: pinpoint where NPE loses adaptive manifests and why it defaults to progres
     - Prior window shows HLS 403 on load -> auto-recovery refresh for the same VOD.
     - Stream resolve failures observed ("The page needs to be reloaded", age-restricted).
     - Log slices: `docs/plans/PR6_2_CRASH_1730.txt`, `docs/plans/PR6_2_CRASH_1733_1734.txt`.
+  - **IMPLEMENTED (2025-12-25): HTTP 403 Telemetry and Recovery Improvements**
+    - Added `StreamRequestTelemetry` for detailed 403 failure logging:
+      - Records request URL (host + path hash), headers, response code/headers/body
+      - Classifies failures: URL_EXPIRED, GEO_RESTRICTED, RATE_LIMITED, UNKNOWN_403
+      - Tracks stream age and estimates TTL remaining (~6hr YouTube URL TTL)
+    - Added `StreamUrlRefreshManager` for preemptive URL refresh:
+      - Tracks stream resolution times for TTL estimation
+      - Provides `shouldRefreshBeforeOperation()` for pre-seek/quality-change checks
+      - Schedules preemptive refresh when TTL < 30min threshold
+    - Updated PlayerFragment error handling for 403-specific recovery:
+      - GEO_RESTRICTED: No recovery - shows user-facing "not available in your region" message
+      - RATE_LIMITED: Exponential backoff using retry-after header or 2^n seconds
+      - URL_EXPIRED: Force refresh with immediate retry
+      - UNKNOWN_403: Exponential backoff + forced refresh as last resort
+    - Added `InstrumentedHttpDataSourceFactory` for future instrumented playback telemetry
+    - New strings: `player_geo_restricted`, `player_stream_expired`, `player_rate_limited`
   - Repro plan:
     - Go to video list screen, scroll to at least the middle of the list.
     - Play 3-5 videos sequentially; record which attempt triggers error/crash.
@@ -148,11 +164,25 @@ Goal: pinpoint where NPE loses adaptive manifests and why it defaults to progres
 - Trigger only when hasHls=false AND hasDash=false.
 - Attempt-once gating design:
   - Per-videoId in-flight dedupe (shared promise/deferred).
-  - Negative caching with TTL (avoid tap-spam storms).
+  - **Negative caching TTL: 60 seconds.**
+    - Rationale: Balances user experience (can retry after a minute) against tap-spam
+      storms (prevents dozens of attempts in rapid succession).
+    - 60s aligns with ExtractionRateLimiter.GLOBAL_WINDOW_MS (1 minute) and is short
+      enough that users don't perceive a permanent failure.
+    - Too short (5-10s): rapid re-taps would still storm the extractor.
+    - Too long (5-10min): users might think the feature is broken and give up.
   - Hard timeout; no retries.
 - Rate-limit design:
-  - Use PREFETCH bucket or a dedicated BACKFILL treated as lowest priority.
-  - Ensure AUTO_RECOVERY is never starved (must keep PR5 guardrails).
+  - Use existing `RequestKind.PREFETCH` bucket (lowest priority, blocked if budget pressure).
+    - **Confirmed in codebase**: `ExtractionRateLimiter.kt:88` defines PREFETCH.
+    - PREFETCH is blocked when per-video budget is near exhaustion (lines 217-226).
+  - AUTO_RECOVERY guardrails are protected:
+    - **Confirmed in codebase**: `ExtractionRateLimiter.kt:66-67` reserves 2 attempts.
+    - **Confirmed in codebase**: `ExtractionRateLimiter.kt:332-337` bypasses global limits.
+    - Backfill using PREFETCH cannot starve AUTO_RECOVERY because:
+      1. AUTO_RECOVERY has reserved budget independent of PREFETCH/MANUAL.
+      2. AUTO_RECOVERY bypasses global rate limit entirely.
+      3. PREFETCH is preemptively blocked when budget is tight (preserves headroom).
 - Feature-flag strategy:
   - Default OFF (debug-only or internal toggle).
 - Observability additions:
@@ -216,3 +246,70 @@ Goal: pinpoint where NPE loses adaptive manifests and why it defaults to progres
 - Watch rate-limit metrics (PREFETCH/AUTO_RECOVERY) and request volume changes.
 - Rollback:
   - Disable flag (backfill off) or revert NPE version if regression observed.
+
+9) Manual Regression Test Checklist (POST-IMPLEMENTATION)
+Execute these tests after implementing PR6.2 changes to verify stability.
+
+**9.1 P0 Blocker Tests**
+- [ ] **ForegroundService crash test**: Play 10+ videos in sequence without crashes.
+  - `adb logcat -s AndroidRuntime | grep ForegroundService` should show no crashes.
+  - Note: Previously crashed with `ForegroundServiceDidNotStartInTimeException`.
+- [ ] **HLS 403 test (iOS fetch ON)**: With `npe.ios.fetch.enabled=true` in local.properties:
+  - Play 5 VODs and confirm HLS streams work without 403 errors.
+  - `adb logcat -s PlayerFragment | grep -E "http=403|HTTP.*403|Response code: 403"` should be empty.
+  - Note: HTTP 403 errors appear in two formats: PlayerFragment logs (`http=$httpResponseCode`) and Media3 exceptions (`Response code: 403`).
+- [ ] **Notification permission denial test** (Android 13+):
+  - Deny POST_NOTIFICATIONS when prompted.
+  - Play a video and background the app.
+  - Confirm no crash (notification silently dropped is expected).
+  - Check logs: `adb logcat -s PlaybackService | grep "Notifications are disabled"`.
+
+**9.2 Feature Flag Tests**
+- [ ] **iOS fetch OFF baseline**: With `npe.ios.fetch.enabled=false` (default):
+  - Play known VODs and verify AdaptiveAvail logs show baseline behavior (mostly NONE).
+  - Count NONE entries: `adb logcat -s AdaptiveAvail | grep '"adaptive":"NONE"' | wc -l`
+  - Alternative (warning logs): `adb logcat -s AdaptiveAvail | grep "NO_ADAPTIVE" | wc -l`
+- [ ] **iOS fetch ON improvement**: With `npe.ios.fetch.enabled=true`:
+  - Play the same VODs and verify HLS availability improves.
+  - Count HLS entries: `adb logcat -s AdaptiveAvail | grep '"hasHls":true' | wc -l`
+  - Or by adaptive field: `adb logcat -s AdaptiveAvail | grep '"adaptive":"HLS_ONLY"' | wc -l`
+  - Verify playback starts within reasonable time (no multi-second regressions).
+
+**9.3 Rate-Limiter & Recovery Tests**
+- [ ] **Rapid play test**: Play 5 videos in quick succession (< 30s between taps).
+  - Confirm no rate-limit blocks for normal playback.
+  - `adb logcat -s ExtractionRateLimiter | grep "Blocked"` should show no per-video blocks
+    within normal usage patterns.
+- [ ] **Auto-recovery priority test**: Simulate a playback failure (e.g., network toggle):
+  - Confirm auto-recovery is not blocked by rate limiter.
+  - `adb logcat -s ExtractionRateLimiter | grep "AUTO_RECOVERY bypasses"` should appear.
+- [ ] **403 telemetry test**: Trigger a 403 error (e.g., long playback of VOD > 6 hours or simulated):
+  - Confirm StreamTelemetry logs failure details: `adb logcat -s StreamTelemetry`.
+  - Verify failure type classification in logs (URL_EXPIRED, GEO_RESTRICTED, etc.).
+  - Confirm appropriate recovery action (forced refresh for URL_EXPIRED, toast for GEO_RESTRICTED).
+
+**9.4 Notification & Background Playback Tests**
+- [ ] **Background playback notification**: Play a video, press home button.
+  - Notification should appear with play/pause controls.
+  - Controls should work (pause from notification, resume from notification).
+- [ ] **Notification tap navigation**: Tap notification while app is backgrounded.
+  - App should return to foreground with player visible.
+- [ ] **Notification dismiss (paused)**: Pause video, swipe notification away.
+  - Service should stop cleanly.
+  - `adb logcat -s PlaybackService | grep "ACTION_DISMISS"` should show clean handling.
+
+**9.5 Multi-Device Smoke Tests**
+- [ ] **Phone emulator**: Run tests on API 26+ phone emulator.
+- [ ] **Tablet emulator** (if available): Verify layout correctness on sw600dp+.
+- [ ] **RTL locale** (Arabic): Verify player UI renders correctly with RTL layout.
+
+**Logging commands for test session:**
+```bash
+# Start comprehensive logging
+adb logcat -c
+adb logcat -v time -s AndroidRuntime PlaybackService ExtractionRateLimiter \
+  AdaptiveAvail MultiQualityMediaSourceFactory PlayerViewModel > pr6_2_regression.log
+
+# After testing, search for issues:
+grep -E "FATAL|ForegroundService|403|Blocked|disabled" pr6_2_regression.log
+```

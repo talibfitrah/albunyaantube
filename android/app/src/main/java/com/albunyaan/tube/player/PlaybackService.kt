@@ -26,6 +26,7 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionCommands
+import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.R
 import com.albunyaan.tube.ui.MainActivity
 
@@ -62,6 +63,28 @@ class PlaybackService : MediaSessionService() {
     private var currentVideoId: String? = null
 
     /**
+     * Tracks whether startForeground() has been called for the current service lifecycle.
+     *
+     * **Critical for Android 8+ FGS compliance:**
+     * When started via startForegroundService(), the service MUST call startForeground()
+     * within 5 seconds or the app crashes with ForegroundServiceDidNotStartInTimeException.
+     *
+     * This flag prevents the service from being destroyed (via stopSelf/releaseSession)
+     * before the foreground requirement is satisfied. Once true, destruction is allowed.
+     *
+     * Reset on each onCreate() since the OS tracks foreground state per service instance.
+     */
+    @Volatile
+    private var isForegroundStarted: Boolean = false
+
+    /**
+     * Tracks pending release requests that arrived before foreground was started.
+     * If true, releaseSession() will be called once startForeground() completes.
+     */
+    @Volatile
+    private var pendingReleaseRequest: Boolean = false
+
+    /**
      * Tracks whether the app is in the foreground (any activity visible).
      * Updated by ProcessLifecycleOwner which reliably detects app-level foreground/background.
      * When true, the notification should be hidden to avoid banner intrusion.
@@ -89,7 +112,7 @@ class PlaybackService : MediaSessionService() {
     private val appLifecycleObserver = object : DefaultLifecycleObserver {
         override fun onStart(owner: LifecycleOwner) {
             // App came to foreground
-            Log.d(TAG, "App moved to foreground (ProcessLifecycleOwner.onStart)")
+            if (BuildConfig.DEBUG) Log.d(TAG, "App moved to foreground (ProcessLifecycleOwner.onStart)")
             isAppInForeground = true
             // Hide notification when app is in foreground
             mediaSession?.player?.let { updateForegroundState(it) }
@@ -97,7 +120,7 @@ class PlaybackService : MediaSessionService() {
 
         override fun onStop(owner: LifecycleOwner) {
             // App went to background
-            Log.d(TAG, "App moved to background (ProcessLifecycleOwner.onStop)")
+            if (BuildConfig.DEBUG) Log.d(TAG, "App moved to background (ProcessLifecycleOwner.onStop)")
             isAppInForeground = false
             // Show notification when app is in background (if playing)
             mediaSession?.player?.let { updateForegroundState(it) }
@@ -118,6 +141,11 @@ class PlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         Log.i(TAG, "PlaybackService created (Android ${Build.VERSION.SDK_INT})")
+
+        // Reset foreground tracking for this service instance
+        isForegroundStarted = false
+        pendingReleaseRequest = false
+
         createNotificationChannel()
 
         // Register for app-level lifecycle events to detect foreground/background
@@ -128,16 +156,84 @@ class PlaybackService : MediaSessionService() {
         // Explicitly check current state to ensure correct initial value.
         val appLifecycle = ProcessLifecycleOwner.get().lifecycle
         isAppInForeground = appLifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
-        Log.d(TAG, "Initial app foreground state: $isAppInForeground")
+        if (BuildConfig.DEBUG) Log.d(TAG, "Initial app foreground state: $isAppInForeground")
+
+        // CRITICAL: Call startForeground() immediately in onCreate() to satisfy Android 8+ requirement.
+        // If the service was started via startForegroundService(), we have 5 seconds to call this.
+        // Calling it here in onCreate() (before onStartCommand) ensures we meet the deadline even if
+        // the service is destroyed quickly due to rapid lifecycle changes.
+        //
+        // This uses a placeholder notification that will be replaced by the real media notification
+        // once onStartCommand() runs and/or the player is attached.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val notification = createPlaceholderNotification()
+            if (BuildConfig.DEBUG) Log.d(TAG, "Calling startForeground() in onCreate() with placeholder")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+            isForegroundStarted = true
+            if (BuildConfig.DEBUG) Log.d(TAG, "startForeground() completed in onCreate(), isForegroundStarted=true")
+
+            // If a release was requested before foreground started (shouldn't happen in onCreate,
+            // but handle defensively), process it now
+            if (pendingReleaseRequest) {
+                if (BuildConfig.DEBUG) Log.d(TAG, "Processing pending release request after foreground started")
+                pendingReleaseRequest = false
+                doReleaseSession()
+            }
+        } else {
+            // Pre-O: No foreground requirement
+            isForegroundStarted = true
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "onStartCommand called (action=${intent?.action}, flags=$flags, startId=$startId)")
+        if (BuildConfig.DEBUG) Log.d(TAG, "onStartCommand called (action=${intent?.action}, flags=$flags, startId=$startId)")
+
+        // CRITICAL: On Android 8+, when started via startForegroundService(), we MUST call
+        // startForeground() within 5 seconds or the app will crash with:
+        // "Context.startForegroundService() did not then call Service.startForeground()"
+        //
+        // The OS tracks EACH startForegroundService() call and expects a corresponding startForeground().
+        // We UNCONDITIONALLY call startForeground() here to satisfy this requirement.
+        // This is safe because:
+        // 1. If player UI is visible, updateForegroundState() will call stopForeground() later
+        // 2. If player UI is not visible, we need foreground mode anyway for background playback
+        // 3. The notification will be updated/replaced once playback state changes
+        //
+        // Note: startForeground() is also called in onCreate(), but we call it here too because:
+        // - The service may be reused (onCreate not called) but receive new startForegroundService calls
+        // - Multiple startForegroundService() calls require startForeground() to be called for each
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val notification = mediaSession?.player?.let { player ->
+                // Session exists - use real notification with current state
+                buildMediaNotification(player, includeDeleteIntent = false)
+            } ?: createPlaceholderNotification() // No session yet - use placeholder
+
+            if (BuildConfig.DEBUG) Log.d(TAG, "Calling startForeground in onStartCommand (hasSession=${mediaSession != null})")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+            // Mark foreground as started (may already be true from onCreate)
+            isForegroundStarted = true
+        }
 
         // Handle notification action intents
         when (intent?.action) {
             ACTION_PLAY -> {
-                Log.d(TAG, "ACTION_PLAY received")
+                if (BuildConfig.DEBUG) Log.d(TAG, "ACTION_PLAY received")
                 mediaSession?.player?.let { player ->
                     player.play()
                     // After starting playback, update foreground state
@@ -146,7 +242,7 @@ class PlaybackService : MediaSessionService() {
                 }
             }
             ACTION_PAUSE -> {
-                Log.d(TAG, "ACTION_PAUSE received")
+                if (BuildConfig.DEBUG) Log.d(TAG, "ACTION_PAUSE received")
                 mediaSession?.player?.let { player ->
                     player.pause()
                     // After pausing, update foreground state
@@ -155,7 +251,7 @@ class PlaybackService : MediaSessionService() {
                 }
             }
             ACTION_SKIP_PREV -> {
-                Log.d(TAG, "ACTION_SKIP_PREV received")
+                if (BuildConfig.DEBUG) Log.d(TAG, "ACTION_SKIP_PREV received")
                 mediaSession?.player?.let { player ->
                     if (player.hasPreviousMediaItem()) {
                         player.seekToPreviousMediaItem()
@@ -165,7 +261,7 @@ class PlaybackService : MediaSessionService() {
                 }
             }
             ACTION_SKIP_NEXT -> {
-                Log.d(TAG, "ACTION_SKIP_NEXT received")
+                if (BuildConfig.DEBUG) Log.d(TAG, "ACTION_SKIP_NEXT received")
                 mediaSession?.player?.let { player ->
                     if (player.hasNextMediaItem()) {
                         player.seekToNextMediaItem()
@@ -181,25 +277,16 @@ class PlaybackService : MediaSessionService() {
                 }
                 // User swiped away the paused notification
                 // Stop service since there's no playback and no way to resume
-                Log.d(TAG, "ACTION_DISMISS received - notification swiped away, stopping service")
+                if (BuildConfig.DEBUG) Log.d(TAG, "ACTION_DISMISS received - notification swiped away, stopping service")
                 mediaSession?.player?.stop()
                 stopSelf()
                 return START_NOT_STICKY
             }
         }
 
-        // CRITICAL: On Android 8+, when started via startForegroundService(), we MUST call
-        // startForeground() within 5 seconds or the app will crash with:
-        // "Context.startForegroundService() did not then call Service.startForeground()"
-        //
-        // MediaSessionService only calls startForeground() when a player is attached AND playing.
-        // If the player isn't ready yet (still loading), the crash occurs. To prevent this,
-        // we immediately start foreground with a placeholder notification, which MediaSessionService
-        // will replace with the proper media notification once the player starts.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && mediaSession == null) {
-            Log.d(TAG, "Starting foreground immediately with placeholder notification (no session yet)")
-            startForeground(NOTIFICATION_ID, createPlaceholderNotification())
-        }
+        // After handling startForeground and action intents, update foreground state
+        // to ensure notification visibility matches current UI/playback state
+        mediaSession?.player?.let { updateForegroundState(it) }
 
         // Delegate to MediaSessionService which handles the full media notification
         // when a player is attached and playing
@@ -231,7 +318,7 @@ class PlaybackService : MediaSessionService() {
         // so they cannot invoke LocalBinder methods cross-process. The remaining "risk" is nuisance
         // binding (keeping service alive), which already exists since the service is exported for MediaSession.
         if (intent?.action == ACTION_LOCAL_BIND) {
-            Log.d(TAG, "Local bind requested")
+            if (BuildConfig.DEBUG) Log.d(TAG, "Local bind requested")
             return binder
         }
         // Otherwise delegate to MediaSessionService for MediaSession connections
@@ -255,17 +342,17 @@ class PlaybackService : MediaSessionService() {
         if (mediaSession != null) {
             // Session already initialized - check if same player
             if (mediaSession?.player === player) {
-                Log.d(TAG, "Session already initialized with same player")
+                if (BuildConfig.DEBUG) Log.d(TAG, "Session already initialized with same player")
                 return
             }
             // Different player - release old session first
-            Log.d(TAG, "Releasing old session for new player")
+            if (BuildConfig.DEBUG) Log.d(TAG, "Releasing old session for new player")
             removePlayerListener()
             mediaSession?.release()
             mediaSession = null
         }
 
-        Log.d(TAG, "Initializing MediaSession with player (playWhenReady=${player.playWhenReady}, state=${player.playbackState})")
+        if (BuildConfig.DEBUG) Log.d(TAG, "Initializing MediaSession with player (playWhenReady=${player.playWhenReady}, state=${player.playbackState})")
         try {
             mediaSession = MediaSession.Builder(this, player)
                 .setSessionActivity(createPlayerPendingIntent())
@@ -299,21 +386,21 @@ class PlaybackService : MediaSessionService() {
         removePlayerListener()
         playerListener = object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                Log.d(TAG, "onIsPlayingChanged: isPlaying=$isPlaying, uiVisible=$isPlayerUiVisible")
+                if (BuildConfig.DEBUG) Log.d(TAG, "onIsPlayingChanged: isPlaying=$isPlaying, uiVisible=$isPlayerUiVisible")
                 // Update foreground state based on new play state
                 // This handles: playback started/stopped from any source (notification, Bluetooth, etc.)
                 updateForegroundState(player)
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
-                Log.d(TAG, "onPlaybackStateChanged: state=$playbackState, playWhenReady=${player.playWhenReady}")
+                if (BuildConfig.DEBUG) Log.d(TAG, "onPlaybackStateChanged: state=$playbackState, playWhenReady=${player.playWhenReady}")
                 // Update foreground state when playback state changes
                 // Covers buffering→ready transitions where playback may start/resume
                 updateForegroundState(player)
             }
 
             override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {
-                Log.d(TAG, "onMediaMetadataChanged: title=${mediaMetadata.title}")
+                if (BuildConfig.DEBUG) Log.d(TAG, "onMediaMetadataChanged: title=${mediaMetadata.title}")
                 // Metadata change only needs notification update, not foreground state change
                 if (!isPlayerUiVisible && (player.isPlaying || player.playbackState == Player.STATE_READY)) {
                     updateMediaNotification(player)
@@ -384,18 +471,57 @@ class PlaybackService : MediaSessionService() {
     private fun updateMediaNotification(player: Player) {
         // Don't show notification if player UI is visible - user has direct controls
         if (isPlayerUiVisible) {
-            Log.d(TAG, "Skipping notification update - UI is visible")
+            if (BuildConfig.DEBUG) Log.d(TAG, "Skipping notification update - UI is visible")
             return
         }
 
         val notification = buildMediaNotification(player, includeDeleteIntent = true) ?: return
 
-        Log.d(TAG, "Updating media notification: isPlaying=${player.isPlaying}")
+        if (BuildConfig.DEBUG) Log.d(TAG, "Updating media notification: isPlaying=${player.isPlaying}")
 
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+        // On Android 13+, check if notifications are enabled. If not, log a warning.
+        // Note: The system handles permission denial gracefully (notification is silently dropped).
+        // This check is for debugging/logging purposes only - we don't crash on denial.
+        // OEM consideration: startForeground() in onStartCommand() is called unconditionally to avoid
+        // FGS crash, even if notifications are disabled. This behavior is expected on AOSP (Android
+        // satisfies the FGS requirement even with a "hidden" notification); OEM behavior may vary.
+        // This notify() call is for subsequent updates only.
+        if (!areNotificationsEnabled(manager)) {
+            Log.w(TAG, "Notifications are disabled - media notification will not appear. " +
+                "User can enable in Settings > Apps > Albunyaan Tube > Notifications")
+        }
+
         manager.notify(NOTIFICATION_ID, notification)
 
-        Log.d(TAG, "Media notification updated successfully")
+        if (BuildConfig.DEBUG) Log.d(TAG, "Media notification updated successfully")
+    }
+
+    /**
+     * Check if notifications are enabled for this app.
+     *
+     * On Android 13+ (API 33), POST_NOTIFICATIONS permission is required.
+     * On earlier versions, notifications are enabled by default unless the user
+     * explicitly disabled the notification channel.
+     *
+     * @return true if notifications can be shown, false if blocked by user
+     */
+    private fun areNotificationsEnabled(manager: NotificationManager): Boolean {
+        // First check app-level notification setting
+        if (!manager.areNotificationsEnabled()) {
+            return false
+        }
+
+        // On Android O+, also check if the specific channel is enabled
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = manager.getNotificationChannel(CHANNEL_ID)
+            if (channel != null && channel.importance == NotificationManager.IMPORTANCE_NONE) {
+                return false
+            }
+        }
+
+        return true
     }
 
     private fun createPlayAction(): NotificationCompat.Action {
@@ -479,9 +605,32 @@ class PlaybackService : MediaSessionService() {
      * The player lifecycle is managed by PlayerFragment.
      *
      * Call this BEFORE releasing the player in PlayerFragment.
+     *
+     * **Foreground safety:** If startForeground() hasn't completed yet (isForegroundStarted=false),
+     * the release is deferred to prevent ForegroundServiceDidNotStartInTimeException. This can
+     * happen if PlayerFragment navigates away before the service fully starts.
      */
     fun releaseSession() {
-        Log.d(TAG, "Releasing MediaSession")
+        if (BuildConfig.DEBUG) Log.d(TAG, "releaseSession requested (isForegroundStarted=$isForegroundStarted)")
+
+        // Guard: If foreground hasn't started yet, defer the release to avoid crash.
+        // The crash happens when service is destroyed before startForeground() is called.
+        // After onCreate() runs (which calls startForeground()), isForegroundStarted will be true.
+        if (!isForegroundStarted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Log.w(TAG, "releaseSession deferred - foreground not yet started")
+            pendingReleaseRequest = true
+            return
+        }
+
+        doReleaseSession()
+    }
+
+    /**
+     * Actually performs the session release. Called either directly from releaseSession()
+     * or deferred after startForeground() completes.
+     */
+    private fun doReleaseSession() {
+        if (BuildConfig.DEBUG) Log.d(TAG, "Releasing MediaSession (actual)")
         removePlayerListener()
         cachedArtwork = null
         mediaSession?.release()
@@ -489,10 +638,11 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
-        Log.d(TAG, "PlaybackService destroyed")
+        if (BuildConfig.DEBUG) Log.d(TAG, "PlaybackService destroyed (isForegroundStarted=$isForegroundStarted)")
         // Unregister lifecycle observer to prevent leaks
         ProcessLifecycleOwner.get().lifecycle.removeObserver(appLifecycleObserver)
-        releaseSession()
+        // In onDestroy, always release - the service is going away regardless
+        doReleaseSession()
         // Clear static field when service is destroyed
         activeVideoId = null
         super.onDestroy()
@@ -501,7 +651,7 @@ class PlaybackService : MediaSessionService() {
     override fun onTaskRemoved(rootIntent: Intent?) {
         val player = mediaSession?.player
         if (player == null || !player.playWhenReady || player.mediaItemCount == 0) {
-            Log.d(TAG, "Task removed with no active playback - stopping service")
+            if (BuildConfig.DEBUG) Log.d(TAG, "Task removed with no active playback - stopping service")
             stopSelf()
         }
     }
@@ -535,7 +685,7 @@ class PlaybackService : MediaSessionService() {
             currentVideoId = videoId
             // Also update static field for MainActivity access without binding
             activeVideoId = videoId
-            Log.d(TAG, "setCurrentVideoId: $videoId")
+            if (BuildConfig.DEBUG) Log.d(TAG, "setCurrentVideoId: $videoId")
             // Update notification to use new intent with videoId
             mediaSession?.player?.let { player ->
                 if (player.isPlaying || player.playbackState == Player.STATE_READY) {
@@ -561,7 +711,7 @@ class PlaybackService : MediaSessionService() {
     fun setPlayerUiVisible(visible: Boolean) {
         if (isPlayerUiVisible == visible) return
         isPlayerUiVisible = visible
-        Log.d(TAG, "setPlayerUiVisible: $visible")
+        if (BuildConfig.DEBUG) Log.d(TAG, "setPlayerUiVisible: $visible")
 
         // Use unified foreground state management
         // This handles all visibility transitions consistently
@@ -577,7 +727,7 @@ class PlaybackService : MediaSessionService() {
     private fun enterForegroundMode(player: Player) {
         val notification = buildMediaNotification(player, includeDeleteIntent = false) ?: return
 
-        Log.d(TAG, "Entering foreground mode")
+        if (BuildConfig.DEBUG) Log.d(TAG, "Entering foreground mode")
 
         // Use startForeground() to properly enter foreground state
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -589,7 +739,7 @@ class PlaybackService : MediaSessionService() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
-        Log.d(TAG, "Foreground mode started")
+        if (BuildConfig.DEBUG) Log.d(TAG, "Foreground mode started")
     }
 
     /**
@@ -605,7 +755,7 @@ class PlaybackService : MediaSessionService() {
             @Suppress("DEPRECATION")
             stopForeground(true)
         }
-        Log.d(TAG, "Foreground mode stopped (UI visible)")
+        if (BuildConfig.DEBUG) Log.d(TAG, "Foreground mode stopped (UI visible)")
     }
 
     /**
@@ -625,7 +775,7 @@ class PlaybackService : MediaSessionService() {
         }
         // Update notification to show paused state (play button instead of pause)
         updateMediaNotification(player)
-        Log.d(TAG, "Foreground mode stopped (paused in background), notification retained")
+        if (BuildConfig.DEBUG) Log.d(TAG, "Foreground mode stopped (paused in background), notification retained")
     }
 
     /**
@@ -663,7 +813,7 @@ class PlaybackService : MediaSessionService() {
         // - App is in foreground but user navigated away from player
         val shouldHideNotification = isAppInForeground && isPlayerUiVisible
 
-        Log.d(TAG, "updateForegroundState: appInForeground=$isAppInForeground, playerUiVisible=$isPlayerUiVisible, " +
+        if (BuildConfig.DEBUG) Log.d(TAG, "updateForegroundState: appInForeground=$isAppInForeground, playerUiVisible=$isPlayerUiVisible, " +
             "playbackActive=$isPlaybackActive, isPlaying=${player.isPlaying}, state=${player.playbackState}")
 
         when {
@@ -699,7 +849,7 @@ class PlaybackService : MediaSessionService() {
             if (existingChannel != null) {
                 // Channel exists - respect user's settings, don't modify or delete
                 // If user changed importance, that's their choice to keep
-                Log.d(TAG, "Notification channel '$CHANNEL_ID' exists with importance ${existingChannel.importance}")
+                if (BuildConfig.DEBUG) Log.d(TAG, "Notification channel '$CHANNEL_ID' exists with importance ${existingChannel.importance}")
                 return
             }
 
@@ -747,7 +897,7 @@ class PlaybackService : MediaSessionService() {
 
             return when (accessLevel) {
                 ControllerAccessLevel.FULL -> {
-                    Log.d(TAG, "Full access for: ${controller.packageName}")
+                    if (BuildConfig.DEBUG) Log.d(TAG, "Full access for: ${controller.packageName}")
                     MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                         .setAvailableSessionCommands(
                             MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS

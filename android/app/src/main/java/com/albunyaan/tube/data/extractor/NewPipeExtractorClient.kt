@@ -725,9 +725,17 @@ class NewPipeExtractorClient(
                 NewPipe.init(downloader, localization, contentCountry)
                 NewPipe.setupLocalization(localization, contentCountry)
             }
+            // PR6.2: iOS client fetch for better HLS manifest availability
+            // Controlled by BuildConfig.ENABLE_NPE_IOS_FETCH (default OFF)
+            // Enable in local.properties: npe.ios.fetch.enabled=true
+            //
+            // WARNING: iOS fetch changes the HLS manifest source from YouTube's Android/Web
+            // endpoint to the iOS endpoint. HLS segment URLs expect iOS-like headers.
+            // MultiQualityMediaSourceFactory uses iOS User-Agent for HLS to match.
+            val iosFetchEnabled = BuildConfig.ENABLE_NPE_IOS_FETCH
+            YoutubeStreamExtractor.setFetchIosClient(iosFetchEnabled)
             if (BuildConfig.DEBUG) {
-                YoutubeStreamExtractor.setFetchIosClient(true)
-                android.util.Log.d(ADAPTIVE_PROBE_TAG, "initialize: fetchIosClient=true")
+                android.util.Log.d(ADAPTIVE_PROBE_TAG, "initialize: fetchIosClient=$iosFetchEnabled")
             }
         }
     }

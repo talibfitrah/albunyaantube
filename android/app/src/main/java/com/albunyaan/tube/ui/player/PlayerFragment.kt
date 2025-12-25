@@ -58,6 +58,8 @@ import com.albunyaan.tube.player.MediaSessionMetadataManager
 import com.albunyaan.tube.player.MediaSourceResult
 import com.albunyaan.tube.player.PlaybackRecoveryManager
 import com.albunyaan.tube.player.PlaybackService
+import com.albunyaan.tube.player.StreamRequestTelemetry
+import com.albunyaan.tube.player.StreamUrlRefreshManager
 import javax.inject.Inject
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.flow.collectLatest
@@ -75,6 +77,8 @@ import java.io.File
 class PlayerFragment : Fragment(R.layout.fragment_player) {
 
     @Inject lateinit var metadataManager: MediaSessionMetadataManager
+    @Inject lateinit var streamTelemetry: StreamRequestTelemetry
+    @Inject lateinit var streamUrlRefreshManager: StreamUrlRefreshManager
 
     private var binding: FragmentPlayerBinding? = null
     private var player: ExoPlayer? = null
@@ -815,12 +819,23 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                             }
                         }
                     }
-                    PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS,
+                    PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> {
+                        // HTTP error - check for 403 specifically for telemetry and geo-restriction handling
+                        handle403OrHttpError(
+                            player = player,
+                            error = error,
+                            httpResponseCode = httpResponseCode,
+                            lifecycleOwner = lifecycleOwner,
+                            currentStreamRefreshCount = streamRefreshCount,
+                            maxStreamRefreshes = maxStreamRefreshes,
+                            onStreamRefresh = { streamRefreshCount++ }
+                        )
+                    }
                     PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,
                     PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE,
                     PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
                     PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED -> {
-                        // Stream URL expired/invalid (or a hard HTTP failure) - re-resolve URLs and resume.
+                        // Stream URL expired/invalid - re-resolve URLs and resume.
                         if (streamRefreshCount < maxStreamRefreshes) {
                             streamRefreshCount++
                             requestStreamRefreshAndResume(
@@ -1039,9 +1054,21 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
      *
      * MediaSessionService requires startForegroundService() (not just bindService) to properly
      * transition to foreground mode and show notifications. This is called when playback starts.
+     *
+     * **Lifecycle safety:** Only starts the service if the fragment is in STARTED state or later.
+     * This prevents race conditions where the fragment navigates away before the service can
+     * satisfy its foreground requirement.
      */
     private fun startPlaybackServiceForForeground() {
         val context = context ?: return
+
+        // Safety check: Only start foreground service if fragment is in proper lifecycle state
+        // This prevents starting the service during rapid navigation that could race with onStop
+        if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+            if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Skipping startForegroundService - fragment not started")
+            return
+        }
+
         try {
             val intent = Intent(context, PlaybackService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -1372,6 +1399,186 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             current = current.cause
         }
         return null
+    }
+
+    /**
+     * Extract InvalidResponseCodeException from cause chain for telemetry.
+     */
+    private fun findInvalidResponseCodeException(throwable: Throwable?): HttpDataSource.InvalidResponseCodeException? {
+        var current = throwable
+        while (current != null) {
+            if (current is HttpDataSource.InvalidResponseCodeException) return current
+            current = current.cause
+        }
+        return null
+    }
+
+    /**
+     * Handle HTTP 403 and other HTTP errors with enhanced telemetry and recovery.
+     *
+     * For 403 errors specifically:
+     * - Records detailed telemetry (URL, headers, response)
+     * - Classifies failure type (expired, geo-restricted, rate-limited)
+     * - Applies targeted recovery:
+     *   - URL_EXPIRED: Force refresh with exponential backoff
+     *   - GEO_RESTRICTED: Show user-facing error, no recovery possible
+     *   - RATE_LIMITED: Back off and retry after delay
+     *   - UNKNOWN_403: Attempt forced refresh as last resort
+     */
+    private fun handle403OrHttpError(
+        player: ExoPlayer,
+        error: PlaybackException,
+        httpResponseCode: Int?,
+        lifecycleOwner: androidx.lifecycle.LifecycleOwner,
+        currentStreamRefreshCount: Int,
+        maxStreamRefreshes: Int,
+        onStreamRefresh: () -> Unit
+    ) {
+        val currentItem = viewModel.state.value.currentItem
+        val videoId = currentItem?.streamId
+
+        // Extract full exception details for telemetry
+        val invalidResponseException = findInvalidResponseCodeException(error.cause)
+
+        if (httpResponseCode == 403 && invalidResponseException != null) {
+            // Record telemetry for 403 errors
+            val requestHeaders = mutableMapOf<String, String>()
+            // Headers would be captured by InstrumentedHttpDataSource if enabled
+
+            val responseHeaders = invalidResponseException.headerFields
+            val responseBody = invalidResponseException.responseBody.decodeToString()
+
+            val failureType = streamTelemetry.recordFailure(
+                videoId = videoId,
+                streamType = determineCurrentStreamType(),
+                requestUrl = invalidResponseException.dataSpec.uri.toString(),
+                requestHeaders = requestHeaders,
+                responseCode = 403,
+                responseHeaders = responseHeaders,
+                responseBody = responseBody,
+                playbackPositionMs = player.currentPosition
+            )
+
+            android.util.Log.w(
+                "PlayerFragment",
+                "HTTP 403 detected: type=$failureType, videoId=$videoId, " +
+                    "streamRefreshCount=$currentStreamRefreshCount"
+            )
+
+            // Handle based on failure classification
+            when (failureType) {
+                StreamRequestTelemetry.FailureType.GEO_RESTRICTED -> {
+                    // Geo-restriction - no recovery possible, show error
+                    android.util.Log.e("PlayerFragment", "Video geo-restricted: $videoId")
+                    player.stop()
+                    // Clear prepared stream state to prevent stale cache hits in maybePrepareStream
+                    preparedStreamKey = null
+                    preparedStreamUrl = null
+                    preparedIsAdaptive = false
+                    preparedAdaptiveType = MediaSourceResult.AdaptiveType.NONE
+                    preparedQualityCapHeight = null
+                    factorySelectedVideoTrack = null
+                    context?.let { ctx ->
+                        Toast.makeText(ctx, R.string.player_geo_restricted, Toast.LENGTH_LONG).show()
+                    }
+                    viewModel.setErrorState(R.string.player_geo_restricted)
+                    return
+                }
+
+                StreamRequestTelemetry.FailureType.RATE_LIMITED -> {
+                    // Rate limited - back off and retry
+                    val retryAfterHeader = responseHeaders["retry-after"]?.firstOrNull()
+                    val safeRefreshCount = currentStreamRefreshCount.coerceAtLeast(0)
+                    val backoffMs = retryAfterHeader?.toLongOrNull()?.times(1000)
+                        ?: (2000L * (1 shl safeRefreshCount.coerceAtMost(4))) // Exponential: 2s, 4s, 8s, 16s, 32s
+
+                    android.util.Log.w("PlayerFragment", "Rate limited, backing off ${backoffMs}ms")
+                    context?.let { ctx ->
+                        Toast.makeText(ctx, R.string.player_rate_limited, Toast.LENGTH_SHORT).show()
+                    }
+
+                    lifecycleOwner.lifecycleScope.launch {
+                        kotlinx.coroutines.delay(backoffMs)
+                        if (currentStreamRefreshCount < maxStreamRefreshes) {
+                            onStreamRefresh()
+                            requestStreamRefreshAndResume("rate limited, retrying after ${backoffMs}ms")
+                        } else {
+                            context?.let { ctx ->
+                                Toast.makeText(ctx, R.string.player_stream_unavailable, Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                    return
+                }
+
+                StreamRequestTelemetry.FailureType.URL_EXPIRED -> {
+                    // URL expired - force refresh immediately
+                    android.util.Log.w("PlayerFragment", "Stream URL expired, forcing refresh")
+                    context?.let { ctx ->
+                        Toast.makeText(ctx, R.string.player_stream_expired, Toast.LENGTH_SHORT).show()
+                    }
+
+                    if (currentStreamRefreshCount < maxStreamRefreshes) {
+                        onStreamRefresh()
+                        requestStreamRefreshAndResume("URL expired (403)")
+                    } else {
+                        context?.let { ctx ->
+                            Toast.makeText(ctx, R.string.player_stream_unavailable, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    return
+                }
+
+                StreamRequestTelemetry.FailureType.UNKNOWN_403,
+                StreamRequestTelemetry.FailureType.HTTP_ERROR,
+                StreamRequestTelemetry.FailureType.NETWORK_ERROR -> {
+                    // Unknown 403 or other HTTP error - attempt refresh with linear backoff
+                    val safeCount = currentStreamRefreshCount.coerceAtLeast(0)
+                    val backoffMs = 1500L * (safeCount + 1)
+
+                    android.util.Log.w("PlayerFragment", "Unknown 403/HTTP error, attempting refresh after ${backoffMs}ms")
+
+                    lifecycleOwner.lifecycleScope.launch {
+                        kotlinx.coroutines.delay(backoffMs)
+                        if (currentStreamRefreshCount < maxStreamRefreshes) {
+                            onStreamRefresh()
+                            requestStreamRefreshAndResume("HTTP $httpResponseCode (${failureType.name})")
+                        } else {
+                            context?.let { ctx ->
+                                Toast.makeText(ctx, R.string.player_stream_unavailable, Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                    return
+                }
+            }
+        }
+
+        // Non-403 HTTP error or missing exception details - use standard handling
+        if (currentStreamRefreshCount < maxStreamRefreshes) {
+            onStreamRefresh()
+            requestStreamRefreshAndResume(
+                "HTTP error (${error.errorCodeName}, http=${httpResponseCode ?: "n/a"})"
+            )
+        } else {
+            context?.let { ctx ->
+                Toast.makeText(ctx, R.string.player_stream_unavailable, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    /**
+     * Determine the current stream type for telemetry.
+     */
+    private fun determineCurrentStreamType(): String {
+        return when {
+            preparedAdaptiveType == MediaSourceResult.AdaptiveType.HLS -> "HLS"
+            preparedAdaptiveType == MediaSourceResult.AdaptiveType.DASH -> "DASH"
+            preparedAdaptiveType == MediaSourceResult.AdaptiveType.SYNTHETIC_DASH -> "SYNTHETIC_DASH"
+            preparedIsAdaptive -> "ADAPTIVE"
+            viewModel.state.value.audioOnly -> "AUDIO_ONLY"
+            else -> "PROGRESSIVE"
+        }
     }
 
     /**

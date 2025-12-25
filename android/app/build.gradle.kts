@@ -47,6 +47,13 @@ android {
         val apiBaseUrl = localProperties.getProperty("api.base.url", "http://10.0.2.2:8080/")
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
         buildConfigField("boolean", "ENABLE_THUMBNAIL_IMAGES", "true")
+
+        // PR6.2: iOS client fetch feature flag
+        // Enables NewPipeExtractor iOS client fetch for better HLS manifest availability.
+        // Default OFF - enable in local.properties: npe.ios.fetch.enabled=true
+        // WARNING: Requires iOS User-Agent for HLS playback (configured in MultiQualityMediaSourceFactory)
+        val enableNpeIosFetch = localProperties.getProperty("npe.ios.fetch.enabled", "false").toBoolean()
+        buildConfigField("boolean", "ENABLE_NPE_IOS_FETCH", "$enableNpeIosFetch")
     }
 
     signingConfigs {

@@ -43,6 +43,10 @@
     <string name="player_status_resolving">Resolving stream…</string>
     <string name="player_stream_error">Playback unavailable. Please try again later.</string>
     <string name="player_stream_unavailable">This video is not available for playback.</string>
+    <string name="player_geo_restricted">This video is not available in your region.</string>
+    <string name="player_stream_expired">Stream expired. Refreshing…</string>
+    <string name="player_rate_limited">Too many requests. Please wait a moment.</string>
+    <string name="player_refreshing_stream">Refreshing stream URLs…</string>
     <string name="player_decoder_stepping_down">Video codec not supported. Switching to %1$s…</string>
     <string name="player_decoder_audio_error">Audio playback error. Please try again.</string>
     <string name="player_decoder_no_compatible_quality">No compatible video quality available for this device.</string>

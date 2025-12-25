@@ -57,6 +57,7 @@ data class MediaSourceResult(
 @OptIn(UnstableApi::class)
 class MultiQualityMediaSourceFactory(private val context: Context) {
 
+    // Standard data source for progressive/DASH (Android User-Agent)
     private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
         .setUserAgent(HttpConstants.YOUTUBE_USER_AGENT)
         // Timeouts balanced for reliability and responsiveness
@@ -64,15 +65,51 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
         .setReadTimeoutMs(20000)     // 20s read timeout (balances reliability with responsiveness)
         .setAllowCrossProtocolRedirects(true)  // Allow HTTP -> HTTPS redirects
 
+    /**
+     * HLS-specific data source with iOS User-Agent.
+     *
+     * **Design Decision: Always use iOS UA for HLS**
+     *
+     * When iOS client fetch is enabled (BuildConfig.ENABLE_NPE_IOS_FETCH), HLS manifest URLs
+     * are returned from YouTube's iOS endpoint. These HLS segment URLs expect iOS-like headers;
+     * using an Android User-Agent causes HTTP 403 errors.
+     *
+     * We always use iOS UA for HLS rather than conditionally checking the flag because:
+     * 1. It's harmless for non-iOS HLS URLs (YouTube has not been observed to validate UA for HLS manifests;
+     *    if an edge case surfaces where non-iOS HLS fails with iOS UA, we can add conditional logic)
+     * 2. It simplifies the code (no runtime flag checking in data source selection)
+     * 3. It future-proofs against enabling the iOS fetch flag later (no code changes needed here)
+     * 4. The HLS URLs we receive when iOS fetch is OFF are rare (most VODs lack HLS without iOS)
+     *
+     * The coupling is intentional: NPE's iOS client fetch returns URLs that expect this UA.
+     * See: HttpConstants.YOUTUBE_IOS_USER_AGENT, NewPipeExtractorClient.initializeNewPipe()
+     */
+    private val hlsHttpDataSourceFactory = DefaultHttpDataSource.Factory()
+        .setUserAgent(HttpConstants.YOUTUBE_IOS_USER_AGENT)
+        .setConnectTimeoutMs(15000)
+        .setReadTimeoutMs(20000)
+        .setAllowCrossProtocolRedirects(true)
+
     private val dataSourceFactory: DataSource.Factory = DefaultDataSource.Factory(
         context,
         httpDataSourceFactory
+    )
+
+    private val hlsDataSourceFactory: DataSource.Factory = DefaultDataSource.Factory(
+        context,
+        hlsHttpDataSourceFactory
     )
 
     // Cache factory to enable HTTP response caching for faster subsequent loads
     private val cacheDataSourceFactory: DataSource.Factory = CacheDataSource.Factory()
         .setCache(getOrCreateCache(context))
         .setUpstreamDataSourceFactory(dataSourceFactory)
+        .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+
+    // HLS-specific cache factory with iOS User-Agent
+    private val hlsCacheDataSourceFactory: DataSource.Factory = CacheDataSource.Factory()
+        .setCache(getOrCreateCache(context))
+        .setUpstreamDataSourceFactory(hlsDataSourceFactory)
         .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
     // PR6.1: Synthetic DASH factory for progressive stream wrapping
@@ -314,15 +351,25 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
      *
      * For live streams, uses non-caching DataSource to prevent stale manifest issues.
      * For VOD, uses caching DataSource for faster subsequent loads.
+     *
+     * NOTE: HLS sources use iOS User-Agent because HLS manifests come from YouTube's iOS endpoint
+     * (when setFetchIosClient=true). Using Android User-Agent causes HTTP 403 on HLS segments.
      */
     private fun tryCreateAdaptiveSource(resolved: ResolvedStreams): AdaptiveSourceResult? {
         // Use non-caching factory for live streams to prevent stale manifests
         // that cause playback to stop after a few seconds
-        val adaptiveDataSourceFactory = if (resolved.isLive) {
+        val dashDataSourceFactory = if (resolved.isLive) {
             android.util.Log.d(TAG, "Using non-caching data source for live stream")
             dataSourceFactory
         } else {
             cacheDataSourceFactory
+        }
+
+        // HLS requires iOS User-Agent (manifest comes from iOS endpoint)
+        val hlsSourceFactory = if (resolved.isLive) {
+            hlsDataSourceFactory
+        } else {
+            hlsCacheDataSourceFactory
         }
 
         // Try HLS first (better compatibility)
@@ -332,7 +379,8 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
                     .setUri(hlsUrl)
                     .setMimeType(MimeTypes.APPLICATION_M3U8)
                     .build()
-                val source = HlsMediaSource.Factory(adaptiveDataSourceFactory)
+                // Use iOS User-Agent for HLS to match the client that fetched the manifest
+                val source = HlsMediaSource.Factory(hlsSourceFactory)
                     .setAllowChunklessPreparation(true)
                     .createMediaSource(mediaItem)
                 AdaptiveSourceResult(source, hlsUrl, MediaSourceResult.AdaptiveType.HLS)
@@ -342,18 +390,18 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
             }
         }
         if (hlsResult != null) {
-            android.util.Log.d(TAG, "Using HLS adaptive streaming (isLive=${resolved.isLive})")
+            android.util.Log.d(TAG, "Using HLS adaptive streaming (isLive=${resolved.isLive}, iOS UA)")
             return hlsResult
         }
 
-        // Fall back to DASH if HLS unavailable or failed
+        // Fall back to DASH if HLS unavailable or failed (uses Android User-Agent)
         val dashResult = resolved.dashUrl?.let { dashUrl ->
             try {
                 val mediaItem = MediaItem.Builder()
                     .setUri(dashUrl)
                     .setMimeType(MimeTypes.APPLICATION_MPD)
                     .build()
-                val source = DashMediaSource.Factory(adaptiveDataSourceFactory)
+                val source = DashMediaSource.Factory(dashDataSourceFactory)
                     .createMediaSource(mediaItem)
                 AdaptiveSourceResult(source, dashUrl, MediaSourceResult.AdaptiveType.DASH)
             } catch (e: Exception) {
