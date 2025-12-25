@@ -10,6 +10,7 @@ import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.databinding.ItemHomeChannelBinding
 import com.albunyaan.tube.databinding.ItemHomePlaylistBinding
 import com.albunyaan.tube.databinding.ItemHomeVideoBinding
+import com.albunyaan.tube.locale.LocaleManager
 import com.albunyaan.tube.util.ImageLoading.loadThumbnail
 import java.text.NumberFormat
 import java.util.Locale
@@ -157,12 +158,18 @@ class HomeFeaturedAdapter(
         private val onItemClick: (ContentItem) -> Unit
     ) : RecyclerView.ViewHolder(binding.root) {
 
+        private val context get() = binding.root.context
+
         fun bind(video: ContentItem.Video) {
             binding.videoTitle.text = video.title
 
-            val formattedViews = video.viewCount?.let { formatViewCount(it) } ?: "0"
+            val appLocale = LocaleManager.getCurrentLocale(context)
+            val numberFormat = NumberFormat.getNumberInstance(appLocale)
+            val formattedViews = video.viewCount?.let {
+                numberFormat.format(it)
+            } ?: numberFormat.format(0)
             val metaParts = mutableListOf<String>()
-            metaParts.add(binding.root.context.getString(R.string.video_views_format, formattedViews))
+            metaParts.add(context.getString(R.string.video_views_format, formattedViews))
             metaParts.add(formatUploadedAgo(video.uploadedDaysAgo))
             if (video.category.isNotBlank()) {
                 metaParts.add(video.category)
@@ -174,9 +181,9 @@ class HomeFeaturedAdapter(
             binding.videoThumbnail.loadThumbnail(video)
 
             val uploadedAgo = formatUploadedAgo(video.uploadedDaysAgo)
-            val viewsText = binding.root.context.getString(R.string.video_views_format, formattedViews)
+            val viewsText = context.getString(R.string.video_views_format, formattedViews)
             val duration = formatDuration(video.durationSeconds)
-            binding.root.contentDescription = binding.root.context.getString(
+            binding.root.contentDescription = context.getString(
                 R.string.a11y_video_item,
                 video.title,
                 duration,
@@ -186,14 +193,6 @@ class HomeFeaturedAdapter(
 
             binding.root.setOnClickListener {
                 onItemClick(video)
-            }
-        }
-
-        private fun formatViewCount(count: Long): String {
-            return when {
-                count >= 1_000_000 -> String.format(Locale.US, "%.1fM", count / 1_000_000.0)
-                count >= 1_000 -> String.format(Locale.US, "%.1fK", count / 1_000.0)
-                else -> NumberFormat.getInstance().format(count)
             }
         }
 

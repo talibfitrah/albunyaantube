@@ -3,14 +3,14 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@android:color/white">
+    android:background="?android:attr/colorBackground">
 
-    <!-- Logo Icon -->
+    <!-- Logo Icon - positioned at center, consistent across all phases -->
     <ImageView
         android:id="@+id/splashIcon"
-        android:layout_width="120dp"
-        android:layout_height="120dp"
-        android:src="@drawable/ic_splash_house"
+        android:layout_width="@dimen/splash_logo_size"
+        android:layout_height="@dimen/splash_logo_size"
+        android:src="@drawable/albunyaantube_logo"
         android:contentDescription="@string/app_name"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toBottomOf="parent"
@@ -18,41 +18,46 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintVertical_bias="0.35"/>
 
-    <!-- App Name -->
+    <!-- App Name - initially invisible, fades in with animation -->
     <TextView
         android:id="@+id/appName"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="@string/app_name"
-        android:textSize="32sp"
-        android:textColor="#1A1A1A"
+        android:textSize="@dimen/splash_title_size"
+        android:textColor="?attr/colorOnBackground"
         android:textStyle="bold"
-        android:layout_marginTop="24dp"
+        android:visibility="invisible"
+        android:layout_marginTop="@dimen/spacing_lg"
         app:layout_constraintTop_toBottomOf="@id/splashIcon"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"/>
 
-    <!-- Tagline -->
+    <!-- Tagline - initially invisible, fades in with animation -->
     <TextView
         android:id="@+id/tagline"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="@string/splash_tagline"
-        android:textSize="16sp"
-        android:textColor="#666666"
+        android:textSize="@dimen/text_subtitle"
+        android:textColor="?attr/colorOnSurfaceVariant"
         android:gravity="center"
-        android:paddingHorizontal="32dp"
-        android:layout_marginTop="8dp"
+        android:visibility="invisible"
+        android:paddingStart="@dimen/spacing_xl"
+        android:paddingEnd="@dimen/spacing_xl"
+        android:layout_marginTop="@dimen/spacing_sm"
         app:layout_constraintTop_toBottomOf="@id/appName"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"/>
 
     <!-- Loading Spinner -->
     <ProgressBar
+        android:id="@+id/loadingSpinner"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:indeterminateTint="@color/primary_green"
-        android:layout_marginBottom="48dp"
+        android:indeterminateTint="?attr/colorPrimary"
+        android:visibility="invisible"
+        android:layout_marginBottom="@dimen/spacing_xxl"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"/>

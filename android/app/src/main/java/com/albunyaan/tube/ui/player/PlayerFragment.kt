@@ -1395,6 +1395,22 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     }
 
     /**
+     * Handle unrecoverable decoder error by stopping playback and transitioning to error state.
+     * Used when no compatible quality is available for the device to decode.
+     *
+     * @param player The ExoPlayer instance to stop
+     * @param logMessage Message to log for debugging
+     */
+    private fun handleUnrecoverableDecoderError(player: ExoPlayer, logMessage: String) {
+        android.util.Log.w("PlayerFragment", logMessage)
+        player.stop()
+        context?.let { ctx ->
+            Toast.makeText(ctx, R.string.player_decoder_no_compatible_quality, Toast.LENGTH_LONG).show()
+        }
+        viewModel.setErrorState(R.string.player_decoder_no_compatible_quality)
+    }
+
+    /**
      * Handle decoder errors (4K/VP9/AV1 not supported) by stepping down to a lower quality.
      *
      * When a video fails to decode (e.g., device doesn't support VP9 4K or AV1),
@@ -1420,10 +1436,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         val availableTracks = currentSelection.resolved.videoTracks
 
         if (currentVideo == null || availableTracks.isEmpty()) {
-            android.util.Log.w("PlayerFragment", "handleDecoderError: no video track to step down from")
-            context?.let { ctx ->
-                Toast.makeText(ctx, R.string.player_stream_error, Toast.LENGTH_SHORT).show()
-            }
+            handleUnrecoverableDecoderError(player, "handleDecoderError: no video track to step down from - stopping playback")
             return
         }
 
@@ -1489,10 +1502,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             ?: currentVideo.height?.takeIf { it > 0 }
             ?: player.videoSize.height.takeIf { it > 0 }
         if (currentHeight == null || currentHeight <= 0) {
-            android.util.Log.w("PlayerFragment", "handleDecoderError: no valid height from exception, currentTracks, selection, or videoSize")
-            context?.let { ctx ->
-                Toast.makeText(ctx, R.string.player_decoder_no_compatible_quality, Toast.LENGTH_LONG).show()
-            }
+            handleUnrecoverableDecoderError(player, "handleDecoderError: no valid height from exception, currentTracks, selection, or videoSize - stopping playback")
             return
         }
 
@@ -1606,10 +1616,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         val lowerQualityTrack = sameResolutionAlternative ?: lowerResolutionTrack
 
         if (lowerQualityTrack == null) {
-            android.util.Log.w("PlayerFragment", "handleDecoderError: no lower quality available")
-            context?.let { ctx ->
-                Toast.makeText(ctx, R.string.player_decoder_no_compatible_quality, Toast.LENGTH_LONG).show()
-            }
+            handleUnrecoverableDecoderError(player, "handleDecoderError: no lower quality available - stopping playback")
             return
         }
 

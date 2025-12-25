@@ -19,6 +19,7 @@ import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubePlaylist
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.schabi.newpipe.extractor.stream.StreamType
 import java.io.IOException
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -144,10 +145,11 @@ class NewPipeChannelDetailRepository @Inject constructor(
         try {
             val channelInfo = getChannelInfo(channelId, forceRefresh = false)
 
-            // Find the tab handler
-            val tabHandler = channelInfo.tabs.find { it.contentFilters.contains(tabName) }
+            // Find the tab handler using robust matching
+            val tabHandler = findTabHandler(channelInfo.tabs, tabName)
             if (tabHandler == null) {
-                Log.d(TAG, "Tab $tabName not found for channel $channelId")
+                // Log available tabs for debugging
+                logAvailableTabs(channelId, channelInfo.tabs, tabName)
                 return@withContext ChannelPage(items = emptyList(), nextPage = null)
             }
 
@@ -160,6 +162,12 @@ class NewPipeChannelDetailRepository @Inject constructor(
                 items = tabInfo.relatedItems.mapNotNull(mapper)
                 nextPage = Page.fromNewPipePage(tabInfo.nextPage)
                 Log.d(TAG, "Fetched initial $tabName page: ${items.size} items, hasMore=${nextPage != null}")
+
+                // If items are empty but nextPage exists, content may exist on subsequent pages
+                // This can happen with some channels due to slow loading or extraction issues
+                if (items.isEmpty() && nextPage != null) {
+                    Log.d(TAG, "$tabName: Initial page empty but pagination available - content may exist on subsequent pages")
+                }
             } else {
                 // Subsequent page
                 val morePage = ChannelTabInfo.getMoreItems(youtubeService, tabHandler, page.toNewPipePage())
@@ -177,6 +185,67 @@ class NewPipeChannelDetailRepository @Inject constructor(
                 is IOException, is ExtractionException -> throw e
                 else -> throw ExtractionException("Failed to fetch $tabName", e)
             }
+        }
+    }
+
+    /**
+     * Finds a tab handler using multiple matching strategies.
+     *
+     * NewPipe's tab identification can vary:
+     * 1. contentFilters contains the exact tab name (ChannelTabs.LIVESTREAMS = "livestreams")
+     * 2. The tab URL contains a path segment indicating the tab type
+     * 3. The tab's original URL contains identifier patterns
+     *
+     * This method tries multiple approaches to ensure tabs are found regardless of
+     * locale or YouTube's varying response formats.
+     */
+    private fun findTabHandler(tabs: List<ListLinkHandler>, tabName: String): ListLinkHandler? {
+        // Strategy 1: Exact content filter match (most reliable when available)
+        tabs.find { it.contentFilters.contains(tabName) }?.let { return it }
+
+        // Strategy 2: Case-insensitive content filter match
+        tabs.find { handler ->
+            handler.contentFilters.any { filter ->
+                filter.equals(tabName, ignoreCase = true)
+            }
+        }?.let { return it }
+
+        // Strategy 3: URL-based matching for specific tabs
+        // YouTube tab URLs have predictable patterns regardless of locale
+        val urlPattern = when (tabName) {
+            ChannelTabs.LIVESTREAMS -> listOf("/streams", "/live", "tab=streams")
+            ChannelTabs.SHORTS -> listOf("/shorts", "tab=shorts")
+            ChannelTabs.VIDEOS -> listOf("/videos", "tab=videos")
+            ChannelTabs.PLAYLISTS -> listOf("/playlists", "tab=playlists")
+            else -> emptyList()
+        }
+
+        if (urlPattern.isNotEmpty()) {
+            tabs.find { handler ->
+                val url = handler.url?.lowercase(Locale.ROOT) ?: ""
+                urlPattern.any { pattern -> url.contains(pattern) }
+            }?.let { return it }
+        }
+
+        // Strategy 4: Check originalUrl if url didn't match
+        if (urlPattern.isNotEmpty()) {
+            tabs.find { handler ->
+                val originalUrl = handler.originalUrl?.lowercase(Locale.ROOT) ?: ""
+                urlPattern.any { pattern -> originalUrl.contains(pattern) }
+            }?.let { return it }
+        }
+
+        return null
+    }
+
+    /**
+     * Logs available tabs for debugging when a tab is not found.
+     */
+    private fun logAvailableTabs(channelId: String, tabs: List<ListLinkHandler>, requestedTab: String) {
+        Log.d(TAG, "Tab '$requestedTab' not found for channel $channelId")
+        Log.d(TAG, "Available tabs (${tabs.size}):")
+        tabs.forEachIndexed { index, handler ->
+            Log.d(TAG, "  Tab $index: filters=${handler.contentFilters}, url=${handler.url ?: "null"}")
         }
     }
 
@@ -282,6 +351,8 @@ class NewPipeChannelDetailRepository @Inject constructor(
     private fun StreamInfoItem.toChannelLiveStream(): ChannelLiveStream {
         val isLive = streamType == StreamType.LIVE_STREAM
         val isUpcoming = streamType == StreamType.NONE && duration <= 0 // Heuristic for upcoming
+        // Past/recorded streams have duration > 0 and are not live
+        val isPastStream = !isLive && !isUpcoming && duration > 0
 
         return ChannelLiveStream(
             id = extractVideoId(url),
@@ -289,9 +360,13 @@ class NewPipeChannelDetailRepository @Inject constructor(
             thumbnailUrl = thumbnails.chooseBestUrl(),
             isLiveNow = isLive,
             isUpcoming = isUpcoming,
-            scheduledStartTime = null, // Not easily available
+            scheduledStartTime = null, // Not easily available from list items
             viewCount = viewCount.takeIf { it >= 0 },
-            uploaderName = uploaderName
+            uploaderName = uploaderName,
+            // Duration only makes sense for past/recorded streams
+            durationSeconds = if (isPastStream) duration.takeIf { it > 0 }?.toInt() else null,
+            // Textual upload date (e.g., "2 weeks ago", "Streamed 3 days ago")
+            publishedTime = textualUploadDate
         )
     }
 

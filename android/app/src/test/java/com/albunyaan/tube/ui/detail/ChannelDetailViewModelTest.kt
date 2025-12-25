@@ -44,10 +44,19 @@ class ChannelDetailViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
     private lateinit var fakeRepository: FakeChannelDetailRepository
 
+    /**
+     * Fake clock for deterministic rate limiting tests.
+     * Initialized to a value > MIN_APPEND_INTERVAL_MS (1000ms) so that loadNextPage()
+     * is not rate-limited on first call after initial load. This prevents subtle test
+     * failures if a test author forgets to call advanceTimeBy() before pagination.
+     */
+    private var fakeCurrentTimeMs = 2000L
+
     @Before
     fun setup() {
         Dispatchers.setMain(testDispatcher)
         fakeRepository = FakeChannelDetailRepository()
+        fakeCurrentTimeMs = 2000L
     }
 
     @After
@@ -55,8 +64,20 @@ class ChannelDetailViewModelTest {
         Dispatchers.resetMain()
     }
 
+    /**
+     * Create a ViewModel with an injectable time provider for deterministic rate limiting tests.
+     */
     private fun createViewModel(channelId: String = "UCtest123"): ChannelDetailViewModel {
-        return ChannelDetailViewModel(fakeRepository, channelId)
+        return ChannelDetailViewModel(fakeRepository, channelId).apply {
+            timeProvider = { fakeCurrentTimeMs }
+        }
+    }
+
+    /**
+     * Advance the fake clock by the specified milliseconds.
+     */
+    private fun advanceTimeBy(ms: Long) {
+        fakeCurrentTimeMs += ms
     }
 
     // Header Tests
@@ -152,6 +173,9 @@ class ChannelDetailViewModelTest {
         var state = viewModel.videosState.value as ChannelDetailViewModel.PaginatedState.Loaded
         assertEquals(1, state.items.size)
 
+        // Advance fake clock past rate limit
+        advanceTimeBy(1100L)
+
         // Load next page
         fakeRepository.videosResponse = ChannelPage(page2, null)
         viewModel.loadNextPage(ChannelTab.VIDEOS)
@@ -208,6 +232,9 @@ class ChannelDetailViewModelTest {
         // First page loaded
         assertTrue(viewModel.videosState.value is ChannelDetailViewModel.PaginatedState.Loaded)
 
+        // Advance fake clock past rate limit
+        advanceTimeBy(1100L)
+
         // Second page fails
         fakeRepository.videosError = RuntimeException("Pagination failed")
         viewModel.loadNextPage(ChannelTab.VIDEOS)
@@ -216,6 +243,164 @@ class ChannelDetailViewModelTest {
         val state = viewModel.videosState.value
         assertTrue("Expected ErrorAppend state", state is ChannelDetailViewModel.PaginatedState.ErrorAppend)
         assertEquals(1, (state as ChannelDetailViewModel.PaginatedState.ErrorAppend).items.size)
+    }
+
+    @Test
+    fun `retryAppend successfully loads next page from ErrorAppend state`() = runTest {
+        val page1 = listOf(createTestVideo("v1", "Video 1"))
+        val page2 = listOf(createTestVideo("v2", "Video 2"))
+        val nextPage = Page("http://next", null, null, null)
+
+        fakeRepository.headerResponse = createTestHeader("UCtest123", "Test Channel")
+        fakeRepository.videosResponse = ChannelPage(page1, nextPage)
+
+        val viewModel = createViewModel("UCtest123")
+        advanceUntilIdle()
+
+        // First page loaded
+        assertTrue(viewModel.videosState.value is ChannelDetailViewModel.PaginatedState.Loaded)
+
+        // Advance fake clock past rate limit (MIN_APPEND_INTERVAL_MS = 1000L)
+        advanceTimeBy(1100L)
+
+        // Second page fails
+        fakeRepository.videosError = RuntimeException("Pagination failed")
+        viewModel.loadNextPage(ChannelTab.VIDEOS)
+        advanceUntilIdle()
+
+        val errorState = viewModel.videosState.value
+        assertTrue("Expected ErrorAppend state", errorState is ChannelDetailViewModel.PaginatedState.ErrorAppend)
+        assertEquals(1, (errorState as ChannelDetailViewModel.PaginatedState.ErrorAppend).items.size)
+        // Verify nextPage is preserved in ErrorAppend state
+        assertEquals(nextPage, errorState.nextPage)
+
+        // Advance fake clock past rate limit again
+        advanceTimeBy(1100L)
+
+        // Fix error and retry - the nextPage should be restored from ErrorAppend state
+        fakeRepository.videosError = null
+        fakeRepository.videosResponse = ChannelPage(page2, null)
+        viewModel.retryAppend(ChannelTab.VIDEOS)
+        advanceUntilIdle()
+
+        // Should successfully load next page
+        val loadedState = viewModel.videosState.value
+        assertTrue("Expected Loaded state after retry", loadedState is ChannelDetailViewModel.PaginatedState.Loaded)
+        assertEquals(2, (loadedState as ChannelDetailViewModel.PaginatedState.Loaded).items.size)
+        assertEquals("Video 1", loadedState.items[0].title)
+        assertEquals("Video 2", loadedState.items[1].title)
+    }
+
+    /**
+     * Edge case test: Ensures retry works even if hasReachedEnd was incorrectly set to true
+     * while ErrorAppend state contains a valid nextPage.
+     *
+     * This scenario shouldn't occur in normal code flow, but the ViewModel should be defensive
+     * against such inconsistent state by treating ErrorAppend.nextPage as the source of truth.
+     */
+    @Test
+    fun `retryAppend restores hasReachedEnd when ErrorAppend has valid nextPage`() = runTest {
+        val page1 = listOf(createTestVideo("v1", "Video 1"))
+        val page2 = listOf(createTestVideo("v2", "Video 2"))
+        val nextPage = Page("http://next", null, null, null)
+
+        fakeRepository.headerResponse = createTestHeader("UCtest123", "Test Channel")
+        fakeRepository.videosResponse = ChannelPage(page1, nextPage)
+
+        val viewModel = createViewModel("UCtest123")
+        advanceUntilIdle()
+
+        // First page loaded
+        assertTrue(viewModel.videosState.value is ChannelDetailViewModel.PaginatedState.Loaded)
+
+        // Advance time past rate limit
+        advanceTimeBy(1100L)
+
+        // Second page fails - this creates ErrorAppend state with nextPage preserved
+        fakeRepository.videosError = RuntimeException("Pagination failed")
+        viewModel.loadNextPage(ChannelTab.VIDEOS)
+        advanceUntilIdle()
+
+        val errorState = viewModel.videosState.value
+        assertTrue("Expected ErrorAppend state", errorState is ChannelDetailViewModel.PaginatedState.ErrorAppend)
+        assertEquals(nextPage, (errorState as ChannelDetailViewModel.PaginatedState.ErrorAppend).nextPage)
+
+        // Advance time again
+        advanceTimeBy(1100L)
+
+        // Fix error and retry - the restoration logic should clear hasReachedEnd
+        // and allow the retry to proceed even if there was inconsistent state
+        fakeRepository.videosError = null
+        fakeRepository.videosResponse = ChannelPage(page2, null)
+        val retryAccepted = viewModel.loadNextPage(ChannelTab.VIDEOS)
+        advanceUntilIdle()
+
+        // Retry should have been accepted
+        assertTrue("Retry should be accepted when ErrorAppend has valid nextPage", retryAccepted)
+
+        // Should successfully load next page
+        val loadedState = viewModel.videosState.value
+        assertTrue("Expected Loaded state after retry", loadedState is ChannelDetailViewModel.PaginatedState.Loaded)
+        assertEquals(2, (loadedState as ChannelDetailViewModel.PaginatedState.Loaded).items.size)
+    }
+
+    /**
+     * True edge case test: Forces controller into inconsistent state (hasReachedEnd=true,
+     * nextPage=null) while ErrorAppend state still has a valid nextPage.
+     *
+     * This is the most defensive test scenario - it explicitly corrupts internal state
+     * to verify that the restoration logic in loadNextPage() properly recovers from
+     * the ErrorAppend state even when the controller itself is in an invalid state.
+     */
+    @Test
+    fun `retryAppend recovers from forced inconsistent controller state`() = runTest {
+        val page1 = listOf(createTestVideo("v1", "Video 1"))
+        val page2 = listOf(createTestVideo("v2", "Video 2"))
+        val nextPage = Page("http://next", null, null, null)
+
+        fakeRepository.headerResponse = createTestHeader("UCtest123", "Test Channel")
+        fakeRepository.videosResponse = ChannelPage(page1, nextPage)
+
+        val viewModel = createViewModel("UCtest123")
+        advanceUntilIdle()
+
+        // First page loaded
+        assertTrue(viewModel.videosState.value is ChannelDetailViewModel.PaginatedState.Loaded)
+
+        // Advance time past rate limit
+        advanceTimeBy(1100L)
+
+        // Second page fails - this creates ErrorAppend state with nextPage preserved
+        fakeRepository.videosError = RuntimeException("Pagination failed")
+        viewModel.loadNextPage(ChannelTab.VIDEOS)
+        advanceUntilIdle()
+
+        val errorState = viewModel.videosState.value
+        assertTrue("Expected ErrorAppend state", errorState is ChannelDetailViewModel.PaginatedState.ErrorAppend)
+        assertEquals(nextPage, (errorState as ChannelDetailViewModel.PaginatedState.ErrorAppend).nextPage)
+
+        // FORCE INCONSISTENT STATE: Simulate a bug where controller says "reached end"
+        // but ErrorAppend state still has a valid nextPage that should be usable
+        viewModel.forceInconsistentState(ChannelTab.VIDEOS)
+
+        // Advance time again
+        advanceTimeBy(1100L)
+
+        // Fix error and retry - the restoration logic MUST recover from this inconsistency
+        fakeRepository.videosError = null
+        fakeRepository.videosResponse = ChannelPage(page2, null)
+        val retryAccepted = viewModel.loadNextPage(ChannelTab.VIDEOS)
+        advanceUntilIdle()
+
+        // Retry MUST be accepted because ErrorAppend has valid nextPage
+        assertTrue("Retry MUST be accepted when ErrorAppend has valid nextPage, regardless of controller state", retryAccepted)
+
+        // Should successfully load next page
+        val loadedState = viewModel.videosState.value
+        assertTrue("Expected Loaded state after retry", loadedState is ChannelDetailViewModel.PaginatedState.Loaded)
+        assertEquals(2, (loadedState as ChannelDetailViewModel.PaginatedState.Loaded).items.size)
+        assertEquals("Video 1", loadedState.items[0].title)
+        assertEquals("Video 2", loadedState.items[1].title)
     }
 
     // Rate Limiting Tests
@@ -234,7 +419,10 @@ class ChannelDetailViewModelTest {
         // Reset call count after initial load
         fakeRepository.videosCallCount = 0
 
-        // Rapid fire pagination requests
+        // Advance time to allow first request, then rapid fire at same time
+        advanceTimeBy(1100L)
+
+        // Rapid fire pagination requests at same time (rate limiting should block 2nd and 3rd)
         viewModel.loadNextPage(ChannelTab.VIDEOS)
         viewModel.loadNextPage(ChannelTab.VIDEOS)
         viewModel.loadNextPage(ChannelTab.VIDEOS)
@@ -308,6 +496,239 @@ class ChannelDetailViewModelTest {
         assertEquals(2, (state as ChannelDetailViewModel.PaginatedState.Loaded).items.size)
     }
 
+    // Empty First Page With Continuation Tests
+
+    @Test
+    fun `videos auto-fetches next page when first page is empty but has continuation`() = runTest {
+        val nextPage = Page("http://continuation", null, null, null)
+        val page2Videos = listOf(createTestVideo("v1", "Video 1"), createTestVideo("v2", "Video 2"))
+
+        fakeRepository.headerResponse = createTestHeader("UCtest123", "Test Channel")
+        // Configure: first page empty with continuation, second page has items
+        fakeRepository.videosPagedResponses = listOf(
+            ChannelPage(emptyList(), nextPage),  // First page: empty with continuation
+            ChannelPage(page2Videos, null)       // Second page: has items
+        )
+
+        val viewModel = createViewModel("UCtest123")
+        advanceUntilIdle()
+
+        // Should have auto-fetched the second page and have items
+        val state = viewModel.videosState.value
+        assertTrue("Expected Loaded state with items", state is ChannelDetailViewModel.PaginatedState.Loaded)
+        assertEquals(2, (state as ChannelDetailViewModel.PaginatedState.Loaded).items.size)
+        // Verify both pages were fetched
+        assertEquals(2, fakeRepository.videosCallCount)
+    }
+
+    @Test
+    fun `live auto-fetches next page when first page is empty but has continuation`() = runTest {
+        val nextPage = Page("http://continuation", null, null, null)
+        val page2Live = listOf(createTestLiveStream("l1", "Live Stream 1", isLiveNow = true))
+
+        fakeRepository.headerResponse = createTestHeader("UCtest123", "Test Channel")
+        fakeRepository.livePagedResponses = listOf(
+            ChannelPage(emptyList(), nextPage),
+            ChannelPage(page2Live, null)
+        )
+
+        val viewModel = createViewModel("UCtest123")
+        advanceUntilIdle()
+
+        viewModel.loadInitial(ChannelTab.LIVE)
+        advanceUntilIdle()
+
+        val state = viewModel.liveState.value
+        assertTrue("Expected Loaded state with items", state is ChannelDetailViewModel.PaginatedState.Loaded)
+        assertEquals(1, (state as ChannelDetailViewModel.PaginatedState.Loaded).items.size)
+        assertEquals(2, fakeRepository.liveCallCount)
+    }
+
+    @Test
+    fun `shorts auto-fetches next page when first page is empty but has continuation`() = runTest {
+        val nextPage = Page("http://continuation", null, null, null)
+        val page2Shorts = listOf(createTestShort("s1", "Short 1"))
+
+        fakeRepository.headerResponse = createTestHeader("UCtest123", "Test Channel")
+        fakeRepository.shortsPagedResponses = listOf(
+            ChannelPage(emptyList(), nextPage),
+            ChannelPage(page2Shorts, null)
+        )
+
+        val viewModel = createViewModel("UCtest123")
+        advanceUntilIdle()
+
+        viewModel.loadInitial(ChannelTab.SHORTS)
+        advanceUntilIdle()
+
+        val state = viewModel.shortsState.value
+        assertTrue("Expected Loaded state with items", state is ChannelDetailViewModel.PaginatedState.Loaded)
+        assertEquals(1, (state as ChannelDetailViewModel.PaginatedState.Loaded).items.size)
+        assertEquals(2, fakeRepository.shortsCallCount)
+    }
+
+    @Test
+    fun `playlists auto-fetches next page when first page is empty but has continuation`() = runTest {
+        val nextPage = Page("http://continuation", null, null, null)
+        val page2Playlists = listOf(createTestPlaylist("p1", "Playlist 1"))
+
+        fakeRepository.headerResponse = createTestHeader("UCtest123", "Test Channel")
+        fakeRepository.playlistsPagedResponses = listOf(
+            ChannelPage(emptyList(), nextPage),
+            ChannelPage(page2Playlists, null)
+        )
+
+        val viewModel = createViewModel("UCtest123")
+        advanceUntilIdle()
+
+        viewModel.loadInitial(ChannelTab.PLAYLISTS)
+        advanceUntilIdle()
+
+        val state = viewModel.playlistsState.value
+        assertTrue("Expected Loaded state with items", state is ChannelDetailViewModel.PaginatedState.Loaded)
+        assertEquals(1, (state as ChannelDetailViewModel.PaginatedState.Loaded).items.size)
+        assertEquals(2, fakeRepository.playlistsCallCount)
+    }
+
+    @Test
+    fun `videos emits Empty only when both first page and continuation are empty`() = runTest {
+        fakeRepository.headerResponse = createTestHeader("UCtest123", "Test Channel")
+        fakeRepository.videosResponse = ChannelPage(emptyList(), null) // No items, no continuation
+
+        val viewModel = createViewModel("UCtest123")
+        advanceUntilIdle()
+
+        val state = viewModel.videosState.value
+        assertTrue("Expected Empty state", state is ChannelDetailViewModel.PaginatedState.Empty)
+    }
+
+    @Test
+    fun `videos emits Empty when first page has continuation but continuation also returns empty`() = runTest {
+        val nextPage = Page("http://continuation", null, null, null)
+
+        fakeRepository.headerResponse = createTestHeader("UCtest123", "Test Channel")
+        // First page: empty with continuation, second page: also empty with no continuation
+        fakeRepository.videosPagedResponses = listOf(
+            ChannelPage(emptyList(), nextPage),  // First page: empty with continuation
+            ChannelPage(emptyList(), null)       // Second page: empty with no continuation
+        )
+
+        val viewModel = createViewModel("UCtest123")
+        advanceUntilIdle()
+
+        val state = viewModel.videosState.value
+        assertTrue("Expected Empty state when all pages are empty", state is ChannelDetailViewModel.PaginatedState.Empty)
+        // Verify both pages were fetched
+        assertEquals(2, fakeRepository.videosCallCount)
+    }
+
+    @Test
+    fun `videos handles multiple consecutive empty pages before finding content`() = runTest {
+        val nextPage1 = Page("http://continuation1", null, null, null)
+        val nextPage2 = Page("http://continuation2", null, null, null)
+        val nextPage3 = Page("http://continuation3", null, null, null)
+        val videos = listOf(createTestVideo("v1", "Video 1"))
+
+        fakeRepository.headerResponse = createTestHeader("UCtest123", "Test Channel")
+        // Multiple empty pages before content
+        fakeRepository.videosPagedResponses = listOf(
+            ChannelPage(emptyList(), nextPage1),
+            ChannelPage(emptyList(), nextPage2),
+            ChannelPage(emptyList(), nextPage3),
+            ChannelPage(videos, null)
+        )
+
+        val viewModel = createViewModel("UCtest123")
+        advanceUntilIdle()
+
+        val state = viewModel.videosState.value
+        assertTrue("Expected Loaded state after skipping empty pages", state is ChannelDetailViewModel.PaginatedState.Loaded)
+        assertEquals(1, (state as ChannelDetailViewModel.PaginatedState.Loaded).items.size)
+        // Verify all pages were fetched
+        assertEquals(4, fakeRepository.videosCallCount)
+    }
+
+    @Test
+    fun `videos limits consecutive empty page fetches to prevent infinite loops`() = runTest {
+        // Create more continuation pages than the limit (5)
+        val pages = (1..10).map { i ->
+            ChannelPage<ChannelVideo>(emptyList(), Page("http://continuation$i", null, null, null))
+        }
+
+        fakeRepository.headerResponse = createTestHeader("UCtest123", "Test Channel")
+        fakeRepository.videosPagedResponses = pages
+
+        // Creating the ViewModel triggers loadHeader -> loadInitial(VIDEOS)
+        createViewModel("UCtest123")
+        advanceUntilIdle()
+
+        // Should stop at MAX_EMPTY_PAGE_FETCHES (5), not fetch all 10
+        assertEquals("Should limit empty page fetches to 5", 5, fakeRepository.videosCallCount)
+    }
+
+    @Test
+    fun `live emits Empty when continuation also returns empty`() = runTest {
+        val nextPage = Page("http://continuation", null, null, null)
+
+        fakeRepository.headerResponse = createTestHeader("UCtest123", "Test Channel")
+        fakeRepository.livePagedResponses = listOf(
+            ChannelPage(emptyList(), nextPage),
+            ChannelPage(emptyList(), null)
+        )
+
+        val viewModel = createViewModel("UCtest123")
+        advanceUntilIdle()
+
+        viewModel.loadInitial(ChannelTab.LIVE)
+        advanceUntilIdle()
+
+        val state = viewModel.liveState.value
+        assertTrue("Expected Empty state", state is ChannelDetailViewModel.PaginatedState.Empty)
+        assertEquals(2, fakeRepository.liveCallCount)
+    }
+
+    @Test
+    fun `shorts emits Empty when continuation also returns empty`() = runTest {
+        val nextPage = Page("http://continuation", null, null, null)
+
+        fakeRepository.headerResponse = createTestHeader("UCtest123", "Test Channel")
+        fakeRepository.shortsPagedResponses = listOf(
+            ChannelPage(emptyList(), nextPage),
+            ChannelPage(emptyList(), null)
+        )
+
+        val viewModel = createViewModel("UCtest123")
+        advanceUntilIdle()
+
+        viewModel.loadInitial(ChannelTab.SHORTS)
+        advanceUntilIdle()
+
+        val state = viewModel.shortsState.value
+        assertTrue("Expected Empty state", state is ChannelDetailViewModel.PaginatedState.Empty)
+        assertEquals(2, fakeRepository.shortsCallCount)
+    }
+
+    @Test
+    fun `playlists emits Empty when continuation also returns empty`() = runTest {
+        val nextPage = Page("http://continuation", null, null, null)
+
+        fakeRepository.headerResponse = createTestHeader("UCtest123", "Test Channel")
+        fakeRepository.playlistsPagedResponses = listOf(
+            ChannelPage(emptyList(), nextPage),
+            ChannelPage(emptyList(), null)
+        )
+
+        val viewModel = createViewModel("UCtest123")
+        advanceUntilIdle()
+
+        viewModel.loadInitial(ChannelTab.PLAYLISTS)
+        advanceUntilIdle()
+
+        val state = viewModel.playlistsState.value
+        assertTrue("Expected Empty state", state is ChannelDetailViewModel.PaginatedState.Empty)
+        assertEquals(2, fakeRepository.playlistsCallCount)
+    }
+
     // Tab Selection Tests
 
     @Test
@@ -341,6 +762,9 @@ class ChannelDetailViewModelTest {
 
         fakeRepository.videosCallCount = 0
         fakeRepository.videosResponse = ChannelPage(emptyList(), null)
+
+        // Advance fake clock past rate limit
+        advanceTimeBy(1100L)
 
         // Simulate scroll near end (threshold is 5)
         viewModel.onListScrolled(ChannelTab.VIDEOS, lastVisibleItem = 8, totalCount = 10)
@@ -422,7 +846,9 @@ class ChannelDetailViewModelTest {
         isUpcoming = isUpcoming,
         scheduledStartTime = null,
         viewCount = if (isLiveNow) 1000L else null,
-        uploaderName = "Test Channel"
+        uploaderName = "Test Channel",
+        durationSeconds = if (!isLiveNow && !isUpcoming) 3600 else null,
+        publishedTime = if (!isLiveNow && !isUpcoming) "2 weeks ago" else null
     )
 
     private fun createTestPlaylist(id: String, title: String) = ChannelPlaylist(
@@ -436,23 +862,35 @@ class ChannelDetailViewModelTest {
 
     /**
      * Fake ChannelDetailRepository for testing.
+     * Supports both single response mode (for simple tests) and paged response mode
+     * (for testing pagination scenarios like empty first page with continuation).
      */
     private class FakeChannelDetailRepository : ChannelDetailRepository {
         var headerResponse: ChannelHeader? = null
         var headerError: Exception? = null
 
+        // Single response mode (for backward compatibility with existing tests)
         var videosResponse: ChannelPage<ChannelVideo> = ChannelPage(emptyList(), null)
         var videosError: Exception? = null
         var videosCallCount = 0
 
+        // Paged response mode (for testing pagination)
+        var videosPagedResponses: List<ChannelPage<ChannelVideo>>? = null
+
         var liveResponse: ChannelPage<ChannelLiveStream> = ChannelPage(emptyList(), null)
         var liveError: Exception? = null
+        var liveCallCount = 0
+        var livePagedResponses: List<ChannelPage<ChannelLiveStream>>? = null
 
         var shortsResponse: ChannelPage<ChannelShort> = ChannelPage(emptyList(), null)
         var shortsError: Exception? = null
+        var shortsCallCount = 0
+        var shortsPagedResponses: List<ChannelPage<ChannelShort>>? = null
 
         var playlistsResponse: ChannelPage<ChannelPlaylist> = ChannelPage(emptyList(), null)
         var playlistsError: Exception? = null
+        var playlistsCallCount = 0
+        var playlistsPagedResponses: List<ChannelPage<ChannelPlaylist>>? = null
 
         override suspend fun getChannelHeader(channelId: String, forceRefresh: Boolean): ChannelHeader {
             headerError?.let { throw it }
@@ -460,24 +898,32 @@ class ChannelDetailViewModelTest {
         }
 
         override suspend fun getVideos(channelId: String, page: Page?): ChannelPage<ChannelVideo> {
+            val callIndex = videosCallCount
             videosCallCount++
             videosError?.let { throw it }
-            return videosResponse
+            // Use paged responses if configured, otherwise fall back to single response
+            return videosPagedResponses?.getOrNull(callIndex) ?: videosResponse
         }
 
         override suspend fun getLiveStreams(channelId: String, page: Page?): ChannelPage<ChannelLiveStream> {
+            val callIndex = liveCallCount
+            liveCallCount++
             liveError?.let { throw it }
-            return liveResponse
+            return livePagedResponses?.getOrNull(callIndex) ?: liveResponse
         }
 
         override suspend fun getShorts(channelId: String, page: Page?): ChannelPage<ChannelShort> {
+            val callIndex = shortsCallCount
+            shortsCallCount++
             shortsError?.let { throw it }
-            return shortsResponse
+            return shortsPagedResponses?.getOrNull(callIndex) ?: shortsResponse
         }
 
         override suspend fun getPlaylists(channelId: String, page: Page?): ChannelPage<ChannelPlaylist> {
+            val callIndex = playlistsCallCount
+            playlistsCallCount++
             playlistsError?.let { throw it }
-            return playlistsResponse
+            return playlistsPagedResponses?.getOrNull(callIndex) ?: playlistsResponse
         }
 
         override suspend fun getAbout(channelId: String, forceRefresh: Boolean): ChannelHeader {

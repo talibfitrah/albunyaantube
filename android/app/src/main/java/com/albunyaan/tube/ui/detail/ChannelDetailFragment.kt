@@ -24,6 +24,7 @@ import com.google.android.material.appbar.AppBarLayout
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.tabs.TabLayoutMediator
 import dagger.hilt.android.AndroidEntryPoint
+import com.albunyaan.tube.locale.LocaleManager
 import dagger.hilt.android.lifecycle.withCreationCallback
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
@@ -215,9 +216,10 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
             // Verified badge (localized via content description)
             verifiedBadge.isVisible = header.isVerified
 
-            // Subscriber count
+            // Subscriber count - use app's per-app locale for number formatting
             if (header.subscriberCount != null && header.subscriberCount > 0) {
-                val formattedCount = NumberFormat.getInstance().format(header.subscriberCount)
+                val appLocale = LocaleManager.getCurrentLocale(requireContext())
+                val formattedCount = NumberFormat.getNumberInstance(appLocale).format(header.subscriberCount)
                 subscriberCountText.text = getString(R.string.channel_subscribers_format, formattedCount)
                 subscriberCountText.isVisible = true
             } else {

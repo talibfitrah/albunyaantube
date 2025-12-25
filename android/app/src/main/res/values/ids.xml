@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Tag key for ImageLoading fallback request tracking -->
+    <item name="thumbnail_fallback_request_tag" type="id" />
+</resources>

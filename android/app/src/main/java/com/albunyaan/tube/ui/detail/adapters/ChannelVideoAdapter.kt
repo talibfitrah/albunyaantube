@@ -5,10 +5,11 @@ import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
-import coil.load
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.channel.ChannelVideo
 import com.albunyaan.tube.databinding.ItemVideoListBinding
+import com.albunyaan.tube.locale.LocaleManager
+import com.albunyaan.tube.util.ImageLoading.loadYouTubeThumbnail
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -38,15 +39,23 @@ class ChannelVideoAdapter(
         private val onVideoClick: (ChannelVideo) -> Unit
     ) : RecyclerView.ViewHolder(binding.root) {
 
+        private val context get() = binding.root.context
+
         fun bind(video: ChannelVideo) {
             binding.videoTitle.text = video.title
 
             // Format duration
             binding.videoDuration.text = video.durationSeconds?.let { formatDuration(it) } ?: ""
 
-            // Format metadata (views + time)
-            val views = video.viewCount?.let {
-                NumberFormat.getInstance().format(it) + " views"
+            // Format metadata (views + time) using app's per-app locale
+            val appLocale = LocaleManager.getCurrentLocale(context)
+            val views = video.viewCount?.let { viewCount ->
+                val formattedCount = NumberFormat.getNumberInstance(appLocale).format(viewCount)
+                context.resources.getQuantityString(
+                    R.plurals.video_views,
+                    ChannelVideoAdapter.safeQuantityForPlural(viewCount),
+                    formattedCount
+                )
             } ?: ""
             val timeAgo = video.publishedTime ?: ""
 
@@ -56,12 +65,13 @@ class ChannelVideoAdapter(
                 views.ifEmpty { timeAgo }
             }
 
-            // Load thumbnail
-            binding.videoThumbnail.load(video.thumbnailUrl) {
-                placeholder(R.drawable.thumbnail_placeholder)
-                error(R.drawable.thumbnail_placeholder)
-                crossfade(true)
-            }
+            // Load thumbnail with automatic fallback
+            binding.videoThumbnail.loadYouTubeThumbnail(
+                primaryUrl = video.thumbnailUrl,
+                videoId = video.id,
+                isShort = false,
+                placeholder = R.drawable.thumbnail_placeholder
+            )
 
             // Hide category chips (not available from NewPipe channel videos)
             binding.categoryChipsContainer.visibility = android.view.View.GONE
@@ -90,6 +100,14 @@ class ChannelVideoAdapter(
 
             override fun areContentsTheSame(oldItem: ChannelVideo, newItem: ChannelVideo): Boolean =
                 oldItem == newItem
+        }
+
+        /**
+         * Safely converts a Long count to Int for plural quantity selection.
+         * Clamps to Int.MAX_VALUE to prevent overflow for very large counts.
+         */
+        private fun safeQuantityForPlural(count: Long): Int {
+            return count.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         }
     }
 }

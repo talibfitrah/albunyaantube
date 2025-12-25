@@ -239,6 +239,10 @@
 
     <!-- Channel Detail -->
     <string name="channel_subscribers_format">%s subscribers</string>
+    <!-- Category chip with overflow count: "Islam +3" for channels with multiple categories.
+         Note for translators: %1$s is category name, %2$s is already locale-formatted count (e.g., "٣" in Arabic).
+         Do not add additional number formatting. -->
+    <string name="category_with_overflow">%1$s +%2$s</string>
     <!-- Shown when subscriber count is unavailable (displays as en-dash) -->
     <string name="channel_subscribers_unknown">–</string>
     <string name="playlist_videos_title">Videos in this playlist</string>
@@ -258,14 +262,28 @@
     <string name="channel_shorts_empty">No Shorts available</string>
     <string name="channel_playlists_empty">No playlists available</string>
 
+    <!-- Pagination Footer -->
+    <string name="load_more">Load more</string>
+    <string name="load_more_error">Failed to load more. Tap to retry.</string>
+    <string name="loading_more">Loading…</string>
+
     <!-- Live Badge -->
     <string name="live_badge">LIVE</string>
     <string name="upcoming_badge">UPCOMING</string>
+
+    <!-- Live Stream Metadata -->
+    <plurals name="live_watching_count">
+        <item quantity="one">%s watching</item>
+        <item quantity="other">%s watching</item>
+    </plurals>
+    <!-- Meta line for past/recorded streams: "100K views • Streamed 2 weeks ago" -->
+    <string name="live_past_meta">%1$s • %2$s</string>
 
     <!-- Additional Accessibility Descriptions -->
     <string name="cd_video_thumbnail">Video thumbnail</string>
     <string name="cd_channel_avatar">Channel avatar</string>
     <string name="cd_playlist_thumbnail">Playlist thumbnail</string>
+    <string name="cd_live_stream_thumbnail">Live stream thumbnail</string>
     <string name="cd_delete_search_history">Delete search history item</string>
     <string name="cd_search_icon">Search</string>
     <string name="cd_filter_button">Filter content</string>

@@ -1,5 +1,6 @@
 package com.albunyaan.tube.ui.adapters
 
+import android.content.Context
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
@@ -8,6 +9,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.databinding.ItemVideoGridBinding
+import com.albunyaan.tube.locale.LocaleManager
 import com.albunyaan.tube.util.ImageLoading.loadThumbnailUrl
 import com.google.android.material.chip.Chip
 import java.text.NumberFormat
@@ -36,25 +38,24 @@ class VideoGridAdapter(
     ) : RecyclerView.ViewHolder(binding.root) {
 
         fun bind(video: ContentItem.Video) {
+            val context = binding.root.context
+            val res = context.resources
             binding.videoTitle.text = video.title
 
             // Format duration (HH:mm:ss or mm:ss)
             binding.videoDuration.text = formatDuration(video.durationSeconds)
 
-            // Format metadata (views + time ago)
-            val views = video.viewCount?.let {
-                NumberFormat.getInstance().format(it) + " views"
+            // Format metadata (views + time ago) using app's per-app locale
+            val appLocale = LocaleManager.getCurrentLocale(context)
+            val views = video.viewCount?.let { viewCount ->
+                val formattedCount = NumberFormat.getNumberInstance(appLocale).format(viewCount)
+                res.getQuantityString(
+                    R.plurals.video_views,
+                    safeQuantityForPlural(viewCount),
+                    formattedCount
+                )
             } ?: ""
-            val timeAgo = if (video.uploadedDaysAgo > 0) {
-                when {
-                    video.uploadedDaysAgo == 1 -> "1 day ago"
-                    video.uploadedDaysAgo < 7 -> "${video.uploadedDaysAgo} days ago"
-                    video.uploadedDaysAgo < 30 -> "${video.uploadedDaysAgo / 7} weeks ago"
-                    else -> "${video.uploadedDaysAgo / 30} months ago"
-                }
-            } else {
-                "today"
-            }
+            val timeAgo = formatTimeAgo(context, video.uploadedDaysAgo)
 
             binding.videoMeta.text = if (views.isNotEmpty()) {
                 "$views • $timeAgo"
@@ -94,6 +95,30 @@ class VideoGridAdapter(
             } else {
                 String.format(Locale.US, "%d:%02d", mins, secs)
             }
+        }
+
+        private fun formatTimeAgo(context: Context, daysAgo: Int): String {
+            val res = context.resources
+            return when {
+                daysAgo <= 0 -> context.getString(R.string.video_uploaded_today)
+                daysAgo < 7 -> res.getQuantityString(R.plurals.video_uploaded_days_ago, daysAgo, daysAgo)
+                daysAgo < 30 -> {
+                    val weeks = daysAgo / 7
+                    res.getQuantityString(R.plurals.time_ago_weeks, weeks, weeks)
+                }
+                daysAgo < 365 -> {
+                    val months = daysAgo / 30
+                    res.getQuantityString(R.plurals.time_ago_months, months, months)
+                }
+                else -> {
+                    val years = daysAgo / 365
+                    res.getQuantityString(R.plurals.time_ago_years, years, years)
+                }
+            }
+        }
+
+        private fun safeQuantityForPlural(count: Long): Int {
+            return count.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         }
     }
 

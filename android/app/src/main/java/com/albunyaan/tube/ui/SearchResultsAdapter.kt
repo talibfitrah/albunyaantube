@@ -12,6 +12,7 @@ import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.databinding.ItemChannelBinding
 import com.albunyaan.tube.databinding.ItemPlaylistBinding
 import com.albunyaan.tube.databinding.ItemVideoListBinding
+import com.albunyaan.tube.locale.LocaleManager
 import com.albunyaan.tube.util.ImageLoading.loadThumbnailUrl
 import com.google.android.material.chip.Chip
 import java.text.NumberFormat
@@ -71,10 +72,12 @@ class SearchResultsAdapter(
     ) : RecyclerView.ViewHolder(binding.root) {
 
         fun bind(channel: ContentItem.Channel) {
+            val context = binding.root.context
             binding.channelName.text = channel.name
 
-            val formattedSubs = NumberFormat.getInstance().format(channel.subscribers)
-            binding.subscriberCount.text = binding.root.context.getString(
+            val appLocale = LocaleManager.getCurrentLocale(context)
+            val formattedSubs = NumberFormat.getNumberInstance(appLocale).format(channel.subscribers)
+            binding.subscriberCount.text = context.getString(
                 R.string.channel_subscribers_format,
                 formattedSubs
             )
@@ -95,7 +98,8 @@ class SearchResultsAdapter(
             val remainingCount = categories.size - 1
 
             val chipText = if (remainingCount > 0) {
-                "$firstCategory +$remainingCount"
+                val formattedCount = NumberFormat.getNumberInstance(appLocale).format(remainingCount)
+                context.getString(R.string.category_with_overflow, firstCategory, formattedCount)
             } else {
                 firstCategory
             }
@@ -167,10 +171,15 @@ class SearchResultsAdapter(
 
             val context = binding.root.context
             val res = context.resources
+            val appLocale = LocaleManager.getCurrentLocale(context)
 
-            val views = video.viewCount?.let {
-                val formattedCount = NumberFormat.getInstance().format(it)
-                res.getQuantityString(R.plurals.video_views, it.toInt().coerceAtLeast(0), formattedCount)
+            val views = video.viewCount?.let { viewCount ->
+                val formattedCount = NumberFormat.getNumberInstance(appLocale).format(viewCount)
+                res.getQuantityString(
+                    R.plurals.video_views,
+                    safeQuantityForPlural(viewCount),
+                    formattedCount
+                )
             } ?: ""
 
             val timeAgo = formatTimeAgo(context, video.uploadedDaysAgo)
@@ -239,6 +248,14 @@ class SearchResultsAdapter(
         private const val VIEW_TYPE_CHANNEL = 0
         private const val VIEW_TYPE_PLAYLIST = 1
         private const val VIEW_TYPE_VIDEO = 2
+
+        /**
+         * Safely converts a Long count to Int for plural quantity selection.
+         * Clamps to Int.MAX_VALUE to prevent overflow for very large counts.
+         */
+        private fun safeQuantityForPlural(count: Long): Int {
+            return count.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        }
 
         private val DIFF = object : DiffUtil.ItemCallback<ContentItem>() {
             override fun areItemsTheSame(oldItem: ContentItem, newItem: ContentItem): Boolean {

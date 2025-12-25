@@ -11,6 +11,7 @@ import com.albunyaan.tube.R
 import com.albunyaan.tube.data.playlist.PlaylistItem
 import com.albunyaan.tube.databinding.ItemPlaylistVideoBinding
 import com.albunyaan.tube.download.DownloadStatus
+import com.albunyaan.tube.locale.LocaleManager
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -31,22 +32,49 @@ class PlaylistVideosAdapter(
     private val onVideoClick: (PlaylistItem, Int) -> Unit
 ) : ListAdapter<PlaylistVideoUiItem, PlaylistVideosAdapter.ViewHolder>(DIFF_CALLBACK) {
 
+    // Cache locale and NumberFormat at adapter level for scrolling performance
+    private var cachedLocale: Locale? = null
+    private var cachedNumberFormat: NumberFormat? = null
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
         val binding = ItemPlaylistVideoBinding.inflate(
             LayoutInflater.from(parent.context),
             parent,
             false
         )
-        return ViewHolder(binding, onVideoClick)
+        // Initialize or update cached values on first ViewHolder creation
+        val numberFormat = getOrCreateNumberFormat(parent.context)
+        return ViewHolder(binding, onVideoClick, numberFormat)
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         holder.bind(getItem(position))
     }
 
+    /**
+     * Returns cached NumberFormat, creating it if needed or if locale changed.
+     */
+    private fun getOrCreateNumberFormat(context: android.content.Context): NumberFormat {
+        val currentLocale = LocaleManager.getCurrentLocale(context)
+        if (cachedLocale != currentLocale || cachedNumberFormat == null) {
+            cachedLocale = currentLocale
+            cachedNumberFormat = NumberFormat.getNumberInstance(currentLocale)
+        }
+        return cachedNumberFormat!!
+    }
+
+    /**
+     * Call this when locale changes to refresh the cached NumberFormat.
+     */
+    fun onLocaleChanged() {
+        cachedLocale = null
+        cachedNumberFormat = null
+    }
+
     class ViewHolder(
         private val binding: ItemPlaylistVideoBinding,
-        private val onVideoClick: (PlaylistItem, Int) -> Unit
+        private val onVideoClick: (PlaylistItem, Int) -> Unit,
+        private val numberFormat: NumberFormat
     ) : RecyclerView.ViewHolder(binding.root) {
 
         fun bind(uiItem: PlaylistVideoUiItem) {
@@ -63,11 +91,11 @@ class PlaylistVideosAdapter(
             binding.videoDuration.text = item.durationSeconds?.let { formatDuration(it) } ?: ""
             binding.videoDuration.isVisible = item.durationSeconds != null && item.durationSeconds > 0
 
-            // Format metadata (channel + views or just channel)
+            // Format metadata (channel + views or just channel) using cached NumberFormat
             val channelName = item.channelName ?: ""
             val views = item.viewCount?.let { count ->
-                // Use NumberFormat to safely handle large view counts without overflow
-                val formattedCount = NumberFormat.getInstance().format(count)
+                // Use cached NumberFormat to safely handle large view counts without overflow
+                val formattedCount = numberFormat.format(count)
                 context.getString(R.string.video_views_format, formattedCount)
             } ?: ""
 

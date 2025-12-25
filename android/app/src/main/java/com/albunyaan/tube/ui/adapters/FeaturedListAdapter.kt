@@ -1,5 +1,6 @@
 package com.albunyaan.tube.ui.adapters
 
+import android.content.Context
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
@@ -10,6 +11,7 @@ import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.databinding.ItemChannelBinding
 import com.albunyaan.tube.databinding.ItemPlaylistBinding
 import com.albunyaan.tube.databinding.ItemVideoListBinding
+import com.albunyaan.tube.locale.LocaleManager
 import com.albunyaan.tube.util.ImageLoading.loadThumbnailUrl
 import com.google.android.material.chip.Chip
 import java.text.NumberFormat
@@ -66,10 +68,12 @@ class FeaturedListAdapter(
     ) : RecyclerView.ViewHolder(binding.root) {
 
         fun bind(channel: ContentItem.Channel) {
+            val context = binding.root.context
             binding.channelName.text = channel.name
 
-            val formattedSubs = NumberFormat.getInstance().format(channel.subscribers)
-            binding.subscriberCount.text = binding.root.context.getString(
+            val appLocale = LocaleManager.getCurrentLocale(context)
+            val formattedSubs = NumberFormat.getNumberInstance(appLocale).format(channel.subscribers)
+            binding.subscriberCount.text = context.getString(
                 R.string.channel_subscribers_format,
                 formattedSubs
             )
@@ -86,7 +90,8 @@ class FeaturedListAdapter(
             val remainingCount = categories.size - 1
 
             val chipText = if (remainingCount > 0) {
-                "$firstCategory +$remainingCount"
+                val formattedCount = NumberFormat.getNumberInstance(appLocale).format(remainingCount)
+                context.getString(R.string.category_with_overflow, firstCategory, formattedCount)
             } else {
                 firstCategory
             }
@@ -114,8 +119,13 @@ class FeaturedListAdapter(
     ) : RecyclerView.ViewHolder(binding.root) {
 
         fun bind(playlist: ContentItem.Playlist) {
+            val context = binding.root.context
             binding.playlistTitle.text = playlist.title
-            binding.playlistMeta.text = "${playlist.itemCount} items"
+            binding.playlistMeta.text = context.resources.getQuantityString(
+                R.plurals.playlist_item_count,
+                playlist.itemCount,
+                playlist.itemCount
+            )
 
             binding.playlistThumbnail.loadThumbnailUrl(playlist.thumbnailUrl)
 
@@ -143,28 +153,22 @@ class FeaturedListAdapter(
     ) : RecyclerView.ViewHolder(binding.root) {
 
         fun bind(video: ContentItem.Video) {
+            val context = binding.root.context
+            val res = context.resources
             binding.videoTitle.text = video.title
             binding.videoDuration.text = formatDuration(video.durationSeconds)
 
-            val views = video.viewCount?.let {
-                NumberFormat.getInstance().format(it) + " views"
+            // Format metadata using app's per-app locale
+            val appLocale = LocaleManager.getCurrentLocale(context)
+            val views = video.viewCount?.let { viewCount ->
+                val formattedCount = NumberFormat.getNumberInstance(appLocale).format(viewCount)
+                res.getQuantityString(
+                    R.plurals.video_views,
+                    safeQuantityForPlural(viewCount),
+                    formattedCount
+                )
             } ?: ""
-            val timeAgo = if (video.uploadedDaysAgo > 0) {
-                when {
-                    video.uploadedDaysAgo == 1 -> "1 day ago"
-                    video.uploadedDaysAgo < 7 -> "${video.uploadedDaysAgo} days ago"
-                    video.uploadedDaysAgo < 30 -> {
-                        val weeks = video.uploadedDaysAgo / 7
-                        if (weeks == 1) "1 week ago" else "$weeks weeks ago"
-                    }
-                    else -> {
-                        val months = video.uploadedDaysAgo / 30
-                        if (months == 1) "1 month ago" else "$months months ago"
-                    }
-                }
-            } else {
-                "today"
-            }
+            val timeAgo = formatTimeAgo(context, video.uploadedDaysAgo)
 
             binding.videoMeta.text = if (views.isNotEmpty()) {
                 "$views • $timeAgo"
@@ -199,6 +203,30 @@ class FeaturedListAdapter(
             } else {
                 String.format(Locale.US, "%d:%02d", mins, secs)
             }
+        }
+
+        private fun formatTimeAgo(context: Context, daysAgo: Int): String {
+            val res = context.resources
+            return when {
+                daysAgo <= 0 -> context.getString(R.string.video_uploaded_today)
+                daysAgo < 7 -> res.getQuantityString(R.plurals.video_uploaded_days_ago, daysAgo, daysAgo)
+                daysAgo < 30 -> {
+                    val weeks = daysAgo / 7
+                    res.getQuantityString(R.plurals.time_ago_weeks, weeks, weeks)
+                }
+                daysAgo < 365 -> {
+                    val months = daysAgo / 30
+                    res.getQuantityString(R.plurals.time_ago_months, months, months)
+                }
+                else -> {
+                    val years = daysAgo / 365
+                    res.getQuantityString(R.plurals.time_ago_years, years, years)
+                }
+            }
+        }
+
+        private fun safeQuantityForPlural(count: Long): Int {
+            return count.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         }
     }
 

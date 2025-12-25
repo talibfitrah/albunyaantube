@@ -13,6 +13,7 @@ import androidx.lifecycle.lifecycleScope
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.channel.ChannelHeader
 import com.albunyaan.tube.databinding.FragmentChannelAboutTabBinding
+import com.albunyaan.tube.locale.LocaleManager
 import com.albunyaan.tube.ui.detail.ChannelDetailViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.lifecycle.withCreationCallback
@@ -154,10 +155,12 @@ class ChannelAboutTabFragment : Fragment(R.layout.fragment_channel_about_tab) {
                 locationRow.isVisible = false
             }
 
-            // Joined date
+            // Joined date - use app's per-app locale for date formatting
             if (header.joinedDate != null) {
                 joinedRow.isVisible = true
+                val appLocale = LocaleManager.getCurrentLocale(requireContext())
                 val dateFormatter = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)
+                    .withLocale(appLocale)
                     .withZone(ZoneId.systemDefault())
                 joinedLabel.text = getString(R.string.channel_joined_date, dateFormatter.format(header.joinedDate))
                 hasAnyInfo = true
@@ -183,7 +186,8 @@ class ChannelAboutTabFragment : Fragment(R.layout.fragment_channel_about_tab) {
     }
 
     private fun formatNumber(number: Long): String {
-        return NumberFormat.getInstance().format(number)
+        val appLocale = LocaleManager.getCurrentLocale(requireContext())
+        return NumberFormat.getNumberInstance(appLocale).format(number)
     }
 
     private fun openUrl(url: String) {

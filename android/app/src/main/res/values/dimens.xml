@@ -176,4 +176,13 @@
     <integer name="channel_shorts_span_count">2</integer>
     <integer name="channel_short_thumbnail_ratio_width">9</integer>
     <integer name="channel_short_thumbnail_ratio_height">16</integer>
+
+    <!-- Progress Indicator -->
+    <dimen name="progress_indicator_size">32dp</dimen>
+    <dimen name="progress_indicator_track_thickness">3dp</dimen>
+
+    <!-- Splash Screen -->
+    <dimen name="splash_logo_size">160dp</dimen>
+    <dimen name="splash_title_size">32sp</dimen>
+    <dimen name="splash_slide_distance">30dp</dimen>
 </resources>

@@ -94,4 +94,8 @@
     <!-- Download/Favorite List Item Thumbnail (Tablet - larger for readability) -->
     <dimen name="favorite_thumbnail_width">160dp</dimen>
     <dimen name="favorite_thumbnail_height">90dp</dimen>
+
+    <!-- Splash Screen (Tablet) -->
+    <dimen name="splash_logo_size">220dp</dimen>
+    <dimen name="splash_title_size">40sp</dimen>
 </resources>

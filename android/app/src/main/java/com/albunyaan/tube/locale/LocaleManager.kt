@@ -2,6 +2,7 @@ package com.albunyaan.tube.locale
 
 import android.content.Context
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.os.ConfigurationCompat
 import androidx.core.os.LocaleListCompat
 import com.albunyaan.tube.R
 import com.albunyaan.tube.preferences.SettingsPreferences
@@ -125,6 +126,13 @@ object LocaleManager {
 
     /**
      * Get the current app locale.
+     *
+     * Resolution order:
+     * 1. AppCompatDelegate.getApplicationLocales() - the per-app locale set via setApplicationLocales()
+     * 2. Locale.getDefault() - system default as final fallback
+     *
+     * Note: After applyStoredLocale() is called on startup, getApplicationLocales() will
+     * always return the applied locale. The fallback only applies during very early startup.
      */
     fun getCurrentLocale(): Locale {
         val locales = AppCompatDelegate.getApplicationLocales()
@@ -132,6 +140,34 @@ object LocaleManager {
             Locale.getDefault()
         } else {
             locales[0] ?: Locale.getDefault()
+        }
+    }
+
+    /**
+     * Get the current app locale with context-aware fallback.
+     *
+     * Resolution order:
+     * 1. AppCompatDelegate.getApplicationLocales() - the per-app locale set via setApplicationLocales()
+     * 2. ConfigurationCompat.getLocales() - respects per-app locale on Android 13+
+     * 3. Locale.getDefault() - system default as final fallback
+     *
+     * Use this variant when you have a Context and need the most configuration-aware resolution,
+     * particularly during early startup before applyStoredLocale() is called.
+     */
+    fun getCurrentLocale(context: Context): Locale {
+        val appLocales = AppCompatDelegate.getApplicationLocales()
+        return if (!appLocales.isEmpty) {
+            appLocales[0] ?: Locale.getDefault()
+        } else {
+            // Fall back to configuration locale.
+            // TODO: Verify that ConfigurationCompat.getLocales() respects per-app locale on
+            //  Android 13+ (API 33). See: https://developer.android.com/guide/topics/resources/app-languages
+            val configLocales = ConfigurationCompat.getLocales(context.resources.configuration)
+            if (configLocales.isEmpty) {
+                Locale.getDefault()
+            } else {
+                configLocales[0] ?: Locale.getDefault()
+            }
         }
     }
 

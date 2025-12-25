@@ -59,6 +59,10 @@ data class ChannelShort(
 
 /**
  * Live stream or upcoming stream from a channel's Live tab.
+ *
+ * For past/recorded streams: [durationSeconds] and [publishedTime] are populated.
+ * For live streams: [isLiveNow] is true, [durationSeconds] is null (or 0).
+ * For upcoming streams: [isUpcoming] is true, [scheduledStartTime] may be populated.
  */
 data class ChannelLiveStream(
     val id: String,
@@ -68,7 +72,11 @@ data class ChannelLiveStream(
     val isUpcoming: Boolean,
     val scheduledStartTime: Instant?,
     val viewCount: Long?,
-    val uploaderName: String?
+    val uploaderName: String?,
+    /** Duration in seconds for past/recorded streams. Null for live/upcoming. */
+    val durationSeconds: Int?,
+    /** Human-readable publish/stream time from NewPipe (e.g., "2 weeks ago", "Streamed 3 days ago") */
+    val publishedTime: String?
 )
 
 /**

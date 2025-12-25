@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Footer item for RecyclerView pagination: shows Load More button, loading spinner, or error -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:paddingStart="@dimen/spacing_md"
+    android:paddingEnd="@dimen/spacing_md"
+    android:paddingTop="@dimen/spacing_lg"
+    android:paddingBottom="@dimen/spacing_lg">
+
+    <!-- Load More Button (shown when autofill capped but more pages exist) -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/loadMoreButton"
+        style="@style/Widget.Material3.Button.TextButton"
+        android:layout_width="wrap_content"
+        android:layout_height="@dimen/touch_target_button"
+        android:layout_gravity="center"
+        android:text="@string/load_more"
+        android:visibility="gone"
+        app:icon="@drawable/ic_expand_more"
+        app:iconGravity="end"
+        tools:visibility="visible" />
+
+    <!-- Loading Indicator (shown when appending) -->
+    <com.google.android.material.progressindicator.CircularProgressIndicator
+        android:id="@+id/loadingIndicator"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:contentDescription="@string/loading_more"
+        android:indeterminate="true"
+        android:visibility="gone"
+        app:indicatorSize="@dimen/progress_indicator_size"
+        app:trackThickness="@dimen/progress_indicator_track_thickness"
+        tools:visibility="gone" />
+
+    <!-- Error + Retry (shown when append failed) -->
+    <LinearLayout
+        android:id="@+id/errorContainer"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:visibility="gone"
+        tools:visibility="gone">
+
+        <TextView
+            android:id="@+id/errorText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/load_more_error"
+            android:textColor="?attr/colorError"
+            android:textSize="@dimen/text_body" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/retryButton"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/touch_target_button"
+            android:layout_marginTop="@dimen/spacing_xs"
+            android:text="@string/retry" />
+
+    </LinearLayout>
+
+</FrameLayout>

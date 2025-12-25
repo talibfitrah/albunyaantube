@@ -8,6 +8,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.databinding.ItemChannelBinding
+import com.albunyaan.tube.locale.LocaleManager
 import com.albunyaan.tube.util.ImageLoading.loadThumbnailUrl
 import com.google.android.material.chip.Chip
 import java.text.NumberFormat
@@ -34,11 +35,14 @@ class ChannelAdapter(
         private val onChannelClick: (ContentItem.Channel) -> Unit
     ) : RecyclerView.ViewHolder(binding.root) {
 
+        private val context get() = binding.root.context
+
         fun bind(channel: ContentItem.Channel) {
             binding.channelName.text = channel.name
 
-            val formattedSubs = NumberFormat.getInstance().format(channel.subscribers)
-            binding.subscriberCount.text = binding.root.context.getString(
+            val appLocale = LocaleManager.getCurrentLocale(context)
+            val formattedSubs = NumberFormat.getNumberInstance(appLocale).format(channel.subscribers)
+            binding.subscriberCount.text = context.getString(
                 R.string.channel_subscribers_format,
                 formattedSubs
             )
@@ -57,7 +61,8 @@ class ChannelAdapter(
             val remainingCount = categories.size - 1
 
             val chipText = if (remainingCount > 0) {
-                "$firstCategory +$remainingCount"
+                val formattedCount = NumberFormat.getNumberInstance(appLocale).format(remainingCount)
+                context.getString(R.string.category_with_overflow, firstCategory, formattedCount)
             } else {
                 firstCategory
             }

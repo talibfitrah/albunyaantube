@@ -5,11 +5,10 @@ import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
-import coil.load
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.channel.ChannelShort
 import com.albunyaan.tube.databinding.ItemChannelShortBinding
-import java.text.NumberFormat
+import com.albunyaan.tube.util.ImageLoading.loadYouTubeThumbnail
 
 /**
  * Adapter for Shorts in the Shorts tab.
@@ -46,12 +45,14 @@ class ChannelShortsAdapter(
             } ?: ""
             binding.shortViews.text = views
 
-            // Load thumbnail
-            binding.shortThumbnail.load(short.thumbnailUrl) {
-                placeholder(R.drawable.thumbnail_placeholder)
-                error(R.drawable.thumbnail_placeholder)
-                crossfade(true)
-            }
+            // Load thumbnail with automatic fallback for Shorts
+            // Shorts may use different thumbnail patterns that fail more often
+            binding.shortThumbnail.loadYouTubeThumbnail(
+                primaryUrl = short.thumbnailUrl,
+                videoId = short.id,
+                isShort = true,
+                placeholder = R.drawable.thumbnail_placeholder
+            )
 
             binding.root.setOnClickListener {
                 onShortClick(short)
