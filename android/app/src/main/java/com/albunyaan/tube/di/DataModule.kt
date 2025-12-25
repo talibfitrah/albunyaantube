@@ -128,8 +128,11 @@ object DataModule {
 
     @Provides
     @Singleton
-    fun provideOkHttpDownloader(okHttpClient: OkHttpClient): OkHttpDownloader {
-        return OkHttpDownloader(okHttpClient)
+    fun provideOkHttpDownloader(
+        okHttpClient: OkHttpClient,
+        @ApplicationContext context: Context
+    ): OkHttpDownloader {
+        return OkHttpDownloader(okHttpClient, context.cacheDir)
     }
 
     @Provides

@@ -20,6 +20,7 @@ import org.schabi.newpipe.extractor.linkhandler.ListLinkHandler
 import org.schabi.newpipe.extractor.localization.ContentCountry
 import org.schabi.newpipe.extractor.localization.Localization
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo
+import org.schabi.newpipe.extractor.services.youtube.extractors.YoutubeStreamExtractor
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeChannelLinkHandlerFactory
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubePlaylistLinkHandlerFactory
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeStreamLinkHandlerFactory
@@ -435,6 +436,13 @@ class NewPipeExtractorClient(
             hasVideoOnlyTracks = videoTracks.any { it.isVideoOnly }
         )
 
+        if (hlsStreamUrl == null && dashStreamUrl == null && BuildConfig.DEBUG) {
+            android.util.Log.d(
+                ADAPTIVE_PROBE_TAG,
+                "callsite: vid=$streamId type=${streamType.name} dur=${durationSeconds ?: -1}"
+            )
+        }
+
         // Detect live streams (LIVE_STREAM or AUDIO_LIVE_STREAM)
         val isLiveStream = streamType == StreamType.LIVE_STREAM ||
             streamType == StreamType.AUDIO_LIVE_STREAM
@@ -717,6 +725,10 @@ class NewPipeExtractorClient(
                 NewPipe.init(downloader, localization, contentCountry)
                 NewPipe.setupLocalization(localization, contentCountry)
             }
+            if (BuildConfig.DEBUG) {
+                YoutubeStreamExtractor.setFetchIosClient(true)
+                android.util.Log.d(ADAPTIVE_PROBE_TAG, "initialize: fetchIosClient=true")
+            }
         }
     }
 
@@ -750,5 +762,9 @@ class NewPipeExtractorClient(
         // PR6.2 Measurement: Log tag for HLS/DASH manifest availability research
         // Filter with: adb logcat -s AdaptiveAvail
         private const val ADAPTIVE_AVAIL_TAG = "AdaptiveAvail"
+
+        // PR6.2 Debug: Log tag for probe callsite + iOS flag
+        // Filter with: adb logcat -s AdaptiveProbe
+        private const val ADAPTIVE_PROBE_TAG = "AdaptiveProbe"
     }
 }

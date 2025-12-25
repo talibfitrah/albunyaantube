@@ -1,0 +1,1136 @@
+12-25 17:32:29.010 D/ExtractionRateLimiter(11759): Cleanup complete: 0 video records remaining
+12-25 17:32:29.011 D/ExtractionRateLimiter(11759): Permit acquired for cSQP5o4zXt0 (PREFETCH)
+12-25 17:32:29.011 D/StreamPrefetch(11759): Starting prefetch for cSQP5o4zXt0
+12-25 17:32:29.013 D/ExtractorMetrics(11759): extractor_cache_miss type=VIDEOS misses=1
+12-25 17:32:29.089 D/StreamPrefetch(11759): Awaiting in-flight prefetch for cSQP5o4zXt0
+12-25 17:32:29.090 I/ExoPlayerImpl(11759): Init 501eb6b [AndroidXMedia3/1.4.1] [emu64xa, sdk_gphone64_x86_64, Google, 36]
+12-25 17:32:29.097 I/ActivityManager(  681): Background started FGS: Allowed [callingPackage: com.albunyaan.tube; callingUid: 10222; uidState: TOP ; uidBFSL: [BFSL]; intent: Intent { act=com.albunyaan.tube.LOCAL_BIND xflg=0x4 cmp=com.albunyaan.tube/.player.PlaybackService }; code:PROC_STATE_TOP; tempAllowListReason:<null>; allowWiu:12; targetSdkVersion:34; callerTargetSdkVersion:34; startForegroundCount:15; bindFromPackage:null: isBindService:true]
+12-25 17:32:29.098 D/PlayerFragment(11759): Started PlaybackService for foreground notification
+12-25 17:32:29.114 D/PlaybackService(11759): Initializing MediaSession with player (playWhenReady=true, state=1)
+12-25 17:32:29.121 I/PlaybackService(11759): MediaSession initialized successfully - notification should appear when playback starts
+12-25 17:32:29.121 D/PlaybackService(11759): setPlayerUiVisible: true
+12-25 17:32:29.121 D/PlaybackService(11759): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=false, isPlaying=false, state=1
+12-25 17:32:29.123 D/PlaybackService(11759): Foreground mode stopped (UI visible)
+12-25 17:32:29.123 D/PlaybackService(11759): onStartCommand called (action=null, flags=0, startId=15)
+12-25 17:32:30.980 D/AdaptiveAvail(11759): {"vid":"cSQP5o4zXt0","hasHls":true,"hasDash":false,"adaptive":"HLS_ONLY","streamType":"VIDEO_STREAM","durSec":332,"videoTracks":13,"audioTracks":7,"hasVideoOnly":true}
+12-25 17:32:30.980 D/ExtractorMetrics(11759): stream_resolve_success videoId=cSQP5o4zXt0 durationMs=1967
+12-25 17:32:30.980 D/ExtractionRateLimiter(11759): Extraction success for cSQP5o4zXt0 - backoff reset
+12-25 17:32:30.980 D/StreamPrefetch(11759): Prefetch completed for cSQP5o4zXt0
+12-25 17:32:30.980 D/StreamPrefetch(11759): Prefetch consumed (awaited) for cSQP5o4zXt0
+12-25 17:32:30.980 D/PlayerViewModel(11759): Using tap-prefetched stream for cSQP5o4zXt0
+12-25 17:32:30.983 D/PlayerFragment(11759): Preparing stream: id=cSQP5o4zXt0, audioOnly=false, expectedUrl=https://manifest.googlevideo.com/api/manifest/hls_variant/expire/1766701950/ei/HmdNac-NLJ_i6dsP3IG90Qo/ip/105.155.60.118/id/71240fe68e335edd/source/youtube/requiressl/yes/xpc/EgVo2aDSNQ%3D%3D/playback_host/rr3---sn-p5h-gc5e7.googlevideo.com/cps/25/met/1766680350%2C/mh/Qb/mm/31%2C26/mn/sn-p5h-gc5e7%2Csn-hgn7yn7e/ms/au%2Conr/mv/m/mvi/3/pl/22/rms/au%2Cau/tx/51539831/txs/51539830%2C51539831/hfr/1/demuxed/1/tts_caps/1/maudio/1/initcwndbps/933750/bui/AYUSA3BAUkiAAJvdVTwroF_MJhZgGd-twWZW14_Jk1bFONV-KMknwJKUidNjjgQbpWNp3dTukBZG8QTb/spc/wH4Qq-RoLwHWiEcmOFG8BItFooX3vHHwxOvj4IlQgcayUcyXQxW0rJ2KWdOg6hXm/vprv/1/go/1/rqh/5/mt/1766679925/fvip/2/nvgoi/1/short_key/1/ncsapi/1/keepalive/yes/fexp/51552689%2C51565115%2C51565681%2C51580968/dover/13/itag/0/playlist_type/DVR/sparams/expire%2Cei%2Cip%2Cid%2Csource%2Crequiressl%2Cxpc%2Ctx%2Ctxs%2Chfr%2Cdemuxed%2Ctts_caps%2Cmaudio%2Cbui%2Cspc%2Cvprv%2Cgo%2Crqh%2Citag%2Cplaylist_type/sig/AJfQdSswRAIgX43ybwRG6CB-Av7cMtxIyNtWywGlGEktZJ8my7bImlQCIGA4bFxVloj_Q5ed04MHnPJQs1hQ_NN9SctHR5vESHkL/lsparams/playback_host%2Ccps%2Cmet%2Cmh%2Cmm%2Cmn%2Cms%2Cmv%2Cmvi%2Cpl%2Crms%2Cinitcwndbps/lsig/APaTxxMwRQIhAOWaRo8IN0uWhpP0rFNS7yyd-ymHDvXumNhG6v7GZF9KAiAh2r4ST5K7Whwb_7kUUh2YEsCB8sAmvd72NQHh7-rneA%3D%3D/file/index.m3u8?, isQualitySwitch=false
+12-25 17:32:30.983 D/PlayerFragment(11759): Created media source: isAdaptive=true, type=HLS, qualityCap=nullp, actualSource=manifest.googlevideo.com#de1466ea
+12-25 17:32:30.984 D/PlayerFragment(11759): Track selector: cleared constraints (ABR free)
+12-25 17:32:30.987 D/PlayerFragment(11759): onPlaybackStateChanged: state=2
+12-25 17:32:30.988 D/PlaybackService(11759): onPlaybackStateChanged: state=2, playWhenReady=true
+12-25 17:32:30.988 D/PlaybackService(11759): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=false, state=2
+12-25 17:32:30.988 D/PlaybackService(11759): Foreground mode stopped (UI visible)
+12-25 17:32:30.988 D/PlayerFragment(11759): Stream prepared successfully: cSQP5o4zXt0, isAdaptive=true, type=HLS, actualSource=manifest.googlevideo.com#de1466ea
+12-25 17:32:30.990 D/PlaybackService(11759): onMediaMetadataChanged: title=بَـسْـمِـلْ | طـفـلـة ~ تـمـيـم الـجـهنـي
+12-25 17:32:30.990 D/PlaybackService(11759): setCurrentVideoId: cSQP5o4zXt0
+12-25 17:32:30.990 D/PlayerFragment(11759): Synced MediaSession metadata for: بَـسْـمِـلْ | طـفـلـة ~ تـمـيـم الـجـهنـي (forced)
+12-25 17:32:31.027 D/PlaybackService(11759): onMediaMetadataChanged: title=بَـسْـمِـلْ | طـفـلـة ~ تـمـيـم الـجـهنـي
+12-25 17:32:32.920 D/PlayerFragment(11759): onVideoSizeChanged: width=1920, height=1080, pixelWidthHeightRatio=1.0, playerViewResizeMode=0
+12-25 17:32:32.935 D/PlayerFragment(11759): onPlaybackStateChanged: state=3
+12-25 17:32:32.936 D/PlaybackService(11759): onPlaybackStateChanged: state=3, playWhenReady=true
+12-25 17:32:32.936 D/PlaybackService(11759): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=true, state=3
+12-25 17:32:32.936 D/PlaybackService(11759): Foreground mode stopped (UI visible)
+12-25 17:32:32.936 D/PlayerFragment(11759): onIsPlayingChanged: isPlaying=true, hasAutoHidden=false
+12-25 17:32:32.936 D/ExtractionRateLimiter(11759): Reset rate limit state for cSQP5o4zXt0
+12-25 17:32:32.937 D/PlaybackService(11759): onIsPlayingChanged: isPlaying=true, uiVisible=true
+12-25 17:32:32.937 D/PlaybackService(11759): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=true, state=3
+12-25 17:32:32.937 D/PlaybackService(11759): Foreground mode stopped (UI visible)
+12-25 17:32:35.937 D/PlayerFragment(11759): Auto-hiding controls: BEFORE - resizeMode=0, width=1280, height=720
+12-25 17:32:35.960 D/PlayerFragment(11759): Auto-hiding controls: AFTER - resizeMode=0, width=1280, height=720
+12-25 17:32:37.195 D/PlayerFragment(11759): Controller visibility changed: 0, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:32:37.208 D/PlayerFragment(11759): Controller visibility changed: 0, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:32:37.212 D/PlayerFragment(11759): After controller visibility change layout: resizeMode=0, width=1280, height=720
+12-25 17:32:37.212 D/PlayerFragment(11759): After controller visibility change layout: resizeMode=0, width=1280, height=720
+12-25 17:32:38.997 D/PlaybackService(11759): setPlayerUiVisible: false
+12-25 17:32:38.997 D/PlaybackService(11759): updateForegroundState: appInForeground=true, playerUiVisible=false, playbackActive=true, isPlaying=true, state=3
+12-25 17:32:38.998 D/PlaybackService(11759): Entering foreground mode
+12-25 17:32:38.999 I/ActivityManager(  681): Background started FGS: Allowed [callingPackage: com.albunyaan.tube; callingUid: 10222; uidState: TOP ; uidBFSL: [BFSL]; intent: Intent { act=com.albunyaan.tube.LOCAL_BIND cmp=com.albunyaan.tube/.player.PlaybackService }; code:PROC_STATE_TOP; tempAllowListReason:<MediaSessionRecord:android.support.v4.media.session.command.GET_EXTRA_BINDER,reasonCode:MEDIA_SESSION_CALLBACK,duration:10000,callingUid:1000>; allowWiu:12; targetSdkVersion:34; callerTargetSdkVersion:34; startForegroundCount:15; bindFromPackage:null: isBindService:false]
+12-25 17:32:39.000 D/PlaybackService(11759): Foreground mode started
+12-25 17:32:39.087 D/PlaybackService(11759): Releasing MediaSession
+12-25 17:32:39.091 D/PlayerFragment(11759): Controller visibility changed: 0, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:32:39.097 D/PlayerFragment(11759): Controller visibility changed: 8, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:32:39.182 I/ExoPlayerImpl(11759): Release 501eb6b [AndroidXMedia3/1.4.1] [emu64xa, sdk_gphone64_x86_64, Google, 36] [media3.common, media3.ui, media3.exoplayer, media3.decoder, media3.session, media3.exoplayer.hls, media3.database, media3.datasource, media3.extractor]
+12-25 17:32:42.044 D/ExtractionRateLimiter(11759): Permit acquired for 6gzSILMuzq8 (PREFETCH)
+12-25 17:32:42.044 D/StreamPrefetch(11759): Starting prefetch for 6gzSILMuzq8
+12-25 17:32:42.044 D/ExtractorMetrics(11759): extractor_cache_miss type=VIDEOS misses=1
+12-25 17:32:42.115 D/StreamPrefetch(11759): Awaiting in-flight prefetch for 6gzSILMuzq8
+12-25 17:32:42.116 I/ExoPlayerImpl(11759): Init 34e1a54 [AndroidXMedia3/1.4.1] [emu64xa, sdk_gphone64_x86_64, Google, 36]
+12-25 17:32:42.120 I/ActivityManager(  681): Background started FGS: Allowed [callingPackage: com.albunyaan.tube; callingUid: 10222; uidState: TOP ; uidBFSL: [BFSL]; intent: Intent { act=com.albunyaan.tube.LOCAL_BIND xflg=0x4 cmp=com.albunyaan.tube/.player.PlaybackService }; code:PROC_STATE_TOP; tempAllowListReason:<null>; allowWiu:12; targetSdkVersion:34; callerTargetSdkVersion:34; startForegroundCount:16; bindFromPackage:null: isBindService:true]
+12-25 17:32:42.121 D/PlayerFragment(11759): Started PlaybackService for foreground notification
+12-25 17:32:42.132 D/PlaybackService(11759): Initializing MediaSession with player (playWhenReady=true, state=1)
+12-25 17:32:42.137 I/PlaybackService(11759): MediaSession initialized successfully - notification should appear when playback starts
+12-25 17:32:42.137 D/PlaybackService(11759): setPlayerUiVisible: true
+12-25 17:32:42.137 D/PlaybackService(11759): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=false, isPlaying=false, state=1
+12-25 17:32:42.138 D/PlaybackService(11759): Foreground mode stopped (UI visible)
+12-25 17:32:42.138 D/PlaybackService(11759): onStartCommand called (action=null, flags=0, startId=16)
+12-25 17:32:43.549 D/AdaptiveAvail(11759): {"vid":"6gzSILMuzq8","hasHls":true,"hasDash":false,"adaptive":"HLS_ONLY","streamType":"VIDEO_STREAM","durSec":183,"videoTracks":5,"audioTracks":3,"hasVideoOnly":true}
+12-25 17:32:43.549 D/ExtractorMetrics(11759): stream_resolve_success videoId=6gzSILMuzq8 durationMs=1504
+12-25 17:32:43.549 D/ExtractionRateLimiter(11759): Extraction success for 6gzSILMuzq8 - backoff reset
+12-25 17:32:43.549 D/StreamPrefetch(11759): Prefetch completed for 6gzSILMuzq8
+12-25 17:32:43.549 D/StreamPrefetch(11759): Prefetch consumed (awaited) for 6gzSILMuzq8
+12-25 17:32:43.549 D/PlayerViewModel(11759): Using tap-prefetched stream for 6gzSILMuzq8
+12-25 17:32:43.552 D/PlayerFragment(11759): Preparing stream: id=6gzSILMuzq8, audioOnly=false, expectedUrl=https://manifest.googlevideo.com/api/manifest/hls_variant/expire/1766701963/ei/K2dNad_FGbOHgMMP_tbP0QQ/ip/105.155.60.118/id/ea0cd220b32eceaf/source/youtube/requiressl/yes/xpc/EgVo2aDSNQ%3D%3D/playback_host/rr1---sn-p5h-gc5y.googlevideo.com/cps/1/met/1766680363%2C/mh/Og/mm/31%2C26/mn/sn-p5h-gc5y%2Csn-hgn7rn7r/ms/au%2Conr/mv/m/mvi/1/pl/22/rms/au%2Cau/hfr/1/demuxed/1/tts_caps/1/maudio/1/initcwndbps/936250/bui/AYUSA3AnQEUOlynqi59x3QUrXCYYpii_CKFiNAEH2df22mAfHfTr1U73pemQKEAHL-i32f-o1teTCTFn/spc/wH4Qqw5CheLnEFXrVo_sCmY8LNy2c_uLb5rJwUpo4NoQZrPdCNXGq9IHMILK2w/vprv/1/go/1/rqh/5/mt/1766679925/fvip/3/nvgoi/1/short_key/1/ncsapi/1/keepalive/yes/fexp/51552689%2C51565115%2C51565681%2C51580968/dover/13/itag/0/playlist_type/DVR/sparams/expire%2Cei%2Cip%2Cid%2Csource%2Crequiressl%2Cxpc%2Chfr%2Cdemuxed%2Ctts_caps%2Cmaudio%2Cbui%2Cspc%2Cvprv%2Cgo%2Crqh%2Citag%2Cplaylist_type/sig/AJfQdSswRgIhAKSMfOer_G7WsyVWVkMCFIm0fBA_oLkjOrYT4X95N9IhAiEAkmRbiSnlQKTDprJGFepvqQcsyX0lSNJu-vNxQQXaTvU%3D/lsparams/playback_host%2Ccps%2Cmet%2Cmh%2Cmm%2Cmn%2Cms%2Cmv%2Cmvi%2Cpl%2Crms%2Cinitcwndbps/lsig/APaTxxMwRgIhAIlaQkmYKhP5z_QD4n9xHGWUvNlJEoCz3XXT5zHYZFH0AiEAwn43aeZGwRd1suVCJnRlSwhyJJCJ6a-2UkB99GdfQrE%3D/file/index.m3u8?, isQualitySwitch=false
+12-25 17:32:43.552 D/PlayerFragment(11759): Created media source: isAdaptive=true, type=HLS, qualityCap=nullp, actualSource=manifest.googlevideo.com#ba28f0a8
+12-25 17:32:43.552 D/PlayerFragment(11759): Track selector: cleared constraints (ABR free)
+12-25 17:32:43.556 D/PlayerFragment(11759): onPlaybackStateChanged: state=2
+12-25 17:32:43.556 D/PlaybackService(11759): onPlaybackStateChanged: state=2, playWhenReady=true
+12-25 17:32:43.556 D/PlaybackService(11759): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=false, state=2
+12-25 17:32:43.556 D/PlaybackService(11759): Foreground mode stopped (UI visible)
+12-25 17:32:43.556 D/PlayerFragment(11759): Stream prepared successfully: 6gzSILMuzq8, isAdaptive=true, type=HLS, actualSource=manifest.googlevideo.com#ba28f0a8
+12-25 17:32:43.558 D/PlaybackService(11759): onMediaMetadataChanged: title=كليب رمضان
+12-25 17:32:43.558 D/PlaybackService(11759): setCurrentVideoId: 6gzSILMuzq8
+12-25 17:32:43.558 D/PlayerFragment(11759): Synced MediaSession metadata for: كليب رمضان (forced)
+12-25 17:32:43.624 D/PlaybackService(11759): onMediaMetadataChanged: title=كليب رمضان
+12-25 17:32:48.012 E/ExoPlayerImplInternal(11759): Playback error
+12-25 17:32:48.012 E/ExoPlayerImplInternal(11759):   androidx.media3.exoplayer.ExoPlaybackException: Source error
+12-25 17:32:48.012 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.ExoPlayerImplInternal.handleIoException(ExoPlayerImplInternal.java:736)
+12-25 17:32:48.012 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.ExoPlayerImplInternal.handleMessage(ExoPlayerImplInternal.java:708)
+12-25 17:32:48.012 E/ExoPlayerImplInternal(11759):       at android.os.Handler.dispatchMessage(Handler.java:106)
+12-25 17:32:48.012 E/ExoPlayerImplInternal(11759):       at android.os.Looper.loopOnce(Looper.java:248)
+12-25 17:32:48.012 E/ExoPlayerImplInternal(11759):       at android.os.Looper.loop(Looper.java:338)
+12-25 17:32:48.012 E/ExoPlayerImplInternal(11759):       at android.os.HandlerThread.run(HandlerThread.java:85)
+12-25 17:32:48.012 E/ExoPlayerImplInternal(11759):   Caused by: androidx.media3.datasource.HttpDataSource$InvalidResponseCodeException: Response code: 403
+12-25 17:32:48.012 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.DefaultHttpDataSource.open(DefaultHttpDataSource.java:397)
+12-25 17:32:48.012 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.DefaultDataSource.open(DefaultDataSource.java:275)
+12-25 17:32:48.012 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.TeeDataSource.open(TeeDataSource.java:54)
+12-25 17:32:48.012 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.cache.CacheDataSource.openNextSource(CacheDataSource.java:802)
+12-25 17:32:48.012 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.cache.CacheDataSource.open(CacheDataSource.java:615)
+12-25 17:32:48.012 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.hls.HlsMediaChunk.prepareExtraction(HlsMediaChunk.java:525)
+12-25 17:32:48.012 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.hls.HlsMediaChunk.feedDataToExtractor(HlsMediaChunk.java:498)
+12-25 17:32:48.012 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.hls.HlsMediaChunk.maybeLoadInitData(HlsMediaChunk.java:456)
+12-25 17:32:48.012 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.hls.HlsMediaChunk.load(HlsMediaChunk.java:421)
+12-25 17:32:48.012 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.upstream.Loader$LoadTask.run(Loader.java:421)
+12-25 17:32:48.012 E/ExoPlayerImplInternal(11759):       at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1156)
+12-25 17:32:48.012 E/ExoPlayerImplInternal(11759):       at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:651)
+12-25 17:32:48.012 E/ExoPlayerImplInternal(11759):       at java.lang.Thread.run(Thread.java:1119)
+12-25 17:32:48.013 D/PlayerFragment(11759): Stream already prepared with same source, skipping
+12-25 17:32:48.013 D/PlayerFragment(11759): onVideoSizeChanged: width=0, height=0, pixelWidthHeightRatio=1.0, playerViewResizeMode=0
+12-25 17:32:48.016 E/PlayerFragment(11759): Player error: ERROR_CODE_IO_BAD_HTTP_STATUS, retryCount=0, streamRefreshCount=0, http=403
+12-25 17:32:48.016 E/PlayerFragment(11759): androidx.media3.exoplayer.ExoPlaybackException: Source error
+12-25 17:32:48.016 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.ExoPlayerImplInternal.handleIoException(ExoPlayerImplInternal.java:736)
+12-25 17:32:48.016 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.ExoPlayerImplInternal.handleMessage(ExoPlayerImplInternal.java:708)
+12-25 17:32:48.016 E/PlayerFragment(11759): 	at android.os.Handler.dispatchMessage(Handler.java:106)
+12-25 17:32:48.016 E/PlayerFragment(11759): 	at android.os.Looper.loopOnce(Looper.java:248)
+12-25 17:32:48.016 E/PlayerFragment(11759): 	at android.os.Looper.loop(Looper.java:338)
+12-25 17:32:48.016 E/PlayerFragment(11759): 	at android.os.HandlerThread.run(HandlerThread.java:85)
+12-25 17:32:48.016 E/PlayerFragment(11759): Caused by: androidx.media3.datasource.HttpDataSource$InvalidResponseCodeException: Response code: 403
+12-25 17:32:48.016 E/PlayerFragment(11759): 	at androidx.media3.datasource.DefaultHttpDataSource.open(DefaultHttpDataSource.java:397)
+12-25 17:32:48.016 E/PlayerFragment(11759): 	at androidx.media3.datasource.DefaultDataSource.open(DefaultDataSource.java:275)
+12-25 17:32:48.016 E/PlayerFragment(11759): 	at androidx.media3.datasource.TeeDataSource.open(TeeDataSource.java:54)
+12-25 17:32:48.016 E/PlayerFragment(11759): 	at androidx.media3.datasource.cache.CacheDataSource.openNextSource(CacheDataSource.java:802)
+12-25 17:32:48.016 E/PlayerFragment(11759): 	at androidx.media3.datasource.cache.CacheDataSource.open(CacheDataSource.java:615)
+12-25 17:32:48.016 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.hls.HlsMediaChunk.prepareExtraction(HlsMediaChunk.java:525)
+12-25 17:32:48.016 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.hls.HlsMediaChunk.feedDataToExtractor(HlsMediaChunk.java:498)
+12-25 17:32:48.016 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.hls.HlsMediaChunk.maybeLoadInitData(HlsMediaChunk.java:456)
+12-25 17:32:48.016 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.hls.HlsMediaChunk.load(HlsMediaChunk.java:421)
+12-25 17:32:48.016 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.upstream.Loader$LoadTask.run(Loader.java:421)
+12-25 17:32:48.016 E/PlayerFragment(11759): 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1156)
+12-25 17:32:48.016 E/PlayerFragment(11759): 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:651)
+12-25 17:32:48.016 E/PlayerFragment(11759): 	at java.lang.Thread.run(Thread.java:1119)
+12-25 17:32:48.016 W/PlayerFragment(11759): Refreshing stream for 6gzSILMuzq8 at 0ms: source invalid/expired (ERROR_CODE_IO_BAD_HTTP_STATUS, http=403)
+12-25 17:32:48.016 D/ExtractionRateLimiter(11759): AUTO_RECOVERY bypasses global rate limit check
+12-25 17:32:48.016 D/ExtractionRateLimiter(11759): Permit acquired for 6gzSILMuzq8 (AUTO_RECOVERY)
+12-25 17:32:48.017 D/PlayerViewModel(11759): Force refresh requested for 6gzSILMuzq8, bypassing caches
+12-25 17:32:48.018 D/ExtractorMetrics(11759): extractor_cache_miss type=VIDEOS misses=1
+12-25 17:32:48.021 D/PlayerFragment(11759): Controller visibility changed: 0, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:32:48.022 D/PlayerFragment(11759): onPlaybackStateChanged: state=1
+12-25 17:32:48.022 D/PlaybackService(11759): onPlaybackStateChanged: state=1, playWhenReady=true
+12-25 17:32:48.022 D/PlaybackService(11759): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=false, isPlaying=false, state=1
+12-25 17:32:48.022 D/PlaybackService(11759): Foreground mode stopped (UI visible)
+12-25 17:32:48.025 D/PlayerFragment(11759): Controller visibility changed: 0, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:32:48.033 D/PlayerFragment(11759): After controller visibility change layout: resizeMode=0, width=1280, height=720
+12-25 17:32:48.033 D/PlayerFragment(11759): After controller visibility change layout: resizeMode=0, width=1280, height=720
+12-25 17:32:49.232 D/AdaptiveAvail(11759): {"vid":"6gzSILMuzq8","hasHls":true,"hasDash":false,"adaptive":"HLS_ONLY","streamType":"VIDEO_STREAM","durSec":183,"videoTracks":5,"audioTracks":3,"hasVideoOnly":true}
+12-25 17:32:49.232 D/ExtractorMetrics(11759): stream_resolve_success videoId=6gzSILMuzq8 durationMs=1214
+12-25 17:32:49.232 D/PlayerViewModel(11759): Stream resolved successfully on attempt 1
+12-25 17:32:49.232 D/ExtractionRateLimiter(11759): Extraction success for 6gzSILMuzq8 - backoff reset
+12-25 17:32:49.234 D/PlayerFragment(11759): Preparing stream: id=6gzSILMuzq8, audioOnly=false, expectedUrl=https://manifest.googlevideo.com/api/manifest/hls_variant/expire/1766701969/ei/MWdNafCfBoWY6dsPvtHE6Qs/ip/105.155.60.118/id/ea0cd220b32eceaf/source/youtube/requiressl/yes/xpc/EgVo2aDSNQ%3D%3D/playback_host/rr1---sn-p5h-gc5y.googlevideo.com/cps/0/met/1766680369%2C/mh/Og/mm/31%2C26/mn/sn-p5h-gc5y%2Csn-hgn7rn7r/ms/au%2Conr/mv/m/mvi/1/pl/22/rms/au%2Cau/tx/51539831/txs/51539830%2C51539831/hfr/1/demuxed/1/tts_caps/1/maudio/1/initcwndbps/936250/bui/AYUSA3DVc5O5SoMZY77Tvbg7XVnr9y66Dh5sxi6VE3iiLq4XJCzduFdFEivimsdi0h0lkxGr2i_pCTUQ/spc/wH4Qq_y5vXzB9FFqzuVPGMTKbaoXIWSnjHVtBi6K-D04XMRFmadToe1FrFAhuQ/vprv/1/go/1/rqh/5/mt/1766679925/fvip/3/nvgoi/1/short_key/1/ncsapi/1/keepalive/yes/fexp/51552689%2C51565116%2C51565681%2C51580968/dover/13/itag/0/playlist_type/DVR/sparams/expire%2Cei%2Cip%2Cid%2Csource%2Crequiressl%2Cxpc%2Ctx%2Ctxs%2Chfr%2Cdemuxed%2Ctts_caps%2Cmaudio%2Cbui%2Cspc%2Cvprv%2Cgo%2Crqh%2Citag%2Cplaylist_type/sig/AJfQdSswRQIgUwOnJovjQAqngXphlFj9m3_zLal8-9ACNnNVxlcQkKECIQD4rHxEX_AU_NgY0n_tc3c39yaeNNEYdTANLXoaCz253g%3D%3D/lsparams/playback_host%2Ccps%2Cmet%2Cmh%2Cmm%2Cmn%2Cms%2Cmv%2Cmvi%2Cpl%2Crms%2Cinitcwndbps/lsig/APaTxxMwRQIhANVBO5qz9rbgOOwiw7esx9NcD1gzfY4IMqGliKIKW2rbAiBmTzKQzqF1e-Gf-s8tL7Sv1BbMxcCZ3d_5hi5FsbdPPA%3D%3D/file/index.m3u8?, isQualitySwitch=false
+12-25 17:32:49.234 D/PlayerFragment(11759): Created media source: isAdaptive=true, type=HLS, qualityCap=nullp, actualSource=manifest.googlevideo.com#83531251
+12-25 17:32:49.234 D/PlayerFragment(11759): Track selector: cleared constraints (ABR free)
+12-25 17:32:49.237 D/PlaybackService(11759): onMediaMetadataChanged: title=null
+12-25 17:32:49.239 D/PlayerFragment(11759): onPlaybackStateChanged: state=2
+12-25 17:32:49.240 D/PlaybackService(11759): onPlaybackStateChanged: state=2, playWhenReady=true
+12-25 17:32:49.240 D/PlaybackService(11759): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=false, state=2
+12-25 17:32:49.240 D/PlaybackService(11759): Foreground mode stopped (UI visible)
+12-25 17:32:49.240 D/PlayerFragment(11759): Stream prepared successfully: 6gzSILMuzq8, isAdaptive=true, type=HLS, actualSource=manifest.googlevideo.com#83531251
+12-25 17:32:49.246 D/PlaybackService(11759): onMediaMetadataChanged: title=كليب رمضان
+12-25 17:32:49.246 D/PlayerFragment(11759): Synced MediaSession metadata for: كليب رمضان (forced)
+12-25 17:32:52.851 E/ExoPlayerImplInternal(11759): Playback error
+12-25 17:32:52.851 E/ExoPlayerImplInternal(11759):   androidx.media3.exoplayer.ExoPlaybackException: Source error
+12-25 17:32:52.851 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.ExoPlayerImplInternal.handleIoException(ExoPlayerImplInternal.java:736)
+12-25 17:32:52.851 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.ExoPlayerImplInternal.handleMessage(ExoPlayerImplInternal.java:708)
+12-25 17:32:52.851 E/ExoPlayerImplInternal(11759):       at android.os.Handler.dispatchMessage(Handler.java:106)
+12-25 17:32:52.851 E/ExoPlayerImplInternal(11759):       at android.os.Looper.loopOnce(Looper.java:248)
+12-25 17:32:52.851 E/ExoPlayerImplInternal(11759):       at android.os.Looper.loop(Looper.java:338)
+12-25 17:32:52.851 E/ExoPlayerImplInternal(11759):       at android.os.HandlerThread.run(HandlerThread.java:85)
+12-25 17:32:52.851 E/ExoPlayerImplInternal(11759):   Caused by: androidx.media3.datasource.HttpDataSource$InvalidResponseCodeException: Response code: 403
+12-25 17:32:52.851 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.DefaultHttpDataSource.open(DefaultHttpDataSource.java:397)
+12-25 17:32:52.851 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.DefaultDataSource.open(DefaultDataSource.java:275)
+12-25 17:32:52.851 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.TeeDataSource.open(TeeDataSource.java:54)
+12-25 17:32:52.851 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.cache.CacheDataSource.openNextSource(CacheDataSource.java:802)
+12-25 17:32:52.851 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.cache.CacheDataSource.open(CacheDataSource.java:615)
+12-25 17:32:52.851 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.hls.HlsMediaChunk.prepareExtraction(HlsMediaChunk.java:525)
+12-25 17:32:52.851 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.hls.HlsMediaChunk.feedDataToExtractor(HlsMediaChunk.java:498)
+12-25 17:32:52.851 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.hls.HlsMediaChunk.maybeLoadInitData(HlsMediaChunk.java:456)
+12-25 17:32:52.851 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.hls.HlsMediaChunk.load(HlsMediaChunk.java:421)
+12-25 17:32:52.851 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.upstream.Loader$LoadTask.run(Loader.java:421)
+12-25 17:32:52.851 E/ExoPlayerImplInternal(11759):       at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1156)
+12-25 17:32:52.851 E/ExoPlayerImplInternal(11759):       at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:651)
+12-25 17:32:52.851 E/ExoPlayerImplInternal(11759):       at java.lang.Thread.run(Thread.java:1119)
+12-25 17:32:52.851 D/PlayerFragment(11759): onVideoSizeChanged: width=0, height=0, pixelWidthHeightRatio=1.0, playerViewResizeMode=0
+12-25 17:32:52.854 E/PlayerFragment(11759): Player error: ERROR_CODE_IO_BAD_HTTP_STATUS, retryCount=0, streamRefreshCount=0, http=403
+12-25 17:32:52.854 E/PlayerFragment(11759): androidx.media3.exoplayer.ExoPlaybackException: Source error
+12-25 17:32:52.854 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.ExoPlayerImplInternal.handleIoException(ExoPlayerImplInternal.java:736)
+12-25 17:32:52.854 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.ExoPlayerImplInternal.handleMessage(ExoPlayerImplInternal.java:708)
+12-25 17:32:52.854 E/PlayerFragment(11759): 	at android.os.Handler.dispatchMessage(Handler.java:106)
+12-25 17:32:52.854 E/PlayerFragment(11759): 	at android.os.Looper.loopOnce(Looper.java:248)
+12-25 17:32:52.854 E/PlayerFragment(11759): 	at android.os.Looper.loop(Looper.java:338)
+12-25 17:32:52.854 E/PlayerFragment(11759): 	at android.os.HandlerThread.run(HandlerThread.java:85)
+12-25 17:32:52.854 E/PlayerFragment(11759): Caused by: androidx.media3.datasource.HttpDataSource$InvalidResponseCodeException: Response code: 403
+12-25 17:32:52.854 E/PlayerFragment(11759): 	at androidx.media3.datasource.DefaultHttpDataSource.open(DefaultHttpDataSource.java:397)
+12-25 17:32:52.854 E/PlayerFragment(11759): 	at androidx.media3.datasource.DefaultDataSource.open(DefaultDataSource.java:275)
+12-25 17:32:52.854 E/PlayerFragment(11759): 	at androidx.media3.datasource.TeeDataSource.open(TeeDataSource.java:54)
+12-25 17:32:52.854 E/PlayerFragment(11759): 	at androidx.media3.datasource.cache.CacheDataSource.openNextSource(CacheDataSource.java:802)
+12-25 17:32:52.854 E/PlayerFragment(11759): 	at androidx.media3.datasource.cache.CacheDataSource.open(CacheDataSource.java:615)
+12-25 17:32:52.854 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.hls.HlsMediaChunk.prepareExtraction(HlsMediaChunk.java:525)
+12-25 17:32:52.854 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.hls.HlsMediaChunk.feedDataToExtractor(HlsMediaChunk.java:498)
+12-25 17:32:52.854 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.hls.HlsMediaChunk.maybeLoadInitData(HlsMediaChunk.java:456)
+12-25 17:32:52.854 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.hls.HlsMediaChunk.load(HlsMediaChunk.java:421)
+12-25 17:32:52.854 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.upstream.Loader$LoadTask.run(Loader.java:421)
+12-25 17:32:52.854 E/PlayerFragment(11759): 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1156)
+12-25 17:32:52.854 E/PlayerFragment(11759): 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:651)
+12-25 17:32:52.854 E/PlayerFragment(11759): 	at java.lang.Thread.run(Thread.java:1119)
+12-25 17:32:52.854 W/PlayerFragment(11759): Refreshing stream for 6gzSILMuzq8 at 0ms: source invalid/expired (ERROR_CODE_IO_BAD_HTTP_STATUS, http=403)
+12-25 17:32:52.854 D/ExtractionRateLimiter(11759): AUTO_RECOVERY bypasses global rate limit check
+12-25 17:32:52.854 D/ExtractionRateLimiter(11759): Min interval not elapsed for 6gzSILMuzq8 (AUTO_RECOVERY): 25162ms remaining
+12-25 17:32:52.854 W/PlayerViewModel(11759): Force refresh (AUTO_RECOVERY) delayed: minimum interval, wait 25162ms
+12-25 17:32:52.857 D/PlayerFragment(11759): onPlaybackStateChanged: state=1
+12-25 17:32:52.857 D/PlaybackService(11759): onPlaybackStateChanged: state=1, playWhenReady=true
+12-25 17:32:52.857 D/PlaybackService(11759): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=false, isPlaying=false, state=1
+12-25 17:32:52.857 D/PlaybackService(11759): Foreground mode stopped (UI visible)
+12-25 17:33:07.491 D/PlaybackService(11759): setPlayerUiVisible: false
+12-25 17:33:07.491 D/PlaybackService(11759): updateForegroundState: appInForeground=true, playerUiVisible=false, playbackActive=false, isPlaying=false, state=1
+12-25 17:33:07.494 D/PlaybackService(11759): Updating media notification: isPlaying=false
+12-25 17:33:07.497 D/PlaybackService(11759): Media notification updated successfully
+12-25 17:33:07.497 D/PlaybackService(11759): Foreground mode stopped (paused in background), notification retained
+12-25 17:33:07.506 D/PlaybackService(11759): Releasing MediaSession
+12-25 17:33:07.509 D/PlayerFragment(11759): Controller visibility changed: 0, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:33:07.512 D/PlayerFragment(11759): Controller visibility changed: 8, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:33:07.604 I/ExoPlayerImpl(11759): Release 34e1a54 [AndroidXMedia3/1.4.1] [emu64xa, sdk_gphone64_x86_64, Google, 36] [media3.common, media3.ui, media3.exoplayer, media3.decoder, media3.session, media3.exoplayer.hls, media3.database, media3.datasource, media3.extractor]
+12-25 17:33:11.192 D/ExtractionRateLimiter(11759): Permit acquired for Go3KVsUqyPo (PREFETCH)
+12-25 17:33:11.192 D/StreamPrefetch(11759): Starting prefetch for Go3KVsUqyPo
+12-25 17:33:11.195 D/ExtractorMetrics(11759): extractor_cache_miss type=VIDEOS misses=1
+12-25 17:33:11.249 D/StreamPrefetch(11759): Awaiting in-flight prefetch for Go3KVsUqyPo
+12-25 17:33:11.250 I/ExoPlayerImpl(11759): Init 1423d9b [AndroidXMedia3/1.4.1] [emu64xa, sdk_gphone64_x86_64, Google, 36]
+12-25 17:33:11.255 I/ActivityManager(  681): Background started FGS: Allowed [callingPackage: com.albunyaan.tube; callingUid: 10222; uidState: TOP ; uidBFSL: [BFSL]; intent: Intent { xflg=0x4 cmp=com.albunyaan.tube/.player.PlaybackService }; code:PROC_STATE_TOP; tempAllowListReason:<null>; allowWiu:12; targetSdkVersion:34; callerTargetSdkVersion:34; startForegroundCount:16; bindFromPackage:null: isBindService:false]
+12-25 17:33:11.256 D/PlayerFragment(11759): Started PlaybackService for foreground notification
+12-25 17:33:11.270 D/PlaybackService(11759): Initializing MediaSession with player (playWhenReady=true, state=1)
+12-25 17:33:11.277 I/PlaybackService(11759): MediaSession initialized successfully - notification should appear when playback starts
+12-25 17:33:11.277 D/PlaybackService(11759): setPlayerUiVisible: true
+12-25 17:33:11.277 D/PlaybackService(11759): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=false, isPlaying=false, state=1
+12-25 17:33:11.277 D/PlaybackService(11759): Foreground mode stopped (UI visible)
+12-25 17:33:11.278 D/PlaybackService(11759): onStartCommand called (action=null, flags=0, startId=17)
+12-25 17:33:12.814 D/AdaptiveAvail(11759): {"vid":"Go3KVsUqyPo","hasHls":true,"hasDash":false,"adaptive":"HLS_ONLY","streamType":"VIDEO_STREAM","durSec":141,"videoTracks":5,"audioTracks":3,"hasVideoOnly":true}
+12-25 17:33:12.814 D/ExtractorMetrics(11759): stream_resolve_success videoId=Go3KVsUqyPo durationMs=1618
+12-25 17:33:12.814 D/ExtractionRateLimiter(11759): Extraction success for Go3KVsUqyPo - backoff reset
+12-25 17:33:12.814 D/StreamPrefetch(11759): Prefetch completed for Go3KVsUqyPo
+12-25 17:33:12.815 D/StreamPrefetch(11759): Prefetch consumed (awaited) for Go3KVsUqyPo
+12-25 17:33:12.815 D/PlayerViewModel(11759): Using tap-prefetched stream for Go3KVsUqyPo
+12-25 17:33:12.817 D/PlayerFragment(11759): Preparing stream: id=Go3KVsUqyPo, audioOnly=false, expectedUrl=https://manifest.googlevideo.com/api/manifest/hls_variant/expire/1766701992/ei/SGdNaaWnHvvB6dsPuoeDuQE/ip/105.155.60.118/id/1a8dca56c52ac8fa/source/youtube/requiressl/yes/xpc/EgVo2aDSNQ%3D%3D/playback_host/rr6---sn-p5h-gc5y.googlevideo.com/cps/0/met/1766680392%2C/mh/p7/mm/31%2C26/mn/sn-p5h-gc5y%2Csn-hgn7yn76/ms/au%2Conr/mv/m/mvi/6/pl/22/rms/au%2Cau/tx/51539830/txs/51539830%2C51539831/hfr/1/demuxed/1/tts_caps/1/maudio/1/initcwndbps/936250/bui/AYUSA3AnMTHwuoZ0e43hT7hSRBPYzzfAQGAB2iAFwgaSapAFaWbwM3JIAnZ6iaW8clGAo1Oul6P8DPjV/spc/wH4QqzMOHR-t_r_kqlcsx3mq7Tywxj-bYLVAFbg-MqJ246bpZRmTcWpyh2KbPw/vprv/1/go/1/rqh/5/mt/1766679925/fvip/1/nvgoi/1/short_key/1/ncsapi/1/keepalive/yes/fexp/51552689%2C51565115%2C51565681%2C51580968/dover/13/itag/0/playlist_type/DVR/sparams/expire%2Cei%2Cip%2Cid%2Csource%2Crequiressl%2Cxpc%2Ctx%2Ctxs%2Chfr%2Cdemuxed%2Ctts_caps%2Cmaudio%2Cbui%2Cspc%2Cvprv%2Cgo%2Crqh%2Citag%2Cplaylist_type/sig/AJfQdSswRQIhAP-_nIYUN3q8R1mqz8QpO99g5EI5KBDadk2Crj0WWiz8AiBXhndy1-I810AH36cBjI1RmjaMobdp5c_uECVRbbeceA%3D%3D/lsparams/playback_host%2Ccps%2Cmet%2Cmh%2Cmm%2Cmn%2Cms%2Cmv%2Cmvi%2Cpl%2Crms%2Cinitcwndbps/lsig/APaTxxMwRQIhAIIQdb_nhf_8eub742tH7Tj-i-nT3o2dd3hxIJyqunxEAiAYmqDuKFExvFIQk6p_N6l8BqZBqo9r93Al-1Kve-AATw%3D%3D/file/index.m3u8?, isQualitySwitch=false
+12-25 17:33:12.817 D/PlayerFragment(11759): Created media source: isAdaptive=true, type=HLS, qualityCap=nullp, actualSource=manifest.googlevideo.com#ced96dcc
+12-25 17:33:12.817 D/PlayerFragment(11759): Track selector: cleared constraints (ABR free)
+12-25 17:33:12.821 D/PlayerFragment(11759): onPlaybackStateChanged: state=2
+12-25 17:33:12.822 D/PlaybackService(11759): onPlaybackStateChanged: state=2, playWhenReady=true
+12-25 17:33:12.822 D/PlaybackService(11759): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=false, state=2
+12-25 17:33:12.822 D/PlaybackService(11759): Foreground mode stopped (UI visible)
+12-25 17:33:12.822 D/PlayerFragment(11759): Stream prepared successfully: Go3KVsUqyPo, isAdaptive=true, type=HLS, actualSource=manifest.googlevideo.com#ced96dcc
+12-25 17:33:12.825 D/PlaybackService(11759): onMediaMetadataChanged: title=كليب الصلاة
+12-25 17:33:12.825 D/PlaybackService(11759): setCurrentVideoId: Go3KVsUqyPo
+12-25 17:33:12.825 D/PlayerFragment(11759): Synced MediaSession metadata for: كليب الصلاة (forced)
+12-25 17:33:12.898 D/PlaybackService(11759): onMediaMetadataChanged: title=كليب الصلاة
+12-25 17:33:16.843 E/ExoPlayerImplInternal(11759): Playback error
+12-25 17:33:16.843 E/ExoPlayerImplInternal(11759):   androidx.media3.exoplayer.ExoPlaybackException: Source error
+12-25 17:33:16.843 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.ExoPlayerImplInternal.handleIoException(ExoPlayerImplInternal.java:736)
+12-25 17:33:16.843 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.ExoPlayerImplInternal.handleMessage(ExoPlayerImplInternal.java:708)
+12-25 17:33:16.843 E/ExoPlayerImplInternal(11759):       at android.os.Handler.dispatchMessage(Handler.java:106)
+12-25 17:33:16.843 E/ExoPlayerImplInternal(11759):       at android.os.Looper.loopOnce(Looper.java:248)
+12-25 17:33:16.843 E/ExoPlayerImplInternal(11759):       at android.os.Looper.loop(Looper.java:338)
+12-25 17:33:16.843 E/ExoPlayerImplInternal(11759):       at android.os.HandlerThread.run(HandlerThread.java:85)
+12-25 17:33:16.843 E/ExoPlayerImplInternal(11759):   Caused by: androidx.media3.datasource.HttpDataSource$InvalidResponseCodeException: Response code: 403
+12-25 17:33:16.843 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.DefaultHttpDataSource.open(DefaultHttpDataSource.java:397)
+12-25 17:33:16.843 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.DefaultDataSource.open(DefaultDataSource.java:275)
+12-25 17:33:16.843 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.TeeDataSource.open(TeeDataSource.java:54)
+12-25 17:33:16.843 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.cache.CacheDataSource.openNextSource(CacheDataSource.java:802)
+12-25 17:33:16.843 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.cache.CacheDataSource.open(CacheDataSource.java:615)
+12-25 17:33:16.843 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.StatsDataSource.open(StatsDataSource.java:86)
+12-25 17:33:16.843 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.hls.HlsMediaChunk.prepareExtraction(HlsMediaChunk.java:525)
+12-25 17:33:16.843 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.hls.HlsMediaChunk.feedDataToExtractor(HlsMediaChunk.java:498)
+12-25 17:33:16.843 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.hls.HlsMediaChunk.loadMedia(HlsMediaChunk.java:467)
+12-25 17:33:16.843 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.hls.HlsMediaChunk.load(HlsMediaChunk.java:424)
+12-25 17:33:16.843 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.upstream.Loader$LoadTask.run(Loader.java:421)
+12-25 17:33:16.843 E/ExoPlayerImplInternal(11759):       at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1156)
+12-25 17:33:16.843 E/ExoPlayerImplInternal(11759):       at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:651)
+12-25 17:33:16.843 E/ExoPlayerImplInternal(11759):       at java.lang.Thread.run(Thread.java:1119)
+12-25 17:33:16.844 D/PlayerFragment(11759): Stream already prepared with same source, skipping
+12-25 17:33:16.845 D/PlayerFragment(11759): onVideoSizeChanged: width=0, height=0, pixelWidthHeightRatio=1.0, playerViewResizeMode=0
+12-25 17:33:16.847 E/PlayerFragment(11759): Player error: ERROR_CODE_IO_BAD_HTTP_STATUS, retryCount=0, streamRefreshCount=0, http=403
+12-25 17:33:16.847 E/PlayerFragment(11759): androidx.media3.exoplayer.ExoPlaybackException: Source error
+12-25 17:33:16.847 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.ExoPlayerImplInternal.handleIoException(ExoPlayerImplInternal.java:736)
+12-25 17:33:16.847 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.ExoPlayerImplInternal.handleMessage(ExoPlayerImplInternal.java:708)
+12-25 17:33:16.847 E/PlayerFragment(11759): 	at android.os.Handler.dispatchMessage(Handler.java:106)
+12-25 17:33:16.847 E/PlayerFragment(11759): 	at android.os.Looper.loopOnce(Looper.java:248)
+12-25 17:33:16.847 E/PlayerFragment(11759): 	at android.os.Looper.loop(Looper.java:338)
+12-25 17:33:16.847 E/PlayerFragment(11759): 	at android.os.HandlerThread.run(HandlerThread.java:85)
+12-25 17:33:16.847 E/PlayerFragment(11759): Caused by: androidx.media3.datasource.HttpDataSource$InvalidResponseCodeException: Response code: 403
+12-25 17:33:16.847 E/PlayerFragment(11759): 	at androidx.media3.datasource.DefaultHttpDataSource.open(DefaultHttpDataSource.java:397)
+12-25 17:33:16.847 E/PlayerFragment(11759): 	at androidx.media3.datasource.DefaultDataSource.open(DefaultDataSource.java:275)
+12-25 17:33:16.847 E/PlayerFragment(11759): 	at androidx.media3.datasource.TeeDataSource.open(TeeDataSource.java:54)
+12-25 17:33:16.847 E/PlayerFragment(11759): 	at androidx.media3.datasource.cache.CacheDataSource.openNextSource(CacheDataSource.java:802)
+12-25 17:33:16.847 E/PlayerFragment(11759): 	at androidx.media3.datasource.cache.CacheDataSource.open(CacheDataSource.java:615)
+12-25 17:33:16.847 E/PlayerFragment(11759): 	at androidx.media3.datasource.StatsDataSource.open(StatsDataSource.java:86)
+12-25 17:33:16.847 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.hls.HlsMediaChunk.prepareExtraction(HlsMediaChunk.java:525)
+12-25 17:33:16.847 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.hls.HlsMediaChunk.feedDataToExtractor(HlsMediaChunk.java:498)
+12-25 17:33:16.847 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.hls.HlsMediaChunk.loadMedia(HlsMediaChunk.java:467)
+12-25 17:33:16.847 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.hls.HlsMediaChunk.load(HlsMediaChunk.java:424)
+12-25 17:33:16.847 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.upstream.Loader$LoadTask.run(Loader.java:421)
+12-25 17:33:16.847 E/PlayerFragment(11759): 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1156)
+12-25 17:33:16.847 E/PlayerFragment(11759): 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:651)
+12-25 17:33:16.847 E/PlayerFragment(11759): 	at java.lang.Thread.run(Thread.java:1119)
+12-25 17:33:16.847 W/PlayerFragment(11759): Refreshing stream for Go3KVsUqyPo at 0ms: source invalid/expired (ERROR_CODE_IO_BAD_HTTP_STATUS, http=403)
+12-25 17:33:16.847 D/ExtractionRateLimiter(11759): AUTO_RECOVERY bypasses global rate limit check
+12-25 17:33:16.847 D/ExtractionRateLimiter(11759): Permit acquired for Go3KVsUqyPo (AUTO_RECOVERY)
+12-25 17:33:16.849 D/PlayerViewModel(11759): Force refresh requested for Go3KVsUqyPo, bypassing caches
+12-25 17:33:16.849 D/ExtractorMetrics(11759): extractor_cache_miss type=VIDEOS misses=1
+12-25 17:33:16.852 D/PlayerFragment(11759): Controller visibility changed: 0, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:33:16.852 D/PlayerFragment(11759): onPlaybackStateChanged: state=1
+12-25 17:33:16.852 D/PlaybackService(11759): onPlaybackStateChanged: state=1, playWhenReady=true
+12-25 17:33:16.852 D/PlaybackService(11759): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=false, isPlaying=false, state=1
+12-25 17:33:16.852 D/PlaybackService(11759): Foreground mode stopped (UI visible)
+12-25 17:33:16.858 D/PlayerFragment(11759): Controller visibility changed: 0, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:33:16.865 D/PlayerFragment(11759): After controller visibility change layout: resizeMode=0, width=1280, height=720
+12-25 17:33:16.865 D/PlayerFragment(11759): After controller visibility change layout: resizeMode=0, width=1280, height=720
+12-25 17:33:18.293 D/AdaptiveAvail(11759): {"vid":"Go3KVsUqyPo","hasHls":true,"hasDash":false,"adaptive":"HLS_ONLY","streamType":"VIDEO_STREAM","durSec":141,"videoTracks":5,"audioTracks":3,"hasVideoOnly":true}
+12-25 17:33:18.293 D/ExtractorMetrics(11759): stream_resolve_success videoId=Go3KVsUqyPo durationMs=1444
+12-25 17:33:18.293 D/PlayerViewModel(11759): Stream resolved successfully on attempt 1
+12-25 17:33:18.293 D/ExtractionRateLimiter(11759): Extraction success for Go3KVsUqyPo - backoff reset
+12-25 17:33:18.294 D/PlayerFragment(11759): Preparing stream: id=Go3KVsUqyPo, audioOnly=false, expectedUrl=https://manifest.googlevideo.com/api/manifest/hls_variant/expire/1766701998/ei/TWdNaaWsPPSMgMMP0uXb2QQ/ip/105.155.60.118/id/1a8dca56c52ac8fa/source/youtube/requiressl/yes/xpc/EgVo2aDSNQ%3D%3D/playback_host/rr6---sn-p5h-gc5y.googlevideo.com/cps/0/met/1766680398%2C/mh/p7/mm/31%2C26/mn/sn-p5h-gc5y%2Csn-hgn7rne7/ms/au%2Conr/mv/m/mvi/6/pl/22/rms/au%2Cau/tx/51539830/txs/51539830%2C51539831/hfr/1/demuxed/1/tts_caps/1/maudio/1/initcwndbps/936250/bui/AYUSA3AWx-VwI9bpLAseomUTPYToHJGDalRaHB_BOOcsNg149IjuvPj7z_lZCqcQmy9vqj9F_HEvPUTK/spc/wH4Qq1saw1fwlCqYyAAvKYMs7X0yZcM5lW9RnY_u_3zrCUMn54412Rhan7eTYQ/vprv/1/go/1/rqh/5/mt/1766679925/fvip/2/nvgoi/1/short_key/1/ncsapi/1/keepalive/yes/fexp/51552689%2C51565116%2C51565681%2C51580968/dover/13/itag/0/playlist_type/DVR/sparams/expire%2Cei%2Cip%2Cid%2Csource%2Crequiressl%2Cxpc%2Ctx%2Ctxs%2Chfr%2Cdemuxed%2Ctts_caps%2Cmaudio%2Cbui%2Cspc%2Cvprv%2Cgo%2Crqh%2Citag%2Cplaylist_type/sig/AJfQdSswRQIhALmRW5nwJpao9hlZUvUwXhKQz4MVRgVA1xBr4pL00kSMAiBP8kG3yjkf5Nccjk3IePS8SjBgHiAmGY_KWzsBb_uZQg%3D%3D/lsparams/playback_host%2Ccps%2Cmet%2Cmh%2Cmm%2Cmn%2Cms%2Cmv%2Cmvi%2Cpl%2Crms%2Cinitcwndbps/lsig/APaTxxMwRAIgX8qesmJWzU9Jrlec_qIBKG-6fep_YeJiuN6eVgRVZiMCIEeXzBeEsJDQuYXhkX3WMUz0oPDdC8FX5AnFrVlinORQ/file/index.m3u8?, isQualitySwitch=false
+12-25 17:33:18.295 D/PlayerFragment(11759): Created media source: isAdaptive=true, type=HLS, qualityCap=nullp, actualSource=manifest.googlevideo.com#d1b2aade
+12-25 17:33:18.295 D/PlayerFragment(11759): Track selector: cleared constraints (ABR free)
+12-25 17:33:18.297 D/PlaybackService(11759): onMediaMetadataChanged: title=null
+12-25 17:33:18.299 D/PlayerFragment(11759): onPlaybackStateChanged: state=2
+12-25 17:33:18.299 D/PlaybackService(11759): onPlaybackStateChanged: state=2, playWhenReady=true
+12-25 17:33:18.299 D/PlaybackService(11759): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=false, state=2
+12-25 17:33:18.300 D/PlaybackService(11759): Foreground mode stopped (UI visible)
+12-25 17:33:18.300 D/PlayerFragment(11759): Stream prepared successfully: Go3KVsUqyPo, isAdaptive=true, type=HLS, actualSource=manifest.googlevideo.com#d1b2aade
+12-25 17:33:18.306 D/PlaybackService(11759): onMediaMetadataChanged: title=كليب الصلاة
+12-25 17:33:18.306 D/PlayerFragment(11759): Synced MediaSession metadata for: كليب الصلاة (forced)
+12-25 17:33:22.558 E/ExoPlayerImplInternal(11759): Playback error
+12-25 17:33:22.558 E/ExoPlayerImplInternal(11759):   androidx.media3.exoplayer.ExoPlaybackException: Source error
+12-25 17:33:22.558 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.ExoPlayerImplInternal.handleIoException(ExoPlayerImplInternal.java:736)
+12-25 17:33:22.558 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.ExoPlayerImplInternal.handleMessage(ExoPlayerImplInternal.java:708)
+12-25 17:33:22.558 E/ExoPlayerImplInternal(11759):       at android.os.Handler.dispatchMessage(Handler.java:106)
+12-25 17:33:22.558 E/ExoPlayerImplInternal(11759):       at android.os.Looper.loopOnce(Looper.java:248)
+12-25 17:33:22.558 E/ExoPlayerImplInternal(11759):       at android.os.Looper.loop(Looper.java:338)
+12-25 17:33:22.558 E/ExoPlayerImplInternal(11759):       at android.os.HandlerThread.run(HandlerThread.java:85)
+12-25 17:33:22.558 E/ExoPlayerImplInternal(11759):   Caused by: androidx.media3.datasource.HttpDataSource$InvalidResponseCodeException: Response code: 403
+12-25 17:33:22.558 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.DefaultHttpDataSource.open(DefaultHttpDataSource.java:397)
+12-25 17:33:22.558 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.DefaultDataSource.open(DefaultDataSource.java:275)
+12-25 17:33:22.558 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.TeeDataSource.open(TeeDataSource.java:54)
+12-25 17:33:22.558 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.cache.CacheDataSource.openNextSource(CacheDataSource.java:802)
+12-25 17:33:22.558 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.cache.CacheDataSource.open(CacheDataSource.java:615)
+12-25 17:33:22.558 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.hls.HlsMediaChunk.prepareExtraction(HlsMediaChunk.java:525)
+12-25 17:33:22.558 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.hls.HlsMediaChunk.feedDataToExtractor(HlsMediaChunk.java:498)
+12-25 17:33:22.558 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.hls.HlsMediaChunk.maybeLoadInitData(HlsMediaChunk.java:456)
+12-25 17:33:22.558 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.hls.HlsMediaChunk.load(HlsMediaChunk.java:421)
+12-25 17:33:22.558 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.upstream.Loader$LoadTask.run(Loader.java:421)
+12-25 17:33:22.558 E/ExoPlayerImplInternal(11759):       at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1156)
+12-25 17:33:22.558 E/ExoPlayerImplInternal(11759):       at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:651)
+12-25 17:33:22.558 E/ExoPlayerImplInternal(11759):       at java.lang.Thread.run(Thread.java:1119)
+12-25 17:33:22.559 D/PlayerFragment(11759): onVideoSizeChanged: width=0, height=0, pixelWidthHeightRatio=1.0, playerViewResizeMode=0
+12-25 17:33:22.563 E/PlayerFragment(11759): Player error: ERROR_CODE_IO_BAD_HTTP_STATUS, retryCount=0, streamRefreshCount=0, http=403
+12-25 17:33:22.563 E/PlayerFragment(11759): androidx.media3.exoplayer.ExoPlaybackException: Source error
+12-25 17:33:22.563 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.ExoPlayerImplInternal.handleIoException(ExoPlayerImplInternal.java:736)
+12-25 17:33:22.563 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.ExoPlayerImplInternal.handleMessage(ExoPlayerImplInternal.java:708)
+12-25 17:33:22.563 E/PlayerFragment(11759): 	at android.os.Handler.dispatchMessage(Handler.java:106)
+12-25 17:33:22.563 E/PlayerFragment(11759): 	at android.os.Looper.loopOnce(Looper.java:248)
+12-25 17:33:22.563 E/PlayerFragment(11759): 	at android.os.Looper.loop(Looper.java:338)
+12-25 17:33:22.563 E/PlayerFragment(11759): 	at android.os.HandlerThread.run(HandlerThread.java:85)
+12-25 17:33:22.563 E/PlayerFragment(11759): Caused by: androidx.media3.datasource.HttpDataSource$InvalidResponseCodeException: Response code: 403
+12-25 17:33:22.563 E/PlayerFragment(11759): 	at androidx.media3.datasource.DefaultHttpDataSource.open(DefaultHttpDataSource.java:397)
+12-25 17:33:22.563 E/PlayerFragment(11759): 	at androidx.media3.datasource.DefaultDataSource.open(DefaultDataSource.java:275)
+12-25 17:33:22.563 E/PlayerFragment(11759): 	at androidx.media3.datasource.TeeDataSource.open(TeeDataSource.java:54)
+12-25 17:33:22.563 E/PlayerFragment(11759): 	at androidx.media3.datasource.cache.CacheDataSource.openNextSource(CacheDataSource.java:802)
+12-25 17:33:22.563 E/PlayerFragment(11759): 	at androidx.media3.datasource.cache.CacheDataSource.open(CacheDataSource.java:615)
+12-25 17:33:22.563 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.hls.HlsMediaChunk.prepareExtraction(HlsMediaChunk.java:525)
+12-25 17:33:22.563 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.hls.HlsMediaChunk.feedDataToExtractor(HlsMediaChunk.java:498)
+12-25 17:33:22.563 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.hls.HlsMediaChunk.maybeLoadInitData(HlsMediaChunk.java:456)
+12-25 17:33:22.563 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.hls.HlsMediaChunk.load(HlsMediaChunk.java:421)
+12-25 17:33:22.563 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.upstream.Loader$LoadTask.run(Loader.java:421)
+12-25 17:33:22.563 E/PlayerFragment(11759): 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1156)
+12-25 17:33:22.563 E/PlayerFragment(11759): 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:651)
+12-25 17:33:22.563 E/PlayerFragment(11759): 	at java.lang.Thread.run(Thread.java:1119)
+12-25 17:33:22.563 W/PlayerFragment(11759): Refreshing stream for Go3KVsUqyPo at 0ms: source invalid/expired (ERROR_CODE_IO_BAD_HTTP_STATUS, http=403)
+12-25 17:33:22.563 D/ExtractionRateLimiter(11759): AUTO_RECOVERY bypasses global rate limit check
+12-25 17:33:22.563 D/ExtractionRateLimiter(11759): Min interval not elapsed for Go3KVsUqyPo (AUTO_RECOVERY): 24284ms remaining
+12-25 17:33:22.563 W/PlayerViewModel(11759): Force refresh (AUTO_RECOVERY) delayed: minimum interval, wait 24284ms
+12-25 17:33:22.566 D/PlayerFragment(11759): onPlaybackStateChanged: state=1
+12-25 17:33:22.566 D/PlaybackService(11759): onPlaybackStateChanged: state=1, playWhenReady=true
+12-25 17:33:22.566 D/PlaybackService(11759): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=false, isPlaying=false, state=1
+12-25 17:33:22.566 D/PlaybackService(11759): Foreground mode stopped (UI visible)
+12-25 17:33:24.617 D/PlaybackService(11759): setPlayerUiVisible: false
+12-25 17:33:24.617 D/PlaybackService(11759): updateForegroundState: appInForeground=true, playerUiVisible=false, playbackActive=false, isPlaying=false, state=1
+12-25 17:33:24.619 D/PlaybackService(11759): Updating media notification: isPlaying=false
+12-25 17:33:24.621 D/PlaybackService(11759): Media notification updated successfully
+12-25 17:33:24.621 D/PlaybackService(11759): Foreground mode stopped (paused in background), notification retained
+12-25 17:33:24.627 D/PlaybackService(11759): Releasing MediaSession
+12-25 17:33:24.629 D/PlayerFragment(11759): Controller visibility changed: 0, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:33:24.633 D/PlayerFragment(11759): Controller visibility changed: 8, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:33:24.726 I/ExoPlayerImpl(11759): Release 1423d9b [AndroidXMedia3/1.4.1] [emu64xa, sdk_gphone64_x86_64, Google, 36] [media3.common, media3.ui, media3.exoplayer, media3.decoder, media3.session, media3.exoplayer.hls, media3.database, media3.datasource, media3.extractor]
+12-25 17:33:26.796 D/ExtractionRateLimiter(11759): Permit acquired for 3PAQw_G8Eik (PREFETCH)
+12-25 17:33:26.796 D/StreamPrefetch(11759): Starting prefetch for 3PAQw_G8Eik
+12-25 17:33:26.798 D/ExtractorMetrics(11759): extractor_cache_miss type=VIDEOS misses=1
+12-25 17:33:27.025 D/StreamPrefetch(11759): Awaiting in-flight prefetch for 3PAQw_G8Eik
+12-25 17:33:27.030 I/ExoPlayerImpl(11759): Init 64283d1 [AndroidXMedia3/1.4.1] [emu64xa, sdk_gphone64_x86_64, Google, 36]
+12-25 17:33:27.062 D/PlayerFragment(11759): Started PlaybackService for foreground notification
+12-25 17:33:27.142 D/PlaybackService(11759): Initializing MediaSession with player (playWhenReady=true, state=1)
+12-25 17:33:27.175 I/PlaybackService(11759): MediaSession initialized successfully - notification should appear when playback starts
+12-25 17:33:27.175 D/PlaybackService(11759): setPlayerUiVisible: true
+12-25 17:33:27.175 D/PlaybackService(11759): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=false, isPlaying=false, state=1
+12-25 17:33:27.176 D/PlaybackService(11759): Foreground mode stopped (UI visible)
+12-25 17:33:27.176 D/PlaybackService(11759): onStartCommand called (action=null, flags=0, startId=18)
+12-25 17:33:28.651 D/AdaptiveAvail(11759): {"vid":"3PAQw_G8Eik","hasHls":true,"hasDash":false,"adaptive":"HLS_ONLY","streamType":"VIDEO_STREAM","durSec":153,"videoTracks":13,"audioTracks":7,"hasVideoOnly":true}
+12-25 17:33:28.651 D/ExtractorMetrics(11759): stream_resolve_success videoId=3PAQw_G8Eik durationMs=1853
+12-25 17:33:28.651 D/ExtractionRateLimiter(11759): Extraction success for 3PAQw_G8Eik - backoff reset
+12-25 17:33:28.651 D/StreamPrefetch(11759): Prefetch completed for 3PAQw_G8Eik
+12-25 17:33:28.651 D/StreamPrefetch(11759): Prefetch consumed (awaited) for 3PAQw_G8Eik
+12-25 17:33:28.651 D/PlayerViewModel(11759): Using tap-prefetched stream for 3PAQw_G8Eik
+12-25 17:33:28.656 D/PlayerFragment(11759): Preparing stream: id=3PAQw_G8Eik, audioOnly=false, expectedUrl=https://manifest.googlevideo.com/api/manifest/hls_variant/expire/1766702008/ei/WGdNabKOENqsp-oPy8aM8AI/ip/105.155.60.118/id/dcf010c3f1bc1229/source/youtube/requiressl/yes/xpc/EgVo2aDSNQ%3D%3D/playback_host/rr6---sn-p5h-gc5y.googlevideo.com/cps/2/met/1766680408%2C/mh/6G/mm/31%2C26/mn/sn-p5h-gc5y%2Csn-hgn7rn7k/ms/au%2Conr/mv/m/mvi/6/pl/22/rms/au%2Cau/tx/51539830/txs/51539830%2C51539831/hfr/1/demuxed/1/tts_caps/1/maudio/1/initcwndbps/936250/bui/AYUSA3BlDvrEb-R-FnpPvVrIUO_ldU51Pk0jY_bXXcbGzRb6l9ODhgDhQ_LyrCE0TrCARVER4RN4b6Sm/spc/wH4Qq2LklJlptq2zOSPfZuiYl-D-OFsMW8kP0cyZ-Oo08mXU4ncpXCgSPTjokA/vprv/1/go/1/rqh/5/mt/1766679925/fvip/1/nvgoi/1/short_key/1/ncsapi/1/keepalive/yes/fexp/51552689%2C51565115%2C51565681%2C51580968/dover/13/itag/0/playlist_type/DVR/sparams/expire%2Cei%2Cip%2Cid%2Csource%2Crequiressl%2Cxpc%2Ctx%2Ctxs%2Chfr%2Cdemuxed%2Ctts_caps%2Cmaudio%2Cbui%2Cspc%2Cvprv%2Cgo%2Crqh%2Citag%2Cplaylist_type/sig/AJfQdSswRQIgXijW0FACcv9eRwXpcveYW746O3Wzwt65yt_a01H9K2ICIQDz0d9P4Ss5PAZTYTYjTz7dqY43B4URkNLrNTlThplYwA%3D%3D/lsparams/playback_host%2Ccps%2Cmet%2Cmh%2Cmm%2Cmn%2Cms%2Cmv%2Cmvi%2Cpl%2Crms%2Cinitcwndbps/lsig/APaTxxMwRQIhAO0-8Es8cNtXezOkW7mdHmh8fM9m9A3wQor0nOVmEexVAiArA5UsAerhEk9__9-cPy_iMPJ81fLNIpEOL0HPLcqJUg%3D%3D/file/index.m3u8?, isQualitySwitch=false
+12-25 17:33:28.657 D/PlayerFragment(11759): Created media source: isAdaptive=true, type=HLS, qualityCap=nullp, actualSource=manifest.googlevideo.com#972128ff
+12-25 17:33:28.657 D/PlayerFragment(11759): Track selector: cleared constraints (ABR free)
+12-25 17:33:28.669 D/PlayerFragment(11759): onPlaybackStateChanged: state=2
+12-25 17:33:28.669 D/PlaybackService(11759): onPlaybackStateChanged: state=2, playWhenReady=true
+12-25 17:33:28.670 D/PlaybackService(11759): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=false, state=2
+12-25 17:33:28.670 D/PlaybackService(11759): Foreground mode stopped (UI visible)
+12-25 17:33:28.670 D/PlayerFragment(11759): Stream prepared successfully: 3PAQw_G8Eik, isAdaptive=true, type=HLS, actualSource=manifest.googlevideo.com#972128ff
+12-25 17:33:28.672 D/PlaybackService(11759): onMediaMetadataChanged: title=انشودة الجنة بدون ايقاع - اناشيد اسلامية للاطفال بدون موسيقى
+12-25 17:33:28.672 D/PlaybackService(11759): setCurrentVideoId: 3PAQw_G8Eik
+12-25 17:33:28.672 D/PlayerFragment(11759): Synced MediaSession metadata for: انشودة الجنة بدون ايقاع - اناشيد اسلامية للاطفال بدون موسيقى (forced)
+12-25 17:33:28.738 D/PlaybackService(11759): onMediaMetadataChanged: title=انشودة الجنة بدون ايقاع - اناشيد اسلامية للاطفال بدون موسيقى
+12-25 17:33:33.246 E/ExoPlayerImplInternal(11759): Playback error
+12-25 17:33:33.246 E/ExoPlayerImplInternal(11759):   androidx.media3.exoplayer.ExoPlaybackException: Source error
+12-25 17:33:33.246 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.ExoPlayerImplInternal.handleIoException(ExoPlayerImplInternal.java:736)
+12-25 17:33:33.246 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.ExoPlayerImplInternal.handleMessage(ExoPlayerImplInternal.java:708)
+12-25 17:33:33.246 E/ExoPlayerImplInternal(11759):       at android.os.Handler.dispatchMessage(Handler.java:106)
+12-25 17:33:33.246 E/ExoPlayerImplInternal(11759):       at android.os.Looper.loopOnce(Looper.java:248)
+12-25 17:33:33.246 E/ExoPlayerImplInternal(11759):       at android.os.Looper.loop(Looper.java:338)
+12-25 17:33:33.246 E/ExoPlayerImplInternal(11759):       at android.os.HandlerThread.run(HandlerThread.java:85)
+12-25 17:33:33.246 E/ExoPlayerImplInternal(11759):   Caused by: androidx.media3.datasource.HttpDataSource$InvalidResponseCodeException: Response code: 403
+12-25 17:33:33.246 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.DefaultHttpDataSource.open(DefaultHttpDataSource.java:397)
+12-25 17:33:33.246 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.DefaultDataSource.open(DefaultDataSource.java:275)
+12-25 17:33:33.246 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.TeeDataSource.open(TeeDataSource.java:54)
+12-25 17:33:33.246 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.cache.CacheDataSource.openNextSource(CacheDataSource.java:802)
+12-25 17:33:33.246 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.cache.CacheDataSource.open(CacheDataSource.java:615)
+12-25 17:33:33.246 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.StatsDataSource.open(StatsDataSource.java:86)
+12-25 17:33:33.246 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.hls.HlsMediaChunk.prepareExtraction(HlsMediaChunk.java:525)
+12-25 17:33:33.246 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.hls.HlsMediaChunk.feedDataToExtractor(HlsMediaChunk.java:498)
+12-25 17:33:33.246 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.hls.HlsMediaChunk.loadMedia(HlsMediaChunk.java:467)
+12-25 17:33:33.246 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.hls.HlsMediaChunk.load(HlsMediaChunk.java:424)
+12-25 17:33:33.246 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.upstream.Loader$LoadTask.run(Loader.java:421)
+12-25 17:33:33.246 E/ExoPlayerImplInternal(11759):       at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1156)
+12-25 17:33:33.246 E/ExoPlayerImplInternal(11759):       at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:651)
+12-25 17:33:33.246 E/ExoPlayerImplInternal(11759):       at java.lang.Thread.run(Thread.java:1119)
+12-25 17:33:33.248 D/PlayerFragment(11759): Stream already prepared with same source, skipping
+12-25 17:33:33.248 D/PlayerFragment(11759): onVideoSizeChanged: width=0, height=0, pixelWidthHeightRatio=1.0, playerViewResizeMode=0
+12-25 17:33:33.251 E/PlayerFragment(11759): Player error: ERROR_CODE_IO_BAD_HTTP_STATUS, retryCount=0, streamRefreshCount=0, http=403
+12-25 17:33:33.251 E/PlayerFragment(11759): androidx.media3.exoplayer.ExoPlaybackException: Source error
+12-25 17:33:33.251 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.ExoPlayerImplInternal.handleIoException(ExoPlayerImplInternal.java:736)
+12-25 17:33:33.251 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.ExoPlayerImplInternal.handleMessage(ExoPlayerImplInternal.java:708)
+12-25 17:33:33.251 E/PlayerFragment(11759): 	at android.os.Handler.dispatchMessage(Handler.java:106)
+12-25 17:33:33.251 E/PlayerFragment(11759): 	at android.os.Looper.loopOnce(Looper.java:248)
+12-25 17:33:33.251 E/PlayerFragment(11759): 	at android.os.Looper.loop(Looper.java:338)
+12-25 17:33:33.251 E/PlayerFragment(11759): 	at android.os.HandlerThread.run(HandlerThread.java:85)
+12-25 17:33:33.251 E/PlayerFragment(11759): Caused by: androidx.media3.datasource.HttpDataSource$InvalidResponseCodeException: Response code: 403
+12-25 17:33:33.251 E/PlayerFragment(11759): 	at androidx.media3.datasource.DefaultHttpDataSource.open(DefaultHttpDataSource.java:397)
+12-25 17:33:33.251 E/PlayerFragment(11759): 	at androidx.media3.datasource.DefaultDataSource.open(DefaultDataSource.java:275)
+12-25 17:33:33.251 E/PlayerFragment(11759): 	at androidx.media3.datasource.TeeDataSource.open(TeeDataSource.java:54)
+12-25 17:33:33.251 E/PlayerFragment(11759): 	at androidx.media3.datasource.cache.CacheDataSource.openNextSource(CacheDataSource.java:802)
+12-25 17:33:33.251 E/PlayerFragment(11759): 	at androidx.media3.datasource.cache.CacheDataSource.open(CacheDataSource.java:615)
+12-25 17:33:33.251 E/PlayerFragment(11759): 	at androidx.media3.datasource.StatsDataSource.open(StatsDataSource.java:86)
+12-25 17:33:33.251 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.hls.HlsMediaChunk.prepareExtraction(HlsMediaChunk.java:525)
+12-25 17:33:33.251 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.hls.HlsMediaChunk.feedDataToExtractor(HlsMediaChunk.java:498)
+12-25 17:33:33.251 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.hls.HlsMediaChunk.loadMedia(HlsMediaChunk.java:467)
+12-25 17:33:33.251 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.hls.HlsMediaChunk.load(HlsMediaChunk.java:424)
+12-25 17:33:33.251 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.upstream.Loader$LoadTask.run(Loader.java:421)
+12-25 17:33:33.251 E/PlayerFragment(11759): 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1156)
+12-25 17:33:33.251 E/PlayerFragment(11759): 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:651)
+12-25 17:33:33.251 E/PlayerFragment(11759): 	at java.lang.Thread.run(Thread.java:1119)
+12-25 17:33:33.251 W/PlayerFragment(11759): Refreshing stream for 3PAQw_G8Eik at 0ms: source invalid/expired (ERROR_CODE_IO_BAD_HTTP_STATUS, http=403)
+12-25 17:33:33.251 D/ExtractionRateLimiter(11759): AUTO_RECOVERY bypasses global rate limit check
+12-25 17:33:33.251 D/ExtractionRateLimiter(11759): Permit acquired for 3PAQw_G8Eik (AUTO_RECOVERY)
+12-25 17:33:33.252 D/PlayerViewModel(11759): Force refresh requested for 3PAQw_G8Eik, bypassing caches
+12-25 17:33:33.252 D/ExtractorMetrics(11759): extractor_cache_miss type=VIDEOS misses=1
+12-25 17:33:33.256 D/PlayerFragment(11759): Controller visibility changed: 0, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:33:33.256 D/PlayerFragment(11759): onPlaybackStateChanged: state=1
+12-25 17:33:33.256 D/PlaybackService(11759): onPlaybackStateChanged: state=1, playWhenReady=true
+12-25 17:33:33.256 D/PlaybackService(11759): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=false, isPlaying=false, state=1
+12-25 17:33:33.257 D/PlaybackService(11759): Foreground mode stopped (UI visible)
+12-25 17:33:33.258 D/PlayerFragment(11759): Controller visibility changed: 0, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:33:33.269 D/PlayerFragment(11759): After controller visibility change layout: resizeMode=0, width=1280, height=720
+12-25 17:33:33.269 D/PlayerFragment(11759): After controller visibility change layout: resizeMode=0, width=1280, height=720
+12-25 17:33:34.677 D/AdaptiveAvail(11759): {"vid":"3PAQw_G8Eik","hasHls":true,"hasDash":false,"adaptive":"HLS_ONLY","streamType":"VIDEO_STREAM","durSec":153,"videoTracks":13,"audioTracks":7,"hasVideoOnly":true}
+12-25 17:33:34.677 D/ExtractorMetrics(11759): stream_resolve_success videoId=3PAQw_G8Eik durationMs=1426
+12-25 17:33:34.678 D/PlayerViewModel(11759): Stream resolved successfully on attempt 1
+12-25 17:33:34.678 D/ExtractionRateLimiter(11759): Extraction success for 3PAQw_G8Eik - backoff reset
+12-25 17:33:34.679 D/PlayerFragment(11759): Preparing stream: id=3PAQw_G8Eik, audioOnly=false, expectedUrl=https://manifest.googlevideo.com/api/manifest/hls_variant/expire/1766702014/ei/XmdNaYqgFsmqp-oP-J-U8QI/ip/105.155.60.118/id/dcf010c3f1bc1229/source/youtube/requiressl/yes/xpc/EgVo2aDSNQ%3D%3D/playback_host/rr6---sn-p5h-gc5y.googlevideo.com/cps/6/met/1766680414%2C/mh/6G/mm/31%2C26/mn/sn-p5h-gc5y%2Csn-hgn7rn7k/ms/au%2Conr/mv/m/mvi/6/pl/22/rms/au%2Cau/hfr/1/demuxed/1/tts_caps/1/maudio/1/initcwndbps/942500/bui/AYUSA3DaJiF393RuI8zIvZwIrnZrEG2Caow0EMP65idZ7sBlP05bIkios_u4tiLbqsI8CBBSUl8ZJNO7/spc/wH4Qq1VscbdJkY_8_fxugf_8y8JwlSukF02TgnruoJyrDqHvYqIVzNd7j6OR3w/vprv/1/go/1/rqh/5/mt/1766680153/fvip/1/nvgoi/1/short_key/1/ncsapi/1/keepalive/yes/fexp/51552689%2C51565115%2C51565682%2C51580968/dover/13/itag/0/playlist_type/DVR/sparams/expire%2Cei%2Cip%2Cid%2Csource%2Crequiressl%2Cxpc%2Chfr%2Cdemuxed%2Ctts_caps%2Cmaudio%2Cbui%2Cspc%2Cvprv%2Cgo%2Crqh%2Citag%2Cplaylist_type/sig/AJfQdSswRQIgUeU-LzuHDbQ9HJqWepUriJrT_u6mNNWK-C9LNmsI9c4CIQCaR_ViJboR3ziTgkt6qBi93y6SUFQ_iK7nXYcTuFwyNA%3D%3D/lsparams/playback_host%2Ccps%2Cmet%2Cmh%2Cmm%2Cmn%2Cms%2Cmv%2Cmvi%2Cpl%2Crms%2Cinitcwndbps/lsig/APaTxxMwRQIhALB8PXxlwfZZuHqew13p0FnrmLZKf5i7sBKj4_uXetXAAiA5HNlMHtQ7zB0laaO76eLK_zLsRXq0G71T5Z-hL5P-mA%3D%3D/file/index.m3u8?, isQualitySwitch=false
+12-25 17:33:34.679 D/PlayerFragment(11759): Created media source: isAdaptive=true, type=HLS, qualityCap=nullp, actualSource=manifest.googlevideo.com#7f836085
+12-25 17:33:34.679 D/PlayerFragment(11759): Track selector: cleared constraints (ABR free)
+12-25 17:33:34.682 D/PlaybackService(11759): onMediaMetadataChanged: title=null
+12-25 17:33:34.684 D/PlayerFragment(11759): onPlaybackStateChanged: state=2
+12-25 17:33:34.684 D/PlaybackService(11759): onPlaybackStateChanged: state=2, playWhenReady=true
+12-25 17:33:34.684 D/PlaybackService(11759): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=false, state=2
+12-25 17:33:34.684 D/PlaybackService(11759): Foreground mode stopped (UI visible)
+12-25 17:33:34.684 D/PlayerFragment(11759): Stream prepared successfully: 3PAQw_G8Eik, isAdaptive=true, type=HLS, actualSource=manifest.googlevideo.com#7f836085
+12-25 17:33:34.689 D/PlaybackService(11759): onMediaMetadataChanged: title=انشودة الجنة بدون ايقاع - اناشيد اسلامية للاطفال بدون موسيقى
+12-25 17:33:34.689 D/PlayerFragment(11759): Synced MediaSession metadata for: انشودة الجنة بدون ايقاع - اناشيد اسلامية للاطفال بدون موسيقى (forced)
+12-25 17:33:39.103 E/ExoPlayerImplInternal(11759): Playback error
+12-25 17:33:39.103 E/ExoPlayerImplInternal(11759):   androidx.media3.exoplayer.ExoPlaybackException: Source error
+12-25 17:33:39.103 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.ExoPlayerImplInternal.handleIoException(ExoPlayerImplInternal.java:736)
+12-25 17:33:39.103 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.ExoPlayerImplInternal.handleMessage(ExoPlayerImplInternal.java:708)
+12-25 17:33:39.103 E/ExoPlayerImplInternal(11759):       at android.os.Handler.dispatchMessage(Handler.java:106)
+12-25 17:33:39.103 E/ExoPlayerImplInternal(11759):       at android.os.Looper.loopOnce(Looper.java:248)
+12-25 17:33:39.103 E/ExoPlayerImplInternal(11759):       at android.os.Looper.loop(Looper.java:338)
+12-25 17:33:39.103 E/ExoPlayerImplInternal(11759):       at android.os.HandlerThread.run(HandlerThread.java:85)
+12-25 17:33:39.103 E/ExoPlayerImplInternal(11759):   Caused by: androidx.media3.datasource.HttpDataSource$InvalidResponseCodeException: Response code: 403
+12-25 17:33:39.103 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.DefaultHttpDataSource.open(DefaultHttpDataSource.java:397)
+12-25 17:33:39.103 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.DefaultDataSource.open(DefaultDataSource.java:275)
+12-25 17:33:39.103 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.TeeDataSource.open(TeeDataSource.java:54)
+12-25 17:33:39.103 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.cache.CacheDataSource.openNextSource(CacheDataSource.java:802)
+12-25 17:33:39.103 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.cache.CacheDataSource.open(CacheDataSource.java:615)
+12-25 17:33:39.103 E/ExoPlayerImplInternal(11759):       at androidx.media3.datasource.StatsDataSource.open(StatsDataSource.java:86)
+12-25 17:33:39.103 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.hls.HlsMediaChunk.prepareExtraction(HlsMediaChunk.java:525)
+12-25 17:33:39.103 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.hls.HlsMediaChunk.feedDataToExtractor(HlsMediaChunk.java:498)
+12-25 17:33:39.103 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.hls.HlsMediaChunk.loadMedia(HlsMediaChunk.java:467)
+12-25 17:33:39.103 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.hls.HlsMediaChunk.load(HlsMediaChunk.java:424)
+12-25 17:33:39.103 E/ExoPlayerImplInternal(11759):       at androidx.media3.exoplayer.upstream.Loader$LoadTask.run(Loader.java:421)
+12-25 17:33:39.103 E/ExoPlayerImplInternal(11759):       at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1156)
+12-25 17:33:39.103 E/ExoPlayerImplInternal(11759):       at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:651)
+12-25 17:33:39.103 E/ExoPlayerImplInternal(11759):       at java.lang.Thread.run(Thread.java:1119)
+12-25 17:33:39.103 D/PlayerFragment(11759): onVideoSizeChanged: width=0, height=0, pixelWidthHeightRatio=1.0, playerViewResizeMode=0
+12-25 17:33:39.106 E/PlayerFragment(11759): Player error: ERROR_CODE_IO_BAD_HTTP_STATUS, retryCount=0, streamRefreshCount=0, http=403
+12-25 17:33:39.106 E/PlayerFragment(11759): androidx.media3.exoplayer.ExoPlaybackException: Source error
+12-25 17:33:39.106 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.ExoPlayerImplInternal.handleIoException(ExoPlayerImplInternal.java:736)
+12-25 17:33:39.106 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.ExoPlayerImplInternal.handleMessage(ExoPlayerImplInternal.java:708)
+12-25 17:33:39.106 E/PlayerFragment(11759): 	at android.os.Handler.dispatchMessage(Handler.java:106)
+12-25 17:33:39.106 E/PlayerFragment(11759): 	at android.os.Looper.loopOnce(Looper.java:248)
+12-25 17:33:39.106 E/PlayerFragment(11759): 	at android.os.Looper.loop(Looper.java:338)
+12-25 17:33:39.106 E/PlayerFragment(11759): 	at android.os.HandlerThread.run(HandlerThread.java:85)
+12-25 17:33:39.106 E/PlayerFragment(11759): Caused by: androidx.media3.datasource.HttpDataSource$InvalidResponseCodeException: Response code: 403
+12-25 17:33:39.106 E/PlayerFragment(11759): 	at androidx.media3.datasource.DefaultHttpDataSource.open(DefaultHttpDataSource.java:397)
+12-25 17:33:39.106 E/PlayerFragment(11759): 	at androidx.media3.datasource.DefaultDataSource.open(DefaultDataSource.java:275)
+12-25 17:33:39.106 E/PlayerFragment(11759): 	at androidx.media3.datasource.TeeDataSource.open(TeeDataSource.java:54)
+12-25 17:33:39.106 E/PlayerFragment(11759): 	at androidx.media3.datasource.cache.CacheDataSource.openNextSource(CacheDataSource.java:802)
+12-25 17:33:39.106 E/PlayerFragment(11759): 	at androidx.media3.datasource.cache.CacheDataSource.open(CacheDataSource.java:615)
+12-25 17:33:39.106 E/PlayerFragment(11759): 	at androidx.media3.datasource.StatsDataSource.open(StatsDataSource.java:86)
+12-25 17:33:39.106 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.hls.HlsMediaChunk.prepareExtraction(HlsMediaChunk.java:525)
+12-25 17:33:39.106 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.hls.HlsMediaChunk.feedDataToExtractor(HlsMediaChunk.java:498)
+12-25 17:33:39.106 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.hls.HlsMediaChunk.loadMedia(HlsMediaChunk.java:467)
+12-25 17:33:39.106 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.hls.HlsMediaChunk.load(HlsMediaChunk.java:424)
+12-25 17:33:39.106 E/PlayerFragment(11759): 	at androidx.media3.exoplayer.upstream.Loader$LoadTask.run(Loader.java:421)
+12-25 17:33:39.106 E/PlayerFragment(11759): 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1156)
+12-25 17:33:39.106 E/PlayerFragment(11759): 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:651)
+12-25 17:33:39.106 E/PlayerFragment(11759): 	at java.lang.Thread.run(Thread.java:1119)
+12-25 17:33:39.106 W/PlayerFragment(11759): Refreshing stream for 3PAQw_G8Eik at 0ms: source invalid/expired (ERROR_CODE_IO_BAD_HTTP_STATUS, http=403)
+12-25 17:33:39.106 D/ExtractionRateLimiter(11759): AUTO_RECOVERY bypasses global rate limit check
+12-25 17:33:39.106 D/ExtractionRateLimiter(11759): Min interval not elapsed for 3PAQw_G8Eik (AUTO_RECOVERY): 24145ms remaining
+12-25 17:33:39.106 W/PlayerViewModel(11759): Force refresh (AUTO_RECOVERY) delayed: minimum interval, wait 24145ms
+12-25 17:33:39.109 D/PlayerFragment(11759): onPlaybackStateChanged: state=1
+12-25 17:33:39.109 D/PlaybackService(11759): onPlaybackStateChanged: state=1, playWhenReady=true
+12-25 17:33:39.109 D/PlaybackService(11759): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=false, isPlaying=false, state=1
+12-25 17:33:39.109 D/PlaybackService(11759): Foreground mode stopped (UI visible)
+12-25 17:33:42.510 D/PlaybackService(11759): setPlayerUiVisible: false
+12-25 17:33:42.510 D/PlaybackService(11759): updateForegroundState: appInForeground=true, playerUiVisible=false, playbackActive=false, isPlaying=false, state=1
+12-25 17:33:42.512 D/PlaybackService(11759): Updating media notification: isPlaying=false
+12-25 17:33:42.513 D/PlaybackService(11759): Media notification updated successfully
+12-25 17:33:42.513 D/PlaybackService(11759): Foreground mode stopped (paused in background), notification retained
+12-25 17:33:42.520 D/PlaybackService(11759): Releasing MediaSession
+12-25 17:33:42.520 W/ActivityManager(  681): Bringing down service while still waiting for start foreground: ServiceRecord{e61c959 u0 com.albunyaan.tube/.player.PlaybackService c:com.albunyaan.tube}
+12-25 17:33:42.521 D/PlayerFragment(11759): Controller visibility changed: 0, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:33:42.524 D/PlayerFragment(11759): Controller visibility changed: 8, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:33:42.604 D/PlaybackService(11759): PlaybackService destroyed
+12-25 17:33:42.604 D/PlaybackService(11759): Releasing MediaSession
+12-25 17:33:42.604 D/AndroidRuntime(11759): Shutting down VM
+12-25 17:33:42.613 E/AndroidRuntime(11759): FATAL EXCEPTION: main
+12-25 17:33:42.613 E/AndroidRuntime(11759): Process: com.albunyaan.tube, PID: 11759
+12-25 17:33:42.613 E/AndroidRuntime(11759): android.app.RemoteServiceException$ForegroundServiceDidNotStartInTimeException: Context.startForegroundService() did not then call Service.startForeground(): ServiceRecord{e61c959 u0 com.albunyaan.tube/.player.PlaybackService c:com.albunyaan.tube}
+12-25 17:33:42.613 E/AndroidRuntime(11759): 	at android.app.ActivityThread.generateForegroundServiceDidNotStartInTimeException(ActivityThread.java:2391)
+12-25 17:33:42.613 E/AndroidRuntime(11759): 	at android.app.ActivityThread.throwRemoteServiceException(ActivityThread.java:2359)
+12-25 17:33:42.613 E/AndroidRuntime(11759): 	at android.app.ActivityThread.-$$Nest$mthrowRemoteServiceException(Unknown Source:0)
+12-25 17:33:42.613 E/AndroidRuntime(11759): 	at android.app.ActivityThread$H.handleMessage(ActivityThread.java:2741)
+12-25 17:33:42.613 E/AndroidRuntime(11759): 	at android.os.Handler.dispatchMessage(Handler.java:110)
+12-25 17:33:42.613 E/AndroidRuntime(11759): 	at android.os.Looper.loopOnce(Looper.java:248)
+12-25 17:33:42.613 E/AndroidRuntime(11759): 	at android.os.Looper.loop(Looper.java:338)
+12-25 17:33:42.613 E/AndroidRuntime(11759): 	at android.app.ActivityThread.main(ActivityThread.java:9067)
+12-25 17:33:42.613 E/AndroidRuntime(11759): 	at java.lang.reflect.Method.invoke(Native Method)
+12-25 17:33:42.613 E/AndroidRuntime(11759): 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:593)
+12-25 17:33:42.613 E/AndroidRuntime(11759): 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:932)
+12-25 17:33:42.613 E/AndroidRuntime(11759): Caused by: android.app.StackTrace: Last startServiceCommon() call for this service was made here
+12-25 17:33:42.613 E/AndroidRuntime(11759): 	at android.app.ContextImpl.startServiceCommon(ContextImpl.java:2055)
+12-25 17:33:42.613 E/AndroidRuntime(11759): 	at android.app.ContextImpl.startForegroundService(ContextImpl.java:2009)
+12-25 17:33:42.613 E/AndroidRuntime(11759): 	at android.content.ContextWrapper.startForegroundService(ContextWrapper.java:860)
+12-25 17:33:42.613 E/AndroidRuntime(11759): 	at android.content.ContextWrapper.startForegroundService(ContextWrapper.java:860)
+12-25 17:33:42.613 E/AndroidRuntime(11759): 	at android.content.ContextWrapper.startForegroundService(ContextWrapper.java:860)
+12-25 17:33:42.613 E/AndroidRuntime(11759): 	at com.albunyaan.tube.ui.player.PlayerFragment.startPlaybackServiceForForeground(PlayerFragment.kt:1048)
+12-25 17:33:42.613 E/AndroidRuntime(11759): 	at com.albunyaan.tube.ui.player.PlayerFragment.onStart(PlayerFragment.kt:397)
+12-25 17:33:42.613 E/AndroidRuntime(11759): 	at androidx.fragment.app.Fragment.performStart(Fragment.java:3187)
+12-25 17:33:42.613 E/AndroidRuntime(11759): 	at androidx.fragment.app.FragmentStateManager.start(FragmentStateManager.java:628)
+12-25 17:33:42.613 E/AndroidRuntime(11759): 	at androidx.fragment.app.FragmentStateManager.moveToExpectedState(FragmentStateManager.java:290)
+12-25 17:33:42.613 E/AndroidRuntime(11759): 	at androidx.fragment.app.FragmentManager.executeOpsTogether(FragmentManager.java:1943)
+12-25 17:33:42.613 E/AndroidRuntime(11759): 	at androidx.fragment.app.FragmentManager.removeRedundantOperationsAndExecute(FragmentManager.java:1845)
+12-25 17:33:42.613 E/AndroidRuntime(11759): 	at androidx.fragment.app.FragmentManager.execPendingActions(FragmentManager.java:1782)
+12-25 17:33:42.613 E/AndroidRuntime(11759): 	at androidx.fragment.app.FragmentManager$5.run(FragmentManager.java:565)
+12-25 17:33:42.613 E/AndroidRuntime(11759): 	at android.os.Handler.handleCallback(Handler.java:995)
+12-25 17:33:42.613 E/AndroidRuntime(11759): 	at android.os.Handler.dispatchMessage(Handler.java:103)
+12-25 17:33:42.613 E/AndroidRuntime(11759): 	... 6 more
+12-25 17:34:05.243 D/ExtractionRateLimiter(13881): Cleanup complete: 0 video records remaining
+12-25 17:34:05.243 D/ExtractionRateLimiter(13881): Permit acquired for C6Rej-HdKsg (PREFETCH)
+12-25 17:34:05.243 D/StreamPrefetch(13881): Starting prefetch for C6Rej-HdKsg
+12-25 17:34:05.247 D/ExtractorMetrics(13881): extractor_cache_miss type=VIDEOS misses=1
+12-25 17:34:05.419 D/StreamPrefetch(13881): Awaiting in-flight prefetch for C6Rej-HdKsg
+12-25 17:34:05.430 I/ExoPlayerImpl(13881): Init ad7183f [AndroidXMedia3/1.4.1] [emu64xa, sdk_gphone64_x86_64, Google, 36]
+12-25 17:34:05.477 I/ActivityManager(  681): Background started FGS: Allowed [callingPackage: com.albunyaan.tube; callingUid: 10222; uidState: TOP ; uidBFSL: [BFSL]; intent: Intent { xflg=0x4 cmp=com.albunyaan.tube/.player.PlaybackService }; code:PROC_STATE_TOP; tempAllowListReason:<null>; allowWiu:12; targetSdkVersion:34; callerTargetSdkVersion:34; startForegroundCount:0; bindFromPackage:null: isBindService:false]
+12-25 17:34:05.478 D/PlayerFragment(13881): Started PlaybackService for foreground notification
+12-25 17:34:05.506 I/PlaybackService(13881): PlaybackService created (Android 36)
+12-25 17:34:05.506 D/PlaybackService(13881): Notification channel 'playback' exists with importance 2
+12-25 17:34:05.506 D/PlaybackService(13881): App moved to foreground (ProcessLifecycleOwner.onStart)
+12-25 17:34:05.507 D/PlaybackService(13881): Initial app foreground state: true
+12-25 17:34:05.507 D/PlaybackService(13881): Local bind requested
+12-25 17:34:05.507 D/PlaybackService(13881): onStartCommand called (action=null, flags=0, startId=1)
+12-25 17:34:05.507 D/PlaybackService(13881): Starting foreground immediately with placeholder notification (no session yet)
+12-25 17:34:05.517 D/PlaybackService(13881): Initializing MediaSession with player (playWhenReady=true, state=1)
+12-25 17:34:05.549 I/PlaybackService(13881): MediaSession initialized successfully - notification should appear when playback starts
+12-25 17:34:05.549 D/PlaybackService(13881): setPlayerUiVisible: true
+12-25 17:34:05.549 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=false, isPlaying=false, state=1
+12-25 17:34:05.549 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:34:07.416 D/AdaptiveAvail(13881): {"vid":"C6Rej-HdKsg","hasHls":true,"hasDash":false,"adaptive":"HLS_ONLY","streamType":"VIDEO_STREAM","durSec":1150,"videoTracks":13,"audioTracks":7,"hasVideoOnly":true}
+12-25 17:34:07.417 D/ExtractorMetrics(13881): stream_resolve_success videoId=C6Rej-HdKsg durationMs=2170
+12-25 17:34:07.418 D/ExtractionRateLimiter(13881): Extraction success for C6Rej-HdKsg - backoff reset
+12-25 17:34:07.418 D/StreamPrefetch(13881): Prefetch completed for C6Rej-HdKsg
+12-25 17:34:07.419 D/StreamPrefetch(13881): Prefetch consumed (awaited) for C6Rej-HdKsg
+12-25 17:34:07.419 D/PlayerViewModel(13881): Using tap-prefetched stream for C6Rej-HdKsg
+12-25 17:34:07.424 D/PlayerFragment(13881): Preparing stream: id=C6Rej-HdKsg, audioOnly=false, expectedUrl=https://manifest.googlevideo.com/api/manifest/hls_variant/expire/1766702047/ei/fmdNaeKpPO6Pv_IPzZrF8AE/ip/105.155.60.118/id/0ba45e8fe1dd2ac8/source/youtube/requiressl/yes/xpc/EgVo2aDSNQ%3D%3D/playback_host/rr3---sn-p5h-gc5e7.googlevideo.com/cps/100/met/1766680446%2C/mh/gv/mm/31%2C26/mn/sn-p5h-gc5e7%2Csn-hgn7rn7r/ms/au%2Conr/mv/m/mvi/3/pl/22/rms/au%2Cau/tx/51539831/txs/51539830%2C51539831/hfr/1/demuxed/1/tts_caps/1/maudio/1/initcwndbps/933750/bui/AYUSA3DID-czyzizLCZfesSHfJBsAwyup70oID1CuR-_QoBHfRiQKhEOXNQVWVzpo9Tv-8XhQtnAmsAf/spc/wH4Qq02KQSebzxTrAu3O4t_RlJ4aWRLFglF8HJ0NdQz1GqcHWsJ0C2UWynMWKXWD/vprv/1/go/1/rqh/5/mt/1766679925/fvip/3/nvgoi/1/short_key/1/ncsapi/1/keepalive/yes/fexp/51552689%2C51565115%2C51565682%2C51580968/dover/13/itag/0/playlist_type/DVR/sparams/expire%2Cei%2Cip%2Cid%2Csource%2Crequiressl%2Cxpc%2Ctx%2Ctxs%2Chfr%2Cdemuxed%2Ctts_caps%2Cmaudio%2Cbui%2Cspc%2Cvprv%2Cgo%2Crqh%2Citag%2Cplaylist_type/sig/AJfQdSswRQIgcxCub4rZpAgWhHaA3qDwbFhCK24heq4QCP12-7L0TGcCIQDiUC2AvLo1ekh6edLh2H8C7SCmvBPFRH8DY1wFuPq6ew%3D%3D/lsparams/playback_host%2Ccps%2Cmet%2Cmh%2Cmm%2Cmn%2Cms%2Cmv%2Cmvi%2Cpl%2Crms%2Cinitcwndbps/lsig/APaTxxMwRgIhALdjyWS_-MbS3oh2LSnG4RFhMZMvqyaKNYI-4rmZIpxaAiEAusqVtfJ9kBIC_6iHxN6QLOIXwbO51q8Q6ys-a4L14zA%3D/file/index.m3u8?, isQualitySwitch=false
+12-25 17:34:07.430 D/PlayerFragment(13881): Created media source: isAdaptive=true, type=HLS, qualityCap=nullp, actualSource=manifest.googlevideo.com#33338364
+12-25 17:34:07.430 D/PlayerFragment(13881): Track selector: cleared constraints (ABR free)
+12-25 17:34:07.439 D/PlayerFragment(13881): onPlaybackStateChanged: state=2
+12-25 17:34:07.440 D/PlaybackService(13881): onPlaybackStateChanged: state=2, playWhenReady=true
+12-25 17:34:07.440 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=false, state=2
+12-25 17:34:07.440 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:34:07.440 D/PlayerFragment(13881): Stream prepared successfully: C6Rej-HdKsg, isAdaptive=true, type=HLS, actualSource=manifest.googlevideo.com#33338364
+12-25 17:34:07.446 D/PlaybackService(13881): onMediaMetadataChanged: title=تحتاج ٣ أدوات فقط كي تغزو العالم
+12-25 17:34:07.447 D/PlaybackService(13881): setCurrentVideoId: C6Rej-HdKsg
+12-25 17:34:07.447 D/PlayerFragment(13881): Synced MediaSession metadata for: تحتاج ٣ أدوات فقط كي تغزو العالم (forced)
+12-25 17:34:07.514 D/PlaybackService(13881): onMediaMetadataChanged: title=تحتاج ٣ أدوات فقط كي تغزو العالم
+12-25 17:34:08.743 D/PlayerFragment(13881): onVideoSizeChanged: width=854, height=480, pixelWidthHeightRatio=1.0, playerViewResizeMode=0
+12-25 17:34:08.849 D/PlayerFragment(13881): onPlaybackStateChanged: state=3
+12-25 17:34:08.850 D/PlaybackService(13881): onPlaybackStateChanged: state=3, playWhenReady=true
+12-25 17:34:08.850 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=true, state=3
+12-25 17:34:08.850 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:34:08.851 D/PlayerFragment(13881): onIsPlayingChanged: isPlaying=true, hasAutoHidden=false
+12-25 17:34:08.851 D/ExtractionRateLimiter(13881): Reset rate limit state for C6Rej-HdKsg
+12-25 17:34:08.851 D/PlaybackService(13881): onIsPlayingChanged: isPlaying=true, uiVisible=true
+12-25 17:34:08.851 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=true, state=3
+12-25 17:34:08.851 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:34:11.851 D/PlayerFragment(13881): Auto-hiding controls: BEFORE - resizeMode=0, width=1280, height=720
+12-25 17:34:11.860 D/PlayerFragment(13881): Auto-hiding controls: AFTER - resizeMode=0, width=1280, height=720
+12-25 17:34:13.515 D/PlayerFragment(13881): Controller visibility changed: 0, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:34:13.524 D/PlayerFragment(13881): Controller visibility changed: 0, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:34:13.530 D/PlayerFragment(13881): After controller visibility change layout: resizeMode=0, width=1280, height=720
+12-25 17:34:13.530 D/PlayerFragment(13881): After controller visibility change layout: resizeMode=0, width=1280, height=720
+12-25 17:34:14.660 D/PlaybackService(13881): setPlayerUiVisible: false
+12-25 17:34:14.660 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=false, playbackActive=true, isPlaying=true, state=3
+12-25 17:34:14.665 D/PlaybackService(13881): Entering foreground mode
+12-25 17:34:14.666 I/ActivityManager(  681): Background started FGS: Allowed [callingPackage: com.albunyaan.tube; callingUid: 10222; uidState: TOP ; uidBFSL: [BFSL]; intent: Intent { act=com.albunyaan.tube.LOCAL_BIND cmp=com.albunyaan.tube/.player.PlaybackService }; code:PROC_STATE_TOP; tempAllowListReason:<MediaSessionRecord:android.support.v4.media.session.command.GET_EXTRA_BINDER,reasonCode:MEDIA_SESSION_CALLBACK,duration:10000,callingUid:1000>; allowWiu:12; targetSdkVersion:34; callerTargetSdkVersion:34; startForegroundCount:1; bindFromPackage:null: isBindService:false]
+12-25 17:34:14.667 D/PlaybackService(13881): Foreground mode started
+12-25 17:34:14.816 D/PlaybackService(13881): Releasing MediaSession
+12-25 17:34:14.818 D/PlayerFragment(13881): Controller visibility changed: 0, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:34:14.826 D/PlayerFragment(13881): Controller visibility changed: 8, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:34:14.916 I/ExoPlayerImpl(13881): Release ad7183f [AndroidXMedia3/1.4.1] [emu64xa, sdk_gphone64_x86_64, Google, 36] [media3.common, media3.ui, media3.exoplayer, media3.decoder, media3.session, media3.database, media3.exoplayer.hls, media3.datasource, media3.extractor]
+12-25 17:34:16.392 D/ExtractionRateLimiter(13881): Permit acquired for u5Bi-aJcuHE (PREFETCH)
+12-25 17:34:16.392 D/StreamPrefetch(13881): Starting prefetch for u5Bi-aJcuHE
+12-25 17:34:16.393 D/ExtractorMetrics(13881): extractor_cache_miss type=VIDEOS misses=1
+12-25 17:34:16.452 D/StreamPrefetch(13881): Awaiting in-flight prefetch for u5Bi-aJcuHE
+12-25 17:34:16.453 I/ExoPlayerImpl(13881): Init af0bcd4 [AndroidXMedia3/1.4.1] [emu64xa, sdk_gphone64_x86_64, Google, 36]
+12-25 17:34:16.458 I/ActivityManager(  681): Background started FGS: Allowed [callingPackage: com.albunyaan.tube; callingUid: 10222; uidState: TOP ; uidBFSL: [BFSL]; intent: Intent { act=com.albunyaan.tube.LOCAL_BIND xflg=0x4 cmp=com.albunyaan.tube/.player.PlaybackService }; code:PROC_STATE_TOP; tempAllowListReason:<null>; allowWiu:12; targetSdkVersion:34; callerTargetSdkVersion:34; startForegroundCount:2; bindFromPackage:null: isBindService:true]
+12-25 17:34:16.459 D/PlayerFragment(13881): Started PlaybackService for foreground notification
+12-25 17:34:16.476 D/PlaybackService(13881): Initializing MediaSession with player (playWhenReady=true, state=1)
+12-25 17:34:16.483 I/PlaybackService(13881): MediaSession initialized successfully - notification should appear when playback starts
+12-25 17:34:16.483 D/PlaybackService(13881): setPlayerUiVisible: true
+12-25 17:34:16.483 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=false, isPlaying=false, state=1
+12-25 17:34:16.483 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:34:16.483 D/PlaybackService(13881): onStartCommand called (action=null, flags=0, startId=2)
+12-25 17:34:18.253 D/AdaptiveAvail(13881): {"vid":"u5Bi-aJcuHE","hasHls":true,"hasDash":false,"adaptive":"HLS_ONLY","streamType":"VIDEO_STREAM","durSec":965,"videoTracks":13,"audioTracks":7,"hasVideoOnly":true}
+12-25 17:34:18.253 D/ExtractorMetrics(13881): stream_resolve_success videoId=u5Bi-aJcuHE durationMs=1860
+12-25 17:34:18.253 D/ExtractionRateLimiter(13881): Extraction success for u5Bi-aJcuHE - backoff reset
+12-25 17:34:18.253 D/StreamPrefetch(13881): Prefetch completed for u5Bi-aJcuHE
+12-25 17:34:18.253 D/StreamPrefetch(13881): Prefetch consumed (awaited) for u5Bi-aJcuHE
+12-25 17:34:18.253 D/PlayerViewModel(13881): Using tap-prefetched stream for u5Bi-aJcuHE
+12-25 17:34:18.256 D/PlayerFragment(13881): Preparing stream: id=u5Bi-aJcuHE, audioOnly=false, expectedUrl=https://manifest.googlevideo.com/api/manifest/hls_variant/expire/1766702058/ei/imdNaYUUyZDvsw_H_crRCw/ip/105.155.60.118/id/bb9062f9a25cb871/source/youtube/requiressl/yes/xpc/EgVo2aDSNQ%3D%3D/playback_host/rr1---sn-p5h-gc5e7.googlevideo.com/cps/16/met/1766680458%2C/mh/5l/mm/31%2C26/mn/sn-p5h-gc5e7%2Csn-hgn7yn7l/ms/au%2Conr/mv/m/mvi/1/pl/22/rms/au%2Cau/hfr/1/demuxed/1/tts_caps/1/maudio/1/initcwndbps/933750/bui/AYUSA3DouDFhRSbxItRE9TEn0VKpA8xIa5xN2-48r0ZeYg88XfZ3Puge_J3gnERXe_-ddH-cweBcavYk/spc/wH4Qq3g7jXOI6sSO1eBFLVkGQO08Xic4CZ6zdU_q6jKz0t7PDVNHZnvWgwIemebf/vprv/1/go/1/rqh/5/mt/1766679925/fvip/4/nvgoi/1/short_key/1/ncsapi/1/keepalive/yes/fexp/51552689%2C51565116%2C51565682%2C51580968/dover/13/itag/0/playlist_type/DVR/sparams/expire%2Cei%2Cip%2Cid%2Csource%2Crequiressl%2Cxpc%2Chfr%2Cdemuxed%2Ctts_caps%2Cmaudio%2Cbui%2Cspc%2Cvprv%2Cgo%2Crqh%2Citag%2Cplaylist_type/sig/AJfQdSswRAIgWiQW5BYD2vrZrzD9cXAL-8fTOSSea1-w-PL6K58puF0CIAoLm-SZGQlbC7QfrYUWHpstcgca1srKB6VOC0X0hjzg/lsparams/playback_host%2Ccps%2Cmet%2Cmh%2Cmm%2Cmn%2Cms%2Cmv%2Cmvi%2Cpl%2Crms%2Cinitcwndbps/lsig/APaTxxMwRgIhAMx26umalPjrAQopji_mYK48atkJy3HSEWGX6i4zu_NRAiEAkFJGzDxjY6LcXaTj0RPlEZcjqNAMkTQTuvOooeYnq6g%3D/file/index.m3u8?, isQualitySwitch=false
+12-25 17:34:18.257 D/PlayerFragment(13881): Created media source: isAdaptive=true, type=HLS, qualityCap=nullp, actualSource=manifest.googlevideo.com#4dbed94d
+12-25 17:34:18.257 D/PlayerFragment(13881): Track selector: cleared constraints (ABR free)
+12-25 17:34:18.262 D/PlayerFragment(13881): onPlaybackStateChanged: state=2
+12-25 17:34:18.263 D/PlaybackService(13881): onPlaybackStateChanged: state=2, playWhenReady=true
+12-25 17:34:18.263 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=false, state=2
+12-25 17:34:18.263 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:34:18.263 D/PlayerFragment(13881): Stream prepared successfully: u5Bi-aJcuHE, isAdaptive=true, type=HLS, actualSource=manifest.googlevideo.com#4dbed94d
+12-25 17:34:18.266 D/PlaybackService(13881): onMediaMetadataChanged: title=نوشن وأوبسيديان أيهما الأفضل؟Notion vs Obsidian
+12-25 17:34:18.266 D/PlaybackService(13881): setCurrentVideoId: u5Bi-aJcuHE
+12-25 17:34:18.266 D/PlayerFragment(13881): Synced MediaSession metadata for: نوشن وأوبسيديان أيهما الأفضل؟Notion vs Obsidian (forced)
+12-25 17:34:18.327 D/PlaybackService(13881): onMediaMetadataChanged: title=نوشن وأوبسيديان أيهما الأفضل؟Notion vs Obsidian
+12-25 17:34:19.779 D/PlayerFragment(13881): onVideoSizeChanged: width=1920, height=1080, pixelWidthHeightRatio=1.0, playerViewResizeMode=0
+12-25 17:34:20.067 D/PlayerFragment(13881): onPlaybackStateChanged: state=3
+12-25 17:34:20.068 D/PlaybackService(13881): onPlaybackStateChanged: state=3, playWhenReady=true
+12-25 17:34:20.069 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=true, state=3
+12-25 17:34:20.069 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:34:20.069 D/PlayerFragment(13881): onIsPlayingChanged: isPlaying=true, hasAutoHidden=false
+12-25 17:34:20.069 D/ExtractionRateLimiter(13881): Reset rate limit state for u5Bi-aJcuHE
+12-25 17:34:20.070 D/PlaybackService(13881): onIsPlayingChanged: isPlaying=true, uiVisible=true
+12-25 17:34:20.070 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=true, state=3
+12-25 17:34:20.070 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:34:21.545 D/PlayerFragment(13881): Controller visibility changed: 0, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:34:21.558 D/PlayerFragment(13881): Controller visibility changed: 0, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:34:21.564 D/PlayerFragment(13881): After controller visibility change layout: resizeMode=0, width=1280, height=720
+12-25 17:34:21.564 D/PlayerFragment(13881): After controller visibility change layout: resizeMode=0, width=1280, height=720
+12-25 17:34:23.069 D/PlayerFragment(13881): Auto-hiding controls: BEFORE - resizeMode=0, width=1280, height=720
+12-25 17:34:23.070 D/PlayerFragment(13881): Controller visibility changed: 0, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:34:23.075 D/PlayerFragment(13881): Controller visibility changed: 8, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:34:23.078 D/PlayerFragment(13881): After controller visibility change layout: resizeMode=0, width=1280, height=720
+12-25 17:34:23.078 D/PlayerFragment(13881): Auto-hiding controls: AFTER - resizeMode=0, width=1280, height=720
+12-25 17:34:23.078 D/PlayerFragment(13881): After controller visibility change layout: resizeMode=0, width=1280, height=720
+12-25 17:34:24.371 D/PlayerFragment(13881): Controller visibility changed: 0, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:34:24.374 D/PlayerFragment(13881): Controller visibility changed: 0, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:34:24.378 D/PlayerFragment(13881): After controller visibility change layout: resizeMode=0, width=1280, height=720
+12-25 17:34:24.378 D/PlayerFragment(13881): After controller visibility change layout: resizeMode=0, width=1280, height=720
+12-25 17:34:25.643 D/PlaybackService(13881): setPlayerUiVisible: false
+12-25 17:34:25.644 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=false, playbackActive=true, isPlaying=true, state=3
+12-25 17:34:25.645 D/PlaybackService(13881): Entering foreground mode
+12-25 17:34:25.646 I/ActivityManager(  681): Background started FGS: Allowed [callingPackage: com.albunyaan.tube; callingUid: 10222; uidState: TOP ; uidBFSL: [BFSL]; intent: Intent { act=com.albunyaan.tube.LOCAL_BIND cmp=com.albunyaan.tube/.player.PlaybackService }; code:PROC_STATE_TOP; tempAllowListReason:<MediaSessionRecord:android.support.v4.media.session.command.GET_EXTRA_BINDER,reasonCode:MEDIA_SESSION_CALLBACK,duration:10000,callingUid:1000>; allowWiu:12; targetSdkVersion:34; callerTargetSdkVersion:34; startForegroundCount:2; bindFromPackage:null: isBindService:false]
+12-25 17:34:25.646 D/PlaybackService(13881): Foreground mode started
+12-25 17:34:25.830 D/PlaybackService(13881): Releasing MediaSession
+12-25 17:34:25.832 D/PlayerFragment(13881): Controller visibility changed: 0, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:34:25.842 D/PlayerFragment(13881): Controller visibility changed: 8, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:34:25.934 I/ExoPlayerImpl(13881): Release af0bcd4 [AndroidXMedia3/1.4.1] [emu64xa, sdk_gphone64_x86_64, Google, 36] [media3.common, media3.ui, media3.exoplayer, media3.decoder, media3.session, media3.database, media3.exoplayer.hls, media3.datasource, media3.extractor]
+12-25 17:34:35.793 D/ExtractionRateLimiter(13881): Permit acquired for zj_0zezg-Kg (PREFETCH)
+12-25 17:34:35.793 D/StreamPrefetch(13881): Starting prefetch for zj_0zezg-Kg
+12-25 17:34:35.793 D/ExtractorMetrics(13881): extractor_cache_miss type=VIDEOS misses=1
+12-25 17:34:35.856 I/ExoPlayerImpl(13881): Init 61f4416 [AndroidXMedia3/1.4.1] [emu64xa, sdk_gphone64_x86_64, Google, 36]
+12-25 17:34:35.862 I/ActivityManager(  681): Background started FGS: Allowed [callingPackage: com.albunyaan.tube; callingUid: 10222; uidState: TOP ; uidBFSL: [BFSL]; intent: Intent { act=com.albunyaan.tube.LOCAL_BIND xflg=0x4 cmp=com.albunyaan.tube/.player.PlaybackService }; code:PROC_STATE_TOP; tempAllowListReason:<null>; allowWiu:12; targetSdkVersion:34; callerTargetSdkVersion:34; startForegroundCount:3; bindFromPackage:null: isBindService:true]
+12-25 17:34:35.863 D/PlayerFragment(13881): Started PlaybackService for foreground notification
+12-25 17:34:35.880 D/PlaybackService(13881): Initializing MediaSession with player (playWhenReady=true, state=1)
+12-25 17:34:35.886 I/PlaybackService(13881): MediaSession initialized successfully - notification should appear when playback starts
+12-25 17:34:35.887 D/PlaybackService(13881): setPlayerUiVisible: true
+12-25 17:34:35.887 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=false, isPlaying=false, state=1
+12-25 17:34:35.887 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:34:35.888 D/PlaybackService(13881): onStartCommand called (action=null, flags=0, startId=3)
+12-25 17:34:35.889 D/PlayerViewModel(13881): Fast path: targetVideoId found at hinted index 1
+12-25 17:34:35.889 D/PlayerViewModel(13881): Playlist initialized: 100 items, startIndex=1, hasMore=true
+12-25 17:34:35.895 D/StreamPrefetch(13881): Awaiting in-flight prefetch for zj_0zezg-Kg
+12-25 17:34:37.261 D/AdaptiveAvail(13881): {"vid":"zj_0zezg-Kg","hasHls":true,"hasDash":false,"adaptive":"HLS_ONLY","streamType":"VIDEO_STREAM","durSec":400,"videoTracks":4,"audioTracks":2,"hasVideoOnly":true}
+12-25 17:34:37.261 D/ExtractorMetrics(13881): stream_resolve_success videoId=zj_0zezg-Kg durationMs=1468
+12-25 17:34:37.262 D/ExtractionRateLimiter(13881): Extraction success for zj_0zezg-Kg - backoff reset
+12-25 17:34:37.262 D/StreamPrefetch(13881): Prefetch completed for zj_0zezg-Kg
+12-25 17:34:37.262 D/StreamPrefetch(13881): Prefetch consumed (awaited) for zj_0zezg-Kg
+12-25 17:34:37.262 D/PlayerViewModel(13881): Using tap-prefetched stream for zj_0zezg-Kg
+12-25 17:34:37.268 D/PlayerFragment(13881): Preparing stream: id=zj_0zezg-Kg, audioOnly=false, expectedUrl=https://manifest.googlevideo.com/api/manifest/hls_variant/expire/1766702077/ei/nWdNaaOPCYaH0u8Poo7_gAU/ip/105.155.60.118/id/ce3ff4cdece0f8a8/source/youtube/requiressl/yes/xpc/EgVo2aDSNQ%3D%3D/playback_host/rr1---sn-p5h-gc5y.googlevideo.com/cps/0/met/1766680477%2C/mh/pM/mm/31%2C26/mn/sn-p5h-gc5y%2Csn-hgn7yn7z/ms/au%2Conr/mv/m/mvi/1/pl/22/rms/au%2Cau/tx/51666466/txs/51666463%2C51666464%2C51666465%2C51666466%2C51666467/hfr/1/demuxed/1/tts_caps/1/maudio/1/initcwndbps/942500/bui/AYUSA3AyZTmyjkns1oFDHx98C_4aug3yi2g1zlROc8DMSVRLuONK3xtMrBjKZfrflkRn6Tazllpu1o1H/spc/wH4Qqy2LKYxAQnAbr6V_ky-chZMcXnYvo3ktqANJir4ndoN-owdWDRpNhl24kdbZ/vprv/1/go/1/rqh/5/mt/1766680153/fvip/2/nvgoi/1/short_key/1/ncsapi/1/keepalive/yes/fexp/51552689%2C51565115%2C51565681%2C51580968/dover/13/itag/0/playlist_type/DVR/sparams/expire%2Cei%2Cip%2Cid%2Csource%2Crequiressl%2Cxpc%2Ctx%2Ctxs%2Chfr%2Cdemuxed%2Ctts_caps%2Cmaudio%2Cbui%2Cspc%2Cvprv%2Cgo%2Crqh%2Citag%2Cplaylist_type/sig/AJfQdSswRQIhALhQgYbgVKQaKzCgz48m0sMyK9Xq76eWd9dc5nIHfgy-AiBcDFkDc-CsG4vmTeW3mvnEPWTT0lLrUpvPT3HIJJyFkg%3D%3D/lsparams/playback_host%2Ccps%2Cmet%2Cmh%2Cmm%2Cmn%2Cms%2Cmv%2Cmvi%2Cpl%2Crms%2Cinitcwndbps/lsig/APaTxxMwRQIhAMPVoF1oE5EI40l4-EMiB1Fzifbkfhd-RQlNjT2c2ek_AiBhYwSzlAxKI2LkoKV5NFNrJUzGaSarMp2wxXdWMnSWPg%3D%3D/file/index.m3u8?, isQualitySwitch=false
+12-25 17:34:37.268 D/PlayerFragment(13881): Created media source: isAdaptive=true, type=HLS, qualityCap=nullp, actualSource=manifest.googlevideo.com#624b6155
+12-25 17:34:37.268 D/PlayerFragment(13881): Track selector: cleared constraints (ABR free)
+12-25 17:34:37.274 D/PlayerFragment(13881): onPlaybackStateChanged: state=2
+12-25 17:34:37.275 D/PlaybackService(13881): onPlaybackStateChanged: state=2, playWhenReady=true
+12-25 17:34:37.275 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=false, state=2
+12-25 17:34:37.276 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:34:37.276 D/PlayerFragment(13881): Stream prepared successfully: zj_0zezg-Kg, isAdaptive=true, type=HLS, actualSource=manifest.googlevideo.com#624b6155
+12-25 17:34:37.278 D/PlaybackService(13881): onMediaMetadataChanged: title=برنامج ورقات 2 - آداب عيد الفطر
+12-25 17:34:37.279 D/PlaybackService(13881): setCurrentVideoId: zj_0zezg-Kg
+12-25 17:34:37.279 D/PlayerFragment(13881): Synced MediaSession metadata for: برنامج ورقات 2 - آداب عيد الفطر (forced)
+12-25 17:34:37.333 D/PlaybackService(13881): onMediaMetadataChanged: title=برنامج ورقات 2 - آداب عيد الفطر
+12-25 17:34:38.759 D/PlayerFragment(13881): onVideoSizeChanged: width=640, height=360, pixelWidthHeightRatio=1.0, playerViewResizeMode=0
+12-25 17:34:38.783 D/PlayerFragment(13881): onPlaybackStateChanged: state=3
+12-25 17:34:38.784 D/PlaybackService(13881): onPlaybackStateChanged: state=3, playWhenReady=true
+12-25 17:34:38.784 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=true, state=3
+12-25 17:34:38.784 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:34:38.784 D/PlayerFragment(13881): onIsPlayingChanged: isPlaying=true, hasAutoHidden=false
+12-25 17:34:38.784 D/ExtractionRateLimiter(13881): Reset rate limit state for zj_0zezg-Kg
+12-25 17:34:38.785 D/ExtractionRateLimiter(13881): Permit acquired for gTAlm9vdQCo (PREFETCH)
+12-25 17:34:38.785 D/PlayerViewModel(13881): Prefetch: Starting for gTAlm9vdQCo
+12-25 17:34:38.785 D/ExtractorMetrics(13881): extractor_cache_miss type=VIDEOS misses=1
+12-25 17:34:38.785 D/PlaybackService(13881): onIsPlayingChanged: isPlaying=true, uiVisible=true
+12-25 17:34:38.785 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=true, state=3
+12-25 17:34:38.786 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:34:40.405 D/AdaptiveAvail(13881): {"vid":"gTAlm9vdQCo","hasHls":true,"hasDash":false,"adaptive":"HLS_ONLY","streamType":"VIDEO_STREAM","durSec":642,"videoTracks":4,"audioTracks":2,"hasVideoOnly":true}
+12-25 17:34:40.405 D/ExtractorMetrics(13881): stream_resolve_success videoId=gTAlm9vdQCo durationMs=1620
+12-25 17:34:40.405 D/ExtractionRateLimiter(13881): Extraction success for gTAlm9vdQCo - backoff reset
+12-25 17:34:40.405 D/PlayerViewModel(13881): Prefetch: Completed for gTAlm9vdQCo
+12-25 17:34:40.405 D/ExtractionRateLimiter(13881): Permit acquired for kHddQuHKD1s (PREFETCH)
+12-25 17:34:40.405 D/PlayerViewModel(13881): Prefetch: Starting for kHddQuHKD1s
+12-25 17:34:40.405 D/ExtractorMetrics(13881): extractor_cache_miss type=VIDEOS misses=1
+12-25 17:34:41.785 D/PlayerFragment(13881): Auto-hiding controls: BEFORE - resizeMode=0, width=1280, height=720
+12-25 17:34:41.794 D/PlayerFragment(13881): Auto-hiding controls: AFTER - resizeMode=0, width=1280, height=720
+12-25 17:34:41.848 D/AdaptiveAvail(13881): {"vid":"kHddQuHKD1s","hasHls":true,"hasDash":false,"adaptive":"HLS_ONLY","streamType":"VIDEO_STREAM","durSec":774,"videoTracks":4,"audioTracks":2,"hasVideoOnly":true}
+12-25 17:34:41.848 D/ExtractorMetrics(13881): stream_resolve_success videoId=kHddQuHKD1s durationMs=1444
+12-25 17:34:41.849 D/ExtractionRateLimiter(13881): Extraction success for kHddQuHKD1s - backoff reset
+12-25 17:34:41.849 D/PlayerViewModel(13881): Prefetch: Completed for kHddQuHKD1s
+12-25 17:34:43.413 D/PlayerFragment(13881): Stream already prepared with same source, skipping
+12-25 17:34:43.414 D/PlayerFragment(13881): Stream already prepared with same source, skipping
+12-25 17:34:43.416 D/PlayerViewModel(13881): Using queue-prefetched stream for kHddQuHKD1s
+12-25 17:34:43.419 D/PlayerFragment(13881): Preparing stream: id=kHddQuHKD1s, audioOnly=false, expectedUrl=https://manifest.googlevideo.com/api/manifest/hls_variant/expire/1766702081/ei/oWdNab2NKdCy0u8P5P2x2Q4/ip/105.155.60.118/id/90775d42e1ca0f5b/source/youtube/requiressl/yes/xpc/EgVo2aDSNQ%3D%3D/playback_host/rr4---sn-p5h-gc5y.googlevideo.com/cps/0/met/1766680481%2C/mh/o-/mm/31%2C26/mn/sn-p5h-gc5y%2Csn-hgn7yn76/ms/au%2Conr/mv/m/mvi/4/pl/22/rms/au%2Cau/hfr/1/demuxed/1/tts_caps/1/maudio/1/initcwndbps/942500/bui/AYUSA3ANmW3x5Tpg4xQ1ZQ5r8sT24fJHnv9PVqR5fv_QyBqbYkbotMWlW08jBRi9wALsAJ1Uqf3s3Z6X/spc/wH4Qq37d-3cEXjTpJIpqJj-unnq37-V0rBLzqD-i2YqLRghIDHYN73csPje43tn1/vprv/1/go/1/rqh/5/mt/1766680153/fvip/1/nvgoi/1/short_key/1/ncsapi/1/keepalive/yes/fexp/51552689%2C51565116%2C51565681%2C51580968/dover/13/itag/0/playlist_type/DVR/sparams/expire%2Cei%2Cip%2Cid%2Csource%2Crequiressl%2Cxpc%2Chfr%2Cdemuxed%2Ctts_caps%2Cmaudio%2Cbui%2Cspc%2Cvprv%2Cgo%2Crqh%2Citag%2Cplaylist_type/sig/AJfQdSswRgIhAPUrNVtlIaSy4lscnIr1IrVsj7kn4rFUtFp_jwARDYeqAiEA2iNjOky2AmnlTx_K4EF8GwKLR26n9Ly-jkjtmTfwzb0%3D/lsparams/playback_host%2Ccps%2Cmet%2Cmh%2Cmm%2Cmn%2Cms%2Cmv%2Cmvi%2Cpl%2Crms%2Cinitcwndbps/lsig/APaTxxMwRQIgc576TIsy3AYlTjcIPGwkSp7E4HLat0llIdZuZbxeUwMCIQCsGvxwb2yl_49L3QuXx3SA03BsoPmsj8J4wD7N4FKaxg%3D%3D/file/index.m3u8?, isQualitySwitch=false
+12-25 17:34:43.419 D/PlayerFragment(13881): Created media source: isAdaptive=true, type=HLS, qualityCap=nullp, actualSource=manifest.googlevideo.com#fec13412
+12-25 17:34:43.419 D/PlayerFragment(13881): Track selector: cleared constraints (ABR free)
+12-25 17:34:43.423 D/PlaybackService(13881): onMediaMetadataChanged: title=null
+12-25 17:34:43.423 D/PlayerFragment(13881): onPlaybackStateChanged: state=2
+12-25 17:34:43.424 D/PlaybackService(13881): onPlaybackStateChanged: state=2, playWhenReady=true
+12-25 17:34:43.424 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=false, state=2
+12-25 17:34:43.424 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:34:43.424 D/PlayerFragment(13881): onIsPlayingChanged: isPlaying=false, hasAutoHidden=true
+12-25 17:34:43.425 D/PlaybackService(13881): onIsPlayingChanged: isPlaying=false, uiVisible=true
+12-25 17:34:43.425 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=false, state=2
+12-25 17:34:43.425 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:34:43.426 D/PlayerFragment(13881): Stream prepared successfully: kHddQuHKD1s, isAdaptive=true, type=HLS, actualSource=manifest.googlevideo.com#fec13412
+12-25 17:34:43.429 D/PlaybackService(13881): onMediaMetadataChanged: title=برنامج ورقات 2 - العبادة
+12-25 17:34:43.429 D/PlaybackService(13881): setCurrentVideoId: kHddQuHKD1s
+12-25 17:34:43.429 D/PlayerFragment(13881): Synced MediaSession metadata for: برنامج ورقات 2 - العبادة (forced)
+12-25 17:34:43.442 D/PlayerFragment(13881): Stream already prepared with same source, skipping
+12-25 17:34:43.442 D/PlayerFragment(13881): onVideoSizeChanged: width=0, height=0, pixelWidthHeightRatio=1.0, playerViewResizeMode=0
+12-25 17:34:43.564 D/PlaybackService(13881): onMediaMetadataChanged: title=برنامج ورقات 2 - العبادة
+12-25 17:34:45.135 D/PlayerFragment(13881): Stream already prepared with same source, skipping
+12-25 17:34:45.135 D/PlayerFragment(13881): onVideoSizeChanged: width=640, height=360, pixelWidthHeightRatio=1.0, playerViewResizeMode=0
+12-25 17:34:45.307 D/PlayerFragment(13881): onPlaybackStateChanged: state=3
+12-25 17:34:45.307 D/PlaybackService(13881): onPlaybackStateChanged: state=3, playWhenReady=true
+12-25 17:34:45.307 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=true, state=3
+12-25 17:34:45.307 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:34:45.307 D/PlayerFragment(13881): onIsPlayingChanged: isPlaying=true, hasAutoHidden=true
+12-25 17:34:45.307 D/ExtractionRateLimiter(13881): Reset rate limit state for kHddQuHKD1s
+12-25 17:34:45.308 D/PlaybackService(13881): onIsPlayingChanged: isPlaying=true, uiVisible=true
+12-25 17:34:45.308 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=true, state=3
+12-25 17:34:45.308 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:34:53.255 D/PlayerFragment(13881): Controller visibility changed: 0, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:34:53.258 D/PlayerFragment(13881): Controller visibility changed: 0, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:34:53.264 D/PlayerFragment(13881): After controller visibility change layout: resizeMode=0, width=1280, height=720
+12-25 17:34:53.264 D/PlayerFragment(13881): After controller visibility change layout: resizeMode=0, width=1280, height=720
+12-25 17:34:54.329 D/PlaybackService(13881): setPlayerUiVisible: false
+12-25 17:34:54.329 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=false, playbackActive=true, isPlaying=true, state=3
+12-25 17:34:54.330 D/PlaybackService(13881): Entering foreground mode
+12-25 17:34:54.331 I/ActivityManager(  681): Background started FGS: Allowed [callingPackage: com.albunyaan.tube; callingUid: 10222; uidState: TOP ; uidBFSL: [BFSL]; intent: Intent { act=com.albunyaan.tube.LOCAL_BIND cmp=com.albunyaan.tube/.player.PlaybackService }; code:PROC_STATE_TOP; tempAllowListReason:<null>; allowWiu:12; targetSdkVersion:34; callerTargetSdkVersion:34; startForegroundCount:3; bindFromPackage:null: isBindService:false]
+12-25 17:34:54.332 D/PlaybackService(13881): Foreground mode started
+12-25 17:34:54.475 D/PlaybackService(13881): Releasing MediaSession
+12-25 17:34:54.476 D/PlayerFragment(13881): Controller visibility changed: 0, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:34:54.482 D/PlayerFragment(13881): Controller visibility changed: 8, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:34:54.584 I/ExoPlayerImpl(13881): Release 61f4416 [AndroidXMedia3/1.4.1] [emu64xa, sdk_gphone64_x86_64, Google, 36] [media3.common, media3.ui, media3.exoplayer, media3.decoder, media3.session, media3.database, media3.exoplayer.hls, media3.datasource, media3.extractor]
+12-25 17:35:05.560 D/ExtractionRateLimiter(13881): Permit acquired for 9qgdsB5soFc (PREFETCH)
+12-25 17:35:05.560 D/StreamPrefetch(13881): Starting prefetch for 9qgdsB5soFc
+12-25 17:35:05.562 D/ExtractorMetrics(13881): extractor_cache_miss type=VIDEOS misses=1
+12-25 17:35:05.639 I/ExoPlayerImpl(13881): Init 8b5b9d3 [AndroidXMedia3/1.4.1] [emu64xa, sdk_gphone64_x86_64, Google, 36]
+12-25 17:35:05.646 I/ActivityManager(  681): Background started FGS: Allowed [callingPackage: com.albunyaan.tube; callingUid: 10222; uidState: TOP ; uidBFSL: [BFSL]; intent: Intent { act=com.albunyaan.tube.LOCAL_BIND xflg=0x4 cmp=com.albunyaan.tube/.player.PlaybackService }; code:PROC_STATE_TOP; tempAllowListReason:<null>; allowWiu:12; targetSdkVersion:34; callerTargetSdkVersion:34; startForegroundCount:4; bindFromPackage:null: isBindService:true]
+12-25 17:35:05.647 D/PlayerFragment(13881): Started PlaybackService for foreground notification
+12-25 17:35:05.666 D/PlaybackService(13881): Initializing MediaSession with player (playWhenReady=true, state=1)
+12-25 17:35:05.673 I/PlaybackService(13881): MediaSession initialized successfully - notification should appear when playback starts
+12-25 17:35:05.673 D/PlaybackService(13881): setPlayerUiVisible: true
+12-25 17:35:05.673 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=false, isPlaying=false, state=1
+12-25 17:35:05.675 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:35:05.675 D/PlaybackService(13881): onStartCommand called (action=null, flags=0, startId=4)
+12-25 17:35:05.675 D/PlayerViewModel(13881): Fast path: targetVideoId found at hinted index 0
+12-25 17:35:05.676 D/PlayerViewModel(13881): Playlist initialized: 100 items, startIndex=0, hasMore=true
+12-25 17:35:05.680 D/StreamPrefetch(13881): Awaiting in-flight prefetch for 9qgdsB5soFc
+12-25 17:35:07.448 D/AdaptiveAvail(13881): {"vid":"9qgdsB5soFc","hasHls":true,"hasDash":false,"adaptive":"HLS_ONLY","streamType":"VIDEO_STREAM","durSec":126,"videoTracks":13,"audioTracks":7,"hasVideoOnly":true}
+12-25 17:35:07.448 D/ExtractorMetrics(13881): stream_resolve_success videoId=9qgdsB5soFc durationMs=1886
+12-25 17:35:07.448 D/ExtractionRateLimiter(13881): Extraction success for 9qgdsB5soFc - backoff reset
+12-25 17:35:07.448 D/StreamPrefetch(13881): Prefetch completed for 9qgdsB5soFc
+12-25 17:35:07.449 D/StreamPrefetch(13881): Prefetch consumed (awaited) for 9qgdsB5soFc
+12-25 17:35:07.449 D/PlayerViewModel(13881): Using tap-prefetched stream for 9qgdsB5soFc
+12-25 17:35:07.454 D/PlayerFragment(13881): Preparing stream: id=9qgdsB5soFc, audioOnly=false, expectedUrl=https://manifest.googlevideo.com/api/manifest/hls_variant/expire/1766702107/ei/u2dNaZo35cTS7w_606fwCw/ip/105.155.60.118/id/f6a81db01e6ca057/source/youtube/requiressl/yes/xpc/EgVo2aDSNQ%3D%3D/playback_host/rr4---sn-p5h-gc5y.googlevideo.com/cps/0/met/1766680507%2C/mh/Fq/mm/31%2C26/mn/sn-p5h-gc5y%2Csn-hgn7yn7s/ms/au%2Conr/mv/m/mvi/4/pl/22/rms/au%2Cau/tx/51539831/txs/51539830%2C51539831/hfr/1/demuxed/1/tts_caps/1/maudio/1/initcwndbps/942500/bui/AYUSA3DUjGy3WdcRcrreNhOHWb4_mXVSr_XBhrayt0GlxM0B_GrFisSwlspIGLb5XACxyMMiDQmP2sYc/spc/wH4Qq2s2Yh7xjn4Q5sMMhgVJ3hIuUJraaFqneoRoBBKqaa-xt-70bc3yDj5-fDZ5/vprv/1/go/1/rqh/5/mt/1766680153/fvip/3/nvgoi/1/short_key/1/ncsapi/1/keepalive/yes/fexp/51552689%2C51565116%2C51565682%2C51580968/dover/13/itag/0/playlist_type/DVR/sparams/expire%2Cei%2Cip%2Cid%2Csource%2Crequiressl%2Cxpc%2Ctx%2Ctxs%2Chfr%2Cdemuxed%2Ctts_caps%2Cmaudio%2Cbui%2Cspc%2Cvprv%2Cgo%2Crqh%2Citag%2Cplaylist_type/sig/AJfQdSswRQIgLGdsnTyQC22XaZ2CPry6_LwTUWdERKoeMaUwFhPxQ6kCIQDj3x3A_6ZukS8tx6h3Yb94Xcg1vk1O1UMqgar50KzozA%3D%3D/lsparams/playback_host%2Ccps%2Cmet%2Cmh%2Cmm%2Cmn%2Cms%2Cmv%2Cmvi%2Cpl%2Crms%2Cinitcwndbps/lsig/APaTxxMwRQIgU1XcdYHJg4YEInfqux5jg9YefiEN5mtlRHwBFZ0XgsMCIQCKTS19GxSJYy7ZuiUjzPjxa9N7eIossjZ10xIlnd3VJw%3D%3D/file/index.m3u8?, isQualitySwitch=false
+12-25 17:35:07.454 D/PlayerFragment(13881): Created media source: isAdaptive=true, type=HLS, qualityCap=nullp, actualSource=manifest.googlevideo.com#c4afe7d2
+12-25 17:35:07.454 D/PlayerFragment(13881): Track selector: cleared constraints (ABR free)
+12-25 17:35:07.460 D/PlayerFragment(13881): onPlaybackStateChanged: state=2
+12-25 17:35:07.461 D/PlaybackService(13881): onPlaybackStateChanged: state=2, playWhenReady=true
+12-25 17:35:07.461 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=false, state=2
+12-25 17:35:07.461 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:35:07.461 D/PlayerFragment(13881): Stream prepared successfully: 9qgdsB5soFc, isAdaptive=true, type=HLS, actualSource=manifest.googlevideo.com#c4afe7d2
+12-25 17:35:07.464 D/PlaybackService(13881): onMediaMetadataChanged: title=سلامته البيبي 🤒 (بدون ايقاع) | قناة مرح كي جي - Marah KG
+12-25 17:35:07.464 D/PlaybackService(13881): setCurrentVideoId: 9qgdsB5soFc
+12-25 17:35:07.464 D/PlayerFragment(13881): Synced MediaSession metadata for: سلامته البيبي 🤒 (بدون ايقاع) | قناة مرح كي جي - Marah KG (forced)
+12-25 17:35:07.593 D/PlaybackService(13881): onMediaMetadataChanged: title=سلامته البيبي 🤒 (بدون ايقاع) | قناة مرح كي جي - Marah KG
+12-25 17:35:09.264 D/PlayerFragment(13881): onVideoSizeChanged: width=1920, height=1080, pixelWidthHeightRatio=1.0, playerViewResizeMode=0
+12-25 17:35:09.356 D/PlayerFragment(13881): onPlaybackStateChanged: state=3
+12-25 17:35:09.357 D/PlaybackService(13881): onPlaybackStateChanged: state=3, playWhenReady=true
+12-25 17:35:09.357 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=true, state=3
+12-25 17:35:09.357 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:35:09.357 D/PlayerFragment(13881): onIsPlayingChanged: isPlaying=true, hasAutoHidden=false
+12-25 17:35:09.357 D/ExtractionRateLimiter(13881): Reset rate limit state for 9qgdsB5soFc
+12-25 17:35:09.357 D/ExtractionRateLimiter(13881): Permit acquired for x_WQVvjsFAg (PREFETCH)
+12-25 17:35:09.357 D/PlayerViewModel(13881): Prefetch: Starting for x_WQVvjsFAg
+12-25 17:35:09.358 D/ExtractorMetrics(13881): extractor_cache_miss type=VIDEOS misses=1
+12-25 17:35:09.358 D/PlaybackService(13881): onIsPlayingChanged: isPlaying=true, uiVisible=true
+12-25 17:35:09.358 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=true, state=3
+12-25 17:35:09.358 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:35:10.961 D/AdaptiveAvail(13881): {"vid":"x_WQVvjsFAg","hasHls":true,"hasDash":false,"adaptive":"HLS_ONLY","streamType":"VIDEO_STREAM","durSec":131,"videoTracks":13,"audioTracks":7,"hasVideoOnly":true}
+12-25 17:35:10.961 D/ExtractorMetrics(13881): stream_resolve_success videoId=x_WQVvjsFAg durationMs=1603
+12-25 17:35:10.961 D/ExtractionRateLimiter(13881): Extraction success for x_WQVvjsFAg - backoff reset
+12-25 17:35:10.961 D/PlayerViewModel(13881): Prefetch: Completed for x_WQVvjsFAg
+12-25 17:35:10.961 D/ExtractionRateLimiter(13881): Permit acquired for 5peZkbWJOa4 (PREFETCH)
+12-25 17:35:10.961 D/PlayerViewModel(13881): Prefetch: Starting for 5peZkbWJOa4
+12-25 17:35:10.961 D/ExtractorMetrics(13881): extractor_cache_miss type=VIDEOS misses=1
+12-25 17:35:12.357 D/PlayerFragment(13881): Auto-hiding controls: BEFORE - resizeMode=0, width=1280, height=720
+12-25 17:35:12.380 D/PlayerFragment(13881): Auto-hiding controls: AFTER - resizeMode=0, width=1280, height=720
+12-25 17:35:12.574 D/AdaptiveAvail(13881): {"vid":"5peZkbWJOa4","hasHls":true,"hasDash":false,"adaptive":"HLS_ONLY","streamType":"VIDEO_STREAM","durSec":186,"videoTracks":13,"audioTracks":7,"hasVideoOnly":true}
+12-25 17:35:12.574 D/ExtractorMetrics(13881): stream_resolve_success videoId=5peZkbWJOa4 durationMs=1612
+12-25 17:35:12.574 D/ExtractionRateLimiter(13881): Extraction success for 5peZkbWJOa4 - backoff reset
+12-25 17:35:12.574 D/PlayerViewModel(13881): Prefetch: Completed for 5peZkbWJOa4
+12-25 17:35:18.000 D/PlayerFragment(13881): Stream already prepared with same source, skipping
+12-25 17:35:18.002 D/PlayerFragment(13881): Stream already prepared with same source, skipping
+12-25 17:35:18.004 D/PlayerViewModel(13881): Using queue-prefetched stream for 5peZkbWJOa4
+12-25 17:35:18.006 D/PlayerFragment(13881): Preparing stream: id=5peZkbWJOa4, audioOnly=false, expectedUrl=https://manifest.googlevideo.com/api/manifest/hls_variant/expire/1766702112/ei/wGdNaZ6HDsnDv_IPnbX8-Ao/ip/105.155.60.118/id/e6979991b58939ae/source/youtube/requiressl/yes/xpc/EgVo2aDSNQ%3D%3D/playback_host/rr1---sn-p5h-gc5y.googlevideo.com/cps/43/met/1766680512%2C/mh/Rp/mm/31%2C26/mn/sn-p5h-gc5y%2Csn-hgn7yn7z/ms/au%2Conr/mv/m/mvi/1/pl/22/rms/au%2Cau/tx/51666465/txs/51666463%2C51666464%2C51666465%2C51666466%2C51666467/hfr/1/demuxed/1/tts_caps/1/maudio/1/initcwndbps/942500/bui/AYUSA3BPN7_wiwsnJT0mvrn5Y_zoOMj8s1C2vNjR7wNn_PKEyHOS1ybYdbNLYYgdVdlt9awAPypn8hDW/spc/wH4Qq030tTUzPxnc8KtjUttVTHVD4x1cBtmy7cWxjByIT_hxCAgfQvm1omRpKgY_/vprv/1/go/1/rqh/5/mt/1766680153/fvip/5/nvgoi/1/short_key/1/ncsapi/1/keepalive/yes/fexp/51552689%2C51565116%2C51565682%2C51580968/dover/13/itag/0/playlist_type/DVR/sparams/expire%2Cei%2Cip%2Cid%2Csource%2Crequiressl%2Cxpc%2Ctx%2Ctxs%2Chfr%2Cdemuxed%2Ctts_caps%2Cmaudio%2Cbui%2Cspc%2Cvprv%2Cgo%2Crqh%2Citag%2Cplaylist_type/sig/AJfQdSswRQIgZCTutva_LiOS8H-nJozWYi2-qvgrtpwuG4F1ANOjpyMCIQC_weUa-GsJcHbtGnpFvCMkSSBA6bZ14IO1wth1gUlZ_Q%3D%3D/lsparams/playback_host%2Ccps%2Cmet%2Cmh%2Cmm%2Cmn%2Cms%2Cmv%2Cmvi%2Cpl%2Crms%2Cinitcwndbps/lsig/APaTxxMwRQIgPXp-ZvNVVJCinGdoMI6Ps5l4Uvt8ehLy8CYPPx4MnawCIQCOYeYGQDC-nOc2m3EwPhyfMqMJFn3iq11K5gNJ4SOWlg%3D%3D/file/index.m3u8?, isQualitySwitch=false
+12-25 17:35:18.006 D/PlayerFragment(13881): Created media source: isAdaptive=true, type=HLS, qualityCap=nullp, actualSource=manifest.googlevideo.com#211a0e7e
+12-25 17:35:18.006 D/PlayerFragment(13881): Track selector: cleared constraints (ABR free)
+12-25 17:35:18.011 D/PlaybackService(13881): onMediaMetadataChanged: title=null
+12-25 17:35:18.012 D/PlayerFragment(13881): onPlaybackStateChanged: state=2
+12-25 17:35:18.012 D/PlaybackService(13881): onPlaybackStateChanged: state=2, playWhenReady=true
+12-25 17:35:18.012 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=false, state=2
+12-25 17:35:18.012 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:35:18.013 D/PlayerFragment(13881): onIsPlayingChanged: isPlaying=false, hasAutoHidden=true
+12-25 17:35:18.013 D/PlaybackService(13881): onIsPlayingChanged: isPlaying=false, uiVisible=true
+12-25 17:35:18.013 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=false, state=2
+12-25 17:35:18.013 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:35:18.016 D/PlayerFragment(13881): Stream prepared successfully: 5peZkbWJOa4, isAdaptive=true, type=HLS, actualSource=manifest.googlevideo.com#211a0e7e
+12-25 17:35:18.018 D/PlaybackService(13881): onMediaMetadataChanged: title=أغنية البيبي الشطور بدون ايقاع | قناة مرح كي جي - Marah KG
+12-25 17:35:18.019 D/PlaybackService(13881): setCurrentVideoId: 5peZkbWJOa4
+12-25 17:35:18.019 D/PlayerFragment(13881): Synced MediaSession metadata for: أغنية البيبي الشطور بدون ايقاع | قناة مرح كي جي - Marah KG (forced)
+12-25 17:35:18.029 D/PlayerFragment(13881): Stream already prepared with same source, skipping
+12-25 17:35:18.029 D/PlayerFragment(13881): onVideoSizeChanged: width=0, height=0, pixelWidthHeightRatio=1.0, playerViewResizeMode=0
+12-25 17:35:18.123 D/PlaybackService(13881): onMediaMetadataChanged: title=أغنية البيبي الشطور بدون ايقاع | قناة مرح كي جي - Marah KG
+12-25 17:35:19.424 D/PlayerFragment(13881): Stream already prepared with same source, skipping
+12-25 17:35:19.424 D/PlayerFragment(13881): onVideoSizeChanged: width=1920, height=1080, pixelWidthHeightRatio=1.0, playerViewResizeMode=0
+12-25 17:35:19.862 D/PlayerFragment(13881): onPlaybackStateChanged: state=3
+12-25 17:35:19.863 D/PlaybackService(13881): onPlaybackStateChanged: state=3, playWhenReady=true
+12-25 17:35:19.863 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=true, state=3
+12-25 17:35:19.863 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:35:19.863 D/PlayerFragment(13881): onIsPlayingChanged: isPlaying=true, hasAutoHidden=true
+12-25 17:35:19.863 D/ExtractionRateLimiter(13881): Reset rate limit state for 5peZkbWJOa4
+12-25 17:35:19.863 D/PlaybackService(13881): onIsPlayingChanged: isPlaying=true, uiVisible=true
+12-25 17:35:19.863 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=true, state=3
+12-25 17:35:19.864 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:35:22.798 D/PlayerFragment(13881): Controller visibility changed: 0, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:35:22.808 D/PlayerFragment(13881): Controller visibility changed: 0, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:35:22.814 D/PlayerFragment(13881): After controller visibility change layout: resizeMode=0, width=1280, height=720
+12-25 17:35:22.815 D/PlayerFragment(13881): After controller visibility change layout: resizeMode=0, width=1280, height=720
+12-25 17:35:25.851 D/PlaybackService(13881): setPlayerUiVisible: false
+12-25 17:35:25.851 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=false, playbackActive=true, isPlaying=true, state=3
+12-25 17:35:25.853 D/PlaybackService(13881): Entering foreground mode
+12-25 17:35:25.853 I/ActivityManager(  681): Background started FGS: Allowed [callingPackage: com.albunyaan.tube; callingUid: 10222; uidState: TOP ; uidBFSL: [BFSL]; intent: Intent { act=com.albunyaan.tube.LOCAL_BIND cmp=com.albunyaan.tube/.player.PlaybackService }; code:PROC_STATE_TOP; tempAllowListReason:<null>; allowWiu:12; targetSdkVersion:34; callerTargetSdkVersion:34; startForegroundCount:4; bindFromPackage:null: isBindService:false]
+12-25 17:35:25.854 D/PlaybackService(13881): Foreground mode started
+12-25 17:35:26.029 D/PlaybackService(13881): Releasing MediaSession
+12-25 17:35:26.031 D/PlayerFragment(13881): Controller visibility changed: 0, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:35:26.041 D/PlayerFragment(13881): Controller visibility changed: 8, playerView.resizeMode=0, playerView.width=1280, playerView.height=720
+12-25 17:35:26.149 I/ExoPlayerImpl(13881): Release 8b5b9d3 [AndroidXMedia3/1.4.1] [emu64xa, sdk_gphone64_x86_64, Google, 36] [media3.common, media3.ui, media3.exoplayer, media3.decoder, media3.session, media3.database, media3.exoplayer.hls, media3.datasource, media3.extractor]
+12-25 17:35:31.942 D/ExtractionRateLimiter(13881): Permit acquired for vYXP1g93gS0 (PREFETCH)
+12-25 17:35:31.942 D/StreamPrefetch(13881): Starting prefetch for vYXP1g93gS0
+12-25 17:35:31.943 D/ExtractorMetrics(13881): extractor_cache_miss type=VIDEOS misses=1
+12-25 17:35:32.003 I/ExoPlayerImpl(13881): Init 95edc11 [AndroidXMedia3/1.4.1] [emu64xa, sdk_gphone64_x86_64, Google, 36]
+12-25 17:35:32.009 I/ActivityManager(  681): Background started FGS: Allowed [callingPackage: com.albunyaan.tube; callingUid: 10222; uidState: TOP ; uidBFSL: [BFSL]; intent: Intent { act=com.albunyaan.tube.LOCAL_BIND xflg=0x4 cmp=com.albunyaan.tube/.player.PlaybackService }; code:PROC_STATE_TOP; tempAllowListReason:<null>; allowWiu:12; targetSdkVersion:34; callerTargetSdkVersion:34; startForegroundCount:5; bindFromPackage:null: isBindService:true]
+12-25 17:35:32.009 D/PlayerFragment(13881): Started PlaybackService for foreground notification
+12-25 17:35:32.024 D/PlaybackService(13881): Initializing MediaSession with player (playWhenReady=true, state=1)
+12-25 17:35:32.030 I/PlaybackService(13881): MediaSession initialized successfully - notification should appear when playback starts
+12-25 17:35:32.030 D/PlaybackService(13881): setPlayerUiVisible: true
+12-25 17:35:32.030 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=false, isPlaying=false, state=1
+12-25 17:35:32.030 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:35:32.030 D/PlaybackService(13881): onStartCommand called (action=null, flags=0, startId=5)
+12-25 17:35:32.031 D/PlayerViewModel(13881): Fast path: targetVideoId found at hinted index 0
+12-25 17:35:32.031 D/PlayerViewModel(13881): Playlist initialized: 73 items, startIndex=0, hasMore=false
+12-25 17:35:32.035 D/StreamPrefetch(13881): Awaiting in-flight prefetch for vYXP1g93gS0
+12-25 17:35:33.760 D/AdaptiveAvail(13881): {"vid":"vYXP1g93gS0","hasHls":true,"hasDash":false,"adaptive":"HLS_ONLY","streamType":"VIDEO_STREAM","durSec":1791,"videoTracks":5,"audioTracks":3,"hasVideoOnly":true}
+12-25 17:35:33.760 D/ExtractorMetrics(13881): stream_resolve_success videoId=vYXP1g93gS0 durationMs=1817
+12-25 17:35:33.761 D/ExtractionRateLimiter(13881): Extraction success for vYXP1g93gS0 - backoff reset
+12-25 17:35:33.761 D/StreamPrefetch(13881): Prefetch completed for vYXP1g93gS0
+12-25 17:35:33.765 D/StreamPrefetch(13881): Prefetch consumed (awaited) for vYXP1g93gS0
+12-25 17:35:33.765 D/PlayerViewModel(13881): Using tap-prefetched stream for vYXP1g93gS0
+12-25 17:35:33.782 D/PlayerFragment(13881): Preparing stream: id=vYXP1g93gS0, audioOnly=false, expectedUrl=https://manifest.googlevideo.com/api/manifest/hls_variant/expire/1766702133/ei/1WdNaebmD6Kw0u8P7dGyoQo/ip/105.155.60.118/id/bd85cfd60f77812d/source/youtube/requiressl/yes/xpc/EgVo2aDSNQ%3D%3D/playback_host/rr3---sn-p5h-gc5y.googlevideo.com/cps/0/met/1766680533%2C/mh/Mj/mm/31%2C26/mn/sn-p5h-gc5y%2Csn-hgn7rn7r/ms/au%2Conr/mv/m/mvi/3/pl/22/rms/au%2Cau/tx/51666467/txs/51666463%2C51666464%2C51666465%2C51666466%2C51666467/hfr/1/demuxed/1/tts_caps/1/maudio/1/initcwndbps/942500/bui/AYUSA3BdYig9PmVi7SZRJvwkOPIhJeVVwOlVQxVUcH8FD-j0p_lI7MhBiTGxLxTAVWjC_abYBB7zPPZ8/spc/wH4Qq4cv9ep-5FWfXGVurgcegsA9VCIXsVH6UQ-KubKJ09ln-oIfRD8N_YruhLi2/vprv/1/go/1/rqh/5/mt/1766680153/fvip/2/nvgoi/1/short_key/1/ncsapi/1/keepalive/yes/fexp/51552689%2C51565115%2C51565682%2C51580968/dover/13/itag/0/playlist_type/DVR/sparams/expire%2Cei%2Cip%2Cid%2Csource%2Crequiressl%2Cxpc%2Ctx%2Ctxs%2Chfr%2Cdemuxed%2Ctts_caps%2Cmaudio%2Cbui%2Cspc%2Cvprv%2Cgo%2Crqh%2Citag%2Cplaylist_type/sig/AJfQdSswRQIhANqgPZxSYWExaOxLJB-mZSAqIKfmzS8VaIJV0GM3T6FwAiAP6_lD84Bqk9bIuC-6CcTdJCOVcBTc9Yt6UtLVQrtrPg%3D%3D/lsparams/playback_host%2Ccps%2Cmet%2Cmh%2Cmm%2Cmn%2Cms%2Cmv%2Cmvi%2Cpl%2Crms%2Cinitcwndbps/lsig/APaTxxMwRgIhAIWiOZO4-uXTsa2C5YTSJ372xPY0Ieckvn6BUYxtgj-EAiEA7KSztaotd0PM51MlZSLN34xnBKiNsxDHcq9hiSw0Ubo%3D/file/index.m3u8?, isQualitySwitch=false
+12-25 17:35:33.793 D/PlayerFragment(13881): Created media source: isAdaptive=true, type=HLS, qualityCap=nullp, actualSource=manifest.googlevideo.com#28a98609
+12-25 17:35:33.795 D/PlayerFragment(13881): Track selector: cleared constraints (ABR free)
+12-25 17:35:33.813 D/PlayerFragment(13881): onPlaybackStateChanged: state=2
+12-25 17:35:33.818 D/PlaybackService(13881): onPlaybackStateChanged: state=2, playWhenReady=true
+12-25 17:35:33.818 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=false, state=2
+12-25 17:35:33.819 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:35:33.820 D/PlayerFragment(13881): Stream prepared successfully: vYXP1g93gS0, isAdaptive=true, type=HLS, actualSource=manifest.googlevideo.com#28a98609
+12-25 17:35:33.829 D/PlaybackService(13881): onMediaMetadataChanged: title=1الجملة المفيدة والاسم والفعل والحرف = النحو الواضح
+12-25 17:35:33.830 D/PlaybackService(13881): setCurrentVideoId: vYXP1g93gS0
+12-25 17:35:33.830 D/PlayerFragment(13881): Synced MediaSession metadata for: 1الجملة المفيدة والاسم والفعل والحرف = النحو الواضح (forced)
+12-25 17:35:34.128 D/PlaybackService(13881): onMediaMetadataChanged: title=1الجملة المفيدة والاسم والفعل والحرف = النحو الواضح
+12-25 17:35:50.920 D/PlayerFragment(13881): Stream already prepared with same source, skipping
+12-25 17:35:50.921 D/PlayerFragment(13881): Stream already prepared with same source, skipping
+12-25 17:35:50.923 D/ExtractorMetrics(13881): extractor_cache_miss type=VIDEOS misses=1
+12-25 17:35:52.789 D/AdaptiveAvail(13881): {"vid":"Okgx3mAd45Q","hasHls":true,"hasDash":false,"adaptive":"HLS_ONLY","streamType":"VIDEO_STREAM","durSec":2154,"videoTracks":5,"audioTracks":3,"hasVideoOnly":true}
+12-25 17:35:52.789 D/ExtractorMetrics(13881): stream_resolve_success videoId=Okgx3mAd45Q durationMs=1866
+12-25 17:35:52.790 D/PlayerViewModel(13881): Stream resolved successfully on attempt 1
+12-25 17:35:52.790 D/ExtractionRateLimiter(13881): Extraction success for Okgx3mAd45Q - backoff reset
+12-25 17:35:52.793 D/PlayerFragment(13881): Preparing stream: id=Okgx3mAd45Q, audioOnly=false, expectedUrl=https://manifest.googlevideo.com/api/manifest/hls_variant/expire/1766702152/ei/6GdNafn3G4OM77MPqbWSkQg/ip/105.155.60.118/id/3a4831de601de394/source/youtube/requiressl/yes/xpc/EgVo2aDSNQ%3D%3D/playback_host/rr1---sn-p5h-gc5y.googlevideo.com/cps/1/met/1766680552%2C/mh/zm/mm/31%2C26/mn/sn-p5h-gc5y%2Csn-hgn7rnll/ms/au%2Conr/mv/m/mvi/1/pl/22/rms/au%2Cau/tx/51539831/txs/51539830%2C51539831/hfr/1/demuxed/1/tts_caps/1/maudio/1/initcwndbps/942500/bui/AYUSA3CP6RyiivNfeeAzBySYZ5DTGqhKw9ykLsQhdr2w3iMZfux8NLUMJm2s0hlA3cwiu-iymmQdr55L/spc/wH4Qqw82R0DNNsvINRM6iSMu4YY_qaZ6H7LB0W3-iTI1QD2mDKE19YpApzz_r-EG/vprv/1/go/1/rqh/5/mt/1766680153/fvip/2/nvgoi/1/short_key/1/ncsapi/1/keepalive/yes/fexp/51552689%2C51565115%2C51565681%2C51580968/dover/13/itag/0/playlist_type/DVR/sparams/expire%2Cei%2Cip%2Cid%2Csource%2Crequiressl%2Cxpc%2Ctx%2Ctxs%2Chfr%2Cdemuxed%2Ctts_caps%2Cmaudio%2Cbui%2Cspc%2Cvprv%2Cgo%2Crqh%2Citag%2Cplaylist_type/sig/AJfQdSswRgIhAPGALE98r4RAQ7rawu2T-6qak3f_cY5hyEThTGnWJdrVAiEA26bHuc3M12Wwzk_kJLtqYxiy7MQVfkklS-ROgFOO8eE%3D/lsparams/playback_host%2Ccps%2Cmet%2Cmh%2Cmm%2Cmn%2Cms%2Cmv%2Cmvi%2Cpl%2Crms%2Cinitcwndbps/lsig/APaTxxMwRgIhAOrEi4GUlKDQtwkRyIZ81XsGVNeOIX2q_TX9hNZqjgbwAiEAwcbN7ZtpkwqZqUL33MMbcBzTBH40Ur19DRoHS7Pyjo8%3D/file/index.m3u8?, isQualitySwitch=false
+12-25 17:35:52.793 D/PlayerFragment(13881): Created media source: isAdaptive=true, type=HLS, qualityCap=nullp, actualSource=manifest.googlevideo.com#1f700c2a
+12-25 17:35:52.794 D/PlayerFragment(13881): Track selector: cleared constraints (ABR free)
+12-25 17:35:52.797 D/PlaybackService(13881): onMediaMetadataChanged: title=null
+12-25 17:35:52.797 D/PlayerFragment(13881): Stream prepared successfully: Okgx3mAd45Q, isAdaptive=true, type=HLS, actualSource=manifest.googlevideo.com#1f700c2a
+12-25 17:35:52.799 D/PlaybackService(13881): onMediaMetadataChanged: title=3المفعول به = النحو الواضح
+12-25 17:35:52.799 D/PlaybackService(13881): setCurrentVideoId: Okgx3mAd45Q
+12-25 17:35:52.799 D/PlayerFragment(13881): Synced MediaSession metadata for: 3المفعول به = النحو الواضح (forced)
+12-25 17:35:52.805 D/PlayerFragment(13881): Stream already prepared with same source, skipping
+12-25 17:35:52.805 D/PlayerFragment(13881): onVideoSizeChanged: width=0, height=0, pixelWidthHeightRatio=1.0, playerViewResizeMode=0
+12-25 17:35:52.863 D/PlaybackService(13881): onMediaMetadataChanged: title=3المفعول به = النحو الواضح
+12-25 17:35:58.138 D/PlaybackService(13881): setPlayerUiVisible: false
+12-25 17:35:58.138 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=false, playbackActive=true, isPlaying=false, state=2
+12-25 17:35:58.140 D/PlaybackService(13881): Entering foreground mode
+12-25 17:35:58.141 I/ActivityManager(  681): Background started FGS: Allowed [callingPackage: com.albunyaan.tube; callingUid: 10222; uidState: TOP ; uidBFSL: [BFSL]; intent: Intent { act=com.albunyaan.tube.LOCAL_BIND cmp=com.albunyaan.tube/.player.PlaybackService }; code:PROC_STATE_TOP; tempAllowListReason:<null>; allowWiu:12; targetSdkVersion:34; callerTargetSdkVersion:34; startForegroundCount:5; bindFromPackage:null: isBindService:false]
+12-25 17:35:58.142 D/PlaybackService(13881): Foreground mode started
+12-25 17:35:58.185 D/PlaybackService(13881): Releasing MediaSession
+12-25 17:35:58.305 I/ExoPlayerImpl(13881): Release 95edc11 [AndroidXMedia3/1.4.1] [emu64xa, sdk_gphone64_x86_64, Google, 36] [media3.common, media3.ui, media3.exoplayer, media3.decoder, media3.session, media3.database, media3.exoplayer.hls, media3.datasource, media3.extractor]
+12-25 17:36:04.895 D/ExtractionRateLimiter(13881): Permit acquired for KdKLxwgXGos (PREFETCH)
+12-25 17:36:04.895 D/StreamPrefetch(13881): Starting prefetch for KdKLxwgXGos
+12-25 17:36:04.896 D/ExtractorMetrics(13881): extractor_cache_miss type=VIDEOS misses=1
+12-25 17:36:04.954 I/ExoPlayerImpl(13881): Init ac8c065 [AndroidXMedia3/1.4.1] [emu64xa, sdk_gphone64_x86_64, Google, 36]
+12-25 17:36:04.959 I/ActivityManager(  681): Background started FGS: Allowed [callingPackage: com.albunyaan.tube; callingUid: 10222; uidState: TOP ; uidBFSL: [BFSL]; intent: Intent { act=com.albunyaan.tube.LOCAL_BIND xflg=0x4 cmp=com.albunyaan.tube/.player.PlaybackService }; code:PROC_STATE_TOP; tempAllowListReason:<null>; allowWiu:12; targetSdkVersion:34; callerTargetSdkVersion:34; startForegroundCount:6; bindFromPackage:null: isBindService:true]
+12-25 17:36:04.960 D/PlayerFragment(13881): Started PlaybackService for foreground notification
+12-25 17:36:04.980 D/PlaybackService(13881): Initializing MediaSession with player (playWhenReady=true, state=1)
+12-25 17:36:04.989 I/PlaybackService(13881): MediaSession initialized successfully - notification should appear when playback starts
+12-25 17:36:04.989 D/PlaybackService(13881): setPlayerUiVisible: true
+12-25 17:36:04.989 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=false, isPlaying=false, state=1
+12-25 17:36:04.990 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:36:04.991 D/PlaybackService(13881): onStartCommand called (action=null, flags=0, startId=6)
+12-25 17:36:04.993 D/PlayerViewModel(13881): Fast path: targetVideoId found at hinted index 1
+12-25 17:36:04.994 D/PlayerViewModel(13881): Playlist initialized: 60 items, startIndex=1, hasMore=false
+12-25 17:36:05.010 D/StreamPrefetch(13881): Awaiting in-flight prefetch for KdKLxwgXGos
+12-25 17:36:06.577 D/AdaptiveAvail(13881): {"vid":"KdKLxwgXGos","hasHls":true,"hasDash":false,"adaptive":"HLS_ONLY","streamType":"VIDEO_STREAM","durSec":614,"videoTracks":11,"audioTracks":7,"hasVideoOnly":true}
+12-25 17:36:06.577 D/ExtractorMetrics(13881): stream_resolve_success videoId=KdKLxwgXGos durationMs=1681
+12-25 17:36:06.577 D/ExtractionRateLimiter(13881): Extraction success for KdKLxwgXGos - backoff reset
+12-25 17:36:06.577 D/StreamPrefetch(13881): Prefetch completed for KdKLxwgXGos
+12-25 17:36:06.578 D/StreamPrefetch(13881): Prefetch consumed (awaited) for KdKLxwgXGos
+12-25 17:36:06.578 D/PlayerViewModel(13881): Using tap-prefetched stream for KdKLxwgXGos
+12-25 17:36:06.581 D/PlayerFragment(13881): Preparing stream: id=KdKLxwgXGos, audioOnly=false, expectedUrl=https://manifest.googlevideo.com/api/manifest/hls_variant/expire/1766702166/ei/9mdNadDTDL2Pv_IPv8-v-AE/ip/105.155.60.118/id/29d28bc708171a8b/source/youtube/requiressl/yes/xpc/EgVo2aDSNQ%3D%3D/playback_host/rr1---sn-p5h-gc5e7.googlevideo.com/cps/0/met/1766680566%2C/mh/Vb/mm/31%2C26/mn/sn-p5h-gc5e7%2Csn-hgn7rnee/ms/au%2Conr/mv/m/mvi/1/pl/22/rms/au%2Cau/tx/51539830/txs/51539830%2C51539831/hfr/1/demuxed/1/tts_caps/1/maudio/1/initcwndbps/940000/bui/AYUSA3C-GjJooA8Bf-1C36lxzVS_ulKL_s2iy5nGePJJU2RpEGgGLEslbm1dhBU78FHtHLXn00CPQCxb/spc/wH4Qq9wknXO82hhRoBE3VwKv0wUj3b9D7hWxCoVjbxaKlly0An7xzY9azF1uNeUt/vprv/1/go/1/rqh/5/mt/1766680153/fvip/2/nvgoi/1/short_key/1/ncsapi/1/keepalive/yes/fexp/51552689%2C51565116%2C51565681%2C51580968/dover/13/itag/0/playlist_type/DVR/sparams/expire%2Cei%2Cip%2Cid%2Csource%2Crequiressl%2Cxpc%2Ctx%2Ctxs%2Chfr%2Cdemuxed%2Ctts_caps%2Cmaudio%2Cbui%2Cspc%2Cvprv%2Cgo%2Crqh%2Citag%2Cplaylist_type/sig/AJfQdSswRQIgKgD1V4EJNosq5dExUNj9jBQsOjDyWwa5Fk8Avco9yKcCIQDWz-ZiaRD2KQswVAAejj6xoTVp8rys_jzsMr7XnsAKQA%3D%3D/lsparams/playback_host%2Ccps%2Cmet%2Cmh%2Cmm%2Cmn%2Cms%2Cmv%2Cmvi%2Cpl%2Crms%2Cinitcwndbps/lsig/APaTxxMwRgIhAL4Wgg1ynG5ZxY0XF2CWYYvfD71hfttvuTxCc8nzNNbPAiEA3xTizqs1TFbgvtrCdjyw26emqkg9dCNiVNR4SmiXOmA%3D/file/index.m3u8?, isQualitySwitch=false
+12-25 17:36:06.581 D/PlayerFragment(13881): Created media source: isAdaptive=true, type=HLS, qualityCap=nullp, actualSource=manifest.googlevideo.com#2461f7d5
+12-25 17:36:06.581 D/PlayerFragment(13881): Track selector: cleared constraints (ABR free)
+12-25 17:36:06.588 D/PlayerFragment(13881): onPlaybackStateChanged: state=2
+12-25 17:36:06.589 D/PlaybackService(13881): onPlaybackStateChanged: state=2, playWhenReady=true
+12-25 17:36:06.589 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=false, state=2
+12-25 17:36:06.590 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:36:06.590 D/PlayerFragment(13881): Stream prepared successfully: KdKLxwgXGos, isAdaptive=true, type=HLS, actualSource=manifest.googlevideo.com#2461f7d5
+12-25 17:36:06.593 D/PlaybackService(13881): onMediaMetadataChanged: title=الحلقة 2 "العظماء المائة": ماذا تعرف عن تاريخك؟ جهاد الترباني
+12-25 17:36:06.593 D/PlaybackService(13881): setCurrentVideoId: KdKLxwgXGos
+12-25 17:36:06.593 D/PlayerFragment(13881): Synced MediaSession metadata for: الحلقة 2 "العظماء المائة": ماذا تعرف عن تاريخك؟ جهاد الترباني (forced)
+12-25 17:36:06.663 D/PlaybackService(13881): onMediaMetadataChanged: title=الحلقة 2 "العظماء المائة": ماذا تعرف عن تاريخك؟ جهاد الترباني
+12-25 17:36:20.911 D/PlayerFragment(13881): onVideoSizeChanged: width=960, height=720, pixelWidthHeightRatio=1.0, playerViewResizeMode=0
+12-25 17:36:20.945 D/PlayerFragment(13881): onPlaybackStateChanged: state=3
+12-25 17:36:20.946 D/PlaybackService(13881): onPlaybackStateChanged: state=3, playWhenReady=true
+12-25 17:36:20.946 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=true, state=3
+12-25 17:36:20.946 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:36:20.946 D/PlayerFragment(13881): onIsPlayingChanged: isPlaying=true, hasAutoHidden=false
+12-25 17:36:20.946 D/ExtractionRateLimiter(13881): Reset rate limit state for KdKLxwgXGos
+12-25 17:36:20.947 D/PlaybackService(13881): onIsPlayingChanged: isPlaying=true, uiVisible=true
+12-25 17:36:20.948 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=true, state=3
+12-25 17:36:20.948 D/ExtractionRateLimiter(13881): Permit acquired for wDw6S9MHhMo (PREFETCH)
+12-25 17:36:20.948 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:36:20.948 D/PlayerViewModel(13881): Prefetch: Starting for wDw6S9MHhMo
+12-25 17:36:20.948 D/ExtractorMetrics(13881): extractor_cache_miss type=VIDEOS misses=1
+12-25 17:36:22.305 D/AdaptiveAvail(13881): {"vid":"wDw6S9MHhMo","hasHls":true,"hasDash":false,"adaptive":"HLS_ONLY","streamType":"VIDEO_STREAM","durSec":644,"videoTracks":11,"audioTracks":5,"hasVideoOnly":true}
+12-25 17:36:22.305 D/ExtractorMetrics(13881): stream_resolve_success videoId=wDw6S9MHhMo durationMs=1356
+12-25 17:36:22.305 D/ExtractionRateLimiter(13881): Extraction success for wDw6S9MHhMo - backoff reset
+12-25 17:36:22.305 D/PlayerViewModel(13881): Prefetch: Completed for wDw6S9MHhMo
+12-25 17:36:22.305 D/ExtractionRateLimiter(13881): Permit acquired for 7mSb3DAQk-A (PREFETCH)
+12-25 17:36:22.305 D/PlayerViewModel(13881): Prefetch: Starting for 7mSb3DAQk-A
+12-25 17:36:22.305 D/ExtractorMetrics(13881): extractor_cache_miss type=VIDEOS misses=1
+12-25 17:36:23.207 W/ExtractorMetrics(13881): stream_resolve_failure videoId=7mSb3DAQk-A
+12-25 17:36:23.207 W/ExtractorMetrics(13881): org.schabi.newpipe.extractor.exceptions.AgeRestrictedContentException: This age-restricted video cannot be watched anonymously
+12-25 17:36:23.207 W/ExtractorMetrics(13881): 	at org.schabi.newpipe.extractor.services.youtube.extractors.YoutubeStreamExtractor.checkPlayabilityStatus(YoutubeStreamExtractor.java:899)
+12-25 17:36:23.207 W/ExtractorMetrics(13881): 	at org.schabi.newpipe.extractor.services.youtube.extractors.YoutubeStreamExtractor.fetchHtml5EmbedClient(YoutubeStreamExtractor.java:971)
+12-25 17:36:23.207 W/ExtractorMetrics(13881): 	at org.schabi.newpipe.extractor.services.youtube.extractors.YoutubeStreamExtractor.fetchHtml5Client(YoutubeStreamExtractor.java:931)
+12-25 17:36:23.207 W/ExtractorMetrics(13881): 	at org.schabi.newpipe.extractor.services.youtube.extractors.YoutubeStreamExtractor.onFetchPage(YoutubeStreamExtractor.java:823)
+12-25 17:36:23.207 W/ExtractorMetrics(13881): 	at org.schabi.newpipe.extractor.Extractor.fetchPage(Extractor.java:60)
+12-25 17:36:23.207 W/ExtractorMetrics(13881): 	at com.albunyaan.tube.data.extractor.NewPipeExtractorClient$resolveStreams$2.invokeSuspend(NewPipeExtractorClient.kt:91)
+12-25 17:36:23.207 W/ExtractorMetrics(13881): 	at com.albunyaan.tube.data.extractor.NewPipeExtractorClient$resolveStreams$2.invoke(Unknown Source:8)
+12-25 17:36:23.207 W/ExtractorMetrics(13881): 	at com.albunyaan.tube.data.extractor.NewPipeExtractorClient$resolveStreams$2.invoke(Unknown Source:4)
+12-25 17:36:23.207 W/ExtractorMetrics(13881): 	at kotlinx.coroutines.intrinsics.UndispatchedKt.startUndispatchedOrReturn(Undispatched.kt:78)
+12-25 17:36:23.207 W/ExtractorMetrics(13881): 	at kotlinx.coroutines.BuildersKt__Builders_commonKt.withContext(Builders.common.kt:167)
+12-25 17:36:23.207 W/ExtractorMetrics(13881): 	at kotlinx.coroutines.BuildersKt.withContext(Unknown Source:1)
+12-25 17:36:23.207 W/ExtractorMetrics(13881): 	at com.albunyaan.tube.data.extractor.NewPipeExtractorClient.resolveStreams(NewPipeExtractorClient.kt:70)
+12-25 17:36:23.207 W/ExtractorMetrics(13881): 	at com.albunyaan.tube.player.DefaultPlayerRepository.resolveStreams(PlayerRepository.kt:18)
+12-25 17:36:23.207 W/ExtractorMetrics(13881): 	at com.albunyaan.tube.player.PlayerRepository$DefaultImpls.resolveStreams$default(PlayerRepository.kt:11)
+12-25 17:36:23.207 W/ExtractorMetrics(13881): 	at com.albunyaan.tube.ui.player.PlayerViewModel$prefetchNextItems$1.invokeSuspend(PlayerViewModel.kt:1276)
+12-25 17:36:23.207 W/ExtractorMetrics(13881): 	at kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:33)
+12-25 17:36:23.207 W/ExtractorMetrics(13881): 	at kotlinx.coroutines.DispatchedTask.run(DispatchedTask.kt:108)
+12-25 17:36:23.207 W/ExtractorMetrics(13881): 	at kotlinx.coroutines.internal.LimitedDispatcher$Worker.run(LimitedDispatcher.kt:115)
+12-25 17:36:23.207 W/ExtractorMetrics(13881): 	at kotlinx.coroutines.scheduling.TaskImpl.run(Tasks.kt:103)
+12-25 17:36:23.207 W/ExtractorMetrics(13881): 	at kotlinx.coroutines.scheduling.CoroutineScheduler.runSafely(CoroutineScheduler.kt:584)
+12-25 17:36:23.207 W/ExtractorMetrics(13881): 	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.executeTask(CoroutineScheduler.kt:793)
+12-25 17:36:23.207 W/ExtractorMetrics(13881): 	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:697)
+12-25 17:36:23.207 W/ExtractorMetrics(13881): 	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:684)
+12-25 17:36:23.207 W/PlayerViewModel(13881): Prefetch failed for 7mSb3DAQk-A: This age-restricted video cannot be watched anonymously
+12-25 17:36:23.947 D/PlayerFragment(13881): Auto-hiding controls: BEFORE - resizeMode=0, width=1280, height=720
+12-25 17:36:23.978 D/PlayerFragment(13881): Auto-hiding controls: AFTER - resizeMode=0, width=1280, height=720
+12-25 17:36:28.712 D/PlayerFragment(13881): Stream already prepared with same source, skipping
+12-25 17:36:28.713 D/PlayerFragment(13881): Stream already prepared with same source, skipping
+12-25 17:36:28.715 D/ExtractorMetrics(13881): extractor_cache_miss type=VIDEOS misses=1
+12-25 17:36:28.970 W/ExtractorMetrics(13881): stream_resolve_failure videoId=cWmE1fr4Nws
+12-25 17:36:28.970 W/ExtractorMetrics(13881): org.schabi.newpipe.extractor.exceptions.ContentNotAvailableException: The page needs to be reloaded.
+12-25 17:36:28.970 W/ExtractorMetrics(13881): 	at org.schabi.newpipe.extractor.services.youtube.extractors.YoutubeStreamExtractor.checkPlayabilityStatus(YoutubeStreamExtractor.java:894)
+12-25 17:36:28.970 W/ExtractorMetrics(13881): 	at org.schabi.newpipe.extractor.services.youtube.extractors.YoutubeStreamExtractor.fetchHtml5Client(YoutubeStreamExtractor.java:935)
+12-25 17:36:28.970 W/ExtractorMetrics(13881): 	at org.schabi.newpipe.extractor.services.youtube.extractors.YoutubeStreamExtractor.onFetchPage(YoutubeStreamExtractor.java:823)
+12-25 17:36:28.970 W/ExtractorMetrics(13881): 	at org.schabi.newpipe.extractor.Extractor.fetchPage(Extractor.java:60)
+12-25 17:36:28.970 W/ExtractorMetrics(13881): 	at com.albunyaan.tube.data.extractor.NewPipeExtractorClient$resolveStreams$2.invokeSuspend(NewPipeExtractorClient.kt:91)
+12-25 17:36:28.970 W/ExtractorMetrics(13881): 	at kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:33)
+12-25 17:36:28.970 W/ExtractorMetrics(13881): 	at kotlinx.coroutines.DispatchedTask.run(DispatchedTask.kt:108)
+12-25 17:36:28.970 W/ExtractorMetrics(13881): 	at kotlinx.coroutines.internal.LimitedDispatcher$Worker.run(LimitedDispatcher.kt:115)
+12-25 17:36:28.970 W/ExtractorMetrics(13881): 	at kotlinx.coroutines.scheduling.TaskImpl.run(Tasks.kt:103)
+12-25 17:36:28.970 W/ExtractorMetrics(13881): 	at kotlinx.coroutines.scheduling.CoroutineScheduler.runSafely(CoroutineScheduler.kt:584)
+12-25 17:36:28.970 W/ExtractorMetrics(13881): 	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.executeTask(CoroutineScheduler.kt:793)
+12-25 17:36:28.970 W/ExtractorMetrics(13881): 	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:697)
+12-25 17:36:28.970 W/ExtractorMetrics(13881): 	at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:684)
+12-25 17:36:28.970 W/PlayerViewModel(13881): Stream resolve attempt 1 failed: The page needs to be reloaded.
+12-25 17:36:28.970 D/PlayerViewModel(13881): Retrying in 1000ms...
+12-25 17:36:29.971 D/ExtractorMetrics(13881): extractor_cache_miss type=VIDEOS misses=1
+12-25 17:36:31.707 D/AdaptiveAvail(13881): {"vid":"cWmE1fr4Nws","hasHls":true,"hasDash":false,"adaptive":"HLS_ONLY","streamType":"VIDEO_STREAM","durSec":1906,"videoTracks":4,"audioTracks":3,"hasVideoOnly":true}
+12-25 17:36:31.707 D/ExtractorMetrics(13881): stream_resolve_success videoId=cWmE1fr4Nws durationMs=1736
+12-25 17:36:31.707 D/PlayerViewModel(13881): Stream resolved successfully on attempt 2
+12-25 17:36:31.707 D/ExtractionRateLimiter(13881): Extraction success for cWmE1fr4Nws - backoff reset
+12-25 17:36:31.710 D/PlayerFragment(13881): Preparing stream: id=cWmE1fr4Nws, audioOnly=false, expectedUrl=https://manifest.googlevideo.com/api/manifest/hls_variant/expire/1766702191/ei/D2hNaZyhF5qJ0u8PnLX6-Ao/ip/105.155.60.118/id/716984d5faf8370b/source/youtube/requiressl/yes/xpc/EgVo2aDSNQ%3D%3D/playback_host/rr3---sn-p5h-gc5y.googlevideo.com/cps/0/met/1766680591%2C/mh/PA/mm/31%2C26/mn/sn-p5h-gc5y%2Csn-hgn7rnll/ms/au%2Conr/mv/m/mvi/3/pl/22/rms/au%2Cau/tx/51539831/txs/51539830%2C51539831/hfr/1/demuxed/1/tts_caps/1/maudio/1/initcwndbps/942500/bui/AYUSA3Auc8UWedgGHzZp-3XUYlggxouviaKqmeN2pVkEVYqGh3gvrSU23kuA12ttoq1RBmeO3ST4hbwr/spc/wH4Qq1fTk9CTJC0gndHG8PsujJPD99jgIsvM4AORt4BmjeviEz13cjmfBnogR3iA/vprv/1/go/1/rqh/5/mt/1766680153/fvip/3/nvgoi/1/short_key/1/ncsapi/1/keepalive/yes/fexp/51552689%2C51565116%2C51565681%2C51580968/dover/13/itag/0/playlist_type/DVR/sparams/expire%2Cei%2Cip%2Cid%2Csource%2Crequiressl%2Cxpc%2Ctx%2Ctxs%2Chfr%2Cdemuxed%2Ctts_caps%2Cmaudio%2Cbui%2Cspc%2Cvprv%2Cgo%2Crqh%2Citag%2Cplaylist_type/sig/AJfQdSswRQIgQuzbToCBIFvoY06I89Nd2Rf4qRrzWSA6EUjlZKl4WasCIQDyiOEOdqHj0mABLj4UT_LuIA27g3iLVjj85ruXlNNFMg%3D%3D/lsparams/playback_host%2Ccps%2Cmet%2Cmh%2Cmm%2Cmn%2Cms%2Cmv%2Cmvi%2Cpl%2Crms%2Cinitcwndbps/lsig/APaTxxMwRAIgZ489AO-9vqz0hSagblhHvTJnw9AlQuLE04rzfvl8HVYCIDt36MbPU0Y9rrB7c4EQB3Qs2vSo5L85XAMzWUKX04oE/file/index.m3u8?, isQualitySwitch=false
+12-25 17:36:31.710 D/PlayerFragment(13881): Created media source: isAdaptive=true, type=HLS, qualityCap=nullp, actualSource=manifest.googlevideo.com#a170c536
+12-25 17:36:31.710 D/PlayerFragment(13881): Track selector: cleared constraints (ABR free)
+12-25 17:36:31.714 D/PlaybackService(13881): onMediaMetadataChanged: title=null
+12-25 17:36:31.714 D/PlayerFragment(13881): onPlaybackStateChanged: state=2
+12-25 17:36:31.715 D/PlaybackService(13881): onPlaybackStateChanged: state=2, playWhenReady=true
+12-25 17:36:31.715 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=false, state=2
+12-25 17:36:31.715 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:36:31.715 D/PlayerFragment(13881): onIsPlayingChanged: isPlaying=false, hasAutoHidden=true
+12-25 17:36:31.716 D/PlaybackService(13881): onIsPlayingChanged: isPlaying=false, uiVisible=true
+12-25 17:36:31.716 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=false, state=2
+12-25 17:36:31.716 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:36:31.717 D/PlayerFragment(13881): Stream prepared successfully: cWmE1fr4Nws, isAdaptive=true, type=HLS, actualSource=manifest.googlevideo.com#a170c536
+12-25 17:36:31.720 D/PlaybackService(13881): onMediaMetadataChanged: title=العظماء المائة17: قاهر الصليبيين "سلطان بن سيف اليعربي"... #جهاد_الترباني
+12-25 17:36:31.720 D/PlaybackService(13881): setCurrentVideoId: cWmE1fr4Nws
+12-25 17:36:31.720 D/PlayerFragment(13881): Synced MediaSession metadata for: العظماء المائة17: قاهر الصليبيين "سلطان بن سيف اليعربي"... #جهاد_الترباني (forced)
+12-25 17:36:31.729 D/PlayerFragment(13881): Stream already prepared with same source, skipping
+12-25 17:36:31.730 D/PlayerFragment(13881): onVideoSizeChanged: width=0, height=0, pixelWidthHeightRatio=1.0, playerViewResizeMode=0
+12-25 17:36:31.773 D/PlaybackService(13881): onMediaMetadataChanged: title=العظماء المائة17: قاهر الصليبيين "سلطان بن سيف اليعربي"... #جهاد_الترباني
+12-25 17:36:32.893 D/PlayerFragment(13881): Stream already prepared with same source, skipping
+12-25 17:36:32.894 D/PlayerFragment(13881): onVideoSizeChanged: width=640, height=360, pixelWidthHeightRatio=1.0, playerViewResizeMode=0
+12-25 17:36:37.991 D/PlayerFragment(13881): onPlaybackStateChanged: state=3
+12-25 17:36:37.994 D/PlaybackService(13881): onPlaybackStateChanged: state=3, playWhenReady=true
+12-25 17:36:37.994 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=true, state=3
+12-25 17:36:37.994 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:36:37.994 D/PlayerFragment(13881): onIsPlayingChanged: isPlaying=true, hasAutoHidden=true
+12-25 17:36:37.994 D/ExtractionRateLimiter(13881): Reset rate limit state for cWmE1fr4Nws
+12-25 17:36:37.996 D/PlaybackService(13881): onIsPlayingChanged: isPlaying=true, uiVisible=true
+12-25 17:36:37.996 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=true, playbackActive=true, isPlaying=true, state=3
+12-25 17:36:37.996 D/PlaybackService(13881): Foreground mode stopped (UI visible)
+12-25 17:36:44.192 D/PlaybackService(13881): setPlayerUiVisible: false
+12-25 17:36:44.192 D/PlaybackService(13881): updateForegroundState: appInForeground=true, playerUiVisible=false, playbackActive=true, isPlaying=true, state=3
+12-25 17:36:44.194 D/PlaybackService(13881): Entering foreground mode
+12-25 17:36:44.195 I/ActivityManager(  681): Background started FGS: Allowed [callingPackage: com.albunyaan.tube; callingUid: 10222; uidState: TOP ; uidBFSL: [BFSL]; intent: Intent { act=com.albunyaan.tube.LOCAL_BIND cmp=com.albunyaan.tube/.player.PlaybackService }; code:PROC_STATE_TOP; tempAllowListReason:<null>; allowWiu:12; targetSdkVersion:34; callerTargetSdkVersion:34; startForegroundCount:6; bindFromPackage:null: isBindService:false]
+12-25 17:36:44.196 D/PlaybackService(13881): Foreground mode started
+12-25 17:36:44.462 D/PlaybackService(13881): Releasing MediaSession
+12-25 17:36:44.628 I/ExoPlayerImpl(13881): Release ac8c065 [AndroidXMedia3/1.4.1] [emu64xa, sdk_gphone64_x86_64, Google, 36] [media3.common, media3.ui, media3.exoplayer, media3.decoder, media3.session, media3.database, media3.exoplayer.hls, media3.datasource, media3.extractor]
