@@ -1,6 +1,7 @@
 package com.albunyaan.tube.player
 
 import android.net.Uri
+import android.os.SystemClock
 import android.util.Log
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -158,12 +159,32 @@ class StreamRequestTelemetry @Inject constructor() {
     /** Estimated YouTube stream URL TTL (6 hours conservative) */
     private val estimatedTtlMs = 6 * 60 * 60 * 1000L
 
+    // Monotonic clock for age/TTL calculations - uses elapsedRealtime to avoid NTP/user clock issues
+    @Volatile
+    private var clock: () -> Long = { SystemClock.elapsedRealtime() }
+
+    // Wall clock for calendar timestamps in logs - uses currentTimeMillis for human-readable dates
+    @Volatile
+    private var wallClock: () -> Long = { System.currentTimeMillis() }
+
+    @androidx.annotation.VisibleForTesting
+    fun setTestClock(testClock: () -> Long) {
+        clock = testClock
+        // Clear existing timestamps to prevent age calculations mixing real and test clock values
+        streamResolutionTimes.clear()
+    }
+
+    @androidx.annotation.VisibleForTesting
+    fun setTestWallClock(testWallClock: () -> Long) {
+        wallClock = testWallClock
+    }
+
     /**
      * Record when a stream was resolved (URLs obtained).
      * Used to calculate stream age and estimate TTL remaining.
      */
     fun onStreamResolved(videoId: String) {
-        streamResolutionTimes[videoId] = System.currentTimeMillis()
+        streamResolutionTimes[videoId] = clock()
     }
 
     /**
@@ -189,7 +210,7 @@ class StreamRequestTelemetry @Inject constructor() {
         responseBody: String?,
         playbackPositionMs: Long? = null
     ): FailureType {
-        val now = System.currentTimeMillis()
+        val now = clock()
 
         // Parse URL for logging (privacy-conscious)
         val uri = runCatching { Uri.parse(requestUrl) }.getOrNull()
@@ -205,7 +226,7 @@ class StreamRequestTelemetry @Inject constructor() {
         val failureType = classifyFailure(responseCode, responseHeaders, responseBody)
 
         val record = FailureRecord(
-            timestamp = now,
+            timestamp = wallClock(), // Use wall clock for human-readable log timestamps
             videoId = videoId,
             streamType = streamType,
             requestUrlHost = host,
@@ -300,7 +321,7 @@ class StreamRequestTelemetry @Inject constructor() {
      */
     fun shouldRefreshPreemptively(videoId: String, safeMarginMs: Long = 30 * 60 * 1000L): Boolean {
         val resolutionTime = streamResolutionTimes[videoId] ?: return false
-        val age = System.currentTimeMillis() - resolutionTime
+        val age = clock() - resolutionTime
         val ttlRemaining = estimatedTtlMs - age
 
         return ttlRemaining < safeMarginMs
@@ -314,7 +335,7 @@ class StreamRequestTelemetry @Inject constructor() {
      */
     fun getEstimatedTtlRemainingMs(videoId: String): Long? {
         val resolutionTime = streamResolutionTimes[videoId] ?: return null
-        val age = System.currentTimeMillis() - resolutionTime
+        val age = clock() - resolutionTime
         return (estimatedTtlMs - age).coerceAtLeast(0)
     }
 

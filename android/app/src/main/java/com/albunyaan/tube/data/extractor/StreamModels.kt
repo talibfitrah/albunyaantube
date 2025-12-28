@@ -159,27 +159,63 @@ enum class QualitySelectionOrigin {
     AUTO_RECOVERY
 }
 
+/**
+ * Phase 3: Quality constraint mode.
+ *
+ * Defines how user quality selection affects ABR behavior:
+ * - CAP: Maximum ceiling; ABR can drop below but not exceed
+ * - LOCK: Fixed quality; no ABR switching allowed
+ */
+enum class QualityConstraintMode {
+    /**
+     * Quality Cap (ceiling).
+     *
+     * User selected quality is the maximum allowed resolution.
+     * ABR can drop to lower qualities on network congestion and recover up to cap.
+     * Use case: "I don't want to exceed 720p to save data"
+     */
+    CAP,
+
+    /**
+     * Quality Lock (fixed).
+     *
+     * User selected quality is locked - no ABR switching.
+     * Player stays at this resolution regardless of network conditions.
+     * Use case: "I want exactly 1080p, even if it buffers"
+     */
+    LOCK
+}
+
 data class PlaybackSelection(
     val streamId: String,
     val video: VideoTrack?,
     val audio: AudioTrack,
     val resolved: ResolvedStreams,
     /**
-     * User's manually selected quality cap (ceiling). When set, playback should not
-     * exceed this resolution. ABR can drop below when network dips, then recover up to cap.
+     * User's manually selected quality height. Interpretation depends on [selectionOrigin]:
+     * - AUTO/AUTO_RECOVERY → CAP mode: Maximum ceiling; ABR can drop below but not exceed
+     * - MANUAL → LOCK mode: Fixed quality; no ABR switching
      *
-     * null = AUTO mode (no cap, ABR chooses freely)
-     * non-null = User preference for maximum resolution height
+     * null = AUTO mode (no constraint, ABR chooses freely)
+     * non-null = User preference for resolution height
+     *
+     * @see QualityTrackSelector.applyQualityConstraint
      */
     val userQualityCapHeight: Int? = null,
     /**
      * The origin of the current selection. Used to distinguish manual user choices
      * from automatic recovery actions.
+     *
+     * Note: Quality constraint mode (CAP vs LOCK) is derived from this origin:
+     * - MANUAL → LOCK mode (user explicitly selected resolution)
+     * - AUTO/AUTO_RECOVERY → CAP mode (ABR can drop below but not exceed)
+     *
+     * @see PlayerFragment.applyQualityConstraintByOrigin
      */
     val selectionOrigin: QualitySelectionOrigin = QualitySelectionOrigin.AUTO
 ) {
     /**
-     * For backward compatibility: returns true if user has manually set a quality cap.
+     * For backward compatibility: returns true if user has manually set a quality constraint.
      * Use this when deciding whether to apply track selector constraints.
      */
     val hasUserQualityCap: Boolean

@@ -254,9 +254,12 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
                 showQualitySelectionDialog()
             }
 
-            // Support Center - navigate to About screen
+            // Support Center - navigate to About screen (with safe navigation guard)
             supportItem?.setOnClickListener {
-                findNavController().navigate(R.id.action_settingsFragment_to_aboutFragment)
+                // Safe navigation: only navigate if still on settings fragment
+                if (findNavController().currentDestination?.id == R.id.settingsFragment) {
+                    findNavController().navigate(R.id.action_settingsFragment_to_aboutFragment)
+                }
             }
 
             // Toggle switches - handle state changes

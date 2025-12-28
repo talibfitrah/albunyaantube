@@ -2,6 +2,7 @@ package com.albunyaan.tube.player
 
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,6 +36,11 @@ import javax.inject.Singleton
  * 2. Check TTL before critical operations (seek, quality change)
  * 3. Schedule refresh when TTL drops below threshold during active playback
  * 4. Caller decides when to actually perform refresh (avoids wasted network calls)
+ *
+ * **Note on Clock & Persistence:**
+ * This manager uses monotonic time (SystemClock.elapsedRealtime) for TTL tracking.
+ * Monotonic time resets on device reboot, so all tracked state is inherently session-only.
+ * The in-memory urlInfoMap is never persisted - app restart or device reboot clears all state.
  */
 @Singleton
 class StreamUrlRefreshManager @Inject constructor(
@@ -68,12 +74,27 @@ class StreamUrlRefreshManager @Inject constructor(
         private const val MIN_CHECK_INTERVAL_MS = 60 * 1000L // 1 minute
     }
 
+    // Clock for testing - uses monotonic time (elapsedRealtime) to avoid NTP/user clock issues
+    @Volatile
+    private var clock: () -> Long = { SystemClock.elapsedRealtime() }
+
+    @androidx.annotation.VisibleForTesting
+    fun setTestClock(testClock: () -> Long) {
+        clock = testClock
+    }
+
+    /** Get current time from clock (testable via setTestClock) */
+    fun now(): Long = clock()
+
     /**
      * Stream URL metadata for TTL tracking.
      *
      * **Thread Safety**: This class is immutable. Updates are performed by replacing
      * the entire object in the ConcurrentHashMap using atomic compute operations.
      * This ensures thread-safe read-modify-write cycles.
+     *
+     * **Note**: Age and TTL methods require a clock supplier to support testing.
+     * Use the companion methods with the manager's clock.
      */
     data class StreamUrlInfo(
         val videoId: String,
@@ -82,18 +103,42 @@ class StreamUrlRefreshManager @Inject constructor(
         val lastCheckMs: Long = 0L,
         val refreshScheduled: Boolean = false
     ) {
+        /** Calculate age using provided clock. Example: info.ageMs(manager.now()) */
+        fun ageMs(now: Long): Long = now - resolvedAtMs
+
+        /** Calculate TTL remaining using provided clock. Example: info.ttlRemainingMs(manager.now()) */
+        fun ttlRemainingMs(now: Long): Long = (estimatedExpiryMs - now).coerceAtLeast(0)
+
+        /** Check if expired using provided clock. Example: info.isExpired(manager.now()) */
+        fun isExpired(now: Long): Boolean = ttlRemainingMs(now) <= 0
+
+        /** Check if needs preemptive refresh using provided clock. */
+        fun needsPreemptiveRefresh(now: Long): Boolean = ttlRemainingMs(now) < PREEMPTIVE_REFRESH_THRESHOLD_MS
+
+        /** Check if critical using provided clock. */
+        fun isCritical(now: Long): Boolean = ttlRemainingMs(now) < CRITICAL_TTL_THRESHOLD_MS
+
+        // Legacy computed properties for backwards compatibility (use default clock)
+        @Deprecated("Use ageMs(now) with manager's clock for testability. This property uses SystemClock and bypasses setTestClock().")
         val ageMs: Long
-            get() = System.currentTimeMillis() - resolvedAtMs
+            get() = SystemClock.elapsedRealtime() - resolvedAtMs
 
+        @Deprecated("Use ttlRemainingMs(now) with manager's clock for testability. This property uses SystemClock and bypasses setTestClock().")
         val ttlRemainingMs: Long
-            get() = (estimatedExpiryMs - System.currentTimeMillis()).coerceAtLeast(0)
+            get() = (estimatedExpiryMs - SystemClock.elapsedRealtime()).coerceAtLeast(0)
 
+        @Suppress("DEPRECATION") // Intentional: deprecated property calling another deprecated property
+        @Deprecated("Use isExpired(now) with manager's clock for testability. This property uses SystemClock and bypasses setTestClock().")
         val isExpired: Boolean
             get() = ttlRemainingMs <= 0
 
+        @Suppress("DEPRECATION") // Intentional: deprecated property calling another deprecated property
+        @Deprecated("Use needsPreemptiveRefresh(now) with manager's clock for testability. This property uses SystemClock and bypasses setTestClock().")
         val needsPreemptiveRefresh: Boolean
             get() = ttlRemainingMs < PREEMPTIVE_REFRESH_THRESHOLD_MS
 
+        @Suppress("DEPRECATION") // Intentional: deprecated property calling another deprecated property
+        @Deprecated("Use isCritical(now) with manager's clock for testability. This property uses SystemClock and bypasses setTestClock().")
         val isCritical: Boolean
             get() = ttlRemainingMs < CRITICAL_TTL_THRESHOLD_MS
 
@@ -143,7 +188,7 @@ class StreamUrlRefreshManager @Inject constructor(
      * Records the resolution time for TTL tracking.
      */
     fun onStreamResolved(videoId: String) {
-        val now = System.currentTimeMillis()
+        val now = clock()
         val info = StreamUrlInfo(
             videoId = videoId,
             resolvedAtMs = now
@@ -200,7 +245,7 @@ class StreamUrlRefreshManager @Inject constructor(
      */
     fun shouldRefreshBeforeOperation(videoId: String): Boolean {
         val info = urlInfoMap[videoId] ?: return false
-        return info.needsPreemptiveRefresh
+        return info.needsPreemptiveRefresh(now())
     }
 
     /**
@@ -210,14 +255,14 @@ class StreamUrlRefreshManager @Inject constructor(
      * @return Remaining TTL in milliseconds, or null if unknown
      */
     fun getTtlRemainingMs(videoId: String): Long? {
-        return urlInfoMap[videoId]?.ttlRemainingMs
+        return urlInfoMap[videoId]?.ttlRemainingMs(now())
     }
 
     /**
      * Check if URLs are in critical state (about to expire).
      */
     fun isUrlCritical(videoId: String): Boolean {
-        return urlInfoMap[videoId]?.isCritical == true
+        return urlInfoMap[videoId]?.isCritical(now()) == true
     }
 
     /**
@@ -227,7 +272,7 @@ class StreamUrlRefreshManager @Inject constructor(
      * Thread-safe: Uses atomic compute to update lastCheckMs.
      */
     fun checkRefreshNeeded(videoId: String): Boolean {
-        val now = System.currentTimeMillis()
+        val now = clock()
         var needsRefresh = false
 
         // Atomic read-check-write: update lastCheckMs only if throttle interval elapsed
@@ -237,11 +282,11 @@ class StreamUrlRefreshManager @Inject constructor(
                 null // No info, nothing to update
             } else if (now - existing.lastCheckMs < MIN_CHECK_INTERVAL_MS) {
                 // Throttled - return cached result without updating
-                needsRefresh = existing.needsPreemptiveRefresh
+                needsRefresh = existing.needsPreemptiveRefresh(now)
                 existing // Keep existing, no update needed
             } else {
                 // Update lastCheckMs and return refresh status
-                needsRefresh = existing.needsPreemptiveRefresh
+                needsRefresh = existing.needsPreemptiveRefresh(now)
                 existing.withLastCheck(now)
             }
         }
@@ -261,12 +306,13 @@ class StreamUrlRefreshManager @Inject constructor(
         // Already scheduled - check via snapshot (racing schedules are harmless)
         if (info.refreshScheduled) return
 
-        if (info.needsPreemptiveRefresh) {
+        val currentTime = now()
+        if (info.needsPreemptiveRefresh(currentTime)) {
             // Needs refresh now
-            triggerRefresh(videoId, info.isCritical)
+            triggerRefresh(videoId, info.isCritical(currentTime))
         } else {
             // Schedule for when TTL drops below threshold
-            val delayMs = info.ttlRemainingMs - PREEMPTIVE_REFRESH_THRESHOLD_MS
+            val delayMs = info.ttlRemainingMs(currentTime) - PREEMPTIVE_REFRESH_THRESHOLD_MS
             if (delayMs > 0) {
                 scheduleRefresh(videoId, delayMs)
             }

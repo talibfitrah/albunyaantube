@@ -471,6 +471,7 @@
     <string name="settings_support">Support</string>
     <string name="settings_about_support">About &amp; Support</string>
     <string name="about_title">About</string>
+    <string name="about_version_format">Version %1$s (%2$d)</string>
     <string name="about_links">Links</string>
     <string name="about_legal">Legal</string>
     <string name="about_website">Website</string>
@@ -499,4 +500,31 @@
 
     <!-- Home Overflow Menu -->
     <string name="menu_settings">Settings</string>
+
+    <!-- Developer Settings (hidden debug menu) -->
+    <string name="dev_settings_title">Developer Settings</string>
+    <string name="dev_settings_header">Build defaults from BuildConfig. Toggle to override at runtime.\nChanges take effect immediately.</string>
+    <string name="dev_settings_reset_all">Reset All to Build Defaults</string>
+    <string name="dev_settings_done">Done</string>
+    <string name="dev_settings_build_default_on">Build default: ON</string>
+    <string name="dev_settings_build_default_off">Build default: OFF</string>
+    <string name="dev_settings_using_default">Using build default</string>
+    <string name="dev_settings_overridden_on">Overridden to ON</string>
+    <string name="dev_settings_overridden_off">Overridden to OFF</string>
+    <string name="dev_settings_status_format">%1$s • %2$s</string>
+    <string name="dev_settings_synth_adaptive_title">Synthetic Adaptive DASH</string>
+    <string name="dev_settings_synth_adaptive_desc">Multi-rep DASH from progressive streams for ABR quality switching</string>
+    <string name="dev_settings_mpd_prefetch_title">MPD Prefetch</string>
+    <string name="dev_settings_mpd_prefetch_desc">Pre-generate DASH MPD on video tap for faster first-frame</string>
+    <string name="dev_settings_degradation_title">Degradation Manager</string>
+    <string name="dev_settings_degradation_desc">Per-video refresh budgets and automatic quality step-downs</string>
+    <string name="dev_settings_ios_fetch_title">iOS Client Fetch</string>
+    <string name="dev_settings_ios_fetch_desc">Use iOS client for HLS manifest extraction (requires iOS UA)</string>
+    <string name="dev_settings_clear_cache">Clear Stream Cache</string>
+    <string name="dev_settings_cache_cleared">Cleared %d cached entries</string>
+    <string name="dev_settings_cache_clear_failed">Failed to clear cache: %1$s</string>
+    <plurals name="dev_settings_steps_away">
+        <item quantity="one">You are %d step away from being a developer</item>
+        <item quantity="other">You are %d steps away from being a developer</item>
+    </plurals>
 </resources>

@@ -1,6 +1,7 @@
 package com.albunyaan.tube.download
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
@@ -209,11 +210,11 @@ class DownloadWorker @AssistedInject constructor(
                 storage.ensureSpace(totalLength)
             }
 
-            Log.d(TAG, "Downloading video stream for merge: ${split.videoUrl}")
+            Log.d(TAG, "Downloading video stream for merge: ${redactUrl(split.videoUrl)}")
             downloadToFile(split.videoUrl, videoTempFile, downloadId, title, videoLength, progressOffset = 0, progressScale = 0.4f)
 
             // Download audio stream (40% of progress)
-            Log.d(TAG, "Downloading audio stream for merge: ${split.audioUrl}")
+            Log.d(TAG, "Downloading audio stream for merge: ${redactUrl(split.audioUrl)}")
             downloadToFile(split.audioUrl, audioTempFile, downloadId, title, audioLength, progressOffset = 40, progressScale = 0.4f)
 
             // Merge with FFmpeg (20% of progress)
@@ -485,5 +486,21 @@ class DownloadWorker @AssistedInject constructor(
 
     companion object {
         private const val TAG = "DownloadWorker"
+
+        /**
+         * Redact URL for logging - shows host and path hash only, no query parameters.
+         * Prevents leaking sensitive tokens/signatures in logs.
+         */
+        private fun redactUrl(url: String): String {
+            return try {
+                val uri = Uri.parse(url)
+                val pathHash = uri.path?.hashCode()?.let {
+                    Integer.toHexString(it and 0xFFFF)
+                } ?: "?"
+                "${uri.host ?: "?"}:path#$pathHash"
+            } catch (e: Exception) {
+                "invalid-url"
+            }
+        }
     }
 }

@@ -3,6 +3,7 @@ package com.albunyaan.tube.data.extractor
 import android.os.SystemClock
 import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.analytics.ExtractorMetricsReporter
+import com.albunyaan.tube.player.PlaybackFeatureFlags
 import com.albunyaan.tube.data.extractor.cache.MetadataCache
 import com.albunyaan.tube.data.model.ContentType
 import java.io.IOException
@@ -32,6 +33,7 @@ class NewPipeExtractorClient(
     private val downloader: OkHttpDownloader,
     private val cache: MetadataCache,
     private val metrics: ExtractorMetricsReporter,
+    private val featureFlags: PlaybackFeatureFlags,
     /**
      * Clock provider for timestamps. Uses SystemClock.elapsedRealtime() by default
      * to match StreamModels.areUrlsExpired() which also uses elapsedRealtime().
@@ -87,6 +89,14 @@ class NewPipeExtractorClient(
         try {
             val handler = streamLinkHandlerFactory.fromId(videoId)
             val extractor = youtubeService.getStreamExtractor(handler)
+            // Apply runtime iOS fetch setting before extraction (enables toggle without restart).
+            // NOTE: Synchronization only ensures atomic apply of the setting to NewPipe's global state.
+            // It does NOT guarantee that concurrent extractions (in fetchPage()) observe the same
+            // value throughout their execution. Full serialization would be too costly. This is
+            // acceptable since toggles are rare (ops/debug only) and not toggled during playback.
+            synchronized(NewPipeExtractorClient::class.java) {
+                applyIosFetchSetting()
+            }
             // CRITICAL: Must call fetchPage() before getInfo() to get ALL video formats!
             extractor.fetchPage()
             val info = StreamInfo.getInfo(extractor)
@@ -180,6 +190,14 @@ class NewPipeExtractorClient(
         runCatching {
             val handler = streamLinkHandlerFactory.fromId(id)
             val extractor = youtubeService.getStreamExtractor(handler)
+            // Apply runtime iOS fetch setting before extraction (enables toggle without restart).
+            // NOTE: Synchronization only ensures atomic apply of the setting to NewPipe's global state.
+            // It does NOT guarantee that concurrent extractions observe the same value throughout
+            // their execution. Full serialization would be too costly. This is acceptable since
+            // toggles are rare (ops/debug only) and not toggled during playback.
+            synchronized(NewPipeExtractorClient::class.java) {
+                applyIosFetchSetting()
+            }
             StreamInfo.getInfo(extractor)
         }.map { info ->
             if (info.streamType == StreamType.NONE) return@map null
@@ -725,19 +743,58 @@ class NewPipeExtractorClient(
                 NewPipe.init(downloader, localization, contentCountry)
                 NewPipe.setupLocalization(localization, contentCountry)
             }
-            // PR6.2: iOS client fetch for better HLS manifest availability
-            // Controlled by BuildConfig.ENABLE_NPE_IOS_FETCH (default OFF)
-            // Enable in local.properties: npe.ios.fetch.enabled=true
-            //
-            // WARNING: iOS fetch changes the HLS manifest source from YouTube's Android/Web
-            // endpoint to the iOS endpoint. HLS segment URLs expect iOS-like headers.
-            // MultiQualityMediaSourceFactory uses iOS User-Agent for HLS to match.
-            val iosFetchEnabled = BuildConfig.ENABLE_NPE_IOS_FETCH
-            YoutubeStreamExtractor.setFetchIosClient(iosFetchEnabled)
-            if (BuildConfig.DEBUG) {
-                android.util.Log.d(ADAPTIVE_PROBE_TAG, "initialize: fetchIosClient=$iosFetchEnabled")
-            }
+            // Apply initial iOS fetch setting (runtime toggle applied before each extraction)
+            applyIosFetchSetting()
         }
+    }
+
+    /**
+     * Apply the current iOS fetch setting from feature flags.
+     *
+     * PR6.2: iOS client fetch for better HLS manifest availability
+     * Build-time default: BuildConfig.ENABLE_NPE_IOS_FETCH (default OFF)
+     * Build-time config: local.properties: npe.ios.fetch.enabled=true
+     * Runtime override: PlaybackFeatureFlags.setIosFetchEnabled(true/false/null)
+     *
+     * WARNING: iOS fetch changes the HLS manifest source from YouTube's Android/Web
+     * endpoint to the iOS endpoint. HLS segment URLs expect iOS-like headers.
+     * MultiQualityMediaSourceFactory uses iOS User-Agent for HLS to match.
+     *
+     * RUNTIME TOGGLE SEMANTICS:
+     * - Applied immediately before each new extraction (not retroactively to cached streams)
+     * - Cache hits bypass extraction entirely, so toggling won't affect already-cached streams
+     * - To force IOS_FETCH to affect a specific video, use forceRefresh=true or call clearStreamCache()
+     * - Do NOT toggle IOS_FETCH during active playback; toggle between videos for predictable behavior
+     * - Global static state: concurrent extractions see the same setting (last-write wins)
+     *
+     * This is called before each extraction to ensure runtime toggle changes take effect
+     * without requiring app restart.
+     */
+    private fun applyIosFetchSetting() {
+        val iosFetchEnabled = featureFlags.isIosFetchEnabled
+        YoutubeStreamExtractor.setFetchIosClient(iosFetchEnabled)
+        if (BuildConfig.DEBUG) {
+            android.util.Log.d(ADAPTIVE_PROBE_TAG, "applyIosFetchSetting: fetchIosClient=$iosFetchEnabled")
+        }
+    }
+
+    /**
+     * Clear the stream URL cache.
+     *
+     * Call this after changing IOS_FETCH or other extraction settings to ensure
+     * subsequent resolves use the new configuration. Without clearing, cached
+     * entries continue to be used until TTL expiry (30 minutes).
+     *
+     * @return The approximate number of entries cleared (may be slightly inaccurate due to
+     *         concurrent modifications between size read and clear - acceptable for debug/ops)
+     */
+    fun clearStreamCache(): Int {
+        val count = streamCache.size
+        streamCache.clear()
+        if (BuildConfig.DEBUG) {
+            android.util.Log.d(ADAPTIVE_PROBE_TAG, "clearStreamCache: cleared $count entries")
+        }
+        return count
     }
 
     companion object {

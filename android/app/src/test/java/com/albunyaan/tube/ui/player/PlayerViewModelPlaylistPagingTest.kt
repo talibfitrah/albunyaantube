@@ -1,6 +1,7 @@
 package com.albunyaan.tube.ui.player
 
 import com.albunyaan.tube.analytics.ExtractorMetricsReporter
+import com.albunyaan.tube.analytics.PlaybackMetricsCollector
 import com.albunyaan.tube.data.channel.Page
 import com.albunyaan.tube.data.extractor.AudioTrack
 import com.albunyaan.tube.data.extractor.ResolvedStreams
@@ -20,6 +21,7 @@ import com.albunyaan.tube.download.PlaylistDownloadItem
 import com.albunyaan.tube.player.ExtractionRateLimiter
 import com.albunyaan.tube.player.PlayerRepository
 import com.albunyaan.tube.player.StreamPrefetchService
+import com.albunyaan.tube.player.SyntheticDashMpdRegistry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -67,6 +69,8 @@ class PlayerViewModelPlaylistPagingTest {
     private lateinit var fakePrefetchService: FakePrefetchService
     private lateinit var fakeFavoritesRepository: FakeFavoritesRepository
     private lateinit var fakeMetricsReporter: FakeExtractorMetricsReporter
+    private lateinit var playbackMetrics: PlaybackMetricsCollector
+    private lateinit var mpdRegistry: SyntheticDashMpdRegistry
 
     @Before
     fun setup() {
@@ -78,6 +82,8 @@ class PlayerViewModelPlaylistPagingTest {
         fakePrefetchService = FakePrefetchService()
         fakeFavoritesRepository = FakeFavoritesRepository()
         fakeMetricsReporter = FakeExtractorMetricsReporter()
+        playbackMetrics = PlaybackMetricsCollector()  // Use real metrics collector for tests
+        mpdRegistry = SyntheticDashMpdRegistry()  // Use real registry - it's an in-memory cache with no external deps
     }
 
     @After
@@ -93,7 +99,9 @@ class PlayerViewModelPlaylistPagingTest {
             rateLimiter = rateLimiter,
             prefetchService = fakePrefetchService,
             favoritesRepository = fakeFavoritesRepository,
-            metricsReporter = fakeMetricsReporter
+            metricsReporter = fakeMetricsReporter,
+            playbackMetrics = playbackMetrics,
+            mpdRegistry = mpdRegistry
         )
     }
 
@@ -684,6 +692,7 @@ class PlayerViewModelPlaylistPagingTest {
         override fun consumePrefetch(videoId: String): ResolvedStreams? = null
         override fun isPrefetchInFlight(videoId: String): Boolean = false
         override fun cancelPrefetch(videoId: String) {}
+        override fun clearPrefetchState() {}
         override fun clearAll() {}
     }
 

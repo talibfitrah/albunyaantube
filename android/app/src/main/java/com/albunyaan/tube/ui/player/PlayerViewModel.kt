@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.albunyaan.tube.R
 import com.albunyaan.tube.analytics.ExtractorMetricsReporter
+import com.albunyaan.tube.analytics.PlaybackMetricsCollector
 import com.albunyaan.tube.data.extractor.AudioTrack
 import com.albunyaan.tube.data.extractor.PlaybackSelection
 import com.albunyaan.tube.data.extractor.QualitySelectionOrigin
@@ -18,6 +19,7 @@ import com.albunyaan.tube.download.DownloadRequest
 import com.albunyaan.tube.player.ExtractionRateLimiter
 import com.albunyaan.tube.player.PlayerRepository
 import com.albunyaan.tube.player.StreamPrefetchService
+import com.albunyaan.tube.player.SyntheticDashMpdRegistry
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import com.albunyaan.tube.data.channel.Page
@@ -55,7 +57,9 @@ class PlayerViewModel @Inject constructor(
     private val rateLimiter: ExtractionRateLimiter,
     private val prefetchService: StreamPrefetchService,
     private val favoritesRepository: FavoritesRepository,
-    private val metricsReporter: ExtractorMetricsReporter
+    private val metricsReporter: ExtractorMetricsReporter,
+    private val playbackMetrics: PlaybackMetricsCollector,
+    private val mpdRegistry: SyntheticDashMpdRegistry
 ) : ViewModel() {
 
     private val dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate
@@ -115,6 +119,9 @@ class PlayerViewModel @Inject constructor(
         onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
     val analyticsEvents: SharedFlow<PlaybackAnalyticsEvent> = _analyticsEvents
+
+    /** Expose playback metrics for fragment-level tracking (first frame, rebuffer, 403 errors) */
+    val metrics: PlaybackMetricsCollector get() = playbackMetrics
 
     val playerListener: Player.Listener = object : Player.Listener {
         override fun onVideoSizeChanged(videoSize: VideoSize) {
@@ -953,6 +960,10 @@ class PlayerViewModel @Inject constructor(
     }
 
     private fun forceRefreshCurrentStreamInternal(item: UpNextItem) {
+        // Invalidate MPD cache BEFORE resolving to ensure fresh streams aren't
+        // mapped to stale MPD (fixes race condition where fast resolve could
+        // hit cached MPD that was generated with expired URLs)
+        mpdRegistry.unregister(item.streamId)
         // Invalidate the prefetch cache as well since URLs are likely stale
         synchronized(prefetchCache) { prefetchCache.remove(item.streamId) }
         resolveStreamFor(item, PlaybackStartReason.USER_SELECTED, forceRefresh = true)
@@ -975,6 +986,10 @@ class PlayerViewModel @Inject constructor(
         forceRefresh: Boolean = false
     ) {
         resolveJob?.cancel()
+
+        // Phase 0 metrics: mark playback requested if not already marked (for playlist advance)
+        playbackMetrics.onPlaybackRequested(item.streamId)
+
         updateState { it.copy(streamState = StreamState.Loading, retryCount = 0) }
         resolveJob = viewModelScope.launch(dispatcher) {
             resolveWithRetry(item, maxAttempts = MAX_RETRY_ATTEMPTS, forceRefresh = forceRefresh)
@@ -1074,6 +1089,7 @@ class PlayerViewModel @Inject constructor(
                     continue
                 } else {
                     // All retries exhausted - try auto-skip in playlist mode
+                    playbackMetrics.onPlaybackFailed(item.streamId, "extraction_timeout")
                     publishAnalytics(PlaybackAnalyticsEvent.StreamFailed(item.streamId))
                     if (handleStreamResolutionFailure(item)) {
                         return  // Auto-skipped to next item
@@ -1091,6 +1107,7 @@ class PlayerViewModel @Inject constructor(
                     continue
                 } else {
                     // All retries exhausted - try auto-skip in playlist mode
+                    playbackMetrics.onPlaybackFailed(item.streamId, "stream_null")
                     publishAnalytics(PlaybackAnalyticsEvent.StreamFailed(item.streamId))
                     if (handleStreamResolutionFailure(item)) {
                         return  // Auto-skipped to next item
@@ -1102,6 +1119,7 @@ class PlayerViewModel @Inject constructor(
 
             val selection = resolved.toDefaultSelection()
             if (selection == null) {
+                playbackMetrics.onPlaybackFailed(item.streamId, "no_selection")
                 updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_unavailable)) }
                 publishAnalytics(PlaybackAnalyticsEvent.StreamFailed(item.streamId))
                 return

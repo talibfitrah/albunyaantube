@@ -19,9 +19,19 @@ class StreamRequestTelemetryTest {
 
     private lateinit var telemetry: StreamRequestTelemetry
 
+    /** Controllable test clock for deterministic timing */
+    private var testTimeMs = 0L
+
     @Before
     fun setUp() {
+        testTimeMs = 0L
         telemetry = StreamRequestTelemetry()
+        telemetry.setTestClock { testTimeMs }
+    }
+
+    /** Advance test clock for deterministic ordering */
+    private fun advanceClock(millis: Long = 100) {
+        testTimeMs += millis
     }
 
     // --- URL_EXPIRED Classification Tests ---
@@ -517,8 +527,8 @@ class StreamRequestTelemetryTest {
     fun `failure records track stream age when resolved`() {
         telemetry.onStreamResolved("video1")
 
-        // Small delay to ensure age > 0
-        Thread.sleep(10)
+        // Advance clock to simulate time passing (deterministic)
+        advanceClock(100)
 
         telemetry.recordFailure(
             videoId = "video1",
@@ -532,7 +542,7 @@ class StreamRequestTelemetryTest {
 
         val record = telemetry.getRecentFailures().first()
         assertNotNull(record.streamAgeMs)
-        assertTrue("Stream age should be positive", record.streamAgeMs!! >= 0)
+        assertEquals("Stream age should be 100ms", 100L, record.streamAgeMs!!)
     }
 
     @Test

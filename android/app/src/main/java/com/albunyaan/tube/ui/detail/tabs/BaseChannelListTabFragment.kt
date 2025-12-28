@@ -126,6 +126,7 @@ abstract class BaseChannelListTabFragment<T> : Fragment(R.layout.fragment_channe
                 val accepted = viewModel.loadNextPage(tab)
                 if (accepted) {
                     autofillAttempts++
+                    delayedRecheckRetries = 0  // Reset delayed retry counter on success
                     if (BuildConfig.DEBUG) {
                         Log.d(TAG, "$tab: autofill triggered (attempt $autofillAttempts), $itemCount items, canScroll=false")
                     }
@@ -146,8 +147,12 @@ abstract class BaseChannelListTabFragment<T> : Fragment(R.layout.fragment_channe
     /**
      * Schedule a delayed re-check for autofill pagination after rate limiting.
      * This ensures we retry after the rate limit window expires.
+     *
+     * @param _itemCount Unused - current state is re-read for up-to-date values
+     * @param _nextPage Unused - current state is re-read for up-to-date values
      */
-    private fun scheduleDelayedAutofillRecheck(itemCount: Int, nextPage: Page?) {
+    @Suppress("UNUSED_PARAMETER")
+    private fun scheduleDelayedAutofillRecheck(_itemCount: Int, _nextPage: Page?) {
         // Prevent unbounded retry loops
         if (delayedRecheckRetries >= MAX_DELAYED_RECHECK_RETRIES) {
             if (BuildConfig.DEBUG) {
@@ -155,10 +160,10 @@ abstract class BaseChannelListTabFragment<T> : Fragment(R.layout.fragment_channe
             }
             return
         }
-        delayedRecheckRetries++
 
         viewLifecycleOwner.lifecycleScope.launch {
             delay(AUTOFILL_RECHECK_DELAY_MS)
+            delayedRecheckRetries++  // Increment after delay to prevent premature limit hits
             // Re-check only if view is still active
             if (binding != null && isAdded && isResumed) {
                 // Get current state to check actual isAppending value

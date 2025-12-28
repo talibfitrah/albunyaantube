@@ -35,27 +35,42 @@ data class MediaSourceResult(
     /**
      * The video track actually selected by the factory for progressive/synthetic DASH sources.
      * Used by proactive downshift to know the true "current" quality (may differ from selection.video
-     * when factory applies DEFAULT_INITIAL_QUALITY_HEIGHT in AUTO mode).
+     * when factory applies cold-start quality selection in AUTO mode).
      * Null for adaptive HLS/DASH (ABR handles quality) or audio-only mode.
      */
     val selectedVideoTrack: VideoTrack? = null
 ) {
-    enum class AdaptiveType { NONE, HLS, DASH, SYNTHETIC_DASH }
+    enum class AdaptiveType { NONE, HLS, DASH, SYNTHETIC_DASH, SYNTH_ADAPTIVE }
 }
 
 /**
  * Factory for creating MediaSources from NewPipe extractor data.
  *
- * Streaming strategy (PR6.1 update):
- * 1. Prefer HLS/DASH adaptive streaming whenever available (smooth ABR-like playback, better seeks).
- * 2. Try synthetic DASH for video-only + audio progressive streams (improved seek behavior).
- * 3. Fall back to raw progressive only when both adaptive and synthetic DASH fail.
+ * Streaming strategy (Phase 2 update):
+ * 1. Prefer HLS/DASH adaptive streaming whenever available (smooth ABR playback, better seeks).
+ * 2. Try SYNTH_ADAPTIVE (multi-rep synthetic DASH) when 2+ video-only tracks exist (ABR capable).
+ * 3. Try single-rep synthetic DASH for video-only + audio progressive streams (improved seeks).
+ * 4. Fall back to raw progressive only when all above fail.
+ *
+ * Phase 1B: HLS Poison Gate
+ * Before selecting HLS, checks HlsPoisonRegistry to skip videos with known HLS failures.
+ * This prevents repeatedly attempting HLS when it's known to 403 for specific videos.
+ *
+ * Phase 2: SYNTH_ADAPTIVE
+ * Multi-representation synthetic DASH enables quality switching without true HLS/DASH manifests.
+ * ExoPlayer's ABR logic can switch between progressive streams bundled in a single MPD.
  *
  * NOTE: Media3's quality selection in settings menu ONLY works with adaptive streams (HLS/DASH).
  * For progressive streams, quality selection is handled via custom UI.
  */
 @OptIn(UnstableApi::class)
-class MultiQualityMediaSourceFactory(private val context: Context) {
+class MultiQualityMediaSourceFactory(
+    private val context: Context,
+    private val hlsPoisonRegistry: HlsPoisonRegistry? = null,
+    private val multiRepFactory: MultiRepSyntheticDashMediaSourceFactory? = null,
+    private val coldStartQualityChooser: ColdStartQualityChooser? = null,
+    private val featureFlags: PlaybackFeatureFlags? = null
+) {
 
     // Standard data source for progressive/DASH (Android User-Agent)
     private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
@@ -121,15 +136,17 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
         private const val TAG = "MultiQualityMediaSource"
 
         /**
-         * Default initial quality ceiling when no user cap is set.
+         * Fallback initial quality ceiling when ColdStartQualityChooser is unavailable.
          * 720p offers a good balance of quality and bandwidth for most connections.
          *
          * For progressive/synthetic DASH streams (no ABR), if throughput can't keep up:
          * - BufferHealthMonitor will detect declining buffer and trigger proactive downshift
          * - Early-stall exception handles critical situations during grace period
          * - Predictive downshift catches gradual depletion before stall
+         *
+         * Phase 3: Prefer using ColdStartQualityChooser for context-aware initial quality.
          */
-        private const val DEFAULT_INITIAL_QUALITY_HEIGHT = 720
+        private const val FALLBACK_INITIAL_QUALITY_HEIGHT = 720
 
         private var simpleCache: SimpleCache? = null
 
@@ -153,6 +170,22 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
         fun releaseCache() {
             simpleCache?.release()
             simpleCache = null
+        }
+    }
+
+    /**
+     * Phase 3: Get the effective initial quality height for AUTO mode.
+     *
+     * Uses ColdStartQualityChooser if available for context-aware selection
+     * (network type, screen size, persisted hints). Falls back to 720p.
+     */
+    private fun getInitialQualityHeight(): Int {
+        return try {
+            coldStartQualityChooser?.chooseInitialQuality(context)?.recommendedHeight
+                ?: FALLBACK_INITIAL_QUALITY_HEIGHT
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "Failed to get initial quality from chooser: ${e.message}")
+            FALLBACK_INITIAL_QUALITY_HEIGHT
         }
     }
 
@@ -217,6 +250,8 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
      * }
      * ```
      *
+     * Phase 1B: Pass videoId to check HLS poison status before attempting HLS.
+     *
      * @param resolved The resolved streams from NewPipe extractor
      * @param audioOnly Whether to create audio-only MediaSource
      * @param selectedQuality The video track to use (for progressive) or reference quality
@@ -225,6 +260,7 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
      *        For adaptive sources, caller must apply via DefaultTrackSelector.
      * @param selectionOrigin Origin of the selection (used to respect AUTO_RECOVERY step-down).
      * @param forceProgressive If true, skips adaptive selection and always returns a progressive source.
+     * @param videoId The video ID, used to check HLS poison registry (Phase 1B).
      * @return MediaSourceResult with source, isAdaptive flag, actual URL used, and adaptive type
      */
     fun createMediaSourceWithType(
@@ -233,7 +269,8 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
         selectedQuality: VideoTrack? = null,
         userQualityCapHeight: Int? = null,
         selectionOrigin: QualitySelectionOrigin = QualitySelectionOrigin.AUTO,
-        forceProgressive: Boolean = false
+        forceProgressive: Boolean = false,
+        videoId: String? = null
     ): MediaSourceResult {
         if (audioOnly) {
             val audioTrack = resolved.audioTracks.maxByOrNull { it.bitrate ?: 0 }
@@ -249,7 +286,7 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
         // Prefer HLS/DASH adaptive streaming unless explicitly forced to progressive.
         // Quality cap is applied via track selector, NOT by forcing progressive.
         if (!forceProgressive) {
-            val adaptiveResult = tryCreateAdaptiveSource(resolved)
+            val adaptiveResult = tryCreateAdaptiveSource(resolved, videoId)
             if (adaptiveResult != null) {
                 val capInfo = userQualityCapHeight?.let { "${it}p cap" } ?: "no cap (ABR free)"
                 android.util.Log.d(TAG, "Using ${adaptiveResult.type} adaptive streaming ($capInfo)")
@@ -263,13 +300,32 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
                     adaptiveType = adaptiveResult.type
                 )
             }
-            android.util.Log.d(TAG, "Adaptive streaming not available, trying synthetic DASH")
+            android.util.Log.d(TAG, "Adaptive streaming not available, trying SYNTH_ADAPTIVE")
 
-            // PR6.1: Try synthetic DASH for video-only + audio progressive streams
+            // Phase 2: Try multi-rep synthetic DASH (SYNTH_ADAPTIVE) for ABR capability
+            if (multiRepFactory != null && videoId != null) {
+                val multiRepResult = tryCreateMultiRepSynthAdaptive(resolved, videoId, userQualityCapHeight)
+                if (multiRepResult != null) {
+                    val capInfo = userQualityCapHeight?.let { "${it}p cap" } ?: "no cap (ABR free)"
+                    android.util.Log.d(TAG, "Using SYNTH_ADAPTIVE streaming ($capInfo)")
+                    if (userQualityCapHeight != null) {
+                        android.util.Log.w(TAG, "Quality cap must be applied via DefaultTrackSelector by caller")
+                    }
+                    return MediaSourceResult(
+                        source = multiRepResult.source,
+                        isAdaptive = true, // Multi-rep enables ABR quality switching
+                        actualSourceUrl = multiRepResult.url,
+                        adaptiveType = MediaSourceResult.AdaptiveType.SYNTH_ADAPTIVE
+                    )
+                }
+            }
+            android.util.Log.d(TAG, "SYNTH_ADAPTIVE not available, trying single-rep synthetic DASH")
+
+            // PR6.1: Try single-rep synthetic DASH for video-only + audio progressive streams
             val syntheticResult = tryCreateSyntheticDashSource(resolved, userQualityCapHeight, selectedQuality, selectionOrigin)
             if (syntheticResult != null) {
                 val capInfo = userQualityCapHeight?.let { "${it}p cap" } ?: "no cap"
-                android.util.Log.d(TAG, "Using synthetic DASH streaming ($capInfo)")
+                android.util.Log.d(TAG, "Using single-rep synthetic DASH streaming ($capInfo)")
                 return MediaSourceResult(
                     source = syntheticResult.source,
                     isAdaptive = false, // Not true ABR - still single bitrate
@@ -293,10 +349,11 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
                     ?: resolved.videoTracks.minByOrNull { it.height ?: Int.MAX_VALUE }
             }
             else -> {
-                // No user cap (AUTO mode): use DEFAULT_INITIAL_QUALITY_HEIGHT (720p).
+                // No user cap (AUTO mode): use cold-start quality selection.
                 // BufferHealthMonitor handles quality adjustments via predictive/early-stall downshift.
-                // Fallback chain: 1) ≤720p, 2) lowest with height, 3) first available (null heights)
-                findBestTrackUnderCap(resolved.videoTracks, DEFAULT_INITIAL_QUALITY_HEIGHT)
+                val initialHeight = getInitialQualityHeight()
+                // Fallback chain: 1) ≤initialHeight, 2) lowest with height, 3) first available (null heights)
+                findBestTrackUnderCap(resolved.videoTracks, initialHeight)
                     ?: resolved.videoTracks.filter { it.height != null }.minByOrNull { it.height!! }
                     ?: resolved.videoTracks.firstOrNull()
             }
@@ -343,19 +400,87 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
     )
 
     /**
+     * Phase 2: Try to create multi-rep synthetic DASH (SYNTH_ADAPTIVE).
+     *
+     * This creates a DASH MPD with multiple video representations, enabling
+     * ExoPlayer's ABR logic to switch between qualities based on network conditions.
+     *
+     * Note: The MPD always includes ALL quality levels (full ladder). Quality cap is
+     * enforced via track selector constraints, not MPD filtering. This enables instant
+     * quality switching without MediaSource rebuild.
+     *
+     * @param resolved The resolved streams
+     * @param videoId The video ID for MPD registry
+     * @param userQualityCapHeight Passed for API compatibility but no longer used for MPD filtering.
+     *        Quality cap is now enforced via QualityTrackSelector.
+     * @return AdaptiveSourceResult if successful, null otherwise
+     */
+    private fun tryCreateMultiRepSynthAdaptive(
+        resolved: ResolvedStreams,
+        videoId: String,
+        userQualityCapHeight: Int?
+    ): AdaptiveSourceResult? {
+        // Phase 6: Runtime feature flag for synthetic adaptive DASH
+        val synthAdaptiveEnabled = featureFlags?.isSynthAdaptiveEnabled
+            ?: com.albunyaan.tube.BuildConfig.ENABLE_SYNTH_ADAPTIVE
+        if (!synthAdaptiveEnabled) {
+            android.util.Log.d(TAG, "SYNTH_ADAPTIVE disabled via feature flag")
+            return null
+        }
+
+        val factory = multiRepFactory ?: return null
+
+        // Check eligibility first
+        val (eligible, reason) = factory.checkEligibility(resolved)
+        if (!eligible) {
+            android.util.Log.d(TAG, "SYNTH_ADAPTIVE ineligible: $reason")
+            return null
+        }
+
+        // Create multi-rep source
+        val result = factory.createMediaSource(
+            resolved = resolved,
+            videoId = videoId,
+            context = context,
+            qualityCapHeight = userQualityCapHeight
+        )
+
+        return when (result) {
+            is MultiRepSyntheticDashMediaSourceFactory.Result.Success -> {
+                android.util.Log.d(TAG, "SYNTH_ADAPTIVE created: ${result.videoTracks.size} reps (${result.codecFamily})")
+                AdaptiveSourceResult(
+                    source = result.source,
+                    url = "${SyntheticDashDataSource.SCHEME}://$videoId",
+                    type = MediaSourceResult.AdaptiveType.SYNTH_ADAPTIVE
+                )
+            }
+            is MultiRepSyntheticDashMediaSourceFactory.Result.Failure -> {
+                android.util.Log.d(TAG, "SYNTH_ADAPTIVE failed: ${result.reason}")
+                null
+            }
+        }
+    }
+
+    /**
      * Try to create an adaptive streaming MediaSource (HLS or DASH).
      * Returns null if no adaptive streams are available.
      *
      * Fallback order: HLS → DASH → null
      * If HLS creation fails, attempts DASH before giving up.
      *
+     * Phase 1B: Checks HlsPoisonRegistry before attempting HLS. If the video is
+     * poisoned (prior 403 failure), HLS is skipped and DASH is attempted directly.
+     *
      * For live streams, uses non-caching DataSource to prevent stale manifest issues.
      * For VOD, uses caching DataSource for faster subsequent loads.
      *
      * NOTE: HLS sources use iOS User-Agent because HLS manifests come from YouTube's iOS endpoint
      * (when setFetchIosClient=true). Using Android User-Agent causes HTTP 403 on HLS segments.
+     *
+     * @param resolved The resolved streams
+     * @param videoId Optional video ID for HLS poison check
      */
-    private fun tryCreateAdaptiveSource(resolved: ResolvedStreams): AdaptiveSourceResult? {
+    private fun tryCreateAdaptiveSource(resolved: ResolvedStreams, videoId: String? = null): AdaptiveSourceResult? {
         // Use non-caching factory for live streams to prevent stale manifests
         // that cause playback to stop after a few seconds
         val dashDataSourceFactory = if (resolved.isLive) {
@@ -372,22 +497,32 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
             hlsCacheDataSourceFactory
         }
 
-        // Try HLS first (better compatibility)
-        val hlsResult = resolved.hlsUrl?.let { hlsUrl ->
-            try {
-                val mediaItem = MediaItem.Builder()
-                    .setUri(hlsUrl)
-                    .setMimeType(MimeTypes.APPLICATION_M3U8)
-                    .build()
-                // Use iOS User-Agent for HLS to match the client that fetched the manifest
-                val source = HlsMediaSource.Factory(hlsSourceFactory)
-                    .setAllowChunklessPreparation(true)
-                    .createMediaSource(mediaItem)
-                AdaptiveSourceResult(source, hlsUrl, MediaSourceResult.AdaptiveType.HLS)
-            } catch (e: Exception) {
-                android.util.Log.w(TAG, "Failed to create HLS source: ${e.message}")
-                null
+        // Phase 1B: Check HLS poison registry before attempting HLS
+        val hlsPoisoned = videoId != null && hlsPoisonRegistry?.isHlsPoisoned(videoId) == true
+        if (hlsPoisoned) {
+            android.util.Log.d(TAG, "Skipping HLS for $videoId (poisoned), trying DASH directly")
+        }
+
+        // Try HLS first (better compatibility) unless poisoned
+        val hlsResult = if (!hlsPoisoned) {
+            resolved.hlsUrl?.let { hlsUrl ->
+                try {
+                    val mediaItem = MediaItem.Builder()
+                        .setUri(hlsUrl)
+                        .setMimeType(MimeTypes.APPLICATION_M3U8)
+                        .build()
+                    // Use iOS User-Agent for HLS to match the client that fetched the manifest
+                    val source = HlsMediaSource.Factory(hlsSourceFactory)
+                        .setAllowChunklessPreparation(true)
+                        .createMediaSource(mediaItem)
+                    AdaptiveSourceResult(source, hlsUrl, MediaSourceResult.AdaptiveType.HLS)
+                } catch (e: Exception) {
+                    android.util.Log.w(TAG, "Failed to create HLS source: ${e.message}")
+                    null
+                }
             }
+        } else {
+            null
         }
         if (hlsResult != null) {
             android.util.Log.d(TAG, "Using HLS adaptive streaming (isLive=${resolved.isLive}, iOS UA)")
@@ -444,10 +579,11 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
                 SyntheticDashTrackSelector.findBestVideoOnlyTrackUnderCap(resolved.videoTracks, userQualityCapHeight)
             }
             else -> {
-                // No user cap (AUTO mode): use DEFAULT_INITIAL_QUALITY_HEIGHT (720p).
+                // No user cap (AUTO mode): use cold-start quality selection.
                 // BufferHealthMonitor handles quality adjustments via predictive/early-stall downshift.
-                // Fallback chain: 1) ≤720p video-only, 2) lowest with height, 3) first eligible
-                SyntheticDashTrackSelector.findBestVideoOnlyTrackUnderCap(resolved.videoTracks, DEFAULT_INITIAL_QUALITY_HEIGHT)
+                val initialHeight = getInitialQualityHeight()
+                // Fallback chain: 1) ≤initialHeight video-only, 2) lowest with height, 3) first eligible
+                SyntheticDashTrackSelector.findBestVideoOnlyTrackUnderCap(resolved.videoTracks, initialHeight)
                     ?: resolved.videoTracks
                         .filter { it.isVideoOnly && it.height != null && it.syntheticDashMetadata?.hasValidRanges() == true }
                         .minByOrNull { it.height!! }
@@ -470,7 +606,7 @@ class MultiQualityMediaSourceFactory(private val context: Context) {
         // Check if there's a higher-resolution muxed progressive track available.
         // Synthetic DASH can only use video-only tracks, but if a better muxed option exists,
         // we should fall back to raw progressive to use that higher-quality muxed stream.
-        val effectiveCap = userQualityCapHeight ?: DEFAULT_INITIAL_QUALITY_HEIGHT
+        val effectiveCap = userQualityCapHeight ?: getInitialQualityHeight()
         if (SyntheticDashTrackSelector.shouldSkipSyntheticDash(videoTrack, resolved.videoTracks, effectiveCap)) {
             val bestMuxedTrack = SyntheticDashTrackSelector.findBestMuxedTrackUnderCap(resolved.videoTracks, effectiveCap)
             android.util.Log.d(TAG, "Synthetic DASH: muxed ${bestMuxedTrack?.height}p available, higher than video-only ${videoTrack.height}p - prefer raw progressive")

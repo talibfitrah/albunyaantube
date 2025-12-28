@@ -30,9 +30,13 @@ import com.albunyaan.tube.data.source.api.ContentApi
 import com.albunyaan.tube.data.source.api.DownloadApi
 import com.albunyaan.tube.player.DefaultPlayerRepository
 import com.albunyaan.tube.player.ExtractionRateLimiter
+import com.albunyaan.tube.player.GlobalStreamResolver
+import com.albunyaan.tube.player.PlaybackFeatureFlags
 import com.albunyaan.tube.player.PlayerRepository
 import com.albunyaan.tube.player.DefaultStreamPrefetchService
+import com.albunyaan.tube.player.MultiRepresentationMpdGenerator
 import com.albunyaan.tube.player.StreamPrefetchService
+import com.albunyaan.tube.player.SyntheticDashMpdRegistry
 import com.albunyaan.tube.telemetry.LogTelemetryClient
 import com.albunyaan.tube.telemetry.TelemetryClient
 import dagger.Module
@@ -140,9 +144,10 @@ object DataModule {
     fun provideNewPipeExtractorClient(
         downloader: OkHttpDownloader,
         cache: MetadataCache,
-        metrics: ExtractorMetricsReporter
+        metrics: ExtractorMetricsReporter,
+        featureFlags: PlaybackFeatureFlags
     ): NewPipeExtractorClient {
-        return NewPipeExtractorClient(downloader, cache, metrics)
+        return NewPipeExtractorClient(downloader, cache, metrics, featureFlags)
     }
 
     @Provides
@@ -191,19 +196,29 @@ object DataModule {
         return LogListMetricsReporter()
     }
 
+    /**
+     * Phase 1A: PlayerRepository now uses GlobalStreamResolver for single-flight semantics.
+     */
     @Provides
     @Singleton
-    fun providePlayerRepository(extractorClient: NewPipeExtractorClient): PlayerRepository {
-        return DefaultPlayerRepository(extractorClient)
+    fun providePlayerRepository(globalResolver: GlobalStreamResolver): PlayerRepository {
+        return DefaultPlayerRepository(globalResolver)
     }
 
+    /**
+     * Phase 1A: StreamPrefetchService now uses GlobalStreamResolver for single-flight semantics.
+     * Phase 5: Also pre-generates synthetic DASH MPD during prefetch for faster playback start.
+     */
     @Provides
     @Singleton
     fun provideStreamPrefetchService(
-        extractorClient: NewPipeExtractorClient,
-        rateLimiter: ExtractionRateLimiter
+        globalResolver: GlobalStreamResolver,
+        rateLimiter: ExtractionRateLimiter,
+        mpdGenerator: MultiRepresentationMpdGenerator,
+        mpdRegistry: SyntheticDashMpdRegistry,
+        featureFlags: PlaybackFeatureFlags
     ): StreamPrefetchService {
-        return DefaultStreamPrefetchService(extractorClient, rateLimiter)
+        return DefaultStreamPrefetchService(globalResolver, rateLimiter, mpdGenerator, mpdRegistry, featureFlags)
     }
 
     @Provides

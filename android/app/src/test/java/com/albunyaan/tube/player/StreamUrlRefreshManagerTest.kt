@@ -22,94 +22,112 @@ class StreamUrlRefreshManagerTest {
     private lateinit var rateLimiter: ExtractionRateLimiter
     private lateinit var manager: StreamUrlRefreshManager
 
-    private var currentTime = 1000L
+    /** Controllable test clock for deterministic time-based tests */
+    private var testTimeMs = 1000L
 
     @Before
     fun setUp() {
-        currentTime = 1000L
-        telemetry = StreamRequestTelemetry()
-        rateLimiter = ExtractionRateLimiter().apply {
-            setTestClock { currentTime }
+        testTimeMs = 1000L
+        telemetry = StreamRequestTelemetry().apply {
+            setTestClock { testTimeMs }
         }
-        manager = StreamUrlRefreshManager(telemetry, rateLimiter)
+        rateLimiter = ExtractionRateLimiter().apply {
+            setTestClock { testTimeMs }
+        }
+        manager = StreamUrlRefreshManager(telemetry, rateLimiter).apply {
+            setTestClock { testTimeMs }
+        }
+    }
+
+    /** Advance test clock for deterministic ordering */
+    private fun advanceClock(millis: Long = 100) {
+        testTimeMs += millis
     }
 
     // --- Basic StreamUrlInfo Tests ---
 
     @Test
     fun `StreamUrlInfo calculates ttlRemainingMs correctly`() {
-        // Use current time to ensure TTL is fresh
-        val resolvedAt = System.currentTimeMillis()
+        // Use test clock - info resolved at current testTimeMs
         val info = StreamUrlRefreshManager.StreamUrlInfo(
             videoId = "video1",
-            resolvedAtMs = resolvedAt
+            resolvedAtMs = testTimeMs
         )
 
-        // At creation time, TTL should be approximately 6 hours
-        assertTrue("TTL should be close to 6 hours",
-            info.ttlRemainingMs > 5 * 60 * 60 * 1000L)
+        // At creation time, TTL should be exactly 6 hours
+        assertEquals("TTL should be 6 hours",
+            StreamUrlRefreshManager.ESTIMATED_TTL_MS, info.ttlRemainingMs(testTimeMs))
     }
 
     @Test
     fun `StreamUrlInfo ageMs increases over time`() {
-        val resolvedAt = System.currentTimeMillis() - 60_000L // 1 minute ago
+        val resolvedAt = testTimeMs
         val info = StreamUrlRefreshManager.StreamUrlInfo(
             videoId = "video1",
             resolvedAtMs = resolvedAt
         )
 
-        assertTrue("Age should be at least 60 seconds", info.ageMs >= 60_000L)
+        // Advance clock by 1 minute
+        advanceClock(60_000L)
+
+        assertEquals("Age should be 60 seconds", 60_000L, info.ageMs(testTimeMs))
     }
 
     @Test
     fun `StreamUrlInfo isExpired when TTL is zero or negative`() {
-        val expiredResolvedAt = System.currentTimeMillis() -
-            (StreamUrlRefreshManager.ESTIMATED_TTL_MS + 1000L)
+        val resolvedAt = testTimeMs
         val info = StreamUrlRefreshManager.StreamUrlInfo(
             videoId = "video1",
-            resolvedAtMs = expiredResolvedAt
+            resolvedAtMs = resolvedAt
         )
 
-        assertTrue("Stream should be expired", info.isExpired)
-        assertEquals(0L, info.ttlRemainingMs)
+        // Advance clock past expiry (6 hours + 1 second)
+        advanceClock(StreamUrlRefreshManager.ESTIMATED_TTL_MS + 1000L)
+
+        assertTrue("Stream should be expired", info.isExpired(testTimeMs))
+        assertEquals(0L, info.ttlRemainingMs(testTimeMs))
     }
 
     @Test
     fun `StreamUrlInfo needsPreemptiveRefresh when TTL below threshold`() {
-        // Resolved 5 hours 35 minutes ago (25 minutes TTL remaining)
-        val resolvedAt = System.currentTimeMillis() -
-            (5 * 60 * 60 * 1000L + 35 * 60 * 1000L)
+        val resolvedAt = testTimeMs
         val info = StreamUrlRefreshManager.StreamUrlInfo(
             videoId = "video1",
             resolvedAtMs = resolvedAt
         )
 
-        assertTrue("Should need preemptive refresh (TTL < 30min)", info.needsPreemptiveRefresh)
+        // Advance clock to 5h35m (25 minutes TTL remaining)
+        advanceClock(5 * 60 * 60 * 1000L + 35 * 60 * 1000L)
+
+        assertTrue("Should need preemptive refresh (TTL < 30min)", info.needsPreemptiveRefresh(testTimeMs))
     }
 
     @Test
     fun `StreamUrlInfo needsPreemptiveRefresh false when TTL above threshold`() {
-        // Resolved 5 hours ago (1 hour TTL remaining)
-        val resolvedAt = System.currentTimeMillis() - (5 * 60 * 60 * 1000L)
+        val resolvedAt = testTimeMs
         val info = StreamUrlRefreshManager.StreamUrlInfo(
             videoId = "video1",
             resolvedAtMs = resolvedAt
         )
 
-        assertFalse("Should not need preemptive refresh (TTL > 30min)", info.needsPreemptiveRefresh)
+        // Advance clock by 5 hours (1 hour TTL remaining)
+        advanceClock(5 * 60 * 60 * 1000L)
+
+        assertFalse("Should not need preemptive refresh (TTL > 30min)", info.needsPreemptiveRefresh(testTimeMs))
     }
 
     @Test
     fun `StreamUrlInfo isCritical when TTL below critical threshold`() {
-        // Resolved 5 hours 55 minutes ago (5 minutes TTL remaining)
-        val resolvedAt = System.currentTimeMillis() -
-            (5 * 60 * 60 * 1000L + 55 * 60 * 1000L)
+        val resolvedAt = testTimeMs
         val info = StreamUrlRefreshManager.StreamUrlInfo(
             videoId = "video1",
             resolvedAtMs = resolvedAt
         )
 
-        assertTrue("Should be critical (TTL < 10min)", info.isCritical)
+        // Advance clock to 5h55m (5 minutes TTL remaining)
+        advanceClock(5 * 60 * 60 * 1000L + 55 * 60 * 1000L)
+
+        assertTrue("Should be critical (TTL < 10min)", info.isCritical(testTimeMs))
     }
 
     @Test
@@ -165,14 +183,14 @@ class StreamUrlRefreshManagerTest {
         manager.onStreamResolved("video1")
         val firstInfo = manager.getUrlInfo("video1")
 
-        // Wait a tiny bit
-        Thread.sleep(10)
+        // Advance clock for deterministic ordering
+        advanceClock(100)
 
         manager.onStreamRefreshed("video1")
         val secondInfo = manager.getUrlInfo("video1")
 
         assertTrue("New resolution time should be later",
-            secondInfo!!.resolvedAtMs >= firstInfo!!.resolvedAtMs)
+            secondInfo!!.resolvedAtMs > firstInfo!!.resolvedAtMs)
     }
 
     // --- shouldRefreshBeforeOperation Tests ---
@@ -192,94 +210,95 @@ class StreamUrlRefreshManagerTest {
 
     @Test
     fun `shouldRefreshBeforeOperation returns true when TTL below threshold`() {
-        // We need to simulate an old stream - we'll test the underlying StreamUrlInfo logic
-        // Since we can't easily inject time into the manager, we test the info calculation directly
+        // Resolve stream at current test time
+        manager.onStreamResolved("video1")
 
-        val resolvedAt = System.currentTimeMillis() -
-            (StreamUrlRefreshManager.ESTIMATED_TTL_MS -
-                StreamUrlRefreshManager.PREEMPTIVE_REFRESH_THRESHOLD_MS + 1000L)
-        val info = StreamUrlRefreshManager.StreamUrlInfo(
-            videoId = "video1",
-            resolvedAtMs = resolvedAt
-        )
+        // Advance clock past the preemptive refresh threshold (5h31m means 29min TTL remaining)
+        advanceClock(StreamUrlRefreshManager.ESTIMATED_TTL_MS - StreamUrlRefreshManager.PREEMPTIVE_REFRESH_THRESHOLD_MS + 1000L)
 
-        assertTrue("Should need refresh when TTL < threshold", info.needsPreemptiveRefresh)
+        assertTrue("Should need refresh when TTL < threshold", manager.shouldRefreshBeforeOperation("video1"))
     }
 
     // --- TTL Boundary Tests ---
 
     @Test
     fun `TTL exactly at 30 min threshold does not need refresh`() {
-        val resolvedAt = System.currentTimeMillis() -
-            (StreamUrlRefreshManager.ESTIMATED_TTL_MS -
-                StreamUrlRefreshManager.PREEMPTIVE_REFRESH_THRESHOLD_MS)
+        val resolvedAt = testTimeMs
         val info = StreamUrlRefreshManager.StreamUrlInfo(
             videoId = "video1",
             resolvedAtMs = resolvedAt
         )
 
+        // Advance to exactly threshold (TTL remaining = 30min)
+        advanceClock(StreamUrlRefreshManager.ESTIMATED_TTL_MS - StreamUrlRefreshManager.PREEMPTIVE_REFRESH_THRESHOLD_MS)
+
         // At exactly threshold, TTL remaining equals threshold, so needsPreemptiveRefresh is false
-        assertFalse("At exactly threshold, should not need refresh", info.needsPreemptiveRefresh)
+        assertFalse("At exactly threshold, should not need refresh", info.needsPreemptiveRefresh(testTimeMs))
     }
 
     @Test
     fun `TTL 1ms below 30 min threshold needs refresh`() {
-        val resolvedAt = System.currentTimeMillis() -
-            (StreamUrlRefreshManager.ESTIMATED_TTL_MS -
-                StreamUrlRefreshManager.PREEMPTIVE_REFRESH_THRESHOLD_MS + 1L)
+        val resolvedAt = testTimeMs
         val info = StreamUrlRefreshManager.StreamUrlInfo(
             videoId = "video1",
             resolvedAtMs = resolvedAt
         )
 
-        assertTrue("Just below threshold should need refresh", info.needsPreemptiveRefresh)
+        // Advance to 1ms past threshold (TTL remaining = 29min 59.999s)
+        advanceClock(StreamUrlRefreshManager.ESTIMATED_TTL_MS - StreamUrlRefreshManager.PREEMPTIVE_REFRESH_THRESHOLD_MS + 1L)
+
+        assertTrue("Just below threshold should need refresh", info.needsPreemptiveRefresh(testTimeMs))
     }
 
     @Test
     fun `TTL exactly at 10 min critical threshold is not critical`() {
-        val resolvedAt = System.currentTimeMillis() -
-            (StreamUrlRefreshManager.ESTIMATED_TTL_MS -
-                StreamUrlRefreshManager.CRITICAL_TTL_THRESHOLD_MS)
+        val resolvedAt = testTimeMs
         val info = StreamUrlRefreshManager.StreamUrlInfo(
             videoId = "video1",
             resolvedAtMs = resolvedAt
         )
 
-        assertFalse("At exactly critical threshold, should not be critical", info.isCritical)
+        // Advance to exactly critical threshold (TTL remaining = 10min)
+        advanceClock(StreamUrlRefreshManager.ESTIMATED_TTL_MS - StreamUrlRefreshManager.CRITICAL_TTL_THRESHOLD_MS)
+
+        assertFalse("At exactly critical threshold, should not be critical", info.isCritical(testTimeMs))
     }
 
     @Test
     fun `TTL 1ms below 10 min critical threshold is critical`() {
-        val resolvedAt = System.currentTimeMillis() -
-            (StreamUrlRefreshManager.ESTIMATED_TTL_MS -
-                StreamUrlRefreshManager.CRITICAL_TTL_THRESHOLD_MS + 1L)
+        val resolvedAt = testTimeMs
         val info = StreamUrlRefreshManager.StreamUrlInfo(
             videoId = "video1",
             resolvedAtMs = resolvedAt
         )
 
-        assertTrue("Just below critical threshold should be critical", info.isCritical)
+        // Advance to 1ms past critical threshold (TTL remaining = 9min 59.999s)
+        advanceClock(StreamUrlRefreshManager.ESTIMATED_TTL_MS - StreamUrlRefreshManager.CRITICAL_TTL_THRESHOLD_MS + 1L)
+
+        assertTrue("Just below critical threshold should be critical", info.isCritical(testTimeMs))
     }
 
     @Test
     fun `expired stream has zero TTL remaining`() {
-        val resolvedAt = System.currentTimeMillis() -
-            (StreamUrlRefreshManager.ESTIMATED_TTL_MS + 1000L)
+        val resolvedAt = testTimeMs
         val info = StreamUrlRefreshManager.StreamUrlInfo(
             videoId = "video1",
             resolvedAtMs = resolvedAt
         )
 
-        assertEquals("Expired stream should have 0 TTL", 0L, info.ttlRemainingMs)
-        assertTrue("Expired stream should be expired", info.isExpired)
-        assertTrue("Expired stream should need refresh", info.needsPreemptiveRefresh)
-        assertTrue("Expired stream should be critical", info.isCritical)
+        // Advance past expiry
+        advanceClock(StreamUrlRefreshManager.ESTIMATED_TTL_MS + 1000L)
+
+        assertEquals("Expired stream should have 0 TTL", 0L, info.ttlRemainingMs(testTimeMs))
+        assertTrue("Expired stream should be expired", info.isExpired(testTimeMs))
+        assertTrue("Expired stream should need refresh", info.needsPreemptiveRefresh(testTimeMs))
+        assertTrue("Expired stream should be critical", info.isCritical(testTimeMs))
     }
 
     @Test
     fun `negative age scenario has full TTL`() {
-        // Future resolution time (clock skew edge case)
-        val resolvedAt = System.currentTimeMillis() + 1000L
+        // Future resolution time (clock skew edge case) - 1 second in future
+        val resolvedAt = testTimeMs + 1000L
         val info = StreamUrlRefreshManager.StreamUrlInfo(
             videoId = "video1",
             resolvedAtMs = resolvedAt
@@ -288,8 +307,8 @@ class StreamUrlRefreshManagerTest {
         // Age will be negative, but TTL should still be calculated
         // TTL = estimatedExpiry - now = (resolvedAt + 6h) - now = 6h + 1s
         assertTrue("Future resolution should have > 6h TTL",
-            info.ttlRemainingMs > StreamUrlRefreshManager.ESTIMATED_TTL_MS)
-        assertFalse("Future resolution should not be expired", info.isExpired)
+            info.ttlRemainingMs(testTimeMs) > StreamUrlRefreshManager.ESTIMATED_TTL_MS)
+        assertFalse("Future resolution should not be expired", info.isExpired(testTimeMs))
     }
 
     // --- getTtlRemainingMs Tests ---
@@ -453,13 +472,14 @@ class StreamUrlRefreshManagerTest {
         manager.onStreamResolved("video1")
         val firstInfo = manager.getUrlInfo("video1")
 
-        Thread.sleep(10)
+        // Advance clock for deterministic ordering
+        advanceClock(100)
 
         manager.onStreamResolved("video1")
         val secondInfo = manager.getUrlInfo("video1")
 
         assertTrue("Second resolution should be later",
-            secondInfo!!.resolvedAtMs >= firstInfo!!.resolvedAtMs)
+            secondInfo!!.resolvedAtMs > firstInfo!!.resolvedAtMs)
     }
 
     @Test

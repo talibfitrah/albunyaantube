@@ -1,12 +1,14 @@
 package com.albunyaan.tube.player
 
 import android.content.Context
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.Format
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.trackselection.AdaptiveTrackSelection
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.exoplayer.trackselection.ExoTrackSelection
+import com.albunyaan.tube.data.extractor.QualityConstraintMode
 
 /**
  * Custom track selector that provides better quality selection for discrete video streams.
@@ -15,12 +17,27 @@ import androidx.media3.exoplayer.trackselection.ExoTrackSelection
  * 1. Select appropriate default quality based on screen size
  * 2. Enable manual quality selection via ExoPlayer settings menu
  * 3. Show quality labels in the settings UI
+ *
+ * Phase 3: Supports both CAP and LOCK modes:
+ * - CAP: Maximum ceiling; ABR can go lower but not higher
+ * - LOCK: Fixed height with forced highest bitrate; locks to specified resolution
  */
 @OptIn(UnstableApi::class)
 class QualityTrackSelector(
     context: Context,
     trackSelectionFactory: ExoTrackSelection.Factory = AdaptiveTrackSelection.Factory()
 ) : DefaultTrackSelector(context, trackSelectionFactory) {
+
+    companion object {
+        private const val TAG = "QualityTrackSelector"
+
+        /**
+         * Creates a track selector configured for discrete quality selection.
+         */
+        fun createForDiscreteQualities(context: Context): QualityTrackSelector {
+            return QualityTrackSelector(context)
+        }
+    }
 
     init {
         // Configure parameters for better quality selection
@@ -39,21 +56,58 @@ class QualityTrackSelector(
     }
 
     /**
-     * Update parameters to select a specific quality.
+     * Update parameters to select a specific quality (legacy - uses LOCK semantics).
      *
      * @param height The desired video height (e.g., 720 for 720p)
+     * @deprecated Use [applyQualityConstraint] with explicit mode instead
      */
+    @Deprecated("Use applyQualityConstraint with explicit mode", ReplaceWith("applyQualityConstraint(height, QualityConstraintMode.LOCK)"))
     fun selectQuality(height: Int) {
-        parameters = buildUponParameters()
-            .setMaxVideoSize(Int.MAX_VALUE, height)
-            .setMinVideoSize(0, height)
-            .build()
+        applyQualityConstraint(height, QualityConstraintMode.LOCK)
+    }
+
+    /**
+     * Phase 3: Apply quality constraint with explicit mode.
+     *
+     * @param height The desired video height (e.g., 720 for 720p). Must be positive.
+     * @param mode CAP (ceiling only) or LOCK (fixed quality)
+     * @throws IllegalArgumentException if height is not positive
+     */
+    fun applyQualityConstraint(height: Int, mode: QualityConstraintMode) {
+        require(height > 0) { "Height must be positive, got: $height" }
+        parameters = when (mode) {
+            QualityConstraintMode.CAP -> {
+                // Cap mode: Set maximum only, allow ABR to drop below
+                // Min set to 0 (no minimum constraint) so ABR can select any lower quality
+                // Reset forceHighestSupportedBitrate to allow ABR to adapt bitrate
+                Log.d(TAG, "Applying quality CAP: max ${height}p, ABR enabled below cap")
+                buildUponParameters()
+                    .setMaxVideoSize(Int.MAX_VALUE, height)
+                    .setMinVideoSize(0, 0) // No minimum constraint
+                    .setForceHighestSupportedBitrate(false) // Allow ABR to adapt bitrate
+                    .build()
+            }
+            QualityConstraintMode.LOCK -> {
+                // Lock mode: Set both min and max to the same height, force highest bitrate
+                // at that height to prevent ABR switching between different bitrates/widths
+                // Calculate minimum width assuming 4:3 aspect ratio as the minimum acceptable ratio
+                // This excludes portrait and narrower formats, allowing 4:3, 16:9, and wider
+                val minWidth = (height * 4) / 3
+                Log.d(TAG, "Applying quality LOCK: fixed ${height}p (minWidth=${minWidth}), forcing highest bitrate")
+                buildUponParameters()
+                    .setMaxVideoSize(Int.MAX_VALUE, height)
+                    .setMinVideoSize(minWidth, height)
+                    .setForceHighestSupportedBitrate(true)
+                    .build()
+            }
+        }
     }
 
     /**
      * Reset to automatic quality selection based on bandwidth.
      */
     fun selectAutoQuality() {
+        Log.d(TAG, "Selecting AUTO quality: ABR enabled, no constraints")
         parameters = buildUponParameters()
             .clearVideoSizeConstraints()
             .setForceHighestSupportedBitrate(false)
@@ -73,15 +127,6 @@ class QualityTrackSelector(
             width > 0 -> "${width}w"
             bitrate > 0 -> "${bitrate / 1000}kbps"
             else -> "Unknown"
-        }
-    }
-
-    companion object {
-        /**
-         * Creates a track selector configured for discrete quality selection.
-         */
-        fun createForDiscreteQualities(context: Context): QualityTrackSelector {
-            return QualityTrackSelector(context)
         }
     }
 }

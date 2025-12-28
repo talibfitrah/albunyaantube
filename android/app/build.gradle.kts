@@ -54,6 +54,36 @@ android {
         // WARNING: Requires iOS User-Agent for HLS playback (configured in MultiQualityMediaSourceFactory)
         val enableNpeIosFetch = localProperties.getProperty("npe.ios.fetch.enabled", "false").toBoolean()
         buildConfigField("boolean", "ENABLE_NPE_IOS_FETCH", "$enableNpeIosFetch")
+
+        // ===================================================================================
+        // Playback reliability feature flags (Phases 1-5)
+        // ===================================================================================
+        // ROLLOUT POLICY:
+        // - All features default ON for both debug and release builds.
+        // - This means release builds shipped to users have these features enabled by default.
+        // - For staged rollout or emergency disable, use PlaybackFeatureFlags runtime toggles
+        //   (accessible via hidden developer options: About → tap version 7×).
+        // - For fleet-wide control, integrate PlaybackFeatureFlags with Firebase Remote Config
+        //   or similar service that writes to SharedPreferences on app startup.
+        // - To disable at build time (local dev/testing): set property in local.properties
+        //
+        // Enable synthetic adaptive DASH from progressive streams.
+        // Creates multi-representation DASH MPD from video-only progressive streams for ABR switching.
+        // Default ON - disable in local.properties: playback.synth.adaptive.enabled=false
+        val enableSynthAdaptive = localProperties.getProperty("playback.synth.adaptive.enabled", "true").toBoolean()
+        buildConfigField("boolean", "ENABLE_SYNTH_ADAPTIVE", "$enableSynthAdaptive")
+
+        // Enable MPD pre-generation during stream prefetch.
+        // Pre-generates DASH MPD when user taps video to reduce first-frame latency.
+        // Default ON - disable in local.properties: playback.mpd.prefetch.enabled=false
+        val enableMpdPrefetch = localProperties.getProperty("playback.mpd.prefetch.enabled", "true").toBoolean()
+        buildConfigField("boolean", "ENABLE_MPD_PREFETCH", "$enableMpdPrefetch")
+
+        // Enable graceful degradation manager for playback recovery.
+        // Implements per-video refresh budgets and automatic quality step-downs.
+        // Default ON - disable in local.properties: playback.degradation.enabled=false
+        val enableDegradation = localProperties.getProperty("playback.degradation.enabled", "true").toBoolean()
+        buildConfigField("boolean", "ENABLE_DEGRADATION_MANAGER", "$enableDegradation")
     }
 
     signingConfigs {
