@@ -203,7 +203,9 @@ dependencies {
     implementation("com.squareup.moshi:moshi:1.15.1")
     implementation("com.squareup.moshi:moshi-kotlin:1.15.1")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
-    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.8")
+    // Using dev branch with latest YouTube fixes (PR #13129 - "page reload" error fix)
+    // Commit: ac654a77cd - includes TVHTML5 client removal handling and poToken fixes
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:dev-SNAPSHOT")
     implementation("androidx.work:work-runtime-ktx:2.9.0")
     implementation("androidx.profileinstaller:profileinstaller:1.3.1")
     implementation("io.coil-kt:coil:2.6.0")
