@@ -30,6 +30,10 @@
 -keep class org.schabi.newpipe.extractor.** { *; }
 -dontwarn org.schabi.newpipe.extractor.**
 
+# re2j (used by jsoup in NewPipeExtractor dev-SNAPSHOT)
+-dontwarn com.google.re2j.Matcher
+-dontwarn com.google.re2j.Pattern
+
 # Rhino JavaScript (used by NewPipe)
 -keep class org.mozilla.javascript.** { *; }
 -dontwarn org.mozilla.javascript.**
