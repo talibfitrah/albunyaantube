@@ -1,5 +1,6 @@
 import { authorizedJsonFetch } from '@/services/http';
 import type { CursorPage } from '@/types/pagination';
+import type { Exclusion, CreateExclusionPayload, ExclusionPage } from '@/types/exclusions';
 
 // Types
 
@@ -25,7 +26,7 @@ export interface ExclusionResponse {
 
 export async function fetchChannelExclusions(channelId: string): Promise<ChannelExclusions> {
   const response = await authorizedJsonFetch<ChannelExclusions>(
-    `/admin/channels/${channelId}/exclusions`
+    `/api/admin/channels/${channelId}/exclusions`
   );
   return response;
 }
@@ -36,7 +37,7 @@ export async function addChannelExclusion(
   youtubeId: string
 ): Promise<ChannelExclusions> {
   const response = await authorizedJsonFetch<ChannelExclusions>(
-    `/admin/channels/${channelId}/exclusions/${type}/${youtubeId}`,
+    `/api/admin/channels/${channelId}/exclusions/${type}/${youtubeId}`,
     { method: 'POST' }
   );
   return response;
@@ -48,7 +49,7 @@ export async function removeChannelExclusion(
   youtubeId: string
 ): Promise<ChannelExclusions> {
   const response = await authorizedJsonFetch<ChannelExclusions>(
-    `/admin/channels/${channelId}/exclusions/${type}/${youtubeId}`,
+    `/api/admin/channels/${channelId}/exclusions/${type}/${youtubeId}`,
     { method: 'DELETE' }
   );
   return response;
@@ -58,7 +59,7 @@ export async function removeChannelExclusion(
 
 export async function fetchPlaylistExclusions(playlistId: string): Promise<string[]> {
   const response = await authorizedJsonFetch<string[]>(
-    `/admin/playlists/${playlistId}/exclusions`
+    `/api/admin/registry/playlists/${playlistId}/exclusions`
   );
   return response;
 }
@@ -68,7 +69,7 @@ export async function addPlaylistExclusion(
   videoId: string
 ): Promise<string[]> {
   const response = await authorizedJsonFetch<string[]>(
-    `/admin/playlists/${playlistId}/exclusions/${videoId}`,
+    `/api/admin/registry/playlists/${playlistId}/exclusions/${videoId}`,
     { method: 'POST' }
   );
   return response;
@@ -79,7 +80,7 @@ export async function removePlaylistExclusion(
   videoId: string
 ): Promise<string[]> {
   const response = await authorizedJsonFetch<string[]>(
-    `/admin/playlists/${playlistId}/exclusions/${videoId}`,
+    `/api/admin/registry/playlists/${playlistId}/exclusions/${videoId}`,
     { method: 'DELETE' }
   );
   return response;
@@ -87,53 +88,56 @@ export async function removePlaylistExclusion(
 
 // Workspace Exclusions
 
-export async function fetchExclusionsPage(params: any = {}): Promise<CursorPage<any>> {
-  // TODO: Implement proper backend endpoint for workspace exclusions
-  // For now, return empty page
-  return {
-    data: [],
-    pageInfo: {
-      cursor: null,
-      nextCursor: null,
-      hasNext: false
-    }
-  };
+export interface FetchExclusionsParams {
+  cursor?: string | null;
+  limit?: number;
+  /** Filter by parent type: CHANNEL or PLAYLIST */
+  parentType?: string;
+  /** Filter by exclude type: VIDEO or PLAYLIST */
+  excludeType?: string;
+  /** Search term for filtering */
+  search?: string;
 }
 
-export async function createExclusion(payload: any): Promise<any> {
-  // TODO: Implement proper backend endpoint for creating exclusions
-  // For now, return mock response
-  console.warn('createExclusion not fully implemented - using mock response');
-  return {
-    id: 'mock-' + Date.now(),
-    ...payload,
-    createdAt: new Date().toISOString(),
-    createdBy: {
-      id: 'user-1',
-      email: 'admin@example.com',
-      displayName: 'Admin',
-      roles: ['ADMIN'],
-      status: 'ACTIVE',
-      lastLoginAt: null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    }
-  };
+export async function fetchExclusionsPage(params: FetchExclusionsParams = {}): Promise<ExclusionPage> {
+  const queryParams = new URLSearchParams();
+  if (params.cursor) {
+    queryParams.set('cursor', params.cursor);
+  }
+  if (params.limit) {
+    queryParams.set('limit', params.limit.toString());
+  }
+  if (params.parentType) {
+    queryParams.set('parentType', params.parentType);
+  }
+  if (params.excludeType) {
+    queryParams.set('excludeType', params.excludeType);
+  }
+  if (params.search) {
+    queryParams.set('search', params.search);
+  }
+
+  const queryString = queryParams.toString();
+  const url = `/api/admin/exclusions${queryString ? '?' + queryString : ''}`;
+
+  const response = await authorizedJsonFetch<ExclusionPage>(url);
+  return response;
 }
 
-export async function updateExclusion(exclusionId: string, payload: any): Promise<any> {
-  // TODO: Implement proper backend endpoint for updating exclusions
-  // For now, return mock response
-  console.warn('updateExclusion not fully implemented - using mock response');
-  return {
-    id: exclusionId,
-    ...payload,
-    updatedAt: new Date().toISOString()
-  };
+export async function createExclusion(payload: CreateExclusionPayload): Promise<Exclusion> {
+  const response = await authorizedJsonFetch<Exclusion>(
+    '/api/admin/exclusions',
+    {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }
+  );
+  return response;
 }
 
 export async function removeExclusion(exclusionId: string): Promise<void> {
-  // TODO: Implement proper backend endpoint for removing exclusions
-  console.warn('removeExclusion not fully implemented - using mock');
-  // For now, do nothing
+  await authorizedJsonFetch<void>(
+    `/api/admin/exclusions/${encodeURIComponent(exclusionId)}`,
+    { method: 'DELETE' }
+  );
 }

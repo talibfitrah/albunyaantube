@@ -11,6 +11,7 @@ import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.albunyaan.tube.R
+import com.albunyaan.tube.data.filters.FilterManager
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.source.ContentService
@@ -20,6 +21,7 @@ import com.albunyaan.tube.ui.utils.calculateGridSpanCount
 import com.albunyaan.tube.player.StreamPrefetchService
 import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Named
@@ -37,6 +39,9 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
     @Inject
     lateinit var prefetchService: StreamPrefetchService
 
+    @Inject
+    lateinit var filterManager: FilterManager
+
     private val viewModel: ContentListViewModel by viewModels {
         ContentListViewModel.Factory(
             contentService,
@@ -50,7 +55,33 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
 
         setupRecyclerView()
         setupSwipeRefresh()
+        observeFilters()
         observeViewModel()
+    }
+
+    private fun observeFilters() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            filterManager.state.collectLatest { filterState ->
+                Log.d(TAG, "Filter state changed: category=${filterState.category}")
+                viewModel.setFilters(filterState)
+                updateFilterChip(filterState.category)
+            }
+        }
+    }
+
+    private fun updateFilterChip(categoryId: String?) {
+        binding?.filterChip?.apply {
+            if (categoryId.isNullOrEmpty()) {
+                visibility = View.GONE
+            } else {
+                visibility = View.VISIBLE
+                text = getString(R.string.filtering_by_category, categoryId)
+                setOnCloseIconClickListener {
+                    Log.d(TAG, "Clearing category filter")
+                    filterManager.setCategory(null)
+                }
+            }
+        }
     }
 
     private fun setupSwipeRefresh() {
@@ -115,18 +146,28 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
             viewModel.content.collect { state ->
                 when (state) {
                     is ContentListViewModel.ContentState.Loading -> {
-                        Log.d(TAG, "Loading videos...")
-                        binding?.swipeRefresh?.isRefreshing = true
-                        binding?.loadingMore?.visibility = View.GONE
-                        binding?.emptyState?.visibility = View.GONE
+                        Log.d(TAG, "Loading videos (type=${state.type})...")
+                        when (state.type) {
+                            ContentListViewModel.LoadingType.INITIAL,
+                            ContentListViewModel.LoadingType.REFRESH -> {
+                                // Initial load or pull-to-refresh: show top swipeRefresh indicator
+                                binding?.swipeRefresh?.isRefreshing = true
+                                binding?.loadingMore?.visibility = View.GONE
+                                binding?.emptyState?.visibility = View.GONE
+                            }
+                            ContentListViewModel.LoadingType.PAGINATION -> {
+                                // Infinite scroll: show bottom loadingMore indicator only
+                                binding?.swipeRefresh?.isRefreshing = false
+                                binding?.loadingMore?.visibility = View.VISIBLE
+                            }
+                        }
                     }
                     is ContentListViewModel.ContentState.Success -> {
                         val videos = state.items.filterIsInstance<ContentItem.Video>()
-                        Log.d(TAG, "Videos loaded: ${videos.size} items, loadingMore=${state.isLoadingMore}, hasMore=${state.hasMoreData}")
+                        Log.d(TAG, "Videos loaded: ${videos.size} items, hasMore=${state.hasMoreData}")
                         binding?.let { binding ->
                             binding.swipeRefresh.isRefreshing = false
-                            // Show/hide bottom loading indicator
-                            binding.loadingMore.visibility = if (state.isLoadingMore) View.VISIBLE else View.GONE
+                            binding.loadingMore.visibility = View.GONE
 
                             // Surface pagination errors as a transient message while keeping content visible
                             state.paginationError?.let { errorMessage ->

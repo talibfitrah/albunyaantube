@@ -4,7 +4,9 @@
  * Wire format from backend:
  * {
  *   "nextCursor": "string|null",
- *   "hasNext": boolean
+ *   "hasNext": boolean,
+ *   "totalCount": number|null,
+ *   "truncated": boolean|null
  * }
  *
  * The cursor and limit fields are optional - maintained client-side
@@ -17,6 +19,14 @@ export interface CursorPageInfo {
   cursor?: string | null;
   /** Page size - optional, maintained client-side */
   limit?: number;
+  /** Total count of items matching current filters - optional, returned by some endpoints */
+  totalCount?: number | null;
+  /**
+   * Indicates whether results were truncated due to safety limits.
+   * When true, the totalCount and results may be incomplete.
+   * Used by workspace exclusions aggregation to signal when hard limits have been hit.
+   */
+  truncated?: boolean | null;
 }
 
 /**

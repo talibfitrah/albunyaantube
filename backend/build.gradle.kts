@@ -3,10 +3,10 @@ import java.time.Duration
 
 plugins {
     id("java")
-    id("org.springframework.boot") version "3.2.5"
-    id("io.spring.dependency-management") version "1.1.4"
-    id("io.gatling.gradle") version "3.10.3"
-    id("org.openapi.generator") version "7.10.0"
+    id("org.springframework.boot") version "3.5.2"
+    id("io.spring.dependency-management") version "1.1.7"
+    id("io.gatling.gradle") version "3.13.1"
+    id("org.openapi.generator") version "7.12.0"
 }
 
 group = "com.albunyaan"
@@ -24,22 +24,22 @@ repositories {
 dependencies {
     // Dependency constraints - P0-T1: Enforce specific versions for transitive dependencies
     constraints {
-        implementation("io.netty:netty-common:4.1.128.Final") {
+        implementation("io.netty:netty-common:4.1.131.Final") {
             because("Enforce Netty version from Firebase/Spring Boot to prevent version conflicts and CVEs in 4.1.109")
         }
-        implementation("io.netty:netty-handler:4.1.128.Final") {
+        implementation("io.netty:netty-handler:4.1.131.Final") {
             because("Enforce Netty version from Firebase/Spring Boot to prevent version conflicts and CVEs in 4.1.109")
         }
-        implementation("io.netty:netty-transport:4.1.128.Final") {
+        implementation("io.netty:netty-transport:4.1.131.Final") {
             because("Enforce Netty version from Firebase/Spring Boot to prevent version conflicts and CVEs in 4.1.109")
         }
-        implementation("io.netty:netty-codec:4.1.128.Final") {
+        implementation("io.netty:netty-codec:4.1.131.Final") {
             because("Enforce Netty version from Firebase/Spring Boot to prevent version conflicts and CVEs in 4.1.109")
         }
-        implementation("io.netty:netty-buffer:4.1.128.Final") {
+        implementation("io.netty:netty-buffer:4.1.131.Final") {
             because("Enforce Netty version from Firebase/Spring Boot to prevent version conflicts and CVEs in 4.1.109")
         }
-        implementation("io.netty:netty-resolver:4.1.128.Final") {
+        implementation("io.netty:netty-resolver:4.1.131.Final") {
             because("Enforce Netty version from Firebase/Spring Boot to prevent version conflicts and CVEs in 4.1.109")
         }
     }
@@ -58,13 +58,15 @@ dependencies {
     implementation("io.lettuce:lettuce-core")
 
     // Firebase Admin SDK for Authentication and Firestore (replaces PostgreSQL)
-    implementation("com.google.firebase:firebase-admin:9.2.0")
+    implementation("com.google.firebase:firebase-admin:9.7.1")
 
     // NewPipeExtractor for YouTube content extraction (no API key required)
-    // Pinned to specific commit for reproducible builds (dev-SNAPSHOT is non-deterministic)
-    // Commit from 2025-01-15: includes YouTube InnerTube API fixes
-    // To update: check https://github.com/TeamNewPipe/NewPipeExtractor/commits/dev
-    implementation("com.github.TeamNewPipe:NewPipeExtractor:a0607b2c49e757d368e9dfac241792d42d575236")
+    // v0.25.2 (2026-02-05): Fixes "page reload required" error, removes obsolete TVHTML5 client
+    // Release notes: https://github.com/TeamNewPipe/NewPipeExtractor/releases/tag/v0.25.2
+    // Exclude protobuf-javalite to avoid conflict with Firebase's protobuf-java
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.25.2") {
+        exclude(group = "com.google.protobuf", module = "protobuf-javalite")
+    }
 
     // OkHttp for NewPipe's HTTP client
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
@@ -73,10 +75,6 @@ dependencies {
 
     // Embedded Redis - BACKEND-PERF-01: Enable for testing
     testImplementation("com.github.kstyrc:embedded-redis:0.6")
-}
-
-gatling {
-    logLevel = "INFO"
 }
 
 tasks.test {

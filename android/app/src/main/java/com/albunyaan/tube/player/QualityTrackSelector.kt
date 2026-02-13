@@ -69,8 +69,14 @@ class QualityTrackSelector(
     /**
      * Phase 3: Apply quality constraint with explicit mode.
      *
+     * LOCK mode has been deprecated in favor of CAP_STRICT to prevent audio-only fallback.
+     * When a user selects a specific resolution, we now use CAP_STRICT which:
+     * - Sets the selected resolution as maximum
+     * - Forces highest bitrate at or below that resolution
+     * - Allows ABR to select lower resolutions if needed (prevents audio-only)
+     *
      * @param height The desired video height (e.g., 720 for 720p). Must be positive.
-     * @param mode CAP (ceiling only) or LOCK (fixed quality)
+     * @param mode CAP (ceiling only) or LOCK (now behaves as CAP_STRICT to prevent audio-only)
      * @throws IllegalArgumentException if height is not positive
      */
     fun applyQualityConstraint(height: Int, mode: QualityConstraintMode) {
@@ -88,16 +94,20 @@ class QualityTrackSelector(
                     .build()
             }
             QualityConstraintMode.LOCK -> {
-                // Lock mode: Set both min and max to the same height, force highest bitrate
-                // at that height to prevent ABR switching between different bitrates/widths
-                // Calculate minimum width assuming 4:3 aspect ratio as the minimum acceptable ratio
-                // This excludes portrait and narrower formats, allowing 4:3, 16:9, and wider
-                val minWidth = (height * 4) / 3
-                Log.d(TAG, "Applying quality LOCK: fixed ${height}p (minWidth=${minWidth}), forcing highest bitrate")
+                // LOCK mode has been changed to CAP_STRICT to prevent audio-only fallback.
+                // Previously, LOCK set a minimum height which could result in NO video track
+                // being selected if that exact resolution wasn't available.
+                //
+                // CAP_STRICT behavior:
+                // - Sets the selected resolution as the maximum ceiling
+                // - Forces highest bitrate to prefer the requested quality when available
+                // - Does NOT set a minimum, allowing fallback to lower resolutions
+                // - This ensures video playback continues even if the exact resolution isn't available
+                Log.d(TAG, "Applying quality CAP_STRICT (was LOCK): max ${height}p, forcing highest bitrate, no minimum")
                 buildUponParameters()
                     .setMaxVideoSize(Int.MAX_VALUE, height)
-                    .setMinVideoSize(minWidth, height)
-                    .setForceHighestSupportedBitrate(true)
+                    .setMinVideoSize(0, 0) // No minimum - prevents audio-only fallback
+                    .setForceHighestSupportedBitrate(true) // Prefer highest available at/below cap
                     .build()
             }
         }

@@ -41,8 +41,10 @@ import com.albunyaan.tube.player.QualityTrackSelector
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.recyclerview.widget.DividerItemDecoration
+import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.navigation.fragment.findNavController
+import com.albunyaan.tube.ui.utils.isTablet
 import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.R
 import com.albunyaan.tube.databinding.FragmentPlayerBinding
@@ -574,9 +576,19 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
     private fun setupUpNextList(binding: FragmentPlayerBinding) {
         binding.upNextList.apply {
-            layoutManager = LinearLayoutManager(requireContext())
+            // Use grid layout on tablets for better use of screen real estate
+            // Phone: 1 column (list), Tablet: 2 columns
+            val isTablet = requireContext().isTablet()
+            layoutManager = if (isTablet) {
+                GridLayoutManager(requireContext(), 2)
+            } else {
+                LinearLayoutManager(requireContext())
+            }
             adapter = upNextAdapter
-            addItemDecoration(DividerItemDecoration(requireContext(), LinearLayoutManager.VERTICAL))
+            // Only add dividers for linear layout (list mode)
+            if (!isTablet) {
+                addItemDecoration(DividerItemDecoration(requireContext(), LinearLayoutManager.VERTICAL))
+            }
         }
     }
 

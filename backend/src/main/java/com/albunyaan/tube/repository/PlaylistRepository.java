@@ -14,6 +14,8 @@ import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.google.cloud.firestore.QuerySnapshot;
 import com.google.cloud.firestore.WriteResult;
 import com.albunyaan.tube.util.CursorUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
@@ -32,7 +34,15 @@ import java.util.concurrent.TimeoutException;
 @Repository
 public class PlaylistRepository {
 
+    private static final Logger log = LoggerFactory.getLogger(PlaylistRepository.class);
     private static final String COLLECTION_NAME = "playlists";
+
+    /**
+     * Standard approval status value used across all content types (channels, playlists, videos).
+     * This must match the value set by approval controllers and seeders.
+     */
+    private static final String STATUS_APPROVED = "APPROVED";
+
     private final Firestore firestore;
     private final FirestoreTimeoutProperties timeoutProperties;
 
@@ -121,7 +131,64 @@ public class PlaylistRepository {
     public List<Playlist> findByCategoryId(String categoryId) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereArrayContains("categoryIds", categoryId)
-                .whereEqualTo("status", "APPROVED")
+                .whereEqualTo("status", STATUS_APPROVED)
+                .get();
+
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
+    }
+
+    /**
+     * Find playlists by category ID with limit (bounded query).
+     * This prevents quota exhaustion for large categories.
+     *
+     * @param categoryId Category ID to filter by
+     * @param limit Maximum number of results
+     * @return List of approved playlists in the category
+     */
+    public List<Playlist> findByCategoryId(String categoryId, int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereArrayContains("categoryIds", categoryId)
+                .whereEqualTo("status", STATUS_APPROVED)
+                .orderBy("createdAt", Query.Direction.DESCENDING)
+                .limit(limit)
+                .get();
+
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
+    }
+
+    /**
+     * Find playlists by category ID regardless of status (for status=all).
+     * This allows admin Content Library to show pending/rejected items when filtering by category.
+     *
+     * @param categoryId Category ID to filter by
+     * @param limit Maximum number of results
+     * @return List of playlists in the category (any status)
+     */
+    public List<Playlist> findByCategoryIdAllStatus(String categoryId, int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereArrayContains("categoryIds", categoryId)
+                .orderBy("createdAt", Query.Direction.DESCENDING)
+                .limit(limit)
+                .get();
+
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
+    }
+
+    /**
+     * Find playlists by category ID and specific status.
+     * This allows admin Content Library to filter by both category and status.
+     *
+     * @param categoryId Category ID to filter by
+     * @param status Status to filter by (APPROVED, PENDING, REJECTED)
+     * @param limit Maximum number of results
+     * @return List of playlists matching both category and status
+     */
+    public List<Playlist> findByCategoryIdAndStatus(String categoryId, String status, int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereArrayContains("categoryIds", categoryId)
+                .whereEqualTo("status", status)
+                .orderBy("createdAt", Query.Direction.DESCENDING)
+                .limit(limit)
                 .get();
 
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
@@ -130,7 +197,7 @@ public class PlaylistRepository {
     public List<Playlist> findByCategoryOrderByItemCountDesc(String category) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereArrayContains("categoryIds", category)
-                .whereEqualTo("status", "APPROVED")
+                .whereEqualTo("status", STATUS_APPROVED)
                 .orderBy("itemCount", Query.Direction.DESCENDING)
                 .get();
 
@@ -140,7 +207,7 @@ public class PlaylistRepository {
     public List<Playlist> findByCategoryOrderByItemCountDesc(String category, int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereArrayContains("categoryIds", category)
-                .whereEqualTo("status", "APPROVED")
+                .whereEqualTo("status", STATUS_APPROVED)
                 .orderBy("itemCount", Query.Direction.DESCENDING)
                 .limit(limit)
                 .get();
@@ -150,7 +217,7 @@ public class PlaylistRepository {
 
     public List<Playlist> findAllByOrderByItemCountDesc() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
-                .whereEqualTo("status", "APPROVED")
+                .whereEqualTo("status", STATUS_APPROVED)
                 .orderBy("itemCount", Query.Direction.DESCENDING)
                 .get();
 
@@ -159,7 +226,7 @@ public class PlaylistRepository {
 
     public List<Playlist> findAllByOrderByItemCountDesc(int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
-                .whereEqualTo("status", "APPROVED")
+                .whereEqualTo("status", STATUS_APPROVED)
                 .orderBy("itemCount", Query.Direction.DESCENDING)
                 .limit(limit)
                 .get();
@@ -176,6 +243,62 @@ public class PlaylistRepository {
                 .orderBy("title")
                 .startAt(query)
                 .endAt(query + "\uf8ff")
+                .get();
+
+        return querySnapshot.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
+    }
+
+    /**
+     * Search playlists by title prefix with limit (bounded query).
+     * This prevents quota exhaustion for broad search queries.
+     *
+     * @param query Search prefix
+     * @param limit Maximum number of results
+     * @return List of matching playlists
+     */
+    public List<Playlist> searchByTitle(String query, int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        ApiFuture<QuerySnapshot> querySnapshot = getCollection()
+                .orderBy("title")
+                .startAt(query)
+                .endAt(query + "\uf8ff")
+                .limit(limit)
+                .get();
+
+        return querySnapshot.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
+    }
+
+    /**
+     * Search playlists by normalized titleLower field for case-insensitive prefix matching.
+     * This is the preferred search method as it supports case-insensitive queries.
+     *
+     * @param queryLower Lowercase search prefix
+     * @param limit Maximum number of results
+     * @return List of matching playlists
+     */
+    public List<Playlist> searchByTitleLower(String queryLower, int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        ApiFuture<QuerySnapshot> querySnapshot = getCollection()
+                .orderBy("titleLower")
+                .startAt(queryLower)
+                .endAt(queryLower + "\uf8ff")
+                .limit(limit)
+                .get();
+
+        return querySnapshot.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
+    }
+
+    /**
+     * Search playlists by keyword using array-contains on keywordsLower.
+     * Finds playlists where any keyword exactly matches the query (case-insensitive).
+     * Complements prefix-based title search for improved recall.
+     *
+     * @param keywordLower Lowercase keyword to search for
+     * @param limit Maximum number of results
+     * @return List of matching playlists
+     */
+    public List<Playlist> searchByKeyword(String keywordLower, int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        ApiFuture<QuerySnapshot> querySnapshot = getCollection()
+                .whereArrayContains("keywordsLower", keywordLower)
+                .limit(limit)
                 .get();
 
         return querySnapshot.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
@@ -217,6 +340,40 @@ public class PlaylistRepository {
     }
 
     /**
+     * Find all playlists ordered by createdAt ascending (oldest first) with limit.
+     * Used by admin Content Library when sort=oldest is requested.
+     *
+     * @param limit Maximum number of results
+     * @return List of playlists ordered oldest-first
+     */
+    public List<Playlist> findAllOrderByCreatedAtAsc(int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .orderBy("createdAt", Query.Direction.ASCENDING)
+                .limit(limit)
+                .get();
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
+    }
+
+    /**
+     * Find playlists by status ordered by createdAt ascending (oldest first) with limit.
+     * Used by admin Content Library when sort=oldest is requested with status filter.
+     *
+     * <p>Requires Firestore composite index: status (ASC) + createdAt (ASC)</p>
+     *
+     * @param status Status to filter by
+     * @param limit Maximum number of results
+     * @return List of playlists ordered oldest-first
+     */
+    public List<Playlist> findByStatusOrderByCreatedAtAsc(String status, int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereEqualTo("status", status)
+                .orderBy("createdAt", Query.Direction.ASCENDING)
+                .limit(limit)
+                .get();
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
+    }
+
+    /**
      * Find approved playlists ordered by item count with cursor-based pagination.
      *
      * @param limit Number of items to fetch
@@ -227,7 +384,7 @@ public class PlaylistRepository {
             throws ExecutionException, InterruptedException, TimeoutException {
 
         Query query = getCollection()
-                .whereEqualTo("status", "APPROVED")
+                .whereEqualTo("status", STATUS_APPROVED)
                 .orderBy("itemCount", Query.Direction.DESCENDING)
                 .limit(limit + 1);
 
@@ -282,7 +439,7 @@ public class PlaylistRepository {
 
         Query query = getCollection()
                 .whereArrayContains("categoryIds", category)
-                .whereEqualTo("status", "APPROVED")
+                .whereEqualTo("status", STATUS_APPROVED)
                 .orderBy("itemCount", Query.Direction.DESCENDING)
                 .limit(limit + 1);
 
@@ -322,6 +479,83 @@ public class PlaylistRepository {
         }
 
         return new PaginatedResult<>(playlists, nextCursor, hasNext);
+    }
+
+    // ==================== Display Order Methods ====================
+
+    /**
+     * Find approved playlists ordered by displayOrder ascending (custom admin order).
+     * Playlists with null displayOrder are placed first (Firestore default for ASCENDING).
+     *
+     * <p>Requires Firestore composite index: status (ASC) + displayOrder (ASC)</p>
+     *
+     * @return List of approved playlists ordered by displayOrder
+     */
+    public List<Playlist> findApprovedByDisplayOrderAsc() throws ExecutionException, InterruptedException, TimeoutException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereEqualTo("status", STATUS_APPROVED)
+                .orderBy("displayOrder", Query.Direction.ASCENDING)
+                .get();
+
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
+    }
+
+    /**
+     * Find approved playlists ordered by displayOrder ascending with limit.
+     *
+     * <p>Requires Firestore composite index: status (ASC) + displayOrder (ASC)</p>
+     *
+     * @param limit Maximum number of results
+     * @return List of approved playlists ordered by displayOrder
+     */
+    public List<Playlist> findApprovedByDisplayOrderAsc(int limit) throws ExecutionException, InterruptedException, TimeoutException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereEqualTo("status", STATUS_APPROVED)
+                .orderBy("displayOrder", Query.Direction.ASCENDING)
+                .limit(limit)
+                .get();
+
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
+    }
+
+    /**
+     * Batch update displayOrder for multiple playlists.
+     * Used by admin reordering feature.
+     *
+     * @param orderUpdates Map of playlist ID to new displayOrder value
+     * @throws IllegalArgumentException if orderUpdates contains more than 500 entries (Firestore limit)
+     */
+    public void batchUpdateDisplayOrder(java.util.Map<String, Integer> orderUpdates) throws ExecutionException, InterruptedException, TimeoutException {
+        if (orderUpdates == null || orderUpdates.isEmpty()) {
+            return;
+        }
+
+        if (orderUpdates.size() > 500) {
+            throw new IllegalArgumentException("Cannot update more than 500 playlists in a single batch. Received: " + orderUpdates.size());
+        }
+
+        // Validate all documents exist before updating (using batched read)
+        List<DocumentReference> docRefs = new ArrayList<>();
+        for (String playlistId : orderUpdates.keySet()) {
+            docRefs.add(getCollection().document(playlistId));
+        }
+        
+        List<com.google.cloud.firestore.DocumentSnapshot> snapshots = 
+            firestore.getAll(docRefs.toArray(new DocumentReference[0]))
+                .get(timeoutProperties.getRead(), TimeUnit.SECONDS);
+        
+        for (int i = 0; i < snapshots.size(); i++) {
+            if (!snapshots.get(i).exists()) {
+                throw new IllegalArgumentException("Playlist with ID '" + docRefs.get(i).getId() + "' does not exist");
+            }
+        }
+
+        var batch = firestore.batch();
+        for (var entry : orderUpdates.entrySet()) {
+            DocumentReference docRef = getCollection().document(entry.getKey());
+            batch.update(docRef, "displayOrder", entry.getValue(), "updatedAt", com.google.cloud.Timestamp.now());
+        }
+        batch.commit().get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
     }
 
     // ==================== Validation Status Methods ====================
@@ -373,18 +607,113 @@ public class PlaylistRepository {
     /**
      * Find approved playlists that need validation.
      *
+     * <p>Requires Firestore composite index: status (ASC) + lastValidatedAt (ASC)</p>
+     *
      * @param limit Maximum number of results
      * @return List of approved playlists needing validation
      */
     public List<Playlist> findApprovedPlaylistsNeedingValidation(int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        // Note: Playlists use lowercase "approved" status, unlike channels/videos which use "APPROVED"
         ApiFuture<QuerySnapshot> query = getCollection()
-                .whereEqualTo("status", "approved")
+                .whereEqualTo("status", STATUS_APPROVED)
                 .orderBy("lastValidatedAt", Query.Direction.ASCENDING)
                 .limit(limit)
                 .get();
 
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
+    }
+
+    /**
+     * Find all playlists that have exclusions (excludedVideoCount > 0).
+     * Uses the excludedVideoCount field for efficient querying without full collection scans.
+     *
+     * Note: For playlists created before excludedVideoCount was added, this query won't
+     * find them. Falls back to bounded legacy scan if:
+     * - No results from primary query (legacy documents)
+     * - Query fails due to missing index or timeout (graceful degradation)
+     *
+     * @return List of playlists with at least one excluded video
+     */
+    public List<Playlist> findAllWithExclusions() throws ExecutionException, InterruptedException, TimeoutException {
+        List<Playlist> result;
+
+        try {
+            // Primary query: use excludedVideoCount field (efficient, no full scan)
+            ApiFuture<QuerySnapshot> query = getCollection()
+                    .whereGreaterThan("excludedVideoCount", 0)
+                    .orderBy("excludedVideoCount", Query.Direction.DESCENDING)
+                    .orderBy("createdAt", Query.Direction.DESCENDING)
+                    .limit(1000) // Hard limit to prevent quota exhaustion
+                    .get();
+
+            result = new ArrayList<>(query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class));
+
+            // Fallback: if no results from primary query, do a bounded scan for legacy documents
+            // This handles playlists created before excludedVideoCount was added
+            if (result.isEmpty()) {
+                log.debug("Primary exclusions query returned empty, falling back to legacy scan");
+                result = findAllWithExclusionsLegacyScan();
+            }
+        } catch (ExecutionException e) {
+            // Check if the cause is a FAILED_PRECONDITION (missing index) or other query error
+            String message = e.getMessage();
+            if (message != null && (message.contains("FAILED_PRECONDITION") || message.contains("index"))) {
+                log.warn("Exclusions query failed due to missing index, falling back to legacy scan: {}", message);
+                result = findAllWithExclusionsLegacyScan();
+            } else {
+                // Re-throw other execution exceptions
+                throw e;
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Legacy fallback: scan playlists to find those with exclusions.
+     * Only used when excludedVideoCount field doesn't exist on documents.
+     * Limited to 5000 documents to prevent quota exhaustion.
+     */
+    private List<Playlist> findAllWithExclusionsLegacyScan() throws ExecutionException, InterruptedException, TimeoutException {
+        List<Playlist> result = new ArrayList<>();
+        int batchSize = 500;
+        int maxIterations = 10; // Safety limit: 10 * 500 = 5,000 max documents scanned
+        int iterations = 0;
+        QueryDocumentSnapshot lastDoc = null;
+
+        while (iterations < maxIterations) {
+            iterations++;
+            Query query = getCollection()
+                    .orderBy("createdAt", Query.Direction.DESCENDING)
+                    .limit(batchSize);
+
+            if (lastDoc != null) {
+                query = query.startAfter(lastDoc);
+            }
+
+            QuerySnapshot snapshot = query.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
+            List<QueryDocumentSnapshot> docs = snapshot.getDocuments();
+
+            if (docs.isEmpty()) {
+                break;
+            }
+
+            for (QueryDocumentSnapshot doc : docs) {
+                Playlist playlist = doc.toObject(Playlist.class);
+                playlist.setId(doc.getId());
+                List<String> excludedVideoIds = playlist.getExcludedVideoIds();
+                if (excludedVideoIds != null && !excludedVideoIds.isEmpty()) {
+                    result.add(playlist);
+                }
+            }
+
+            if (docs.size() < batchSize) {
+                break; // No more documents
+            }
+
+            lastDoc = docs.get(docs.size() - 1);
+        }
+
+        return result;
     }
 
     /**

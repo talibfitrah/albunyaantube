@@ -31,7 +31,7 @@ class ContentListViewModel(
     private val contentType: ContentType
 ) : ViewModel() {
 
-    private val _content = MutableStateFlow<ContentState>(ContentState.Loading)
+    private val _content = MutableStateFlow<ContentState>(ContentState.Loading(LoadingType.INITIAL))
     val content: StateFlow<ContentState> = _content.asStateFlow()
 
     // Pagination state - private backing fields
@@ -40,6 +40,9 @@ class ContentListViewModel(
     private var _isLoadingMore = false
     private var _isRefreshing = false
     private var loadJob: Job? = null
+
+    // Current filter state
+    private var currentFilters: FilterState = FilterState()
 
     // Public read-only accessors for Fragment-side guards
     val canLoadMore: Boolean
@@ -50,6 +53,18 @@ class ContentListViewModel(
 
     init {
         loadContent()
+    }
+
+    /**
+     * Update filters and reload content if filters changed.
+     * Called from Fragment when FilterManager.state changes.
+     */
+    fun setFilters(filters: FilterState) {
+        if (currentFilters != filters) {
+            Log.d(TAG, "Filters changed: $currentFilters -> $filters")
+            currentFilters = filters
+            loadContent()
+        }
     }
 
     /**
@@ -67,14 +82,14 @@ class ContentListViewModel(
         allItems.clear()
 
         loadJob = viewModelScope.launch {
-            _content.value = ContentState.Loading
+            _content.value = ContentState.Loading(LoadingType.INITIAL)
             try {
                 Log.d(TAG, "Fetching content for type=$contentType (initial load)")
                 val response = contentService.fetchContent(
                     type = contentType,
                     cursor = null,
                     pageSize = PAGE_SIZE,
-                    filters = FilterState()
+                    filters = currentFilters
                 )
 
                 allItems.addAll(response.data)
@@ -84,7 +99,6 @@ class ContentListViewModel(
                 Log.d(TAG, "Received ${response.data.size} items, hasMore=$_hasMoreData")
                 _content.value = ContentState.Success(
                     items = allItems.toList(),
-                    isLoadingMore = false,
                     hasMoreData = _hasMoreData
                 )
             } catch (e: Exception) {
@@ -116,14 +130,14 @@ class ContentListViewModel(
         allItems.clear()
 
         loadJob = viewModelScope.launch {
-            _content.value = ContentState.Loading
+            _content.value = ContentState.Loading(LoadingType.REFRESH)
             try {
                 Log.d(TAG, "Refreshing content for type=$contentType")
                 val response = contentService.fetchContent(
                     type = contentType,
                     cursor = null,
                     pageSize = PAGE_SIZE,
-                    filters = FilterState()
+                    filters = currentFilters
                 )
 
                 allItems.addAll(response.data)
@@ -133,7 +147,6 @@ class ContentListViewModel(
                 Log.d(TAG, "Refresh complete: ${response.data.size} items, hasMore=$_hasMoreData")
                 _content.value = ContentState.Success(
                     items = allItems.toList(),
-                    isLoadingMore = false,
                     hasMoreData = _hasMoreData
                 )
             } catch (e: Exception) {
@@ -162,22 +175,18 @@ class ContentListViewModel(
         _isLoadingMore = true
 
         // Update UI to show loading indicator at bottom
-        _content.value = ContentState.Success(
-            items = allItems.toList(),
-            isLoadingMore = true,
-            hasMoreData = _hasMoreData
-        )
+        _content.value = ContentState.Loading(LoadingType.PAGINATION)
 
         // Cancel any previous loadMore job to prevent race conditions with refresh
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
             try {
-                Log.d(TAG, "Loading more for type=$contentType, cursor=$nextCursor")
+                Log.d(TAG, "Loading more for type=$contentType, cursor=$nextCursor, filters=$currentFilters")
                 val response = contentService.fetchContent(
                     type = contentType,
                     cursor = nextCursor,
                     pageSize = PAGE_SIZE,
-                    filters = FilterState()
+                    filters = currentFilters
                 )
 
                 allItems.addAll(response.data)
@@ -187,7 +196,6 @@ class ContentListViewModel(
                 Log.d(TAG, "Loaded ${response.data.size} more items, total=${allItems.size}, hasMore=$_hasMoreData")
                 _content.value = ContentState.Success(
                     items = allItems.toList(),
-                    isLoadingMore = false,
                     hasMoreData = _hasMoreData
                 )
             } catch (e: Exception) {
@@ -196,7 +204,6 @@ class ContentListViewModel(
                 // On error, keep existing items but show pagination error state
                 _content.value = ContentState.Success(
                     items = allItems.toList(),
-                    isLoadingMore = false,
                     hasMoreData = _hasMoreData,
                     paginationError = e.message ?: "Failed to load more"
                 )
@@ -207,11 +214,24 @@ class ContentListViewModel(
         }
     }
 
+    /**
+     * Distinguishes between different loading scenarios for UI indicator selection.
+     */
+    enum class LoadingType {
+        INITIAL,    // First load - show swipeRefresh (or full-screen loader)
+        REFRESH,    // Pull-to-refresh - show swipeRefresh
+        PAGINATION  // Infinite scroll - show bottom loadingMore indicator
+    }
+
     sealed class ContentState {
-        object Loading : ContentState()
+        /**
+         * Loading state with explicit type for correct UI indicator selection.
+         * - INITIAL/REFRESH: Show swipeRefresh (top indicator)
+         * - PAGINATION: Show loadingMore (bottom indicator)
+         */
+        data class Loading(val type: LoadingType) : ContentState()
         data class Success(
             val items: List<ContentItem>,
-            val isLoadingMore: Boolean = false,
             val hasMoreData: Boolean = true,
             val paginationError: String? = null
         ) : ContentState()

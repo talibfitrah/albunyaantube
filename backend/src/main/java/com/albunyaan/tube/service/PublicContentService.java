@@ -22,6 +22,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 
@@ -345,59 +346,438 @@ public class PublicContentService {
         return video;
     }
 
+    /**
+     * Search for content by query string.
+     *
+     * Search features:
+     * - Bounded queries with configurable over-fetch to prevent quota spikes
+     * - YouTube URL/ID parsing: youtube.com/watch?v=XXX, youtu.be/XXX, youtube.com/channel/XXX, etc.
+     * - Case-insensitive substring matching (post-query filtering)
+     * - Caching of search results (short TTL) to reduce Firestore reads during typing
+     *
+     * @param query Search query (text, YouTube URL, or YouTube ID)
+     * @param type Content type filter (null for all types)
+     * @param limit Maximum results to return
+     * @return List of matching content items
+     */
+    @Cacheable(value = CacheConfig.CACHE_PUBLIC_CONTENT_SEARCH,
+               key = "#query == null ? '' : #query.trim().toLowerCase(T(java.util.Locale).ROOT) + '-' + #type + '-' + #limit",
+               condition = "#query != null && #query.trim().length() >= 2")
     public List<ContentItemDto> search(String query, String type, int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        if (query == null || query.trim().isEmpty()) {
+            return new ArrayList<>();
+        }
+        // Normalize query for matching
+        String normalizedQuery = query.trim().toLowerCase(java.util.Locale.ROOT);
+
+        // Try to parse as YouTube URL/ID first
+        YouTubeIdentifier identifier = parseYouTubeIdentifier(query);
+
         List<ContentItemDto> results = new ArrayList<>();
 
-        if (type == null) {
-            // When searching all types, distribute limit evenly across content types
-            int limitPerType = limit / 3;
+        if (identifier != null) {
+            // Direct lookup by YouTube ID (most efficient)
+            results = searchByYouTubeId(identifier, type, limit);
+        } else if (normalizedQuery.length() >= 2) {
+            // Text-based search with bounded queries
+            results = searchByText(normalizedQuery, type, limit);
+        }
+        // If query is less than 2 chars and not a YouTube ID, return empty to avoid expensive scans
 
-            // Add channels and playlists first
-            results.addAll(searchChannels(query, limitPerType));
-            results.addAll(searchPlaylists(query, limitPerType));
+        return results;
+    }
 
-            // Calculate remaining space and fill with videos in a single call
-            // This ensures we never get duplicate videos from calling searchVideos twice
-            int remaining = limit - results.size();
-            if (remaining > 0) {
-                results.addAll(searchVideos(query, remaining));
-            }
-        } else if (type.equalsIgnoreCase("CHANNELS")) {
-            results.addAll(searchChannels(query, limit));
-        } else if (type.equalsIgnoreCase("PLAYLISTS")) {
-            results.addAll(searchPlaylists(query, limit));
-        } else if (type.equalsIgnoreCase("VIDEOS")) {
-            results.addAll(searchVideos(query, limit));
+    /**
+     * Search by YouTube ID for direct lookups.
+     * This is the most efficient path - single document fetch.
+     */
+    private List<ContentItemDto> searchByYouTubeId(YouTubeIdentifier identifier, String type, int limit)
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        List<ContentItemDto> results = new ArrayList<>();
+
+        switch (identifier.type) {
+            case CHANNEL:
+                if (type == null || type.equalsIgnoreCase("CHANNELS")) {
+                    channelRepository.findByYoutubeId(identifier.id)
+                            .filter(this::isApproved)
+                            .filter(this::isAvailable)
+                            .map(this::toDto)
+                            .ifPresent(results::add);
+                }
+                break;
+            case PLAYLIST:
+                if (type == null || type.equalsIgnoreCase("PLAYLISTS")) {
+                    playlistRepository.findByYoutubeId(identifier.id)
+                            .filter(this::isApproved)
+                            .filter(this::isAvailable)
+                            .map(this::toDto)
+                            .ifPresent(results::add);
+                }
+                break;
+            case VIDEO:
+                if (type == null || type.equalsIgnoreCase("VIDEOS")) {
+                    videoRepository.findByYoutubeId(identifier.id)
+                            .filter(this::isApproved)
+                            .filter(this::isAvailable)
+                            .map(this::toDto)
+                            .ifPresent(results::add);
+                }
+                break;
         }
 
         return results;
     }
 
-    private List<ContentItemDto> searchChannels(String query, int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        return channelRepository.searchByName(query).stream()
+    /**
+     * Text-based search across content.
+     * Uses bounded prefix queries with over-fetch, then filters in memory.
+     */
+    private List<ContentItemDto> searchByText(String normalizedQuery, String type, int limit)
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        List<ContentItemDto> results = new ArrayList<>();
+
+        // Over-fetch factor to account for filtering and improve result quality
+        int overFetchLimit = Math.min(limit * 3, 100);
+
+        if (type == null) {
+            // When searching all types, distribute limit evenly
+            int limitPerType = Math.max(1, limit / 3);
+            int overFetchPerType = Math.min(limitPerType * 3, 50);
+
+            results.addAll(searchChannelsByText(normalizedQuery, limitPerType, overFetchPerType));
+            results.addAll(searchPlaylistsByText(normalizedQuery, limitPerType, overFetchPerType));
+
+            int remaining = limit - results.size();
+            if (remaining > 0) {
+                results.addAll(searchVideosByText(normalizedQuery, remaining, Math.min(remaining * 3, 50)));
+            }
+
+            // Cap at requested limit in case distributed fetches returned more
+            if (results.size() > limit) {
+                results = new ArrayList<>(results.subList(0, limit));
+            }
+        } else if (type.equalsIgnoreCase("CHANNELS")) {
+            results.addAll(searchChannelsByText(normalizedQuery, limit, overFetchLimit));
+        } else if (type.equalsIgnoreCase("PLAYLISTS")) {
+            results.addAll(searchPlaylistsByText(normalizedQuery, limit, overFetchLimit));
+        } else if (type.equalsIgnoreCase("VIDEOS")) {
+            results.addAll(searchVideosByText(normalizedQuery, limit, overFetchLimit));
+        }
+
+        return results;
+    }
+
+    private List<ContentItemDto> searchChannelsByText(String normalizedQuery, int limit, int fetchLimit)
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        // Use nameLower field for true case-insensitive prefix search
+        // normalizedQuery is already lowercase, nameLower is auto-maintained by setName()
+        List<Channel> channels = new ArrayList<>(channelRepository.searchByNameLower(normalizedQuery, fetchLimit));
+
+        // Fallback: also query original 'name' field for legacy documents without nameLower
+        // This handles documents created before the nameLower field was added
+        try {
+            List<Channel> legacyResults = channelRepository.searchByName(normalizedQuery, fetchLimit);
+            // Merge results, avoiding duplicates by ID
+            Set<String> existingIds = channels.stream()
+                    .map(Channel::getYoutubeId)
+                    .collect(Collectors.toSet());
+            for (Channel c : legacyResults) {
+                if (!existingIds.contains(c.getYoutubeId())) {
+                    channels.add(c);
+                }
+            }
+        } catch (Exception e) {
+            // Fallback query failed, proceed with nameLower results only
+            // This is expected if the legacy name index doesn't exist
+        }
+
+        // Keyword-based search: finds channels where any keyword exactly matches the query.
+        // This catches channels whose name doesn't start with the query but have a matching keyword.
+        try {
+            List<Channel> keywordResults = channelRepository.searchByKeyword(normalizedQuery, fetchLimit);
+            Set<String> existingIds = channels.stream()
+                    .map(Channel::getYoutubeId)
+                    .collect(Collectors.toSet());
+            for (Channel c : keywordResults) {
+                if (!existingIds.contains(c.getYoutubeId())) {
+                    channels.add(c);
+                }
+            }
+        } catch (Exception e) {
+            // Keyword query failed (e.g., index not yet created), proceed with name results only
+        }
+
+        // Filter and return
+        return channels.stream()
                 .filter(this::isApproved)
                 .filter(this::isAvailable)
+                // Case-insensitive contains matching on name or keywords
+                .filter(c -> matchesSearchQuery(c.getName(), c.getKeywords(), normalizedQuery))
                 .limit(limit)
                 .map(this::toDto)
                 .collect(Collectors.toList());
     }
 
-    private List<ContentItemDto> searchPlaylists(String query, int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        return playlistRepository.searchByTitle(query).stream()
+    private List<ContentItemDto> searchPlaylistsByText(String normalizedQuery, int limit, int fetchLimit)
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        // Use titleLower field for true case-insensitive prefix search
+        // normalizedQuery is already lowercase, titleLower is auto-maintained by setTitle()
+        List<Playlist> playlists = new ArrayList<>(playlistRepository.searchByTitleLower(normalizedQuery, fetchLimit));
+
+        // Fallback: also query original 'title' field for legacy documents without titleLower
+        try {
+            List<Playlist> legacyResults = playlistRepository.searchByTitle(normalizedQuery, fetchLimit);
+            Set<String> existingIds = playlists.stream()
+                    .map(Playlist::getYoutubeId)
+                    .collect(Collectors.toSet());
+            for (Playlist p : legacyResults) {
+                if (!existingIds.contains(p.getYoutubeId())) {
+                    playlists.add(p);
+                }
+            }
+        } catch (Exception e) {
+            // Fallback query failed, proceed with titleLower results only
+        }
+
+        // Keyword-based search: finds playlists where any keyword exactly matches the query.
+        try {
+            List<Playlist> keywordResults = playlistRepository.searchByKeyword(normalizedQuery, fetchLimit);
+            Set<String> existingIds = playlists.stream()
+                    .map(Playlist::getYoutubeId)
+                    .collect(Collectors.toSet());
+            for (Playlist p : keywordResults) {
+                if (!existingIds.contains(p.getYoutubeId())) {
+                    playlists.add(p);
+                }
+            }
+        } catch (Exception e) {
+            // Keyword query failed, proceed with title results only
+        }
+
+        return playlists.stream()
                 .filter(this::isApproved)
                 .filter(this::isAvailable)
+                // Case-insensitive contains matching on title or keywords
+                .filter(p -> matchesSearchQuery(p.getTitle(), p.getKeywords(), normalizedQuery))
                 .limit(limit)
                 .map(this::toDto)
                 .collect(Collectors.toList());
     }
 
-    private List<ContentItemDto> searchVideos(String query, int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        return videoRepository.searchByTitle(query).stream()
+    private List<ContentItemDto> searchVideosByText(String normalizedQuery, int limit, int fetchLimit)
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        // Use titleLower field for true case-insensitive prefix search
+        // normalizedQuery is already lowercase, titleLower is auto-maintained by setTitle()
+        List<Video> videos = new ArrayList<>(videoRepository.searchByTitleLower(normalizedQuery, fetchLimit));
+
+        // Fallback: also query original 'title' field for legacy documents without titleLower
+        try {
+            List<Video> legacyResults = videoRepository.searchByTitle(normalizedQuery, fetchLimit);
+            Set<String> existingIds = videos.stream()
+                    .map(Video::getYoutubeId)
+                    .collect(Collectors.toSet());
+            for (Video v : legacyResults) {
+                if (!existingIds.contains(v.getYoutubeId())) {
+                    videos.add(v);
+                }
+            }
+        } catch (Exception e) {
+            // Fallback query failed, proceed with titleLower results only
+        }
+
+        // Keyword-based search: finds videos where any keyword exactly matches the query.
+        try {
+            List<Video> keywordResults = videoRepository.searchByKeyword(normalizedQuery, fetchLimit);
+            Set<String> existingIds = videos.stream()
+                    .map(Video::getYoutubeId)
+                    .collect(Collectors.toSet());
+            for (Video v : keywordResults) {
+                if (!existingIds.contains(v.getYoutubeId())) {
+                    videos.add(v);
+                }
+            }
+        } catch (Exception e) {
+            // Keyword query failed, proceed with title results only
+        }
+
+        return videos.stream()
                 .filter(this::isApproved)
                 .filter(this::isAvailable)
+                // Case-insensitive contains matching on title or keywords
+                .filter(v -> matchesSearchQuery(v.getTitle(), v.getKeywords(), normalizedQuery))
                 .limit(limit)
                 .map(this::toDto)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Check if title or keywords match the search query (case-insensitive contains).
+     */
+    private boolean matchesSearchQuery(String title, List<String> keywords, String normalizedQuery) {
+        // Check title
+        if (title != null && title.toLowerCase(java.util.Locale.ROOT).contains(normalizedQuery)) {
+            return true;
+        }
+        // Check keywords
+        if (keywords != null) {
+            for (String keyword : keywords) {
+                if (keyword != null && keyword.toLowerCase(java.util.Locale.ROOT).contains(normalizedQuery)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    // ===================== YouTube URL/ID Parsing =====================
+
+    /**
+     * Represents a parsed YouTube identifier.
+     */
+    private static class YouTubeIdentifier {
+        enum Type { CHANNEL, PLAYLIST, VIDEO }
+        final Type type;
+        final String id;
+
+        YouTubeIdentifier(Type type, String id) {
+            this.type = type;
+            this.id = id;
+        }
+    }
+
+    /**
+     * Parse a query string to extract YouTube identifiers.
+     * Supports:
+     * - Video: youtube.com/watch?v=XXX, youtu.be/XXX, youtube.com/v/XXX
+     * - Channel: youtube.com/channel/UCXXX, youtube.com/@handle
+     * - Playlist: youtube.com/playlist?list=PLXXX
+     * - Direct IDs: 11-char video IDs, UCxxxx channel IDs, PLxxxx playlist IDs
+     *
+     * @param query The search query to parse
+     * @return YouTubeIdentifier if recognized, null otherwise
+     */
+    private YouTubeIdentifier parseYouTubeIdentifier(String query) {
+        if (query == null || query.trim().isEmpty()) {
+            return null;
+        }
+
+        String trimmed = query.trim();
+
+        // Check for URL patterns
+        if (trimmed.contains("youtube.com") || trimmed.contains("youtu.be")) {
+            return parseYouTubeUrl(trimmed);
+        }
+
+        // Check for direct ID patterns
+        return parseDirectId(trimmed);
+    }
+
+    private YouTubeIdentifier parseYouTubeUrl(String url) {
+        try {
+            // Video: youtube.com/watch?v=XXX
+            if (url.contains("watch?") || url.contains("watch/?")) {
+                int vIndex = url.indexOf("v=");
+                if (vIndex != -1) {
+                    String videoId = extractParamValue(url, vIndex + 2);
+                    if (isValidVideoId(videoId)) {
+                        return new YouTubeIdentifier(YouTubeIdentifier.Type.VIDEO, videoId);
+                    }
+                }
+            }
+
+            // Video: youtu.be/XXX
+            if (url.contains("youtu.be/")) {
+                int start = url.indexOf("youtu.be/") + 9;
+                String videoId = extractPathSegment(url, start);
+                if (isValidVideoId(videoId)) {
+                    return new YouTubeIdentifier(YouTubeIdentifier.Type.VIDEO, videoId);
+                }
+            }
+
+            // Playlist: youtube.com/playlist?list=PLXXX
+            if (url.contains("list=")) {
+                int listIndex = url.indexOf("list=");
+                String playlistId = extractParamValue(url, listIndex + 5);
+                if (playlistId.startsWith("PL") && playlistId.length() >= 13 && isAlphanumericWithDashUnderscore(playlistId)) {
+                    return new YouTubeIdentifier(YouTubeIdentifier.Type.PLAYLIST, playlistId);
+                }
+            }
+
+            // Channel: youtube.com/channel/UCXXX
+            if (url.contains("/channel/")) {
+                int start = url.indexOf("/channel/") + 9;
+                String channelId = extractPathSegment(url, start);
+                if (channelId.startsWith("UC") && channelId.length() == 24 && isAlphanumericWithDashUnderscore(channelId)) {
+                    return new YouTubeIdentifier(YouTubeIdentifier.Type.CHANNEL, channelId);
+                }
+            }
+
+            // Channel: youtube.com/@handle
+            if (url.contains("/@")) {
+                // Handle lookups would require additional API call, skip for now
+                return null;
+            }
+
+        } catch (Exception e) {
+            // URL parsing failed, fall through to null
+        }
+
+        return null;
+    }
+
+    private YouTubeIdentifier parseDirectId(String id) {
+        // Channel ID: starts with UC, 24 chars
+        if (id.startsWith("UC") && id.length() == 24 && isAlphanumericWithDashUnderscore(id)) {
+            return new YouTubeIdentifier(YouTubeIdentifier.Type.CHANNEL, id);
+        }
+
+        // Playlist ID: starts with PL, 13+ chars
+        if (id.startsWith("PL") && id.length() >= 13 && isAlphanumericWithDashUnderscore(id)) {
+            return new YouTubeIdentifier(YouTubeIdentifier.Type.PLAYLIST, id);
+        }
+
+        // Video ID: exactly 11 chars, alphanumeric with - and _
+        if (id.length() == 11 && isAlphanumericWithDashUnderscore(id)) {
+            return new YouTubeIdentifier(YouTubeIdentifier.Type.VIDEO, id);
+        }
+
+        return null;
+    }
+
+    private String extractParamValue(String url, int startIndex) {
+        int end = url.indexOf('&', startIndex);
+        // Handle URL fragments (e.g., ?v=XXX#description)
+        int fragmentEnd = url.indexOf('#', startIndex);
+        if (fragmentEnd != -1 && (end == -1 || fragmentEnd < end)) {
+            end = fragmentEnd;
+        }
+        if (end == -1) end = url.length();
+        return url.substring(startIndex, end);
+    }
+
+    private String extractPathSegment(String url, int startIndex) {
+        int end = url.indexOf('/', startIndex);
+        if (end == -1) end = url.indexOf('?', startIndex);
+        // Handle URL fragments (e.g., /watch/XXX#section)
+        int fragmentEnd = url.indexOf('#', startIndex);
+        if (fragmentEnd != -1 && (end == -1 || fragmentEnd < end)) {
+            end = fragmentEnd;
+        }
+        if (end == -1) end = url.length();
+        return url.substring(startIndex, end);
+    }
+
+    private boolean isValidVideoId(String id) {
+        return id != null && id.length() == 11 && isAlphanumericWithDashUnderscore(id);
+    }
+
+    private boolean isAlphanumericWithDashUnderscore(String s) {
+        for (char c : s.toCharArray()) {
+            if (!Character.isLetterOrDigit(c) && c != '-' && c != '_') {
+                return false;
+            }
+        }
+        return true;
     }
 
     // Helper methods

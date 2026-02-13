@@ -117,11 +117,13 @@ public class SimpleExportService {
         for (Channel channel : channels) {
             if (channel.getYoutubeId() != null && channel.getName() != null) {
                 String categories = categoryMappingService.getCategoryNamesCommaSeparated(channel.getCategoryIds());
+                String keywords = formatKeywords(channel.getKeywords());
 
                 response.addChannel(
                         channel.getYoutubeId(),
                         channel.getName(),
-                        categories
+                        categories,
+                        keywords
                 );
             }
         }
@@ -144,11 +146,13 @@ public class SimpleExportService {
         for (Playlist playlist : playlists) {
             if (playlist.getYoutubeId() != null && playlist.getTitle() != null) {
                 String categories = categoryMappingService.getCategoryNamesCommaSeparated(playlist.getCategoryIds());
+                String keywords = formatKeywords(playlist.getKeywords());
 
                 response.addPlaylist(
                         playlist.getYoutubeId(),
                         playlist.getTitle(),
-                        categories
+                        categories,
+                        keywords
                 );
             }
         }
@@ -171,14 +175,31 @@ public class SimpleExportService {
         for (Video video : videos) {
             if (video.getYoutubeId() != null && video.getTitle() != null) {
                 String categories = categoryMappingService.getCategoryNamesCommaSeparated(video.getCategoryIds());
+                String keywords = formatKeywords(video.getKeywords());
 
                 response.addVideo(
                         video.getYoutubeId(),
                         video.getTitle(),
-                        categories
+                        categories,
+                        keywords
                 );
             }
         }
+    }
+
+    /**
+     * Format keywords list as comma-separated string.
+     * @param keywords List of keywords (can be null)
+     * @return Comma-separated string or null if empty/null
+     */
+    private String formatKeywords(List<String> keywords) {
+        if (keywords == null || keywords.isEmpty()) {
+            return null;
+        }
+        String result = keywords.stream()
+                .filter(k -> k != null && !k.isBlank())
+                .collect(java.util.stream.Collectors.joining(","));
+        return result.isEmpty() ? null : result;
     }
 }
 

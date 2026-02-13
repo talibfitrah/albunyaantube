@@ -7,7 +7,11 @@ import axios, { AxiosError, type AxiosInstance, type InternalAxiosRequestConfig 
 import { useAuthStore } from '@/stores/auth';
 import { toast } from '@/utils/toast';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080';
+// In development, use relative URL to go through Vite proxy (avoids CORS)
+// In production, use the configured API base URL or fall back to relative URLs
+const API_BASE_URL = import.meta.env.DEV
+  ? '' // Empty = relative, goes through Vite proxy
+  : (import.meta.env.VITE_API_BASE_URL || ''); // Fall back to relative if not set
 
 // Create Axios instance
 export const apiClient: AxiosInstance = axios.create({

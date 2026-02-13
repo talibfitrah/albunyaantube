@@ -14,6 +14,8 @@ import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.google.cloud.firestore.QuerySnapshot;
 import com.google.cloud.firestore.WriteResult;
 import com.albunyaan.tube.util.CursorUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
@@ -31,6 +33,8 @@ import java.util.concurrent.TimeoutException;
  */
 @Repository
 public class ChannelRepository {
+
+    private static final Logger log = LoggerFactory.getLogger(ChannelRepository.class);
 
     private static final String COLLECTION_NAME = "channels";
     private final Firestore firestore;
@@ -135,10 +139,76 @@ public class ChannelRepository {
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
     }
 
+    /**
+     * Find approved channels by category ID with deterministic ordering.
+     * NOTE: This unbounded method is retained for backwards compatibility but
+     * callers should prefer findByCategoryId(categoryId, limit) for quota safety.
+     *
+     * @param categoryId Category ID to filter by
+     * @return List of approved channels in the category, ordered by createdAt descending
+     */
     public List<Channel> findByCategoryId(String categoryId) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereArrayContains("categoryIds", categoryId)
                 .whereEqualTo("status", "APPROVED")
+                .orderBy("createdAt", Query.Direction.DESCENDING)
+                .get();
+
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
+    }
+
+    /**
+     * Find channels by category ID with limit (bounded query).
+     * This prevents quota exhaustion for large categories.
+     *
+     * @param categoryId Category ID to filter by
+     * @param limit Maximum number of results
+     * @return List of approved channels in the category
+     */
+    public List<Channel> findByCategoryId(String categoryId, int limit) throws ExecutionException, InterruptedException, TimeoutException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereArrayContains("categoryIds", categoryId)
+                .whereEqualTo("status", "APPROVED")
+                .orderBy("createdAt", Query.Direction.DESCENDING)
+                .limit(limit)
+                .get();
+
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
+    }
+
+    /**
+     * Find channels by category ID regardless of status (for status=all).
+     * This allows admin Content Library to show pending/rejected items when filtering by category.
+     *
+     * @param categoryId Category ID to filter by
+     * @param limit Maximum number of results
+     * @return List of channels in the category (any status)
+     */
+    public List<Channel> findByCategoryIdAllStatus(String categoryId, int limit) throws ExecutionException, InterruptedException, TimeoutException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereArrayContains("categoryIds", categoryId)
+                .orderBy("createdAt", Query.Direction.DESCENDING)
+                .limit(limit)
+                .get();
+
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
+    }
+
+    /**
+     * Find channels by category ID and specific status.
+     * This allows admin Content Library to filter by both category and status.
+     *
+     * @param categoryId Category ID to filter by
+     * @param status Status to filter by (APPROVED, PENDING, REJECTED)
+     * @param limit Maximum number of results
+     * @return List of channels matching both category and status
+     */
+    public List<Channel> findByCategoryIdAndStatus(String categoryId, String status, int limit) throws ExecutionException, InterruptedException, TimeoutException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereArrayContains("categoryIds", categoryId)
+                .whereEqualTo("status", status)
+                .orderBy("createdAt", Query.Direction.DESCENDING)
+                .limit(limit)
                 .get();
 
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
@@ -159,6 +229,38 @@ public class ChannelRepository {
     public List<Channel> findAll(int limit) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .orderBy("createdAt", Query.Direction.DESCENDING)
+                .limit(limit)
+                .get();
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
+    }
+
+    /**
+     * Find all channels ordered by createdAt ascending (oldest first) with limit.
+     * Used by admin Content Library when sort=oldest is requested.
+     *
+     * @param limit Maximum number of results
+     * @return List of channels ordered oldest-first
+     */
+    public List<Channel> findAllOrderByCreatedAtAsc(int limit) throws ExecutionException, InterruptedException, TimeoutException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .orderBy("createdAt", Query.Direction.ASCENDING)
+                .limit(limit)
+                .get();
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
+    }
+
+    /**
+     * Find channels by status ordered by createdAt ascending (oldest first) with limit.
+     * Used by admin Content Library when sort=oldest is requested with status filter.
+     *
+     * @param status Status to filter by
+     * @param limit Maximum number of results
+     * @return List of channels ordered oldest-first
+     */
+    public List<Channel> findByStatusOrderByCreatedAtAsc(String status, int limit) throws ExecutionException, InterruptedException, TimeoutException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereEqualTo("status", status)
+                .orderBy("createdAt", Query.Direction.ASCENDING)
                 .limit(limit)
                 .get();
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
@@ -213,6 +315,62 @@ public class ChannelRepository {
                 .orderBy("name")
                 .startAt(query)
                 .endAt(query + "\uf8ff")
+                .get();
+
+        return querySnapshot.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
+    }
+
+    /**
+     * Search channels by name prefix with limit (bounded query).
+     * This prevents quota exhaustion for broad search queries.
+     *
+     * @param query Search prefix
+     * @param limit Maximum number of results
+     * @return List of matching channels
+     */
+    public List<Channel> searchByName(String query, int limit) throws ExecutionException, InterruptedException, TimeoutException {
+        ApiFuture<QuerySnapshot> querySnapshot = getCollection()
+                .orderBy("name")
+                .startAt(query)
+                .endAt(query + "\uf8ff")
+                .limit(limit)
+                .get();
+
+        return querySnapshot.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
+    }
+
+    /**
+     * Search channels by normalized nameLower field for case-insensitive prefix matching.
+     * This is the preferred search method as it supports case-insensitive queries.
+     *
+     * @param queryLower Lowercase search prefix
+     * @param limit Maximum number of results
+     * @return List of matching channels
+     */
+    public List<Channel> searchByNameLower(String queryLower, int limit) throws ExecutionException, InterruptedException, TimeoutException {
+        ApiFuture<QuerySnapshot> querySnapshot = getCollection()
+                .orderBy("nameLower")
+                .startAt(queryLower)
+                .endAt(queryLower + "\uf8ff")
+                .limit(limit)
+                .get();
+
+        return querySnapshot.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
+    }
+
+    /**
+     * Search channels by keyword using array-contains on keywordsLower.
+     * Finds channels where any keyword exactly matches the query (case-insensitive).
+     * Complements prefix-based name search for improved recall.
+     *
+     * @param keywordLower Lowercase keyword to search for
+     * @param limit Maximum number of results
+     * @return List of matching channels
+     */
+    public List<Channel> searchByKeyword(String keywordLower, int limit) throws ExecutionException, InterruptedException, TimeoutException {
+        ApiFuture<QuerySnapshot> querySnapshot = getCollection()
+                .whereArrayContains("keywordsLower", keywordLower)
+                .limit(limit)
                 .get();
 
         return querySnapshot.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
@@ -349,6 +507,63 @@ public class ChannelRepository {
         return new PaginatedResult<>(channels, nextCursor, hasNext);
     }
 
+    // ==================== Display Order Methods ====================
+
+    /**
+     * Find approved channels ordered by displayOrder ascending (custom admin order).
+     * Channels with null displayOrder are placed first (Firestore default for ASCENDING).
+     *
+     * @return List of approved channels ordered by displayOrder
+     */
+    public List<Channel> findApprovedByDisplayOrderAsc() throws ExecutionException, InterruptedException, TimeoutException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereEqualTo("status", "APPROVED")
+                .orderBy("displayOrder", Query.Direction.ASCENDING)
+                .get();
+
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
+    }
+
+    /**
+     * Find approved channels ordered by displayOrder ascending with limit.
+     *
+     * @param limit Maximum number of results
+     * @return List of approved channels ordered by displayOrder
+     */
+    public List<Channel> findApprovedByDisplayOrderAsc(int limit) throws ExecutionException, InterruptedException, TimeoutException {
+        ApiFuture<QuerySnapshot> query = getCollection()
+                .whereEqualTo("status", "APPROVED")
+                .orderBy("displayOrder", Query.Direction.ASCENDING)
+                .limit(limit)
+                .get();
+
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
+    }
+
+    /**
+     * Batch update displayOrder for multiple channels.
+     * Used by admin reordering feature.
+     *
+     * @param orderUpdates Map of channel ID to new displayOrder value
+     * @throws IllegalArgumentException if orderUpdates contains more than 500 entries (Firestore limit)
+     */
+    public void batchUpdateDisplayOrder(java.util.Map<String, Integer> orderUpdates) throws ExecutionException, InterruptedException, TimeoutException {
+        if (orderUpdates == null || orderUpdates.isEmpty()) {
+            return;
+        }
+
+        if (orderUpdates.size() > 500) {
+            throw new IllegalArgumentException("Cannot update more than 500 channels in a single batch. Received: " + orderUpdates.size());
+        }
+
+        var batch = firestore.batch();
+        for (var entry : orderUpdates.entrySet()) {
+            DocumentReference docRef = getCollection().document(entry.getKey());
+            batch.update(docRef, "displayOrder", entry.getValue(), "updatedAt", com.google.cloud.Timestamp.now());
+        }
+        batch.commit().get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+    }
+
     // ==================== Validation Status Methods ====================
 
     /**
@@ -412,6 +627,156 @@ public class ChannelRepository {
                 .get();
 
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
+    }
+
+    /**
+     * Maximum number of channels to return with exclusions to prevent quota exhaustion.
+     */
+    private static final int MAX_EXCLUSIONS_CHANNELS = 500;
+
+    /**
+     * Find all channels that have exclusions (totalExcludedCount > 0).
+     * Uses the totalExcludedCount field for efficient queries, with a legacy fallback
+     * scan for documents that predate the field.
+     *
+     * Fallback triggers:
+     * - No results from primary query (legacy documents without totalExcludedCount)
+     * - Query fails due to missing composite index or timeout (graceful degradation)
+     *
+     * Note: Requires Firestore composite index on excludedItems.totalExcludedCount.
+     * Limited to MAX_EXCLUSIONS_CHANNELS to prevent quota exhaustion.
+     *
+     * @return List of channels with at least one exclusion (max 500)
+     */
+    public List<Channel> findAllWithExclusions() throws ExecutionException, InterruptedException, TimeoutException {
+        return findAllWithExclusions(MAX_EXCLUSIONS_CHANNELS);
+    }
+
+    /**
+     * Find channels with exclusions, with explicit limit.
+     * Uses the totalExcludedCount field for efficient queries, with a legacy fallback
+     * scan for documents that predate the field.
+     *
+     * @param limit Maximum number of results
+     * @return List of channels with at least one exclusion
+     */
+    public List<Channel> findAllWithExclusions(int limit) throws ExecutionException, InterruptedException, TimeoutException {
+        List<Channel> result;
+
+        try {
+            // Primary query: use totalExcludedCount field (efficient, no full scan)
+            ApiFuture<QuerySnapshot> query = getCollection()
+                    .whereGreaterThan("excludedItems.totalExcludedCount", 0)
+                    .orderBy("excludedItems.totalExcludedCount", Query.Direction.DESCENDING)
+                    .limit(limit)
+                    .get();
+
+            result = new ArrayList<>(query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class));
+
+            // Fallback: if no results from primary query, do a bounded scan for legacy documents
+            // This handles channels created before totalExcludedCount was added
+            if (result.isEmpty()) {
+                log.debug("Primary channel exclusions query returned empty, falling back to legacy scan");
+                result = findAllWithExclusionsLegacyScan(limit);
+            }
+        } catch (ExecutionException e) {
+            // Check if the cause is a FAILED_PRECONDITION (missing index) or other query error
+            String message = e.getMessage();
+            if (message != null && (message.contains("FAILED_PRECONDITION") || message.contains("index"))) {
+                log.warn("Channel exclusions query failed due to missing index, falling back to legacy scan: {}", message);
+                result = findAllWithExclusionsLegacyScan(limit);
+            } else {
+                // Re-throw other execution exceptions
+                throw e;
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Legacy fallback: scan channels to find those with exclusions.
+     * Only used when excludedItems.totalExcludedCount field doesn't exist on documents.
+     * Uses batched scanning with a safety limit to prevent quota exhaustion.
+     *
+     * @param limit Maximum number of channels to return
+     */
+    private List<Channel> findAllWithExclusionsLegacyScan(int limit) throws ExecutionException, InterruptedException, TimeoutException {
+        List<Channel> result = new ArrayList<>();
+        int batchSize = 500;
+        int maxIterations = 10; // Safety limit: 10 * 500 = 5,000 max documents scanned
+        int iterations = 0;
+        QueryDocumentSnapshot lastDoc = null;
+
+        while (iterations < maxIterations && result.size() < limit) {
+            iterations++;
+            Query query = getCollection()
+                    .orderBy("createdAt", Query.Direction.DESCENDING)
+                    .limit(batchSize);
+
+            if (lastDoc != null) {
+                query = query.startAfter(lastDoc);
+            }
+
+            QuerySnapshot snapshot = query.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
+            List<QueryDocumentSnapshot> docs = snapshot.getDocuments();
+
+            if (docs.isEmpty()) {
+                break;
+            }
+
+            for (QueryDocumentSnapshot doc : docs) {
+                Channel channel = doc.toObject(Channel.class);
+                channel.setId(doc.getId());
+                Channel.ExcludedItems excludedItems = channel.getExcludedItems();
+                if (excludedItems != null && excludedItems.getTotalExcludedCount() > 0) {
+                    result.add(channel);
+                    if (result.size() >= limit) {
+                        break;
+                    }
+                }
+            }
+
+            if (docs.size() < batchSize) {
+                break; // No more documents
+            }
+
+            lastDoc = docs.get(docs.size() - 1);
+        }
+
+        return result;
+    }
+
+    /**
+     * Count channels by category using server-side aggregation.
+     * This is efficient as it doesn't load any documents.
+     *
+     * @param categoryId Category ID to count
+     * @return Count of channels in the category
+     */
+    public long countByCategoryId(String categoryId) throws ExecutionException, InterruptedException, TimeoutException {
+        AggregateQuery countQuery = getCollection()
+                .whereArrayContains("categoryIds", categoryId)
+                .count();
+        AggregateQuerySnapshot snapshot = countQuery.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
+        return snapshot.getCount();
+    }
+
+    /**
+     * Count channels by category and status using server-side aggregation.
+     * This is efficient as it doesn't load any documents.
+     *
+     * @param categoryId Category ID to filter by
+     * @param status Status to filter by (APPROVED, PENDING, REJECTED)
+     * @return Count of channels matching both category and status
+     */
+    public long countByCategoryIdAndStatus(String categoryId, String status) throws ExecutionException, InterruptedException, TimeoutException {
+        AggregateQuery countQuery = getCollection()
+                .whereArrayContains("categoryIds", categoryId)
+                .whereEqualTo("status", status)
+                .count();
+        AggregateQuerySnapshot snapshot = countQuery.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
+        return snapshot.getCount();
     }
 
     /**

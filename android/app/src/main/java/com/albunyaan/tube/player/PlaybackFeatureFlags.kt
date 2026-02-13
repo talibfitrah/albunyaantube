@@ -71,10 +71,59 @@ class PlaybackFeatureFlags @Inject constructor(
         private const val VALUE_USE_DEFAULT = -1
         private const val VALUE_DISABLED = 0
         private const val VALUE_ENABLED = 1
+
+        /** Key for tracking the app version that wrote the preferences */
+        private const val KEY_PREFS_VERSION = "prefs_version_code"
     }
 
     private val prefs: SharedPreferences = context.applicationContext
         .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    init {
+        // Migrate preferences if app was updated
+        migratePreferencesIfNeeded()
+    }
+
+    /**
+     * Migrate preferences when app version changes.
+     *
+     * When the app is updated (installed on top of an older version), feature flag
+     * overrides from older versions may conflict with new player configurations.
+     * This clears stale overrides to ensure a fresh start with new defaults.
+     */
+    private fun migratePreferencesIfNeeded() {
+        val storedVersion = prefs.getInt(KEY_PREFS_VERSION, 0)
+        val currentVersion = BuildConfig.VERSION_CODE
+
+        if (storedVersion == 0) {
+            // First time or preferences from before versioning was added
+            // Check if there are any overrides set
+            val hasAnyOverride = VALID_KEYS.any { prefs.contains(it) }
+            if (hasAnyOverride) {
+                Log.i(TAG, "Migrating legacy preferences (no version) -> clearing overrides for fresh start")
+                clearAllOverridesInternal()
+            }
+            prefs.edit().putInt(KEY_PREFS_VERSION, currentVersion).apply()
+        } else if (storedVersion < currentVersion) {
+            // App was updated - clear overrides to avoid conflicts with new defaults
+            Log.i(TAG, "App updated ($storedVersion -> $currentVersion) - clearing feature flag overrides")
+            clearAllOverridesInternal()
+            prefs.edit().putInt(KEY_PREFS_VERSION, currentVersion).apply()
+        }
+        // If storedVersion == currentVersion, no migration needed
+    }
+
+    /**
+     * Internal method to clear overrides without logging (used during migration).
+     */
+    private fun clearAllOverridesInternal() {
+        prefs.edit()
+            .remove(KEY_SYNTH_ADAPTIVE)
+            .remove(KEY_MPD_PREFETCH)
+            .remove(KEY_DEGRADATION_MANAGER)
+            .remove(KEY_IOS_FETCH)
+            .apply()
+    }
 
     /**
      * Whether synthetic adaptive DASH is enabled.

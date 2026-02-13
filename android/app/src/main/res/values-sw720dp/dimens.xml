@@ -110,4 +110,9 @@
     <!-- Splash Screen (Large Tablet / TV) -->
     <dimen name="splash_logo_size">280dp</dimen>
     <dimen name="splash_title_size">48sp</dimen>
+
+    <!-- Grid Tile Layouts (Large Tablet/TV - vertical card style, larger for 10-foot viewing) -->
+    <dimen name="grid_tile_avatar_size">96dp</dimen>
+    <dimen name="grid_tile_thumbnail_height">120dp</dimen>
+    <dimen name="grid_tile_content_padding">16dp</dimen>
 </resources>

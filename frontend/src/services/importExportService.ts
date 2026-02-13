@@ -333,22 +333,23 @@ class ImportExportService {
 
   /**
    * Generate example simple format JSON for template download.
+   * Format: "Title|Categories|Keywords" (keywords are optional)
    *
    * @returns Blob containing example JSON
    */
   generateSimpleFormatTemplate(): Blob {
     const template = [
       {
-        'UCw0OFJrMMH6N5aTyeOTTWZQ': 'مجموعة زاد|Global',
-        'UCOll3M-P7oKs5cSrQ9ytt6g': 'قناة زاد العلمية|Global',
+        'UCw0OFJrMMH6N5aTyeOTTWZQ': 'مجموعة زاد|Global|islamic,education,zad',
+        'UCOll3M-P7oKs5cSrQ9ytt6g': 'قناة زاد العلمية|Global|quran,learning',
         'UCBoe29aQT-zMECFyyyO7H4Q': 'برنامج أكاديمية زاد - Zad academy|Global'
       },
       {
-        'PLEaGEZnOHpUP4SKUKrg3Udghc5zJ_tH0g': 'Arabic Alphabet for Children - حروف الهجاء للأطفال|Global',
+        'PLEaGEZnOHpUP4SKUKrg3Udghc5zJ_tH0g': 'Arabic Alphabet for Children - حروف الهجاء للأطفال|Global|arabic,alphabet,children',
         'PLEaGEZnOHpUPBcDnCCXkmgsgRDICnhYwT': 'Learn Arabic for Kids -  تعليم اللغة العربية للأطفال|Global'
       },
       {
-        'EnfgPg0Ey3I': 'نشيد طلب العلم|Global',
+        'EnfgPg0Ey3I': 'نشيد طلب العلم|Global|nasheed,knowledge',
         '7KP-elyP-EE': 'نشيد قناة زاد العلمية|Global'
       }
     ]

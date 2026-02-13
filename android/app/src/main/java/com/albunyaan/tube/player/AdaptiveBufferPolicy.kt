@@ -1,15 +1,18 @@
 package com.albunyaan.tube.player
 
 import android.app.ActivityManager
+import android.app.UiModeManager
 import android.content.Context
+import android.content.res.Configuration
 import android.util.Log
+import androidx.core.content.getSystemService
 import androidx.media3.exoplayer.DefaultLoadControl
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Adaptive buffer policy that scales buffer sizes based on device memory class.
+ * Adaptive buffer policy that scales buffer sizes based on device memory class and type.
  *
  * This addresses the [MAJOR] review finding that aggressive buffering (minBuffer=30s,
  * maxBuffer=180s) can cause memory pressure, GC jank, or OOM on low-end devices.
@@ -18,6 +21,12 @@ import javax.inject.Singleton
  * - Low-memory devices (≤128MB heap): Conservative buffers to prevent OOM
  * - Normal devices (128-256MB heap): Balanced buffers for good UX
  * - High-memory devices (>256MB heap): Aggressive buffers for minimal rebuffering
+ * - TV/Set-top boxes: Use NORMAL profile even with high memory (slow eMMC storage)
+ *
+ * **TV/Set-top box handling:**
+ * Many Android TV boxes and set-top boxes report high memory class (>256MB) but have
+ * slow eMMC storage that causes buffering to disk to lag. These devices are detected
+ * via UiModeManager and forced to use the NORMAL profile for better performance.
  *
  * **Memory class mapping:**
  * The Android memory class (ActivityManager.getMemoryClass()) returns the approximate
@@ -93,11 +102,27 @@ class AdaptiveBufferPolicy @Inject constructor(
     }
 
     /**
+     * Detect if the device is an Android TV or set-top box.
+     *
+     * TV/set-top boxes often have high memory but slow eMMC storage, causing
+     * aggressive buffering to lag. We detect these devices to use conservative buffers.
+     */
+    private val isTvOrSetTopBox: Boolean by lazy {
+        val uiModeManager = context.getSystemService<UiModeManager>()
+        val isTV = uiModeManager?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION
+        if (isTV) {
+            Log.d(TAG, "Device detected as TV/set-top box - will use conservative buffers")
+        }
+        isTV
+    }
+
+    /**
      * Cached buffer configuration. Computed lazily once based on device capabilities.
      * This avoids recreating BufferConfig objects on every call to getBufferConfig().
      */
     private val cachedBufferConfig: BufferConfig by lazy {
         val config = when {
+            // Low RAM devices always get conservative profile
             isLowRamDevice || memoryClass <= LOW_MEMORY_CLASS -> {
                 BufferConfig(
                     minBufferMs = LOW_MIN_BUFFER_MS,
@@ -108,6 +133,20 @@ class AdaptiveBufferPolicy @Inject constructor(
                     profile = BufferProfile.LOW_MEMORY
                 )
             }
+            // TV/set-top boxes: Force NORMAL profile even with high memory
+            // These devices often have slow eMMC storage that can't handle aggressive buffering
+            isTvOrSetTopBox -> {
+                Log.d(TAG, "TV/set-top box detected with ${memoryClass}MB memory - using NORMAL profile (not HIGH)")
+                BufferConfig(
+                    minBufferMs = NORMAL_MIN_BUFFER_MS,
+                    maxBufferMs = NORMAL_MAX_BUFFER_MS,
+                    bufferForPlaybackMs = NORMAL_PLAYBACK_BUFFER_MS,
+                    bufferForPlaybackAfterRebufferMs = NORMAL_REBUFFER_BUFFER_MS,
+                    backBufferMs = NORMAL_BACK_BUFFER_MS,
+                    profile = BufferProfile.NORMAL
+                )
+            }
+            // High memory phones/tablets get aggressive profile
             memoryClass >= HIGH_MEMORY_CLASS -> {
                 BufferConfig(
                     minBufferMs = HIGH_MIN_BUFFER_MS,
@@ -118,6 +157,7 @@ class AdaptiveBufferPolicy @Inject constructor(
                     profile = BufferProfile.HIGH_MEMORY
                 )
             }
+            // Normal memory devices
             else -> {
                 BufferConfig(
                     minBufferMs = NORMAL_MIN_BUFFER_MS,
@@ -131,7 +171,7 @@ class AdaptiveBufferPolicy @Inject constructor(
         }
 
         Log.d(TAG, "Device memory class: ${memoryClass}MB, isLowRam: $isLowRamDevice, " +
-            "profile: ${config.profile}, maxBuffer: ${config.maxBufferMs / 1000}s")
+            "isTV: $isTvOrSetTopBox, profile: ${config.profile}, maxBuffer: ${config.maxBufferMs / 1000}s")
 
         config
     }
@@ -168,6 +208,7 @@ class AdaptiveBufferPolicy @Inject constructor(
         return mapOf(
             "memoryClass" to memoryClass,
             "isLowRamDevice" to isLowRamDevice,
+            "isTvOrSetTopBox" to isTvOrSetTopBox,
             "profile" to config.profile.name,
             "minBufferMs" to config.minBufferMs,
             "maxBufferMs" to config.maxBufferMs,

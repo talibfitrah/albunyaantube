@@ -90,12 +90,11 @@ class StreamPrefetchServiceTest {
     @Test
     fun `generateMpd returns success for eligible streams`() {
         val resolved = createEligibleResolvedStreams()
+        val result = mpdGenerator.generateMpd(resolved)
 
         assertTrue("MPD generation should succeed", result is MultiRepresentationMpdGenerator.Result.Success)
         result as MultiRepresentationMpdGenerator.Result.Success
 
-        assertTrue("Should return success", result is MultiRepresentationMpdGenerator.Result.Success)
-        result as MultiRepresentationMpdGenerator.Result.Success
         assertTrue("MPD XML should not be empty", result.mpdXml.isNotEmpty())
         assertTrue("Should have multiple video tracks", result.videoTracks.size >= 2)
     }

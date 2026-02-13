@@ -11,7 +11,9 @@
     android:paddingBottom="@dimen/spacing_sm"
     android:background="?attr/selectableItemBackground"
     android:clickable="true"
-    android:focusable="true">
+    android:focusable="true"
+    android:contentDescription="@string/a11y_playlist_item"
+    tools:contentDescription="Playlist: Quran Recitations, 10 items">
 
     <!-- Playlist Thumbnail (Square with rounded corners via MaterialCardView) -->
     <com.google.android.material.card.MaterialCardView

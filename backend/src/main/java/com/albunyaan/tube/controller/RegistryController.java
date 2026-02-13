@@ -31,17 +31,20 @@ public class RegistryController {
     private final PlaylistRepository playlistRepository;
     private final VideoRepository videoRepository;
     private final AuditLogService auditLogService;
+    private final com.github.benmanes.caffeine.cache.Cache<String, Object> workspaceExclusionsCache;
 
     public RegistryController(
             ChannelRepository channelRepository,
             PlaylistRepository playlistRepository,
             VideoRepository videoRepository,
-            AuditLogService auditLogService
+            AuditLogService auditLogService,
+            com.github.benmanes.caffeine.cache.Cache<String, Object> workspaceExclusionsCache
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
         this.videoRepository = videoRepository;
         this.auditLogService = auditLogService;
+        this.workspaceExclusionsCache = workspaceExclusionsCache;
     }
 
     /**
@@ -400,6 +403,7 @@ public class RegistryController {
             playlist.setExcludedVideoIds(excluded);
             playlist.touch();
             playlistRepository.save(playlist);
+            workspaceExclusionsCache.invalidateAll();
             auditLogService.log("playlist_video_excluded", "playlist", id, user);
         }
 
@@ -433,6 +437,7 @@ public class RegistryController {
             playlist.setExcludedVideoIds(excluded);
             playlist.touch();
             playlistRepository.save(playlist);
+            workspaceExclusionsCache.invalidateAll();
             auditLogService.log("playlist_video_exclusion_removed", "playlist", id, user);
         }
 

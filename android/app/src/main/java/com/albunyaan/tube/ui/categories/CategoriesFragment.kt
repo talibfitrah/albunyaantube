@@ -9,6 +9,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.albunyaan.tube.R
+import com.albunyaan.tube.data.filters.FilterManager
 import com.albunyaan.tube.data.model.Category
 import com.albunyaan.tube.data.source.ContentService
 import com.albunyaan.tube.databinding.FragmentCategoriesBinding
@@ -26,6 +27,9 @@ class CategoriesFragment : Fragment(R.layout.fragment_categories) {
     @Inject
     @Named("real")
     internal lateinit var contentService: ContentService
+
+    @Inject
+    internal lateinit var filterManager: FilterManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -63,17 +67,56 @@ class CategoriesFragment : Fragment(R.layout.fragment_categories) {
                     android.util.Log.e("CategoriesFragment", "Navigation failed", e)
                 }
             } else {
-                android.util.Log.d("CategoriesFragment", "Category has no subcategories")
-                // Show feedback that category was selected
-                // TODO: Navigate to filtered content list (Videos tab with category filter)
-                android.widget.Toast.makeText(
-                    requireContext(),
-                    "Category: ${category.name}\n(Filtering not yet implemented)",
-                    android.widget.Toast.LENGTH_SHORT
-                ).show()
+                android.util.Log.d("CategoriesFragment", "Category has no subcategories, applying filter")
 
-                // Navigate back
-                findNavController().navigateUp()
+                // Step 1: Set the category filter
+                val filterApplied = try {
+                    filterManager.setCategory(category.id)
+                    true
+                } catch (e: Exception) {
+                    android.util.Log.e("CategoriesFragment", "Failed to set category filter", e)
+                    android.widget.Toast.makeText(
+                        requireContext(),
+                        getString(R.string.category_filter_error),
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                    false
+                }
+
+                // Step 2: Navigate to Videos tab (only if filter was applied successfully)
+                if (filterApplied) {
+                    // Show feedback before navigation while context is guaranteed valid
+                    android.widget.Toast.makeText(
+                        requireContext(),
+                        getString(R.string.category_filter_applied, category.name),
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                    try {
+                        // Use NavOptions to pop and navigate atomically, avoiding flash
+                        findNavController().navigate(
+                            R.id.videosFragment,
+                            null,
+                            androidx.navigation.NavOptions.Builder()
+                                .setPopUpTo(R.id.homeFragment, false)
+                                .build()
+                        )
+                    } catch (e: Exception) {
+                        android.util.Log.e("CategoriesFragment", "Navigation to videos failed", e)
+                        // Clear filter to avoid inconsistent state (filter applied but not on Videos tab)
+                        try {
+                            filterManager.setCategory(null)
+                        } catch (clearError: Exception) {
+                            android.util.Log.e("CategoriesFragment", "Failed to clear filter", clearError)
+                        }
+                        context?.let { ctx ->
+                            android.widget.Toast.makeText(
+                                ctx,
+                                getString(R.string.category_filter_error),
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                }
             }
         }
 

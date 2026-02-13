@@ -20,6 +20,12 @@
     <string name="filter_sort_newest">Newest first</string>
     <string name="filter_clear">Clear filters</string>
     <string name="filter_chip_value">%1$s • %2$s</string>
+    <string name="category_filter_applied">Filtering by: %1$s</string>
+    <string name="category_filter_cleared">Category filter cleared</string>
+    <string name="category_filter_error">Failed to apply category filter</string>
+    <string name="navigation_error">Navigation failed. Please try again.</string>
+    <string name="category_filter_active">Active category filter. Double tap to clear.</string>
+    <string name="filtering_by_category">Category: %1$s</string>
     <string name="channel_tab_videos">Videos</string>
     <string name="channel_tab_live">Live</string>
     <string name="channel_tab_shorts">Shorts</string>

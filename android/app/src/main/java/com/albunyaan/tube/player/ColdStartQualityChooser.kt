@@ -7,6 +7,7 @@ import android.net.NetworkCapabilities
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.WindowManager
+import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.data.extractor.VideoTrack
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -37,6 +38,11 @@ import javax.inject.Singleton
  *
  * Note: Initial recommendations are conservative to minimize TTFF. ABR/BufferHealthMonitor
  * handles quality upgrades after playback starts based on actual bandwidth.
+ *
+ * **Version Migration:**
+ * When the app is updated, persisted quality hints from older versions may conflict with
+ * new player configurations. We track the app version that wrote the preferences and
+ * clear stale data on version upgrade to ensure a fresh start.
  */
 @Singleton
 class ColdStartQualityChooser @Inject constructor() {
@@ -47,6 +53,7 @@ class ColdStartQualityChooser @Inject constructor() {
         // SharedPreferences key for persisted quality hint
         private const val PREFS_NAME = "cold_start_quality"
         private const val KEY_LAST_SUCCESSFUL_HEIGHT = "last_successful_height"
+        private const val KEY_PREFS_VERSION = "prefs_version_code"
 
         // Quality tiers (height in pixels)
         const val QUALITY_ULTRA = 2160
@@ -108,6 +115,9 @@ class ColdStartQualityChooser @Inject constructor() {
      * @return QualityChoice with recommended height and diagnostic info
      */
     fun chooseInitialQuality(context: Context): QualityChoice {
+        // Migrate preferences if app was updated
+        migratePreferencesIfNeeded(context)
+
         val networkType = detectNetworkType(context)
         val screenClass = detectScreenClass(context)
         val persistedHint = getPersistedQualityHint(context)
@@ -156,8 +166,9 @@ class ColdStartQualityChooser @Inject constructor() {
         val prefs = getPrefs(context)
         prefs.edit()
             .putInt(KEY_LAST_SUCCESSFUL_HEIGHT, height)
+            .putInt(KEY_PREFS_VERSION, BuildConfig.VERSION_CODE)
             .apply()
-        Log.d(TAG, "Recorded successful playback: ${height}p on $networkType")
+        Log.d(TAG, "Recorded successful playback: ${height}p on $networkType (version ${BuildConfig.VERSION_CODE})")
     }
 
     /**
@@ -169,6 +180,47 @@ class ColdStartQualityChooser @Inject constructor() {
     }
 
     // --- Private Implementation ---
+
+    /**
+     * Migrate preferences when app version changes.
+     *
+     * When the app is updated (installed on top of an older version), persisted quality
+     * hints may conflict with new player configurations. This clears stale preferences
+     * to ensure a fresh start with the new player logic.
+     *
+     * This fixes issues where devices have lags/freezes after updating because old
+     * quality hints force inappropriate quality selections for the new player.
+     */
+    private fun migratePreferencesIfNeeded(context: Context) {
+        val prefs = getPrefs(context)
+        val storedVersion = prefs.getInt(KEY_PREFS_VERSION, 0)
+        val currentVersion = BuildConfig.VERSION_CODE
+
+        if (storedVersion == 0) {
+            // First time or preferences from before versioning was added
+            // Clear any legacy preferences and start fresh
+            if (prefs.contains(KEY_LAST_SUCCESSFUL_HEIGHT)) {
+                Log.i(TAG, "Migrating legacy preferences (no version) -> clearing for fresh start")
+                prefs.edit()
+                    .clear()
+                    .putInt(KEY_PREFS_VERSION, currentVersion)
+                    .apply()
+            } else {
+                // No existing preferences, just set version
+                prefs.edit()
+                    .putInt(KEY_PREFS_VERSION, currentVersion)
+                    .apply()
+            }
+        } else if (storedVersion != currentVersion) {
+            // App was updated or downgraded - clear preferences to avoid conflicts with player logic
+            Log.i(TAG, "App version changed ($storedVersion -> $currentVersion) - clearing quality hints for fresh start")
+            prefs.edit()
+                .clear()
+                .putInt(KEY_PREFS_VERSION, currentVersion)
+                .apply()
+        }
+        // If storedVersion == currentVersion, no migration needed
+    }
 
     private fun detectNetworkType(context: Context): NetworkType {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager

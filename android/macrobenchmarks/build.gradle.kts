@@ -6,11 +6,11 @@ plugins {
 
 android {
     namespace = "com.albunyaan.tube.macrobenchmarks"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         minSdk = 24
-        targetSdk = 34
+        targetSdk = 35
         testInstrumentationRunner = "androidx.benchmark.junit4.AndroidBenchmarkRunner"
 
         val enabledRulesPropertyKey = "android.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules"
@@ -63,12 +63,12 @@ android {
 
 dependencies {
     implementation(project(":app"))
-    implementation("androidx.benchmark:benchmark-macro-junit4:1.3.0")
-    implementation("androidx.benchmark:benchmark-junit4:1.3.0")
-    implementation("androidx.test.ext:junit:1.1.5")
-    implementation("androidx.test:runner:1.5.2")
+    implementation("androidx.benchmark:benchmark-macro-junit4:1.3.1")
+    implementation("androidx.benchmark:benchmark-junit4:1.3.1")
+    implementation("androidx.test.ext:junit:1.2.1")
+    implementation("androidx.test:runner:1.6.2")
     implementation("androidx.test.uiautomator:uiautomator:2.3.0")
-    implementation("io.coil-kt:coil:2.6.0")
+    implementation("io.coil-kt:coil:2.7.0")
 }
 
 baselineProfile {

@@ -41,6 +41,11 @@
       </div>
     </div>
 
+    <div v-if="isTruncated" class="truncation-warning" role="alert">
+      <span class="truncation-title">{{ t('exclusions.truncationWarning.title') }}</span>
+      <span class="truncation-message">{{ t('exclusions.truncationWarning.message') }}</span>
+    </div>
+
     <div v-if="hasSelection" class="bulk-bar" aria-live="polite">
       <span>{{ t('exclusions.summary.selection', { count: selectedIds.length }) }}</span>
       <div class="bulk-actions">
@@ -118,17 +123,15 @@
             </td>
             <td>
               <div class="timestamp">
-                <time :datetime="entry.createdAt">{{ formatUpdated(entry.createdAt) }}</time>
-                <span class="entity-subtle">{{ entry.createdBy.email }}</span>
+                <time v-if="entry.createdAt" :datetime="entry.createdAt">{{ formatUpdated(entry.createdAt) }}</time>
+                <span v-else class="entity-subtle">—</span>
+                <span v-if="entry.createdBy?.email" class="entity-subtle">{{ entry.createdBy.email }}</span>
+                <span v-else-if="entry.createdBy?.displayName" class="entity-subtle">{{ entry.createdBy.displayName }}</span>
               </div>
             </td>
             <td>
               <button type="button" class="link-action" @click="openViewDetails(entry)">
                 {{ t('exclusions.actions.viewDetails') }}
-              </button>
-              <span aria-hidden="true">·</span>
-              <button type="button" class="link-action" @click="openEditDialog(entry)">
-                {{ t('exclusions.actions.edit') }}
               </button>
               <span aria-hidden="true">·</span>
               <button
@@ -240,7 +243,11 @@
         <label class="modal-label" :for="addDialogReasonId">
           {{ t('exclusions.dialog.reasonLabel') }}
         </label>
-        <textarea :id="addDialogReasonId" v-model.trim="addDialog.reason" rows="3" required></textarea>
+        <select :id="addDialogReasonId" v-model="addDialog.reason">
+          <option value="">{{ t('exclusions.dialog.reasonDefault') }}</option>
+          <option value="LIVESTREAM">{{ t('exclusions.dialog.reasonLivestream') }}</option>
+          <option value="SHORT">{{ t('exclusions.dialog.reasonShort') }}</option>
+        </select>
 
         <p v-if="formError" class="form-error" role="alert">{{ formError }}</p>
 
@@ -266,8 +273,7 @@ import { useCursorPagination } from '@/composables/useCursorPagination';
 import {
   fetchExclusionsPage,
   removeExclusion,
-  createExclusion,
-  updateExclusion
+  createExclusion
 } from '@/services/exclusions';
 import type { Exclusion, ExclusionParentType, ExclusionResourceType } from '@/types/exclusions';
 import { emitAuditEvent } from '@/services/audit';
@@ -316,8 +322,6 @@ const addDialog = reactive({
   reason: ''
 });
 
-const mode = ref<'create' | 'edit'>('create');
-const editingId = ref<string | null>(null);
 
 const addDialogRef = ref<HTMLDivElement | null>(null);
 const addDialogTargetRef = ref<HTMLInputElement | null>(null);
@@ -350,6 +354,7 @@ const { items, isLoading, error, load, next, previous, hasNext, hasPrevious, pag
 const entries = items;
 const loadError = computed(() => error.value);
 const hasSelection = computed(() => selectedIds.value.length > 0);
+const isTruncated = computed(() => pageInfo.value?.truncated === true);
 const filteredItems = computed(() => entries.value);
 const isAllVisibleSelected = computed(() => {
   if (!entries.value.length) {
@@ -365,6 +370,10 @@ const paginationSummary = computed(() => {
   }
   const formatter = new Intl.NumberFormat(currentLocale.value);
   const count = formatter.format(entries.value.length);
+  const total = pageInfo.value.totalCount;
+  if (total !== undefined) {
+    return t('exclusions.pagination.showingOfTotal', { count, total: formatter.format(total) });
+  }
   const limit = formatter.format(pageInfo.value.limit ?? entries.value.length);
   return t('exclusions.pagination.showing', { count, limit });
 });
@@ -487,17 +496,6 @@ function isRemoving(id: string) {
   return removingIds.value.includes(id);
 }
 
-function openEditDialog(entry: Exclusion) {
-  mode.value = 'edit';
-  editingId.value = entry.id;
-  addDialog.parentType = entry.parentType;
-  addDialog.parentId = entry.parentId;
-  addDialog.excludeType = entry.excludeType;
-  addDialog.excludeId = entry.excludeId;
-  addDialog.reason = entry.reason;
-  openDialog(true);
-}
-
 function openDialog(skipFocus = false) {
   formError.value = null;
   addDialog.visible = true;
@@ -518,8 +516,6 @@ function closeAddDialog() {
   deactivateAddTrap();
   addDialog.visible = false;
   resetDialog();
-  mode.value = 'create';
-  editingId.value = null;
   isSubmitting.value = false;
 }
 
@@ -527,48 +523,35 @@ async function handleSubmit() {
   if (isSubmitting.value) {
     return;
   }
-  if (!addDialog.parentId || !addDialog.excludeId || !addDialog.reason) {
+  if (!addDialog.parentId || !addDialog.excludeId) {
     formError.value = t('exclusions.dialog.validation');
     return;
   }
   isSubmitting.value = true;
   formError.value = null;
   try {
-    if (mode.value === 'create') {
-      const payload = {
-        parentType: addDialog.parentType,
-        parentId: addDialog.parentId.trim(),
-        excludeType: addDialog.excludeType,
-        excludeId: addDialog.excludeId.trim(),
-        reason: addDialog.reason.trim()
-      };
-      const created = await createExclusion(payload);
-      emitAuditEvent({
-        name: 'exclusions:create',
-        exclusionId: created.id,
-        timestamp: new Date().toISOString(),
-        metadata: {
-          parentType: created.parentType,
-          parentId: created.parentId,
-          excludeType: created.excludeType,
-          excludeId: created.excludeId
-        }
-      });
-      await load(null, 'reset');
-      actionMessage.value = t('exclusions.toasts.added', { name: created.excludeId });
-      closeAddDialog();
-    } else if (editingId.value) {
-      const updated = await updateExclusion(editingId.value, { reason: addDialog.reason.trim() });
-      emitAuditEvent({
-        name: 'exclusions:update',
-        exclusionId: updated.id,
-        timestamp: new Date().toISOString(),
-        metadata: { reason: updated.reason }
-      });
-      await reloadCurrentPage();
-      actionMessage.value = t('exclusions.toasts.updated');
-      closeAddDialog();
-    }
+    const payload = {
+      parentType: addDialog.parentType,
+      parentId: addDialog.parentId.trim(),
+      excludeType: addDialog.excludeType,
+      excludeId: addDialog.excludeId.trim(),
+      reason: addDialog.reason.trim()
+    };
+    const created = await createExclusion(payload);
+    emitAuditEvent({
+      name: 'exclusions:create',
+      exclusionId: created.id,
+      timestamp: new Date().toISOString(),
+      metadata: {
+        parentType: created.parentType,
+        parentId: created.parentId,
+        excludeType: created.excludeType,
+        excludeId: created.excludeId
+      }
+    });
+    await load(null, 'reset');
+    actionMessage.value = t('exclusions.toasts.added', { name: created.excludeId });
+    closeAddDialog();
   } catch (err) {
     formError.value = err instanceof Error ? err.message : t('exclusions.errors.createFailed');
   } finally {
@@ -627,21 +610,16 @@ async function reloadCurrentPage() {
 }
 
 function isEditMode() {
-  return mode.value === 'edit';
+  return false;  // Edit mode removed - data model doesn't support reason updates
 }
 
 function submitButtonLabel() {
-  if (isSubmitting.value) {
-    return mode.value === 'create'
-      ? t('exclusions.actions.creating')
-      : t('exclusions.actions.updating');
-  }
-  return mode.value === 'create' ? t('exclusions.actions.create') : t('exclusions.actions.update');
+  return isSubmitting.value
+    ? t('exclusions.actions.creating')
+    : t('exclusions.actions.create');
 }
 
 function openAddDialog() {
-  mode.value = 'create';
-  editingId.value = null;
   resetDialog();
   openDialog();
 }
@@ -792,6 +770,26 @@ async function handleModalUpdated() {
 .type-option:focus-visible {
   background: var(--color-brand-soft);
   color: var(--color-text-primary);
+}
+
+.truncation-warning {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  background: var(--color-warning-soft);
+  border: 1px solid var(--color-warning);
+  border-radius: 0.75rem;
+  padding: 0.75rem 1rem;
+}
+
+.truncation-title {
+  font-weight: 600;
+  color: var(--color-warning);
+}
+
+.truncation-message {
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
 }
 
 .bulk-bar {

@@ -60,6 +60,13 @@ class ChannelPlaylistsAdapter(
                 crossfade(true)
             }
 
+            // Set accessibility content description for the entire card
+            binding.root.contentDescription = binding.root.context.getString(
+                R.string.a11y_playlist_item,
+                playlist.title,
+                itemCount
+            )
+
             binding.root.setOnClickListener {
                 onPlaylistClick(playlist)
             }

@@ -1,77 +1,99 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Simple list/grid container with pull-to-refresh and pagination support. -->
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:orientation="vertical">
 
-    <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
-        android:id="@+id/swipeRefresh"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent">
-
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/recyclerView"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:clipToPadding="false"
-            android:overScrollMode="never"
-            android:paddingTop="@dimen/spacing_sm"
-            android:paddingBottom="@dimen/bottom_nav_height" />
-
-    </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
-
-    <!-- Empty state view -->
-    <LinearLayout
-        android:id="@+id/emptyState"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="vertical"
-        android:gravity="center"
-        android:padding="@dimen/spacing_lg"
-        android:visibility="gone"
-        tools:visibility="visible">
-
-        <ImageView
-            android:id="@+id/emptyIcon"
-            android:layout_width="@dimen/icon_xlarge"
-            android:layout_height="@dimen/icon_xlarge"
-            android:src="@drawable/ic_videos"
-            app:tint="@color/home_empty_icon"
-            android:importantForAccessibility="no" />
-
-        <TextView
-            android:id="@+id/emptyTitle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/spacing_md"
-            android:text="@string/videos_empty_title"
-            android:textAlignment="center"
-            android:textSize="18sp"
-            android:textStyle="bold"
-            android:textColor="@color/home_text_primary" />
-
-        <TextView
-            android:id="@+id/emptySubtitle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/spacing_sm"
-            android:text="@string/videos_empty_subtitle"
-            android:textAlignment="center"
-            android:textSize="14sp"
-            android:textColor="@color/home_empty_text" />
-
-    </LinearLayout>
-
-    <!-- Bottom loading indicator for pagination -->
-    <ProgressBar
-        android:id="@+id/loadingMore"
+    <!-- Filter indicator bar (hidden by default) -->
+    <com.google.android.material.chip.Chip
+        android:id="@+id/filterChip"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom|center_horizontal"
-        android:layout_marginBottom="88dp"
-        android:indeterminate="true"
-        android:visibility="gone" />
+        android:layout_margin="@dimen/spacing_sm"
+        android:visibility="gone"
+        android:contentDescription="@string/category_filter_active"
+        app:closeIconVisible="true"
+        app:chipIcon="@drawable/ic_filter"
+        tools:text="Category: Education"
+        tools:visibility="visible" />
 
-</FrameLayout>
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+            android:id="@+id/swipeRefresh"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/recyclerView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:overScrollMode="never"
+                android:paddingTop="@dimen/spacing_sm"
+                android:paddingBottom="@dimen/bottom_nav_height" />
+
+        </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+
+        <!-- Empty state view -->
+        <LinearLayout
+            android:id="@+id/emptyState"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:padding="@dimen/spacing_lg"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <ImageView
+                android:id="@+id/emptyIcon"
+                android:layout_width="@dimen/icon_xlarge"
+                android:layout_height="@dimen/icon_xlarge"
+                android:src="@drawable/ic_videos"
+                app:tint="@color/home_empty_icon"
+                android:importantForAccessibility="no" />
+
+            <TextView
+                android:id="@+id/emptyTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_md"
+                android:text="@string/videos_empty_title"
+                android:textAlignment="center"
+                android:textSize="@dimen/text_section_title"
+                android:textStyle="bold"
+                android:textColor="@color/home_text_primary" />
+
+            <TextView
+                android:id="@+id/emptySubtitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_sm"
+                android:text="@string/videos_empty_subtitle"
+                android:textAlignment="center"
+                android:textSize="@dimen/text_body"
+                android:textColor="@color/home_empty_text" />
+
+        </LinearLayout>
+
+        <!-- Bottom loading indicator for pagination -->
+        <ProgressBar
+            android:id="@+id/loadingMore"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|center_horizontal"
+            android:layout_marginBottom="@dimen/bottom_nav_height"
+            android:indeterminate="true"
+            android:visibility="gone"
+            android:contentDescription="@string/loading_more" />
+
+    </FrameLayout>
+
+</LinearLayout>

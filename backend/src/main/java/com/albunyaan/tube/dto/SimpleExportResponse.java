@@ -12,10 +12,13 @@ import java.util.Map;
 /**
  * Simple export response in the format:
  * [
- *   {"UCxxx": "Channel Name|Category1,Category2", ...},  // Channels
- *   {"PLxxx": "Playlist Name|Category1,Category2", ...}, // Playlists
- *   {"xxx": "Video Title|Category1,Category2", ...}      // Videos
+ *   {"UCxxx": "Channel Name|Category1,Category2|keyword1,keyword2", ...},  // Channels
+ *   {"PLxxx": "Playlist Name|Category1,Category2|keyword1,keyword2", ...}, // Playlists
+ *   {"xxx": "Video Title|Category1,Category2|keyword1,keyword2", ...}      // Videos
  * ]
+ *
+ * The keywords section (after the second pipe) is optional for backward compatibility.
+ * Format: "Title|Categories|Keywords" or "Title|Categories" (legacy)
  */
 public class SimpleExportResponse {
 
@@ -36,7 +39,18 @@ public class SimpleExportResponse {
      * @param categories Comma-separated category names
      */
     public void addChannel(String youtubeId, String title, String categories) {
-        this.channels.put(youtubeId, formatValue(title, categories));
+        this.channels.put(youtubeId, formatValue(title, categories, null));
+    }
+
+    /**
+     * Add a channel to the export with keywords.
+     * @param youtubeId YouTube channel ID (UCxxx)
+     * @param title Channel name
+     * @param categories Comma-separated category names
+     * @param keywords Comma-separated keywords (optional)
+     */
+    public void addChannel(String youtubeId, String title, String categories, String keywords) {
+        this.channels.put(youtubeId, formatValue(title, categories, keywords));
     }
 
     /**
@@ -46,7 +60,18 @@ public class SimpleExportResponse {
      * @param categories Comma-separated category names
      */
     public void addPlaylist(String youtubeId, String title, String categories) {
-        this.playlists.put(youtubeId, formatValue(title, categories));
+        this.playlists.put(youtubeId, formatValue(title, categories, null));
+    }
+
+    /**
+     * Add a playlist to the export with keywords.
+     * @param youtubeId YouTube playlist ID (PLxxx)
+     * @param title Playlist title
+     * @param categories Comma-separated category names
+     * @param keywords Comma-separated keywords (optional)
+     */
+    public void addPlaylist(String youtubeId, String title, String categories, String keywords) {
+        this.playlists.put(youtubeId, formatValue(title, categories, keywords));
     }
 
     /**
@@ -56,17 +81,50 @@ public class SimpleExportResponse {
      * @param categories Comma-separated category names
      */
     public void addVideo(String youtubeId, String title, String categories) {
-        this.videos.put(youtubeId, formatValue(title, categories));
+        this.videos.put(youtubeId, formatValue(title, categories, null));
     }
 
     /**
-     * Format value as "Title|Categories"
+     * Add a video to the export with keywords.
+     * @param youtubeId YouTube video ID
+     * @param title Video title
+     * @param categories Comma-separated category names
+     * @param keywords Comma-separated keywords (optional)
      */
-    private String formatValue(String title, String categories) {
-        if (categories == null || categories.isEmpty()) {
-            return title + "|";
+    public void addVideo(String youtubeId, String title, String categories, String keywords) {
+        this.videos.put(youtubeId, formatValue(title, categories, keywords));
+    }
+
+    /**
+     * Format value as "Title|Categories|Keywords"
+     * Keywords are optional - if empty/null, format is "Title|Categories" for backward compatibility
+     *
+     * Input validation:
+     * - Title must not be null (required field)
+     * - Pipe characters in inputs are replaced with hyphen to preserve format integrity
+     */
+    private String formatValue(String title, String categories, String keywords) {
+        if (title == null) {
+            throw new IllegalArgumentException("Title cannot be null");
         }
-        return title + "|" + categories;
+
+        // Sanitize inputs: replace pipe characters to preserve format integrity
+        String sanitizedTitle = title.replace("|", "-");
+        String sanitizedCategories = (categories != null) ? categories.replace("|", "-") : "";
+        String sanitizedKeywords = (keywords != null) ? keywords.replace("|", "-") : null;
+
+        // Build output: "Title|Categories" or "Title|Categories|Keywords"
+        // Categories is always present (may be empty string)
+        // Keywords section only added if non-null and non-empty
+        StringBuilder sb = new StringBuilder();
+        sb.append(sanitizedTitle);
+        sb.append("|");
+        sb.append(sanitizedCategories);
+
+        if (sanitizedKeywords != null && !sanitizedKeywords.isEmpty()) {
+            sb.append("|").append(sanitizedKeywords);
+        }
+        return sb.toString();
     }
 
     /**

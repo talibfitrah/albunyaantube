@@ -27,9 +27,12 @@ import java.util.concurrent.ExecutionException;
 public class ChannelController {
 
     private final ChannelRepository channelRepository;
+    private final com.github.benmanes.caffeine.cache.Cache<String, Object> workspaceExclusionsCache;
 
-    public ChannelController(ChannelRepository channelRepository) {
+    public ChannelController(ChannelRepository channelRepository,
+                             com.github.benmanes.caffeine.cache.Cache<String, Object> workspaceExclusionsCache) {
         this.channelRepository = channelRepository;
+        this.workspaceExclusionsCache = workspaceExclusionsCache;
     }
 
     /**
@@ -41,23 +44,29 @@ public class ChannelController {
             @RequestParam(required = false) String status
     ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         List<Channel> channels;
-        if (status != null) {
-            channels = channelRepository.findByStatus(status);
-        } else {
-            channels = channelRepository.findByStatus("approved"); // Default to approved
-        }
+        // Normalize status to uppercase to match storage invariant (Channel.setStatus uppercases)
+        String normalizedStatus = (status != null ? status : "APPROVED").toUpperCase();
+        channels = channelRepository.findByStatus(normalizedStatus);
         return ResponseEntity.ok(channels);
     }
 
     /**
-     * Get channels by category
-     * BACKEND-PERF-01: Cached for 15 minutes
+     * Default limit for category queries to prevent unbounded reads.
+     */
+    private static final int DEFAULT_CATEGORY_LIMIT = 500;
+
+    /**
+     * Get channels by category.
+     * BACKEND-PERF-01: Cached for 15 minutes.
+     * QUOTA-SAFETY: Uses bounded query with orderBy to ensure deterministic results.
      */
     @GetMapping("/category/{categoryId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
     @Cacheable(value = CacheConfig.CACHE_CHANNELS, key = "'category-' + #categoryId")
     public ResponseEntity<List<Channel>> getChannelsByCategory(@PathVariable String categoryId)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        List<Channel> channels = channelRepository.findByCategoryId(categoryId);
+        // Use bounded+ordered method to prevent quota exhaustion and ensure deterministic ordering
+        List<Channel> channels = channelRepository.findByCategoryId(categoryId, DEFAULT_CATEGORY_LIMIT);
         return ResponseEntity.ok(channels);
     }
 
@@ -152,6 +161,7 @@ public class ChannelController {
      */
     @PutMapping("/{id}/exclusions")
     @PreAuthorize("hasRole('ADMIN')")
+    @CacheEvict(value = CacheConfig.CACHE_CHANNELS, allEntries = true)
     public ResponseEntity<Channel> updateExclusions(
             @PathVariable String id,
             @RequestBody Channel.ExcludedItems excludedItems
@@ -163,6 +173,7 @@ public class ChannelController {
 
         channel.setExcludedItems(excludedItems);
         Channel updated = channelRepository.save(channel);
+        workspaceExclusionsCache.invalidateAll();
         return ResponseEntity.ok(updated);
     }
 
@@ -192,6 +203,7 @@ public class ChannelController {
      */
     @PostMapping("/{id}/exclusions/{type}/{youtubeId}")
     @PreAuthorize("hasRole('ADMIN')")
+    @CacheEvict(value = CacheConfig.CACHE_CHANNELS, allEntries = true)
     public ResponseEntity<Channel.ExcludedItems> addExclusion(
             @PathVariable String id,
             @PathVariable String type,
@@ -253,6 +265,7 @@ public class ChannelController {
             channel.setExcludedItems(excluded);
             channel.touch();
             channelRepository.save(channel);
+            workspaceExclusionsCache.invalidateAll();
         }
 
         return ResponseEntity.ok(excluded);
@@ -265,6 +278,7 @@ public class ChannelController {
      */
     @DeleteMapping("/{id}/exclusions/{type}/{youtubeId}")
     @PreAuthorize("hasRole('ADMIN')")
+    @CacheEvict(value = CacheConfig.CACHE_CHANNELS, allEntries = true)
     public ResponseEntity<Channel.ExcludedItems> removeExclusion(
             @PathVariable String id,
             @PathVariable String type,
@@ -306,6 +320,7 @@ public class ChannelController {
             channel.setExcludedItems(excluded);
             channel.touch();
             channelRepository.save(channel);
+            workspaceExclusionsCache.invalidateAll();
         }
 
         return ResponseEntity.ok(excluded);

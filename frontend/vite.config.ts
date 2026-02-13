@@ -20,7 +20,15 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    strictPort: true
+    strictPort: true,
+    proxy: {
+      // Proxy /api requests to backend to avoid CORS issues in development
+      '/api': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+        secure: false
+      }
+    }
   },
   build: {
     // Optimize chunk size for better caching
@@ -84,6 +92,8 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
+    // Use process-based isolation to avoid thread-pool instability in CI
+    pool: 'forks',
     setupFiles: ['./tests/setup.ts'],
     include: ['tests/**/*.spec.ts'],
     css: true,

@@ -431,8 +431,7 @@ class PlaybackService : MediaSessionService() {
         val title = metadata.title?.toString() ?: getString(R.string.player_default_title)
         val artist = metadata.artist?.toString() ?: metadata.albumArtist?.toString() ?: ""
 
-        @Suppress("DEPRECATION")
-        val sessionToken = session.sessionCompatToken
+        val sessionToken = android.support.v4.media.session.MediaSessionCompat.Token.fromToken(session.platformToken)
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_play)

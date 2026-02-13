@@ -29,6 +29,11 @@ public class Channel {
      * Cached YouTube metadata
      */
     private String name;
+    /**
+     * Lowercase version of name for case-insensitive prefix queries.
+     * Auto-maintained by setName().
+     */
+    private String nameLower;
     private String description;
     private String thumbnailUrl;
     private Long subscribers;
@@ -83,6 +88,24 @@ public class Channel {
      * Last time this channel was validated against YouTube
      */
     private Timestamp lastValidatedAt;
+
+    /**
+     * Display order for custom sorting in Content Library.
+     * Lower values appear first. Null by default until explicitly set.
+     */
+    private Integer displayOrder;
+
+    /**
+     * Keywords/tags for improved search accuracy.
+     * Optional field - can be null or empty.
+     */
+    private List<String> keywords;
+
+    /**
+     * Lowercase version of keywords for case-insensitive array-contains queries.
+     * Auto-maintained by setKeywords().
+     */
+    private List<String> keywordsLower;
 
     public Channel() {
         this.categoryIds = new ArrayList<>();
@@ -322,6 +345,15 @@ public class Channel {
 
     public void setName(String name) {
         this.name = name;
+        this.nameLower = name != null ? name.toLowerCase(java.util.Locale.ROOT) : null;
+    }
+
+    public String getNameLower() {
+        return nameLower;
+    }
+
+    public void setNameLower(String nameLower) {
+        this.nameLower = nameLower;
     }
 
     public String getDescription() {
@@ -387,6 +419,33 @@ public class Channel {
 
     public void setLastValidatedAt(Timestamp lastValidatedAt) {
         this.lastValidatedAt = lastValidatedAt;
+    }
+
+    public Integer getDisplayOrder() {
+        return displayOrder;
+    }
+
+    public void setDisplayOrder(Integer displayOrder) {
+        this.displayOrder = displayOrder;
+    }
+
+    public List<String> getKeywords() {
+        return keywords;
+    }
+
+    public void setKeywords(List<String> keywords) {
+        this.keywords = keywords;
+        this.keywordsLower = keywords != null
+                ? keywords.stream().filter(k -> k != null).map(k -> k.toLowerCase(java.util.Locale.ROOT)).collect(java.util.stream.Collectors.toList())
+                : null;
+    }
+
+    public List<String> getKeywordsLower() {
+        return keywordsLower;
+    }
+
+    public void setKeywordsLower(List<String> keywordsLower) {
+        this.keywordsLower = keywordsLower;
     }
 }
 

@@ -8,6 +8,7 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
+import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.albunyaan.tube.R
@@ -17,6 +18,7 @@ import com.albunyaan.tube.data.source.ContentService
 import com.albunyaan.tube.databinding.FragmentChannelsNewBinding
 import com.albunyaan.tube.ui.adapters.ChannelAdapter
 import com.albunyaan.tube.ui.detail.ChannelDetailFragment
+import com.albunyaan.tube.ui.utils.isTablet
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -72,7 +74,14 @@ class ChannelsFragmentNew : Fragment(R.layout.fragment_channels_new) {
         }
 
         binding?.recyclerView?.apply {
-            layoutManager = LinearLayoutManager(requireContext())
+            // Use grid layout on tablets for better use of screen real estate
+            // Phone: 1 column (linear), Tablet: 3 columns, TV: 4 columns (from resources)
+            layoutManager = if (requireContext().isTablet()) {
+                val spanCount = resources.getInteger(R.integer.grid_span_count_default).coerceIn(2, 4)
+                GridLayoutManager(requireContext(), spanCount)
+            } else {
+                LinearLayoutManager(requireContext())
+            }
             adapter = this@ChannelsFragmentNew.adapter
 
             // Infinite scroll listener with Fragment-side guards
@@ -84,9 +93,13 @@ class ChannelsFragmentNew : Fragment(R.layout.fragment_channels_new) {
                     // Fragment-side guard: early exit if cannot load more
                     if (!viewModel.canLoadMore) return
 
-                    val layoutManager = recyclerView.layoutManager as? LinearLayoutManager ?: return
-                    val totalItems = layoutManager.itemCount
-                    val lastVisible = layoutManager.findLastVisibleItemPosition()
+                    val lm = recyclerView.layoutManager
+                    val totalItems = lm?.itemCount ?: return
+                    val lastVisible = when (lm) {
+                        is GridLayoutManager -> lm.findLastVisibleItemPosition()
+                        is LinearLayoutManager -> lm.findLastVisibleItemPosition()
+                        else -> return
+                    }
 
                     // Load more when 5 items from bottom (threshold for smooth UX)
                     if (lastVisible >= totalItems - LOAD_MORE_THRESHOLD) {
@@ -102,16 +115,26 @@ class ChannelsFragmentNew : Fragment(R.layout.fragment_channels_new) {
             viewModel.content.collect { state ->
                 when (state) {
                     is ContentListViewModel.ContentState.Loading -> {
-                        Log.d(TAG, "Loading channels...")
-                        binding?.swipeRefresh?.isRefreshing = true
-                        binding?.loadingMore?.visibility = View.GONE
+                        Log.d(TAG, "Loading channels (type=${state.type})...")
+                        when (state.type) {
+                            ContentListViewModel.LoadingType.INITIAL,
+                            ContentListViewModel.LoadingType.REFRESH -> {
+                                // Initial load or pull-to-refresh: show top swipeRefresh indicator
+                                binding?.swipeRefresh?.isRefreshing = true
+                                binding?.loadingMore?.visibility = View.GONE
+                            }
+                            ContentListViewModel.LoadingType.PAGINATION -> {
+                                // Infinite scroll: show bottom loadingMore indicator only
+                                binding?.swipeRefresh?.isRefreshing = false
+                                binding?.loadingMore?.visibility = View.VISIBLE
+                            }
+                        }
                     }
                     is ContentListViewModel.ContentState.Success -> {
                         binding?.swipeRefresh?.isRefreshing = false
-                        // Show/hide bottom loading indicator
-                        binding?.loadingMore?.visibility = if (state.isLoadingMore) View.VISIBLE else View.GONE
+                        binding?.loadingMore?.visibility = View.GONE
                         val channels = state.items.filterIsInstance<ContentItem.Channel>()
-                        Log.d(TAG, "Channels loaded: ${channels.size} items, loadingMore=${state.isLoadingMore}, hasMore=${state.hasMoreData}")
+                        Log.d(TAG, "Channels loaded: ${channels.size} items, hasMore=${state.hasMoreData}")
                         adapter.submitList(channels)
                     }
                     is ContentListViewModel.ContentState.Error -> {

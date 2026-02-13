@@ -37,6 +37,13 @@ class PlaylistAdapter(
             binding.playlistTitle.text = playlist.title
             binding.playlistMeta.text = "${playlist.itemCount} items"
 
+            // Set accessibility content description for the entire card
+            binding.root.contentDescription = binding.root.context.getString(
+                R.string.a11y_playlist_item,
+                playlist.title,
+                playlist.itemCount
+            )
+
             // Load thumbnail with aggressive caching
             binding.playlistThumbnail.loadThumbnailUrl(playlist.thumbnailUrl)
 

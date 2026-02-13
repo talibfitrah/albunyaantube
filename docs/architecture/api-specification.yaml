@@ -71,6 +71,8 @@ tags:
     description: Video validation and health checks
   - name: Content Library
     description: Unified content library management
+  - name: Exclusions
+    description: Workspace-level exclusion management
 
 paths:
   # ============================================================================
@@ -2157,48 +2159,79 @@ paths:
   /admin/content:
     get:
       summary: Get all content with filtering
+      description: |
+        Retrieves content items (channels, playlists, videos) with support for filtering,
+        searching, and pagination.
+
+        **Search Behavior:**
+        Search matches against title, keywords/tags, and description fields using
+        case-insensitive contains matching. This enables finding content by:
+        - Partial title text (e.g., "islam" matches "Introduction to Islam")
+        - Keyword tags (e.g., "quran" matches items tagged with "quran recitation")
+        - Description text (e.g., "arabic" matches items with "arabic" in description)
+
+        **Query Limits (Important):**
+        To prevent Firestore quota exhaustion, this endpoint uses bounded queries that
+        limit results to a maximum of 200 items per content type. When the `truncated`
+        field in the response is `true`, there may be more matching items than shown.
+
+        **Best Practices for Large Datasets:**
+        - Use specific type filters (`types=channel`) instead of fetching all types
+        - Apply category and status filters to narrow results
+        - Use pagination (`page`, `size`) for browsing
+        - For finding specific items, use the search parameter with distinctive terms
       operationId: listContent
       tags: [Content Library]
       parameters:
         - name: types
           in: query
-          description: Comma-separated content types
+          description: Comma-separated content types to include. Defaults to all types.
           schema:
             type: string
             example: channel,playlist,video
         - name: status
           in: query
+          description: Filter by approval status
           schema:
             type: string
             enum: [all, approved, pending, rejected]
             default: all
         - name: category
           in: query
+          description: Filter by category ID
           schema:
             type: string
         - name: search
           in: query
+          description: |
+            Search term to filter results. Matches against title, keywords, and description
+            using case-insensitive contains matching. Note: Search is applied after bounded
+            fetch, so results are limited to the most recent 200 items per content type.
           schema:
             type: string
         - name: sort
           in: query
+          description: Sort order for results
           schema:
             type: string
-            enum: [newest, oldest]
+            enum: [newest, oldest, custom]
             default: newest
         - name: page
           in: query
+          description: Page number (0-indexed)
           schema:
             type: integer
             default: 0
         - name: size
           in: query
+          description: Page size (max 100)
           schema:
             type: integer
             default: 20
+            maximum: 100
       responses:
         '200':
-          description: Content library page
+          description: Content library page with pagination metadata
           content:
             application/json:
               schema:
@@ -2320,6 +2353,250 @@ paths:
         '200':
           description: Bulk action results
 
+  /admin/content/bulk/reorder:
+    post:
+      summary: Bulk reorder content items
+      description: |
+        Update display order for multiple content items. Lower displayOrder values appear first.
+
+        **Sorting Behavior:**
+        - displayOrder is scoped globally across all content types
+        - Items with the same displayOrder are sorted by creation date (newest first)
+        - displayOrder is null until explicitly set via this endpoint
+
+        **Error Handling:**
+        - Returns 400 if any content item ID does not exist
+        - Returns 400 if displayOrder values are negative
+      operationId: bulkReorderContent
+      tags: [Content Library]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [type, id, displayOrder]
+                    properties:
+                      type:
+                        type: string
+                        enum: [channel, playlist, video]
+                        description: Content type
+                      id:
+                        type: string
+                        description: Document ID of the content item
+                      displayOrder:
+                        type: integer
+                        minimum: 0
+                        description: New display order position (lower values appear first)
+      responses:
+        '200':
+          description: Reorder results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkActionResponse'
+        '400':
+          description: Invalid request - missing or invalid items
+        '401':
+          description: Not authenticated
+        '403':
+          description: Requires ADMIN role
+        '503':
+          description: Service temporarily unavailable - Firestore or backend service is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkActionResponse'
+
+  /admin/content/{type}/{id}/keywords:
+    put:
+      summary: Update keywords/tags for a content item
+      description: |
+        Update the keywords (tags) for a channel, playlist, or video.
+        Keywords improve search accuracy by providing additional searchable terms.
+
+        **Auto-enrichment:**
+        Keywords can be auto-populated from YouTube tags during import if not provided.
+        This endpoint allows manual override/editing of keywords.
+
+        **Validation:**
+        - Maximum 50 keywords per item
+        - Each keyword max 100 characters
+        - Empty/whitespace keywords are filtered out
+      operationId: updateKeywords
+      tags: [Content Library]
+      parameters:
+        - name: type
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [channel, playlist, video]
+          description: Content type
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Document ID of the content item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                keywords:
+                  type: array
+                  items:
+                    type: string
+                    maxLength: 100
+                  maxItems: 50
+                  nullable: true
+                  description: List of keywords/tags. Set to null or empty array to clear.
+      responses:
+        '200':
+          description: Keywords updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  keywords:
+                    type: array
+                    items:
+                      type: string
+        '400':
+          description: Invalid request - invalid type or validation error
+        '401':
+          description: Not authenticated
+        '403':
+          description: Requires ADMIN role
+        '404':
+          description: Content item not found
+
+  # ============================================================================
+  # EXCLUSIONS API
+  # ============================================================================
+
+  /admin/exclusions:
+    get:
+      summary: List workspace exclusions
+      description: |
+        List all exclusions across channels and playlists with cursor-based pagination.
+        Supports filtering by parent type, exclude type, and search term.
+      operationId: listExclusions
+      tags: [Exclusions]
+      parameters:
+        - name: cursor
+          in: query
+          schema:
+            type: string
+          description: Pagination cursor from previous response
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 200
+          description: Maximum results per page (default 50, max 200)
+        - name: parentType
+          in: query
+          schema:
+            type: string
+            enum: [CHANNEL, PLAYLIST]
+          description: Filter by parent type
+        - name: excludeType
+          in: query
+          schema:
+            type: string
+            enum: [VIDEO, PLAYLIST]
+          description: Filter by excluded content type
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Search term for filtering
+      responses:
+        '200':
+          description: Paginated list of exclusions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExclusionPage'
+        '400':
+          description: Invalid cursor (non-numeric or negative value)
+        '401':
+          description: Not authenticated
+        '403':
+          description: Requires ADMIN role
+        '503':
+          description: Service unavailable (timeout or database error)
+    post:
+      summary: Create an exclusion
+      description: |
+        Add a new exclusion to a channel or playlist.
+        The exclusion will prevent the specified content from appearing when browsing the parent.
+      operationId: createExclusion
+      tags: [Exclusions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateExclusionRequest'
+      responses:
+        '201':
+          description: Exclusion created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceExclusion'
+        '400':
+          description: Invalid request (missing required fields or invalid parent/exclude type)
+        '401':
+          description: Not authenticated
+        '403':
+          description: Requires ADMIN role
+
+  /admin/exclusions/{id}:
+    delete:
+      summary: Remove an exclusion
+      description: |
+        Delete an exclusion by its composite ID.
+        ID format: "parentType:parentId:storageType:excludeId" (single colon delimiter).
+        The excluded content will again be visible when browsing the parent.
+      operationId: removeExclusion
+      tags: [Exclusions]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Composite exclusion ID (e.g., "CHANNEL:abc123:VIDEO:xyz789")
+      responses:
+        '204':
+          description: Exclusion removed successfully
+        '400':
+          description: Invalid ID format
+        '401':
+          description: Not authenticated
+        '403':
+          description: Requires ADMIN role
+        '404':
+          description: Parent not found
+
 # ==============================================================================
 # COMPONENT SCHEMAS
 # ==============================================================================
@@ -2361,8 +2638,8 @@ components:
           description: Emoji or icon identifier
         displayOrder:
           type: integer
-          default: 0
-          description: Sort order within parent category
+          nullable: true
+          description: Sort order within parent category. Null until explicitly set.
         localizedNames:
           type: object
           nullable: true
@@ -2441,6 +2718,12 @@ components:
           items:
             type: string
           description: List of category IDs this channel belongs to
+        keywords:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: Search keywords/tags for this channel. Auto-populated from YouTube tags during import if not provided.
         status:
           type: string
           enum: [APPROVED, PENDING, REJECTED]
@@ -2470,6 +2753,10 @@ components:
           type: string
           format: date-time
           nullable: true
+        displayOrder:
+          type: integer
+          nullable: true
+          description: Integer sort order. Lower values appear first. Null until explicitly set.
 
     Playlist:
       type: object
@@ -2497,6 +2784,12 @@ components:
           items:
             type: string
           description: List of category IDs this playlist belongs to
+        keywords:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: Search keywords/tags for this playlist.
         channelId:
           type: string
           nullable: true
@@ -2532,6 +2825,10 @@ components:
           type: string
           format: date-time
           nullable: true
+        displayOrder:
+          type: integer
+          nullable: true
+          description: Integer sort order. Lower values appear first. Null until explicitly set.
 
     Video:
       type: object
@@ -2576,6 +2873,12 @@ components:
           items:
             type: string
           description: List of category IDs this video belongs to
+        keywords:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: Search keywords/tags for this video. Auto-populated from YouTube tags during import if not provided.
         status:
           type: string
           enum: [APPROVED, PENDING, REJECTED, UNAVAILABLE]
@@ -2607,6 +2910,10 @@ components:
           type: string
           format: date-time
           nullable: true
+        displayOrder:
+          type: integer
+          nullable: true
+          description: Integer sort order. Lower values appear first. Null until explicitly set.
 
     ExcludedItems:
       type: object
@@ -2938,7 +3245,10 @@ components:
     # Content Library DTOs
     ContentLibraryResponse:
       type: object
-      description: Paginated response for content library
+      description: |
+        Paginated response for content library. The `truncated` field indicates whether
+        results may be incomplete due to bounded query limits (max 200 per content type).
+        UI should display a warning to users when `truncated` is true.
       properties:
         content:
           type: array
@@ -2946,12 +3256,24 @@ components:
             $ref: '#/components/schemas/ContentItem'
         totalItems:
           type: integer
+          description: Total count of items matching filters within the bounded query window
         currentPage:
           type: integer
+          description: Current page number (0-indexed)
         pageSize:
           type: integer
+          description: Number of items per page
         totalPages:
           type: integer
+          description: Total number of pages within the bounded query window
+        truncated:
+          type: boolean
+          description: |
+            Indicates whether results may be incomplete due to bounded query limits.
+            When true, the server capped results to prevent Firestore quota exhaustion,
+            and there may be more items matching the filters than shown. UI should
+            display a message like "Showing most recent results. Use filters or search
+            to find specific items." when this is true.
 
     ContentItem:
       type: object
@@ -2962,6 +3284,9 @@ components:
           enum: [channel, playlist, video]
         id:
           type: string
+        youtubeId:
+          type: string
+          description: YouTube ID for video preview/player functionality
         title:
           type: string
         description:
@@ -2986,6 +3311,16 @@ components:
           format: int64
           nullable: true
           description: Subscriber/video/view count depending on content type
+        displayOrder:
+          type: integer
+          nullable: true
+          description: Integer sort order. Lower values appear first. Null until explicitly set.
+        keywords:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: Search keywords/tags for improved search accuracy. Auto-populated from YouTube tags during import if not provided.
 
     BulkActionRequest:
       type: object
@@ -3037,6 +3372,123 @@ components:
           items:
             type: string
           description: List of error messages for failed items
+
+    # Exclusion DTOs
+    WorkspaceExclusion:
+      type: object
+      description: A single exclusion in the workspace
+      required: [id, parentType, parentId, excludeType, excludeId]
+      properties:
+        id:
+          type: string
+          description: Composite ID in format "parentType:parentId:storageType:excludeId"
+          example: "CHANNEL:abc123:VIDEO:xyz789"
+        parentType:
+          type: string
+          enum: [CHANNEL, PLAYLIST]
+          description: Type of parent entity
+        parentId:
+          type: string
+          description: Internal ID of the parent channel or playlist
+        parentYoutubeId:
+          type: string
+          nullable: true
+          description: YouTube ID of the parent channel or playlist
+        parentName:
+          type: string
+          nullable: true
+          description: Name of the parent channel or playlist
+        excludeType:
+          type: string
+          enum: [VIDEO, PLAYLIST]
+          description: Type of excluded content
+        excludeId:
+          type: string
+          description: YouTube ID of the excluded content
+        reason:
+          type: string
+          nullable: true
+          enum: [LIVESTREAM, SHORT, POST, null]
+          description: Content sub-type reason (LIVESTREAM, SHORT, POST, or null for plain video/playlist)
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Best-available timestamp for the exclusion. Currently derived from the parent entity's updatedAt field (not per-exclusion creation time).
+        createdBy:
+          nullable: true
+          description: Reserved for future use. Currently always null (per-exclusion creator tracking is not implemented).
+          oneOf:
+            - $ref: '#/components/schemas/AdminUserSummary'
+            - type: 'null'
+
+    AdminUserSummary:
+      type: object
+      description: Simplified admin user info for display
+      properties:
+        id:
+          type: string
+          description: User ID
+        email:
+          type: string
+          nullable: true
+          description: User email
+        displayName:
+          type: string
+          nullable: true
+          description: User display name
+
+    CreateExclusionRequest:
+      type: object
+      description: Request body for creating an exclusion
+      required: [parentType, parentId, excludeType, excludeId]
+      properties:
+        parentType:
+          type: string
+          enum: [CHANNEL, PLAYLIST]
+          description: Type of parent entity
+        parentId:
+          type: string
+          description: Internal ID of the parent channel or playlist
+        excludeType:
+          type: string
+          enum: [VIDEO, PLAYLIST]
+          description: Type of content to exclude
+        excludeId:
+          type: string
+          description: YouTube ID of the content to exclude
+        reason:
+          type: string
+          nullable: true
+          enum: [LIVESTREAM, SHORT, POST]
+          description: Content sub-type reason. Routes VIDEO exclusions to the correct storage list (e.g., LIVESTREAM to liveStreams)
+
+    ExclusionPage:
+      type: object
+      description: Cursor-paginated list of exclusions
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceExclusion'
+        pageInfo:
+          type: object
+          properties:
+            nextCursor:
+              type: string
+              nullable: true
+              description: Cursor for fetching the next page (null if no more pages)
+            hasNext:
+              type: boolean
+              description: Whether more pages are available
+            totalCount:
+              type: integer
+              nullable: true
+              description: Total count of matching items (may not always be available)
+            truncated:
+              type: boolean
+              nullable: true
+              description: Whether results were truncated due to safety limits (e.g., max 500 channels). When true, totalCount and results may be incomplete.
 
     # Download DTOs
     DownloadTokenRequest:
@@ -3224,6 +3676,18 @@ components:
         hasNext:
           type: boolean
           description: Whether more pages are available
+        totalCount:
+          type: integer
+          nullable: true
+          description: Total count of items matching current filters (optional, returned by some endpoints)
+        truncated:
+          type: boolean
+          nullable: true
+          description: |
+            Indicates whether results were truncated due to safety limits.
+            When true, the totalCount and results may be incomplete.
+            Used by workspace exclusions aggregation to signal when hard limits
+            (e.g., 500 channels, 1000 playlists) have been hit.
 
     NextUpDto:
       type: object

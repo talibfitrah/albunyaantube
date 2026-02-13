@@ -35,9 +35,11 @@ describe('API Client', () => {
   });
 
   it('should have correct base URL', () => {
+    // In DEV mode, baseURL is empty string (relative) to go through Vite proxy
+    // In production, it would be an absolute URL
     expect(apiClient.defaults.baseURL).toBeDefined();
-    // Should be either env var or default
-    expect(apiClient.defaults.baseURL).toMatch(/^https?:\/\//);
+    // In test mode (which is DEV), expect empty string
+    expect(apiClient.defaults.baseURL).toBe('');
   });
 
   it('should have correct default headers', () => {

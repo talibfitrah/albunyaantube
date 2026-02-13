@@ -7,6 +7,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.albunyaan.tube.R
+import com.albunyaan.tube.data.filters.FilterManager
 import com.albunyaan.tube.data.source.ContentService
 import com.albunyaan.tube.databinding.FragmentSubcategoriesBinding
 import dagger.hilt.android.AndroidEntryPoint
@@ -23,6 +24,9 @@ class SubcategoriesFragment : Fragment(R.layout.fragment_subcategories) {
     @Inject
     @Named("real")
     lateinit var contentService: ContentService
+
+    @Inject
+    lateinit var filterManager: FilterManager
 
     private val categoryId: String by lazy { requireArguments().getString(ARG_CATEGORY_ID).orEmpty() }
     private val categoryName: String by lazy { requireArguments().getString(ARG_CATEGORY_NAME).orEmpty() }
@@ -45,17 +49,51 @@ class SubcategoriesFragment : Fragment(R.layout.fragment_subcategories) {
 
     private fun setupRecyclerView() {
         adapter = CategoryAdapter { subcategory ->
-            android.util.Log.d(TAG, "Subcategory clicked: ${subcategory.name}")
-            // For now, show a toast indicating the category was selected
-            // TODO: Navigate to filtered content list (Videos tab with category filter)
-            android.widget.Toast.makeText(
-                requireContext(),
-                "Category: ${subcategory.name}\n(Filtering not yet implemented)",
-                android.widget.Toast.LENGTH_SHORT
-            ).show()
+            android.util.Log.d(TAG, "Subcategory clicked: ${subcategory.name}, applying filter")
 
-            // Navigate back to categories
-            findNavController().navigateUp()
+            // Set the category filter to the subcategory
+            val filterApplied = try {
+                filterManager.setCategory(subcategory.id)
+                true
+            } catch (e: Exception) {
+                android.util.Log.e(TAG, "Failed to apply category filter", e)
+                context?.let { ctx ->
+                    android.widget.Toast.makeText(
+                        ctx,
+                        getString(R.string.category_filter_error),
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+                false
+            }
+
+            if (filterApplied) {
+                // Show feedback before navigation while context is guaranteed valid
+                android.widget.Toast.makeText(
+                    requireContext(),
+                    getString(R.string.category_filter_applied, subcategory.name),
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+                // Navigate to Videos tab with proper back stack management
+                try {
+                    findNavController().navigate(
+                        R.id.videosFragment,
+                        null,
+                        androidx.navigation.NavOptions.Builder()
+                            .setPopUpTo(R.id.homeFragment, false)
+                            .build()
+                    )
+                } catch (e: Exception) {
+                    android.util.Log.e(TAG, "Navigation to videos failed", e)
+                    context?.let { ctx ->
+                        android.widget.Toast.makeText(
+                            ctx,
+                            getString(R.string.navigation_error),
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            }
         }
 
         binding?.subcategoriesRecyclerView?.apply {

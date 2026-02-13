@@ -212,6 +212,12 @@ export const messages = {
       retry: 'Retry',
       empty: 'No content found. Try adjusting your filters.',
       error: 'Failed to load content.',
+      truncatedWarning: 'Results may be incomplete. Apply filters to narrow down the content.',
+      reorderDisabledTruncated: 'Reorder is disabled when results are truncated. Apply filters to view all items.',
+      reorderDisabledPaginated: 'Reorder is disabled when not all items are displayed. Clear status filter to view all items.',
+      reorderDisabledSearch: 'Reorder is disabled when search is active. Clear search to enable reordering.',
+      reorderDisabledFilters: 'Reorder is disabled when filters are active. Clear filters to enable reordering.',
+      reorderDisabledNotApproved: 'Reorder is only available for approved items. Filter by "Approved" status to enable reordering.',
       clearSelection: 'Clear Selection',
       clear: 'Clear',
       bulkActions: 'Bulk Actions',
@@ -246,6 +252,7 @@ export const messages = {
         status: 'Status',
         allStatuses: 'All Statuses',
         categories: 'Categories',
+        allCategories: 'All Categories',
         searchCategories: 'Search categories...',
         dateAdded: 'Date Added',
         anyDate: 'Any Date',
@@ -256,11 +263,19 @@ export const messages = {
         apply: 'Apply Filters'
       },
       sort: {
+        custom: 'Custom Order',
         newestFirst: 'Newest First',
         oldestFirst: 'Oldest First',
         nameAZ: 'Name (A-Z)',
         nameZA: 'Name (Z-A)'
       },
+      saveOrder: 'Save Order',
+      saving: 'Saving...',
+      orderSaved: 'Order saved',
+      itemsReordered: 'items reordered',
+      errorSavingOrder: 'Failed to save order',
+      partialReorderError: 'Some items failed to reorder',
+      reorderFailed: 'Failed to reorder items',
       bulkMenu: {
         title: 'Bulk Actions',
         approve: 'Approve Selected',
@@ -275,7 +290,14 @@ export const messages = {
       itemsDeleted: 'items deleted',
       errorBulkAction: 'Error performing bulk action',
       categoriesAssigned: 'categories assigned',
-      deleteSuccess: 'Item deleted'
+      deleteSuccess: 'Item deleted',
+      keywords: 'Keywords',
+      editKeywords: 'Edit Keywords',
+      keywordsLabel: 'Keywords/Tags',
+      keywordsPlaceholder: 'Enter keywords separated by commas...',
+      keywordsHelp: 'Keywords improve search accuracy. Separate multiple keywords with commas.',
+      keywordsSaved: 'Keywords saved successfully',
+      errorSavingKeywords: 'Failed to save keywords'
     },
     common: {
       loading: 'Loading...',
@@ -287,6 +309,12 @@ export const messages = {
       },
       retry: 'Retry',
       close: 'Close'
+    },
+    videoPreview: {
+      noVideo: 'No video available',
+      openOnYouTube: 'Open on YouTube',
+      playerTitle: 'Video player: {title}',
+      playerTitleGeneric: 'YouTube video player'
     },
     channelDetails: {
       close: 'Close',
@@ -551,14 +579,16 @@ export const messages = {
         parentIdLabel: 'Parent ID',
         typeLabel: 'Excluded type',
         targetLabel: 'Excluded ID',
-        reasonLabel: 'Reason',
-        validation: 'All fields are required.'
+        reasonLabel: 'Content Type',
+        reasonDefault: 'Regular video',
+        reasonLivestream: 'Livestream',
+        reasonShort: 'Short',
+        validation: 'Parent ID and Excluded ID are required.'
       },
       toasts: {
         added: '{name} added to exclusions.',
         removed: 'Exclusion removed.',
-        bulkRemoved: '{count} exclusions removed.',
-        updated: 'Exclusion updated.'
+        bulkRemoved: '{count} exclusions removed.'
       },
       errors: {
         createFailed: 'Unable to create exclusion. Please try again.',
@@ -567,7 +597,12 @@ export const messages = {
       pagination: {
         previous: 'Previous',
         next: 'Next',
-        showing: 'Showing {count} of {limit} exclusions'
+        showing: 'Showing {count} of {limit} exclusions',
+        showingOfTotal: 'Showing {count} of {total} exclusions'
+      },
+      truncationWarning: {
+        title: 'Results may be incomplete',
+        message: 'The exclusions list has been limited to prevent performance issues. Some exclusions may not be displayed. Use search or filters to find specific exclusions.'
       },
       channelDetail: {
         title: 'Channel Details',
@@ -1238,6 +1273,10 @@ export const messages = {
       users: 'المستخدمون',
       audit: 'سجل التدقيق',
       activity: 'سجل النشاط',
+      settings: 'الإعدادات',
+      settingsProfile: 'الملف الشخصي',
+      settingsNotifications: 'الإشعارات',
+      settingsSystem: 'النظام',
       home: 'الرئيسية',
       channels: 'القنوات',
       playlists: 'قوائم التشغيل',
@@ -1414,6 +1453,12 @@ export const messages = {
       retry: 'إعادة المحاولة',
       empty: 'لم يتم العثور على محتوى. جرب تعديل الفلاتر.',
       error: 'فشل تحميل المحتوى.',
+      truncatedWarning: 'قد تكون النتائج غير مكتملة. استخدم الفلاتر لتضييق نطاق البحث.',
+      reorderDisabledTruncated: 'إعادة الترتيب غير متاحة عندما تكون النتائج مقتطعة. استخدم الفلاتر لعرض جميع العناصر.',
+      reorderDisabledPaginated: 'إعادة الترتيب غير متاحة عندما لا تظهر جميع العناصر. امسح فلتر الحالة لعرض جميع العناصر.',
+      reorderDisabledSearch: 'إعادة الترتيب غير متاحة أثناء البحث. امسح البحث لتفعيل إعادة الترتيب.',
+      reorderDisabledFilters: 'إعادة الترتيب غير متاحة أثناء تطبيق الفلاتر. امسح الفلاتر لتفعيل إعادة الترتيب.',
+      reorderDisabledNotApproved: 'إعادة الترتيب متاحة فقط للعناصر الموافق عليها. اختر حالة "موافق عليه" لتفعيل إعادة الترتيب.',
       clearSelection: 'مسح التحديد',
       clear: 'مسح',
       bulkActions: 'إجراءات جماعية',
@@ -1448,6 +1493,7 @@ export const messages = {
         status: 'الحالة',
         allStatuses: 'جميع الحالات',
         categories: 'الفئات',
+        allCategories: 'جميع الفئات',
         searchCategories: 'البحث عن الفئات...',
         dateAdded: 'تاريخ الإضافة',
         anyDate: 'أي تاريخ',
@@ -1458,11 +1504,19 @@ export const messages = {
         apply: 'تطبيق الفلاتر'
       },
       sort: {
+        custom: 'ترتيب مخصص',
         newestFirst: 'الأحدث أولاً',
         oldestFirst: 'الأقدم أولاً',
         nameAZ: 'الاسم (أ-ي)',
         nameZA: 'الاسم (ي-أ)'
       },
+      saveOrder: 'حفظ الترتيب',
+      saving: 'جارٍ الحفظ...',
+      orderSaved: 'تم حفظ الترتيب',
+      itemsReordered: 'عنصر مُعاد ترتيبه',
+      errorSavingOrder: 'فشل حفظ الترتيب',
+      partialReorderError: 'فشل إعادة ترتيب بعض العناصر',
+      reorderFailed: 'فشل إعادة ترتيب العناصر',
       bulkMenu: {
         title: 'إجراءات جماعية',
         approve: 'اعتماد المحدد',
@@ -1477,7 +1531,14 @@ export const messages = {
       itemsDeleted: 'عنصر محذوف',
       errorBulkAction: 'خطأ في تنفيذ الإجراء الجماعي',
       categoriesAssigned: 'تم تعيين الفئات',
-      deleteSuccess: 'تم حذف العنصر'
+      deleteSuccess: 'تم حذف العنصر',
+      keywords: 'الكلمات المفتاحية',
+      editKeywords: 'تعديل الكلمات المفتاحية',
+      keywordsLabel: 'الكلمات المفتاحية/الوسوم',
+      keywordsPlaceholder: 'أدخل الكلمات المفتاحية مفصولة بفواصل...',
+      keywordsHelp: 'الكلمات المفتاحية تحسن دقة البحث. افصل بين الكلمات المتعددة بفواصل.',
+      keywordsSaved: 'تم حفظ الكلمات المفتاحية بنجاح',
+      errorSavingKeywords: 'فشل في حفظ الكلمات المفتاحية'
     },
     common: {
       loading: 'جارٍ التحميل...',
@@ -1489,6 +1550,12 @@ export const messages = {
       },
       retry: 'إعادة المحاولة',
       close: 'إغلاق'
+    },
+    videoPreview: {
+      noVideo: 'لا يوجد فيديو متاح',
+      openOnYouTube: 'فتح على يوتيوب',
+      playerTitle: 'مشغل الفيديو: {title}',
+      playerTitleGeneric: 'مشغل فيديو يوتيوب'
     },
     registry: {
       heading: 'مساحة عمل السجل',
@@ -1703,14 +1770,16 @@ export const messages = {
         parentIdLabel: 'معرّف المصدر الرئيسي',
         typeLabel: 'نوع العنصر المستبعد',
         targetLabel: 'معرّف العنصر المستبعد',
-        reasonLabel: 'السبب',
-        validation: 'جميع الحقول مطلوبة.'
+        reasonLabel: 'نوع المحتوى',
+        reasonDefault: 'فيديو عادي',
+        reasonLivestream: 'بث مباشر',
+        reasonShort: 'فيديو قصير',
+        validation: 'معرّف المصدر ومعرّف العنصر المستبعد مطلوبان.'
       },
       toasts: {
         added: 'تمت إضافة {name} إلى الاستثناءات.',
         removed: 'تمت إزالة الاستثناء.',
-        bulkRemoved: 'تمت إزالة {count} من الاستثناءات.',
-        updated: 'تم تحديث الاستثناء.'
+        bulkRemoved: 'تمت إزالة {count} من الاستثناءات.'
       },
       errors: {
         createFailed: 'تعذر إنشاء الاستثناء. حاول مرة أخرى.',
@@ -1719,7 +1788,12 @@ export const messages = {
       pagination: {
         previous: 'السابق',
         next: 'التالي',
-        showing: 'إظهار {count} من أصل {limit} استثناءات'
+        showing: 'إظهار {count} من أصل {limit} استثناءات',
+        showingOfTotal: 'إظهار {count} من أصل {total} استثناءات'
+      },
+      truncationWarning: {
+        title: 'قد تكون النتائج غير مكتملة',
+        message: 'تم تحديد قائمة الاستثناءات لمنع مشاكل الأداء. قد لا تظهر بعض الاستثناءات. استخدم البحث أو الفلاتر للعثور على استثناءات محددة.'
       },
       channelDetail: {
         title: 'تفاصيل القناة',
@@ -2169,6 +2243,32 @@ export const messages = {
         skipped: 'متخطى',
         failed: 'فاشل'
       }
+    },
+    notifications: {
+      heading: 'الإشعارات',
+      togglePanel: 'تبديل لوحة الإشعارات',
+      empty: 'لا توجد إشعارات',
+      filters: {
+        all: 'الكل',
+        unread: 'غير مقروءة'
+      },
+      types: {
+        newApproval: 'طلب موافقة جديد',
+        categoryChange: 'تحديث الفئة',
+        userActivity: 'نشاط المستخدم',
+        systemAlert: 'تنبيه النظام'
+      },
+      time: {
+        justNow: 'الآن',
+        minutesAgo: 'منذ {minutes} دقيقة',
+        hoursAgo: 'منذ {hours} ساعة',
+        daysAgo: 'منذ {days} يوم'
+      },
+      actions: {
+        markAllRead: 'تحديد الكل كمقروء',
+        close: 'إغلاق',
+        viewAll: 'عرض كل النشاط'
+      }
     }
   },
   nl: {
@@ -2200,6 +2300,10 @@ export const messages = {
       users: 'Gebruikers',
       audit: 'Auditlogboek',
       activity: 'Activiteitenlogboek',
+      settings: 'Instellingen',
+      settingsProfile: 'Profiel',
+      settingsNotifications: 'Meldingen',
+      settingsSystem: 'Systeem',
       home: 'Home',
       channels: 'Kanalen',
       playlists: 'Afspeellijsten',
@@ -2374,6 +2478,12 @@ export const messages = {
       retry: 'Opnieuw proberen',
       empty: 'Geen inhoud gevonden. Probeer de filters aan te passen.',
       error: 'Inhoud laden is mislukt.',
+      truncatedWarning: 'Resultaten zijn mogelijk onvolledig. Pas filters toe om de inhoud te beperken.',
+      reorderDisabledTruncated: 'Herordenen is uitgeschakeld wanneer resultaten zijn afgekapt. Pas filters toe om alle items te bekijken.',
+      reorderDisabledPaginated: 'Herordenen is uitgeschakeld wanneer niet alle items worden weergegeven. Wis het statusfilter om alle items te bekijken.',
+      reorderDisabledSearch: 'Herordenen is uitgeschakeld tijdens zoeken. Wis de zoekopdracht om herordenen in te schakelen.',
+      reorderDisabledFilters: 'Herordenen is uitgeschakeld wanneer filters actief zijn. Wis filters om herordenen in te schakelen.',
+      reorderDisabledNotApproved: 'Herordenen is alleen beschikbaar voor goedgekeurde items. Filter op "Goedgekeurd" status om herordenen in te schakelen.',
       clearSelection: 'Selectie wissen',
       clear: 'Wissen',
       bulkActions: 'Bulkacties',
@@ -2408,6 +2518,7 @@ export const messages = {
         status: 'Status',
         allStatuses: 'Alle statussen',
         categories: 'Categorieën',
+        allCategories: 'Alle categorieën',
         searchCategories: 'Zoek categorieën...',
         dateAdded: 'Toegevoegd op',
         anyDate: 'Elke datum',
@@ -2418,11 +2529,19 @@ export const messages = {
         apply: 'Filters toepassen'
       },
       sort: {
+        custom: 'Aangepaste volgorde',
         newestFirst: 'Nieuwste eerst',
         oldestFirst: 'Oudste eerst',
         nameAZ: 'Naam (A-Z)',
         nameZA: 'Naam (Z-A)'
       },
+      saveOrder: 'Volgorde opslaan',
+      saving: 'Opslaan...',
+      orderSaved: 'Volgorde opgeslagen',
+      itemsReordered: 'items opnieuw geordend',
+      errorSavingOrder: 'Volgorde opslaan mislukt',
+      partialReorderError: 'Sommige items konden niet opnieuw worden geordend',
+      reorderFailed: 'Opnieuw ordenen van items mislukt',
       bulkMenu: {
         title: 'Bulkacties',
         approve: 'Geselecteerde goedkeuren',
@@ -2437,7 +2556,14 @@ export const messages = {
       itemsDeleted: 'items verwijderd',
       errorBulkAction: 'Fout bij uitvoeren van bulkactie',
       categoriesAssigned: 'categorieën toegewezen',
-      deleteSuccess: 'Item verwijderd'
+      deleteSuccess: 'Item verwijderd',
+      keywords: 'Trefwoorden',
+      editKeywords: 'Trefwoorden bewerken',
+      keywordsLabel: 'Trefwoorden/Tags',
+      keywordsPlaceholder: 'Voer trefwoorden in, gescheiden door komma\'s...',
+      keywordsHelp: 'Trefwoorden verbeteren de zoeknauwkeurigheid. Scheid meerdere trefwoorden met komma\'s.',
+      keywordsSaved: 'Trefwoorden succesvol opgeslagen',
+      errorSavingKeywords: 'Trefwoorden opslaan mislukt'
     },
     common: {
       loading: 'Laden...',
@@ -2449,6 +2575,12 @@ export const messages = {
       },
       retry: 'Opnieuw proberen',
       close: 'Sluiten'
+    },
+    videoPreview: {
+      noVideo: 'Geen video beschikbaar',
+      openOnYouTube: 'Openen op YouTube',
+      playerTitle: 'Videospeler: {title}',
+      playerTitleGeneric: 'YouTube-videospeler'
     },
     registry: {
       heading: 'Registerwerkruimte',
@@ -2663,14 +2795,16 @@ export const messages = {
         parentIdLabel: 'Bovenliggend ID',
         typeLabel: 'Type uitgesloten item',
         targetLabel: 'Uitgesloten ID',
-        reasonLabel: 'Reden',
-        validation: 'Alle velden zijn verplicht.'
+        reasonLabel: 'Inhoudstype',
+        reasonDefault: 'Reguliere video',
+        reasonLivestream: 'Livestream',
+        reasonShort: 'Short',
+        validation: 'Bovenliggend ID en uitgesloten ID zijn verplicht.'
       },
       toasts: {
         added: '{name} toegevoegd aan uitzonderingen.',
         removed: 'Uitzondering verwijderd.',
-        bulkRemoved: '{count} uitzonderingen verwijderd.',
-        updated: 'Uitzondering bijgewerkt.'
+        bulkRemoved: '{count} uitzonderingen verwijderd.'
       },
       errors: {
         createFailed: 'Uitzondering kan niet worden gemaakt. Probeer het opnieuw.',
@@ -2679,7 +2813,12 @@ export const messages = {
       pagination: {
         previous: 'Vorige',
         next: 'Volgende',
-        showing: '{count} van {limit} uitzonderingen'
+        showing: '{count} van {limit} uitzonderingen',
+        showingOfTotal: '{count} van {total} uitzonderingen'
+      },
+      truncationWarning: {
+        title: 'Resultaten kunnen onvolledig zijn',
+        message: 'De uitzonderingenlijst is beperkt om prestatieproblemen te voorkomen. Sommige uitzonderingen worden mogelijk niet weergegeven. Gebruik zoek- of filteropties om specifieke uitzonderingen te vinden.'
       },
       channelDetail: {
         title: 'Kanaaldetails',

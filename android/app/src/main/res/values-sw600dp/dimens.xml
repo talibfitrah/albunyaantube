@@ -98,4 +98,9 @@
     <!-- Splash Screen (Tablet) -->
     <dimen name="splash_logo_size">220dp</dimen>
     <dimen name="splash_title_size">40sp</dimen>
+
+    <!-- Grid Tile Layouts (Tablet - vertical card style) -->
+    <dimen name="grid_tile_avatar_size">80dp</dimen>
+    <dimen name="grid_tile_thumbnail_height">100dp</dimen>
+    <dimen name="grid_tile_content_padding">12dp</dimen>
 </resources>

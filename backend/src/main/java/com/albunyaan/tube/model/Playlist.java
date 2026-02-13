@@ -32,6 +32,11 @@ public class Playlist {
      * Cached YouTube metadata
      */
     private String title;
+    /**
+     * Lowercase version of title for case-insensitive prefix queries.
+     * Auto-maintained by setTitle().
+     */
+    private String titleLower;
     private String description;
     private String thumbnailUrl;
     private Integer itemCount;
@@ -50,6 +55,12 @@ public class Playlist {
      * Excluded videos from this playlist
      */
     private List<String> excludedVideoIds;
+
+    /**
+     * Count of excluded videos - automatically maintained by setExcludedVideoIds().
+     * Enables efficient Firestore queries with whereGreaterThan("excludedVideoCount", 0).
+     */
+    private Integer excludedVideoCount;
 
     /**
      * Metadata
@@ -75,10 +86,29 @@ public class Playlist {
      */
     private Timestamp lastValidatedAt;
 
+    /**
+     * Display order for custom sorting in Content Library.
+     * Lower values appear first. Null by default until explicitly set.
+     */
+    private Integer displayOrder;
+
+    /**
+     * Keywords/tags for improved search accuracy.
+     * Optional field - can be null or empty.
+     */
+    private List<String> keywords;
+
+    /**
+     * Lowercase version of keywords for case-insensitive array-contains queries.
+     * Auto-maintained by setKeywords().
+     */
+    private List<String> keywordsLower;
+
     public Playlist() {
         this.categoryIds = new ArrayList<>();
         this.excludedVideoIds = new ArrayList<>();
-        this.status = "pending";
+        this.excludedVideoCount = 0;
+        this.status = "PENDING";
         this.createdAt = Timestamp.now();
         this.updatedAt = Timestamp.now();
     }
@@ -119,7 +149,8 @@ public class Playlist {
     }
 
     public void setStatus(String status) {
-        this.status = status;
+        // Normalize to uppercase for consistency with Channel and Video models
+        this.status = (status != null) ? status.toUpperCase() : null;
     }
 
     public List<String> getExcludedVideoIds() {
@@ -128,6 +159,16 @@ public class Playlist {
 
     public void setExcludedVideoIds(List<String> excludedVideoIds) {
         this.excludedVideoIds = excludedVideoIds;
+        // Auto-maintain excludedVideoCount for efficient Firestore queries
+        this.excludedVideoCount = (excludedVideoIds != null) ? excludedVideoIds.size() : 0;
+    }
+
+    public Integer getExcludedVideoCount() {
+        return excludedVideoCount;
+    }
+
+    public void setExcludedVideoCount(Integer excludedVideoCount) {
+        this.excludedVideoCount = excludedVideoCount;
     }
 
     public Timestamp getCreatedAt() {
@@ -167,7 +208,7 @@ public class Playlist {
     }
 
     public boolean isApproved() {
-        return "approved".equals(status);
+        return "APPROVED".equals(status);
     }
 
     public String getTitle() {
@@ -176,6 +217,15 @@ public class Playlist {
 
     public void setTitle(String title) {
         this.title = title;
+        this.titleLower = title != null ? title.toLowerCase(java.util.Locale.ROOT) : null;
+    }
+
+    public String getTitleLower() {
+        return titleLower;
+    }
+
+    public void setTitleLower(String titleLower) {
+        this.titleLower = titleLower;
     }
 
     public String getDescription() {
@@ -233,6 +283,33 @@ public class Playlist {
 
     public void setLastValidatedAt(Timestamp lastValidatedAt) {
         this.lastValidatedAt = lastValidatedAt;
+    }
+
+    public Integer getDisplayOrder() {
+        return displayOrder;
+    }
+
+    public void setDisplayOrder(Integer displayOrder) {
+        this.displayOrder = displayOrder;
+    }
+
+    public List<String> getKeywords() {
+        return keywords;
+    }
+
+    public void setKeywords(List<String> keywords) {
+        this.keywords = keywords;
+        this.keywordsLower = keywords != null
+                ? keywords.stream().filter(k -> k != null).map(k -> k.toLowerCase(java.util.Locale.ROOT)).collect(java.util.stream.Collectors.toList())
+                : null;
+    }
+
+    public List<String> getKeywordsLower() {
+        return keywordsLower;
+    }
+
+    public void setKeywordsLower(List<String> keywordsLower) {
+        this.keywordsLower = keywordsLower;
     }
 }
 

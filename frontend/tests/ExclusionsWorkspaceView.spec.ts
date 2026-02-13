@@ -8,7 +8,6 @@ import { messages } from '@/locales/messages';
 import {
   fetchExclusionsPage,
   createExclusion,
-  updateExclusion,
   removeExclusion
 } from '@/services/exclusions';
 import type { Exclusion, ExclusionPage } from '@/types/exclusions';
@@ -16,7 +15,6 @@ import type { Exclusion, ExclusionPage } from '@/types/exclusions';
 vi.mock('@/services/exclusions', () => ({
   fetchExclusionsPage: vi.fn(),
   createExclusion: vi.fn(),
-  updateExclusion: vi.fn(),
   removeExclusion: vi.fn()
 }));
 
@@ -118,7 +116,6 @@ describe('ExclusionsWorkspaceView', () => {
     ]));
     (createExclusion as unknown as vi.Mock).mockReset();
     (removeExclusion as unknown as vi.Mock).mockReset();
-    (updateExclusion as unknown as vi.Mock).mockReset();
   });
 
   it('filters results by search query', async () => {
@@ -223,7 +220,7 @@ describe('ExclusionsWorkspaceView', () => {
       parentId: 'channel:new-parent',
       excludeType: 'VIDEO',
       excludeId: 'video:new',
-      reason: 'Manual QA hold',
+      reason: 'LIVESTREAM',
       createdAt: '2025-10-01T10:00:00Z',
       createdBy: baseUser
     };
@@ -236,13 +233,13 @@ describe('ExclusionsWorkspaceView', () => {
 
     const parentIdField = await screen.findByLabelText(/parent id/i);
     const excludedIdField = screen.getByLabelText(/excluded id/i);
-    const reasonField = screen.getByLabelText(/reason/i);
+    const contentTypeSelect = screen.getByLabelText(/content type/i);
 
     await fireEvent.update(parentIdField, 'channel:new-parent');
     const typeSelect = screen.getByLabelText(/excluded type/i);
     await fireEvent.update(typeSelect, 'VIDEO');
     await fireEvent.update(excludedIdField, 'video:new');
-    await fireEvent.update(reasonField, 'Manual QA hold');
+    await fireEvent.update(contentTypeSelect, 'LIVESTREAM');
 
     (createExclusion as unknown as vi.Mock).mockResolvedValue(response);
 
@@ -255,48 +252,14 @@ describe('ExclusionsWorkspaceView', () => {
         parentId: 'channel:new-parent',
         excludeType: 'VIDEO',
         excludeId: 'video:new',
-        reason: 'Manual QA hold'
+        reason: 'LIVESTREAM'
       });
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
       expect(screen.getByText('video:new', { selector: '.entity-label' })).toBeInTheDocument();
     });
   });
 
-  it('updates an exclusion reason', async () => {
-    const fetchMock = fetchExclusionsPage as unknown as vi.Mock;
-    const original: Exclusion = {
-      id: 'exclusion-1',
-      parentType: 'CHANNEL',
-      parentId: 'channel:alqalam',
-      excludeType: 'PLAYLIST',
-      excludeId: 'playlist:alqalam-foundation',
-      reason: 'Manual removal pending QA',
-      createdAt: '2025-09-20T08:30:00Z',
-      createdBy: baseUser
-    };
-    fetchMock.mockResolvedValueOnce(createPage([original]));
-    const updated: Exclusion = { ...original, reason: 'Updated note', createdAt: '2025-10-02T10:00:00Z' };
-    fetchMock.mockResolvedValueOnce(createPage([updated]));
-
-    renderView();
-
-    const editButton = await screen.findByRole('button', { name: /edit/i });
-    await fireEvent.click(editButton);
-
-    const reasonField = screen.getByLabelText(/reason/i);
-    await fireEvent.update(reasonField, 'Updated note');
-
-    (updateExclusion as unknown as vi.Mock).mockResolvedValue(updated);
-
-    const submit = screen.getByRole('button', { name: /update exclusion/i });
-    await fireEvent.click(submit);
-
-    await waitFor(() => {
-      expect(updateExclusion).toHaveBeenCalledWith('exclusion-1', { reason: 'Updated note' });
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-      expect(screen.getByRole('status')).toHaveTextContent('Exclusion updated.');
-    });
-  });
+  // NOTE: Edit exclusion functionality was removed from the UI - reason is now immutable after creation
 
   it('displays "View Details" button for each exclusion', async () => {
     renderView();

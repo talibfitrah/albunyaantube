@@ -185,4 +185,9 @@
     <dimen name="splash_logo_size">160dp</dimen>
     <dimen name="splash_title_size">32sp</dimen>
     <dimen name="splash_slide_distance">30dp</dimen>
+
+    <!-- Grid Tile Layouts (Phone fallback - not used on phone but needed for compilation) -->
+    <dimen name="grid_tile_avatar_size">56dp</dimen>
+    <dimen name="grid_tile_thumbnail_height">80dp</dimen>
+    <dimen name="grid_tile_content_padding">8dp</dimen>
 </resources>

@@ -79,12 +79,23 @@
             />
           </div>
           <div class="category-list">
+            <label class="filter-option">
+              <input
+                type="radio"
+                name="category"
+                value=""
+                :checked="!filters.category"
+                @change="filters.category = ''; loadContent()"
+              />
+              <span>{{ t('contentLibrary.filters.allCategories') }}</span>
+            </label>
             <label v-for="cat in filteredCategories" :key="cat.id" class="filter-option">
               <input
-                type="checkbox"
+                type="radio"
+                name="category"
                 :value="cat.id"
-                :checked="filters.categories.includes(cat.id)"
-                @change="toggleCategoryFilter(cat.id)"
+                :checked="filters.category === cat.id"
+                @change="filters.category = cat.id; loadContent()"
               />
               <span>{{ cat.name }}</span>
             </label>
@@ -121,12 +132,23 @@
             />
           </div>
           <div class="toolbar-actions">
-            <select v-model="sortBy" class="sort-select" @change="loadContent">
+            <select v-model="sortBy" class="sort-select" @change="handleSortChange">
+              <option value="custom">{{ t('contentLibrary.sort.custom') }}</option>
               <option value="date-desc">{{ t('contentLibrary.sort.newestFirst') }}</option>
               <option value="date-asc">{{ t('contentLibrary.sort.oldestFirst') }}</option>
               <option value="name-asc">{{ t('contentLibrary.sort.nameAZ') }}</option>
               <option value="name-desc">{{ t('contentLibrary.sort.nameZA') }}</option>
             </select>
+            <button
+              v-if="sortBy === 'custom' && hasOrderChanges"
+              type="button"
+              class="btn-save-order"
+              :disabled="isSavingOrder || !isReorderSafe"
+              :title="!isReorderSafe ? t(reorderDisabledReason) : ''"
+              @click="saveOrder"
+            >
+              {{ isSavingOrder ? t('contentLibrary.saving') : t('contentLibrary.saveOrder') }}
+            </button>
           </div>
         </div>
 
@@ -149,8 +171,15 @@
           <p class="empty-message">{{ t('contentLibrary.empty') }}</p>
         </div>
 
-        <!-- Mobile/Tablet Card Grid -->
-        <div v-else class="content-cards">
+        <!-- Truncation Warning Banner -->
+        <template v-else>
+          <div v-if="isTruncated" class="truncation-warning">
+            <span class="warning-icon">⚠️</span>
+            <span>{{ t('contentLibrary.truncatedWarning') }}</span>
+          </div>
+
+        <!-- Mobile/Tablet Card Grid (only render on mobile/tablet) -->
+        <div v-if="!isDesktop" class="content-cards">
           <div
             v-for="item in content"
             :key="item.id"
@@ -171,6 +200,7 @@
                 v-if="item.thumbnailUrl"
                 :src="item.thumbnailUrl"
                 :alt="item.title"
+                @error="handleThumbnailError($event, item)"
               />
               <div v-else class="thumbnail-placeholder"></div>
               <span class="type-badge-card" :class="`type-${item.type}`">
@@ -217,6 +247,14 @@
               </button>
               <button
                 type="button"
+                class="card-action-btn"
+                @click="openKeywordsModal(item)"
+              >
+                <span class="action-icon">🔑</span>
+                <span class="action-label">{{ t('contentLibrary.keywords') }}</span>
+              </button>
+              <button
+                type="button"
                 class="card-action-btn delete"
                 @click="confirmDelete(item)"
               >
@@ -227,11 +265,12 @@
           </div>
         </div>
 
-        <!-- Desktop Table (hidden on mobile) -->
-        <div v-if="content.length > 0" class="content-table-wrapper">
+        <!-- Desktop Table (only render on desktop) -->
+        <div v-if="isDesktop" class="content-table-wrapper">
           <table class="content-table">
             <thead>
               <tr>
+                <th v-if="sortBy === 'custom'" class="col-drag"></th>
                 <th class="col-checkbox">
                   <input
                     type="checkbox"
@@ -250,10 +289,19 @@
             </thead>
             <tbody>
               <tr
-                v-for="item in content"
+                v-for="(item, index) in content"
                 :key="item.id"
-                :class="{ selected: isSelected(item.id) }"
+                :class="{ selected: isSelected(item.id), 'drag-over': dragOverIndex === index }"
+                :draggable="sortBy === 'custom'"
+                @dragstart="handleDragStart($event, index)"
+                @dragover="handleDragOver($event, index)"
+                @dragleave="handleDragLeave"
+                @drop="handleDrop($event, index)"
+                @dragend="handleDragEnd"
               >
+                <td v-if="sortBy === 'custom'" class="col-drag">
+                  <span class="drag-handle" title="Drag to reorder">⋮⋮</span>
+                </td>
                 <td class="col-checkbox">
                   <input
                     type="checkbox"
@@ -268,6 +316,7 @@
                       :src="item.thumbnailUrl"
                       :alt="item.title"
                       class="thumbnail"
+                      @error="handleThumbnailError($event, item)"
                     />
                     <div v-else class="thumbnail-placeholder-sm"></div>
                     <span class="title-text">{{ item.title }}</span>
@@ -295,14 +344,16 @@
                 </td>
                 <td class="col-date">{{ formatDate(item.createdAt) }}</td>
                 <td class="col-actions">
-                  <button type="button" class="action-btn" @click="openDetailsModal(item)">👁</button>
-                  <button type="button" class="action-btn" @click="openCategoryModal(item)">🏷</button>
-                  <button type="button" class="action-btn delete" @click="confirmDelete(item)">🗑</button>
+                  <button type="button" class="action-btn" @click="openDetailsModal(item)" :title="t('contentLibrary.view')">👁</button>
+                  <button type="button" class="action-btn" @click="openCategoryModal(item)" :title="t('contentLibrary.categories')">🏷</button>
+                  <button type="button" class="action-btn" @click="openKeywordsModal(item)" :title="t('contentLibrary.keywords')">🔑</button>
+                  <button type="button" class="action-btn delete" @click="confirmDelete(item)" :title="t('contentLibrary.delete')">🗑</button>
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
+        </template>
       </main>
     </div>
 
@@ -409,6 +460,14 @@
       @updated="handleModalUpdated"
     />
 
+    <VideoPreviewModal
+      v-if="selectedItemForModal && selectedItemForModal.type === 'video'"
+      :open="videoModalOpen"
+      :youtube-id="selectedItemForModal.youtubeId || selectedItemForModal.id"
+      :title="selectedItemForModal.title"
+      @close="videoModalOpen = false"
+    />
+
     <!-- Category Assignment Modal -->
     <CategoryAssignmentModal
       v-if="categoryModalOpen"
@@ -417,17 +476,53 @@
       @close="closeCategoryModal"
       @assign="handleCategoriesAssigned"
     />
+
+    <!-- Keywords Edit Modal -->
+    <div v-if="keywordsModalOpen" class="keywords-modal-overlay" @click.self="closeKeywordsModal">
+      <div class="keywords-modal">
+        <div class="keywords-modal-header">
+          <h3>{{ t('contentLibrary.editKeywords') }}</h3>
+          <button type="button" class="keywords-modal-close" @click="closeKeywordsModal">×</button>
+        </div>
+        <div class="keywords-modal-content">
+          <p class="keywords-modal-item-title">{{ keywordsEditItem?.title }}</p>
+          <label class="keywords-input-label">{{ t('contentLibrary.keywordsLabel') }}</label>
+          <textarea
+            v-model="keywordsInput"
+            class="keywords-textarea"
+            :placeholder="t('contentLibrary.keywordsPlaceholder')"
+            rows="4"
+          ></textarea>
+          <p class="keywords-help">{{ t('contentLibrary.keywordsHelp') }}</p>
+        </div>
+        <div class="keywords-modal-footer">
+          <button type="button" class="btn-keywords-cancel" @click="closeKeywordsModal">
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            type="button"
+            class="btn-keywords-save"
+            :disabled="isSavingKeywords"
+            @click="saveKeywords"
+          >
+            {{ isSavingKeywords ? t('contentLibrary.saving') : t('common.save') }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import apiClient from '@/services/api/client';
 import ChannelDetailModal from '@/components/exclusions/ChannelDetailModal.vue';
 import PlaylistDetailModal from '@/components/exclusions/PlaylistDetailModal.vue';
+import VideoPreviewModal from '@/components/VideoPreviewModal.vue';
 import CategoryAssignmentModal from '@/components/CategoryAssignmentModal.vue';
 import * as contentLibraryService from '@/services/contentLibrary';
+import type { ReorderItem } from '@/services/contentLibrary';
 
 const { t } = useI18n();
 
@@ -438,8 +533,10 @@ interface ContentItem {
   thumbnailUrl?: string;
   categoryIds: string[];
   status: 'approved' | 'pending' | 'rejected';
-  createdAt: Date;
+  createdAt: Date | null;
   youtubeId?: string;
+  displayOrder?: number;
+  keywords?: string[];
 }
 
 interface Category {
@@ -459,19 +556,85 @@ const sortBy = ref('date-desc');
 const showBulkMenu = ref(false);
 const showFilters = ref(false);
 
+// Drag-drop state for custom ordering
+const dragIndex = ref<number | null>(null);
+const dragOverIndex = ref<number | null>(null);
+const hasOrderChanges = ref(false);
+const isSavingOrder = ref(false);
+const originalOrder = ref<string[]>([]); // Track original order to detect changes
+
+// Truncation warning - true when server limited results to prevent excessive Firestore reads
+const isTruncated = ref(false);
+
+// Reorder safety - tracks whether the current view can safely be reordered
+// Reorder is unsafe when: truncated, paginated (totalItems > displayed), search active, filters active, or non-approved items visible
+const totalItemsFromServer = ref(0);
+const isReorderSafe = computed(() => {
+  // Cannot reorder if results are truncated (server hit safety limit)
+  if (isTruncated.value) return false;
+
+  // Cannot reorder if there are more items than displayed (pagination)
+  if (totalItemsFromServer.value > content.value.length) return false;
+
+  // Cannot reorder if search is active (affects which items are visible)
+  if (searchQuery.value.trim()) return false;
+
+  // Cannot reorder if type filters are active (affects which items are visible)
+  if (filters.value.types.length > 0) return false;
+
+  // Cannot reorder if category filter is active (affects which items are visible)
+  if (filters.value.category) return false;
+
+  // Cannot reorder if date filter is active (affects which items are visible)
+  if (filters.value.dateAdded !== 'any') return false;
+
+  // Cannot reorder if status filter is not "approved" - only approved items can be reordered
+  // This matches the backend enforcement in ContentLibraryController.validateAllReorderOperations()
+  if (filters.value.status !== 'approved') return false;
+
+  // Safe to reorder - we have the complete, unfiltered set of approved items
+  return true;
+});
+
+// Reason why reorder is disabled (for tooltip)
+const reorderDisabledReason = computed(() => {
+  if (isTruncated.value) return 'contentLibrary.reorderDisabledTruncated';
+  if (totalItemsFromServer.value > content.value.length) return 'contentLibrary.reorderDisabledPaginated';
+  if (searchQuery.value.trim()) return 'contentLibrary.reorderDisabledSearch';
+  if (filters.value.types.length > 0) return 'contentLibrary.reorderDisabledFilters';
+  if (filters.value.category) return 'contentLibrary.reorderDisabledFilters';
+  if (filters.value.dateAdded !== 'any') return 'contentLibrary.reorderDisabledFilters';
+  if (filters.value.status !== 'approved') return 'contentLibrary.reorderDisabledNotApproved';
+  return '';
+});
+
+// Track if we're on desktop (>= 1024px) to conditionally render table vs cards
+// This prevents rendering both layouts simultaneously, improving performance
+const isDesktop = ref(window.innerWidth >= 1024);
+function handleResize() {
+  isDesktop.value = window.innerWidth >= 1024;
+}
+
 const filters = ref({
   types: [] as string[],
   status: 'all',
-  categories: [] as string[],
+  category: '', // Single category filter (empty = all)
   dateAdded: 'any'
 });
 
 // Modal State
 const channelModalOpen = ref(false);
 const playlistModalOpen = ref(false);
+const videoModalOpen = ref(false);
 const selectedItemForModal = ref<ContentItem | null>(null);
 const categoryModalOpen = ref(false);
 const itemsForCategoryAssignment = ref<ContentItem[]>([]);
+
+// Keywords Modal State
+const keywordsModalOpen = ref(false);
+const keywordsEditItem = ref<ContentItem | null>(null);
+const keywordsInput = ref('');
+const isSavingKeywords = ref(false);
 
 // Filter Options
 const contentTypes = computed(() => [
@@ -497,7 +660,7 @@ const activeFilterCount = computed(() => {
   let count = 0;
   if (filters.value.types.length > 0) count++;
   if (filters.value.status !== 'all') count++;
-  if (filters.value.categories.length > 0) count++;
+  if (filters.value.category) count++;
   if (filters.value.dateAdded !== 'any') count++;
   return count;
 });
@@ -547,26 +710,100 @@ function toggleTypeFilter(type: string) {
   loadContent();
 }
 
-function toggleCategoryFilter(catId: string) {
-  const index = filters.value.categories.indexOf(catId);
-  if (index > -1) {
-    filters.value.categories.splice(index, 1);
-  } else {
-    filters.value.categories.push(catId);
-  }
-  loadContent();
-}
-
 function resetFilters() {
   filters.value = {
     types: [],
     status: 'all',
-    categories: [],
+    category: '',
     dateAdded: 'any'
   };
   searchQuery.value = '';
   categorySearch.value = '';
   loadContent();
+}
+
+// Sort handling - client-side for name sorts, server for date sorts
+function sortContentLocally() {
+  if (sortBy.value === 'custom') {
+    // Sort by displayOrder (lower values first, nulls at end)
+    content.value.sort((a, b) => {
+      const orderA = a.displayOrder ?? Number.MAX_SAFE_INTEGER;
+      const orderB = b.displayOrder ?? Number.MAX_SAFE_INTEGER;
+      // Tie-breaker: use id for stable ordering when displayOrder is equal
+      if (orderA === orderB) {
+        return a.id.localeCompare(b.id);
+      }
+      return orderA - orderB;
+    });
+  } else if (sortBy.value === 'name-asc') {
+    content.value.sort((a, b) => {
+      const cmp = a.title.localeCompare(b.title);
+      // Tie-breaker: use id for stable ordering
+      return cmp !== 0 ? cmp : a.id.localeCompare(b.id);
+    });
+  } else if (sortBy.value === 'name-desc') {
+    content.value.sort((a, b) => {
+      const cmp = b.title.localeCompare(a.title);
+      // Tie-breaker: use id for stable ordering
+      return cmp !== 0 ? cmp : b.id.localeCompare(a.id);
+    });
+  } else if (sortBy.value === 'date-asc') {
+    content.value.sort((a, b) => {
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      // Tie-breaker: use id for stable ordering
+      if (timeA === timeB) {
+        return a.id.localeCompare(b.id);
+      }
+      return timeA - timeB;
+    });
+  } else {
+    // date-desc (default)
+    content.value.sort((a, b) => {
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      // Tie-breaker: use id for stable ordering
+      if (timeA === timeB) {
+        return b.id.localeCompare(a.id);
+      }
+      return timeB - timeA;
+    });
+  }
+}
+
+// Track what sort was used for last server fetch
+let lastServerSort = 'date-desc';
+
+function handleSortChange() {
+  // Custom order: sort by displayOrder (client-side)
+  if (sortBy.value === 'custom') {
+    sortContentLocally();
+    // Store original order for change detection
+    originalOrder.value = content.value.map(item => item.id);
+    hasOrderChanges.value = false;
+    return;
+  }
+
+  // Reset order tracking when leaving custom mode
+  hasOrderChanges.value = false;
+  originalOrder.value = [];
+
+  // Name sorts are always client-side (server doesn't support them)
+  if (sortBy.value === 'name-asc' || sortBy.value === 'name-desc') {
+    sortContentLocally();
+    return;
+  }
+
+  // Date sorts: only refetch if the server sort direction changed
+  const newServerSort = sortBy.value === 'date-asc' ? 'oldest' : 'newest';
+  const oldServerSort = lastServerSort === 'date-asc' ? 'oldest' : 'newest';
+
+  if (newServerSort !== oldServerSort || content.value.length === 0) {
+    loadContent();
+  } else {
+    // Already have data with correct server sort, just re-sort locally
+    sortContentLocally();
+  }
 }
 
 // Bulk Actions
@@ -654,9 +891,8 @@ function openDetailsModal(item: ContentItem) {
     channelModalOpen.value = true;
   } else if (item.type === 'playlist') {
     playlistModalOpen.value = true;
-  } else {
-    // Videos don't have detail modals
-    console.log('Video details not implemented');
+  } else if (item.type === 'video') {
+    videoModalOpen.value = true;
   }
 }
 
@@ -723,17 +959,72 @@ function closeCategoryModal() {
   itemsForCategoryAssignment.value = [];
 }
 
+// Keywords Modal Functions
+function openKeywordsModal(item: ContentItem) {
+  keywordsEditItem.value = item;
+  keywordsInput.value = (item.keywords || []).join(', ');
+  keywordsModalOpen.value = true;
+}
+
+function closeKeywordsModal() {
+  keywordsModalOpen.value = false;
+  keywordsEditItem.value = null;
+  keywordsInput.value = '';
+}
+
+async function saveKeywords() {
+  if (!keywordsEditItem.value || isSavingKeywords.value) return;
+
+  isSavingKeywords.value = true;
+
+  try {
+    // Parse keywords from comma-separated input
+    const keywords = keywordsInput.value
+      .split(',')
+      .map(k => k.trim())
+      .filter(k => k.length > 0);
+
+    // Call API to update keywords
+    await apiClient.put(
+      `/api/admin/content/${keywordsEditItem.value.type}/${keywordsEditItem.value.id}/keywords`,
+      { keywords }
+    );
+
+    // Update local state
+    const item = content.value.find(c => c.id === keywordsEditItem.value!.id);
+    if (item) {
+      item.keywords = keywords;
+    }
+
+    alert(t('contentLibrary.keywordsSaved'));
+    closeKeywordsModal();
+  } catch (err: any) {
+    console.error('Failed to save keywords:', err);
+    alert(t('contentLibrary.errorSavingKeywords') + ': ' + (err.message || ''));
+  } finally {
+    isSavingKeywords.value = false;
+  }
+}
+
 // Data Loading
+// Max items for custom sort mode to enable reordering.
+// Must not exceed backend's page size cap (100) since ContentLibraryController caps at Math.min(size, 100).
+// Reorder safety is enforced by isReorderSafe computed: disabled when truncated or totalItems > displayed.
+const CUSTOM_SORT_MAX_ITEMS = 100;
+
 async function loadContent() {
   isLoading.value = true;
   error.value = null;
 
   try {
+    // Use larger page size for custom sort mode to enable full reordering
+    const pageSize = sortBy.value === 'custom' ? CUSTOM_SORT_MAX_ITEMS : 100;
+
     // Build query parameters
     const params: Record<string, any> = {
       status: filters.value.status,
       page: 0,
-      size: 100 // Load first 100 items for now
+      size: pageSize
     };
 
     // Add content types if not all selected
@@ -741,13 +1032,22 @@ async function loadContent() {
       params.types = filters.value.types.join(',');
     }
 
+    // Add category filter
+    if (filters.value.category) {
+      params.category = filters.value.category;
+    }
+
     // Add search query
     if (searchQuery.value.trim()) {
       params.search = searchQuery.value.trim();
     }
 
-    // Add sort parameter
-    params.sort = sortBy.value.includes('asc') ? 'oldest' : 'newest';
+    // Add sort parameter (only date-based sorts go to server; name sorts handled client-side)
+    if (sortBy.value === 'date-asc') {
+      params.sort = 'oldest';
+    } else {
+      params.sort = 'newest';
+    }
 
     // Make API call
     const response = await apiClient.get('/api/admin/content', { params });
@@ -760,15 +1060,31 @@ async function loadContent() {
       thumbnailUrl: item.thumbnailUrl,
       categoryIds: item.categoryIds || [],
       status: item.status?.toLowerCase() || 'pending',
-      createdAt: new Date(item.createdAt),
+      createdAt: item.createdAt ? new Date(item.createdAt) : null,
       description: item.description,
       count: item.count,
-      youtubeId:
-        item.youtubeId ||
-        item.youtubeChannelId ||
-        item.youtubePlaylistId ||
-        item.youtubeVideoId
+      youtubeId: item.youtubeId,
+      displayOrder: item.displayOrder ?? null,
+      keywords: item.keywords || []
     }));
+
+    // Track what sort we used for this fetch
+    lastServerSort = sortBy.value === 'date-asc' ? 'date-asc' : 'date-desc';
+
+    // Update truncation state from server response
+    isTruncated.value = response.data.truncated === true;
+
+    // Track total items for reorder safety check
+    totalItemsFromServer.value = response.data.totalItems ?? content.value.length;
+
+    // Warn if custom sort mode has incomplete results
+    if (sortBy.value === 'custom' && !isReorderSafe.value) {
+      console.warn(`Custom sort: reorder disabled. Reason: ${reorderDisabledReason.value}. ` +
+        `Showing ${content.value.length} of ${totalItemsFromServer.value} items.`);
+    }
+
+    // Apply client-side sort if needed (for name sorts, or to ensure consistency)
+    sortContentLocally();
 
   } catch (err: any) {
     console.error('Failed to load content:', err);
@@ -805,17 +1121,148 @@ function getCategoryName(catId: string): string {
   return cat ? cat.name : catId;
 }
 
-function formatDate(date: Date): string {
+function formatDate(date: Date | null | undefined): string {
+  if (!date) {
+    return '—';
+  }
+  const d = new Date(date);
+  if (isNaN(d.getTime())) {
+    return '—';
+  }
   return new Intl.DateTimeFormat('en-US', {
     year: 'numeric',
     month: 'short',
     day: 'numeric'
-  }).format(new Date(date));
+  }).format(d);
+}
+
+// Handle thumbnail load errors by hiding the image and showing placeholder
+function handleThumbnailError(event: Event, item: ContentItem) {
+  const img = event.target as HTMLImageElement;
+  img.style.display = 'none';
+  // Set thumbnailUrl to empty to show placeholder
+  item.thumbnailUrl = '';
+}
+
+// Drag-drop handlers for custom ordering
+function handleDragStart(event: DragEvent, index: number) {
+  if (sortBy.value !== 'custom') return;
+  dragIndex.value = index;
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', index.toString());
+  }
+  // Add visual feedback - use currentTarget (the row with the listener) not target (may be child element)
+  const row = event.currentTarget as HTMLElement;
+  row.classList.add('dragging');
+}
+
+function handleDragOver(event: DragEvent, index: number) {
+  if (sortBy.value !== 'custom' || dragIndex.value === null) return;
+  event.preventDefault();
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'move';
+  }
+  dragOverIndex.value = index;
+}
+
+function handleDragLeave() {
+  dragOverIndex.value = null;
+}
+
+function handleDrop(event: DragEvent, targetIndex: number) {
+  if (sortBy.value !== 'custom' || dragIndex.value === null) return;
+  event.preventDefault();
+
+  const sourceIndex = dragIndex.value;
+  if (sourceIndex !== targetIndex) {
+    // Reorder the content array
+    const item = content.value.splice(sourceIndex, 1)[0];
+    // When moving downward, adjust target index since splice shifted subsequent items
+    const adjustedTarget = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex;
+    content.value.splice(adjustedTarget, 0, item);
+
+    // Update displayOrder values to match new positions
+    content.value.forEach((item, index) => {
+      item.displayOrder = index;
+    });
+
+    // Check if order has changed from original
+    const currentOrder = content.value.map(item => item.id);
+    hasOrderChanges.value = JSON.stringify(currentOrder) !== JSON.stringify(originalOrder.value);
+  }
+
+  // Reset drag state
+  dragIndex.value = null;
+  dragOverIndex.value = null;
+}
+
+function handleDragEnd(event: DragEvent) {
+  // Remove visual feedback - use currentTarget (the row with the listener) not target (may be child element)
+  const row = event.currentTarget as HTMLElement;
+  row.classList.remove('dragging');
+  dragIndex.value = null;
+  dragOverIndex.value = null;
+}
+
+// Save custom order to backend
+async function saveOrder() {
+  // Block reorder when view is not safe for reordering
+  // (truncated, paginated, filtered, or search active)
+  if (!hasOrderChanges.value || isSavingOrder.value || !isReorderSafe.value) return;
+
+  isSavingOrder.value = true;
+
+  try {
+    // Build reorder items from current content positions
+    const items: ReorderItem[] = content.value.map((item, index) => ({
+      type: item.type,
+      id: item.id,
+      displayOrder: index
+    }));
+
+    const result = await contentLibraryService.bulkReorder(items);
+
+    if (result.errors && result.errors.length > 0) {
+      // Partial or complete failure - reload to get actual server state
+      console.error('Reorder errors:', result.errors);
+
+      if (result.successCount > 0) {
+        alert(`${t('contentLibrary.partialReorderError')} - ${result.successCount} ${t('contentLibrary.itemsReordered')}`);
+      } else {
+        alert(t('contentLibrary.reorderFailed'));
+      }
+
+      await loadContent();
+      // Reset order tracking after reload
+      originalOrder.value = content.value.map(item => item.id);
+      hasOrderChanges.value = false;
+    } else if (result.successCount > 0) {
+      // Full success
+      alert(`${t('contentLibrary.orderSaved')} - ${result.successCount} ${t('contentLibrary.itemsReordered')}`);
+      originalOrder.value = content.value.map(item => item.id);
+      hasOrderChanges.value = false;
+    }
+  } catch (err: any) {
+    console.error('Failed to save order:', err);
+    alert(t('contentLibrary.errorSavingOrder') + ': ' + (err.message || ''));
+  } finally {
+    isSavingOrder.value = false;
+  }
 }
 
 onMounted(() => {
   loadCategories();
   loadContent();
+  window.addEventListener('resize', handleResize);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('resize', handleResize);
+  // Clear debounced search timeout to prevent memory leak
+  if (searchTimeout) {
+    clearTimeout(searchTimeout);
+  }
 });
 </script>
 
@@ -1063,6 +1510,24 @@ onMounted(() => {
   to { transform: rotate(360deg); }
 }
 
+/* Truncation Warning */
+.truncation-warning {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  background: var(--color-warning-bg, #fef3cd);
+  border: 1px solid var(--color-warning-border, #ffc107);
+  border-radius: 0.5rem;
+  color: var(--color-warning-text, #856404);
+  font-size: 0.875rem;
+}
+
+.truncation-warning .warning-icon {
+  flex-shrink: 0;
+}
+
 /* Mobile Card Grid */
 .content-cards {
   display: none;
@@ -1168,7 +1633,7 @@ onMounted(() => {
 
 .card-actions {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   border-top: 1px solid var(--color-border);
 }
 
@@ -1692,5 +2157,202 @@ onMounted(() => {
   .filter-chip span {
     min-height: 48px;
   }
+}
+
+/* Drag-drop styles for custom ordering */
+.col-drag {
+  width: 32px;
+  text-align: center;
+}
+
+.drag-handle {
+  cursor: grab;
+  color: var(--color-text-secondary);
+  font-size: 1rem;
+  user-select: none;
+  padding: 0.5rem;
+  display: inline-block;
+}
+
+.drag-handle:hover {
+  color: var(--color-brand);
+}
+
+.content-table tr[draggable="true"] {
+  cursor: grab;
+}
+
+.content-table tr[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.content-table tr.dragging {
+  opacity: 0.5;
+  background: var(--color-background);
+}
+
+.content-table tr.drag-over {
+  border-top: 2px solid var(--color-brand);
+}
+
+.content-table tr.drag-over td {
+  border-top: none;
+}
+
+.btn-save-order {
+  padding: 0.625rem 1.25rem;
+  background: var(--color-brand);
+  color: white;
+  border: none;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.btn-save-order:hover:not(:disabled) {
+  background: var(--color-accent);
+}
+
+.btn-save-order:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.toolbar-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+/* Keywords Modal */
+.keywords-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.keywords-modal {
+  background: var(--color-surface);
+  border-radius: 0.75rem;
+  width: min(500px, 90vw);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+}
+
+.keywords-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.keywords-modal-header h3 {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.keywords-modal-close {
+  background: transparent;
+  border: none;
+  font-size: 1.75rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  color: var(--color-text-secondary);
+}
+
+.keywords-modal-content {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.keywords-modal-item-title {
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0;
+  font-size: 0.9375rem;
+}
+
+.keywords-input-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.keywords-textarea {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  font-size: 0.9375rem;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 100px;
+}
+
+.keywords-textarea:focus {
+  outline: none;
+  border-color: var(--color-brand);
+}
+
+.keywords-help {
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.keywords-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.btn-keywords-cancel,
+.btn-keywords-save {
+  padding: 0.625rem 1.25rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-keywords-cancel {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+}
+
+.btn-keywords-cancel:hover {
+  background: var(--color-background);
+}
+
+.btn-keywords-save {
+  background: var(--color-brand);
+  border: none;
+  color: white;
+}
+
+.btn-keywords-save:hover:not(:disabled) {
+  background: var(--color-accent);
+}
+
+.btn-keywords-save:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 </style>

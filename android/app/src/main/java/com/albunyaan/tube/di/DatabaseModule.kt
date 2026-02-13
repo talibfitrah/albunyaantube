@@ -37,7 +37,7 @@ object DatabaseModule {
         // Release builds will crash on schema mismatch, forcing proper migration implementation.
         // This prevents silent data loss in production.
         if (BuildConfig.DEBUG) {
-            builder.fallbackToDestructiveMigration()
+            builder.fallbackToDestructiveMigration(dropAllTables = true)
         }
         // TODO: Before first production release, implement proper Room migrations
         // to handle schema changes without losing user favorites data.

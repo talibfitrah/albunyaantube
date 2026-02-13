@@ -30,6 +30,11 @@ public class Video {
      * YouTube metadata (cached from YouTube API)
      */
     private String title;
+    /**
+     * Lowercase version of title for case-insensitive prefix queries.
+     * Auto-maintained by setTitle().
+     */
+    private String titleLower;
     private String description;
     private String thumbnailUrl;
     private Integer durationSeconds;
@@ -78,6 +83,24 @@ public class Video {
     private String submittedBy;
     private String approvedBy;
 
+    /**
+     * Display order for custom sorting in Content Library.
+     * Lower values appear first. Null by default until explicitly set.
+     */
+    private Integer displayOrder;
+
+    /**
+     * Keywords/tags for improved search accuracy.
+     * Optional field - can be null or empty.
+     */
+    private List<String> keywords;
+
+    /**
+     * Lowercase version of keywords for case-insensitive array-contains queries.
+     * Auto-maintained by setKeywords().
+     */
+    private List<String> keywordsLower;
+
     public Video() {
         this.categoryIds = new ArrayList<>();
         this.status = "PENDING";
@@ -123,7 +146,8 @@ public class Video {
     }
 
     public void setStatus(String status) {
-        this.status = status;
+        // Normalize to uppercase for consistency across all models
+        this.status = (status != null) ? status.toUpperCase() : null;
     }
 
     public Timestamp getCreatedAt() {
@@ -164,6 +188,15 @@ public class Video {
 
     public void setTitle(String title) {
         this.title = title;
+        this.titleLower = title != null ? title.toLowerCase(java.util.Locale.ROOT) : null;
+    }
+
+    public String getTitleLower() {
+        return titleLower;
+    }
+
+    public void setTitleLower(String titleLower) {
+        this.titleLower = titleLower;
     }
 
     public String getDescription() {
@@ -276,6 +309,33 @@ public class Video {
     public Category getCategory() {
         // This returns null for now - will need to be populated by service layer
         return null;
+    }
+
+    public Integer getDisplayOrder() {
+        return displayOrder;
+    }
+
+    public void setDisplayOrder(Integer displayOrder) {
+        this.displayOrder = displayOrder;
+    }
+
+    public List<String> getKeywords() {
+        return keywords;
+    }
+
+    public void setKeywords(List<String> keywords) {
+        this.keywords = keywords;
+        this.keywordsLower = keywords != null
+                ? keywords.stream().filter(k -> k != null).map(k -> k.toLowerCase(java.util.Locale.ROOT)).collect(java.util.stream.Collectors.toList())
+                : null;
+    }
+
+    public List<String> getKeywordsLower() {
+        return keywordsLower;
+    }
+
+    public void setKeywordsLower(List<String> keywordsLower) {
+        this.keywordsLower = keywordsLower;
     }
 }
 

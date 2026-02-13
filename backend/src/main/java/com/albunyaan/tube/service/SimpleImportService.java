@@ -25,20 +25,31 @@ import java.util.concurrent.ExecutionException;
 
 /**
  * Service for importing content in simple JSON format.
- * Format: [{channelId: "Title|Cat1,Cat2"}, {playlistId: "Title|Cat1,Cat2"}, {videoId: "Title|Cat1,Cat2"}]
+ * Format: [{channelId: "Title|Cat1,Cat2|keyword1,keyword2"}, ...]
+ *
+ * The format supports both legacy (Title|Categories) and new (Title|Categories|Keywords) formats.
+ * Keywords section is optional for backward compatibility.
  *
  * Import flow per item:
  * 1. Check if YouTube ID already exists in Firestore → Skip if exists
  * 2. Validate YouTube ID still exists via YouTube API → Skip if 404
  * 3. Fetch full metadata from YouTube API (title, description, thumbnail)
  * 4. Parse comma-separated categories → Map names to IDs
- * 5. Create Firestore document with status=APPROVED by default
- * 6. Track result (success/failed/skipped with reason)
+ * 5. Parse comma-separated keywords (if present)
+ * 6. Create Firestore document with status=APPROVED by default
+ * 7. Track result (success/failed/skipped with reason)
  */
 @Service
 public class SimpleImportService {
 
     private static final Logger logger = LoggerFactory.getLogger(SimpleImportService.class);
+
+    /**
+     * Keywords bounds - matching ContentLibraryController validation.
+     * Applied during both manual entry and YouTube tag enrichment.
+     */
+    private static final int MAX_KEYWORDS = 50;
+    private static final int MAX_KEYWORD_LENGTH = 100;
 
     private final YouTubeService youTubeService;
     private final CategoryMappingService categoryMappingService;
@@ -134,7 +145,7 @@ public class SimpleImportService {
     }
 
     /**
-     * Import channels from map of {youtubeId: "Title|Categories"}
+     * Import channels from map of {youtubeId: "Title|Categories|Keywords"}
      */
     private void importChannels(
             Map<String, String> channelsMap,
@@ -147,10 +158,11 @@ public class SimpleImportService {
             String youtubeId = entry.getKey();
             String value = entry.getValue();
 
-            // Parse title and categories from "Title|Cat1,Cat2" format
-            String[] parts = value.split("\\|", 2);
+            // Parse title, categories, and keywords from "Title|Cat1,Cat2|keyword1,keyword2" format
+            String[] parts = value.split("\\|", 3);
             String titleFromFile = parts[0].trim();
             String categoriesStr = parts.length > 1 ? parts[1].trim() : "";
+            String keywordsStr = parts.length > 2 ? parts[2].trim() : "";
 
             try {
                 // 1. Check if already exists in Firestore
@@ -181,7 +193,14 @@ public class SimpleImportService {
                 // 3. Parse categories (optional)
                 List<String> categoryIds = categoryMappingService.mapCategoryNamesToIds(categoriesStr);
 
-                // 4. Create channel document (if not validate-only)
+                // 4. Parse keywords (optional) - enrich from YouTube tags if not provided
+                List<String> keywords = parseKeywords(keywordsStr);
+                if ((keywords == null || keywords.isEmpty()) && ytChannel.getTags() != null && !ytChannel.getTags().isEmpty()) {
+                    keywords = normalizeKeywords(ytChannel.getTags());
+                    logger.debug("Enriched channel {} keywords from YouTube tags: {} (normalized)", youtubeId, keywords != null ? keywords.size() : 0);
+                }
+
+                // 5. Create channel document (if not validate-only)
                 if (!validateOnly) {
                     Channel channel = new Channel(youtubeId);
 
@@ -202,6 +221,11 @@ public class SimpleImportService {
 
                     // Set categories
                     channel.setCategoryIds(categoryIds);
+
+                    // Set keywords (if provided)
+                    if (keywords != null && !keywords.isEmpty()) {
+                        channel.setKeywords(keywords);
+                    }
 
                     // Set approval status
                     channel.setStatus(defaultStatus);
@@ -260,7 +284,7 @@ public class SimpleImportService {
     }
 
     /**
-     * Import playlists from map of {youtubeId: "Title|Categories"}
+     * Import playlists from map of {youtubeId: "Title|Categories|Keywords"}
      */
     private void importPlaylists(
             Map<String, String> playlistsMap,
@@ -273,10 +297,11 @@ public class SimpleImportService {
             String youtubeId = entry.getKey();
             String value = entry.getValue();
 
-            // Parse title and categories
-            String[] parts = value.split("\\|", 2);
+            // Parse title, categories, and keywords
+            String[] parts = value.split("\\|", 3);
             String titleFromFile = parts[0].trim();
             String categoriesStr = parts.length > 1 ? parts[1].trim() : "";
+            String keywordsStr = parts.length > 2 ? parts[2].trim() : "";
 
             try {
                 // 1. Check if already exists
@@ -307,7 +332,10 @@ public class SimpleImportService {
                 // 3. Parse categories
                 List<String> categoryIds = categoryMappingService.mapCategoryNamesToIds(categoriesStr);
 
-                // 4. Create playlist document
+                // 4. Parse keywords (optional)
+                List<String> keywords = parseKeywords(keywordsStr);
+
+                // 5. Create playlist document
                 if (!validateOnly) {
                     Playlist playlist = new Playlist(youtubeId);
 
@@ -327,6 +355,11 @@ public class SimpleImportService {
 
                     // Set categories
                     playlist.setCategoryIds(categoryIds);
+
+                    // Set keywords (if provided)
+                    if (keywords != null && !keywords.isEmpty()) {
+                        playlist.setKeywords(keywords);
+                    }
 
                     // Set approval status
                     playlist.setStatus(defaultStatus);
@@ -383,7 +416,7 @@ public class SimpleImportService {
     }
 
     /**
-     * Import videos from map of {youtubeId: "Title|Categories"}
+     * Import videos from map of {youtubeId: "Title|Categories|Keywords"}
      */
     private void importVideos(
             Map<String, String> videosMap,
@@ -396,10 +429,11 @@ public class SimpleImportService {
             String youtubeId = entry.getKey();
             String value = entry.getValue();
 
-            // Parse title and categories
-            String[] parts = value.split("\\|", 2);
+            // Parse title, categories, and keywords
+            String[] parts = value.split("\\|", 3);
             String titleFromFile = parts[0].trim();
             String categoriesStr = parts.length > 1 ? parts[1].trim() : "";
+            String keywordsStr = parts.length > 2 ? parts[2].trim() : "";
 
             try {
                 // 1. Check if already exists
@@ -430,7 +464,14 @@ public class SimpleImportService {
                 // 3. Parse categories
                 List<String> categoryIds = categoryMappingService.mapCategoryNamesToIds(categoriesStr);
 
-                // 4. Create video document
+                // 4. Parse keywords (optional) - enrich from YouTube tags if not provided
+                List<String> keywords = parseKeywords(keywordsStr);
+                if ((keywords == null || keywords.isEmpty()) && ytVideo.getTags() != null && !ytVideo.getTags().isEmpty()) {
+                    keywords = normalizeKeywords(ytVideo.getTags());
+                    logger.debug("Enriched video {} keywords from YouTube tags: {} (normalized)", youtubeId, keywords != null ? keywords.size() : 0);
+                }
+
+                // 5. Create video document
                 if (!validateOnly) {
                     Video video = new Video(youtubeId);
 
@@ -459,6 +500,11 @@ public class SimpleImportService {
 
                     // Set categories
                     video.setCategoryIds(categoryIds);
+
+                    // Set keywords (if provided)
+                    if (keywords != null && !keywords.isEmpty()) {
+                        video.setKeywords(keywords);
+                    }
 
                     // Set approval status
                     video.setStatus(defaultStatus);
@@ -512,6 +558,61 @@ public class SimpleImportService {
                 ));
             }
         }
+    }
+
+    /**
+     * Parse comma-separated keywords string into a list.
+     * @param keywordsStr Comma-separated keywords (can be null or empty)
+     * @return List of trimmed keywords, or null if input is empty/null
+     */
+    private List<String> parseKeywords(String keywordsStr) {
+        if (keywordsStr == null || keywordsStr.isEmpty()) {
+            return null;
+        }
+        List<String> keywords = new ArrayList<>();
+        for (String keyword : keywordsStr.split(",")) {
+            String trimmed = keyword.trim();
+            if (!trimmed.isEmpty()) {
+                keywords.add(trimmed);
+            }
+        }
+        return keywords.isEmpty() ? null : normalizeKeywords(keywords);
+    }
+
+    /**
+     * Normalize keywords list: trim, filter blanks, dedupe, truncate long keywords,
+     * and enforce maximum count. Matches ContentLibraryController validation.
+     *
+     * @param keywords Raw keywords list (can be null)
+     * @return Normalized keywords list, or null if result is empty
+     */
+    private List<String> normalizeKeywords(List<String> keywords) {
+        if (keywords == null || keywords.isEmpty()) {
+            return null;
+        }
+
+        Set<String> seen = new LinkedHashSet<>(); // Preserve order while deduping
+        for (String keyword : keywords) {
+            if (keyword == null) continue;
+            String trimmed = keyword.trim();
+            if (trimmed.isEmpty()) continue;
+
+            // Truncate keywords that exceed max length
+            if (trimmed.length() > MAX_KEYWORD_LENGTH) {
+                trimmed = trimmed.substring(0, MAX_KEYWORD_LENGTH);
+                logger.debug("Truncated keyword to {} chars", MAX_KEYWORD_LENGTH);
+            }
+
+            seen.add(trimmed);
+
+            // Stop once we hit the max
+            if (seen.size() >= MAX_KEYWORDS) {
+                logger.debug("Keywords truncated to max {} items", MAX_KEYWORDS);
+                break;
+            }
+        }
+
+        return seen.isEmpty() ? null : new ArrayList<>(seen);
     }
 }
 

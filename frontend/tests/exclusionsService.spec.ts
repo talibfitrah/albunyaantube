@@ -2,8 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   fetchExclusionsPage,
   createExclusion,
-  updateExclusion,
-  deleteExclusion,
   fetchChannelExclusions,
   addChannelExclusion,
   removeChannelExclusion,
@@ -103,7 +101,8 @@ describe('exclusions service', () => {
 
       expect(global.fetch).toHaveBeenCalledTimes(1);
       const [url] = (global.fetch as vi.Mock).mock.calls[0] as [string, RequestInit];
-      expect(url).toBe('http://localhost:8080/admin/channels/channel-123/exclusions');
+      // In test mode (DEV), uses relative URL for Vite proxy
+      expect(url).toBe('/api/admin/channels/channel-123/exclusions');
       expect(result).toEqual(mockExclusions);
     });
 
@@ -126,7 +125,8 @@ describe('exclusions service', () => {
       const result = await addChannelExclusion('channel-123', 'video', 'video3');
 
       const [url, init] = (global.fetch as vi.Mock).mock.calls[0] as [string, RequestInit];
-      expect(url).toBe('http://localhost:8080/admin/channels/channel-123/exclusions/video/video3');
+      // In test mode (DEV), uses relative URL for Vite proxy
+      expect(url).toBe('/api/admin/channels/channel-123/exclusions/video/video3');
       expect(init.method).toBe('POST');
       expect(result).toEqual(mockUpdatedExclusions);
     });
@@ -150,7 +150,8 @@ describe('exclusions service', () => {
       const result = await removeChannelExclusion('channel-123', 'playlist', 'playlist1');
 
       const [url, init] = (global.fetch as vi.Mock).mock.calls[0] as [string, RequestInit];
-      expect(url).toBe('http://localhost:8080/admin/channels/channel-123/exclusions/playlist/playlist1');
+      // In test mode (DEV), uses relative URL for Vite proxy
+      expect(url).toBe('/api/admin/channels/channel-123/exclusions/playlist/playlist1');
       expect(init.method).toBe('DELETE');
       expect(result).toEqual(mockUpdatedExclusions);
     });
@@ -171,7 +172,8 @@ describe('exclusions service', () => {
 
       expect(global.fetch).toHaveBeenCalledTimes(1);
       const [url] = (global.fetch as vi.Mock).mock.calls[0] as [string, RequestInit];
-      expect(url).toBe('http://localhost:8080/admin/playlists/playlist-123/exclusions');
+      // In test mode (DEV), uses relative URL for Vite proxy; playlists go through registry endpoint
+      expect(url).toBe('/api/admin/registry/playlists/playlist-123/exclusions');
       expect(result).toEqual(mockExclusions);
     });
 
@@ -188,7 +190,8 @@ describe('exclusions service', () => {
       const result = await addPlaylistExclusion('playlist-123', 'video3');
 
       const [url, init] = (global.fetch as vi.Mock).mock.calls[0] as [string, RequestInit];
-      expect(url).toBe('http://localhost:8080/admin/playlists/playlist-123/exclusions/video3');
+      // In test mode (DEV), uses relative URL for Vite proxy; playlists go through registry endpoint
+      expect(url).toBe('/api/admin/registry/playlists/playlist-123/exclusions/video3');
       expect(init.method).toBe('POST');
       expect(result).toEqual(mockUpdatedExclusions);
     });
@@ -206,7 +209,8 @@ describe('exclusions service', () => {
       const result = await removePlaylistExclusion('playlist-123', 'video1');
 
       const [url, init] = (global.fetch as vi.Mock).mock.calls[0] as [string, RequestInit];
-      expect(url).toBe('http://localhost:8080/admin/playlists/playlist-123/exclusions/video1');
+      // In test mode (DEV), uses relative URL for Vite proxy; playlists go through registry endpoint
+      expect(url).toBe('/api/admin/registry/playlists/playlist-123/exclusions/video1');
       expect(init.method).toBe('DELETE');
       expect(result).toEqual(mockUpdatedExclusions);
     });

@@ -168,3 +168,6 @@ synthetic_dash_data.json
 # TestSprite test artifacts
 # -----------------------
 /testsprite_tests/
+
+# Gradle build cache
+.gradle-home/

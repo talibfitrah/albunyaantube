@@ -140,7 +140,8 @@ export async function addToPendingApprovals(
 ): Promise<void> {
   if (itemType === 'channel') {
     const channel = item as AdminSearchChannelResult;
-    const payload: Omit<Channel, 'id'> = {
+    // Note: displayOrder is intentionally omitted - null until explicitly set via reorder
+    const payload: Omit<Channel, 'id' | 'displayOrder'> = {
       youtubeId: channel.ytId || channel.id,
       name: channel.name || '',
       description: null, // AdminSearchChannelResult doesn't include description
@@ -153,7 +154,8 @@ export async function addToPendingApprovals(
     await apiClient.post<Channel>('/api/admin/registry/channels', payload);
   } else if (itemType === 'playlist') {
     const playlist = item as AdminSearchPlaylistResult;
-    const payload: Omit<Playlist, 'id'> = {
+    // Note: displayOrder is intentionally omitted - null until explicitly set via reorder
+    const payload: Omit<Playlist, 'id' | 'displayOrder'> = {
       youtubeId: playlist.ytId || playlist.id,
       title: playlist.title || '',
       description: null, // AdminSearchPlaylistResult doesn't include description
@@ -166,7 +168,8 @@ export async function addToPendingApprovals(
     await apiClient.post<Playlist>('/api/admin/registry/playlists', payload);
   } else if (itemType === 'video') {
     const video = item as AdminSearchVideoResult;
-    const payload: Omit<Video, 'id'> = {
+    // Note: displayOrder is intentionally omitted - null until explicitly set via reorder
+    const payload: Omit<Video, 'id' | 'displayOrder'> = {
       youtubeId: video.ytId || video.id,
       title: video.title || '',
       description: null, // AdminSearchVideoResult doesn't include description

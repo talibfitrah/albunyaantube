@@ -202,8 +202,19 @@ class GlobalStreamResolver private constructor(
             withTimeoutOrNull(timeoutMs) {
                 job.await()
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // Distinguish between caller cancellation vs shared job cancellation:
+            // - If the caller's coroutine is no longer active, rethrow to propagate cancellation
+            //   (e.g., fragment destroyed mid-resolve → structured concurrency demands propagation)
+            // - If the caller is still active but the shared job was cancelled (e.g., cancelResolve
+            //   or forceRefresh), return null so the caller can handle gracefully
+            if (!currentCoroutineContext().isActive) {
+                Log.d(TAG, "[$caller] caller cancelled while awaiting new job for $videoId")
+                throw e
+            }
+            Log.w(TAG, "[$caller] shared job cancelled for $videoId, returning null")
+            null
         } catch (e: Exception) {
-            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.w(TAG, "[$caller] resolve failed for $videoId: ${e.message}")
             null
         }

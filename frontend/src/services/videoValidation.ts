@@ -5,7 +5,7 @@ import type {
   TriggerValidationOptions
 } from '@/types/validation';
 
-const BASE_PATH = '/admin/videos';
+const BASE_PATH = '/api/admin/videos';
 
 /**
  * Trigger a manual video validation run

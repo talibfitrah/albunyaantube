@@ -11,8 +11,7 @@ NewPipeExtractor: v0.24.8
 - Enabled iOS client fetch via `YoutubeStreamExtractor.setFetchIosClient(true)` in app init (debug).
 - Captured youtubei requests/responses via OkHttpDownloader debug capture.
 - Monitored `AdaptiveAvail` logs for HLS/DASH availability.
-
-## Key Evidence
+         
 - iOS request captured for `V2Brp_esIVI` (archived in tar):
   - `docs/plans/npe_capture_round4.tar` contains:
     - `npe_capture_round4/V2Brp_esIVI_1766678837548_request.txt` (clientName IOS)
