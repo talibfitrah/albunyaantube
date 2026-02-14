@@ -85,6 +85,7 @@ public class ValidationRun {
      * Legacy field for backward compatibility
      * @deprecated Use videosMarkedArchived instead
      */
+    @Deprecated
     private int videosMarkedUnavailable;
 
     /**
@@ -326,6 +327,7 @@ public class ValidationRun {
     /**
      * @deprecated Use getVideosMarkedArchived() instead
      */
+    @Deprecated
     public int getVideosMarkedUnavailable() {
         return videosMarkedUnavailable;
     }
@@ -333,6 +335,7 @@ public class ValidationRun {
     /**
      * @deprecated Use setVideosMarkedArchived() instead
      */
+    @Deprecated
     public void setVideosMarkedUnavailable(int videosMarkedUnavailable) {
         this.videosMarkedUnavailable = videosMarkedUnavailable;
     }
@@ -523,6 +526,7 @@ public class ValidationRun {
      * Increment the videos checked count
      * @deprecated Use incrementVideosChecked() for clarity
      */
+    @Deprecated
     public void incrementChecked() {
         this.videosChecked++;
     }
@@ -546,6 +550,7 @@ public class ValidationRun {
      * Increment the unavailable count
      * @deprecated Use incrementVideosArchived() instead
      */
+    @Deprecated
     public void incrementUnavailable() {
         this.videosMarkedUnavailable++;
         this.videosMarkedArchived++; // Keep new field in sync
