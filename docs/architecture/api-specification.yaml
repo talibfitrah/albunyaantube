@@ -2556,6 +2556,12 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateExclusionRequest'
       responses:
+        '200':
+          description: Exclusion already existed (idempotent no-op). No mutation occurred.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceExclusion'
         '201':
           description: Exclusion created successfully
           content:

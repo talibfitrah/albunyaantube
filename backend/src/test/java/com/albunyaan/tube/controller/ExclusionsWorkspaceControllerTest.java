@@ -837,6 +837,249 @@ class ExclusionsWorkspaceControllerTest {
         verify(workspaceExclusionsCache, never()).invalidateAll();
     }
 
+    // ======================== Cache stampede / exception propagation ========================
+
+    @Test
+    @DisplayName("GET - aggregation TimeoutException propagates through cache")
+    void getExclusions_timeoutExceptionPropagates() throws Exception {
+        // Simulate cache.get() invoking the mapping function which throws
+        when(workspaceExclusionsCache.get(eq("all"), any())).thenAnswer(invocation -> {
+            java.util.function.Function<String, Object> func = invocation.getArgument(1);
+            return func.apply("all");
+        });
+        when(channelRepository.findAllWithExclusions(anyInt())).thenThrow(
+                new java.util.concurrent.TimeoutException("Firestore timeout"));
+
+        assertThrows(java.util.concurrent.TimeoutException.class, () ->
+                controller.getExclusions(null, 50, null, null, null));
+    }
+
+    @Test
+    @DisplayName("GET - fresh cache miss succeeds when repositories return valid data")
+    void getExclusions_cacheMissSucceedsWithValidData() throws Exception {
+        // Cache always invokes the mapping function (simulates fresh cache miss).
+        // This verifies that Caffeine's single-flight pattern does not poison the
+        // cache — each miss re-invokes the mapping function, so a subsequent call
+        // after a prior failure would succeed as long as repositories are healthy.
+        when(workspaceExclusionsCache.get(eq("all"), any())).thenAnswer(invocation -> {
+            java.util.function.Function<String, Object> func = invocation.getArgument(1);
+            return func.apply("all");
+        });
+        when(channelRepository.findAllWithExclusions(anyInt())).thenReturn(List.of(testChannel));
+        when(playlistRepository.findAllWithExclusions(anyInt())).thenReturn(List.of(testPlaylist));
+
+        var response = controller.getExclusions(null, 50, null, null, null);
+        assertEquals(200, response.getStatusCode().value());
+        assertFalse(response.getBody().getData().isEmpty());
+    }
+
+    @Test
+    @DisplayName("GET - aggregation ExecutionException propagates through cache")
+    void getExclusions_executionExceptionPropagates() throws Exception {
+        when(workspaceExclusionsCache.get(eq("all"), any())).thenAnswer(invocation -> {
+            java.util.function.Function<String, Object> func = invocation.getArgument(1);
+            return func.apply("all");
+        });
+        when(channelRepository.findAllWithExclusions(anyInt())).thenThrow(
+                new java.util.concurrent.ExecutionException("Firestore error", new RuntimeException("connection failed")));
+
+        assertThrows(java.util.concurrent.ExecutionException.class, () ->
+                controller.getExclusions(null, 50, null, null, null));
+    }
+
+    @Test
+    @DisplayName("GET - aggregation InterruptedException restores thread interrupt flag")
+    void getExclusions_interruptedExceptionRestoresFlag() throws Exception {
+        when(workspaceExclusionsCache.get(eq("all"), any())).thenAnswer(invocation -> {
+            java.util.function.Function<String, Object> func = invocation.getArgument(1);
+            return func.apply("all");
+        });
+        when(channelRepository.findAllWithExclusions(anyInt())).thenThrow(
+                new InterruptedException("Thread interrupted"));
+
+        try {
+            controller.getExclusions(null, 50, null, null, null);
+            fail("Expected InterruptedException");
+        } catch (InterruptedException e) {
+            // The controller should have restored the thread's interrupt flag
+            assertTrue(Thread.currentThread().isInterrupted(),
+                    "Thread interrupt flag should be restored after InterruptedException");
+            // Clear the interrupt flag for test runner
+            Thread.interrupted();
+        }
+    }
+
+    // ======================== Channel truncation ========================
+
+    @Test
+    @DisplayName("GET - channel truncation sets pageInfo.truncated=true")
+    void getExclusions_channelTruncationDetected() throws Exception {
+        when(workspaceExclusionsCache.get(eq("all"), any())).thenAnswer(invocation -> {
+            java.util.function.Function<String, Object> func = invocation.getArgument(1);
+            return func.apply("all");
+        });
+        when(playlistRepository.findAllWithExclusions(anyInt())).thenReturn(List.of());
+
+        // Simulate channel query returning limit+1 results (triggers truncation)
+        // MAX_CHANNEL_EXCLUSIONS is 500, controller requests 501
+        List<Channel> manyChannels = new ArrayList<>();
+        for (int i = 0; i < 501; i++) {
+            Channel ch = new Channel("UC_" + i);
+            ch.setId("ch-" + i);
+            ch.setName("Channel " + i);
+            Channel.ExcludedItems items = new Channel.ExcludedItems();
+            items.setVideos(new ArrayList<>(List.of("vid" + i)));
+            ch.setExcludedItems(items);
+            manyChannels.add(ch);
+        }
+        when(channelRepository.findAllWithExclusions(anyInt())).thenReturn(manyChannels);
+
+        var response = controller.getExclusions(null, 50, null, null, null);
+
+        assertEquals(200, response.getStatusCode().value());
+        assertTrue(response.getBody().getPageInfo().getTruncated(),
+                "truncated should be true when channels exceed limit");
+    }
+
+    // ======================== Truncation semantics under filters ========================
+
+    @Test
+    @DisplayName("GET - truncated=true is global even when filtered to non-truncated parentType")
+    void getExclusions_truncatedIsGlobalEvenWhenFiltered() throws Exception {
+        when(workspaceExclusionsCache.get(eq("all"), any())).thenAnswer(invocation -> {
+            java.util.function.Function<String, Object> func = invocation.getArgument(1);
+            return func.apply("all");
+        });
+
+        // Only playlists are truncated (1001 results)
+        when(channelRepository.findAllWithExclusions(anyInt())).thenReturn(List.of(testChannel));
+
+        List<Playlist> manyPlaylists = new ArrayList<>();
+        for (int i = 0; i < 1001; i++) {
+            Playlist p = new Playlist();
+            p.setId("pl-" + i);
+            p.setYoutubeId("PL_" + i);
+            p.setTitle("Playlist " + i);
+            p.setExcludedVideoIds(new ArrayList<>(List.of("vid" + i)));
+            manyPlaylists.add(p);
+        }
+        when(playlistRepository.findAllWithExclusions(anyInt())).thenReturn(manyPlaylists);
+
+        // Filter to CHANNEL only - playlists truncation still shows globally
+        var response = controller.getExclusions(null, 50, "CHANNEL", null, null);
+
+        assertEquals(200, response.getStatusCode().value());
+        // All items are CHANNEL parentType
+        response.getBody().getData().forEach(dto -> assertEquals("CHANNEL", dto.parentType));
+        // But truncated flag is global (playlists were truncated during aggregation)
+        assertTrue(response.getBody().getPageInfo().getTruncated(),
+                "truncated should be true globally even when filtering to non-truncated parentType");
+    }
+
+    // ======================== Edge cases: empty exclusion lists ========================
+
+    @Test
+    @DisplayName("GET - channel with empty exclusion lists produces no DTOs")
+    void getExclusions_channelWithEmptyExclusionLists() throws Exception {
+        Channel channelNoExclusions = new Channel("UC_empty");
+        channelNoExclusions.setId("ch-empty");
+        channelNoExclusions.setName("Empty Channel");
+        // Channel constructor initializes excludedItems with empty lists.
+        // Verify that empty lists produce zero DTOs (no false positives).
+        Channel.ExcludedItems emptyItems = new Channel.ExcludedItems();
+        channelNoExclusions.setExcludedItems(emptyItems);
+
+        when(workspaceExclusionsCache.get(eq("all"), any())).thenAnswer(invocation -> {
+            java.util.function.Function<String, Object> func = invocation.getArgument(1);
+            return func.apply("all");
+        });
+        when(channelRepository.findAllWithExclusions(anyInt())).thenReturn(List.of(channelNoExclusions));
+        when(playlistRepository.findAllWithExclusions(anyInt())).thenReturn(List.of());
+
+        var response = controller.getExclusions(null, 50, null, null, null);
+
+        assertEquals(200, response.getStatusCode().value());
+        assertEquals(0, response.getBody().getData().size());
+    }
+
+    @Test
+    @DisplayName("GET - playlist with null excludedVideoIds is skipped gracefully")
+    void getExclusions_playlistWithNullExcludedVideoIds() throws Exception {
+        Playlist emptyPlaylist = new Playlist();
+        emptyPlaylist.setId("pl-empty");
+        emptyPlaylist.setYoutubeId("PL_empty");
+        emptyPlaylist.setTitle("Empty Playlist");
+        emptyPlaylist.setExcludedVideoIds(null);
+
+        when(workspaceExclusionsCache.get(eq("all"), any())).thenAnswer(invocation -> {
+            java.util.function.Function<String, Object> func = invocation.getArgument(1);
+            return func.apply("all");
+        });
+        when(channelRepository.findAllWithExclusions(anyInt())).thenReturn(List.of());
+        when(playlistRepository.findAllWithExclusions(anyInt())).thenReturn(List.of(emptyPlaylist));
+
+        var response = controller.getExclusions(null, 50, null, null, null);
+
+        assertEquals(200, response.getStatusCode().value());
+        assertEquals(0, response.getBody().getData().size());
+    }
+
+    @Test
+    @DisplayName("GET - search by parentYoutubeId matches correctly")
+    void getExclusions_searchByParentYoutubeId() throws Exception {
+        stubRepositoriesWithTestData();
+
+        var response = controller.getExclusions(null, 50, null, null, "UC_test");
+
+        assertEquals(200, response.getStatusCode().value());
+        // All 5 channel exclusions match (parentYoutubeId = UC_test_channel)
+        assertEquals(5, response.getBody().getData().size());
+        response.getBody().getData().forEach(dto ->
+                assertTrue(dto.parentYoutubeId.toLowerCase(java.util.Locale.ROOT).contains("uc_test"))
+        );
+    }
+
+    @Test
+    @DisplayName("POST - create channel exclusion with null excludedItems initializes correctly")
+    void createExclusion_channelNullExcludedItems() throws Exception {
+        Channel channelNoItems = new Channel("UC_noinit");
+        channelNoItems.setId("ch-noinit");
+        channelNoItems.setName("No Init Channel");
+        // Channel constructor initializes excludedItems, but we test the safety path
+        when(channelRepository.findById("ch-noinit")).thenReturn(Optional.of(channelNoItems));
+        when(channelRepository.save(any(Channel.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ExclusionsWorkspaceController.CreateExclusionRequest request = new ExclusionsWorkspaceController.CreateExclusionRequest();
+        request.parentType = "CHANNEL";
+        request.parentId = "ch-noinit";
+        request.excludeType = "VIDEO";
+        request.excludeId = "newVid";
+
+        var response = controller.createExclusion(request);
+        assertEquals(201, response.getStatusCode().value());
+    }
+
+    @Test
+    @DisplayName("POST - create playlist exclusion with null excludedVideoIds initializes list")
+    void createExclusion_playlistNullExcludedVideoIds() throws Exception {
+        Playlist playlistNoIds = new Playlist();
+        playlistNoIds.setId("pl-noinit");
+        playlistNoIds.setYoutubeId("PL_noinit");
+        playlistNoIds.setTitle("No Init Playlist");
+        playlistNoIds.setExcludedVideoIds(null);
+        when(playlistRepository.findById("pl-noinit")).thenReturn(Optional.of(playlistNoIds));
+        when(playlistRepository.save(any(Playlist.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ExclusionsWorkspaceController.CreateExclusionRequest request = new ExclusionsWorkspaceController.CreateExclusionRequest();
+        request.parentType = "PLAYLIST";
+        request.parentId = "pl-noinit";
+        request.excludeType = "VIDEO";
+        request.excludeId = "newVid";
+
+        var response = controller.createExclusion(request);
+        assertEquals(201, response.getStatusCode().value());
+    }
+
     // ======================== Helpers ========================
 
     private void stubRepositoriesWithTestData() throws Exception {

@@ -64,14 +64,19 @@ public class PublicContentService {
      * @return Paginated content
      */
     @Cacheable(value = CacheConfig.CACHE_PUBLIC_CONTENT,
-               key = "#type.toUpperCase(T(java.util.Locale).ROOT) + '-' + #cursor + '-' + #limit + '-' + #category + '-' + #length + '-' + #date + '-' + #sort")
+               key = "(#type == null || #type.isBlank() ? 'HOME' : #type).toUpperCase(T(java.util.Locale).ROOT) + '-' + #cursor + '-' + #limit + '-' + #category + '-' + #length + '-' + #date + '-' + #sort")
     public CursorPageDto<ContentItemDto> getContent(
             String type, String cursor, int limit,
             String category, String length, String date, String sort
     ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
 
+        // Null-safe: default to HOME if type is null or blank
+        if (type == null || type.isBlank()) {
+            type = "HOME";
+        }
+
         // For content types that support real cursor pagination
-        switch (type.toUpperCase()) {
+        switch (type.toUpperCase(java.util.Locale.ROOT)) {
             case "CHANNELS":
                 return getChannelsWithCursor(limit, category, cursor);
             case "PLAYLISTS":
@@ -244,7 +249,7 @@ public class PublicContentService {
 
         // Apply sorting based on sort parameter
         if (sort != null && !sort.isBlank()) {
-            switch (sort.toUpperCase()) {
+            switch (sort.toUpperCase(java.util.Locale.ROOT)) {
                 case "OLDEST":
                     stream = stream.sorted((v1, v2) -> {
                         if (v1.getUploadedAt() == null) return 1;
@@ -824,7 +829,7 @@ public class PublicContentService {
         if (length == null || length.isBlank()) return true;
 
         int duration = video.getDurationSeconds() / 60; // Convert to minutes
-        switch (length.toUpperCase()) {
+        switch (length.toUpperCase(java.util.Locale.ROOT)) {
             case "SHORT":
                 return duration < 4;
             case "MEDIUM":
@@ -844,7 +849,7 @@ public class PublicContentService {
         LocalDateTime uploadedAt = video.getUploadedAt().toDate().toInstant()
                 .atZone(java.time.ZoneId.systemDefault()).toLocalDateTime();
 
-        switch (date.toUpperCase()) {
+        switch (date.toUpperCase(java.util.Locale.ROOT)) {
             case "LAST_24_HOURS":
                 return ChronoUnit.HOURS.between(uploadedAt, now) <= 24;
             case "LAST_7_DAYS":

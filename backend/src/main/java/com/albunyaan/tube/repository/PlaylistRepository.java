@@ -629,7 +629,10 @@ public class PlaylistRepository {
 
     /**
      * Find all playlists that have exclusions (excludedVideoCount > 0).
-     * Uses the excludedVideoCount field for efficient querying without full collection scans.
+     * Uses the excludedVideoCount field for efficient inequality queries.
+     *
+     * <p><b>Legacy data:</b> Documents missing the excludedVideoCount field will not appear.
+     * Use {@code backfill-exclusion-counts} profile to populate missing fields.
      *
      * @return List of playlists with at least one excluded video (max 1000)
      */
@@ -639,11 +642,13 @@ public class PlaylistRepository {
 
     /**
      * Find playlists with exclusions, with explicit limit.
-     * Uses the excludedVideoCount field for efficient queries, with a legacy fallback
-     * scan for documents that predate the field.
+     * Uses the excludedVideoCount field for efficient inequality queries.
      *
-     * Fallback triggers only on FAILED_PRECONDITION (missing index), NOT on empty results.
-     * Empty results are legitimate (no playlists have exclusions).
+     * <p><b>Fallback:</b> Triggers on FAILED_PRECONDITION or errors containing "index"
+     * (missing Firestore index). Empty results are legitimate and do NOT trigger fallback.
+     *
+     * <p><b>Legacy data:</b> Documents missing the excludedVideoCount field will not appear.
+     * Use {@code backfill-exclusion-counts} profile to populate missing fields.
      *
      * @param limit Maximum number of results
      * @return List of playlists with at least one excluded video
@@ -678,8 +683,9 @@ public class PlaylistRepository {
 
     /**
      * Legacy fallback: scan playlists to find those with exclusions.
-     * Only used when excludedVideoCount field doesn't exist on documents (FAILED_PRECONDITION).
-     * Uses batched scanning with a safety limit to prevent quota exhaustion.
+     * Only invoked when the primary query fails with FAILED_PRECONDITION (missing Firestore
+     * composite index on excludedVideoCount). NOT invoked on empty results.
+     * Uses batched scanning with a safety limit (max 5,000 docs) to prevent quota exhaustion.
      *
      * @param limit Maximum number of playlists to return
      */

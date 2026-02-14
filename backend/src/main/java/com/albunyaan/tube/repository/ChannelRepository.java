@@ -636,14 +636,18 @@ public class ChannelRepository {
 
     /**
      * Find all channels that have exclusions (totalExcludedCount > 0).
-     * Uses the totalExcludedCount field for efficient queries, with a legacy fallback
-     * scan for documents that predate the field.
+     * Uses the totalExcludedCount field for efficient queries.
      *
-     * Fallback triggers:
-     * - No results from primary query (legacy documents without totalExcludedCount)
-     * - Query fails due to missing composite index or timeout (graceful degradation)
+     * <p><b>Fallback behavior:</b> Falls back to legacy scan on FAILED_PRECONDITION
+     * or errors containing "index" (missing Firestore index). Empty results are
+     * legitimate and do NOT trigger fallback.
      *
-     * Note: Requires Firestore composite index on excludedItems.totalExcludedCount.
+     * <p><b>Legacy data requirement:</b> Documents created before the totalExcludedCount
+     * field was introduced will be invisible to this query. Run the backfill utility
+     * ({@code --spring.profiles.active=backfill-exclusion-counts}) to populate missing
+     * count fields before relying on this query for completeness.
+     *
+     * <p>Requires Firestore composite index on excludedItems.totalExcludedCount.
      * Limited to MAX_EXCLUSIONS_CHANNELS to prevent quota exhaustion.
      *
      * @return List of channels with at least one exclusion (max 500)
@@ -654,10 +658,13 @@ public class ChannelRepository {
 
     /**
      * Find channels with exclusions, with explicit limit.
-     * Uses the totalExcludedCount field for efficient queries, with a legacy fallback
-     * scan only on FAILED_PRECONDITION (missing index).
+     * Uses the totalExcludedCount field for efficient inequality queries.
      *
-     * Empty results are legitimate (no channels have exclusions) and do NOT trigger fallback.
+     * <p><b>Fallback:</b> Triggers on FAILED_PRECONDITION or errors containing "index"
+     * (missing Firestore index). Empty results are legitimate and do NOT trigger fallback.
+     *
+     * <p><b>Legacy data:</b> Documents missing the totalExcludedCount field will not appear.
+     * Use {@code backfill-exclusion-counts} profile to populate missing fields.
      *
      * @param limit Maximum number of results
      * @return List of channels with at least one exclusion
@@ -691,8 +698,9 @@ public class ChannelRepository {
 
     /**
      * Legacy fallback: scan channels to find those with exclusions.
-     * Only used when excludedItems.totalExcludedCount field doesn't exist on documents.
-     * Uses batched scanning with a safety limit to prevent quota exhaustion.
+     * Only invoked when the primary query fails with FAILED_PRECONDITION (missing Firestore
+     * composite index on excludedItems.totalExcludedCount). NOT invoked on empty results.
+     * Uses batched scanning with a safety limit (max 5,000 docs) to prevent quota exhaustion.
      *
      * @param limit Maximum number of channels to return
      */
