@@ -176,7 +176,7 @@ public class ContentLibraryController {
         // Search is fully in-memory to enable matching across all fields (title, keywords, description)
         // This provides better search accuracy than Firestore prefix-only queries
         if (search != null && !search.isBlank()) {
-            String searchLower = search.toLowerCase();
+            String searchLower = search.toLowerCase(java.util.Locale.ROOT);
             allContent = allContent.stream()
                     .filter(item -> matchesSearch(item, searchLower))
                     .collect(Collectors.toList());
@@ -262,7 +262,7 @@ public class ContentLibraryController {
      */
     private boolean matchesSearch(ContentItem item, String searchLower) {
         // Check title (contains match for flexibility)
-        if (item.title != null && item.title.toLowerCase().contains(searchLower)) {
+        if (item.title != null && item.title.toLowerCase(java.util.Locale.ROOT).contains(searchLower)) {
             return true;
         }
         // Check keywords (prefix or contains match for better search accuracy)
@@ -270,7 +270,7 @@ public class ContentLibraryController {
         if (item.keywords != null) {
             for (String keyword : item.keywords) {
                 if (keyword != null) {
-                    String keywordLower = keyword.toLowerCase();
+                    String keywordLower = keyword.toLowerCase(java.util.Locale.ROOT);
                     // Match if keyword starts with search term OR contains search term
                     if (keywordLower.startsWith(searchLower) || keywordLower.contains(searchLower)) {
                         return true;
@@ -279,7 +279,7 @@ public class ContentLibraryController {
             }
         }
         // Check description for search terms (improves search accuracy)
-        if (item.description != null && item.description.toLowerCase().contains(searchLower)) {
+        if (item.description != null && item.description.toLowerCase(java.util.Locale.ROOT).contains(searchLower)) {
             return true;
         }
         return false;

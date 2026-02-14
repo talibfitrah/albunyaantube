@@ -655,7 +655,9 @@ public class ChannelRepository {
     /**
      * Find channels with exclusions, with explicit limit.
      * Uses the totalExcludedCount field for efficient queries, with a legacy fallback
-     * scan for documents that predate the field.
+     * scan only on FAILED_PRECONDITION (missing index).
+     *
+     * Empty results are legitimate (no channels have exclusions) and do NOT trigger fallback.
      *
      * @param limit Maximum number of results
      * @return List of channels with at least one exclusion
@@ -672,15 +674,8 @@ public class ChannelRepository {
                     .get();
 
             result = new ArrayList<>(query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class));
-
-            // Fallback: if no results from primary query, do a bounded scan for legacy documents
-            // This handles channels created before totalExcludedCount was added
-            if (result.isEmpty()) {
-                log.debug("Primary channel exclusions query returned empty, falling back to legacy scan");
-                result = findAllWithExclusionsLegacyScan(limit);
-            }
         } catch (ExecutionException e) {
-            // Check if the cause is a FAILED_PRECONDITION (missing index) or other query error
+            // Only fallback on FAILED_PRECONDITION (missing index), not on empty results
             String message = e.getMessage();
             if (message != null && (message.contains("FAILED_PRECONDITION") || message.contains("index"))) {
                 log.warn("Channel exclusions query failed due to missing index, falling back to legacy scan: {}", message);

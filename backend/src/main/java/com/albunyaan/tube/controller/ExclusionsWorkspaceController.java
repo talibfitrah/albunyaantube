@@ -42,6 +42,7 @@ public class ExclusionsWorkspaceController {
 
     private static final String CACHE_KEY = "all";
     private static final int MAX_CHANNEL_EXCLUSIONS = 500;
+    private static final int MAX_PLAYLIST_EXCLUSIONS = 1000;
     private static final int MAX_PAGE_LIMIT = 200;
 
     private final ChannelRepository channelRepository;
@@ -232,7 +233,8 @@ public class ExclusionsWorkspaceController {
             dto.excludeId = request.excludeId;
             dto.reason = reason;
 
-            return ResponseEntity.status(201).body(dto);
+            // 201 for new exclusion, 200 for duplicate (already existed)
+            return ResponseEntity.status(added ? 201 : 200).body(dto);
 
         } else if ("PLAYLIST".equals(pt)) {
             if (!"VIDEO".equals(et)) {
@@ -249,7 +251,8 @@ public class ExclusionsWorkspaceController {
                 excludedIds = new ArrayList<>();
             }
 
-            if (!excludedIds.contains(request.excludeId)) {
+            boolean added = !excludedIds.contains(request.excludeId);
+            if (added) {
                 excludedIds.add(request.excludeId);
                 playlist.setExcludedVideoIds(excludedIds);
                 playlist.touch();
@@ -268,7 +271,8 @@ public class ExclusionsWorkspaceController {
             dto.excludeId = request.excludeId;
             dto.reason = null; // Playlists don't have reason sub-types
 
-            return ResponseEntity.status(201).body(dto);
+            // 201 for new exclusion, 200 for duplicate (already existed)
+            return ResponseEntity.status(added ? 201 : 200).body(dto);
         } else {
             return ResponseEntity.badRequest().body(Map.of("error", "parentType must be CHANNEL or PLAYLIST"));
         }
@@ -286,7 +290,7 @@ public class ExclusionsWorkspaceController {
         // Parse synthetic ID
         String[] parts = id.split(":", 4);
         if (parts.length != 4) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Invalid exclusion ID format. Expected: parentType:parentId:excludeType:excludeId"));
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid exclusion ID format. Expected: parentType:parentId:storageType:excludeId"));
         }
 
         String pt = parts[0].toUpperCase();
@@ -342,19 +346,40 @@ public class ExclusionsWorkspaceController {
 
     /**
      * Get or compute the cached exclusions aggregation.
-     * Uses the dedicated Caffeine cache with 5-minute TTL and single-entry capacity.
+     * Uses Caffeine's single-flight cache.get(key, mappingFunction) to prevent stampede:
+     * concurrent cache misses for the same key share a single computation.
      */
     private CachedExclusions getCachedExclusions() throws ExecutionException, InterruptedException, TimeoutException {
-        Object cached = workspaceExclusionsCache.getIfPresent(CACHE_KEY);
-        if (cached instanceof CachedExclusions) {
-            log.debug("Workspace exclusions cache HIT");
-            return (CachedExclusions) cached;
+        try {
+            Object value = workspaceExclusionsCache.get(CACHE_KEY, key -> {
+                log.info("Workspace exclusions cache MISS - aggregating from Firestore");
+                try {
+                    return aggregateExclusions();
+                } catch (ExecutionException | InterruptedException | TimeoutException e) {
+                    throw new AggregationException(e);
+                }
+            });
+            return (CachedExclusions) value;
+        } catch (AggregationException e) {
+            // Unwrap the checked exception from the mapping function
+            Throwable cause = e.getCause();
+            if (cause instanceof ExecutionException) throw (ExecutionException) cause;
+            if (cause instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+                throw (InterruptedException) cause;
+            }
+            if (cause instanceof TimeoutException) throw (TimeoutException) cause;
+            throw new ExecutionException("Unexpected aggregation error", cause);
         }
+    }
 
-        log.info("Workspace exclusions cache MISS - aggregating from Firestore");
-        CachedExclusions result = aggregateExclusions();
-        workspaceExclusionsCache.put(CACHE_KEY, result);
-        return result;
+    /**
+     * Wrapper exception to propagate checked exceptions from Caffeine's mapping function.
+     */
+    private static class AggregationException extends RuntimeException {
+        AggregationException(Throwable cause) {
+            super(cause);
+        }
     }
 
     /**
@@ -389,9 +414,12 @@ public class ExclusionsWorkspaceController {
             flattenChannelExclusions(allExclusions, channel, items.getPosts(), "POST", "VIDEO", "POST", updatedAtStr);
         }
 
-        // Fetch playlists with exclusions (bounded)
-        List<Playlist> playlistsWithExclusions = playlistRepository.findAllWithExclusions();
-        // PlaylistRepository already enforces a hard limit of 1000 internally
+        // Fetch playlists with exclusions (bounded, limit+1 for truncation detection)
+        List<Playlist> playlistsWithExclusions = playlistRepository.findAllWithExclusions(MAX_PLAYLIST_EXCLUSIONS + 1);
+        if (playlistsWithExclusions.size() > MAX_PLAYLIST_EXCLUSIONS) {
+            truncated = true;
+            playlistsWithExclusions = playlistsWithExclusions.subList(0, MAX_PLAYLIST_EXCLUSIONS);
+        }
 
         for (Playlist playlist : playlistsWithExclusions) {
             List<String> excludedIds = playlist.getExcludedVideoIds();

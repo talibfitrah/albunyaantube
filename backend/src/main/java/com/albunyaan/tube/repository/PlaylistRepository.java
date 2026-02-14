@@ -623,17 +623,32 @@ public class PlaylistRepository {
     }
 
     /**
+     * Maximum number of playlists to return with exclusions to prevent quota exhaustion.
+     */
+    private static final int MAX_EXCLUSIONS_PLAYLISTS = 1000;
+
+    /**
      * Find all playlists that have exclusions (excludedVideoCount > 0).
      * Uses the excludedVideoCount field for efficient querying without full collection scans.
      *
-     * Note: For playlists created before excludedVideoCount was added, this query won't
-     * find them. Falls back to bounded legacy scan if:
-     * - No results from primary query (legacy documents)
-     * - Query fails due to missing index or timeout (graceful degradation)
-     *
-     * @return List of playlists with at least one excluded video
+     * @return List of playlists with at least one excluded video (max 1000)
      */
     public List<Playlist> findAllWithExclusions() throws ExecutionException, InterruptedException, TimeoutException {
+        return findAllWithExclusions(MAX_EXCLUSIONS_PLAYLISTS);
+    }
+
+    /**
+     * Find playlists with exclusions, with explicit limit.
+     * Uses the excludedVideoCount field for efficient queries, with a legacy fallback
+     * scan for documents that predate the field.
+     *
+     * Fallback triggers only on FAILED_PRECONDITION (missing index), NOT on empty results.
+     * Empty results are legitimate (no playlists have exclusions).
+     *
+     * @param limit Maximum number of results
+     * @return List of playlists with at least one excluded video
+     */
+    public List<Playlist> findAllWithExclusions(int limit) throws ExecutionException, InterruptedException, TimeoutException {
         List<Playlist> result;
 
         try {
@@ -642,23 +657,16 @@ public class PlaylistRepository {
                     .whereGreaterThan("excludedVideoCount", 0)
                     .orderBy("excludedVideoCount", Query.Direction.DESCENDING)
                     .orderBy("createdAt", Query.Direction.DESCENDING)
-                    .limit(1000) // Hard limit to prevent quota exhaustion
+                    .limit(limit)
                     .get();
 
             result = new ArrayList<>(query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class));
-
-            // Fallback: if no results from primary query, do a bounded scan for legacy documents
-            // This handles playlists created before excludedVideoCount was added
-            if (result.isEmpty()) {
-                log.debug("Primary exclusions query returned empty, falling back to legacy scan");
-                result = findAllWithExclusionsLegacyScan();
-            }
         } catch (ExecutionException e) {
             // Check if the cause is a FAILED_PRECONDITION (missing index) or other query error
             String message = e.getMessage();
             if (message != null && (message.contains("FAILED_PRECONDITION") || message.contains("index"))) {
-                log.warn("Exclusions query failed due to missing index, falling back to legacy scan: {}", message);
-                result = findAllWithExclusionsLegacyScan();
+                log.warn("Playlist exclusions query failed due to missing index, falling back to legacy scan: {}", message);
+                result = findAllWithExclusionsLegacyScan(limit);
             } else {
                 // Re-throw other execution exceptions
                 throw e;
@@ -670,17 +678,19 @@ public class PlaylistRepository {
 
     /**
      * Legacy fallback: scan playlists to find those with exclusions.
-     * Only used when excludedVideoCount field doesn't exist on documents.
-     * Limited to 5000 documents to prevent quota exhaustion.
+     * Only used when excludedVideoCount field doesn't exist on documents (FAILED_PRECONDITION).
+     * Uses batched scanning with a safety limit to prevent quota exhaustion.
+     *
+     * @param limit Maximum number of playlists to return
      */
-    private List<Playlist> findAllWithExclusionsLegacyScan() throws ExecutionException, InterruptedException, TimeoutException {
+    private List<Playlist> findAllWithExclusionsLegacyScan(int limit) throws ExecutionException, InterruptedException, TimeoutException {
         List<Playlist> result = new ArrayList<>();
         int batchSize = 500;
         int maxIterations = 10; // Safety limit: 10 * 500 = 5,000 max documents scanned
         int iterations = 0;
         QueryDocumentSnapshot lastDoc = null;
 
-        while (iterations < maxIterations) {
+        while (iterations < maxIterations && result.size() < limit) {
             iterations++;
             Query query = getCollection()
                     .orderBy("createdAt", Query.Direction.DESCENDING)
@@ -703,6 +713,9 @@ public class PlaylistRepository {
                 List<String> excludedVideoIds = playlist.getExcludedVideoIds();
                 if (excludedVideoIds != null && !excludedVideoIds.isEmpty()) {
                     result.add(playlist);
+                    if (result.size() >= limit) {
+                        break;
+                    }
                 }
             }
 

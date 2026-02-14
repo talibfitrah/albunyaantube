@@ -233,8 +233,12 @@ class ExclusionsWorkspaceControllerTest {
     @Test
     @DisplayName("GET - empty results when no exclusions exist")
     void getExclusions_empty() throws Exception {
+        when(workspaceExclusionsCache.get(eq("all"), any())).thenAnswer(invocation -> {
+            java.util.function.Function<String, Object> func = invocation.getArgument(1);
+            return func.apply("all");
+        });
         when(channelRepository.findAllWithExclusions(anyInt())).thenReturn(List.of());
-        when(playlistRepository.findAllWithExclusions()).thenReturn(List.of());
+        when(playlistRepository.findAllWithExclusions(anyInt())).thenReturn(List.of());
 
         ResponseEntity<CursorPageDto<ExclusionsWorkspaceController.ExclusionDto>> response =
                 controller.getExclusions(null, 50, null, null, null);
@@ -302,28 +306,30 @@ class ExclusionsWorkspaceControllerTest {
     }
 
     @Test
-    @DisplayName("GET - uses cache on second call")
+    @DisplayName("GET - uses cache on second call (single-flight pattern)")
     void getExclusions_usesCache() throws Exception {
-        // First call: cache miss, populates cache
-        when(workspaceExclusionsCache.getIfPresent("all")).thenReturn(null);
+        // First call: cache.get() invokes mapping function on miss
         when(channelRepository.findAllWithExclusions(anyInt())).thenReturn(List.of(testChannel));
-        when(playlistRepository.findAllWithExclusions()).thenReturn(List.of(testPlaylist));
+        when(playlistRepository.findAllWithExclusions(anyInt())).thenReturn(List.of(testPlaylist));
+
+        // Capture the computed value from first call
+        final Object[] captured = new Object[1];
+        when(workspaceExclusionsCache.get(eq("all"), any())).thenAnswer(invocation -> {
+            java.util.function.Function<String, Object> func = invocation.getArgument(1);
+            captured[0] = func.apply("all");
+            return captured[0];
+        });
 
         controller.getExclusions(null, 50, null, null, null);
 
-        // Capture the cached value
-        var cacheCaptor = org.mockito.ArgumentCaptor.forClass(Object.class);
-        verify(workspaceExclusionsCache, atLeastOnce()).put(eq("all"), cacheCaptor.capture());
-        Object cachedValue = cacheCaptor.getValue();
-
-        // Second call: simulate cache hit
-        when(workspaceExclusionsCache.getIfPresent("all")).thenReturn(cachedValue);
+        // Second call: cache.get() returns cached value directly (no mapping function invocation)
+        when(workspaceExclusionsCache.get(eq("all"), any())).thenReturn(captured[0]);
 
         controller.getExclusions(null, 50, null, null, null);
 
-        // Repositories should only have been called once (during cache miss)
+        // Repositories should only have been called once (during first cache miss)
         verify(channelRepository, times(1)).findAllWithExclusions(anyInt());
-        verify(playlistRepository, times(1)).findAllWithExclusions();
+        verify(playlistRepository, times(1)).findAllWithExclusions(anyInt());
     }
 
     @Test
@@ -596,7 +602,7 @@ class ExclusionsWorkspaceControllerTest {
     }
 
     @Test
-    @DisplayName("POST - duplicate exclusion does not re-save")
+    @DisplayName("POST - duplicate exclusion returns 200 and does not re-save")
     void createExclusion_duplicateNoOp() throws Exception {
         when(channelRepository.findById("ch-doc-1")).thenReturn(Optional.of(testChannel));
 
@@ -608,7 +614,8 @@ class ExclusionsWorkspaceControllerTest {
 
         ResponseEntity<?> response = controller.createExclusion(request);
 
-        assertEquals(201, response.getStatusCode().value());
+        // Duplicate returns 200, not 201
+        assertEquals(200, response.getStatusCode().value());
         verify(channelRepository, never()).save(any());
         verify(workspaceExclusionsCache, never()).invalidateAll();
     }
@@ -778,11 +785,68 @@ class ExclusionsWorkspaceControllerTest {
         assertEquals(400, response.getStatusCode().value());
     }
 
+    // ======================== Truncation ========================
+
+    @Test
+    @DisplayName("GET - playlist truncation sets pageInfo.truncated=true")
+    void getExclusions_playlistTruncationDetected() throws Exception {
+        when(workspaceExclusionsCache.get(eq("all"), any())).thenAnswer(invocation -> {
+            java.util.function.Function<String, Object> func = invocation.getArgument(1);
+            return func.apply("all");
+        });
+        when(channelRepository.findAllWithExclusions(anyInt())).thenReturn(List.of());
+
+        // Simulate playlist query returning limit+1 results (triggers truncation)
+        // MAX_PLAYLIST_EXCLUSIONS is 1000, controller requests 1001
+        // We simulate by returning more results than expected for any limit
+        List<Playlist> manyPlaylists = new ArrayList<>();
+        for (int i = 0; i < 1001; i++) {
+            Playlist p = new Playlist();
+            p.setId("pl-" + i);
+            p.setYoutubeId("PL_" + i);
+            p.setTitle("Playlist " + i);
+            p.setExcludedVideoIds(new ArrayList<>(List.of("vid" + i)));
+            manyPlaylists.add(p);
+        }
+        when(playlistRepository.findAllWithExclusions(anyInt())).thenReturn(manyPlaylists);
+
+        ResponseEntity<CursorPageDto<ExclusionsWorkspaceController.ExclusionDto>> response =
+                controller.getExclusions(null, 50, null, null, null);
+
+        assertEquals(200, response.getStatusCode().value());
+        assertTrue(response.getBody().getPageInfo().getTruncated(),
+                "truncated should be true when playlists exceed limit");
+    }
+
+    @Test
+    @DisplayName("POST - duplicate playlist exclusion returns 200")
+    void createExclusion_duplicatePlaylistReturns200() throws Exception {
+        when(playlistRepository.findById("pl-doc-1")).thenReturn(Optional.of(testPlaylist));
+
+        ExclusionsWorkspaceController.CreateExclusionRequest request = new ExclusionsWorkspaceController.CreateExclusionRequest();
+        request.parentType = "PLAYLIST";
+        request.parentId = "pl-doc-1";
+        request.excludeType = "VIDEO";
+        request.excludeId = "vidA"; // Already excluded
+
+        ResponseEntity<?> response = controller.createExclusion(request);
+
+        // Duplicate returns 200, not 201
+        assertEquals(200, response.getStatusCode().value());
+        verify(playlistRepository, never()).save(any());
+        verify(workspaceExclusionsCache, never()).invalidateAll();
+    }
+
     // ======================== Helpers ========================
 
     private void stubRepositoriesWithTestData() throws Exception {
-        when(workspaceExclusionsCache.getIfPresent("all")).thenReturn(null);
+        // Caffeine's cache.get(key, func) calls the function on miss and returns the result.
+        // We stub it to invoke the mapping function so aggregation runs normally.
+        when(workspaceExclusionsCache.get(eq("all"), any())).thenAnswer(invocation -> {
+            java.util.function.Function<String, Object> func = invocation.getArgument(1);
+            return func.apply("all");
+        });
         when(channelRepository.findAllWithExclusions(anyInt())).thenReturn(List.of(testChannel));
-        when(playlistRepository.findAllWithExclusions()).thenReturn(List.of(testPlaylist));
+        when(playlistRepository.findAllWithExclusions(anyInt())).thenReturn(List.of(testPlaylist));
     }
 }
