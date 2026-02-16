@@ -153,7 +153,8 @@ app:
           window-minutes: ${APP_VALIDATION_YOUTUBE_CIRCUIT_BREAKER_WINDOW_MINUTES:10}
   security:
     cors:
-      allowed-origins: "http://localhost:5173,http://127.0.0.1:5173"
+      # Override in production via env var: APP_SECURITY_CORS_ALLOWED_ORIGINS
+      allowed-origins: ${APP_SECURITY_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
     initial-admin:
       email: admin@albunyaan.tube
       password: ChangeMe!123

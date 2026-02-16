@@ -17,6 +17,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -35,9 +36,17 @@ public class SecurityConfig {
 
     private static final Logger logger = LoggerFactory.getLogger(SecurityConfig.class);
     private final FirebaseAuthFilter firebaseAuthFilter;
+    private final List<String> allowedOrigins;
 
-    public SecurityConfig(FirebaseAuthFilter firebaseAuthFilter) {
+    public SecurityConfig(
+            FirebaseAuthFilter firebaseAuthFilter,
+            @org.springframework.beans.factory.annotation.Value("${app.security.cors.allowed-origins}") String allowedOriginsStr) {
         this.firebaseAuthFilter = firebaseAuthFilter;
+        this.allowedOrigins = Arrays.stream(allowedOriginsStr.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
+        logger.info("CORS allowed origins: {}", this.allowedOrigins);
     }
 
     @Bean
@@ -87,11 +96,8 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        // Allow web frontend (localhost during development)
-        configuration.setAllowedOrigins(List.of(
-                "http://localhost:5173",
-                "http://127.0.0.1:5173"
-        ));
+        // Allow web frontend origins from app.security.cors.allowed-origins config
+        configuration.setAllowedOrigins(allowedOrigins);
         // NOTE: Mobile apps do NOT need CORS configuration
         // CORS is a browser security feature and does not apply to native mobile apps.
         // Mobile apps make direct HTTP requests without Origin headers.
