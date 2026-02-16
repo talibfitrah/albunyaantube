@@ -42,6 +42,9 @@ public class CacheConfig {
     public static final String CACHE_NEWPIPE_CHANNEL_VALIDATION = "newpipeChannelValidation";
     public static final String CACHE_NEWPIPE_PLAYLIST_VALIDATION = "newpipePlaylistValidation";
     public static final String CACHE_NEWPIPE_VIDEO_VALIDATION = "newpipeVideoValidation";
+    public static final String CACHE_NEWPIPE_CHANNEL_VIDEOS = "newpipeChannelVideos";
+    public static final String CACHE_NEWPIPE_CHANNEL_PLAYLISTS = "newpipeChannelPlaylists";
+    public static final String CACHE_NEWPIPE_PLAYLIST_VIDEOS = "newpipePlaylistVideos";
 
     // Category mapping cache (used by CategoryMappingService)
     public static final String CACHE_CATEGORY_NAME_MAPPING = "categoryNameMapping";
@@ -87,7 +90,10 @@ public class CacheConfig {
                 CACHE_NEWPIPE_VIDEO_INFO,
                 CACHE_NEWPIPE_CHANNEL_VALIDATION,
                 CACHE_NEWPIPE_PLAYLIST_VALIDATION,
-                CACHE_NEWPIPE_VIDEO_VALIDATION
+                CACHE_NEWPIPE_VIDEO_VALIDATION,
+                CACHE_NEWPIPE_CHANNEL_VIDEOS,
+                CACHE_NEWPIPE_CHANNEL_PLAYLISTS,
+                CACHE_NEWPIPE_PLAYLIST_VIDEOS
 
                 // Note: workspace exclusions and dashboard category stats use dedicated beans
                 // with 5-min TTL, not the CacheManager (see beans below)

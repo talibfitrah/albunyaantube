@@ -391,4 +391,90 @@ class YouTubeCircuitBreakerTest {
         // Can call allowProbe() multiple times in CLOSED state (it's a no-op)
         assertTrue(circuitBreaker.allowProbe(), "allowProbe() should return true again in CLOSED state");
     }
+
+    @Test
+    @DisplayName("Reset should return true when no persistence is configured (null repository)")
+    void resetShouldReturnTrueWhenNoPersistence() {
+        // Arrange - open the circuit first
+        Exception rateLimitError = new RuntimeException("Sign in to confirm you're not a bot");
+        circuitBreaker.recordRateLimitError(rateLimitError);
+        assertTrue(circuitBreaker.isOpen());
+
+        // Act - reset with null repository should succeed (returns true)
+        boolean result = circuitBreaker.reset();
+
+        // Assert
+        assertTrue(result, "reset() should return true when no persistence is configured");
+        assertFalse(circuitBreaker.isOpen());
+        assertEquals(YouTubeCircuitBreaker.State.CLOSED, circuitBreaker.getStatus().getState());
+    }
+
+    @Test
+    @DisplayName("getStatusSnapshot should not trigger OPEN to HALF_OPEN transition")
+    void getStatusSnapshot_shouldNotTriggerStateTransition() {
+        // Arrange - open the circuit
+        Exception rateLimitError = new RuntimeException("Sign in to confirm you're not a bot");
+        circuitBreaker.recordRateLimitError(rateLimitError);
+        assertEquals(YouTubeCircuitBreaker.State.OPEN, circuitBreaker.getStatus().getState());
+
+        // Act - call getStatusSnapshot (should NOT trigger OPEN→HALF_OPEN even if cooldown expired)
+        // Note: in test, cooldown is 1 minute which hasn't expired, but the important thing
+        // is that getStatusSnapshot() never calls isOpen() which has the transition logic
+        YouTubeCircuitBreaker.CircuitBreakerStatus snapshot = circuitBreaker.getStatusSnapshot();
+
+        // Assert - state should still be OPEN (no transition triggered)
+        assertEquals(YouTubeCircuitBreaker.State.OPEN, circuitBreaker.getCurrentState(),
+                "getStatusSnapshot() must not trigger state transitions");
+        assertTrue(snapshot.isOpen(), "Snapshot should report circuit as open");
+        assertEquals(YouTubeCircuitBreaker.State.OPEN, snapshot.getState());
+    }
+
+    @Test
+    @DisplayName("getStatusSnapshot in HALF_OPEN with probe in progress should report open")
+    void getStatusSnapshot_halfOpenWithProbe_reportsOpen() {
+        // Arrange - open circuit, then transition to HALF_OPEN
+        Exception rateLimitError = new RuntimeException("rate limit");
+        circuitBreaker.recordRateLimitError(rateLimitError);
+        circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+
+        // Acquire probe permit
+        assertTrue(circuitBreaker.allowProbe(), "Should acquire probe permit");
+
+        // Act
+        YouTubeCircuitBreaker.CircuitBreakerStatus snapshot = circuitBreaker.getStatusSnapshot();
+
+        // Assert - should report open because probe is in progress
+        assertTrue(snapshot.isOpen(),
+                "Snapshot should report open when HALF_OPEN with probe in progress");
+        assertEquals(YouTubeCircuitBreaker.State.HALF_OPEN, snapshot.getState());
+    }
+
+    @Test
+    @DisplayName("getStatusSnapshot in HALF_OPEN without probe should report closed")
+    void getStatusSnapshot_halfOpenWithoutProbe_reportsClosed() {
+        // Arrange - transition to HALF_OPEN without acquiring probe
+        Exception rateLimitError = new RuntimeException("rate limit");
+        circuitBreaker.recordRateLimitError(rateLimitError);
+        circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+
+        // Act - no probe acquired
+        YouTubeCircuitBreaker.CircuitBreakerStatus snapshot = circuitBreaker.getStatusSnapshot();
+
+        // Assert - should report not open (ready to accept probe)
+        assertFalse(snapshot.isOpen(),
+                "Snapshot should report not-open when HALF_OPEN without probe in progress");
+        assertEquals(YouTubeCircuitBreaker.State.HALF_OPEN, snapshot.getState());
+    }
+
+    @Test
+    @DisplayName("getStatusSnapshot in CLOSED state should report closed")
+    void getStatusSnapshot_closed_reportsClosed() {
+        // Act
+        YouTubeCircuitBreaker.CircuitBreakerStatus snapshot = circuitBreaker.getStatusSnapshot();
+
+        // Assert
+        assertFalse(snapshot.isOpen());
+        assertEquals(YouTubeCircuitBreaker.State.CLOSED, snapshot.getState());
+        assertEquals(0, snapshot.getBackoffLevel());
+    }
 }

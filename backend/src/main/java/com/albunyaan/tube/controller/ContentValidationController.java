@@ -2,6 +2,8 @@ package com.albunyaan.tube.controller;
 
 import com.albunyaan.tube.config.AsyncConfig;
 import com.albunyaan.tube.dto.ArchivedContentDto;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.albunyaan.tube.dto.ArchivedCountsDto;
 import com.albunyaan.tube.dto.ContentActionRequestDto;
 import com.albunyaan.tube.dto.ContentActionResultDto;
@@ -13,7 +15,9 @@ import com.albunyaan.tube.model.ValidationRun;
 import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.CategoryRepository;
 import com.albunyaan.tube.security.FirebaseUserDetails;
+import com.albunyaan.tube.service.AuditLogService;
 import com.albunyaan.tube.service.ContentValidationService;
+import com.albunyaan.tube.service.YouTubeCircuitBreaker;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
@@ -43,10 +47,14 @@ import java.util.concurrent.TimeoutException;
 @RequestMapping("/api/admin/content-validation")
 public class ContentValidationController {
 
+    private static final Logger log = LoggerFactory.getLogger(ContentValidationController.class);
+
     private final ContentValidationService contentValidationService;
     private final CategoryRepository categoryRepository;
     private final Executor validationExecutor;
     private final AsyncConfig.LoggingCallerRunsPolicy rejectionHandler;
+    private final YouTubeCircuitBreaker youTubeCircuitBreaker;
+    private final AuditLogService auditLogService;
 
     // Track currently running validations to prevent duplicates
     private volatile boolean isValidationRunning = false;
@@ -55,12 +63,16 @@ public class ContentValidationController {
             ContentValidationService contentValidationService,
             CategoryRepository categoryRepository,
             Executor validationExecutor,
-            AsyncConfig.LoggingCallerRunsPolicy rejectionHandler
+            AsyncConfig.LoggingCallerRunsPolicy rejectionHandler,
+            YouTubeCircuitBreaker youTubeCircuitBreaker,
+            AuditLogService auditLogService
     ) {
         this.contentValidationService = contentValidationService;
         this.categoryRepository = categoryRepository;
         this.validationExecutor = validationExecutor;
         this.rejectionHandler = rejectionHandler;
+        this.youTubeCircuitBreaker = youTubeCircuitBreaker;
+        this.auditLogService = auditLogService;
     }
 
     // ==================== Validation Triggers ====================
@@ -585,6 +597,66 @@ public class ContentValidationController {
                 ),
                 "validationRunning", isValidationRunning
         ));
+    }
+
+    // ==================== Circuit Breaker ====================
+
+    /**
+     * Get YouTube circuit breaker status (read-only, no side effects).
+     * GET /api/admin/content-validation/circuit-breaker
+     */
+    @GetMapping("/circuit-breaker")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    public ResponseEntity<?> getCircuitBreakerStatus() {
+        return ResponseEntity.ok(youTubeCircuitBreaker.getStatusSnapshot());
+    }
+
+    /**
+     * Reset YouTube circuit breaker to CLOSED state.
+     * POST /api/admin/content-validation/circuit-breaker/reset
+     */
+    @PostMapping("/circuit-breaker/reset")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> resetCircuitBreaker(
+            @AuthenticationPrincipal FirebaseUserDetails user
+    ) {
+        try {
+            boolean persisted = youTubeCircuitBreaker.reset();
+            YouTubeCircuitBreaker.CircuitBreakerStatus status = youTubeCircuitBreaker.getStatusSnapshot();
+
+            if (!persisted || status.isOpen()) {
+                String message;
+                if (!persisted && status.isOpen()) {
+                    message = "Reset not durable and circuit breaker reopened";
+                } else if (!persisted) {
+                    message = "Reset not durable";
+                } else {
+                    message = "Reset reopened";
+                }
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                        .body(Map.of(
+                                "message", message,
+                                "persisted", persisted,
+                                "circuitOpen", status.isOpen(),
+                                "status", status
+                        ));
+            }
+
+            try {
+                auditLogService.log("circuit_breaker_reset", "system", "youtube_circuit_breaker", user);
+            } catch (Exception e) {
+                log.warn("Audit logging failed for circuit breaker reset by {}: {}", user.getEmail(), e.getMessage());
+            }
+
+            return ResponseEntity.ok(Map.of(
+                    "message", "Circuit breaker reset to CLOSED",
+                    "status", status
+            ));
+
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to reset circuit breaker: " + e.getMessage()));
+        }
     }
 
     // ==================== Validation History ====================

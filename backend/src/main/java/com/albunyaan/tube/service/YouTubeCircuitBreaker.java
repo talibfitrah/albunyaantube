@@ -857,8 +857,10 @@ public class YouTubeCircuitBreaker {
 
     /**
      * Manually reset the circuit breaker (for admin intervention).
+     *
+     * @return true if reset was durably persisted (or no persistence configured), false if persistence failed
      */
-    public void reset() {
+    public boolean reset() {
         logger.info("Circuit breaker manually reset");
         state.set(State.CLOSED);
         openedAt.set(null);
@@ -872,7 +874,11 @@ public class YouTubeCircuitBreaker {
             recentErrors.clear();
         }
 
-        persistState();
+        boolean persisted = persistState();
+        if (!persisted) {
+            logger.warn("Circuit breaker reset in-memory but persistence failed");
+        }
+        return persisted;
     }
 
     /**
@@ -887,11 +893,43 @@ public class YouTubeCircuitBreaker {
 
     /**
      * Get current circuit breaker status for monitoring.
+     * Note: calls isOpen() which may trigger OPEN→HALF_OPEN transitions as a side effect.
      */
     public CircuitBreakerStatus getStatus() {
         return new CircuitBreakerStatus(
                 isOpen(),
                 state.get(),
+                getRemainingCooldownMs(),
+                openedAt.get(),
+                cooldownUntil.get(),
+                backoffLevel.get(),
+                lastErrorType.get(),
+                lastErrorMessage.get(),
+                totalRateLimitErrors.get(),
+                totalCircuitOpens.get()
+        );
+    }
+
+    /**
+     * Get current circuit breaker status snapshot without side effects.
+     * Unlike {@link #getStatus()}, this does NOT call {@link #isOpen()} and therefore
+     * will not trigger state transitions (e.g., OPEN → HALF_OPEN). Safe for read-only
+     * monitoring endpoints.
+     */
+    public CircuitBreakerStatus getStatusSnapshot() {
+        State currentState = state.get();
+        boolean effectivelyOpen;
+        if (currentState == State.OPEN) {
+            // Check if cooldown has expired — if so, report as not-open
+            // (the next isOpen() call will transition to HALF_OPEN)
+            Instant until = cooldownUntil.get();
+            effectivelyOpen = until != null && Instant.now().isBefore(until);
+        } else {
+            effectivelyOpen = currentState == State.HALF_OPEN && probeInProgress.get();
+        }
+        return new CircuitBreakerStatus(
+                effectivelyOpen,
+                currentState,
                 getRemainingCooldownMs(),
                 openedAt.get(),
                 cooldownUntil.get(),

@@ -1,5 +1,6 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.config.CacheConfig;
 import com.albunyaan.tube.dto.BatchValidationResult;
 import com.albunyaan.tube.dto.ChannelDetailsDto;
 import com.albunyaan.tube.dto.PlaylistDetailsDto;
@@ -878,8 +879,14 @@ public class ChannelOrchestrator {
     }
 
     /**
-     * Get channel videos as DTOs
+     * Get channel videos as DTOs.
+     * Cached only for base calls (no pageToken) to avoid caching degraded paginated results.
+     * Uses sync=true for single-flight cache fill (prevents duplicate YouTube requests).
      */
+    @Cacheable(value = CacheConfig.CACHE_NEWPIPE_CHANNEL_VIDEOS,
+            key = "#channelId",
+            sync = true,
+            condition = "#pageToken == null")
     public List<StreamItemDto> getChannelVideosDto(String channelId, String pageToken) throws IOException {
         return getChannelVideos(channelId, pageToken).stream()
                 .map(this::mapToStreamItemDto)
@@ -888,8 +895,15 @@ public class ChannelOrchestrator {
     }
 
     /**
-     * Get channel videos as DTOs with optional search filter
+     * Get channel videos as DTOs with optional search filter.
+     * Cached only for base calls (no pageToken, no search) to avoid caching degraded or filtered results.
+     * Note: shares cache key (#channelId) with the 2-arg overload — safe because both delegate
+     * to the same getChannelVideos() when pageToken=null and searchQuery=null/blank.
      */
+    @Cacheable(value = CacheConfig.CACHE_NEWPIPE_CHANNEL_VIDEOS,
+            key = "#channelId",
+            sync = true,
+            condition = "#pageToken == null && (#searchQuery == null || #searchQuery.isBlank())")
     public List<StreamItemDto> getChannelVideosDto(String channelId, String pageToken, String searchQuery) throws IOException {
         return getChannelVideos(channelId, pageToken, searchQuery).stream()
                 .map(this::mapToStreamItemDto)
@@ -898,8 +912,13 @@ public class ChannelOrchestrator {
     }
 
     /**
-     * Get channel playlists as DTOs
+     * Get channel playlists as DTOs.
+     * Cached only for base calls (no pageToken).
      */
+    @Cacheable(value = CacheConfig.CACHE_NEWPIPE_CHANNEL_PLAYLISTS,
+            key = "#channelId",
+            sync = true,
+            condition = "#pageToken == null")
     public List<PlaylistItemDto> getChannelPlaylistsDto(String channelId, String pageToken) throws IOException {
         return getChannelPlaylists(channelId, pageToken).stream()
                 .map(this::mapToPlaylistItemDto)
@@ -916,8 +935,13 @@ public class ChannelOrchestrator {
     }
 
     /**
-     * Get playlist videos as DTOs
+     * Get playlist videos as DTOs.
+     * Cached only for base calls (no pageToken).
      */
+    @Cacheable(value = CacheConfig.CACHE_NEWPIPE_PLAYLIST_VIDEOS,
+            key = "#playlistId",
+            sync = true,
+            condition = "#pageToken == null")
     public List<StreamItemDto> getPlaylistVideosDto(String playlistId, String pageToken) throws IOException {
         return getPlaylistVideos(playlistId, pageToken).stream()
                 .map(this::mapToStreamItemDto)
@@ -926,8 +950,15 @@ public class ChannelOrchestrator {
     }
 
     /**
-     * Get playlist videos as DTOs with optional search filter
+     * Get playlist videos as DTOs with optional search filter.
+     * Cached only for base calls (no pageToken, no search).
+     * Note: shares cache key (#playlistId) with the 2-arg overload — safe because both delegate
+     * to the same getPlaylistVideos() when pageToken=null and searchQuery=null/blank.
      */
+    @Cacheable(value = CacheConfig.CACHE_NEWPIPE_PLAYLIST_VIDEOS,
+            key = "#playlistId",
+            sync = true,
+            condition = "#pageToken == null && (#searchQuery == null || #searchQuery.isBlank())")
     public List<StreamItemDto> getPlaylistVideosDto(String playlistId, String pageToken, String searchQuery) throws IOException {
         return getPlaylistVideos(playlistId, pageToken, searchQuery).stream()
                 .map(this::mapToStreamItemDto)
