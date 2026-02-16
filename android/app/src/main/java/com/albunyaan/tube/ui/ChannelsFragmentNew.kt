@@ -18,6 +18,7 @@ import com.albunyaan.tube.data.source.ContentService
 import com.albunyaan.tube.databinding.FragmentChannelsNewBinding
 import com.albunyaan.tube.ui.adapters.ChannelAdapter
 import com.albunyaan.tube.ui.detail.ChannelDetailFragment
+import com.albunyaan.tube.ui.utils.AutofillPaginationHelper
 import com.albunyaan.tube.ui.utils.isTablet
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -41,6 +42,8 @@ class ChannelsFragmentNew : Fragment(R.layout.fragment_channels_new) {
         )
     }
 
+    private val autofillHelper = AutofillPaginationHelper(TAG)
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding = FragmentChannelsNewBinding.bind(view)
@@ -59,6 +62,7 @@ class ChannelsFragmentNew : Fragment(R.layout.fragment_channels_new) {
 
     private fun setupSwipeRefresh() {
         binding?.swipeRefresh?.setOnRefreshListener {
+            autofillHelper.reset()
             viewModel.refresh()
         }
     }
@@ -135,7 +139,20 @@ class ChannelsFragmentNew : Fragment(R.layout.fragment_channels_new) {
                         binding?.loadingMore?.visibility = View.GONE
                         val channels = state.items.filterIsInstance<ContentItem.Channel>()
                         Log.d(TAG, "Channels loaded: ${channels.size} items, hasMore=${state.hasMoreData}")
-                        adapter.submitList(channels)
+                        val screenWidthDp = resources.configuration.smallestScreenWidthDp
+                        val rv = binding?.recyclerView
+                        adapter.submitList(channels) {
+                            autofillHelper.check(
+                                itemCount = channels.size,
+                                hasMoreData = state.hasMoreData,
+                                hasPaginationError = state.paginationError != null,
+                                smallestScreenWidthDp = screenWidthDp,
+                                recyclerView = rv,
+                                isViewActive = { binding != null && isAdded },
+                                canLoadMore = { viewModel.canLoadMore },
+                                loadMore = { viewModel.loadMore() }
+                            )
+                        }
                     }
                     is ContentListViewModel.ContentState.Error -> {
                         binding?.swipeRefresh?.isRefreshing = false
@@ -153,6 +170,7 @@ class ChannelsFragmentNew : Fragment(R.layout.fragment_channels_new) {
     }
 
     override fun onDestroyView() {
+        autofillHelper.reset()
         binding = null
         super.onDestroyView()
     }

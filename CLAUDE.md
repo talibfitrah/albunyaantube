@@ -32,6 +32,9 @@ Ad-free, admin-curated halal YouTube client with native Android app and web mode
 - **Test Timeout**: 300 seconds max; 30s per test method
 - **Documentation**: DO NOT create new .md files unless explicitly requested
 - **Hilt DI (Android)**: MANDATORY - no manual service locators
+- **UI Preservation**: NEVER remove or break existing working UI components. Before modifying any UI code, verify the change doesn't regress other screens or device variants. Always test/review changes across ALL device layouts (phone, tablet, TV).
+- **Edge-to-Edge (Android 15+)**: App targets SDK 35. All `fragment_main_shell.xml` variants use `fitsSystemWindows="true"` to handle system bar insets. Do NOT remove this attribute.
+- **Pagination on Large Screens**: Grid layouts on tablet/TV can fit an entire page of items without scrolling. All list fragments must auto-trigger `loadMore()` when items fit on screen (the scroll listener alone is insufficient).
 
 ---
 

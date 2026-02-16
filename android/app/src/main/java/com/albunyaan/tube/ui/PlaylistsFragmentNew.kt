@@ -18,6 +18,7 @@ import com.albunyaan.tube.data.source.ContentService
 import com.albunyaan.tube.databinding.FragmentSimpleListBinding
 import com.albunyaan.tube.ui.adapters.PlaylistAdapter
 import com.albunyaan.tube.ui.detail.PlaylistDetailFragment
+import com.albunyaan.tube.ui.utils.AutofillPaginationHelper
 import com.albunyaan.tube.ui.utils.isTablet
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -41,6 +42,8 @@ class PlaylistsFragmentNew : Fragment(R.layout.fragment_simple_list) {
         )
     }
 
+    private val autofillHelper = AutofillPaginationHelper(TAG)
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding = FragmentSimpleListBinding.bind(view)
@@ -52,6 +55,7 @@ class PlaylistsFragmentNew : Fragment(R.layout.fragment_simple_list) {
 
     private fun setupSwipeRefresh() {
         binding?.swipeRefresh?.setOnRefreshListener {
+            autofillHelper.reset()
             viewModel.refresh()
         }
     }
@@ -127,7 +131,20 @@ class PlaylistsFragmentNew : Fragment(R.layout.fragment_simple_list) {
                         binding?.loadingMore?.visibility = View.GONE
                         val playlists = state.items.filterIsInstance<ContentItem.Playlist>()
                         Log.d(TAG, "Playlists loaded: ${playlists.size} items, hasMore=${state.hasMoreData}")
-                        adapter.submitList(playlists)
+                        val screenWidthDp = resources.configuration.smallestScreenWidthDp
+                        val rv = binding?.recyclerView
+                        adapter.submitList(playlists) {
+                            autofillHelper.check(
+                                itemCount = playlists.size,
+                                hasMoreData = state.hasMoreData,
+                                hasPaginationError = state.paginationError != null,
+                                smallestScreenWidthDp = screenWidthDp,
+                                recyclerView = rv,
+                                isViewActive = { binding != null && isAdded },
+                                canLoadMore = { viewModel.canLoadMore },
+                                loadMore = { viewModel.loadMore() }
+                            )
+                        }
                     }
                     is ContentListViewModel.ContentState.Error -> {
                         binding?.swipeRefresh?.isRefreshing = false
@@ -145,6 +162,7 @@ class PlaylistsFragmentNew : Fragment(R.layout.fragment_simple_list) {
     }
 
     override fun onDestroyView() {
+        autofillHelper.reset()
         binding = null
         super.onDestroyView()
     }

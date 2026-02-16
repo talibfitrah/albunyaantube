@@ -17,6 +17,7 @@ import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.source.ContentService
 import com.albunyaan.tube.databinding.FragmentSimpleListBinding
 import com.albunyaan.tube.ui.adapters.VideoGridAdapter
+import com.albunyaan.tube.ui.utils.AutofillPaginationHelper
 import com.albunyaan.tube.ui.utils.calculateGridSpanCount
 import com.albunyaan.tube.player.StreamPrefetchService
 import com.google.android.material.snackbar.Snackbar
@@ -49,6 +50,8 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
         )
     }
 
+    private val autofillHelper = AutofillPaginationHelper(TAG)
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding = FragmentSimpleListBinding.bind(view)
@@ -63,6 +66,7 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
         viewLifecycleOwner.lifecycleScope.launch {
             filterManager.state.collectLatest { filterState ->
                 Log.d(TAG, "Filter state changed: category=${filterState.category}")
+                autofillHelper.reset()
                 viewModel.setFilters(filterState)
                 updateFilterChip(filterState.category)
             }
@@ -86,6 +90,7 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
 
     private fun setupSwipeRefresh() {
         binding?.swipeRefresh?.setOnRefreshListener {
+            autofillHelper.reset()
             viewModel.refresh()
         }
     }
@@ -179,7 +184,20 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
                                 Snackbar.make(binding.root, message, Snackbar.LENGTH_SHORT).show()
                             }
 
-                            adapter.submitList(videos)
+                            val screenWidthDp = resources.configuration.smallestScreenWidthDp
+                            val rv = binding.recyclerView
+                            adapter.submitList(videos) {
+                                autofillHelper.check(
+                                    itemCount = videos.size,
+                                    hasMoreData = state.hasMoreData,
+                                    hasPaginationError = state.paginationError != null,
+                                    smallestScreenWidthDp = screenWidthDp,
+                                    recyclerView = rv,
+                                    isViewActive = { this@VideosFragmentNew.binding != null && isAdded },
+                                    canLoadMore = { viewModel.canLoadMore },
+                                    loadMore = { viewModel.loadMore() }
+                                )
+                            }
 
                             if (videos.isEmpty()) {
                                 binding.emptyState.visibility = View.VISIBLE
@@ -231,6 +249,7 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
     }
 
     override fun onDestroyView() {
+        autofillHelper.reset()
         binding = null
         super.onDestroyView()
     }
