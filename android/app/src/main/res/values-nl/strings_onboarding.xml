@@ -2,6 +2,7 @@
 <resources>
     <string name="onboarding_carousel_content">Introductie dia\'s</string>
     <string name="onboarding_help">Meer informatie over de app-inhoud</string>
+    <string name="onboarding_help_body">Dia\'s geven een samenvatting van FitrahTube\'s missie, veilige contentselectie en downloadbeleid.</string>
     <string name="onboarding_continue">Volgende</string>
     <string name="onboarding_get_started">Aan de slag</string>
     <string name="onboarding_skip">Overslaan</string>

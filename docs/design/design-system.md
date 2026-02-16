@@ -1,4 +1,6 @@
-# Albunyaan Tube - Design Specification
+# FitrahTube - Design Specification
+
+> **Branding Note**: "FitrahTube" is the user-facing brand name. Internal code identifiers (package `com.albunyaan.tube.*`, deep link scheme `albunyaantube://`, splash/onboarding text showing "Albunyaan") retain the original naming for backward compatibility. UI strings in `strings.xml` control what users see; update those to show "FitrahTube" where appropriate without renaming code packages or schemes.
 
 > **Last Updated**: 2025-11-10
 > **Status**: Admin UI ✅ | Android UI ✅ (15 screens, production-ready)

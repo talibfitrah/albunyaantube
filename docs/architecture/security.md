@@ -1,6 +1,6 @@
 # Threat Model & Security Controls
 
-This document applies STRIDE analysis to Albunyaan Tube and enumerates security controls for the MVP release. Refer to [`overview.md`](overview.md#security-mvp-scope) for architectural context and [`../status/TESTING_GUIDE.md`](../status/TESTING_GUIDE.md) for security testing procedures.
+This document applies STRIDE analysis to FitrahTube and enumerates security controls for the MVP release. Refer to [`overview.md`](overview.md#security-mvp-scope) for architectural context and [`../status/TESTING_GUIDE.md`](../status/TESTING_GUIDE.md) for security testing procedures.
 
 ---
 

@@ -1,6 +1,8 @@
-# Albunyaan Tube - Claude Developer Guide
+# FitrahTube - Claude Developer Guide
 
 Ad-free, admin-curated halal YouTube client with native Android app and web moderation dashboard.
+
+> **Branding Note**: The user-facing app name is **FitrahTube**. Internal code identifiers (package `com.albunyaan.tube`, project directory `albunyaantube/`, deep link scheme `albunyaantube://`, class names like `AlbunyaanTubeApplication`) retain the original "albunyaan" naming for backward compatibility. Do not rename these without a coordinated migration.
 
 **Full Requirements**: See [docs/PRD.md](docs/PRD.md) for product requirements, user stories, and acceptance criteria.
 

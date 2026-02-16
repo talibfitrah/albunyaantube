@@ -1,11 +1,11 @@
-# Albunyaan Tube - Play Store Description
+# FitrahTube - Play Store Description
 
 ## Short Description (80 characters max)
 Your trusted source for Islamic content - videos, channels & playlists
 
 ## Full Description
 
-**Albunyaan Tube** is your gateway to curated Islamic educational content. Watch videos, explore channels, and discover playlists from trusted Islamic scholars and educators.
+**FitrahTube** is your gateway to curated Islamic educational content. Watch videos, explore channels, and discover playlists from trusted Islamic scholars and educators.
 
 ### ✨ Features
 
@@ -59,9 +59,9 @@ Your trusted source for Islamic content - videos, channels & playlists
 - Anyone interested in learning about Islam
 - Communities sharing Islamic resources
 
-### 🚀 Why Albunyaan Tube?
+### 🚀 Why FitrahTube?
 
-Unlike mainstream video platforms, Albunyaan Tube focuses exclusively on quality Islamic content. Our curated library ensures you access authentic, educational videos from verified scholars and educators.
+Unlike mainstream video platforms, FitrahTube focuses exclusively on quality Islamic content. Our curated library ensures you access authentic, educational videos from verified scholars and educators.
 
 ### 📋 Requirements
 
@@ -73,4 +73,4 @@ Unlike mainstream video platforms, Albunyaan Tube focuses exclusively on quality
 
 **Download now and start your journey of Islamic knowledge!**
 
-*Albunyaan Tube - Building Knowledge, One Video at a Time* 🕌
+*FitrahTube - Knowledge, True to Your Nature* 🕌

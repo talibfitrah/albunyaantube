@@ -1,6 +1,6 @@
 # Design Mockups
 
-The Albunyaan Tube design mockups are maintained in the shared Figma project **"Albunyaan Tube UX"** within the design team's workspace.
+The FitrahTube design mockups are maintained in the shared Figma project **"FitrahTube UX"** within the design team's workspace. (If the Figma project still carries the legacy name "Albunyaan Tube UX", rename it to match.)
 
 ## Coverage
 

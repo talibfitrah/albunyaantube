@@ -1,7 +1,7 @@
 export const messages = {
   en: {
     auth: {
-      title: 'Albunyaan Tube Admin',
+      title: 'FitrahTube Admin',
       subtitle: 'Sign in with your administrator account to continue.',
       email: 'Work email',
       password: 'Password',
@@ -1246,7 +1246,7 @@ export const messages = {
   },
   ar: {
     auth: {
-      title: 'إدارة Albunyaan Tube',
+      title: 'إدارة فطرة تيوب',
       subtitle: 'سجّل الدخول باستخدام حساب المشرف للمتابعة.',
       email: 'البريد الإلكتروني للعمل',
       password: 'كلمة المرور',
@@ -2273,7 +2273,7 @@ export const messages = {
   },
   nl: {
     auth: {
-      title: 'Albunyaan Tube Beheer',
+      title: 'FitrahTube Beheer',
       subtitle: 'Meld je aan met je beheerdersaccount om door te gaan.',
       email: 'Werk e-mailadres',
       password: 'Wachtwoord',

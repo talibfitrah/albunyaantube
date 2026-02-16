@@ -1,4 +1,4 @@
-# Product Requirements Document: Albunyaan Tube
+# Product Requirements Document: FitrahTube
 
 > **Related Documentation:**
 > - **Architecture**: [System Overview](architecture/overview.md) | [API Spec](architecture/api-specification.yaml) | [Security Model](architecture/security.md)
@@ -7,7 +7,7 @@
 
 ## Overview & Goals
 
-Albunyaan Tube is an ad-free, admin-curated YouTube client delivering safe
+FitrahTube is an ad-free, admin-curated YouTube client delivering safe
 Islamic content to Muslim families and students of knowledge through native
 mobile apps and a web-based moderation dashboard.
 

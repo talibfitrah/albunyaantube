@@ -6,7 +6,11 @@ import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
- * Main application class for Albunyaan Tube Backend
+ * Main application class for FitrahTube (Albunyaan Tube) Backend.
+ * <p>
+ * Note: The user-facing brand name is "FitrahTube". The package ({@code com.albunyaan.tube})
+ * and class name ({@code AlbunyaanTubeApplication}) retain the original "albunyaan" naming
+ * for backward compatibility.
  *
  * Stack:
  * - Spring Boot 3

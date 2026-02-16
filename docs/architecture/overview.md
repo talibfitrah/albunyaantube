@@ -1,6 +1,6 @@
 # Solution Architecture Overview
 
-This document summarizes the end-to-end architecture for Albunyaan Tube, an ad-free, admin-curated YouTube client delivering safe Islamic content through native mobile apps and a web-based moderation dashboard.
+This document summarizes the end-to-end architecture for FitrahTube, an ad-free, admin-curated YouTube client delivering safe Islamic content through native mobile apps and a web-based moderation dashboard.
 
 ## Related Documentation
 - **C4 Diagrams**: [`diagrams/`](diagrams/) - Context and component diagrams
@@ -12,7 +12,7 @@ This document summarizes the end-to-end architecture for Albunyaan Tube, an ad-f
 
 ## System Overview
 
-**Albunyaan Tube** is a 3-tier architecture:
+**FitrahTube** is a 3-tier architecture:
 1. **Android Mobile App** (Kotlin + Jetpack) - Public content consumption
 2. **Admin Web Dashboard** (Vue 3 + TypeScript) - Content curation and moderation
 3. **Spring Boot Backend** (Java 17) - REST API + Firebase Firestore

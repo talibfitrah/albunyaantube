@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Albunyaan Tube</string>
+    <string name="app_name">FitrahTube</string>
     <string name="navigate_back">Terug</string>
     <string name="filter_category">Categorie</string>
     <string name="filter_category_all">Alle categorieën</string>
@@ -459,8 +459,8 @@
     <string name="player_favorite_toggle_error">Favorieten bijwerken mislukt. Probeer het opnieuw.</string>
 
     <!-- Share -->
-    <string name="share_watch_in_app">Bekijk in Albunyaan Tube:</string>
-    <string name="share_app_promo">Download Albunyaan Tube voor advertentievrije islamitische content!</string>
+    <string name="share_watch_in_app">Bekijk in FitrahTube:</string>
+    <string name="share_app_promo">Download FitrahTube voor advertentievrije islamitische content!</string>
     <string name="share_video_chooser">Video delen</string>
 
     <!-- Download Quality Dialog -->

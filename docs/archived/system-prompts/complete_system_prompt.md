@@ -1,8 +1,8 @@
-# Albunyaan Tube - System Prompt
+# FitrahTube - System Prompt
 
 ## Project Overview
 
-**Albunyaan Tube** is an ad-free, admin-curated Islamic content platform delivering safe YouTube content through:
+**FitrahTube** is an ad-free, admin-curated Islamic content platform delivering safe YouTube content through:
 1. **Spring Boot Backend** (Java 17) - REST API with Firebase Firestore
 2. **Vue 3 Admin Dashboard** (TypeScript) - Content moderation interface
 3. **Android Mobile App** (Kotlin) - Public content consumption

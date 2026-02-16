@@ -1,5 +1,5 @@
 [Unit]
-Description=Albunyaan Tube Backend API
+Description=FitrahTube Backend API
 After=network.target
 
 [Service]

@@ -1,6 +1,6 @@
-# Albunyaan Tube
+# FitrahTube
 
-Welcome to **Albunyaan Tube**, an ad-free, admin-curated halal YouTube client delivering safe Islamic content to Muslim families and students of knowledge through native mobile apps and a web-based moderation dashboard.
+Welcome to **FitrahTube**, an ad-free, admin-curated halal YouTube client delivering safe Islamic content to Muslim families and students of knowledge through native mobile apps and a web-based moderation dashboard.
 
 **Vision**: Become the trusted global platform for halal YouTube content where every Muslim can confidently access safe Islamic content without compromising values or exposure to inappropriate material.
 

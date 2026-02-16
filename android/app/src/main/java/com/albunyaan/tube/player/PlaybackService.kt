@@ -489,7 +489,7 @@ class PlaybackService : MediaSessionService() {
         // This notify() call is for subsequent updates only.
         if (!areNotificationsEnabled(manager)) {
             Log.w(TAG, "Notifications are disabled - media notification will not appear. " +
-                "User can enable in Settings > Apps > Albunyaan Tube > Notifications")
+                "User can enable in Settings > Apps > FitrahTube > Notifications")
         }
 
         manager.notify(NOTIFICATION_ID, notification)

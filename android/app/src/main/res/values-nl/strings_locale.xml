@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="locale_settings_heading">Interfacetaal</string>
+    <string name="locale_settings_description">Kies de taal die in FitrahTube wordt gebruikt. Wijzigingen worden direct toegepast.</string>
+    <string name="locale_settings_hint">Selecteer taal</string>
+    <string name="locale_settings_preview">Voorbeeld</string>
+    <string name="locale_settings_sample">Salaam! Dit voorbeeld wordt bijgewerkt om gelokaliseerde cijfers te tonen: ١٢٣ voor Arabisch.</string>
+</resources>

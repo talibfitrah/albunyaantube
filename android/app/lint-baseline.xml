@@ -1392,60 +1392,6 @@
             column="14"/>
     </issue>
 
-    <issue
-        id="MissingTranslation"
-        message="&quot;locale_settings_heading&quot; is not translated in &quot;ar&quot; (Arabic) or &quot;nl&quot; (Dutch)"
-        errorLine1="    &lt;string name=&quot;locale_settings_heading&quot;>Interface language&lt;/string>"
-        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/res/values/strings_locale.xml"
-            line="3"
-            column="13"/>
-    </issue>
-
-    <issue
-        id="MissingTranslation"
-        message="&quot;locale_settings_description&quot; is not translated in &quot;ar&quot; (Arabic) or &quot;nl&quot; (Dutch)"
-        errorLine1="    &lt;string name=&quot;locale_settings_description&quot;>Choose the language used throughout Albunyaan Tube. Changes take effect immediately.&lt;/string>"
-        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/res/values/strings_locale.xml"
-            line="4"
-            column="13"/>
-    </issue>
-
-    <issue
-        id="MissingTranslation"
-        message="&quot;locale_settings_hint&quot; is not translated in &quot;ar&quot; (Arabic) or &quot;nl&quot; (Dutch)"
-        errorLine1="    &lt;string name=&quot;locale_settings_hint&quot;>Select language&lt;/string>"
-        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/res/values/strings_locale.xml"
-            line="5"
-            column="13"/>
-    </issue>
-
-    <issue
-        id="MissingTranslation"
-        message="&quot;locale_settings_preview&quot; is not translated in &quot;ar&quot; (Arabic) or &quot;nl&quot; (Dutch)"
-        errorLine1="    &lt;string name=&quot;locale_settings_preview&quot;>Preview&lt;/string>"
-        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/res/values/strings_locale.xml"
-            line="6"
-            column="13"/>
-    </issue>
-
-    <issue
-        id="MissingTranslation"
-        message="&quot;locale_settings_sample&quot; is not translated in &quot;ar&quot; (Arabic) or &quot;nl&quot; (Dutch)"
-        errorLine1="    &lt;string name=&quot;locale_settings_sample&quot;>Salaam! This preview updates to show localized numerals: ١٢٣ for Arabic.&lt;/string>"
-        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/res/values/strings_locale.xml"
-            line="7"
-            column="13"/>
-    </issue>
 
     <issue
         id="PluralsCandidate"
@@ -3998,7 +3944,7 @@
     <issue
         id="UnusedResources"
         message="The resource `R.string.locale_settings_description` appears to be unused"
-        errorLine1="    &lt;string name=&quot;locale_settings_description&quot;>Choose the language used throughout Albunyaan Tube. Changes take effect immediately.&lt;/string>"
+        errorLine1="    &lt;string name=&quot;locale_settings_description&quot;>Choose the language used throughout FitrahTube. Changes take effect immediately.&lt;/string>"
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/strings_locale.xml"
@@ -4655,16 +4601,6 @@
             column="43"/>
     </issue>
 
-    <issue
-        id="HardcodedText"
-        message="Hardcoded string &quot;Slides summarize Albunyaan Tube&apos;s mission, safe content curation, and download policy.&quot;, should use `@string` resource"
-        errorLine1="        android:text=&quot;Slides summarize Albunyaan Tube&apos;s mission, safe content curation, and download policy.&quot;/>"
-        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/res/layout/dialog_onboarding_help.xml"
-            line="21"
-            column="9"/>
-    </issue>
 
     <issue
         id="HardcodedText"

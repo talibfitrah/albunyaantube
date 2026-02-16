@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Albunyaan Tube</string>
+    <string name="app_name">FitrahTube</string>
     <string name="navigate_back">Go back</string>
     <string name="filter_category">Category</string>
     <string name="filter_category_all">All categories</string>
@@ -217,8 +217,8 @@
     <string name="player_removed_from_favorites">Removed from favorites</string>
     <string name="player_favorite_toggle_error">Failed to update favorites. Please try again.</string>
     <string name="player_action_share">Share video</string>
-    <string name="share_watch_in_app">Watch in Albunyaan Tube:</string>
-    <string name="share_app_promo">Get Albunyaan Tube for ad-free Islamic content!</string>
+    <string name="share_watch_in_app">Watch in FitrahTube:</string>
+    <string name="share_app_promo">Get FitrahTube for ad-free Islamic content!</string>
     <string name="share_video_chooser">Share video</string>
     <string name="player_action_download">Download video</string>
     <string name="player_button_download">Download</string>

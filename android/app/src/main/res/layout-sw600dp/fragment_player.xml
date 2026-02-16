@@ -44,6 +44,7 @@
                     app:layout_constraintDimensionRatio="16:9"
                     app:resize_mode="fit"
                     app:shutter_background_color="@android:color/black"
+                    app:use_artwork="false"
                     app:show_buffering="when_playing"
                     app:use_controller="true"
                     app:show_subtitle_button="true"

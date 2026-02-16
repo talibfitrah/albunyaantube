@@ -1,5 +1,7 @@
 # Play Store Assets
 
+> **Rebranding Note**: The app has been rebranded from "Albunyaan Tube" to **FitrahTube**. Domain names (`albunyaantube.com`), support email (`support@albunyaantube.com`), keystore/alias names (`albunyaantube-release.keystore` / `albunyaantube`), and the deep link scheme (`albunyaantube://`) intentionally retain the original "albunyaan" naming for backward compatibility and infrastructure continuity. Only the user-facing app title, descriptions, and store listing text use "FitrahTube".
+
 This directory contains all assets and metadata for the Google Play Store listing.
 
 ## 📝 Text Content
@@ -46,7 +48,7 @@ Create screenshots for the following screen sizes:
 ## 📋 Play Store Listing Checklist
 
 ### Required:
-- [x] App title: "Albunyaan Tube"
+- [x] App title: "FitrahTube"
 - [x] Short description (80 chars): "Your trusted source for Islamic content - videos, channels & playlists"
 - [x] Full description (4000 chars max)
 - [x] App icon (512x512 PNG)

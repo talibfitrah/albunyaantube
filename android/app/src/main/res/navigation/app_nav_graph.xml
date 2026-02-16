@@ -35,6 +35,6 @@
     <fragment
         android:id="@+id/mainShellFragment"
         android:name="com.albunyaan.tube.ui.MainShellFragment"
-        android:label="Albunyaan Tube" />
+        android:label="FitrahTube" />
 
 </navigation>

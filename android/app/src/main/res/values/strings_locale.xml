@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="locale_settings_heading">Interface language</string>
-    <string name="locale_settings_description">Choose the language used throughout Albunyaan Tube. Changes take effect immediately.</string>
+    <string name="locale_settings_description">Choose the language used throughout FitrahTube. Changes take effect immediately.</string>
     <string name="locale_settings_hint">Select language</string>
     <string name="locale_settings_preview">Preview</string>
     <string name="locale_settings_sample">Salaam! This preview updates to show localized numerals: ١٢٣ for Arabic.</string>

@@ -2,6 +2,7 @@
 <resources>
     <string name="onboarding_carousel_content">شرائح التعريف</string>
     <string name="onboarding_help">تعرف على المزيد حول محتوى التطبيق</string>
+    <string name="onboarding_help_body">تلخّص الشرائح رسالة فطرة تيوب ونهج اختيار المحتوى الآمن وسياسة التحميل.</string>
     <string name="onboarding_continue">التالي</string>
     <string name="onboarding_get_started">ابدأ الآن</string>
     <string name="onboarding_skip">تخطي</string>

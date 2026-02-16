@@ -1,9 +1,9 @@
 openapi: 3.0.3
 info:
-  title: Albunyaan Tube API
+  title: FitrahTube API
   version: 1.0.0
   description: |
-    REST API for Albunyaan Tube backend. Production implementation with 113+ endpoints across 14 controllers.
+    REST API for FitrahTube backend. Production implementation with 113+ endpoints across 14 controllers.
 
     **Key Features:**
     - Public content API for Android app (no auth required)

@@ -1,4 +1,4 @@
-# ProGuard rules for Albunyaan Tube
+# ProGuard rules for FitrahTube
 
 # Keep data classes and DTOs
 -keep class com.albunyaan.tube.data.model.** { *; }

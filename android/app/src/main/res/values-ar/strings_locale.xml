@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="locale_settings_heading">لغة الواجهة</string>
+    <string name="locale_settings_description">اختر اللغة المستخدمة في فطرة تيوب. يتم تطبيق التغييرات فورًا.</string>
+    <string name="locale_settings_hint">اختر اللغة</string>
+    <string name="locale_settings_preview">معاينة</string>
+    <string name="locale_settings_sample">السلام عليكم! تُحدَّث هذه المعاينة لعرض الأرقام المحلية: ١٢٣ للعربية.</string>
+</resources>

@@ -3,7 +3,7 @@
 ```mermaid
 C4Component
     title Backend Components (Spring Boot + Firebase)
-    Container_Boundary(backend, "Albunyaan Tube Backend") {
+    Container_Boundary(backend, "FitrahTube Backend") {
         Component(controllers, "REST Controllers", "Spring MVC", "14 controllers: Public, Admin, Player, YouTube, Approval, etc.")
         Component(security, "Security Layer", "Spring Security + Firebase Auth", "JWT token validation, RBAC (ADMIN/MODERATOR), custom claims")
 

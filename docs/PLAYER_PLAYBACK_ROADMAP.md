@@ -601,16 +601,18 @@ Only the UI for quality selection in the player was missing.
 Video Title
 Watch this video:
 https://www.youtube.com/watch?v=VIDEO_ID
-Get Albunyaan Tube app for ad-free Islamic content!
+Get FitrahTube app for ad-free Islamic content!
 ```
 
 **After**:
 ```
 Video Title
-Watch in Albunyaan Tube:
+Watch in FitrahTube:
 albunyaantube://video/VIDEO_ID
-Get Albunyaan Tube for ad-free Islamic content!
+Get FitrahTube for ad-free Islamic content!
 ```
+
+> **Deep link scheme note**: The `albunyaantube://` scheme is retained for backward compatibility with existing installs and shared links. The user-facing brand name "FitrahTube" appears in the share text only. If the scheme is migrated to `fitrahtube://` in the future, update: the Android manifest intent filters, `res/navigation/main_tabs_nav.xml` deep link declarations, `res/navigation/app_nav_graph.xml`, `PlayerFragment.shareCurrentVideo()`, and any backend/docs referencing the scheme.
 
 **Files Modified**:
 - `res/navigation/main_tabs_nav.xml`: Added video deep link

@@ -3,7 +3,7 @@
 **Last Updated**: November 27, 2025
 **Status**: Active
 
-This document defines the testing and build policies for AI agents and developers working on the Albunyaan Tube project.
+This document defines the testing and build policies for AI agents and developers working on the FitrahTube project.
 
 ---
 

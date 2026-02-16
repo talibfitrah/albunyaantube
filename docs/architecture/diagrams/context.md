@@ -1,15 +1,15 @@
 # C4 Level 1 — System Context Diagram
 
-This diagram shows the high-level system context for Albunyaan Tube, illustrating the relationships between users, the platform components, and external systems.
+This diagram shows the high-level system context for FitrahTube, illustrating the relationships between users, the platform components, and external systems.
 
 ```mermaid
 C4Context
-    title Albunyaan Tube System Context
+    title FitrahTube System Context
 
     Person(muslimUser, "Mobile User", "Muslim families and students<br/>seeking safe Islamic content")
     Person(adminUser, "Admin/Moderator", "Curates and moderates<br/>content catalog")
 
-    System_Boundary(platform, "Albunyaan Tube Platform") {
+    System_Boundary(platform, "FitrahTube Platform") {
         System(backend, "Backend API", "Spring Boot REST API<br/>with Firebase Firestore")
         System(adminUi, "Admin Dashboard", "Vue 3 web app for<br/>content moderation")
         System(androidApp, "Android App", "Native Kotlin app<br/>with ExoPlayer")

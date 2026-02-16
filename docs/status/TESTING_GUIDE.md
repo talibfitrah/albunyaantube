@@ -3,7 +3,7 @@
 **Last Updated**: November 16, 2025
 **Status**: Active - Production testing strategy
 
-This guide covers testing strategy, execution, and verification for the Albunyaan Tube platform across all components (Backend, Frontend, Android).
+This guide covers testing strategy, execution, and verification for the FitrahTube platform across all components (Backend, Frontend, Android).
 
 ---
 

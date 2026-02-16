@@ -17,7 +17,7 @@
           <span></span>
         </span>
       </button>
-      <div class="mobile-brand">Albunyaan Tube</div>
+      <div class="mobile-brand">FitrahTube</div>
       <button type="button" class="mobile-logout" @click="handleLogout">
         {{ t('auth.logout') }}
       </button>
@@ -33,7 +33,7 @@
     <!-- Sidebar Navigation -->
     <aside class="sidebar" :class="{ open: isSidebarOpen }" role="complementary" aria-label="Main navigation">
       <div class="sidebar-header">
-        <div class="brand">Albunyaan Tube</div>
+        <div class="brand">FitrahTube</div>
         <button
           type="button"
           class="close-sidebar"

@@ -2,7 +2,7 @@
 
 ## 🎉 Initial Release
 
-Welcome to **Albunyaan Tube** - your trusted platform for Islamic educational content!
+Welcome to **FitrahTube** - your trusted platform for Islamic educational content!
 
 ### ✨ What's New
 
@@ -60,4 +60,4 @@ We're constantly improving! Please share your feedback and suggestions at:
 
 ---
 
-**JazakAllahu Khairan for using Albunyaan Tube!** 🕌
+**JazakAllahu Khairan for using FitrahTube!** 🕌

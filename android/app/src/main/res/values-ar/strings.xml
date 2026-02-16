@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">البنيان تيوب</string>
+    <string name="app_name">فطرة تيوب</string>
     <string name="filter_category">التصنيف</string>
     <string name="filter_category_all">جميع التصنيفات</string>
     <string name="filter_length">المدة</string>
@@ -518,8 +518,8 @@
     <string name="player_favorite_toggle_error">فشل تحديث المفضلة. يرجى المحاولة مرة أخرى.</string>
 
     <!-- Share -->
-    <string name="share_watch_in_app">شاهد في البنيان تيوب:</string>
-    <string name="share_app_promo">حمّل البنيان تيوب للمحتوى الإسلامي بدون إعلانات!</string>
+    <string name="share_watch_in_app">شاهد في فطرة تيوب:</string>
+    <string name="share_app_promo">حمّل فطرة تيوب للمحتوى الإسلامي بدون إعلانات!</string>
     <string name="share_video_chooser">مشاركة الفيديو</string>
 
     <!-- Download Quality Dialog -->

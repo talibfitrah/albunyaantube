@@ -1,4 +1,6 @@
-# Playlist Detail Screen – Implementation Plan (Albunyaan Tube)
+# Playlist Detail Screen – Implementation Plan (FitrahTube)
+
+> **Branding Note**: "FitrahTube" is the user-facing brand name. All code identifiers in this document (package `com.albunyaan.tube.*`, deep link scheme `albunyaantube://`, file paths under `albunyaantube/`) use the original "albunyaan" naming, which is the actual codebase state. Do not update these identifiers without a coordinated project-wide migration.
 
 ## 0. Critical Review & High‑Level Decisions
 

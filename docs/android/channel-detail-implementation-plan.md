@@ -1,6 +1,6 @@
 # Channel Detail Screen – NewPipe Implementation Plan
 
-> Albunyaan Tube Android app – Channel Detail (Videos / Live / Shorts / Playlists / About)
+> FitrahTube Android app – Channel Detail (Videos / Live / Shorts / Playlists / About)
 > Scope: Native Android, NewPipeExtractor only (no backend calls for this screen)
 
 ---
