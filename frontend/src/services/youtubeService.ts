@@ -1,13 +1,17 @@
 /**
  * YouTube Service
- * Real backend API integration for YouTube search and content preview
  *
- * Backend uses NewPipeExtractor for YouTube content extraction (no API key required).
- * All endpoints return the same data structures, but the backend implementation
- * has been migrated from YouTube Data API v3 to NewPipeExtractor.
+ * Search uses YouTube Data API v3 directly when VITE_YOUTUBE_API_KEY is configured.
+ * Falls back to backend NewPipe proxy when no API key is set.
+ *
+ * Channel/playlist detail browsing still uses the backend (NewPipe handles
+ * complex tab extraction like shorts/livestreams that Data API doesn't support).
+ *
+ * Registry operations (add to pending, check existing) always go through backend.
  */
 
 import apiClient from './api/client';
+import { isYouTubeDataApiAvailable, searchAll as ytSearchAll, searchByType as ytSearchByType } from './youtubeDataApi';
 import type { AdminSearchChannelResult, AdminSearchPlaylistResult, AdminSearchVideoResult } from '@/types/registry';
 import type {
   EnrichedSearchResult,
@@ -30,21 +34,80 @@ interface YouTubeSearchResponse {
 }
 
 /**
- * Search YouTube for channels, playlists, or videos with pagination support
- * Uses NewPipeExtractor on backend (no API quota limits)
+ * Search YouTube for channels, playlists, or videos with pagination support.
+ *
+ * When VITE_YOUTUBE_API_KEY is set: calls YouTube Data API v3 directly (no backend proxy).
+ * Otherwise: falls back to backend NewPipe proxy (no API quota limits).
  */
 export async function searchYouTube(
   query: string,
   type: 'all' | 'channels' | 'playlists' | 'videos' = 'all',
   pageToken?: string
 ): Promise<YouTubeSearchResponse> {
-  // Use unified search for 'all' - MUCH faster (single backend call) with pagination
+  // Prefer direct YouTube Data API when configured
+  if (isYouTubeDataApiAvailable()) {
+    return searchYouTubeDirect(query, type, pageToken);
+  }
+
+  // Fallback: backend proxy via NewPipe
+  return searchYouTubeViaBackend(query, type, pageToken);
+}
+
+/**
+ * Search using YouTube Data API v3 directly from the browser.
+ */
+async function searchYouTubeDirect(
+  query: string,
+  type: 'all' | 'channels' | 'playlists' | 'videos',
+  pageToken?: string
+): Promise<YouTubeSearchResponse> {
+  if (type === 'all') {
+    const response = await ytSearchAll(query, pageToken);
+    const channels: EnrichedSearchResult[] = [];
+    const playlists: EnrichedSearchResult[] = [];
+    const videos: EnrichedSearchResult[] = [];
+
+    response.items.forEach(item => {
+      if (item.type === 'channel') channels.push(item);
+      else if (item.type === 'playlist') playlists.push(item);
+      else if (item.type === 'video') videos.push(item);
+    });
+
+    return {
+      channels: transformChannelResults(channels),
+      playlists: transformPlaylistResults(playlists),
+      videos: transformVideoResults(videos),
+      nextPageToken: response.nextPageToken || undefined,
+      totalResults: response.totalResults
+    };
+  }
+
+  const typeMap: Record<string, 'channel' | 'playlist' | 'video'> = {
+    channels: 'channel',
+    playlists: 'playlist',
+    videos: 'video'
+  };
+  const results = await ytSearchByType(query, typeMap[type]);
+  return {
+    channels: type === 'channels' ? transformChannelResults(results) : [],
+    playlists: type === 'playlists' ? transformPlaylistResults(results) : [],
+    videos: type === 'videos' ? transformVideoResults(results) : []
+  };
+}
+
+/**
+ * Search using backend NewPipe proxy (fallback when no API key).
+ */
+async function searchYouTubeViaBackend(
+  query: string,
+  type: 'all' | 'channels' | 'playlists' | 'videos',
+  pageToken?: string
+): Promise<YouTubeSearchResponse> {
   if (type === 'all') {
     const response = await apiClient.get<SearchPageResponse>('/api/admin/youtube/search/all', {
       params: { query, pageToken }
     });
 
-    // Separate by type but preserve mixed order
     const channels: EnrichedSearchResult[] = [];
     const playlists: EnrichedSearchResult[] = [];
     const videos: EnrichedSearchResult[] = [];
@@ -64,7 +127,6 @@ export async function searchYouTube(
     };
   }
 
-  // Handle single-type responses with typed API calls
   const endpoint = `/api/admin/youtube/search/${type}`;
   const response = await apiClient.get<EnrichedSearchResult[]>(endpoint, {
     params: { query }
@@ -305,7 +367,7 @@ function parseDuration(duration: string): number {
   return hours * 3600 + minutes * 60 + seconds;
 }
 
-// Additional YouTube functions for exclusions modals (powered by NewPipeExtractor)
+// Channel/Playlist detail browsing - stays on backend (NewPipe handles complex tab extraction)
 
 /**
  * Get videos from a YouTube channel with pagination
