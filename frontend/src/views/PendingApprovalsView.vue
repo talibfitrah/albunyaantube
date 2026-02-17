@@ -2,8 +2,8 @@
   <div class="approvals-view">
     <header class="approvals-header">
       <div>
-        <h1>{{ t('approvals.heading') }}</h1>
-        <p>{{ t('approvals.subtitle') }}</p>
+        <h1>{{ isModeratorView ? t('approvals.mySubmissionsHeading') : t('approvals.heading') }}</h1>
+        <p>{{ isModeratorView ? t('approvals.mySubmissionsSubtitle') : t('approvals.subtitle') }}</p>
       </div>
       <div class="header-stats">
         <div class="stat-badge">
@@ -13,8 +13,51 @@
       </div>
     </header>
 
-    <!-- Filters -->
-    <div class="filters">
+    <!-- Status Tabs (moderator view) -->
+    <div v-if="isModeratorView" class="filters">
+      <div class="filter-group">
+        <label>{{ t('approvals.filters.type') }}</label>
+        <div class="filter-tabs">
+          <button
+            v-for="tab in statusTabs"
+            :key="tab.value"
+            type="button"
+            :class="['filter-tab', { active: statusFilter === tab.value }]"
+            @click="statusFilter = tab.value; handleFilterChange()"
+          >
+            {{ t(tab.labelKey) }}
+          </button>
+        </div>
+      </div>
+
+      <div class="filter-row">
+        <div class="filter-item">
+          <label>{{ t('approvals.filters.type') }}</label>
+          <div class="filter-tabs">
+            <button
+              v-for="type in contentTypes"
+              :key="type.value"
+              type="button"
+              :class="['filter-tab', { active: contentType === type.value }]"
+              @click="contentType = type.value; handleFilterChange()"
+            >
+              {{ t(type.labelKey) }}
+            </button>
+          </div>
+        </div>
+
+        <div class="filter-item">
+          <label>{{ t('approvals.filters.sort') }}</label>
+          <select v-model="sortFilter" @change="handleFilterChange">
+            <option value="oldest">{{ t('approvals.filters.oldest') }}</option>
+            <option value="newest">{{ t('approvals.filters.newest') }}</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Admin Filters -->
+    <div v-else class="filters">
       <div class="filter-group">
         <label>{{ t('approvals.filters.type') }}</label>
         <div class="filter-tabs">
@@ -65,7 +108,7 @@
 
     <!-- Empty State -->
     <div v-else-if="approvals.length === 0" class="empty-state">
-      <p>{{ t('approvals.empty') }}</p>
+      <p>{{ isModeratorView ? t('approvals.emptySubmissions') : t('approvals.empty') }}</p>
     </div>
 
     <!-- Approvals Grid -->
@@ -73,7 +116,12 @@
       <div v-for="item in approvals" :key="item.id" class="approval-card">
         <div class="card-header">
           <span class="content-type">{{ t(`approvals.types.${item.type}`) }}</span>
-          <span class="submitted-date">{{ formatDate(item.submittedAt) }}</span>
+          <div class="card-header-right">
+            <span v-if="isModeratorView && item.status" :class="['status-badge', `status-${item.status.toLowerCase()}`]">
+              {{ t(`approvals.statusTabs.${item.status.toLowerCase()}`) }}
+            </span>
+            <span class="submitted-date">{{ formatDate(item.submittedAt) }}</span>
+          </div>
         </div>
 
         <div class="card-body">
@@ -112,6 +160,18 @@
                 </span>
               </div>
             </div>
+          </div>
+        </div>
+
+        <!-- Rejection/Review info for moderator view -->
+        <div v-if="isModeratorView && (item.rejectionReason || item.reviewNotes)" class="review-info">
+          <div v-if="item.rejectionReason" class="review-detail">
+            <span class="meta-label">{{ t('approvals.rejectedReason') }}:</span>
+            <span>{{ item.rejectionReason }}</span>
+          </div>
+          <div v-if="item.reviewNotes" class="review-detail">
+            <span class="meta-label">{{ t('approvals.adminNotes') }}:</span>
+            <span>{{ item.reviewNotes }}</span>
           </div>
         </div>
 
@@ -225,7 +285,7 @@ import { ref, computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAuthStore } from '@/stores/auth';
 import { getAllCategories } from '@/services/categoryService';
-import { getPendingApprovals, approveItem, rejectItem as rejectItemApi, type PendingApproval } from '@/services/approvalService';
+import { getPendingApprovals, getMySubmissions, approveItem, rejectItem as rejectItemApi, type PendingApproval, type SubmissionStatus } from '@/services/approvalService';
 import ChannelDetailModal from '@/components/exclusions/ChannelDetailModal.vue';
 import PlaylistDetailModal from '@/components/exclusions/PlaylistDetailModal.vue';
 import VideoPreviewModal from '@/components/VideoPreviewModal.vue';
@@ -233,9 +293,18 @@ import VideoPreviewModal from '@/components/VideoPreviewModal.vue';
 const { t } = useI18n();
 const authStore = useAuthStore();
 
+const isModeratorView = computed(() => !authStore.isAdmin);
+
 const contentType = ref<'all' | 'channels' | 'playlists' | 'videos'>('all');
 const categoryFilter = ref('');
 const sortFilter = ref('oldest');
+const statusFilter = ref<SubmissionStatus>('PENDING');
+
+const statusTabs = [
+  { value: 'PENDING' as SubmissionStatus, labelKey: 'approvals.statusTabs.pending' },
+  { value: 'APPROVED' as SubmissionStatus, labelKey: 'approvals.statusTabs.approved' },
+  { value: 'REJECTED' as SubmissionStatus, labelKey: 'approvals.statusTabs.rejected' }
+];
 
 const approvals = ref<any[]>([]);
 const categories = ref<any[]>([]);
@@ -307,12 +376,21 @@ async function loadApprovals() {
   error.value = null;
 
   try {
-    const items = await getPendingApprovals({
-      type: contentType.value,
-      category: categoryFilter.value || undefined,
-      sort: sortFilter.value as 'oldest' | 'newest'
-    });
-    approvals.value = items;
+    if (isModeratorView.value) {
+      const items = await getMySubmissions({
+        status: statusFilter.value,
+        type: contentType.value,
+        sort: sortFilter.value as 'oldest' | 'newest'
+      });
+      approvals.value = items;
+    } else {
+      const items = await getPendingApprovals({
+        type: contentType.value,
+        category: categoryFilter.value || undefined,
+        sort: sortFilter.value as 'oldest' | 'newest'
+      });
+      approvals.value = items;
+    }
   } catch (err) {
     error.value = err instanceof Error ? err.message : t('approvals.error');
   } finally {
@@ -625,6 +703,52 @@ onMounted(() => {
   padding: 1rem 1.5rem;
   background: var(--color-surface-alt);
   border-bottom: 1px solid var(--color-border);
+}
+
+.card-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.status-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.25rem 0.625rem;
+  border-radius: 999px;
+}
+
+.status-pending {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.status-approved {
+  background: rgba(21, 128, 61, 0.1);
+  color: var(--color-success);
+}
+
+.status-rejected {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.review-info {
+  padding: 1rem 1.5rem;
+  background: var(--color-surface-alt);
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.review-detail {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
 }
 
 .content-type {

@@ -99,6 +99,68 @@ function mapPendingApprovalToUi(dto: PendingApprovalDto): PendingApproval {
 }
 
 /**
+ * Submission status for moderator "My Submissions" view
+ */
+export type SubmissionStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
+/**
+ * Extended approval item with status info for "My Submissions"
+ */
+export interface MySubmission extends PendingApproval {
+  status: SubmissionStatus;
+  rejectionReason?: string;
+  reviewNotes?: string;
+}
+
+/**
+ * Map API DTO to MySubmission (includes status fields)
+ */
+function mapToMySubmission(dto: PendingApprovalDto): MySubmission {
+  const base = mapPendingApprovalToUi(dto);
+  return {
+    ...base,
+    status: ((dto as any).status as SubmissionStatus) || 'PENDING',
+    rejectionReason: (dto as any).rejectionReason || undefined,
+    reviewNotes: (dto as any).reviewNotes || undefined
+  };
+}
+
+/**
+ * Get the current user's own submissions filtered by status.
+ * Used by moderators to view their submission history.
+ */
+export async function getMySubmissions(filters?: {
+  status?: SubmissionStatus;
+  type?: 'all' | 'channels' | 'playlists' | 'videos';
+  sort?: 'oldest' | 'newest';
+}): Promise<MySubmission[]> {
+  const params: Record<string, string | number> = {};
+
+  if (filters?.status) params.status = filters.status;
+
+  let typeParam: string | undefined;
+  if (filters?.type === 'channels') typeParam = 'CHANNEL';
+  else if (filters?.type === 'playlists') typeParam = 'PLAYLIST';
+  else if (filters?.type === 'videos') typeParam = 'VIDEO';
+  if (typeParam) params.type = typeParam;
+
+  params.limit = 100;
+
+  const response = await apiClient.get<CursorPage<PendingApprovalDto>>('/api/admin/approvals/my-submissions', { params });
+  const data = response.data.data;
+
+  const submissions: MySubmission[] = data.map(mapToMySubmission);
+
+  if (filters?.sort === 'newest') {
+    submissions.sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
+  } else {
+    submissions.sort((a, b) => new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime());
+  }
+
+  return submissions;
+}
+
+/**
  * Get pending approvals using the proper approval endpoint
  */
 export async function getPendingApprovals(filters?: {

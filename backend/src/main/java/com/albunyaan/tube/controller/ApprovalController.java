@@ -45,6 +45,7 @@ public class ApprovalController {
      * - limit: page size (default 20)
      * - cursor: pagination cursor (optional)
      */
+    @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/pending")
     public ResponseEntity<CursorPageDto<PendingApprovalDto>> getPendingApprovals(
             @RequestParam(required = false) String type,
@@ -64,6 +65,41 @@ public class ApprovalController {
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             log.error("Failed to get pending approvals", e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * GET /api/admin/approvals/my-submissions
+     *
+     * List the authenticated user's own submissions filtered by status.
+     * Available to both admins and moderators.
+     *
+     * Query params:
+     * - status: PENDING|APPROVED|REJECTED (default PENDING)
+     * - type: CHANNEL|PLAYLIST (optional)
+     * - limit: page size (default 20)
+     * - cursor: pagination cursor (optional)
+     */
+    @GetMapping("/my-submissions")
+    public ResponseEntity<CursorPageDto<PendingApprovalDto>> getMySubmissions(
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String type,
+            @RequestParam(required = false) Integer limit,
+            @RequestParam(required = false) String cursor,
+            @AuthenticationPrincipal FirebaseUserDetails user)
+            throws ExecutionException, InterruptedException, TimeoutException {
+
+        try {
+            log.debug("GET /my-submissions - status={}, type={}, limit={}, cursor={}, user={}",
+                    status, type, limit, cursor, user.getUid());
+
+            CursorPageDto<PendingApprovalDto> result = approvalService.getMySubmissions(
+                    user.getUid(), status, type, limit, cursor);
+
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("Failed to get my submissions for user {}", user.getUid(), e);
             return ResponseEntity.internalServerError().build();
         }
     }

@@ -320,6 +320,237 @@ public class ApprovalService {
     }
 
     /**
+     * Get submissions by a specific user, filtered by status.
+     * Used by moderators to view their own submissions.
+     */
+    public CursorPageDto<PendingApprovalDto> getMySubmissions(
+            String submittedBy,
+            String status,
+            String type,
+            Integer limit,
+            String cursor) throws ExecutionException, InterruptedException, TimeoutException {
+
+        int pageSize = (limit != null && limit > 0) ? limit : 20;
+        String normalizedStatus = (status != null) ? status.toUpperCase() : "PENDING";
+
+        if ("CHANNEL".equalsIgnoreCase(type)) {
+            return getSubmissionChannelsOnly(submittedBy, normalizedStatus, pageSize, cursor);
+        } else if ("PLAYLIST".equalsIgnoreCase(type)) {
+            return getSubmissionPlaylistsOnly(submittedBy, normalizedStatus, pageSize, cursor);
+        }
+
+        // Mixed: merge channels and playlists
+        return getSubmissionsMixed(submittedBy, normalizedStatus, pageSize, cursor);
+    }
+
+    private CursorPageDto<PendingApprovalDto> getSubmissionChannelsOnly(
+            String submittedBy, String status, int pageSize, String cursor)
+            throws ExecutionException, InterruptedException, TimeoutException {
+
+        ApprovalRepository.PaginatedResult<Channel> result =
+                approvalRepository.findChannelsBySubmitterAndStatus(submittedBy, status, pageSize, cursor);
+
+        List<PendingApprovalDto> items = new ArrayList<>();
+        for (Channel channel : result.getItems()) {
+            PendingApprovalDto dto = channelToApprovalDto(channel);
+            enrichWithStatusFields(dto, channel.getStatus(), channel.getApprovalMetadata());
+            items.add(dto);
+        }
+
+        String nextCursor = null;
+        if (result.hasNext() && !items.isEmpty()) {
+            PendingApprovalDto lastItem = items.get(items.size() - 1);
+            CursorUtils.CursorData cursorData = new CursorUtils.CursorData(lastItem.getId());
+            cursorData.withField("type", "CHANNEL");
+            if (lastItem.getSubmittedAt() != null) {
+                cursorData.withField("createdAt", lastItem.getSubmittedAt());
+            }
+            nextCursor = CursorUtils.encode(cursorData);
+        }
+
+        CursorPageDto<PendingApprovalDto> response = new CursorPageDto<>();
+        response.setData(items);
+        response.setPageInfo(new CursorPageDto.PageInfo(nextCursor));
+        return response;
+    }
+
+    private CursorPageDto<PendingApprovalDto> getSubmissionPlaylistsOnly(
+            String submittedBy, String status, int pageSize, String cursor)
+            throws ExecutionException, InterruptedException, TimeoutException {
+
+        ApprovalRepository.PaginatedResult<Playlist> result =
+                approvalRepository.findPlaylistsBySubmitterAndStatus(submittedBy, status, pageSize, cursor);
+
+        List<PendingApprovalDto> items = new ArrayList<>();
+        for (Playlist playlist : result.getItems()) {
+            PendingApprovalDto dto = playlistToApprovalDto(playlist);
+            enrichWithStatusFields(dto, playlist.getStatus(), playlist.getApprovalMetadata());
+            items.add(dto);
+        }
+
+        String nextCursor = null;
+        if (result.hasNext() && !items.isEmpty()) {
+            PendingApprovalDto lastItem = items.get(items.size() - 1);
+            CursorUtils.CursorData cursorData = new CursorUtils.CursorData(lastItem.getId());
+            cursorData.withField("type", "PLAYLIST");
+            if (lastItem.getSubmittedAt() != null) {
+                cursorData.withField("createdAt", lastItem.getSubmittedAt());
+            }
+            nextCursor = CursorUtils.encode(cursorData);
+        }
+
+        CursorPageDto<PendingApprovalDto> response = new CursorPageDto<>();
+        response.setData(items);
+        response.setPageInfo(new CursorPageDto.PageInfo(nextCursor));
+        return response;
+    }
+
+    private CursorPageDto<PendingApprovalDto> getSubmissionsMixed(
+            String submittedBy, String status, int pageSize, String cursor)
+            throws ExecutionException, InterruptedException, TimeoutException {
+
+        String channelCursor = null;
+        String playlistCursor = null;
+
+        if (cursor != null && !cursor.isEmpty()) {
+            try {
+                CursorUtils.CursorData cursorData = CursorUtils.decode(cursor);
+                if (cursorData != null) {
+                    channelCursor = cursorData.getFieldAsString("channelCursor");
+                    playlistCursor = cursorData.getFieldAsString("playlistCursor");
+                }
+            } catch (Exception e) {
+                log.warn("Invalid cursor format: {}", cursor, e);
+                throw new IllegalArgumentException("Invalid cursor format");
+            }
+        }
+
+        ApprovalRepository.PaginatedResult<Channel> channelResult =
+                approvalRepository.findChannelsBySubmitterAndStatus(submittedBy, status, pageSize, channelCursor);
+        ApprovalRepository.PaginatedResult<Playlist> playlistResult =
+                approvalRepository.findPlaylistsBySubmitterAndStatus(submittedBy, status, pageSize, playlistCursor);
+
+        List<IndexedDto> channelDtos = new ArrayList<>();
+        for (int i = 0; i < channelResult.getItems().size(); i++) {
+            Channel channel = channelResult.getItems().get(i);
+            PendingApprovalDto dto = channelToApprovalDto(channel);
+            enrichWithStatusFields(dto, channel.getStatus(), channel.getApprovalMetadata());
+            channelDtos.add(new IndexedDto(dto, i));
+        }
+
+        List<IndexedDto> playlistDtos = new ArrayList<>();
+        for (int i = 0; i < playlistResult.getItems().size(); i++) {
+            Playlist playlist = playlistResult.getItems().get(i);
+            PendingApprovalDto dto = playlistToApprovalDto(playlist);
+            enrichWithStatusFields(dto, playlist.getStatus(), playlist.getApprovalMetadata());
+            playlistDtos.add(new IndexedDto(dto, i));
+        }
+
+        // Merge-sort by submittedAt (newest first)
+        List<PendingApprovalDto> merged = new ArrayList<>();
+        int channelUsed = 0;
+        int playlistUsed = 0;
+        int ci = 0, pi = 0;
+
+        while (merged.size() < pageSize && (ci < channelDtos.size() || pi < playlistDtos.size())) {
+            if (ci >= channelDtos.size()) {
+                merged.add(playlistDtos.get(pi).dto);
+                playlistUsed = playlistDtos.get(pi).index + 1;
+                pi++;
+            } else if (pi >= playlistDtos.size()) {
+                merged.add(channelDtos.get(ci).dto);
+                channelUsed = channelDtos.get(ci).index + 1;
+                ci++;
+            } else {
+                Timestamp channelDate = channelDtos.get(ci).dto.getSubmittedAt();
+                Timestamp playlistDate = playlistDtos.get(pi).dto.getSubmittedAt();
+
+                boolean takeChannel;
+                if (channelDate == null && playlistDate == null) {
+                    takeChannel = channelDtos.get(ci).dto.getId().compareTo(playlistDtos.get(pi).dto.getId()) <= 0;
+                } else if (channelDate == null) {
+                    takeChannel = false;
+                } else if (playlistDate == null) {
+                    takeChannel = true;
+                } else {
+                    int cmp = channelDate.compareTo(playlistDate);
+                    takeChannel = cmp == 0
+                            ? channelDtos.get(ci).dto.getId().compareTo(playlistDtos.get(pi).dto.getId()) <= 0
+                            : cmp > 0;
+                }
+
+                if (takeChannel) {
+                    merged.add(channelDtos.get(ci).dto);
+                    channelUsed = channelDtos.get(ci).index + 1;
+                    ci++;
+                } else {
+                    merged.add(playlistDtos.get(pi).dto);
+                    playlistUsed = playlistDtos.get(pi).index + 1;
+                    pi++;
+                }
+            }
+        }
+
+        boolean hasMoreChannels = channelResult.hasNext() || ci < channelDtos.size();
+        boolean hasMorePlaylists = playlistResult.hasNext() || pi < playlistDtos.size();
+        boolean hasNext = hasMoreChannels || hasMorePlaylists;
+
+        String nextCursor = null;
+        if (hasNext && !merged.isEmpty()) {
+            String nextChannelCursor = null;
+            String nextPlaylistCursor = null;
+
+            if (channelUsed > 0 && channelUsed <= channelResult.getItems().size()) {
+                Channel lastChannel = channelResult.getItems().get(channelUsed - 1);
+                CursorUtils.CursorData channelCursorData = new CursorUtils.CursorData(lastChannel.getId());
+                if (lastChannel.getCreatedAt() != null) {
+                    channelCursorData.withField("createdAt", lastChannel.getCreatedAt());
+                }
+                nextChannelCursor = CursorUtils.encode(channelCursorData);
+            } else if (channelCursor != null) {
+                nextChannelCursor = channelCursor;
+            }
+
+            if (playlistUsed > 0 && playlistUsed <= playlistResult.getItems().size()) {
+                Playlist lastPlaylist = playlistResult.getItems().get(playlistUsed - 1);
+                CursorUtils.CursorData playlistCursorData = new CursorUtils.CursorData(lastPlaylist.getId());
+                if (lastPlaylist.getCreatedAt() != null) {
+                    playlistCursorData.withField("createdAt", lastPlaylist.getCreatedAt());
+                }
+                nextPlaylistCursor = CursorUtils.encode(playlistCursorData);
+            } else if (playlistCursor != null) {
+                nextPlaylistCursor = playlistCursor;
+            }
+
+            CursorUtils.CursorData compositeCursor = new CursorUtils.CursorData("mixed");
+            compositeCursor.withField("type", "MIXED");
+            if (nextChannelCursor != null) {
+                compositeCursor.withField("channelCursor", nextChannelCursor);
+            }
+            if (nextPlaylistCursor != null) {
+                compositeCursor.withField("playlistCursor", nextPlaylistCursor);
+            }
+            nextCursor = CursorUtils.encode(compositeCursor);
+        }
+
+        CursorPageDto<PendingApprovalDto> response = new CursorPageDto<>();
+        response.setData(merged);
+        response.setPageInfo(new CursorPageDto.PageInfo(nextCursor));
+        return response;
+    }
+
+    /**
+     * Enrich a PendingApprovalDto with status and approval metadata fields.
+     */
+    private void enrichWithStatusFields(PendingApprovalDto dto, String status, ApprovalMetadata metadata) {
+        dto.setStatus(status);
+        if (metadata != null) {
+            dto.setReviewNotes(metadata.getReviewNotes());
+            dto.setRejectionReason(metadata.getRejectionReason());
+        }
+    }
+
+    /**
      * Approve a pending item
      */
     public ApprovalResponseDto approve(String id, ApprovalRequestDto request, String actorUid, String actorDisplayName)

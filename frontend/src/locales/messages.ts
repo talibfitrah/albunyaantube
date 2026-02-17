@@ -159,6 +159,8 @@ export const messages = {
     approvals: {
       heading: 'Pending Approvals',
       subtitle: 'Review and approve or reject content submissions',
+      mySubmissionsHeading: 'My Submissions',
+      mySubmissionsSubtitle: 'Track the status of your content submissions',
       pending: 'Pending items',
       filters: {
         type: 'Content type',
@@ -194,7 +196,15 @@ export const messages = {
       loading: 'Loading approvals...',
       retry: 'Retry',
       empty: 'No pending approvals found.',
+      emptySubmissions: 'No submissions found with this status.',
       error: 'Failed to load approvals.',
+      statusTabs: {
+        pending: 'Pending',
+        approved: 'Approved',
+        rejected: 'Rejected'
+      },
+      rejectedReason: 'Reason',
+      adminNotes: 'Admin notes',
       rejectDialog: {
         title: 'Reject Submission',
         reason: 'Rejection reason',
@@ -1439,6 +1449,8 @@ export const messages = {
     approvals: {
       heading: 'الموافقات المعلقة',
       subtitle: 'مراجعة المحتوى المرسل والموافقة عليه أو رفضه',
+      mySubmissionsHeading: 'طلباتي',
+      mySubmissionsSubtitle: 'تتبع حالة طلبات المحتوى الخاصة بك',
       pending: 'عناصر قيد الانتظار',
       filters: {
         type: 'نوع المحتوى',
@@ -1474,7 +1486,15 @@ export const messages = {
       loading: 'جارٍ تحميل الموافقات...',
       retry: 'إعادة المحاولة',
       empty: 'لا توجد موافقات معلقة.',
+      emptySubmissions: 'لا توجد طلبات بهذه الحالة.',
       error: 'فشل تحميل الموافقات.',
+      statusTabs: {
+        pending: 'قيد الانتظار',
+        approved: 'مقبولة',
+        rejected: 'مرفوضة'
+      },
+      rejectedReason: 'السبب',
+      adminNotes: 'ملاحظات المسؤول',
       rejectDialog: {
         title: 'رفض الطلب',
         reason: 'سبب الرفض',
@@ -2500,6 +2520,8 @@ export const messages = {
     approvals: {
       heading: 'Goedkeuringen in behandeling',
       subtitle: 'Beoordeel en keur ingediende inhoud goed of af',
+      mySubmissionsHeading: 'Mijn indieningen',
+      mySubmissionsSubtitle: 'Volg de status van je ingediende inhoud',
       pending: 'Items in behandeling',
       filters: {
         type: 'Type inhoud',
@@ -2535,7 +2557,15 @@ export const messages = {
       loading: 'Goedkeuringen laden...',
       retry: 'Opnieuw proberen',
       empty: 'Geen goedkeuringen in behandeling.',
+      emptySubmissions: 'Geen indieningen gevonden met deze status.',
       error: 'Goedkeuringen kunnen niet worden geladen.',
+      statusTabs: {
+        pending: 'In behandeling',
+        approved: 'Goedgekeurd',
+        rejected: 'Afgewezen'
+      },
+      rejectedReason: 'Reden',
+      adminNotes: 'Opmerkingen beheerder',
       rejectDialog: {
         title: 'Indiening afwijzen',
         reason: 'Reden voor afwijzing',

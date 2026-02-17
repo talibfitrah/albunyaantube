@@ -268,6 +268,108 @@ public class ApprovalRepository {
     }
 
     /**
+     * Find channels by submitter and status with cursor-based pagination.
+     */
+    public PaginatedResult<Channel> findChannelsBySubmitterAndStatus(String submittedBy, String status, int limit, String cursor)
+            throws ExecutionException, InterruptedException, TimeoutException {
+
+        Query query = getChannelsCollection()
+                .whereEqualTo("submittedBy", submittedBy)
+                .whereEqualTo("status", status)
+                .orderBy("createdAt", Query.Direction.DESCENDING)
+                .orderBy(FieldPath.documentId(), Query.Direction.ASCENDING)
+                .limit(limit + 1);
+
+        if (cursor != null && !cursor.isEmpty()) {
+            CursorUtils.CursorData cursorData = CursorUtils.decode(cursor);
+            if (cursorData != null) {
+                DocumentReference cursorDoc = getChannelsCollection().document(cursorData.getId());
+                var cursorSnapshot = cursorDoc.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS);
+                if (cursorSnapshot.exists()) {
+                    query = query.startAfter(cursorSnapshot);
+                } else {
+                    throw new IllegalArgumentException("Invalid cursor: channel document '" + cursorData.getId() + "' not found");
+                }
+            }
+        }
+
+        QuerySnapshot snapshot = query.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
+        List<QueryDocumentSnapshot> docs = snapshot.getDocuments();
+
+        boolean hasNext = docs.size() > limit;
+        if (hasNext) {
+            docs = docs.subList(0, limit);
+        }
+
+        List<Channel> channels = new ArrayList<>();
+        String nextCursor = null;
+
+        for (int i = 0; i < docs.size(); i++) {
+            QueryDocumentSnapshot doc = docs.get(i);
+            Channel channel = doc.toObject(Channel.class);
+            channel.setId(doc.getId());
+            channels.add(channel);
+
+            if (i == docs.size() - 1 && hasNext) {
+                nextCursor = CursorUtils.encodeFromSnapshot(doc, "createdAt");
+            }
+        }
+
+        return new PaginatedResult<>(channels, nextCursor, hasNext);
+    }
+
+    /**
+     * Find playlists by submitter and status with cursor-based pagination.
+     */
+    public PaginatedResult<Playlist> findPlaylistsBySubmitterAndStatus(String submittedBy, String status, int limit, String cursor)
+            throws ExecutionException, InterruptedException, TimeoutException {
+
+        Query query = getPlaylistsCollection()
+                .whereEqualTo("submittedBy", submittedBy)
+                .whereEqualTo("status", status)
+                .orderBy("createdAt", Query.Direction.DESCENDING)
+                .orderBy(FieldPath.documentId(), Query.Direction.ASCENDING)
+                .limit(limit + 1);
+
+        if (cursor != null && !cursor.isEmpty()) {
+            CursorUtils.CursorData cursorData = CursorUtils.decode(cursor);
+            if (cursorData != null) {
+                DocumentReference cursorDoc = getPlaylistsCollection().document(cursorData.getId());
+                var cursorSnapshot = cursorDoc.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS);
+                if (cursorSnapshot.exists()) {
+                    query = query.startAfter(cursorSnapshot);
+                } else {
+                    throw new IllegalArgumentException("Invalid cursor: playlist document '" + cursorData.getId() + "' not found");
+                }
+            }
+        }
+
+        QuerySnapshot snapshot = query.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
+        List<QueryDocumentSnapshot> docs = snapshot.getDocuments();
+
+        boolean hasNext = docs.size() > limit;
+        if (hasNext) {
+            docs = docs.subList(0, limit);
+        }
+
+        List<Playlist> playlists = new ArrayList<>();
+        String nextCursor = null;
+
+        for (int i = 0; i < docs.size(); i++) {
+            QueryDocumentSnapshot doc = docs.get(i);
+            Playlist playlist = doc.toObject(Playlist.class);
+            playlist.setId(doc.getId());
+            playlists.add(playlist);
+
+            if (i == docs.size() - 1 && hasNext) {
+                nextCursor = CursorUtils.encodeFromSnapshot(doc, "createdAt");
+            }
+        }
+
+        return new PaginatedResult<>(playlists, nextCursor, hasNext);
+    }
+
+    /**
      * Generic paginated result wrapper.
      */
     public static class PaginatedResult<T> {
