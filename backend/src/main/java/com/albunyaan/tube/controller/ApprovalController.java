@@ -7,6 +7,7 @@ import com.albunyaan.tube.service.PublicContentCacheService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -78,6 +79,7 @@ public class ApprovalController {
      *   "categoryOverride": "category_id" (optional)
      * }
      */
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/{id}/approve")
     public ResponseEntity<ApprovalResponseDto> approve(
             @PathVariable String id,
@@ -117,6 +119,7 @@ public class ApprovalController {
      *   "reviewNotes": "Content not aligned with platform guidelines"
      * }
      */
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/{id}/reject")
     public ResponseEntity<ApprovalResponseDto> reject(
             @PathVariable String id,

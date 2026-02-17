@@ -43,7 +43,7 @@ import java.util.stream.Collectors;
  */
 @RestController
 @RequestMapping("/api/admin/content")
-@PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+@PreAuthorize("hasRole('ADMIN')")
 @Validated
 public class ContentLibraryController {
 

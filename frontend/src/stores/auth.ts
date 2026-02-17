@@ -18,6 +18,8 @@ import {
   type User
 } from 'firebase/auth';
 
+export type UserRole = 'ADMIN' | 'MODERATOR' | null;
+
 interface LoginPayload {
   email: string;
   password: string;
@@ -26,14 +28,38 @@ interface LoginPayload {
 export const useAuthStore = defineStore('auth', () => {
   const currentUser = ref<User | null>(null);
   const idToken = ref<string | null>(null);
+  const userRole = ref<UserRole>(null);
   const isLoading = ref(false);
   const error = ref<string | null>(null);
   const authInitialized = ref(false);
 
   // Computed properties
   const isAuthenticated = computed(() => currentUser.value !== null);
+  const isAdmin = computed(() => userRole.value === 'ADMIN');
+  const isModerator = computed(() => userRole.value === 'MODERATOR');
   const bearerToken = computed(() => (idToken.value ? `Bearer ${idToken.value}` : null));
   const userEmail = computed(() => currentUser.value?.email || '');
+
+  /**
+   * Extract role from Firebase ID token claims.
+   * Uses getIdTokenResult() which exposes custom claims set by the backend.
+   */
+  async function extractRole(user: User): Promise<UserRole> {
+    try {
+      const tokenResult = await user.getIdTokenResult();
+      const role = tokenResult.claims.role as string | undefined;
+      if (role) {
+        const normalized = role.toUpperCase();
+        if (normalized === 'ADMIN' || normalized === 'MODERATOR') {
+          return normalized;
+        }
+      }
+      return null;
+    } catch (err) {
+      console.error('Failed to extract role from token', err);
+      return null;
+    }
+  }
 
   /**
    * Initialize auth state listener
@@ -45,15 +71,18 @@ export const useAuthStore = defineStore('auth', () => {
         currentUser.value = user;
 
         if (user) {
-          // Get fresh ID token
+          // Get fresh ID token and extract role from claims
           try {
             idToken.value = await user.getIdToken();
+            userRole.value = await extractRole(user);
           } catch (err) {
             console.error('Failed to get ID token', err);
             idToken.value = null;
+            userRole.value = null;
           }
         } else {
           idToken.value = null;
+          userRole.value = null;
         }
 
         // Mark as initialized on first auth state change
@@ -79,8 +108,9 @@ export const useAuthStore = defineStore('auth', () => {
         payload.password
       );
 
-      // Get ID token for API requests
+      // Get ID token for API requests and extract role from claims
       idToken.value = await userCredential.user.getIdToken();
+      userRole.value = await extractRole(userCredential.user);
       currentUser.value = userCredential.user;
 
       return true;
@@ -122,6 +152,7 @@ export const useAuthStore = defineStore('auth', () => {
       await signOut(auth);
       currentUser.value = null;
       idToken.value = null;
+      userRole.value = null;
     } catch (err) {
       console.error('Logout failed', err);
     }
@@ -210,10 +241,13 @@ export const useAuthStore = defineStore('auth', () => {
   return {
     currentUser,
     idToken,
+    userRole,
     isLoading,
     error,
     authInitialized,
     isAuthenticated,
+    isAdmin,
+    isModerator,
     bearerToken,
     userEmail,
     initializeAuthListener,

@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory, type NavigationGuardNext, type RouteLocationNormalized } from 'vue-router';
-import { useAuthStore } from '@/stores/auth';
+import { useAuthStore, type UserRole } from '@/stores/auth';
 
 // Eager load critical routes (login, layout)
 import LoginView from '@/views/LoginView.vue';
@@ -40,7 +40,7 @@ const protectedChildRoutes = [
     path: 'categories',
     name: 'categories',
     component: CategoriesView,
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, requiredRole: 'ADMIN' as UserRole }
   },
   {
     path: 'approvals',
@@ -52,55 +52,55 @@ const protectedChildRoutes = [
     path: 'content-library',
     name: 'content-library',
     component: ContentLibraryView,
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, requiredRole: 'ADMIN' as UserRole }
   },
   {
     path: 'content-sorting',
     name: 'content-sorting',
     component: ContentSortingView,
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, requiredRole: 'ADMIN' as UserRole }
   },
   {
     path: 'exclusions',
     name: 'exclusions',
     component: ExclusionsWorkspaceView,
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, requiredRole: 'ADMIN' as UserRole }
   },
   {
     path: 'bulk-import-export',
     name: 'bulk-import-export',
     component: BulkImportExportView,
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, requiredRole: 'ADMIN' as UserRole }
   },
   {
     path: 'video-validation',
     name: 'video-validation',
     component: VideoValidationView,
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, requiredRole: 'ADMIN' as UserRole }
   },
   {
     path: 'archived-content',
     name: 'archived-content',
     component: ArchivedContentReviewView,
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, requiredRole: 'ADMIN' as UserRole }
   },
   {
     path: 'users',
     name: 'users',
     component: UsersManagementView,
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, requiredRole: 'ADMIN' as UserRole }
   },
   {
     path: 'audit',
     name: 'audit',
     component: AuditLogView,
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, requiredRole: 'ADMIN' as UserRole }
   },
   {
     path: 'activity',
     name: 'activity',
     component: ActivityLogView,
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, requiredRole: 'ADMIN' as UserRole }
   },
   {
     path: 'settings/profile',
@@ -118,7 +118,7 @@ const protectedChildRoutes = [
     path: 'settings/system',
     name: 'settings-system',
     component: SystemSettingsView,
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, requiredRole: 'ADMIN' as UserRole }
   }
 ];
 
@@ -165,6 +165,14 @@ router.beforeEach(async (to: RouteLocationNormalized, _from: RouteLocationNormal
 
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
     next({ name: 'login', query: { redirect: to.fullPath } });
+    return;
+  }
+
+  // Role-based access control: check if route requires a specific role
+  const requiredRole = to.meta.requiredRole as UserRole | undefined;
+  if (requiredRole === 'ADMIN' && !authStore.isAdmin) {
+    // Moderators and other non-admin users are redirected to dashboard
+    next({ name: 'dashboard' });
     return;
   }
 

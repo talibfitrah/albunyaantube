@@ -130,6 +130,7 @@
               {{ t('approvals.preview') }}
             </button>
             <button
+              v-if="authStore.isAdmin"
               type="button"
               class="action-btn reject"
               :disabled="processingId === item.id"
@@ -138,6 +139,7 @@
               {{ t('approvals.reject') }}
             </button>
             <button
+              v-if="authStore.isAdmin"
               type="button"
               class="action-btn approve"
               :disabled="processingId === item.id"
@@ -221,6 +223,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useAuthStore } from '@/stores/auth';
 import { getAllCategories } from '@/services/categoryService';
 import { getPendingApprovals, approveItem, rejectItem as rejectItemApi, type PendingApproval } from '@/services/approvalService';
 import ChannelDetailModal from '@/components/exclusions/ChannelDetailModal.vue';
@@ -228,6 +231,7 @@ import PlaylistDetailModal from '@/components/exclusions/PlaylistDetailModal.vue
 import VideoPreviewModal from '@/components/VideoPreviewModal.vue';
 
 const { t } = useI18n();
+const authStore = useAuthStore();
 
 const contentType = ref<'all' | 'channels' | 'playlists' | 'videos'>('all');
 const categoryFilter = ref('');

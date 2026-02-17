@@ -44,7 +44,7 @@
 
       <nav class="sidebar-nav" role="navigation" aria-label="Primary navigation">
         <RouterLink
-          v-for="item in navRoutes"
+          v-for="item in filteredNavRoutes"
           :key="item.labelKey"
           :to="item.route"
           class="nav-item"
@@ -121,7 +121,7 @@ import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router';
 import { storeToRefs } from 'pinia';
 import NotificationsPanel from '@/components/NotificationsPanel.vue';
 import { useAuthStore } from '@/stores/auth';
-import { navRoutes } from '@/constants/navigation';
+import { navRoutes, type NavRoute } from '@/constants/navigation';
 import { usePreferencesStore, type LocaleCode } from '@/stores/preferences';
 
 const { t } = useI18n();
@@ -134,6 +134,22 @@ const mainRef = ref<HTMLElement | null>(null);
 const isSidebarOpen = ref(false);
 const windowWidth = ref(window.innerWidth);
 
+/** Filter nav routes based on user role */
+function canAccess(item: NavRoute): boolean {
+  if (!item.requiredRole) return true;
+  if (item.requiredRole === 'ADMIN') return authStore.isAdmin;
+  return true;
+}
+
+const filteredNavRoutes = computed(() =>
+  navRoutes.filter(canAccess).map(item => {
+    if (item.children) {
+      return { ...item, children: item.children.filter(canAccess) };
+    }
+    return item;
+  })
+);
+
 const localeOptions = computed(() =>
   preferencesStore.availableLocales.map((code) => ({
     code,
@@ -142,7 +158,7 @@ const localeOptions = computed(() =>
 );
 
 const currentSectionLabel = computed(() => {
-  const active = navRoutes.find((item) => isActive(item.route));
+  const active = filteredNavRoutes.value.find((item) => isActive(item.route));
   return active ? t(active.labelKey) : '';
 });
 
