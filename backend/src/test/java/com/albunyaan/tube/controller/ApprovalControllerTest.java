@@ -27,6 +27,9 @@ class ApprovalControllerTest {
     private ApprovalService approvalService;
 
     @Mock
+    private com.albunyaan.tube.service.PublicContentCacheService cacheService;
+
+    @Mock
     private FirebaseUserDetails mockUser;
 
     private ApprovalController controller;
@@ -34,7 +37,7 @@ class ApprovalControllerTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        controller = new ApprovalController(approvalService);
+        controller = new ApprovalController(approvalService, cacheService);
 
         // Mock user details
         when(mockUser.getUid()).thenReturn("test_uid");

@@ -19,7 +19,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -760,5 +762,35 @@ public class PlaylistRepository {
         public boolean hasNext() {
             return hasNext;
         }
+    }
+
+    /**
+     * Batch-fetch playlists by their document IDs using Firestore getAll().
+     * Returns a map of ID to Playlist for efficient lookup.
+     */
+    public Map<String, Playlist> findAllByIds(List<String> ids)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        Map<String, Playlist> result = new HashMap<>();
+        if (ids == null || ids.isEmpty()) return result;
+
+        List<DocumentReference> refs = new ArrayList<>();
+        for (String id : ids) {
+            refs.add(getCollection().document(id));
+        }
+
+        List<com.google.cloud.firestore.DocumentSnapshot> snapshots =
+                firestore.getAll(refs.toArray(new DocumentReference[0]))
+                        .get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
+
+        for (com.google.cloud.firestore.DocumentSnapshot snap : snapshots) {
+            if (snap.exists()) {
+                Playlist pl = snap.toObject(Playlist.class);
+                if (pl != null) {
+                    pl.setId(snap.getId());
+                    result.put(snap.getId(), pl);
+                }
+            }
+        }
+        return result;
     }
 }

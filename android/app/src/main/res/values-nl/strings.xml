@@ -202,13 +202,13 @@
     <string name="home_see_all_channels">Alle kanalen bekijken</string>
     <string name="home_see_all_playlists">Alle afspeellijsten bekijken</string>
     <string name="home_see_all_videos">Alle video\'s bekijken</string>
+    <string name="home_see_all_category">Alle inhoud in %1$s bekijken</string>
+    <string name="home_empty_content">Nog geen inhoud beschikbaar</string>
+    <string name="home_loading_more">Meer laden…</string>
     <string name="home_retry_section">Sectie opnieuw laden</string>
 
     <!-- Home Section Empty States -->
     <string name="home_empty_videos">Nog geen video\'s beschikbaar</string>
-    <string name="home_empty_playlists">Nog geen afspeellijsten beschikbaar</string>
-    <string name="home_empty_channels">Nog geen kanalen beschikbaar</string>
-    <string name="home_empty_featured">Nog geen uitgelichte inhoud</string>
 
     <!-- Videos Tab Empty State -->
     <string name="videos_empty_title">Nog geen video\'s</string>

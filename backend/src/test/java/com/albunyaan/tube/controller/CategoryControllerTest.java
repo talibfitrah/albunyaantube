@@ -36,6 +36,12 @@ class CategoryControllerTest {
     @Mock
     private AuditLogService auditLogService;
 
+    @Mock
+    private com.albunyaan.tube.service.PublicContentCacheService publicContentCacheService;
+
+    @Mock
+    private com.albunyaan.tube.service.SortOrderService sortOrderService;
+
     @InjectMocks
     private CategoryController categoryController;
 

@@ -10,11 +10,15 @@ import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.Query;
 import com.google.cloud.firestore.QuerySnapshot;
+import com.google.cloud.firestore.WriteBatch;
 import com.google.cloud.firestore.WriteResult;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -29,7 +33,9 @@ import java.util.concurrent.TimeoutException;
 @Repository
 public class CategoryRepository {
 
+    private static final Logger log = LoggerFactory.getLogger(CategoryRepository.class);
     private static final String COLLECTION_NAME = "categories";
+    private static final int FIRESTORE_BATCH_LIMIT = 500;
     private final Firestore firestore;
     private final FirestoreTimeoutProperties timeoutProperties;
 
@@ -131,5 +137,34 @@ public class CategoryRepository {
         AggregateQuery countQuery = getCollection().count();
         AggregateQuerySnapshot snapshot = countQuery.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
         return snapshot.getCount();
+    }
+
+    /**
+     * Batch save multiple categories.
+     * Each chunk of up to 500 items is committed atomically, but chunks are independent.
+     * If the total exceeds 500, a failure in a later chunk leaves earlier chunks committed.
+     */
+    public void batchSave(List<Category> categories) throws ExecutionException, InterruptedException, TimeoutException {
+        if (categories == null || categories.isEmpty()) return;
+
+        for (int i = 0; i < categories.size(); i += FIRESTORE_BATCH_LIMIT) {
+            int end = Math.min(i + FIRESTORE_BATCH_LIMIT, categories.size());
+            List<Category> chunk = categories.subList(i, end);
+
+            WriteBatch batch = firestore.batch();
+            for (Category cat : chunk) {
+                cat.touch();
+                cat.setTopLevel(cat.getParentCategoryId() == null);
+                if (cat.getId() == null) {
+                    DocumentReference docRef = getCollection().document();
+                    cat.setId(docRef.getId());
+                }
+                batch.set(getCollection().document(cat.getId()), cat);
+            }
+            batch.commit().get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+            log.debug("Batch saved {} categories (chunk {}/{})",
+                    chunk.size(), (i / FIRESTORE_BATCH_LIMIT) + 1,
+                    (int) Math.ceil((double) categories.size() / FIRESTORE_BATCH_LIMIT));
+        }
     }
 }

@@ -1,7 +1,6 @@
 package com.albunyaan.tube
 
 import android.app.Application
-import android.content.ComponentCallbacks2
 import android.util.Log
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
@@ -43,7 +42,8 @@ class AlBunyaanApplication : Application(), Configuration.Provider {
 
         // Release ExoPlayer cache when system is under moderate or higher memory pressure
         // This ensures cache cleanup actually runs in production (unlike onTerminate)
-        if (level >= ComponentCallbacks2.TRIM_MEMORY_MODERATE) {
+        // 60 == ComponentCallbacks2.TRIM_MEMORY_MODERATE (constant deprecated in API 34)
+        if (level >= 60) {
             com.albunyaan.tube.player.MultiQualityMediaSourceFactory.releaseCache()
             Log.d(TAG, "Cache released due to memory pressure (level: $level)")
         }

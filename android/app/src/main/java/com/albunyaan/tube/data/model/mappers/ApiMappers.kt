@@ -2,9 +2,11 @@ package com.albunyaan.tube.data.model.mappers
 
 import com.albunyaan.tube.data.model.Category as DomainCategory
 import com.albunyaan.tube.data.model.ContentItem as DomainContentItem
+import com.albunyaan.tube.data.model.HomeSection
 import com.albunyaan.tube.data.model.api.models.Category as ApiCategory
 import com.albunyaan.tube.data.model.api.models.ContentItem as ApiContentItem
 import com.albunyaan.tube.data.model.api.models.ContentItemDto as ApiContentItemDto
+import com.albunyaan.tube.data.source.api.HomeCategorySection
 
 /**
  * Mapper functions to convert API DTOs (generated from OpenAPI spec)
@@ -24,7 +26,9 @@ fun ApiCategory.toDomain(): DomainCategory {
         slug = this.slug,
         parentId = this.parentCategoryId,
         hasSubcategories = false, // Will be computed by repository
-        icon = this.icon
+        icon = this.icon,
+        displayOrder = this.displayOrder,
+        localizedNames = this.localizedNames
     )
 }
 
@@ -125,4 +129,19 @@ fun List<ApiContentItem>.toDomainContentItems(defaultCategory: String = "General
 
 fun List<ApiContentItemDto>.toDomainContentItems(): List<DomainContentItem> {
     return this.map { it.toDomain() }
+}
+
+/**
+ * Map a home feed category section to domain HomeSection
+ */
+fun HomeCategorySection.toDomain(): HomeSection {
+    return HomeSection(
+        categoryId = this.id,
+        categoryName = this.name,
+        categorySlug = this.slug,
+        localizedNames = this.localizedNames,
+        icon = this.icon,
+        items = this.items.toDomainContentItems(),
+        totalItemCount = this.totalContentCount
+    )
 }

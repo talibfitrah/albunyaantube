@@ -12,6 +12,7 @@ export const navRoutes: NavRoute[] = [
   { labelKey: 'navigation.categories', route: { name: 'categories' } },
   { labelKey: 'navigation.approvals', route: { name: 'approvals' } },
   { labelKey: 'navigation.contentLibrary', route: { name: 'content-library' } },
+  { labelKey: 'navigation.contentSorting', route: { name: 'content-sorting' } },
   { labelKey: 'navigation.exclusions', route: { name: 'exclusions' } },
   { labelKey: 'navigation.bulkImportExport', route: { name: 'bulk-import-export' } },
   { labelKey: 'navigation.archivedContent', route: { name: 'archived-content' } },

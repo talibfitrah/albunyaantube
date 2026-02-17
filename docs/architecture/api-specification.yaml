@@ -158,6 +158,53 @@ paths:
                 items:
                   $ref: '#/components/schemas/CategoryDto'
 
+  /v1/home:
+    get:
+      summary: Get paginated home feed with category sections
+      description: |
+        Returns categories in admin-defined displayOrder, each containing up to
+        contentLimit items in admin-defined sort order. Supports cursor-based
+        pagination for infinite scroll of category sections.
+      operationId: getHomeFeed
+      tags: [Public Content]
+      security: []
+      parameters:
+        - name: cursor
+          in: query
+          description: Base64-encoded cursor from previous page
+          schema:
+            type: string
+        - name: categoryLimit
+          in: query
+          description: Max categories per page
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10
+            default: 5
+        - name: contentLimit
+          in: query
+          description: Max items per category
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+            default: 10
+      responses:
+        '200':
+          description: Paginated home feed
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CursorPageDto'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/HomeCategoryDto'
+
   /v1/channels/{channelId}:
     get:
       summary: Get channel details by YouTube ID
@@ -273,6 +320,111 @@ paths:
                 items:
                   $ref: '#/components/schemas/ContentItemDto'
                 description: Array of matching content items (not paginated)
+
+  # ============================================================================
+  # SORT ORDER (Admin)
+  # ============================================================================
+
+  /admin/sort/categories:
+    get:
+      summary: Get categories in sort order with content counts
+      operationId: getCategorySortOrder
+      tags: [Sort Order]
+      responses:
+        '200':
+          description: Categories sorted by displayOrder
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CategorySortDto'
+
+  /admin/sort/categories/reorder:
+    put:
+      summary: Reorder a category (insert-and-shift)
+      operationId: reorderCategory
+      tags: [Sort Order]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [categoryId, newPosition]
+              properties:
+                categoryId:
+                  type: string
+                newPosition:
+                  type: integer
+                  minimum: 0
+      responses:
+        '200':
+          description: Updated category sort order
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CategorySortDto'
+
+  /admin/sort/categories/{categoryId}/content:
+    get:
+      summary: Get content items in sort order within a category
+      operationId: getCategoryContentOrder
+      tags: [Sort Order]
+      parameters:
+        - name: categoryId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Content items sorted by position
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ContentSortDto'
+
+  /admin/sort/categories/{categoryId}/content/reorder:
+    put:
+      summary: Reorder content within a category (insert-and-shift)
+      operationId: reorderContentInCategory
+      tags: [Sort Order]
+      parameters:
+        - name: categoryId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [contentId, contentType, newPosition]
+              properties:
+                contentId:
+                  type: string
+                contentType:
+                  type: string
+                  enum: [channel, playlist, video]
+                newPosition:
+                  type: integer
+                  minimum: 0
+      responses:
+        '200':
+          description: Updated content sort order
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ContentSortDto'
 
   # ============================================================================
   # CATEGORIES (Admin/Moderator)
@@ -2656,6 +2808,72 @@ components:
       description: Firebase Authentication JWT token
 
   schemas:
+    HomeCategoryDto:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        localizedNames:
+          type: object
+          additionalProperties:
+            type: string
+          nullable: true
+        displayOrder:
+          type: integer
+          nullable: true
+        icon:
+          type: string
+          nullable: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContentItemDto'
+        totalContentCount:
+          type: integer
+
+    CategorySortDto:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        icon:
+          type: string
+          nullable: true
+        localizedNames:
+          type: object
+          additionalProperties:
+            type: string
+          nullable: true
+        displayOrder:
+          type: integer
+          nullable: true
+        contentCount:
+          type: integer
+
+    ContentSortDto:
+      type: object
+      properties:
+        contentId:
+          type: string
+        contentType:
+          type: string
+          enum: [channel, playlist, video]
+        title:
+          type: string
+        thumbnailUrl:
+          type: string
+          nullable: true
+        position:
+          type: integer
+        youtubeId:
+          type: string
+
     Category:
       type: object
       required: [id, name]

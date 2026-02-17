@@ -30,7 +30,7 @@ class FeaturedListFragment : Fragment(R.layout.fragment_featured_list) {
 
     private var binding: FragmentFeaturedListBinding? = null
 
-    private val viewModel: HomeViewModel by viewModels()
+    private val viewModel: FeaturedListViewModel by viewModels()
 
     private lateinit var adapter: FeaturedListAdapter
 
@@ -115,22 +115,22 @@ class FeaturedListFragment : Fragment(R.layout.fragment_featured_list) {
     private fun observeViewModel() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.featuredState.collect { state ->
+                viewModel.state.collect { state ->
                     when (state) {
-                        is HomeViewModel.SectionState.Loading -> {
+                        is FeaturedListViewModel.FeaturedState.Loading -> {
                             Log.d(TAG, "Loading featured content...")
                             binding?.progressBar?.isVisible = true
                             binding?.errorContainer?.isVisible = false
                             binding?.recyclerView?.isVisible = false
                         }
-                        is HomeViewModel.SectionState.Success -> {
+                        is FeaturedListViewModel.FeaturedState.Success -> {
                             Log.d(TAG, "Featured content loaded: ${state.items.size} items")
                             binding?.progressBar?.isVisible = false
                             binding?.errorContainer?.isVisible = false
                             binding?.recyclerView?.isVisible = true
                             adapter.submitList(state.items)
                         }
-                        is HomeViewModel.SectionState.Error -> {
+                        is FeaturedListViewModel.FeaturedState.Error -> {
                             Log.e(TAG, "Error loading featured: ${state.message}")
                             binding?.progressBar?.isVisible = false
                             binding?.recyclerView?.isVisible = false

@@ -31,6 +31,13 @@ interface ContentApi {
         @Query("type") type: String?,
         @Query("limit") limit: Int
     ): List<ContentItemDto>
+
+    @GET("api/v1/home")
+    suspend fun fetchHomeFeed(
+        @Query("cursor") cursor: String?,
+        @Query("categoryLimit") categoryLimit: Int,
+        @Query("contentLimit") contentLimit: Int
+    ): HomeFeedResponse
 }
 
 /**

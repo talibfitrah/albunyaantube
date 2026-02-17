@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:layout_marginTop="@dimen/home_vertical_section_spacing">
+
+    <!-- Section Header: Category Name + See All -->
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="@dimen/home_horizontal_margin"
+        android:paddingEnd="@dimen/home_horizontal_margin"
+        android:minHeight="@dimen/touch_target_min">
+
+        <TextView
+            android:id="@+id/sectionTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:textAppearance="@style/TextAppearance.Home.SectionTitle"
+            android:maxLines="1"
+            android:ellipsize="end"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toStartOf="@id/sectionSeeAll"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintHorizontal_bias="0"
+            tools:text="Ramadaan"/>
+
+        <TextView
+            android:id="@+id/sectionSeeAll"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/see_all"
+            android:textAppearance="@style/TextAppearance.Home.SeeAll"
+            android:padding="@dimen/spacing_sm"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            app:drawableEndCompat="@drawable/ic_chevron_right"
+            android:drawablePadding="@dimen/spacing_xs"
+            app:drawableTint="@color/primary_green"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"/>
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <!-- Horizontal RecyclerView for content items -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/sectionRecyclerView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/spacing_xs"
+        android:clipToPadding="false"
+        android:clipChildren="false"
+        android:paddingStart="@dimen/home_horizontal_margin"
+        android:paddingEnd="@dimen/home_horizontal_margin"
+        android:paddingBottom="@dimen/spacing_sm"/>
+
+</LinearLayout>

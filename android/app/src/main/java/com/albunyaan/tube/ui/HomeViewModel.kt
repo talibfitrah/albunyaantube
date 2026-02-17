@@ -1,11 +1,10 @@
 package com.albunyaan.tube.ui
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.albunyaan.tube.data.filters.FilterState
-import com.albunyaan.tube.data.model.ContentItem
-import com.albunyaan.tube.data.model.ContentType
+import com.albunyaan.tube.data.model.HomeSection
 import com.albunyaan.tube.data.source.ContentService
 import com.albunyaan.tube.util.DeviceConfig
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -13,6 +12,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Named
@@ -23,155 +23,109 @@ class HomeViewModel @Inject constructor(
     @Named("real") private val contentService: ContentService
 ) : AndroidViewModel(app) {
 
-    // Featured section shows mixed content types (channels, playlists, videos) from the Featured category
-    private val _featuredState = MutableStateFlow<SectionState<ContentItem>>(SectionState.Loading)
-    val featuredState: StateFlow<SectionState<ContentItem>> = _featuredState.asStateFlow()
+    private val _homeState = MutableStateFlow<HomeState>(HomeState.Loading)
+    val homeState: StateFlow<HomeState> = _homeState.asStateFlow()
 
-    private val _channelsState = MutableStateFlow<SectionState<ContentItem.Channel>>(SectionState.Loading)
-    val channelsState: StateFlow<SectionState<ContentItem.Channel>> = _channelsState.asStateFlow()
+    private var sections = mutableListOf<HomeSection>()
+    private var nextCursor: String? = null
+    private var hasMore = true
+    private var isLoadingMore = false
+    private var loadJob: Job? = null
+    private var loadMoreJob: Job? = null
 
-    private val _playlistsState = MutableStateFlow<SectionState<ContentItem.Playlist>>(SectionState.Loading)
-    val playlistsState: StateFlow<SectionState<ContentItem.Playlist>> = _playlistsState.asStateFlow()
-
-    private val _videosState = MutableStateFlow<SectionState<ContentItem.Video>>(SectionState.Loading)
-    val videosState: StateFlow<SectionState<ContentItem.Video>> = _videosState.asStateFlow()
-
-    // Track loading jobs to prevent race conditions on refresh
-    private var featuredJob: Job? = null
-    private var channelsJob: Job? = null
-    private var playlistsJob: Job? = null
-    private var videosJob: Job? = null
+    val canLoadMore: Boolean
+        get() = hasMore && !isLoadingMore
 
     init {
-        loadHomeContent()
+        loadInitialFeed()
     }
 
-    fun loadHomeContent() {
-        // Cancel any previous loading jobs to prevent race conditions
-        featuredJob?.cancel()
-        channelsJob?.cancel()
-        playlistsJob?.cancel()
-        videosJob?.cancel()
+    fun loadInitialFeed() {
+        loadJob?.cancel()
+        loadMoreJob?.cancel()
+        loadJob = viewModelScope.launch {
+            sections.clear()
+            nextCursor = null
+            hasMore = true
+            isLoadingMore = false
+            _homeState.value = HomeState.Loading
 
-        // Fetch each content type independently with device-appropriate limits
-        loadFeatured()
-        loadChannels()
-        loadPlaylists()
-        loadVideos()
-    }
-
-    fun loadFeatured() {
-        featuredJob?.cancel()
-        featuredJob = viewModelScope.launch {
-            _featuredState.value = SectionState.Loading
             try {
-                android.util.Log.d("HomeViewModel", "Fetching FEATURED content...")
-                val limit = DeviceConfig.getHomeDataLimit(app)
-                // Fetch all content types filtered by the Featured category
-                val response = contentService.fetchContent(
-                    type = ContentType.ALL,
+                val contentLimit = DeviceConfig.getHomeDataLimit(app)
+                Log.d(TAG, "Loading initial home feed (contentLimit=$contentLimit)")
+                val result = contentService.fetchHomeFeed(
                     cursor = null,
-                    pageSize = limit,
-                    filters = FilterState(category = FEATURED_CATEGORY_ID)
+                    categoryLimit = CATEGORY_LIMIT,
+                    contentLimit = contentLimit
                 )
-
-                // Defensive take(limit) in case backend ignores pageSize hint
-                val featured = response.data.take(limit)
-                android.util.Log.d("HomeViewModel", "Loaded ${featured.size} featured items")
-                _featuredState.value = SectionState.Success(featured)
+                sections.addAll(result.sections)
+                nextCursor = result.nextCursor
+                hasMore = result.hasMore
+                Log.d(TAG, "Initial feed loaded: ${result.sections.size} sections, hasMore=$hasMore")
+                _homeState.value = if (sections.isEmpty()) {
+                    HomeState.Empty
+                } else {
+                    HomeState.Success(sections.toList(), hasMore)
+                }
             } catch (e: Exception) {
-                android.util.Log.e("HomeViewModel", "Error loading featured", e)
-                _featuredState.value = SectionState.Error(e.message ?: "Unknown error")
+                if (e is CancellationException) throw e
+                Log.e(TAG, "Error loading initial home feed", e)
+                _homeState.value = HomeState.Error(e.message ?: "Unknown error")
             }
         }
     }
 
-    fun loadChannels() {
-        channelsJob?.cancel()
-        channelsJob = viewModelScope.launch {
-            _channelsState.value = SectionState.Loading
-            try {
-                android.util.Log.d("HomeViewModel", "Fetching CHANNELS content...")
-                val limit = DeviceConfig.getHomeDataLimit(app)
-                val response = contentService.fetchContent(
-                    type = ContentType.CHANNELS,
-                    cursor = null,
-                    pageSize = limit,
-                    filters = FilterState()
-                )
+    fun loadMoreSections() {
+        if (!canLoadMore) return
+        isLoadingMore = true
+        loadMoreJob?.cancel()
 
-                // Defensive take(limit) in case backend ignores pageSize hint
-                val channels = response.data.filterIsInstance<ContentItem.Channel>().take(limit)
-                android.util.Log.d("HomeViewModel", "Loaded ${channels.size} channels")
-                _channelsState.value = SectionState.Success(channels)
+        loadMoreJob = viewModelScope.launch {
+            try {
+                val contentLimit = DeviceConfig.getHomeDataLimit(app)
+                Log.d(TAG, "Loading more sections (cursor=$nextCursor, contentLimit=$contentLimit)")
+
+                // Emit current sections with loading-more indicator
+                _homeState.value = HomeState.Success(sections.toList(), hasMore, isLoadingMore = true)
+
+                val result = contentService.fetchHomeFeed(
+                    cursor = nextCursor,
+                    categoryLimit = CATEGORY_LIMIT,
+                    contentLimit = contentLimit
+                )
+                sections.addAll(result.sections)
+                nextCursor = result.nextCursor
+                hasMore = result.hasMore
+                isLoadingMore = false
+                Log.d(TAG, "Loaded ${result.sections.size} more sections (total=${sections.size}, hasMore=$hasMore)")
+                _homeState.value = HomeState.Success(sections.toList(), hasMore)
             } catch (e: Exception) {
-                android.util.Log.e("HomeViewModel", "Error loading channels", e)
-                _channelsState.value = SectionState.Error(e.message ?: "Unknown error")
+                if (e is CancellationException) throw e
+                Log.e(TAG, "Error loading more sections", e)
+                isLoadingMore = false
+                // Keep showing existing sections, just stop loading more
+                _homeState.value = HomeState.Success(sections.toList(), hasMore)
             }
         }
     }
 
-    fun loadPlaylists() {
-        playlistsJob?.cancel()
-        playlistsJob = viewModelScope.launch {
-            _playlistsState.value = SectionState.Loading
-            try {
-                android.util.Log.d("HomeViewModel", "Fetching PLAYLISTS content...")
-                val limit = DeviceConfig.getHomeDataLimit(app)
-                val response = contentService.fetchContent(
-                    type = ContentType.PLAYLISTS,
-                    cursor = null,
-                    pageSize = limit,
-                    filters = FilterState()
-                )
-
-                // Defensive take(limit) in case backend ignores pageSize hint
-                val playlists = response.data.filterIsInstance<ContentItem.Playlist>().take(limit)
-                android.util.Log.d("HomeViewModel", "Loaded ${playlists.size} playlists")
-                _playlistsState.value = SectionState.Success(playlists)
-            } catch (e: Exception) {
-                android.util.Log.e("HomeViewModel", "Error loading playlists", e)
-                _playlistsState.value = SectionState.Error(e.message ?: "Unknown error")
-            }
-        }
+    fun refresh() {
+        loadInitialFeed()
     }
 
-    fun loadVideos() {
-        videosJob?.cancel()
-        videosJob = viewModelScope.launch {
-            _videosState.value = SectionState.Loading
-            try {
-                android.util.Log.d("HomeViewModel", "Fetching VIDEOS content...")
-                val limit = DeviceConfig.getHomeDataLimit(app)
-                val response = contentService.fetchContent(
-                    type = ContentType.VIDEOS,
-                    cursor = null,
-                    pageSize = limit,
-                    filters = FilterState()
-                )
-
-                // Sort videos by upload recency (newer = smaller uploadedDaysAgo)
-                // Defensive take(limit) after sorting in case backend ignores pageSize hint
-                val videos = response.data.filterIsInstance<ContentItem.Video>()
-                    .sortedBy { it.uploadedDaysAgo }
-                    .take(limit)
-                android.util.Log.d("HomeViewModel", "Loaded ${videos.size} videos")
-                _videosState.value = SectionState.Success(videos)
-            } catch (e: Exception) {
-                android.util.Log.e("HomeViewModel", "Error loading videos", e)
-                _videosState.value = SectionState.Error(e.message ?: "Unknown error")
-            }
-        }
-    }
-
-    sealed class SectionState<out T> {
-        object Loading : SectionState<Nothing>()
-        data class Success<T>(val items: List<T>) : SectionState<T>()
-        data class Error(val message: String) : SectionState<Nothing>()
+    sealed class HomeState {
+        object Loading : HomeState()
+        data class Success(
+            val sections: List<HomeSection>,
+            val hasMore: Boolean,
+            val isLoadingMore: Boolean = false
+        ) : HomeState()
+        data class Error(val message: String) : HomeState()
+        object Empty : HomeState()
     }
 
     companion object {
-        // Featured category ID - content assigned to this category appears in the Featured section
-        const val FEATURED_CATEGORY_ID = "itirf9pGpAvoBT5VSkEc"
+        private const val TAG = "HomeViewModel"
+        private const val CATEGORY_LIMIT = 5
     }
 }

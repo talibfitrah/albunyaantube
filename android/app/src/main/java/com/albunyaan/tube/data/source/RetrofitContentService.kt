@@ -8,6 +8,7 @@ import com.albunyaan.tube.data.model.Category
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.model.CursorResponse
+import com.albunyaan.tube.data.model.HomeFeedResult
 import com.albunyaan.tube.data.model.mappers.toDomain
 import com.albunyaan.tube.data.model.mappers.toDomainContentItems
 import com.albunyaan.tube.data.extractor.MetadataHydrator
@@ -66,6 +67,20 @@ class RetrofitContentService(
         SortOption.DEFAULT -> null
         SortOption.MOST_POPULAR -> "MOST_POPULAR"
         SortOption.NEWEST -> "NEWEST"
+    }
+
+    override suspend fun fetchHomeFeed(
+        cursor: String?,
+        categoryLimit: Int,
+        contentLimit: Int
+    ): HomeFeedResult {
+        val response = api.fetchHomeFeed(cursor, categoryLimit, contentLimit)
+        val sections = response.data.map { it.toDomain() }
+        return HomeFeedResult(
+            sections = sections,
+            nextCursor = response.pageInfo.nextCursor,
+            hasMore = response.pageInfo.hasNext
+        )
     }
 
     override suspend fun search(query: String, type: String?, limit: Int): List<ContentItem> {

@@ -5,6 +5,10 @@ import com.albunyaan.tube.model.Category;
 import com.albunyaan.tube.repository.CategoryRepository;
 import com.albunyaan.tube.security.FirebaseUserDetails;
 import com.albunyaan.tube.service.AuditLogService;
+import com.albunyaan.tube.service.PublicContentCacheService;
+import com.albunyaan.tube.service.SortOrderService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
@@ -27,12 +31,20 @@ import java.util.concurrent.ExecutionException;
 @RequestMapping("/api/admin/categories")
 public class CategoryController {
 
+    private static final Logger log = LoggerFactory.getLogger(CategoryController.class);
+
     private final CategoryRepository categoryRepository;
     private final AuditLogService auditLogService;
+    private final PublicContentCacheService publicContentCacheService;
+    private final SortOrderService sortOrderService;
 
-    public CategoryController(CategoryRepository categoryRepository, AuditLogService auditLogService) {
+    public CategoryController(CategoryRepository categoryRepository, AuditLogService auditLogService,
+                              PublicContentCacheService publicContentCacheService,
+                              SortOrderService sortOrderService) {
         this.categoryRepository = categoryRepository;
         this.auditLogService = auditLogService;
+        this.publicContentCacheService = publicContentCacheService;
+        this.sortOrderService = sortOrderService;
     }
 
     /**
@@ -105,6 +117,11 @@ public class CategoryController {
         }
 
         Category saved = categoryRepository.save(category);
+        try {
+            publicContentCacheService.evictPublicContentCaches();
+        } catch (Exception ce) {
+            log.warn("Cache eviction failed after creating category {}: {}", saved.getId(), ce.getMessage());
+        }
         auditLogService.log("category_created", "category", saved.getId(), user);
         return ResponseEntity.status(HttpStatus.CREATED).body(saved);
     }
@@ -150,6 +167,11 @@ public class CategoryController {
         existing.setUpdatedBy(user.getUid());
 
         Category updated = categoryRepository.save(existing);
+        try {
+            publicContentCacheService.evictPublicContentCaches();
+        } catch (Exception ce) {
+            log.warn("Cache eviction failed after updating category {}: {}", id, ce.getMessage());
+        }
         auditLogService.log("category_updated", "category", id, user);
         return ResponseEntity.ok(updated);
     }
@@ -175,7 +197,20 @@ public class CategoryController {
             return ResponseEntity.status(HttpStatus.CONFLICT).build();
         }
 
+        // Clean up sort orders before category deletion so dependent data is removed first.
+        // If this fails, proceed with category deletion — orphaned order entries are harmless
+        // (they reference a non-existent category and will be ignored).
+        try {
+            sortOrderService.deleteAllOrdersForCategory(id);
+        } catch (Exception e) {
+            log.warn("Failed to delete sort order entries for category {}: {}", id, e.getMessage());
+        }
         categoryRepository.deleteById(id);
+        try {
+            publicContentCacheService.evictPublicContentCaches();
+        } catch (Exception ce) {
+            log.warn("Cache eviction failed after deleting category {}: {}", id, ce.getMessage());
+        }
         auditLogService.log("category_deleted", "category", id, user);
         return ResponseEntity.noContent().build();
     }

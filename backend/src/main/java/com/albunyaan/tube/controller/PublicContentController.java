@@ -4,7 +4,10 @@ import com.albunyaan.tube.config.CacheConfig;
 import com.albunyaan.tube.dto.CategoryDto;
 import com.albunyaan.tube.dto.ContentItemDto;
 import com.albunyaan.tube.dto.CursorPageDto;
+import com.albunyaan.tube.dto.HomeCategoryDto;
 import com.albunyaan.tube.service.PublicContentService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -21,10 +24,46 @@ import java.util.concurrent.ExecutionException;
 @CrossOrigin(origins = "${app.security.cors.allowed-origins}")
 public class PublicContentController {
 
+    private static final Logger log = LoggerFactory.getLogger(PublicContentController.class);
+
     private final PublicContentService contentService;
 
     public PublicContentController(PublicContentService contentService) {
         this.contentService = contentService;
+    }
+
+    /**
+     * Get home feed with paginated category sections.
+     * Each category section contains content items in admin-defined sort order.
+     *
+     * @param cursor Pagination cursor from previous page
+     * @param categoryLimit Categories per page (default 5, max 10)
+     * @param contentLimit Items per category (default 10, max 20)
+     * @return Paginated home feed with category sections
+     */
+    @GetMapping("/home")
+    public ResponseEntity<?> getHomeFeed(
+            @RequestParam(required = false) String cursor,
+            @RequestParam(required = false, defaultValue = "5") int categoryLimit,
+            @RequestParam(required = false, defaultValue = "10") int contentLimit
+    ) {
+        int validCategoryLimit = Math.min(Math.max(categoryLimit, 1), 10);
+        int validContentLimit = Math.min(Math.max(contentLimit, 1), 20);
+
+        try {
+            CursorPageDto<HomeCategoryDto> feed = contentService.getHomeFeed(cursor, validCategoryLimit, validContentLimit);
+            return ResponseEntity.ok(feed);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("Interrupted while fetching home feed", e);
+            return ResponseEntity.internalServerError()
+                    .body(java.util.Map.of("error", "Failed to load home feed"));
+        } catch (Exception e) {
+            log.error("Error fetching home feed (cursor={}, catLimit={}, contentLimit={})",
+                    cursor, validCategoryLimit, validContentLimit, e);
+            return ResponseEntity.internalServerError()
+                    .body(java.util.Map.of("error", "Failed to load home feed"));
+        }
     }
 
     /**

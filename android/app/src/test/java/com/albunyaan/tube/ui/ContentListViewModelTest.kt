@@ -5,6 +5,7 @@ import com.albunyaan.tube.data.model.Category
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.model.CursorResponse
+import com.albunyaan.tube.data.model.HomeFeedResult
 import com.albunyaan.tube.data.source.ContentService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -372,6 +373,14 @@ class ContentListViewModelTest {
 
         override suspend fun fetchSubcategories(parentId: String): List<Category> {
             return emptyList()
+        }
+
+        override suspend fun fetchHomeFeed(
+            cursor: String?,
+            categoryLimit: Int,
+            contentLimit: Int
+        ): HomeFeedResult {
+            return HomeFeedResult(emptyList(), null, false)
         }
     }
 }

@@ -8,6 +8,8 @@ import com.albunyaan.tube.data.model.Category
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.model.CursorResponse
+import com.albunyaan.tube.data.model.HomeFeedResult
+import com.albunyaan.tube.data.model.HomeSection
 import kotlin.math.min
 
 class FakeContentService : ContentService {
@@ -115,6 +117,31 @@ class FakeContentService : ContentService {
                 is ContentItem.Video -> 100 - it.uploadedDaysAgo
             }
         }
+    }
+
+    override suspend fun fetchHomeFeed(
+        cursor: String?,
+        categoryLimit: Int,
+        contentLimit: Int
+    ): HomeFeedResult {
+        val allSections = categories.mapIndexed { index, categoryName ->
+            val categoryItems = (videos.filter { it.category == categoryName } +
+                channels.filter { it.category == categoryName } +
+                playlists.filter { it.category == categoryName })
+            HomeSection(
+                categoryId = categoryName.lowercase(),
+                categoryName = categoryName,
+                items = categoryItems.take(contentLimit),
+                totalItemCount = categoryItems.size
+            )
+        }
+        val pageIndex = cursor?.toIntOrNull() ?: 0
+        val fromIndex = pageIndex * categoryLimit
+        val toIndex = min(fromIndex + categoryLimit, allSections.size)
+        val pageSections = if (fromIndex >= allSections.size) emptyList() else allSections.subList(fromIndex, toIndex)
+        val hasMore = toIndex < allSections.size
+        val nextCursor = if (hasMore) (pageIndex + 1).toString() else null
+        return HomeFeedResult(sections = pageSections, nextCursor = nextCursor, hasMore = hasMore)
     }
 
     override suspend fun search(query: String, type: String?, limit: Int): List<ContentItem> {

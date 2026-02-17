@@ -15,6 +15,7 @@ const ExclusionsWorkspaceView = () => import('@/views/ExclusionsWorkspaceView.vu
 const BulkImportExportView = () => import('@/views/BulkImportExportView.vue');
 const VideoValidationView = () => import('@/views/VideoValidationView.vue');
 const ArchivedContentReviewView = () => import('@/views/ArchivedContentReviewView.vue');
+const ContentSortingView = () => import('@/views/ContentSortingView.vue');
 const UsersManagementView = () => import('@/views/UsersManagementView.vue');
 const AuditLogView = () => import('@/views/AuditLogView.vue');
 const ActivityLogView = () => import('@/views/ActivityLogView.vue');
@@ -51,6 +52,12 @@ const protectedChildRoutes = [
     path: 'content-library',
     name: 'content-library',
     component: ContentLibraryView,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: 'content-sorting',
+    name: 'content-sorting',
+    component: ContentSortingView,
     meta: { requiresAuth: true }
   },
   {

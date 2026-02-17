@@ -6,5 +6,7 @@ data class Category(
     val slug: String? = null,
     val parentId: String? = null,
     val hasSubcategories: Boolean = false,
-    val icon: String? = null // Emoji or icon identifier
+    val icon: String? = null,
+    val displayOrder: Int? = null,
+    val localizedNames: Map<String, String>? = null
 )

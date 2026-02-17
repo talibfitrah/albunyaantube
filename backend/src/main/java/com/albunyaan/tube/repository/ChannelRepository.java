@@ -9,6 +9,7 @@ import com.google.cloud.firestore.AggregateQuerySnapshot;
 import com.google.cloud.firestore.CollectionReference;
 import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.Firestore;
+import com.google.cloud.firestore.DocumentSnapshot;
 import com.google.cloud.firestore.Query;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.google.cloud.firestore.QuerySnapshot;
@@ -19,7 +20,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -807,5 +810,34 @@ public class ChannelRepository {
         public boolean hasNext() {
             return hasNext;
         }
+    }
+
+    /**
+     * Batch-fetch channels by their document IDs using Firestore getAll().
+     * Returns a map of ID to Channel for efficient lookup.
+     */
+    public Map<String, Channel> findAllByIds(List<String> ids)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        Map<String, Channel> result = new HashMap<>();
+        if (ids == null || ids.isEmpty()) return result;
+
+        List<DocumentReference> refs = new ArrayList<>();
+        for (String id : ids) {
+            refs.add(getCollection().document(id));
+        }
+
+        List<DocumentSnapshot> snapshots = firestore.getAll(refs.toArray(new DocumentReference[0]))
+                .get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
+
+        for (DocumentSnapshot snap : snapshots) {
+            if (snap.exists()) {
+                Channel ch = snap.toObject(Channel.class);
+                if (ch != null) {
+                    ch.setId(snap.getId());
+                    result.put(snap.getId(), ch);
+                }
+            }
+        }
+        return result;
     }
 }

@@ -4,16 +4,21 @@ import com.albunyaan.tube.config.CacheConfig;
 import com.albunyaan.tube.dto.CategoryDto;
 import com.albunyaan.tube.dto.ContentItemDto;
 import com.albunyaan.tube.dto.CursorPageDto;
+import com.albunyaan.tube.dto.HomeCategoryDto;
 import com.albunyaan.tube.exception.ResourceNotFoundException;
 import com.albunyaan.tube.model.Category;
+import com.albunyaan.tube.model.CategoryContentOrder;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
 import com.albunyaan.tube.model.ValidationStatus;
 import com.albunyaan.tube.model.Video;
+import com.albunyaan.tube.repository.CategoryContentOrderRepository;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import com.albunyaan.tube.repository.CategoryRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
@@ -22,8 +27,10 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
 /**
@@ -33,21 +40,26 @@ import java.util.stream.Collectors;
 @Service
 public class PublicContentService {
 
+    private static final Logger log = LoggerFactory.getLogger(PublicContentService.class);
+
     private final ChannelRepository channelRepository;
     private final PlaylistRepository playlistRepository;
     private final VideoRepository videoRepository;
     private final CategoryRepository categoryRepository;
+    private final CategoryContentOrderRepository orderRepository;
 
     public PublicContentService(
             ChannelRepository channelRepository,
             PlaylistRepository playlistRepository,
             VideoRepository videoRepository,
-            CategoryRepository categoryRepository
+            CategoryRepository categoryRepository,
+            CategoryContentOrderRepository orderRepository
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
         this.videoRepository = videoRepository;
         this.categoryRepository = categoryRepository;
+        this.orderRepository = orderRepository;
     }
 
     /**
@@ -290,12 +302,230 @@ public class PublicContentService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Get home feed with paginated category sections.
+     *
+     * Returns categories in displayOrder, each containing up to contentLimit items.
+     * Uses category_content_order for admin-defined sort, falls back to default
+     * sort (channels by subscribers, playlists by itemCount, videos by uploadedAt)
+     * if no sort order exists for a category.
+     *
+     * @param cursor Base64-encoded displayOrder of last category (null for first page)
+     * @param categoryLimit Max categories per page (default 5, max 10)
+     * @param contentLimit Max items per category (default 10, max 20)
+     * @return Paginated home feed
+     */
+    @Cacheable(value = CacheConfig.CACHE_PUBLIC_CONTENT,
+               key = "'home-' + #cursor + '-' + #categoryLimit + '-' + #contentLimit")
+    public CursorPageDto<HomeCategoryDto> getHomeFeed(String cursor, int categoryLimit, int contentLimit)
+            throws ExecutionException, InterruptedException, TimeoutException {
+
+        // Fetch categories sorted by displayOrder. Categories are admin-managed
+        // and typically < 50, so findAll() is bounded in practice.
+        // Re-sort by (displayOrder, id) to match cursor tiebreaker format.
+        List<Category> allCategories = new ArrayList<>(categoryRepository.findAll());
+        allCategories.sort((a, b) -> {
+            int orderA = a.getDisplayOrder() != null ? a.getDisplayOrder() : Integer.MAX_VALUE;
+            int orderB = b.getDisplayOrder() != null ? b.getDisplayOrder() : Integer.MAX_VALUE;
+            if (orderA != orderB) return Integer.compare(orderA, orderB);
+            return a.getId().compareTo(b.getId());
+        });
+
+        // Apply cursor: skip categories with displayOrder <= cursor value
+        int startAfterOrder = -1;
+        String startAfterId = null;
+        if (cursor != null && !cursor.isEmpty()) {
+            try {
+                String decoded = new String(Base64.getDecoder().decode(cursor));
+                // Cursor format: "displayOrder:categoryId"
+                String[] parts = decoded.split(":", 2);
+                startAfterOrder = Integer.parseInt(parts[0]);
+                startAfterId = parts.length > 1 ? parts[1] : null;
+            } catch (Exception e) {
+                log.warn("Invalid home feed cursor: {}", cursor);
+            }
+        }
+
+        // Filter categories past the cursor
+        List<Category> remaining = new ArrayList<>();
+        boolean pastCursor = (cursor == null || cursor.isEmpty());
+        for (Category cat : allCategories) {
+            if (pastCursor) {
+                remaining.add(cat);
+            } else {
+                int order = cat.getDisplayOrder() != null ? cat.getDisplayOrder() : Integer.MAX_VALUE;
+                if (order > startAfterOrder) {
+                    pastCursor = true;
+                    remaining.add(cat);
+                } else if (order == startAfterOrder && startAfterId != null && cat.getId().compareTo(startAfterId) > 0) {
+                    pastCursor = true;
+                    remaining.add(cat);
+                }
+            }
+        }
+
+        // Build sections for up to categoryLimit + 1 (to detect hasMore)
+        List<HomeCategoryDto> sections = new ArrayList<>();
+        int fetchLimit = categoryLimit + 1;
+
+        for (Category cat : remaining) {
+            if (sections.size() >= fetchLimit) break;
+
+            List<ContentItemDto> items = getCategoryContentItems(cat.getId(), contentLimit);
+            if (items.isEmpty()) continue; // Skip empty categories
+
+            long totalCount = orderRepository.countByCategoryId(cat.getId());
+            // When no sort order has been initialized yet, countByCategoryId returns 0
+            // even though items were returned via the fallback path. Use items.size()
+            // as a lower-bound so the client doesn't see totalContentCount=0.
+            if (totalCount == 0 && !items.isEmpty()) {
+                totalCount = items.size();
+            }
+
+            String slug = cat.getSlug() != null ? cat.getSlug() :
+                    cat.getName().toLowerCase().replace(" ", "-");
+
+            sections.add(new HomeCategoryDto(
+                    cat.getId(),
+                    cat.getName(),
+                    slug,
+                    cat.getLocalizedNames(),
+                    cat.getDisplayOrder(),
+                    cat.getIcon(),
+                    items,
+                    (int) totalCount
+            ));
+        }
+
+        // Build cursor from last included category
+        boolean hasMore = sections.size() > categoryLimit;
+        if (hasMore) {
+            sections = new ArrayList<>(sections.subList(0, categoryLimit));
+        }
+
+        String nextCursor = null;
+        if (hasMore && !sections.isEmpty()) {
+            HomeCategoryDto last = sections.get(sections.size() - 1);
+            int order = last.getDisplayOrder() != null ? last.getDisplayOrder() : Integer.MAX_VALUE;
+            nextCursor = Base64.getEncoder().encodeToString((order + ":" + last.getId()).getBytes());
+        }
+
+        return new CursorPageDto<>(sections, nextCursor);
+    }
+
+    /**
+     * Get content items for a category, using admin-defined sort order if available,
+     * falling back to default sort.
+     */
+    private List<ContentItemDto> getCategoryContentItems(String categoryId, int limit)
+            throws ExecutionException, InterruptedException, TimeoutException {
+
+        // Try admin-defined sort order first
+        List<CategoryContentOrder> orderEntries = orderRepository.findByCategoryIdOrderByPosition(categoryId);
+
+        if (!orderEntries.isEmpty()) {
+            // Batch-fetch content by type to avoid N+1 individual findById calls
+            List<String> channelIds = new ArrayList<>();
+            List<String> playlistIds = new ArrayList<>();
+            List<String> videoIds = new ArrayList<>();
+
+            // Only process entries up to a reasonable bound (limit * 2 to account for filtered-out items)
+            int fetchBound = Math.min(orderEntries.size(), limit * 2);
+            for (int i = 0; i < fetchBound; i++) {
+                CategoryContentOrder entry = orderEntries.get(i);
+                switch (entry.getContentType()) {
+                    case "channel": channelIds.add(entry.getContentId()); break;
+                    case "playlist": playlistIds.add(entry.getContentId()); break;
+                    case "video": videoIds.add(entry.getContentId()); break;
+                }
+            }
+
+            java.util.Map<String, Channel> channelMap = channelRepository.findAllByIds(channelIds);
+            java.util.Map<String, Playlist> playlistMap = playlistRepository.findAllByIds(playlistIds);
+            java.util.Map<String, Video> videoMap = videoRepository.findAllByIds(videoIds);
+
+            // Resolve entries in order using batch-fetched maps
+            List<ContentItemDto> items = new ArrayList<>();
+            for (int i = 0; i < fetchBound && items.size() < limit; i++) {
+                CategoryContentOrder entry = orderEntries.get(i);
+                ContentItemDto dto = resolveFromBatchMaps(entry, channelMap, playlistMap, videoMap);
+                if (dto != null) {
+                    items.add(dto);
+                }
+            }
+            return items;
+        }
+
+        // Fall back to default sort: repository default order (no guaranteed sort by subscribers/itemCount/uploadedAt)
+        List<ContentItemDto> items = new ArrayList<>();
+        int perType = Math.max(1, limit / 3);
+
+        List<Channel> channels = channelRepository.findByCategoryId(categoryId, perType * 2);
+        channels.stream()
+                .filter(this::isApproved)
+                .filter(this::isAvailable)
+                .limit(perType)
+                .map(this::toDto)
+                .forEach(items::add);
+
+        List<Playlist> playlists = playlistRepository.findByCategoryId(categoryId, perType * 2);
+        playlists.stream()
+                .filter(this::isApproved)
+                .filter(this::isAvailable)
+                .limit(perType)
+                .map(this::toDto)
+                .forEach(items::add);
+
+        int videoLimit = limit - items.size();
+        if (videoLimit > 0) {
+            List<Video> videos = videoRepository.findByCategoryId(categoryId, videoLimit * 2);
+            videos.stream()
+                    .filter(this::isApproved)
+                    .filter(this::isAvailable)
+                    .limit(videoLimit)
+                    .map(this::toDto)
+                    .forEach(items::add);
+        }
+
+        return items;
+    }
+
+    /**
+     * Resolve a content order entry to DTO using pre-fetched batch maps.
+     * Returns null if content not found, not approved, or unavailable.
+     */
+    private ContentItemDto resolveFromBatchMaps(
+            CategoryContentOrder entry,
+            java.util.Map<String, Channel> channelMap,
+            java.util.Map<String, Playlist> playlistMap,
+            java.util.Map<String, Video> videoMap) {
+        switch (entry.getContentType()) {
+            case "channel":
+                Channel ch = channelMap.get(entry.getContentId());
+                if (ch != null && isApproved(ch) && isAvailable(ch)) return toDto(ch);
+                return null;
+            case "playlist":
+                Playlist pl = playlistMap.get(entry.getContentId());
+                if (pl != null && isApproved(pl) && isAvailable(pl)) return toDto(pl);
+                return null;
+            case "video":
+                Video v = videoMap.get(entry.getContentId());
+                if (v != null && isApproved(v) && isAvailable(v)) return toDto(v);
+                return null;
+            default:
+                return null;
+        }
+    }
+
     private CategoryDto toCategoryDto(Category category) {
         return new CategoryDto(
                 category.getId(),
                 category.getName(),
                 category.getSlug() != null ? category.getSlug() : category.getName().toLowerCase().replace(" ", "-"),
-                category.getParentId()
+                category.getParentId(),
+                category.getDisplayOrder(),
+                category.getLocalizedNames(),
+                category.getIcon()
         );
     }
 

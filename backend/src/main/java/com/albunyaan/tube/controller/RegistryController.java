@@ -6,6 +6,8 @@ import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
+import com.albunyaan.tube.service.PublicContentCacheService;
+import com.albunyaan.tube.service.SortOrderService;
 import com.albunyaan.tube.security.FirebaseUserDetails;
 import com.albunyaan.tube.service.AuditLogService;
 import org.springframework.http.HttpStatus;
@@ -31,6 +33,8 @@ public class RegistryController {
     private final PlaylistRepository playlistRepository;
     private final VideoRepository videoRepository;
     private final AuditLogService auditLogService;
+    private final PublicContentCacheService publicContentCacheService;
+    private final SortOrderService sortOrderService;
     private final com.github.benmanes.caffeine.cache.Cache<String, Object> workspaceExclusionsCache;
 
     public RegistryController(
@@ -38,12 +42,16 @@ public class RegistryController {
             PlaylistRepository playlistRepository,
             VideoRepository videoRepository,
             AuditLogService auditLogService,
+            PublicContentCacheService publicContentCacheService,
+            SortOrderService sortOrderService,
             com.github.benmanes.caffeine.cache.Cache<String, Object> workspaceExclusionsCache
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
         this.videoRepository = videoRepository;
         this.auditLogService = auditLogService;
+        this.publicContentCacheService = publicContentCacheService;
+        this.sortOrderService = sortOrderService;
         this.workspaceExclusionsCache = workspaceExclusionsCache;
     }
 
@@ -121,6 +129,12 @@ public class RegistryController {
         // This supports the approval workflow where admins add items for review
 
         Channel saved = channelRepository.save(channel);
+        if ("APPROVED".equals(saved.getStatus()) && saved.getCategoryIds() != null) {
+            for (String categoryId : saved.getCategoryIds()) {
+                sortOrderService.addContentToCategory(categoryId, saved.getId(), "channel");
+            }
+        }
+        publicContentCacheService.evictPublicContentCaches();
         auditLogService.log("channel_added_to_registry", "channel", saved.getId(), user);
         return ResponseEntity.status(HttpStatus.CREATED).body(saved);
     }
@@ -151,6 +165,7 @@ public class RegistryController {
         existing.setVideoCount(channel.getVideoCount());
 
         Channel updated = channelRepository.save(existing);
+        publicContentCacheService.evictPublicContentCaches();
         auditLogService.log("channel_updated_in_registry", "channel", id, user);
         return ResponseEntity.ok(updated);
     }
@@ -178,6 +193,14 @@ public class RegistryController {
         }
 
         Channel updated = channelRepository.save(channel);
+        if ("APPROVED".equals(updated.getStatus()) && updated.getCategoryIds() != null) {
+            for (String categoryId : updated.getCategoryIds()) {
+                sortOrderService.addContentToCategory(categoryId, updated.getId(), "channel");
+            }
+        } else {
+            sortOrderService.removeContentFromAllCategories(updated.getId(), "channel");
+        }
+        publicContentCacheService.evictPublicContentCaches();
         auditLogService.log("channel_status_toggled", "channel", id, user);
         return ResponseEntity.ok(updated);
     }
@@ -195,7 +218,9 @@ public class RegistryController {
             return ResponseEntity.notFound().build();
         }
 
+        sortOrderService.removeContentFromAllCategories(id, "channel");
         channelRepository.deleteById(id);
+        publicContentCacheService.evictPublicContentCaches();
         auditLogService.log("channel_deleted_from_registry", "channel", id, user);
         return ResponseEntity.noContent().build();
     }
@@ -274,6 +299,12 @@ public class RegistryController {
         // This supports the approval workflow where admins add items for review
 
         Playlist saved = playlistRepository.save(playlist);
+        if ("APPROVED".equals(saved.getStatus()) && saved.getCategoryIds() != null) {
+            for (String categoryId : saved.getCategoryIds()) {
+                sortOrderService.addContentToCategory(categoryId, saved.getId(), "playlist");
+            }
+        }
+        publicContentCacheService.evictPublicContentCaches();
         auditLogService.log("playlist_added_to_registry", "playlist", saved.getId(), user);
         return ResponseEntity.status(HttpStatus.CREATED).body(saved);
     }
@@ -303,6 +334,7 @@ public class RegistryController {
         existing.setItemCount(playlist.getItemCount());
 
         Playlist updated = playlistRepository.save(existing);
+        publicContentCacheService.evictPublicContentCaches();
         auditLogService.log("playlist_updated_in_registry", "playlist", id, user);
         return ResponseEntity.ok(updated);
     }
@@ -330,6 +362,14 @@ public class RegistryController {
         }
 
         Playlist updated = playlistRepository.save(playlist);
+        if ("APPROVED".equals(updated.getStatus()) && updated.getCategoryIds() != null) {
+            for (String categoryId : updated.getCategoryIds()) {
+                sortOrderService.addContentToCategory(categoryId, updated.getId(), "playlist");
+            }
+        } else {
+            sortOrderService.removeContentFromAllCategories(updated.getId(), "playlist");
+        }
+        publicContentCacheService.evictPublicContentCaches();
         auditLogService.log("playlist_status_toggled", "playlist", id, user);
         return ResponseEntity.ok(updated);
     }
@@ -347,7 +387,9 @@ public class RegistryController {
             return ResponseEntity.notFound().build();
         }
 
+        sortOrderService.removeContentFromAllCategories(id, "playlist");
         playlistRepository.deleteById(id);
+        publicContentCacheService.evictPublicContentCaches();
         auditLogService.log("playlist_deleted_from_registry", "playlist", id, user);
         return ResponseEntity.noContent().build();
     }
@@ -404,6 +446,7 @@ public class RegistryController {
             playlist.touch();
             playlistRepository.save(playlist);
             workspaceExclusionsCache.invalidateAll();
+            publicContentCacheService.evictPublicContentCaches();
             auditLogService.log("playlist_video_excluded", "playlist", id, user);
         }
 
@@ -438,6 +481,7 @@ public class RegistryController {
             playlist.touch();
             playlistRepository.save(playlist);
             workspaceExclusionsCache.invalidateAll();
+            publicContentCacheService.evictPublicContentCaches();
             auditLogService.log("playlist_video_exclusion_removed", "playlist", id, user);
         }
 
@@ -520,6 +564,12 @@ public class RegistryController {
         // This supports the approval workflow where admins add items for review
 
         Video saved = videoRepository.save(video);
+        if ("APPROVED".equals(saved.getStatus()) && saved.getCategoryIds() != null) {
+            for (String categoryId : saved.getCategoryIds()) {
+                sortOrderService.addContentToCategory(categoryId, saved.getId(), "video");
+            }
+        }
+        publicContentCacheService.evictPublicContentCaches();
         auditLogService.log("video_added_to_registry", "video", saved.getId(), user);
         return ResponseEntity.status(HttpStatus.CREATED).body(saved);
     }
@@ -549,6 +599,7 @@ public class RegistryController {
         existing.setViewCount(video.getViewCount());
 
         Video updated = videoRepository.save(existing);
+        publicContentCacheService.evictPublicContentCaches();
         auditLogService.log("video_updated_in_registry", "video", id, user);
         return ResponseEntity.ok(updated);
     }
@@ -576,6 +627,14 @@ public class RegistryController {
         }
 
         Video updated = videoRepository.save(video);
+        if ("APPROVED".equals(updated.getStatus()) && updated.getCategoryIds() != null) {
+            for (String categoryId : updated.getCategoryIds()) {
+                sortOrderService.addContentToCategory(categoryId, updated.getId(), "video");
+            }
+        } else {
+            sortOrderService.removeContentFromAllCategories(updated.getId(), "video");
+        }
+        publicContentCacheService.evictPublicContentCaches();
         auditLogService.log("video_status_toggled", "video", id, user);
         return ResponseEntity.ok(updated);
     }
@@ -593,7 +652,9 @@ public class RegistryController {
             return ResponseEntity.notFound().build();
         }
 
+        sortOrderService.removeContentFromAllCategories(id, "video");
         videoRepository.deleteById(id);
+        publicContentCacheService.evictPublicContentCaches();
         auditLogService.log("video_deleted_from_registry", "video", id, user);
         return ResponseEntity.noContent().build();
     }

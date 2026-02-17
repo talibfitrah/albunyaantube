@@ -39,7 +39,19 @@ class RegistryControllerTest {
     private PlaylistRepository playlistRepository;
 
     @Mock
+    private com.albunyaan.tube.repository.VideoRepository videoRepository;
+
+    @Mock
     private AuditLogService auditLogService;
+
+    @Mock
+    private com.albunyaan.tube.service.PublicContentCacheService publicContentCacheService;
+
+    @Mock
+    private com.albunyaan.tube.service.SortOrderService sortOrderService;
+
+    @Mock
+    private com.github.benmanes.caffeine.cache.Cache<String, Object> workspaceExclusionsCache;
 
     @InjectMocks
     private RegistryController registryController;

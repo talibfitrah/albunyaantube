@@ -42,6 +42,9 @@ class PublicContentServicePaginationTest {
     @Mock
     private CategoryRepository categoryRepository;
 
+    @Mock
+    private com.albunyaan.tube.repository.CategoryContentOrderRepository orderRepository;
+
     private PublicContentService publicContentService;
 
     @BeforeEach
@@ -50,7 +53,8 @@ class PublicContentServicePaginationTest {
                 channelRepository,
                 playlistRepository,
                 videoRepository,
-                categoryRepository
+                categoryRepository,
+                orderRepository
         );
     }
 

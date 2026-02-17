@@ -19,6 +19,7 @@ export const messages = {
       categories: 'Categories',
       approvals: 'Pending Approvals',
       contentLibrary: 'Content Library',
+      contentSorting: 'Content Sorting',
       registry: 'Registry',
       moderation: 'Moderation',
       exclusions: 'Exclusions',
@@ -204,6 +205,25 @@ export const messages = {
         rejecting: 'Rejecting...',
         error: 'Failed to reject submission.'
       }
+    },
+    contentSorting: {
+      title: 'Content Sorting',
+      subtitle: 'Manage the display order of categories and content within each category',
+      loading: 'Loading categories...',
+      retry: 'Retry',
+      categoryName: 'Category',
+      position: 'Position',
+      items: 'Items',
+      expand: 'Expand',
+      collapse: 'Collapse',
+      dragToReorder: 'Drag to reorder',
+      loadingContent: 'Loading content...',
+      noContent: 'No content in this category',
+      noCategories: 'No categories found',
+      contentTitle: 'Title',
+      type: 'Type',
+      categoryReordered: 'Category order updated',
+      contentReordered: 'Content order updated'
     },
     contentLibrary: {
       heading: 'Content Library',
@@ -1283,6 +1303,7 @@ export const messages = {
       categories: 'الفئات',
       approvals: 'الموافقات المعلقة',
       contentLibrary: 'مكتبة المحتوى',
+      contentSorting: 'ترتيب المحتوى',
       registry: 'السجل',
       moderation: 'الإشراف',
       exclusions: 'الاستثناءات',
@@ -1464,6 +1485,25 @@ export const messages = {
         rejecting: 'جارٍ الرفض...',
         error: 'فشل رفض الطلب.'
       }
+    },
+    contentSorting: {
+      title: 'ترتيب المحتوى',
+      subtitle: 'إدارة ترتيب عرض الفئات والمحتوى داخل كل فئة',
+      loading: 'جارٍ تحميل الفئات...',
+      retry: 'إعادة المحاولة',
+      categoryName: 'الفئة',
+      position: 'الموقع',
+      items: 'العناصر',
+      expand: 'توسيع',
+      collapse: 'طي',
+      dragToReorder: 'اسحب لإعادة الترتيب',
+      loadingContent: 'جارٍ تحميل المحتوى...',
+      noContent: 'لا يوجد محتوى في هذه الفئة',
+      noCategories: 'لم يتم العثور على فئات',
+      contentTitle: 'العنوان',
+      type: 'النوع',
+      categoryReordered: 'تم تحديث ترتيب الفئة',
+      contentReordered: 'تم تحديث ترتيب المحتوى'
     },
     contentLibrary: {
       heading: 'مكتبة المحتوى',
@@ -2326,6 +2366,7 @@ export const messages = {
       categories: 'Categorieën',
       approvals: 'Goedkeuringen in behandeling',
       contentLibrary: 'Inhoudsbibliotheek',
+      contentSorting: 'Inhoud sorteren',
       registry: 'Registerbeheer',
       moderation: 'Moderatie',
       exclusions: 'Uitzonderingen',
@@ -2505,6 +2546,25 @@ export const messages = {
         rejecting: 'Afwijzen...',
         error: 'Indiening afwijzen is mislukt.'
       }
+    },
+    contentSorting: {
+      title: 'Inhoud sorteren',
+      subtitle: 'Beheer de weergavevolgorde van categorieën en inhoud binnen elke categorie',
+      loading: 'Categorieën laden...',
+      retry: 'Opnieuw proberen',
+      categoryName: 'Categorie',
+      position: 'Positie',
+      items: 'Items',
+      expand: 'Uitvouwen',
+      collapse: 'Invouwen',
+      dragToReorder: 'Sleep om te herordenen',
+      loadingContent: 'Inhoud laden...',
+      noContent: 'Geen inhoud in deze categorie',
+      noCategories: 'Geen categorieën gevonden',
+      contentTitle: 'Titel',
+      type: 'Type',
+      categoryReordered: 'Categorievolgorde bijgewerkt',
+      contentReordered: 'Inhoudsvolgorde bijgewerkt'
     },
     contentLibrary: {
       heading: 'Inhoudsbibliotheek',

@@ -32,17 +32,20 @@ public class ApprovalService {
     private final CategoryRepository categoryRepository;
     private final ApprovalRepository approvalRepository;
     private final AuditLogService auditLogService;
+    private final SortOrderService sortOrderService;
 
     public ApprovalService(ChannelRepository channelRepository,
                           PlaylistRepository playlistRepository,
                           CategoryRepository categoryRepository,
                           ApprovalRepository approvalRepository,
-                          AuditLogService auditLogService) {
+                          AuditLogService auditLogService,
+                          SortOrderService sortOrderService) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
         this.categoryRepository = categoryRepository;
         this.approvalRepository = approvalRepository;
         this.auditLogService = auditLogService;
+        this.sortOrderService = sortOrderService;
     }
 
     /**
@@ -460,6 +463,18 @@ public class ApprovalService {
         // Save to Firestore
         channelRepository.save(channel);
 
+        // Add to category sort order
+        if (channel.getCategoryIds() != null) {
+            for (String categoryId : channel.getCategoryIds()) {
+                try {
+                    sortOrderService.addContentToCategory(categoryId, channel.getId(), "channel");
+                } catch (Exception e) {
+                    log.warn("Failed to add channel {} to sort order for category {}: {}",
+                            channel.getId(), categoryId, e.getMessage());
+                }
+            }
+        }
+
         // Create audit log
         auditLogService.logApproval("channel", channel.getId(), actorUid, actorDisplayName, request.getReviewNotes());
 
@@ -494,6 +509,18 @@ public class ApprovalService {
         // Save to Firestore
         playlistRepository.save(playlist);
 
+        // Add to category sort order
+        if (playlist.getCategoryIds() != null) {
+            for (String categoryId : playlist.getCategoryIds()) {
+                try {
+                    sortOrderService.addContentToCategory(categoryId, playlist.getId(), "playlist");
+                } catch (Exception e) {
+                    log.warn("Failed to add playlist {} to sort order for category {}: {}",
+                            playlist.getId(), categoryId, e.getMessage());
+                }
+            }
+        }
+
         // Create audit log
         auditLogService.logApproval("playlist", playlist.getId(), actorUid, actorDisplayName, request.getReviewNotes());
 
@@ -522,6 +549,9 @@ public class ApprovalService {
 
         // Save to Firestore
         channelRepository.save(channel);
+
+        // Remove from category sort order
+        sortOrderService.removeContentFromAllCategories(channel.getId(), "channel");
 
         // Create audit log
         Map<String, Object> details = new HashMap<>();
@@ -554,6 +584,9 @@ public class ApprovalService {
 
         // Save to Firestore
         playlistRepository.save(playlist);
+
+        // Remove from category sort order
+        sortOrderService.removeContentFromAllCategories(playlist.getId(), "playlist");
 
         // Create audit log
         Map<String, Object> details = new HashMap<>();

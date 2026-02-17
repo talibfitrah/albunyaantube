@@ -20,7 +20,7 @@ import androidx.core.view.MenuProvider
 import androidx.lifecycle.Lifecycle
 import android.widget.Toast
 import androidx.annotation.OptIn
-import androidx.core.view.GestureDetectorCompat
+import androidx.core.view.WindowCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
@@ -114,7 +114,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private var pendingResumeStreamId: String? = null
     private var pendingResumePositionMs: Long? = null
     private var pendingResumePlayWhenReady: Boolean? = null
-    private lateinit var gestureDetector: GestureDetectorCompat
+    private lateinit var gestureDetector: GestureDetector
     private var isFullscreen = false
     /** Current resize mode in fullscreen: FIT (letterbox, default) or ZOOM (fills screen, crops). Toggled by double-tap. */
     private var fullscreenResizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
@@ -697,7 +697,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // Use actual player view width for gesture zones (correct in split-screen, multi-window)
             viewWidthProvider = { binding.playerView.width }
         )
-        gestureDetector = GestureDetectorCompat(requireContext(), playerGesture)
+        gestureDetector = GestureDetector(requireContext(), playerGesture)
 
         // Attach gestures to player view
         binding.playerView.setOnTouchListener { _, event ->
@@ -2847,7 +2847,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
             // Enter fullscreen - Use WindowInsetsController on API 30+, fall back to legacy flags
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                window.setDecorFitsSystemWindows(false)
+                WindowCompat.setDecorFitsSystemWindows(window, false)
                 window.insetsController?.let { controller ->
                     controller.hide(android.view.WindowInsets.Type.systemBars())
                     controller.systemBarsBehavior =
@@ -2927,7 +2927,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         } else {
             // Exit fullscreen - Restore system UI using WindowInsetsController on API 30+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                window.setDecorFitsSystemWindows(true)
+                WindowCompat.setDecorFitsSystemWindows(window, true)
                 window.insetsController?.show(android.view.WindowInsets.Type.systemBars())
             } else {
                 // On pre-API 30, we need to properly restore system UI flags.
@@ -3037,7 +3037,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         // Restore system bars using modern API or legacy flags
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            window.setDecorFitsSystemWindows(true)
+            WindowCompat.setDecorFitsSystemWindows(window, true)
             window.insetsController?.show(android.view.WindowInsets.Type.systemBars())
         } else {
             // On pre-API 30, we need to properly restore system UI flags.

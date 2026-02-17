@@ -17,7 +17,9 @@ import com.albunyaan.tube.util.CursorUtils;
 import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -684,5 +686,35 @@ public class VideoRepository {
         public boolean hasNext() {
             return hasNext;
         }
+    }
+
+    /**
+     * Batch-fetch videos by their document IDs using Firestore getAll().
+     * Returns a map of ID to Video for efficient lookup.
+     */
+    public Map<String, Video> findAllByIds(List<String> ids)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        Map<String, Video> result = new HashMap<>();
+        if (ids == null || ids.isEmpty()) return result;
+
+        List<DocumentReference> refs = new ArrayList<>();
+        for (String id : ids) {
+            refs.add(getCollection().document(id));
+        }
+
+        List<com.google.cloud.firestore.DocumentSnapshot> snapshots =
+                firestore.getAll(refs.toArray(new DocumentReference[0]))
+                        .get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
+
+        for (com.google.cloud.firestore.DocumentSnapshot snap : snapshots) {
+            if (snap.exists()) {
+                Video v = snap.toObject(Video.class);
+                if (v != null) {
+                    v.setId(snap.getId());
+                    result.put(snap.getId(), v);
+                }
+            }
+        }
+        return result;
     }
 }

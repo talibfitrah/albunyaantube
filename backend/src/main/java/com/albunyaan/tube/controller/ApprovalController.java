@@ -3,6 +3,7 @@ package com.albunyaan.tube.controller;
 import com.albunyaan.tube.dto.*;
 import com.albunyaan.tube.security.FirebaseUserDetails;
 import com.albunyaan.tube.service.ApprovalService;
+import com.albunyaan.tube.service.PublicContentCacheService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -25,9 +26,11 @@ public class ApprovalController {
     private static final Logger log = LoggerFactory.getLogger(ApprovalController.class);
 
     private final ApprovalService approvalService;
+    private final PublicContentCacheService publicContentCacheService;
 
-    public ApprovalController(ApprovalService approvalService) {
+    public ApprovalController(ApprovalService approvalService, PublicContentCacheService publicContentCacheService) {
         this.approvalService = approvalService;
+        this.publicContentCacheService = publicContentCacheService;
     }
 
     /**
@@ -87,6 +90,11 @@ public class ApprovalController {
 
             ApprovalResponseDto response = approvalService.approve(
                     id, request, user.getUid(), user.getEmail());
+            try {
+                publicContentCacheService.evictPublicContentCaches();
+            } catch (Exception ce) {
+                log.warn("Cache eviction failed after approving {}: {}", id, ce.getMessage());
+            }
 
             return ResponseEntity.ok(response);
         } catch (IllegalArgumentException e) {
@@ -122,6 +130,11 @@ public class ApprovalController {
 
             ApprovalResponseDto response = approvalService.reject(
                     id, request, user.getUid(), user.getEmail());
+            try {
+                publicContentCacheService.evictPublicContentCaches();
+            } catch (Exception ce) {
+                log.warn("Cache eviction failed after rejecting {}: {}", id, ce.getMessage());
+            }
 
             return ResponseEntity.ok(response);
         } catch (IllegalArgumentException e) {

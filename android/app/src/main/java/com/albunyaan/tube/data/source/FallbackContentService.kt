@@ -6,6 +6,7 @@ import com.albunyaan.tube.data.model.Category
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.model.CursorResponse
+import com.albunyaan.tube.data.model.HomeFeedResult
 
 class FallbackContentService(
     private val primary: ContentService,
@@ -39,6 +40,23 @@ class FallbackContentService(
         Log.d(TAG, "Falling back to fake search")
         fallback.search(query, type, limit).also {
             Log.d(TAG, "Fallback search returned ${it.size} items")
+        }
+    }
+
+    override suspend fun fetchHomeFeed(
+        cursor: String?,
+        categoryLimit: Int,
+        contentLimit: Int
+    ): HomeFeedResult = try {
+        Log.d(TAG, "Trying primary backend for home feed")
+        primary.fetchHomeFeed(cursor, categoryLimit, contentLimit).also {
+            Log.d(TAG, "Primary home feed SUCCESS: returned ${it.sections.size} sections")
+        }
+    } catch (e: Throwable) {
+        Log.e(TAG, "Primary home feed FAILED: ${e.message}", e)
+        Log.d(TAG, "Falling back to fake home feed")
+        fallback.fetchHomeFeed(cursor, categoryLimit, contentLimit).also {
+            Log.d(TAG, "Fallback home feed returned ${it.sections.size} sections")
         }
     }
 

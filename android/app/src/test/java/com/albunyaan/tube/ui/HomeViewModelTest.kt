@@ -8,8 +8,10 @@ import com.albunyaan.tube.data.filters.FilterState
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.model.CursorResponse
-import com.albunyaan.tube.data.source.ContentService
+import com.albunyaan.tube.data.model.HomeFeedResult
+import com.albunyaan.tube.data.model.HomeSection
 import com.albunyaan.tube.data.model.Category
+import com.albunyaan.tube.data.source.ContentService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -29,15 +31,15 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 /**
- * Unit tests for HomeViewModel per-section loading and error handling.
+ * Unit tests for HomeViewModel (category-section-based home feed).
  *
  * Tests verify:
- * - Independent section loading (featured, channels, playlists, videos)
- * - Error isolation (one section failure doesn't affect others)
- * - Retry functionality for individual sections
- * - Video sorting by recency
- * - Defensive take(limit) behavior
- * - Featured section mixed content handling
+ * - Initial feed loading populates sections
+ * - Error handling on initial load
+ * - Load-more pagination appends sections
+ * - Empty state when no sections returned
+ * - Refresh resets and reloads
+ * - Defensive content limit based on device type
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -66,269 +68,166 @@ class HomeViewModelTest {
     }
 
     @Test
-    fun `loadChannels emits Success when service returns channels`() = runTest {
-        val channels = listOf(
-            createChannel("1", "Channel 1"),
-            createChannel("2", "Channel 2")
+    fun `initial load emits Success with sections`() = runTest {
+        val sections = listOf(
+            createSection("cat1", "Category 1", 3),
+            createSection("cat2", "Category 2", 2)
         )
-        fakeContentService.channelsResponse = CursorResponse(channels, null)
+        fakeContentService.homeFeedResponses.add(HomeFeedResult(sections, null, false))
 
         viewModel = createViewModel()
         advanceUntilIdle()
 
-        val state = viewModel.channelsState.value
-        assertTrue("Expected Success state", state is HomeViewModel.SectionState.Success)
-        assertEquals(2, (state as HomeViewModel.SectionState.Success).items.size)
+        val state = viewModel.homeState.value
+        assertTrue("Expected Success state", state is HomeViewModel.HomeState.Success)
+        assertEquals(2, (state as HomeViewModel.HomeState.Success).sections.size)
     }
 
     @Test
-    fun `loadChannels emits Error when service throws exception`() = runTest {
-        fakeContentService.channelsError = RuntimeException("Network error")
+    fun `initial load emits Error when service throws exception`() = runTest {
+        fakeContentService.homeFeedError = RuntimeException("Network error")
 
         viewModel = createViewModel()
         advanceUntilIdle()
 
-        val state = viewModel.channelsState.value
-        assertTrue("Expected Error state", state is HomeViewModel.SectionState.Error)
-        assertEquals("Network error", (state as HomeViewModel.SectionState.Error).message)
+        val state = viewModel.homeState.value
+        assertTrue("Expected Error state", state is HomeViewModel.HomeState.Error)
+        assertEquals("Network error", (state as HomeViewModel.HomeState.Error).message)
     }
 
     @Test
-    fun `loadPlaylists emits Success when service returns playlists`() = runTest {
-        val playlists = listOf(
-            createPlaylist("1", "Playlist 1"),
-            createPlaylist("2", "Playlist 2"),
-            createPlaylist("3", "Playlist 3")
-        )
-        fakeContentService.playlistsResponse = CursorResponse(playlists, null)
+    fun `initial load emits Empty when no sections returned`() = runTest {
+        fakeContentService.homeFeedResponses.add(HomeFeedResult(emptyList(), null, false))
 
         viewModel = createViewModel()
         advanceUntilIdle()
 
-        val state = viewModel.playlistsState.value
-        assertTrue("Expected Success state", state is HomeViewModel.SectionState.Success)
-        assertEquals(3, (state as HomeViewModel.SectionState.Success).items.size)
+        val state = viewModel.homeState.value
+        assertTrue("Expected Empty state", state is HomeViewModel.HomeState.Empty)
     }
 
     @Test
-    fun `loadVideos sorts by uploadedDaysAgo ascending`() = runTest {
-        // Videos in random order by upload date
-        val videos = listOf(
-            createVideo("1", "Old Video", uploadedDaysAgo = 30),
-            createVideo("2", "New Video", uploadedDaysAgo = 1),
-            createVideo("3", "Medium Video", uploadedDaysAgo = 15)
-        )
-        fakeContentService.videosResponse = CursorResponse(videos, null)
+    fun `loadMore appends sections and updates cursor`() = runTest {
+        // Initial page
+        val page1 = listOf(createSection("cat1", "Category 1", 3))
+        fakeContentService.homeFeedResponses.add(HomeFeedResult(page1, "cursor1", true))
+        // Page 2
+        val page2 = listOf(createSection("cat2", "Category 2", 2))
+        fakeContentService.homeFeedResponses.add(HomeFeedResult(page2, null, false))
 
         viewModel = createViewModel()
         advanceUntilIdle()
 
-        val state = viewModel.videosState.value
-        assertTrue("Expected Success state", state is HomeViewModel.SectionState.Success)
+        assertTrue(viewModel.canLoadMore)
 
-        val sortedVideos = (state as HomeViewModel.SectionState.Success).items
-        assertEquals("New Video", sortedVideos[0].title)
-        assertEquals("Medium Video", sortedVideos[1].title)
-        assertEquals("Old Video", sortedVideos[2].title)
+        viewModel.loadMoreSections()
+        advanceUntilIdle()
+
+        val state = viewModel.homeState.value as HomeViewModel.HomeState.Success
+        assertEquals(2, state.sections.size)
+        assertEquals("Category 1", state.sections[0].categoryName)
+        assertEquals("Category 2", state.sections[1].categoryName)
     }
 
     @Test
-    fun `section failure does not affect other sections`() = runTest {
-        // Channels fail, but playlists and videos succeed
-        fakeContentService.channelsError = RuntimeException("Channels failed")
-        fakeContentService.playlistsResponse = CursorResponse(
-            listOf(createPlaylist("1", "Playlist")), null
+    fun `refresh resets and reloads from beginning`() = runTest {
+        // Initial load
+        fakeContentService.homeFeedResponses.add(
+            HomeFeedResult(listOf(createSection("cat1", "Old", 1)), "cursor1", true)
         )
-        fakeContentService.videosResponse = CursorResponse(
-            listOf(createVideo("1", "Video")), null
+        // Load more
+        fakeContentService.homeFeedResponses.add(
+            HomeFeedResult(listOf(createSection("cat2", "Old2", 1)), null, false)
         )
-
-        viewModel = createViewModel()
-        advanceUntilIdle()
-
-        // Channels should be in error state
-        assertTrue(viewModel.channelsState.value is HomeViewModel.SectionState.Error)
-
-        // Playlists and videos should succeed
-        assertTrue(viewModel.playlistsState.value is HomeViewModel.SectionState.Success)
-        assertTrue(viewModel.videosState.value is HomeViewModel.SectionState.Success)
-    }
-
-    @Test
-    fun `retry loads only the specific section`() = runTest {
-        // Initially all fail
-        fakeContentService.channelsError = RuntimeException("Error")
-        fakeContentService.playlistsError = RuntimeException("Error")
-        fakeContentService.videosError = RuntimeException("Error")
-
-        viewModel = createViewModel()
-        advanceUntilIdle()
-
-        // All sections should be in error state
-        assertTrue(viewModel.channelsState.value is HomeViewModel.SectionState.Error)
-        assertTrue(viewModel.playlistsState.value is HomeViewModel.SectionState.Error)
-        assertTrue(viewModel.videosState.value is HomeViewModel.SectionState.Error)
-
-        // Fix channels service and retry only channels
-        fakeContentService.channelsError = null
-        fakeContentService.channelsResponse = CursorResponse(
-            listOf(createChannel("1", "Channel")), null
-        )
-
-        viewModel.loadChannels()
-        advanceUntilIdle()
-
-        // Channels should now succeed
-        assertTrue(viewModel.channelsState.value is HomeViewModel.SectionState.Success)
-
-        // Playlists and videos should still be in error state
-        assertTrue(viewModel.playlistsState.value is HomeViewModel.SectionState.Error)
-        assertTrue(viewModel.videosState.value is HomeViewModel.SectionState.Error)
-    }
-
-    @Test
-    fun `defensive take limits results to device limit`() = runTest {
-        // Service returns more items than the limit
-        val channels = (1..15).map { createChannel(it.toString(), "Channel $it") }
-        fakeContentService.channelsResponse = CursorResponse(channels, null)
-
-        viewModel = createViewModel() // Phone mode = 10 item limit
-        advanceUntilIdle()
-
-        val state = viewModel.channelsState.value
-        assertTrue("Expected Success state", state is HomeViewModel.SectionState.Success)
-        assertEquals(10, (state as HomeViewModel.SectionState.Success).items.size)
-    }
-
-    // Featured section tests
-
-    @Test
-    fun `loadFeatured emits Success with mixed content types`() = runTest {
-        // Featured can contain videos, playlists, and channels
-        val mixedContent: List<ContentItem> = listOf(
-            createVideo("v1", "Featured Video"),
-            createPlaylist("p1", "Featured Playlist"),
-            createChannel("c1", "Featured Channel")
-        )
-        fakeContentService.featuredResponse = CursorResponse(mixedContent, null)
-
-        viewModel = createViewModel()
-        advanceUntilIdle()
-
-        val state = viewModel.featuredState.value
-        assertTrue("Expected Success state", state is HomeViewModel.SectionState.Success)
-        val items = (state as HomeViewModel.SectionState.Success).items
-        assertEquals(3, items.size)
-        assertTrue("Should contain video", items.any { it is ContentItem.Video })
-        assertTrue("Should contain playlist", items.any { it is ContentItem.Playlist })
-        assertTrue("Should contain channel", items.any { it is ContentItem.Channel })
-    }
-
-    @Test
-    fun `loadFeatured passes Featured category ID in filters`() = runTest {
-        fakeContentService.featuredResponse = CursorResponse(emptyList(), null)
-
-        viewModel = createViewModel()
-        advanceUntilIdle()
-
-        val filters = fakeContentService.lastFeaturedFilters
-        assertEquals(
-            "Should use Featured category ID",
-            HomeViewModel.FEATURED_CATEGORY_ID,
-            filters?.category
-        )
-    }
-
-    @Test
-    fun `loadFeatured emits Error when service throws exception`() = runTest {
-        fakeContentService.featuredError = RuntimeException("Featured failed")
-
-        viewModel = createViewModel()
-        advanceUntilIdle()
-
-        val state = viewModel.featuredState.value
-        assertTrue("Expected Error state", state is HomeViewModel.SectionState.Error)
-        assertEquals("Featured failed", (state as HomeViewModel.SectionState.Error).message)
-    }
-
-    @Test
-    fun `Featured failure does not affect other sections`() = runTest {
-        // Featured fails, but channels, playlists, and videos succeed
-        fakeContentService.featuredError = RuntimeException("Featured failed")
-        fakeContentService.channelsResponse = CursorResponse(
-            listOf(createChannel("1", "Channel")), null
-        )
-        fakeContentService.playlistsResponse = CursorResponse(
-            listOf(createPlaylist("1", "Playlist")), null
-        )
-        fakeContentService.videosResponse = CursorResponse(
-            listOf(createVideo("1", "Video")), null
+        // Refresh response
+        fakeContentService.homeFeedResponses.add(
+            HomeFeedResult(listOf(createSection("catNew", "Fresh", 2)), null, false)
         )
 
         viewModel = createViewModel()
         advanceUntilIdle()
 
-        // Featured should be in error state
-        assertTrue(viewModel.featuredState.value is HomeViewModel.SectionState.Error)
+        viewModel.loadMoreSections()
+        advanceUntilIdle()
 
-        // Other sections should succeed
-        assertTrue(viewModel.channelsState.value is HomeViewModel.SectionState.Success)
-        assertTrue(viewModel.playlistsState.value is HomeViewModel.SectionState.Success)
-        assertTrue(viewModel.videosState.value is HomeViewModel.SectionState.Success)
+        assertEquals(2, (viewModel.homeState.value as HomeViewModel.HomeState.Success).sections.size)
+
+        viewModel.refresh()
+        advanceUntilIdle()
+
+        val state = viewModel.homeState.value as HomeViewModel.HomeState.Success
+        assertEquals(1, state.sections.size)
+        assertEquals("Fresh", state.sections[0].categoryName)
     }
 
     @Test
-    fun `retry Featured loads only Featured section`() = runTest {
-        // Initially Featured fails
-        fakeContentService.featuredError = RuntimeException("Error")
-        fakeContentService.channelsResponse = CursorResponse(
-            listOf(createChannel("1", "Channel")), null
+    fun `loadMore error preserves existing sections`() = runTest {
+        // Initial load succeeds
+        fakeContentService.homeFeedResponses.add(
+            HomeFeedResult(listOf(createSection("cat1", "Category 1", 2)), "cursor1", true)
         )
+        // Load more will fail
+        fakeContentService.homeFeedErrorOnCall = 1
 
         viewModel = createViewModel()
         advanceUntilIdle()
 
-        assertTrue(viewModel.featuredState.value is HomeViewModel.SectionState.Error)
-        assertTrue(viewModel.channelsState.value is HomeViewModel.SectionState.Success)
-
-        // Fix Featured and retry
-        fakeContentService.featuredError = null
-        fakeContentService.featuredResponse = CursorResponse(
-            listOf(createVideo("1", "Video")), null
-        )
-
-        viewModel.loadFeatured()
+        viewModel.loadMoreSections()
         advanceUntilIdle()
 
-        // Featured should now succeed
-        assertTrue(viewModel.featuredState.value is HomeViewModel.SectionState.Success)
+        // Should still show existing sections
+        val state = viewModel.homeState.value as HomeViewModel.HomeState.Success
+        assertEquals(1, state.sections.size)
     }
 
-    // Helper functions to create test data
-    private fun createChannel(id: String, name: String) = ContentItem.Channel(
-        id = id,
-        name = name,
-        category = "Test",
-        subscribers = 1000,
-        description = "Test channel"
-    )
+    @Test
+    fun `phone content limit is 10`() = runTest {
+        fakeContentService.homeFeedResponses.add(
+            HomeFeedResult(listOf(createSection("cat1", "Category 1", 3)), null, false)
+        )
 
-    private fun createPlaylist(id: String, title: String) = ContentItem.Playlist(
-        id = id,
-        title = title,
-        category = "Test",
-        itemCount = 10,
-        description = "Test playlist"
-    )
+        val app = RuntimeEnvironment.getApplication()
+        setDeviceMode(app, Configuration.UI_MODE_TYPE_NORMAL)
+        viewModel = HomeViewModel(app, fakeContentService)
+        advanceUntilIdle()
 
-    private fun createVideo(id: String, title: String, uploadedDaysAgo: Int = 1) = ContentItem.Video(
-        id = id,
-        title = title,
-        category = "Test",
-        durationSeconds = 10,
-        uploadedDaysAgo = uploadedDaysAgo,
-        description = "Test video"
-    )
+        assertEquals(10, fakeContentService.lastContentLimit)
+    }
+
+    @Test
+    fun `TV content limit is 20`() = runTest {
+        fakeContentService.homeFeedResponses.add(
+            HomeFeedResult(listOf(createSection("cat1", "Category 1", 3)), null, false)
+        )
+
+        val app = RuntimeEnvironment.getApplication()
+        setDeviceMode(app, Configuration.UI_MODE_TYPE_TELEVISION)
+        viewModel = HomeViewModel(app, fakeContentService)
+        advanceUntilIdle()
+
+        assertEquals(20, fakeContentService.lastContentLimit)
+    }
+
+    // Helper functions
+
+    private fun createSection(id: String, name: String, itemCount: Int): HomeSection {
+        val items = (1..itemCount).map { i ->
+            ContentItem.Video(
+                id = "${id}_v$i",
+                title = "Video $i",
+                category = name,
+                durationSeconds = 60,
+                uploadedDaysAgo = 1,
+                description = "Test"
+            )
+        }
+        return HomeSection(
+            categoryId = id,
+            categoryName = name,
+            items = items,
+            totalItemCount = itemCount
+        )
+    }
 
     private fun setDeviceMode(context: Context, modeType: Int) {
         val uiModeManager = context.getSystemService(Context.UI_MODE_SERVICE) as UiModeManager
@@ -336,21 +235,32 @@ class HomeViewModelTest {
     }
 
     /**
-     * Fake ContentService for testing that allows controlling responses per content type.
+     * Fake ContentService for testing the home feed flow.
      */
     private class FakeContentService : ContentService {
-        var featuredResponse: CursorResponse? = CursorResponse(emptyList(), null)
-        var featuredError: Exception? = null
-        var lastFeaturedFilters: FilterState? = null
+        val homeFeedResponses = mutableListOf<HomeFeedResult>()
+        var homeFeedError: Exception? = null
+        var homeFeedErrorOnCall: Int? = null
+        var lastContentLimit: Int? = null
+        private var homeFeedCallCount = 0
 
-        var channelsResponse: CursorResponse? = CursorResponse(emptyList(), null)
-        var channelsError: Exception? = null
-
-        var playlistsResponse: CursorResponse? = CursorResponse(emptyList(), null)
-        var playlistsError: Exception? = null
-
-        var videosResponse: CursorResponse? = CursorResponse(emptyList(), null)
-        var videosError: Exception? = null
+        override suspend fun fetchHomeFeed(
+            cursor: String?,
+            categoryLimit: Int,
+            contentLimit: Int
+        ): HomeFeedResult {
+            lastContentLimit = contentLimit
+            val callIndex = homeFeedCallCount++
+            if (homeFeedErrorOnCall == callIndex) {
+                throw RuntimeException("Simulated error on call $callIndex")
+            }
+            homeFeedError?.let { throw it }
+            return if (callIndex < homeFeedResponses.size) {
+                homeFeedResponses[callIndex]
+            } else {
+                HomeFeedResult(emptyList(), null, false)
+            }
+        }
 
         override suspend fun fetchContent(
             type: ContentType,
@@ -358,29 +268,7 @@ class HomeViewModelTest {
             pageSize: Int,
             filters: FilterState
         ): CursorResponse {
-            return when (type) {
-                ContentType.CHANNELS -> {
-                    channelsError?.let { throw it }
-                    channelsResponse ?: CursorResponse(emptyList(), null)
-                }
-                ContentType.PLAYLISTS -> {
-                    playlistsError?.let { throw it }
-                    playlistsResponse ?: CursorResponse(emptyList(), null)
-                }
-                ContentType.VIDEOS -> {
-                    videosError?.let { throw it }
-                    videosResponse ?: CursorResponse(emptyList(), null)
-                }
-                ContentType.ALL -> {
-                    // Featured section uses ALL type with category filter
-                    lastFeaturedFilters = filters
-                    featuredError?.let { throw it }
-                    featuredResponse ?: CursorResponse(emptyList(), null)
-                }
-                ContentType.HOME -> {
-                    CursorResponse(emptyList(), null)
-                }
-            }
+            return CursorResponse(emptyList(), null)
         }
 
         override suspend fun search(query: String, type: String?, limit: Int): List<ContentItem> {

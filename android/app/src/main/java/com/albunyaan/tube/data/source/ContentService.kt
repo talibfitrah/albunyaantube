@@ -5,6 +5,7 @@ import com.albunyaan.tube.data.model.Category
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.model.CursorResponse
+import com.albunyaan.tube.data.model.HomeFeedResult
 
 interface ContentService {
     suspend fun fetchContent(
@@ -13,6 +14,12 @@ interface ContentService {
         pageSize: Int,
         filters: FilterState
     ): CursorResponse
+
+    suspend fun fetchHomeFeed(
+        cursor: String?,
+        categoryLimit: Int,
+        contentLimit: Int
+    ): HomeFeedResult
 
     suspend fun search(query: String, type: String? = null, limit: Int = 20): List<ContentItem>
 

@@ -44,6 +44,9 @@ class ApprovalServicePaginationTest {
     @Mock
     private AuditLogService auditLogService;
 
+    @Mock
+    private SortOrderService sortOrderService;
+
     private ApprovalService approvalService;
 
     @BeforeEach
@@ -53,7 +56,8 @@ class ApprovalServicePaginationTest {
                 playlistRepository,
                 categoryRepository,
                 approvalRepository,
-                auditLogService
+                auditLogService,
+                sortOrderService
         );
     }
 

@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Tablet variant: same structure as phone. Dimensions adapt via qualifiers
+     (bottom_nav_height=0dp, wider margins via home_horizontal_margin, etc.) -->
 <androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/homeScrollView"

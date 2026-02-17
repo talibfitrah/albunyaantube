@@ -7,6 +7,8 @@ import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
+import com.albunyaan.tube.service.PublicContentCacheService;
+import com.albunyaan.tube.service.SortOrderService;
 import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.DocumentSnapshot;
 import com.google.cloud.firestore.Firestore;
@@ -19,6 +21,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -52,19 +55,42 @@ public class ContentLibraryController {
     private final VideoRepository videoRepository;
     private final Firestore firestore;
     private final FirestoreTimeoutProperties timeoutProperties;
+    private final PublicContentCacheService publicContentCacheService;
+    private final SortOrderService sortOrderService;
 
     public ContentLibraryController(
             ChannelRepository channelRepository,
             PlaylistRepository playlistRepository,
             VideoRepository videoRepository,
             Firestore firestore,
-            FirestoreTimeoutProperties timeoutProperties
+            FirestoreTimeoutProperties timeoutProperties,
+            PublicContentCacheService publicContentCacheService,
+            SortOrderService sortOrderService
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
         this.videoRepository = videoRepository;
         this.firestore = firestore;
         this.timeoutProperties = timeoutProperties;
+        this.publicContentCacheService = publicContentCacheService;
+        this.sortOrderService = sortOrderService;
+    }
+
+    /**
+     * Helper to fetch category IDs for a content item.
+     */
+    private List<String> getCategoryIdsForItem(String type, String id)
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        switch (type.toLowerCase()) {
+            case "channel":
+                return channelRepository.findById(id).map(Channel::getCategoryIds).orElse(null);
+            case "playlist":
+                return playlistRepository.findById(id).map(Playlist::getCategoryIds).orElse(null);
+            case "video":
+                return videoRepository.findById(id).map(Video::getCategoryIds).orElse(null);
+            default:
+                return null;
+        }
     }
 
     /**
@@ -528,6 +554,7 @@ public class ContentLibraryController {
     private BulkActionResponse executeBulkStatusUpdate(List<BulkActionItem> items, String newStatus, String operationName) {
         int successCount = 0;
         List<String> errors = new ArrayList<>();
+        Set<String> failedKeys = new HashSet<>();
 
         // Process items in chunks to respect Firestore batch limit (500 operations)
         for (int i = 0; i < items.size(); i += FIRESTORE_BATCH_LIMIT) {
@@ -544,6 +571,7 @@ public class ContentLibraryController {
                         String collectionName = getCollectionName(item.type);
                         docRefs.add(firestore.collection(collectionName).document(item.id));
                     } catch (IllegalArgumentException e) {
+                        failedKeys.add(item.type.toLowerCase() + ":" + item.id);
                         errors.add(e.getMessage());
                     }
                 }
@@ -560,6 +588,7 @@ public class ContentLibraryController {
                             if (snapshotIndex < snapshots.size() && snapshots.get(snapshotIndex).exists()) {
                                 validatedItems.add(item);
                             } else {
+                                failedKeys.add(item.type.toLowerCase() + ":" + item.id);
                                 errors.add(item.type + " not found: " + item.id);
                             }
                             snapshotIndex++;
@@ -571,12 +600,14 @@ public class ContentLibraryController {
             } catch (TimeoutException e) {
                 log.error("Timeout during existence check for batch: {}", e.getMessage());
                 for (BulkActionItem item : batch) {
+                    failedKeys.add(item.type.toLowerCase() + ":" + item.id);
                     errors.add("Timeout checking existence of " + item.type + " " + item.id);
                 }
                 continue; // Skip to next batch
             } catch (Exception e) {
                 log.error("Error during existence check for batch: {}", e.getMessage());
                 for (BulkActionItem item : batch) {
+                    failedKeys.add(item.type.toLowerCase() + ":" + item.id);
                     errors.add("Error checking " + item.type + " " + item.id + ": " + e.getMessage());
                 }
                 continue; // Skip to next batch
@@ -616,19 +647,21 @@ public class ContentLibraryController {
                 } catch (TimeoutException e) {
                     log.error("Timeout during batch commit: {}", e.getMessage());
                     for (BulkActionItem item : validatedItems) {
+                        failedKeys.add(item.type.toLowerCase() + ":" + item.id);
                         errors.add("Timeout " + operationName + " " + item.type + " " + item.id);
                     }
                 } catch (Exception e) {
                     // Batch failed - all items in this batch are rolled back by Firestore
                     log.error("Batch commit failed for {} items: {}", validatedItems.size(), e.getMessage());
                     for (BulkActionItem item : validatedItems) {
+                        failedKeys.add(item.type.toLowerCase() + ":" + item.id);
                         errors.add("Batch commit failed for " + item.type + " " + item.id + ": " + e.getMessage());
                     }
                 }
             }
         }
 
-        return new BulkActionResponse(successCount, errors);
+        return new BulkActionResponse(successCount, errors, failedKeys);
     }
 
     /**
@@ -637,6 +670,7 @@ public class ContentLibraryController {
     private BulkActionResponse executeBulkDeleteOperation(List<BulkActionItem> items, EntityDeleter deleter, String operationName) {
         int successCount = 0;
         List<String> errors = new ArrayList<>();
+        Set<String> failedKeys = new HashSet<>();
 
         // Process items in chunks to respect Firestore batch limit (500 operations)
         for (int i = 0; i < items.size(); i += FIRESTORE_BATCH_LIMIT) {
@@ -653,11 +687,14 @@ public class ContentLibraryController {
                     if (exists) {
                         itemsToDelete.add(item);
                     } else {
+                        failedKeys.add(item.type.toLowerCase() + ":" + item.id);
                         errors.add(item.type + " not found: " + item.id);
                     }
                 } catch (IllegalArgumentException e) {
+                    failedKeys.add(item.type.toLowerCase() + ":" + item.id);
                     errors.add(e.getMessage());
                 } catch (Exception e) {
+                    failedKeys.add(item.type.toLowerCase() + ":" + item.id);
                     errors.add("Error " + operationName + " " + item.type + " " + item.id + ": " + e.getMessage());
                 }
             }
@@ -678,13 +715,14 @@ public class ContentLibraryController {
                 } catch (Exception e) {
                     log.error("Batch delete failed for {} items: {}", itemsToDelete.size(), e.getMessage());
                     for (BulkActionItem item : itemsToDelete) {
+                        failedKeys.add(item.type.toLowerCase() + ":" + item.id);
                         errors.add("Batch delete failed for " + item.type + " " + item.id + ": " + e.getMessage());
                     }
                 }
             }
         }
 
-        return new BulkActionResponse(successCount, errors);
+        return new BulkActionResponse(successCount, errors, failedKeys);
     }
 
     /**
@@ -745,6 +783,25 @@ public class ContentLibraryController {
 
         BulkActionResponse response = executeBulkStatusUpdate(request.items, "APPROVED", "approving");
 
+        // Add newly approved items to category sort order (only for items that succeeded)
+        if (response.successCount > 0) {
+            for (BulkActionItem item : request.items) {
+                String key = item.type.toLowerCase() + ":" + item.id;
+                if (response.failedKeys.contains(key)) continue;
+                try {
+                    List<String> catIds = getCategoryIdsForItem(item.type, item.id);
+                    if (catIds != null) {
+                        for (String categoryId : catIds) {
+                            sortOrderService.addContentToCategory(categoryId, item.id, item.type.toLowerCase());
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to add sort order for {} {}: {}", item.type, item.id, e.getMessage());
+                }
+            }
+        }
+        publicContentCacheService.evictPublicContentCaches();
+
         log.info("Bulk approve completed: user={}, successCount={}, errorCount={}",
                 username, response.successCount, response.errors.size());
 
@@ -796,6 +853,20 @@ public class ContentLibraryController {
         log.info("Bulk reject started: user={}, itemCount={}", username, request.items.size());
 
         BulkActionResponse response = executeBulkStatusUpdate(request.items, "REJECTED", "rejecting");
+
+        // Remove rejected items from category sort order (only for items that succeeded)
+        if (response.successCount > 0) {
+            for (BulkActionItem item : request.items) {
+                String key = item.type.toLowerCase() + ":" + item.id;
+                if (response.failedKeys.contains(key)) continue;
+                try {
+                    sortOrderService.removeContentFromAllCategories(item.id, item.type.toLowerCase());
+                } catch (Exception e) {
+                    log.warn("Failed to remove sort order for {} {}: {}", item.type, item.id, e.getMessage());
+                }
+            }
+        }
+        publicContentCacheService.evictPublicContentCaches();
 
         log.info("Bulk reject completed: user={}, successCount={}, errorCount={}",
                 username, response.successCount, response.errors.size());
@@ -860,6 +931,21 @@ public class ContentLibraryController {
             }
         }, "deleting");
 
+        // Clean up sort order entries only for items that were actually deleted
+        // (i.e., items that no longer exist in the repository)
+        if (response.successCount > 0) {
+            for (BulkActionItem item : request.items) {
+                String key = item.type.toLowerCase() + ":" + item.id;
+                if (response.failedKeys.contains(key)) continue; // Skip items that failed to delete
+                try {
+                    sortOrderService.removeContentFromAllCategories(item.id, item.type.toLowerCase());
+                } catch (Exception e) {
+                    log.warn("Failed to clean up sort order for {} {}: {}", item.type, item.id, e.getMessage());
+                }
+            }
+        }
+        publicContentCacheService.evictPublicContentCaches();
+
         log.info("Bulk delete completed: user={}, successCount={}, errorCount={}",
                 username, response.successCount, response.errors.size());
 
@@ -914,10 +1000,16 @@ public class ContentLibraryController {
 
         for (BulkActionItem item : request.items) {
             try {
-                switch (item.type.toLowerCase()) {
+                List<String> oldCategoryIds = null;
+                String contentType = item.type.toLowerCase();
+                boolean isApproved = false;
+
+                switch (contentType) {
                     case "channel":
                         Channel channel = channelRepository.findById(item.id).orElse(null);
                         if (channel != null) {
+                            oldCategoryIds = channel.getCategoryIds();
+                            isApproved = "APPROVED".equals(channel.getStatus());
                             channel.setCategoryIds(request.categoryIds);
                             channelRepository.save(channel);
                             successCount++;
@@ -928,6 +1020,8 @@ public class ContentLibraryController {
                     case "playlist":
                         Playlist playlist = playlistRepository.findById(item.id).orElse(null);
                         if (playlist != null) {
+                            oldCategoryIds = playlist.getCategoryIds();
+                            isApproved = "APPROVED".equals(playlist.getStatus());
                             playlist.setCategoryIds(request.categoryIds);
                             playlistRepository.save(playlist);
                             successCount++;
@@ -938,6 +1032,8 @@ public class ContentLibraryController {
                     case "video":
                         Video video = videoRepository.findById(item.id).orElse(null);
                         if (video != null) {
+                            oldCategoryIds = video.getCategoryIds();
+                            isApproved = "APPROVED".equals(video.getStatus());
                             video.setCategoryIds(request.categoryIds);
                             videoRepository.save(video);
                             successCount++;
@@ -947,12 +1043,40 @@ public class ContentLibraryController {
                         break;
                     default:
                         errors.add("Invalid type: " + item.type);
+                        continue;
+                }
+
+                // Sync sort order for approved items: remove from old categories, add to new
+                if (isApproved && oldCategoryIds != null) {
+                    Set<String> oldSet = new HashSet<>(oldCategoryIds);
+                    Set<String> newSet = new HashSet<>(request.categoryIds != null ? request.categoryIds : List.of());
+                    // Remove from categories no longer assigned
+                    for (String oldCat : oldSet) {
+                        if (!newSet.contains(oldCat)) {
+                            try {
+                                sortOrderService.removeContentFromCategory(oldCat, item.id, contentType);
+                            } catch (Exception e) {
+                                log.warn("Failed to remove sort order for {} {} from category {}: {}", contentType, item.id, oldCat, e.getMessage());
+                            }
+                        }
+                    }
+                    // Add to newly assigned categories
+                    for (String newCat : newSet) {
+                        if (!oldSet.contains(newCat)) {
+                            try {
+                                sortOrderService.addContentToCategory(newCat, item.id, contentType);
+                            } catch (Exception e) {
+                                log.warn("Failed to add sort order for {} {} to category {}: {}", contentType, item.id, newCat, e.getMessage());
+                            }
+                        }
+                    }
                 }
             } catch (Exception e) {
                 errors.add("Error assigning categories to " + item.type + " " + item.id + ": " + e.getMessage());
             }
         }
 
+        publicContentCacheService.evictPublicContentCaches();
         return ResponseEntity.ok(new BulkActionResponse(successCount, errors));
     }
 
@@ -1017,6 +1141,7 @@ public class ContentLibraryController {
                     channel.setKeywords(normalizedKeywords);
                     channel.touch();
                     channelRepository.save(channel);
+                    publicContentCacheService.evictPublicContentCaches();
                     return ResponseEntity.ok(Map.of("success", true, "keywords", normalizedKeywords != null ? normalizedKeywords : List.of()));
 
                 case "playlist":
@@ -1027,6 +1152,7 @@ public class ContentLibraryController {
                     playlist.setKeywords(normalizedKeywords);
                     playlist.touch();
                     playlistRepository.save(playlist);
+                    publicContentCacheService.evictPublicContentCaches();
                     return ResponseEntity.ok(Map.of("success", true, "keywords", normalizedKeywords != null ? normalizedKeywords : List.of()));
 
                 case "video":
@@ -1037,6 +1163,7 @@ public class ContentLibraryController {
                     video.setKeywords(normalizedKeywords);
                     video.touch();
                     videoRepository.save(video);
+                    publicContentCacheService.evictPublicContentCaches();
                     return ResponseEntity.ok(Map.of("success", true, "keywords", normalizedKeywords != null ? normalizedKeywords : List.of()));
 
                 default:
@@ -1202,6 +1329,11 @@ public class ContentLibraryController {
         log.info("Bulk reorder completed: user={}, successCount={}, missingDocErrors={}, transientErrors={}",
                 username, execResult.successCount,
                 execResult.missingDocumentErrors.size(), execResult.transientErrors.size());
+
+        // Evict caches if any operations succeeded
+        if (execResult.successCount > 0) {
+            publicContentCacheService.evictPublicContentCaches();
+        }
 
         // Handle TOCTOU race condition: documents deleted between validation and commit
         // Return 400 Bad Request - client should refresh and resubmit with existing items only
@@ -1506,10 +1638,17 @@ public class ContentLibraryController {
     public static class BulkActionResponse {
         public int successCount;
         public List<String> errors;
+        @JsonIgnore
+        public Set<String> failedKeys;
 
         public BulkActionResponse(int successCount, List<String> errors) {
+            this(successCount, errors, Set.of());
+        }
+
+        public BulkActionResponse(int successCount, List<String> errors, Set<String> failedKeys) {
             this.successCount = successCount;
             this.errors = errors;
+            this.failedKeys = failedKeys != null ? failedKeys : Set.of();
         }
     }
 }

@@ -9,6 +9,12 @@ data class CursorResponse(
     )
 }
 
+data class HomeFeedResult(
+    val sections: List<HomeSection>,
+    val nextCursor: String?,
+    val hasMore: Boolean
+)
+
 enum class ContentType {
     HOME,
     CHANNELS,

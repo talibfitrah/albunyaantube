@@ -183,13 +183,13 @@
     <string name="home_see_all_playlists">عرض كل قوائم التشغيل</string>
     <string name="home_see_all_videos">عرض كل الفيديوهات</string>
     <string name="home_see_all_featured">عرض كل المحتوى المميز</string>
+    <string name="home_see_all_category">عرض كل المحتوى في %1$s</string>
+    <string name="home_empty_content">لا يوجد محتوى متاح بعد</string>
+    <string name="home_loading_more">جارٍ تحميل المزيد…</string>
     <string name="home_retry_section">إعادة تحميل القسم</string>
 
     <!-- Home Section Empty States -->
     <string name="home_empty_videos">لا توجد فيديوهات متاحة بعد</string>
-    <string name="home_empty_playlists">لا توجد قوائم تشغيل متاحة بعد</string>
-    <string name="home_empty_channels">لا توجد قنوات متاحة بعد</string>
-    <string name="home_empty_featured">لا يوجد محتوى مميز بعد</string>
 
     <!-- Videos Tab Empty State -->
     <string name="videos_empty_title">لا توجد فيديوهات بعد</string>
