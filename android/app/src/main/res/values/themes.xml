@@ -51,8 +51,8 @@
     <!-- Bottom Navigation Style (Design Spec: 72dp) -->
     <style name="Widget.Albunyaan.BottomNavigationView" parent="Widget.Material3.BottomNavigationView">
         <item name="itemIconSize">@dimen/icon_small</item>
-        <item name="itemIconTint">@android:color/white</item>
-        <item name="itemTextColor">@android:color/white</item>
+        <item name="itemIconTint">@color/bottom_nav_item_color</item>
+        <item name="itemTextColor">@color/bottom_nav_item_color</item>
         <item name="labelVisibilityMode">labeled</item>
         <item name="android:minHeight">@dimen/bottom_nav_height</item>
     </style>

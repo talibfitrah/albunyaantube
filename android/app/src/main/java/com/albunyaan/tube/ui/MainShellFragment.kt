@@ -2,6 +2,7 @@ package com.albunyaan.tube.ui
 
 import android.os.Bundle
 import android.view.View
+import androidx.core.view.ViewCompat
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.setupWithNavController
@@ -20,6 +21,14 @@ class MainShellFragment : Fragment(R.layout.fragment_main_shell) {
         // Find navigation view by ID (works for both BottomNavigationView and NavigationRailView)
         navigationView = view.findViewById(R.id.mainBottomNav)
         navHostFragment = view.findViewById(R.id.main_shell_nav_host)
+
+        // Prevent Material3's internal WindowInsets listener from adding bottom padding.
+        // The parent CoordinatorLayout's fitsSystemWindows="true" already positions the nav
+        // view above the system navigation bar. Without this, on Android 15+ (mandatory
+        // edge-to-edge), Material3 adds ADDITIONAL bottom padding, compressing the icons/labels.
+        navigationView?.let { nav ->
+            ViewCompat.setOnApplyWindowInsetsListener(nav) { _, insets -> insets }
+        }
 
         val navHost = childFragmentManager.findFragmentById(R.id.main_shell_nav_host) as? NavHostFragment
         val navController = navHost?.navController ?: return
@@ -108,22 +117,14 @@ class MainShellFragment : Fragment(R.layout.fragment_main_shell) {
             }
         }
 
-        // When showing navigation after fullscreen exit, reset ALL padding that
-        // may have been added by window insets and force a clean layout pass.
-        // We reset all padding (including top/bottom) to prevent accumulation,
-        // then let requestApplyInsets() restore legitimate system insets.
+        // When showing navigation after fullscreen exit, reset any padding that
+        // may have accumulated and force a clean layout pass.
         if (visible) {
             nav.post {
-                // Guard against view lifecycle - check if fragment is still attached
                 if (!isAdded || view == null) return@post
-
-                // Reset all padding to zero - insets will be reapplied correctly
                 nav.setPaddingRelative(zeroDimen, zeroDimen, zeroDimen, zeroDimen)
                 nav.requestLayout()
                 view?.requestLayout()
-
-                // Request insets to be reapplied to restore legitimate system bar padding
-                nav.requestApplyInsets()
             }
         }
     }
