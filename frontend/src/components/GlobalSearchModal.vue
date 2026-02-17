@@ -155,6 +155,7 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { useFocusTrap } from '@/composables/useFocusTrap';
+import apiClient from '@/services/api/client';
 
 const { t } = useI18n();
 const router = useRouter();
@@ -196,22 +197,9 @@ const entityFilters = computed(() => [
   { value: 'users', label: t('globalSearch.filters.users') }
 ]);
 
-const suggestions = computed(() => {
-  if (!searchQuery.value || searchQuery.value.length < 2) return [];
-
-  const query = searchQuery.value.toLowerCase();
-  const allSuggestions = [
-    'Islamic lectures',
-    'Quran recitation',
-    'Islamic history',
-    'Arabic language',
-    'Tafsir',
-    'Hadith studies',
-    'Islamic finance',
-    'Muslim scholars'
-  ];
-
-  return allSuggestions.filter(s => s.toLowerCase().includes(query)).slice(0, 5);
+const suggestions = computed<string[]>(() => {
+  // No hardcoded suggestions - return empty array
+  return [];
 });
 
 // Focus trap
@@ -256,57 +244,61 @@ function toggleFilter(filter: string) {
   handleSearchInput();
 }
 
+let searchDebounce: ReturnType<typeof setTimeout> | null = null;
+
 async function handleSearchInput() {
   if (!searchQuery.value || searchQuery.value.length < 2) {
     results.value = [];
     return;
   }
 
+  // Debounce API calls
+  if (searchDebounce) clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(() => performSearch(), 300);
+}
+
+async function performSearch() {
   searching.value = true;
   focusedIndex.value = 0;
 
-  // Simulate API search - replace with actual API call
-  await new Promise(resolve => setTimeout(resolve, 500));
+  try {
+    // Determine which content types to search
+    const typeFilter = selectedFilters.value.length > 0
+      ? selectedFilters.value
+      : ['channels', 'playlists', 'videos'];
 
-  // Mock search results
-  const mockResults: SearchResult[] = [
-    {
-      id: '1',
-      type: 'channel',
-      title: 'Islamic Lectures Channel',
-      subtitle: '1.2M subscribers',
-      route: '/content-library'
-    },
-    {
-      id: '2',
-      type: 'playlist',
-      title: 'Quran Recitations Playlist',
-      subtitle: '25 videos',
-      route: '/content-library'
-    },
-    {
-      id: '3',
-      type: 'category',
-      title: 'Islamic Studies',
-      subtitle: '45 items',
-      route: '/categories'
-    },
-    {
-      id: '4',
-      type: 'user',
-      title: 'Admin User',
-      subtitle: 'admin@example.com',
-      route: '/users'
+    // Map filter values to API types parameter
+    const apiTypes: string[] = [];
+    if (typeFilter.includes('channels')) apiTypes.push('CHANNEL');
+    if (typeFilter.includes('playlists')) apiTypes.push('PLAYLIST');
+    if (typeFilter.includes('videos')) apiTypes.push('VIDEO');
+
+    if (apiTypes.length > 0) {
+      const response = await apiClient.get('/api/admin/content', {
+        params: {
+          search: searchQuery.value,
+          types: apiTypes.join(','),
+          size: 10
+        }
+      });
+
+      const items = response.data?.items || [];
+      results.value = items.map((item: any) => ({
+        id: item.id || '',
+        type: (item.type?.toLowerCase() || 'content') as SearchResult['type'],
+        title: item.title || '',
+        subtitle: item.type || '',
+        route: '/content-library'
+      }));
+    } else {
+      results.value = [];
     }
-  ];
-
-  const query = searchQuery.value.toLowerCase();
-  const filtered = selectedFilters.value.length > 0
-    ? mockResults.filter(r => selectedFilters.value.includes(r.type + 's') || selectedFilters.value.includes('all'))
-    : mockResults;
-
-  results.value = filtered.filter(r => r.title.toLowerCase().includes(query));
-  searching.value = false;
+  } catch (err) {
+    console.error('Global search failed:', err);
+    results.value = [];
+  } finally {
+    searching.value = false;
+  }
 }
 
 function navigateResults(direction: number) {

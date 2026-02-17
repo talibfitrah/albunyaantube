@@ -42,35 +42,8 @@ onMounted(() => {
 });
 
 async function loadNotifications() {
-  // Mock data - replace with actual API call
-  notifications.value = [
-    {
-      id: '1',
-      type: 'approval',
-      title: t('notifications.types.newApproval'),
-      message: 'New video "Islamic History 101" pending review',
-      timestamp: new Date(Date.now() - 3600000).toISOString(),
-      read: false,
-      actionUrl: '/approvals'
-    },
-    {
-      id: '2',
-      type: 'category',
-      title: t('notifications.types.categoryChange'),
-      message: 'Category "Quran Recitation" was updated',
-      timestamp: new Date(Date.now() - 7200000).toISOString(),
-      read: false
-    },
-    {
-      id: '3',
-      type: 'user',
-      title: t('notifications.types.userActivity'),
-      message: 'New moderator "ahmad@example.com" was added',
-      timestamp: new Date(Date.now() - 86400000).toISOString(),
-      read: true,
-      actionUrl: '/users'
-    }
-  ];
+  // Notification API not yet implemented - show empty state
+  notifications.value = [];
 }
 
 function togglePanel() {
