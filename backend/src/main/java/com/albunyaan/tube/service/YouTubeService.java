@@ -3,6 +3,7 @@ package com.albunyaan.tube.service;
 import com.albunyaan.tube.dto.BatchValidationResult;
 import com.albunyaan.tube.dto.ChannelDetailsDto;
 import com.albunyaan.tube.dto.EnrichedSearchResult;
+import com.albunyaan.tube.dto.PaginatedItemsResponse;
 import com.albunyaan.tube.dto.PlaylistDetailsDto;
 import com.albunyaan.tube.dto.PlaylistItemDto;
 import com.albunyaan.tube.dto.SearchPageResponse;
@@ -268,6 +269,43 @@ public class YouTubeService {
      */
     public List<StreamItemDto> getPlaylistVideosDto(String playlistId, String pageToken, String searchQuery) throws IOException {
         return channelOrchestrator.getPlaylistVideosDto(playlistId, pageToken, searchQuery);
+    }
+
+    // ==================== Paginated DTO Methods ====================
+
+    /**
+     * Get channel videos as paginated DTOs
+     */
+    public PaginatedItemsResponse<StreamItemDto> getChannelVideosDtoPaginated(String channelId, String pageToken, String searchQuery) throws IOException {
+        return channelOrchestrator.getChannelVideosDtoPaginated(channelId, pageToken, searchQuery);
+    }
+
+    /**
+     * Get channel shorts as paginated DTOs
+     */
+    public PaginatedItemsResponse<StreamItemDto> getChannelShortsDtoPaginated(String channelId, String pageToken) throws IOException {
+        return channelOrchestrator.getChannelShortsDtoPaginated(channelId, pageToken);
+    }
+
+    /**
+     * Get channel live streams as paginated DTOs
+     */
+    public PaginatedItemsResponse<StreamItemDto> getChannelLiveStreamsDtoPaginated(String channelId, String pageToken) throws IOException {
+        return channelOrchestrator.getChannelLiveStreamsDtoPaginated(channelId, pageToken);
+    }
+
+    /**
+     * Get channel playlists as paginated DTOs
+     */
+    public PaginatedItemsResponse<PlaylistItemDto> getChannelPlaylistsDtoPaginated(String channelId, String pageToken) throws IOException {
+        return channelOrchestrator.getChannelPlaylistsDtoPaginated(channelId, pageToken);
+    }
+
+    /**
+     * Get playlist videos as paginated DTOs
+     */
+    public PaginatedItemsResponse<StreamItemDto> getPlaylistVideosDtoPaginated(String playlistId, String pageToken, String searchQuery) throws IOException {
+        return channelOrchestrator.getPlaylistVideosDtoPaginated(playlistId, pageToken, searchQuery);
     }
 
     /**

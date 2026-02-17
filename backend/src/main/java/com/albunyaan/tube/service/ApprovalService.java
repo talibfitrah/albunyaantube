@@ -382,6 +382,15 @@ public class ApprovalService {
         }
 
         // Add metadata
+        if (channel.getYoutubeId() != null) {
+            dto.addMetadata("youtubeId", channel.getYoutubeId());
+        }
+        if (channel.getThumbnailUrl() != null) {
+            dto.addMetadata("thumbnailUrl", channel.getThumbnailUrl());
+        }
+        if (channel.getDescription() != null) {
+            dto.addMetadata("description", channel.getDescription());
+        }
         if (channel.getSubscribers() != null) {
             dto.addMetadata("subscriberCount", formatNumber(channel.getSubscribers()));
         }
@@ -414,6 +423,15 @@ public class ApprovalService {
         }
 
         // Add metadata
+        if (playlist.getYoutubeId() != null) {
+            dto.addMetadata("youtubeId", playlist.getYoutubeId());
+        }
+        if (playlist.getThumbnailUrl() != null) {
+            dto.addMetadata("thumbnailUrl", playlist.getThumbnailUrl());
+        }
+        if (playlist.getDescription() != null) {
+            dto.addMetadata("description", playlist.getDescription());
+        }
         if (playlist.getItemCount() != null) {
             dto.addMetadata("itemCount", playlist.getItemCount());
         }

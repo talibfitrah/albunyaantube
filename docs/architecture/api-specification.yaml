@@ -1214,13 +1214,57 @@ paths:
             type: string
       responses:
         '200':
-          description: Channel videos
+          description: Channel videos (paginated)
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/StreamItemDto'
+                $ref: '#/components/schemas/PaginatedStreamItems'
+
+  /admin/youtube/channels/{channelId}/shorts:
+    get:
+      summary: Get shorts from YouTube channel
+      operationId: youtubeGetChannelShorts
+      tags: [YouTube]
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: pageToken
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Channel shorts (paginated)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedStreamItems'
+
+  /admin/youtube/channels/{channelId}/livestreams:
+    get:
+      summary: Get live streams from YouTube channel
+      operationId: youtubeGetChannelLiveStreams
+      tags: [YouTube]
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: pageToken
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Channel live streams (paginated)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedStreamItems'
 
   /admin/youtube/channels/{channelId}/playlists:
     get:
@@ -1239,13 +1283,11 @@ paths:
             type: string
       responses:
         '200':
-          description: Channel playlists
+          description: Channel playlists (paginated)
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/PlaylistItemDto'
+                $ref: '#/components/schemas/PaginatedPlaylistItems'
 
   /admin/youtube/playlists/{playlistId}:
     get:
@@ -1287,13 +1329,11 @@ paths:
             type: string
       responses:
         '200':
-          description: Playlist videos
+          description: Playlist videos (paginated)
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/StreamItemDto'
+                $ref: '#/components/schemas/PaginatedStreamItems'
 
   /admin/youtube/videos/{videoId}:
     get:
@@ -3070,6 +3110,32 @@ components:
             type: string
           nullable: true
 
+    PaginatedStreamItems:
+      type: object
+      description: Paginated response for stream/video items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/StreamItemDto'
+        nextPageToken:
+          type: string
+          nullable: true
+          description: Token for fetching next page (null if last page)
+
+    PaginatedPlaylistItems:
+      type: object
+      description: Paginated response for playlist items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlaylistItemDto'
+        nextPageToken:
+          type: string
+          nullable: true
+          description: Token for fetching next page (null if last page)
+
     StreamItemDto:
       type: object
       description: Lightweight video/stream item for lists
@@ -3102,6 +3168,11 @@ components:
           type: string
           format: date-time
           nullable: true
+        streamType:
+          type: string
+          nullable: true
+          description: Content type - VIDEO, SHORT, or LIVESTREAM
+          enum: [VIDEO, SHORT, LIVESTREAM]
 
     PlaylistItemDto:
       type: object

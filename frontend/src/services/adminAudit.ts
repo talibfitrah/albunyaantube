@@ -16,49 +16,46 @@ export interface AuditLogPageParams {
 /**
  * Map API AuditLog DTO to UI AuditEntry model
  */
-function mapAuditLogToEntry(log: AuditLog): AuditEntry {
-  // Validate all required fields
-  const requiredFields = {
-    id: log.id,
-    actorUid: log.actorUid,
-    action: log.action,
-    entityType: log.entityType,
-    entityId: log.entityId,
-    timestamp: log.timestamp
-  };
+function mapAuditLogToEntry(log: AuditLog): AuditEntry | null {
+  // Backend model uses 'actorDisplayName' and 'details' field names,
+  // but the OpenAPI spec (and generated types) use 'actorEmail' and 'metadata'.
+  // Handle both at runtime to be resilient to this mismatch.
+  const raw = log as Record<string, unknown>;
 
-  const missingFields: string[] = [];
-  for (const [field, value] of Object.entries(requiredFields)) {
-    if (!value || (typeof value === 'string' && value.trim() === '')) {
-      missingFields.push(field);
-    }
+  const id = (raw.id as string) || '';
+  const actorUid = (raw.actorUid as string) || '';
+  const action = (raw.action as string) || '';
+  const entityType = (raw.entityType as string) || '';
+  const entityId = (raw.entityId as string) || '';
+  const timestamp = (raw.timestamp as string) || '';
+
+  // Skip entries missing critical fields instead of throwing
+  if (!id || !action || !entityType || !timestamp) {
+    console.warn('Skipping audit log with missing required fields:', log);
+    return null;
   }
 
-  if (missingFields.length > 0) {
-    const errorMsg = `Audit log missing required fields: ${missingFields.join(', ')}`;
-    console.error(errorMsg, log);
-    throw new Error(errorMsg);
-  }
+  // Backend sends 'actorDisplayName', spec says 'actorEmail' — try both
+  const actorDisplayName = (raw.actorDisplayName as string)
+    || (raw.actorEmail as string)
+    || '';
 
-  // Safely handle metadata
+  // Backend sends 'details', spec says 'metadata' — try both
   let details: Record<string, unknown> = {};
-  if (log.metadata !== null && log.metadata !== undefined) {
-    if (typeof log.metadata === 'object' && !Array.isArray(log.metadata)) {
-      details = log.metadata as Record<string, unknown>;
-    } else {
-      console.warn('Audit log metadata is not an object, using empty object:', log);
-    }
+  const rawDetails = raw.details ?? raw.metadata;
+  if (rawDetails && typeof rawDetails === 'object' && !Array.isArray(rawDetails)) {
+    details = rawDetails as Record<string, unknown>;
   }
 
   return {
-    id: log.id,
-    actorUid: log.actorUid,
-    actorDisplayName: log.actorEmail || '', // Use email as display name (can be enriched later)
-    action: log.action,
-    entityType: log.entityType,
-    entityId: log.entityId,
+    id,
+    actorUid,
+    actorDisplayName,
+    action,
+    entityType,
+    entityId,
     details,
-    timestamp: log.timestamp
+    timestamp
   };
 }
 
@@ -85,7 +82,7 @@ export async function fetchAuditLogPage(params: AuditLogPageParams = {}): Promis
   const logs = await authorizedJsonFetch<AuditLog[]>(`${AUDIT_BASE_PATH}?${queryParams}`);
 
   return {
-    data: logs.map(mapAuditLogToEntry),
+    data: logs.map(mapAuditLogToEntry).filter((entry): entry is AuditEntry => entry !== null),
     pageInfo: {
       cursor: null,
       nextCursor: null,
@@ -95,16 +92,16 @@ export async function fetchAuditLogPage(params: AuditLogPageParams = {}): Promis
 }
 
 export async function fetchAuditLogsByActor(actorUid: string, limit = 100): Promise<AuditEntry[]> {
-  const logs = await authorizedJsonFetch<AuditLog[]>(`${AUDIT_BASE_PATH}/actor/${actorUid}?limit=${limit}`);
-  return logs.map(mapAuditLogToEntry);
+  const logs = await authorizedJsonFetch<AuditLog[]>(`${AUDIT_BASE_PATH}/actor/${encodeURIComponent(actorUid)}?limit=${limit}`);
+  return logs.map(mapAuditLogToEntry).filter((entry): entry is AuditEntry => entry !== null);
 }
 
 export async function fetchAuditLogsByEntityType(entityType: string, limit = 100): Promise<AuditEntry[]> {
-  const logs = await authorizedJsonFetch<AuditLog[]>(`${AUDIT_BASE_PATH}/entity-type/${entityType}?limit=${limit}`);
-  return logs.map(mapAuditLogToEntry);
+  const logs = await authorizedJsonFetch<AuditLog[]>(`${AUDIT_BASE_PATH}/entity-type/${encodeURIComponent(entityType)}?limit=${limit}`);
+  return logs.map(mapAuditLogToEntry).filter((entry): entry is AuditEntry => entry !== null);
 }
 
 export async function fetchAuditLogsByAction(action: string, limit = 100): Promise<AuditEntry[]> {
-  const logs = await authorizedJsonFetch<AuditLog[]>(`${AUDIT_BASE_PATH}/action/${action}?limit=${limit}`);
-  return logs.map(mapAuditLogToEntry);
+  const logs = await authorizedJsonFetch<AuditLog[]>(`${AUDIT_BASE_PATH}/action/${encodeURIComponent(action)}?limit=${limit}`);
+  return logs.map(mapAuditLogToEntry).filter((entry): entry is AuditEntry => entry !== null);
 }

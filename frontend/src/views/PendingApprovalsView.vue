@@ -122,6 +122,14 @@
           </div>
           <div class="actions">
             <button
+              v-if="item.youtubeId"
+              type="button"
+              class="action-btn preview"
+              @click="openPreview(item)"
+            >
+              {{ t('approvals.preview') }}
+            </button>
+            <button
               type="button"
               class="action-btn reject"
               :disabled="processingId === item.id"
@@ -142,6 +150,31 @@
         </div>
       </div>
     </div>
+
+    <!-- Preview Modals -->
+    <ChannelDetailModal
+      v-if="previewItem?.type === 'channel'"
+      :open="showPreview"
+      :channel-id="previewItem.id"
+      :channel-youtube-id="previewItem.youtubeId"
+      @close="closePreview"
+    />
+
+    <PlaylistDetailModal
+      v-if="previewItem?.type === 'playlist'"
+      :open="showPreview"
+      :playlist-id="previewItem.id"
+      :playlist-youtube-id="previewItem.youtubeId"
+      @close="closePreview"
+    />
+
+    <VideoPreviewModal
+      v-if="previewItem?.type === 'video'"
+      :open="showPreview"
+      :youtube-id="previewItem.youtubeId"
+      :title="previewItem.title"
+      @close="closePreview"
+    />
 
     <!-- Reject Modal -->
     <teleport to="body">
@@ -189,7 +222,10 @@
 import { ref, computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { getAllCategories } from '@/services/categoryService';
-import { getPendingApprovals, approveItem, rejectItem as rejectItemApi } from '@/services/approvalService';
+import { getPendingApprovals, approveItem, rejectItem as rejectItemApi, type PendingApproval } from '@/services/approvalService';
+import ChannelDetailModal from '@/components/exclusions/ChannelDetailModal.vue';
+import PlaylistDetailModal from '@/components/exclusions/PlaylistDetailModal.vue';
+import VideoPreviewModal from '@/components/VideoPreviewModal.vue';
 
 const { t } = useI18n();
 
@@ -239,6 +275,10 @@ const rejectItem = ref<any | null>(null);
 const rejectReason = ref('');
 const isRejecting = ref(false);
 const rejectError = ref<string | null>(null);
+
+// Preview state
+const showPreview = ref(false);
+const previewItem = ref<PendingApproval | null>(null);
 
 const contentTypes = [
   { value: 'all' as const, labelKey: 'approvals.types.all' },
@@ -326,6 +366,16 @@ async function handleReject() {
   } finally {
     isRejecting.value = false;
   }
+}
+
+function openPreview(item: PendingApproval) {
+  previewItem.value = item;
+  showPreview.value = true;
+}
+
+function closePreview() {
+  showPreview.value = false;
+  previewItem.value = null;
 }
 
 function getCategoryName(categoryId: string): string {
@@ -718,6 +768,18 @@ onMounted(() => {
 .action-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.action-btn.preview {
+  background: transparent;
+  color: var(--color-brand);
+  border: 1.5px solid var(--color-brand);
+}
+
+@media (hover: hover) {
+  .action-btn.preview:hover {
+    background: var(--color-brand-soft);
+  }
 }
 
 .action-btn.approve {

@@ -3,6 +3,7 @@ package com.albunyaan.tube.service;
 import com.albunyaan.tube.config.CacheConfig;
 import com.albunyaan.tube.dto.BatchValidationResult;
 import com.albunyaan.tube.dto.ChannelDetailsDto;
+import com.albunyaan.tube.dto.PaginatedItemsResponse;
 import com.albunyaan.tube.dto.PlaylistDetailsDto;
 import com.albunyaan.tube.dto.PlaylistItemDto;
 import com.albunyaan.tube.dto.StreamDetailsDto;
@@ -20,6 +21,7 @@ import org.schabi.newpipe.extractor.playlist.PlaylistInfo;
 import org.schabi.newpipe.extractor.playlist.PlaylistInfoItem;
 import org.schabi.newpipe.extractor.stream.StreamInfo;
 import org.schabi.newpipe.extractor.stream.StreamInfoItem;
+import org.schabi.newpipe.extractor.stream.StreamType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
@@ -90,40 +92,66 @@ public class ChannelOrchestrator {
      * Get videos from a channel (with pagination)
      */
     public List<StreamInfoItem> getChannelVideos(String channelId, String pageToken) throws IOException {
-        return getChannelVideos(channelId, pageToken, null);
+        return getChannelTabContentPaginated(channelId, pageToken, null, "videos").items;
     }
 
     /**
      * Get videos from a channel with optional search filter
      */
     public List<StreamInfoItem> getChannelVideos(String channelId, String pageToken, String searchQuery) throws IOException {
-        logger.debug("Fetching videos for channel: {}, pageToken: {}, search: {}", channelId, pageToken, searchQuery);
+        return getChannelTabContentPaginated(channelId, pageToken, searchQuery, "videos").items;
+    }
+
+    /**
+     * Result holder for paginated channel tab content
+     */
+    static class PaginatedTabResult {
+        final List<StreamInfoItem> items;
+        final String nextPageToken;
+
+        PaginatedTabResult(List<StreamInfoItem> items, String nextPageToken) {
+            this.items = items;
+            this.nextPageToken = nextPageToken;
+        }
+    }
+
+    /**
+     * Generic method to fetch paginated content from a channel tab (videos, shorts, or livestreams).
+     */
+    private PaginatedTabResult getChannelTabContentPaginated(
+            String channelId, String pageToken, String searchQuery, String tabFilter) throws IOException {
+        logger.debug("Fetching {} for channel: {}, pageToken: {}, search: {}", tabFilter, channelId, pageToken, searchQuery);
 
         ChannelInfo channelInfo = getChannelDetails(channelId);
-        List<StreamInfoItem> videos = new ArrayList<>();
+        List<StreamInfoItem> items = new ArrayList<>();
+        String nextToken = null;
 
         try {
-            // Find the videos tab
-            ListLinkHandler videosTab = null;
+            // Find the requested tab
+            ListLinkHandler targetTab = null;
             for (ListLinkHandler tab : channelInfo.getTabs()) {
-                if (tab.getContentFilters().isEmpty() ||
-                    tab.getContentFilters().contains("videos") ||
-                    tab.getContentFilters().contains("uploads")) {
-                    videosTab = tab;
+                List<String> filters = tab.getContentFilters();
+                if ("videos".equals(tabFilter)) {
+                    if (filters.isEmpty() || filters.contains("videos") || filters.contains("uploads")) {
+                        targetTab = tab;
+                        break;
+                    }
+                } else if (filters.contains(tabFilter)) {
+                    targetTab = tab;
                     break;
                 }
             }
 
-            if (videosTab == null) {
-                logger.warn("No videos tab found for channel: {}", channelId);
-                return videos;
+            if (targetTab == null) {
+                logger.debug("No '{}' tab found for channel: {}", tabFilter, channelId);
+                return new PaginatedTabResult(items, null);
             }
 
             // Fetch the tab with throttling and circuit breaker protection
-            ChannelTabExtractor tabExtractor = gateway.createChannelTabExtractor(videosTab);
+            ChannelTabExtractor tabExtractor = gateway.createChannelTabExtractor(targetTab);
             gateway.fetchTabPage(tabExtractor);
 
-            // Get requested page or initial page (with throttling/circuit breaker protection for pagination)
+            // Get requested page or initial page
             ListExtractor.InfoItemsPage<InfoItem> page;
             if (pageToken != null && !pageToken.isEmpty()) {
                 Page requestedPage = gateway.decodePageToken(pageToken);
@@ -140,35 +168,44 @@ public class ChannelOrchestrator {
             boolean hasSearchQuery = searchQuery != null && !searchQuery.trim().isEmpty();
             String lowerQuery = hasSearchQuery ? searchQuery.trim().toLowerCase() : null;
 
-            while (page != null && videos.size() < DEFAULT_RESULTS) {
+            while (page != null && items.size() < DEFAULT_RESULTS) {
                 for (InfoItem item : page.getItems()) {
                     if (item instanceof StreamInfoItem) {
                         StreamInfoItem streamItem = (StreamInfoItem) item;
 
                         if (hasSearchQuery) {
                             if (streamItem.getName().toLowerCase().contains(lowerQuery)) {
-                                videos.add(streamItem);
+                                items.add(streamItem);
                             }
+                            // When searching, process ALL items on the current page to avoid
+                            // skipping matches that appear after the DEFAULT_RESULTS-th match.
+                            // The page may return slightly more than DEFAULT_RESULTS, which is
+                            // acceptable to avoid permanently losing matches.
                         } else {
-                            videos.add(streamItem);
-                        }
-
-                        if (videos.size() >= DEFAULT_RESULTS) {
-                            break;
+                            items.add(streamItem);
+                            if (items.size() >= DEFAULT_RESULTS) {
+                                break;
+                            }
                         }
                     }
                 }
 
-                if (videos.size() >= DEFAULT_RESULTS) {
+                if (items.size() >= DEFAULT_RESULTS) {
+                    // We filled the page — encode the next page token from the current page
+                    if (page.hasNextPage()) {
+                        nextToken = gateway.encodePageToken(page.getNextPage());
+                    }
                     break;
                 }
 
                 if (page.hasNextPage()) {
                     try {
-                        // Use gateway for throttling/circuit breaker protection on pagination
-                        page = gateway.getTabPage(tabExtractor, page.getNextPage());
+                        Page nextPage = page.getNextPage();
+                        page = gateway.getTabPage(tabExtractor, nextPage);
+                        // If we'll exit the loop (not enough items but no more pages),
+                        // nextToken stays null
                     } catch (Exception e) {
-                        logger.warn("Failed to fetch next page of videos: {}", e.getMessage());
+                        logger.warn("Failed to fetch next page of {}: {}", tabFilter, e.getMessage());
                         break;
                     }
                 } else {
@@ -176,33 +213,73 @@ public class ChannelOrchestrator {
                 }
             }
 
+            // If we exited because the last page still has more items
+            if (items.size() < DEFAULT_RESULTS && page != null && page.hasNextPage()) {
+                nextToken = gateway.encodePageToken(page.getNextPage());
+            }
+
         } catch (Exception e) {
-            logger.warn("Failed to fetch channel videos: {}", e.getMessage());
+            logger.warn("Failed to fetch channel {}: {}", tabFilter, e.getMessage());
         }
 
-        logger.debug("Fetched {} videos from channel", videos.size());
-        return videos;
+        logger.debug("Fetched {} {} from channel, hasMore: {}", items.size(), tabFilter, nextToken != null);
+        return new PaginatedTabResult(items, nextToken);
     }
 
     /**
-     * Get playlists from a channel
+     * Get shorts from a channel (with pagination)
+     */
+    public PaginatedTabResult getChannelShorts(String channelId, String pageToken) throws IOException {
+        return getChannelTabContentPaginated(channelId, pageToken, null, "shorts");
+    }
+
+    /**
+     * Get live streams from a channel (with pagination)
+     */
+    public PaginatedTabResult getChannelLiveStreams(String channelId, String pageToken) throws IOException {
+        return getChannelTabContentPaginated(channelId, pageToken, null, "livestreams");
+    }
+
+    /**
+     * Result holder for paginated playlist items
+     */
+    static class PaginatedPlaylistResult {
+        final List<PlaylistInfoItem> items;
+        final String nextPageToken;
+
+        PaginatedPlaylistResult(List<PlaylistInfoItem> items, String nextPageToken) {
+            this.items = items;
+            this.nextPageToken = nextPageToken;
+        }
+    }
+
+    /**
+     * Get playlists from a channel (returns list for backward compatibility)
      */
     public List<PlaylistInfoItem> getChannelPlaylists(String channelId, String pageToken) throws IOException {
+        return getChannelPlaylistsPaginated(channelId, pageToken).items;
+    }
+
+    /**
+     * Get playlists from a channel with pagination support
+     */
+    public PaginatedPlaylistResult getChannelPlaylistsPaginated(String channelId, String pageToken) throws IOException {
         logger.debug("Fetching playlists for channel: {}, pageToken: {}", channelId, pageToken);
 
         ChannelInfo channelInfo = getChannelDetails(channelId);
 
         if (channelInfo == null) {
             logger.warn("Channel info is null for channel: {}", channelId);
-            return Collections.emptyList();
+            return new PaginatedPlaylistResult(Collections.emptyList(), null);
         }
 
         List<ListLinkHandler> tabs = channelInfo.getTabs();
         List<PlaylistInfoItem> playlists = new ArrayList<>();
+        String nextToken = null;
 
         if (tabs == null || tabs.isEmpty()) {
             logger.warn("No tabs found for channel: {}", channelId);
-            return playlists;
+            return new PaginatedPlaylistResult(playlists, null);
         }
 
         logger.debug("Channel has {} tabs available", tabs.size());
@@ -219,7 +296,7 @@ public class ChannelOrchestrator {
 
             if (playlistsTab == null) {
                 logger.debug("No playlists tab found for channel: {}", channelId);
-                return playlists;
+                return new PaginatedPlaylistResult(playlists, null);
             }
 
             // Fetch the playlists tab with throttling and circuit breaker protection
@@ -246,7 +323,12 @@ public class ChannelOrchestrator {
                 }
             }
 
-            logger.debug("Fetched {} playlists from channel", playlists.size());
+            // Capture next page token
+            if (page.hasNextPage()) {
+                nextToken = gateway.encodePageToken(page.getNextPage());
+            }
+
+            logger.debug("Fetched {} playlists from channel, hasMore: {}", playlists.size(), nextToken != null);
 
         } catch (ExtractionException e) {
             String errorMsg = "Failed to fetch playlists for channel " + channelId + ": " + e.getMessage();
@@ -258,7 +340,7 @@ public class ChannelOrchestrator {
             throw new IOException(errorMsg, e);
         }
 
-        return playlists;
+        return new PaginatedPlaylistResult(playlists, nextToken);
     }
 
     // ==================== Playlist Operations ====================
@@ -280,50 +362,96 @@ public class ChannelOrchestrator {
     }
 
     /**
-     * Get videos in a playlist (with pagination)
+     * Get videos in a playlist (with pagination) - backward compatible
      */
     public List<StreamInfoItem> getPlaylistVideos(String playlistId, String pageToken) throws IOException {
-        return getPlaylistVideos(playlistId, pageToken, null);
+        return getPlaylistVideosPaginated(playlistId, pageToken, null).items;
     }
 
     /**
-     * Get videos in a playlist with optional search filter
+     * Get videos in a playlist with optional search filter - backward compatible
      */
     public List<StreamInfoItem> getPlaylistVideos(String playlistId, String pageToken, String searchQuery) throws IOException {
+        return getPlaylistVideosPaginated(playlistId, pageToken, searchQuery).items;
+    }
+
+    /**
+     * Get videos in a playlist with pagination support
+     */
+    public PaginatedTabResult getPlaylistVideosPaginated(String playlistId, String pageToken, String searchQuery) throws IOException {
         logger.debug("Fetching videos for playlist: {}, pageToken: {}, search: {}", playlistId, pageToken, searchQuery);
 
         PlaylistInfo playlistInfo = getPlaylistDetails(playlistId);
         List<StreamInfoItem> videos = new ArrayList<>();
+        String nextToken = null;
 
-        // Get initial items from playlist
-        List<StreamInfoItem> relatedItems = playlistInfo.getRelatedItems();
-        if (relatedItems != null) {
-            videos.addAll(relatedItems);
-        }
+        boolean hasSearchQuery = searchQuery != null && !searchQuery.trim().isEmpty();
+        String lowerQuery = hasSearchQuery ? searchQuery.trim().toLowerCase() : null;
 
-        // If pageToken provided, fetch that page
+        // Determine starting page
+        List<StreamInfoItem> pageItems;
+        Page upstreamNextPage;
+
         if (pageToken != null && !pageToken.isEmpty()) {
             try {
                 Page requestedPage = gateway.decodePageToken(pageToken);
                 if (requestedPage != null) {
                     ListExtractor.InfoItemsPage<StreamInfoItem> page = gateway.getPlaylistMoreItems(playlistId, requestedPage);
-                    videos = new ArrayList<>(page.getItems());
+                    pageItems = new ArrayList<>(page.getItems());
+                    upstreamNextPage = page.hasNextPage() ? page.getNextPage() : null;
+                } else {
+                    logger.warn("Failed to decode page token for playlist {}: invalid token '{}'", playlistId, pageToken);
+                    pageItems = new ArrayList<>();
+                    upstreamNextPage = null;
                 }
             } catch (Exception e) {
-                logger.warn("Failed to fetch page, using initial items: {}", e.getMessage());
+                logger.warn("Failed to fetch page for playlist: {}", e.getMessage());
+                pageItems = new ArrayList<>();
+                upstreamNextPage = null;
+            }
+        } else {
+            List<StreamInfoItem> relatedItems = playlistInfo.getRelatedItems();
+            pageItems = relatedItems != null ? new ArrayList<>(relatedItems) : new ArrayList<>();
+            upstreamNextPage = playlistInfo.getNextPage();
+        }
+
+        if (hasSearchQuery) {
+            // When searching, loop through pages until we have enough matches or run out of pages.
+            // This prevents returning 0 filtered results with hasMore=true.
+            while (true) {
+                for (StreamInfoItem item : pageItems) {
+                    if (item.getName().toLowerCase().contains(lowerQuery)) {
+                        videos.add(item);
+                    }
+                }
+
+                if (videos.size() >= DEFAULT_RESULTS || upstreamNextPage == null) {
+                    break;
+                }
+
+                // Haven't found enough matches — try the next upstream page
+                try {
+                    ListExtractor.InfoItemsPage<StreamInfoItem> morePage = gateway.getPlaylistMoreItems(playlistId, upstreamNextPage);
+                    pageItems = new ArrayList<>(morePage.getItems());
+                    upstreamNextPage = morePage.hasNextPage() ? morePage.getNextPage() : null;
+                } catch (Exception e) {
+                    logger.warn("Failed to fetch next page for playlist search: {}", e.getMessage());
+                    break;
+                }
+            }
+
+            if (upstreamNextPage != null) {
+                nextToken = gateway.encodePageToken(upstreamNextPage);
+            }
+        } else {
+            videos.addAll(pageItems);
+            if (upstreamNextPage != null) {
+                nextToken = gateway.encodePageToken(upstreamNextPage);
             }
         }
 
-        // Filter by search query if provided
-        if (searchQuery != null && !searchQuery.trim().isEmpty()) {
-            String lowerQuery = searchQuery.trim().toLowerCase();
-            videos = videos.stream()
-                    .filter(v -> v.getName().toLowerCase().contains(lowerQuery))
-                    .collect(Collectors.toList());
-        }
-
-        logger.debug("Fetched {} videos from playlist", videos.size());
-        return videos.stream().limit(DEFAULT_RESULTS).collect(Collectors.toList());
+        logger.debug("Fetched {} videos from playlist, hasMore: {}", videos.size(), nextToken != null);
+        return new PaginatedTabResult(videos, nextToken);
     }
 
     // ==================== Video Operations ====================
@@ -966,6 +1094,68 @@ public class ChannelOrchestrator {
                 .collect(Collectors.toList());
     }
 
+    // ==================== Paginated DTO Methods ====================
+
+    /**
+     * Get channel videos as paginated DTOs
+     */
+    public PaginatedItemsResponse<StreamItemDto> getChannelVideosDtoPaginated(String channelId, String pageToken, String searchQuery) throws IOException {
+        PaginatedTabResult result = getChannelTabContentPaginated(channelId, pageToken, searchQuery, "videos");
+        List<StreamItemDto> dtos = result.items.stream()
+                .map(this::mapToStreamItemDto)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+        return new PaginatedItemsResponse<>(dtos, result.nextPageToken);
+    }
+
+    /**
+     * Get channel shorts as paginated DTOs
+     */
+    public PaginatedItemsResponse<StreamItemDto> getChannelShortsDtoPaginated(String channelId, String pageToken) throws IOException {
+        PaginatedTabResult result = getChannelShorts(channelId, pageToken);
+        List<StreamItemDto> dtos = result.items.stream()
+                .map(this::mapToStreamItemDto)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+        return new PaginatedItemsResponse<>(dtos, result.nextPageToken);
+    }
+
+    /**
+     * Get channel live streams as paginated DTOs
+     */
+    public PaginatedItemsResponse<StreamItemDto> getChannelLiveStreamsDtoPaginated(String channelId, String pageToken) throws IOException {
+        PaginatedTabResult result = getChannelLiveStreams(channelId, pageToken);
+        List<StreamItemDto> dtos = result.items.stream()
+                .map(this::mapToStreamItemDto)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+        return new PaginatedItemsResponse<>(dtos, result.nextPageToken);
+    }
+
+    /**
+     * Get channel playlists as paginated DTOs
+     */
+    public PaginatedItemsResponse<PlaylistItemDto> getChannelPlaylistsDtoPaginated(String channelId, String pageToken) throws IOException {
+        PaginatedPlaylistResult result = getChannelPlaylistsPaginated(channelId, pageToken);
+        List<PlaylistItemDto> dtos = result.items.stream()
+                .map(this::mapToPlaylistItemDto)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+        return new PaginatedItemsResponse<>(dtos, result.nextPageToken);
+    }
+
+    /**
+     * Get playlist videos as paginated DTOs
+     */
+    public PaginatedItemsResponse<StreamItemDto> getPlaylistVideosDtoPaginated(String playlistId, String pageToken, String searchQuery) throws IOException {
+        PaginatedTabResult result = getPlaylistVideosPaginated(playlistId, pageToken, searchQuery);
+        List<StreamItemDto> dtos = result.items.stream()
+                .map(this::mapToStreamItemDto)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+        return new PaginatedItemsResponse<>(dtos, result.nextPageToken);
+    }
+
     /**
      * Get video details as DTO
      */
@@ -1223,6 +1413,15 @@ public class ChannelOrchestrator {
         dto.setUploaderUrl(stream.getUploaderUrl());
         dto.setViewCount(stream.getViewCount());
         dto.setDuration(stream.getDuration());
+
+        // Detect stream type
+        if (stream.isShortFormContent()) {
+            dto.setStreamType("SHORT");
+        } else if (stream.getStreamType() == StreamType.LIVE_STREAM || stream.getStreamType() == StreamType.AUDIO_LIVE_STREAM) {
+            dto.setStreamType("LIVESTREAM");
+        } else {
+            dto.setStreamType("VIDEO");
+        }
 
         if (stream.getThumbnails() != null && !stream.getThumbnails().isEmpty()) {
             dto.setThumbnailUrl(stream.getThumbnails().get(0).getUrl());

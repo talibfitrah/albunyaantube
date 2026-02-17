@@ -163,6 +163,14 @@
     </p>
   </section>
 
+  <!-- Content Browser Modal -->
+  <ContentBrowserModal
+    :open="showContentBrowser"
+    @close="closeContentBrowser"
+    @manual="openManualEntry"
+    @updated="handleContentBrowserUpdated"
+  />
+
   <!-- Detail Modals -->
   <ChannelDetailModal
     v-if="selectedItem && channelModalOpen"
@@ -279,6 +287,10 @@ import type { Exclusion, ExclusionParentType, ExclusionResourceType } from '@/ty
 import { emitAuditEvent } from '@/services/audit';
 import ChannelDetailModal from '@/components/exclusions/ChannelDetailModal.vue';
 import PlaylistDetailModal from '@/components/exclusions/PlaylistDetailModal.vue';
+import ContentBrowserModal from '@/components/exclusions/ContentBrowserModal.vue';
+
+// Content browser state
+const showContentBrowser = ref(false);
 
 type TypeFilterValue = 'all' | 'parent:CHANNEL' | 'parent:PLAYLIST' | 'exclude:PLAYLIST' | 'exclude:VIDEO';
 
@@ -620,8 +632,21 @@ function submitButtonLabel() {
 }
 
 function openAddDialog() {
+  showContentBrowser.value = true;
+}
+
+function openManualEntry() {
+  showContentBrowser.value = false;
   resetDialog();
   openDialog();
+}
+
+function closeContentBrowser() {
+  showContentBrowser.value = false;
+}
+
+async function handleContentBrowserUpdated() {
+  await reloadCurrentPage();
 }
 
 function openViewDetails(entry: Exclusion) {

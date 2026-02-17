@@ -13,6 +13,7 @@ public class StreamItemDto {
     private Long viewCount;
     private Long duration;
     private String uploadDate;
+    private String streamType; // "VIDEO", "SHORT", "LIVESTREAM"
 
     public StreamItemDto() {}
 
@@ -87,5 +88,13 @@ public class StreamItemDto {
 
     public void setUploadDate(String uploadDate) {
         this.uploadDate = uploadDate;
+    }
+
+    public String getStreamType() {
+        return streamType;
+    }
+
+    public void setStreamType(String streamType) {
+        this.streamType = streamType;
     }
 }

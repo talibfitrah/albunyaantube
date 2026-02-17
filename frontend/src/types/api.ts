@@ -36,6 +36,8 @@ export type PlaylistDetailsDto = components['schemas']['PlaylistDetailsDto']
 export type StreamDetailsDto = components['schemas']['StreamDetailsDto']
 export type StreamItemDto = components['schemas']['StreamItemDto']
 export type PlaylistItemDto = components['schemas']['PlaylistItemDto']
+export type PaginatedStreamItems = components['schemas']['PaginatedStreamItems']
+export type PaginatedPlaylistItems = components['schemas']['PaginatedPlaylistItems']
 
 // Approval Workflow
 export type ApprovalMetadata = components['schemas']['ApprovalMetadata']

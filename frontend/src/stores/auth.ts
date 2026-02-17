@@ -11,6 +11,10 @@ import {
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
+  updatePassword,
+  updateProfile,
+  reauthenticateWithCredential,
+  EmailAuthProvider,
   type User
 } from 'firebase/auth';
 
@@ -157,6 +161,52 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  /**
+   * Change password using Firebase Auth client-side re-authentication
+   */
+  async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    if (!currentUser.value || !currentUser.value.email) {
+      throw new Error('Not authenticated');
+    }
+
+    isLoading.value = true;
+    error.value = null;
+
+    try {
+      const credential = EmailAuthProvider.credential(
+        currentUser.value.email,
+        currentPassword
+      );
+      await reauthenticateWithCredential(currentUser.value, credential);
+      await updatePassword(currentUser.value, newPassword);
+    } catch (err: any) {
+      switch (err.code) {
+        case 'auth/wrong-password':
+        case 'auth/invalid-credential':
+          error.value = 'Current password is incorrect.';
+          break;
+        case 'auth/weak-password':
+          error.value = 'New password is too weak.';
+          break;
+        case 'auth/requires-recent-login':
+          error.value = 'Session expired. Please sign in again.';
+          break;
+        default:
+          error.value = err.message || 'Failed to change password';
+      }
+      throw err;
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  async function updateDisplayName(newDisplayName: string): Promise<void> {
+    if (!currentUser.value) {
+      throw new Error('Not authenticated');
+    }
+    await updateProfile(currentUser.value, { displayName: newDisplayName });
+  }
+
   return {
     currentUser,
     idToken,
@@ -170,6 +220,8 @@ export const useAuthStore = defineStore('auth', () => {
     login,
     logout,
     refreshToken,
-    getIdToken
+    getIdToken,
+    changePassword,
+    updateDisplayName
   };
 });

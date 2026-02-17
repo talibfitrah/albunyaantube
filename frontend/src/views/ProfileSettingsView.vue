@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAuthStore } from '@/stores/auth';
 
@@ -18,6 +18,13 @@ const isLoading = ref(false);
 const isSaving = ref(false);
 const error = ref('');
 const successMessage = ref('');
+let successTimeout: ReturnType<typeof setTimeout> | null = null;
+
+onUnmounted(() => {
+  if (successTimeout) {
+    clearTimeout(successTimeout);
+  }
+});
 
 // Validation errors
 const displayNameError = ref('');
@@ -105,8 +112,16 @@ async function handleSaveProfile() {
   isSaving.value = true;
 
   try {
-    // Mock save - replace with actual API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // Persist display name if changed
+    const currentDisplayName = authStore.currentUser?.displayName || '';
+    if (displayName.value !== currentDisplayName) {
+      await authStore.updateDisplayName(displayName.value);
+    }
+
+    const anyPasswordFilled = currentPassword.value || newPassword.value || confirmPassword.value;
+    if (anyPasswordFilled) {
+      await authStore.changePassword(currentPassword.value, newPassword.value);
+    }
 
     successMessage.value = t('settings.profile.successMessage');
 
@@ -116,11 +131,20 @@ async function handleSaveProfile() {
     confirmPassword.value = '';
 
     // Auto-hide success message after 3 seconds
-    setTimeout(() => {
+    if (successTimeout) clearTimeout(successTimeout);
+    successTimeout = setTimeout(() => {
       successMessage.value = '';
     }, 3000);
-  } catch (err) {
-    error.value = t('settings.profile.errors.saveFailed');
+  } catch (err: any) {
+    if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+      passwordError.value = t('settings.profile.errors.wrongCurrentPassword');
+    } else if (err.code === 'auth/weak-password') {
+      passwordError.value = t('settings.profile.errors.weakPassword');
+    } else if (err.code === 'auth/requires-recent-login') {
+      passwordError.value = t('settings.profile.errors.sessionExpired');
+    } else {
+      error.value = err.message || t('settings.profile.errors.saveFailed');
+    }
   } finally {
     isSaving.value = false;
   }

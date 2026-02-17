@@ -181,6 +181,7 @@ export const messages = {
       subscribers: 'Subscribers',
       videos: 'Videos',
       noCategories: 'No categories assigned',
+      preview: 'Preview',
       approve: 'Approve',
       approving: 'Approving...',
       approveError: 'Failed to approve submission.',
@@ -209,6 +210,8 @@ export const messages = {
       subtitle: 'Manage all approved content across channels, playlists, and videos',
       searchPlaceholder: 'Search by title, ID, or description...',
       loading: 'Loading content...',
+      loadingMore: 'Loading more...',
+      allLoaded: 'All {count} items loaded',
       retry: 'Retry',
       empty: 'No content found. Try adjusting your filters.',
       error: 'Failed to load content.',
@@ -570,8 +573,19 @@ export const messages = {
       summary: {
         selection: '{count} selected'
       },
+      contentBrowser: {
+        title: 'Browse Content',
+        subtitle: 'Select a channel or playlist to manage exclusions',
+        searchPlaceholder: 'Search approved content...',
+        filterAll: 'All',
+        filterChannels: 'Channels',
+        filterPlaylists: 'Playlists',
+        noResults: 'No approved content found.',
+        allLoaded: 'All {count} items loaded',
+        manualEntry: 'Manual Entry'
+      },
       dialog: {
-        title: 'Add exclusion',
+        title: 'Add exclusion (Manual)',
         description: 'Provide parent and child identifiers to register a manual exclusion.',
         parentTypeLabel: 'Parent type',
         parentChannel: 'Channel',
@@ -610,6 +624,8 @@ export const messages = {
         videos: '{count} videos',
         tabs: {
           videos: 'Videos',
+          shorts: 'Shorts',
+          live: 'Live',
           playlists: 'Playlists'
         },
         search: 'Search within channel...',
@@ -876,7 +892,10 @@ export const messages = {
           currentPasswordRequired: 'Current password is required to change password.',
           newPasswordRequired: 'New password is required.',
           passwordTooShort: 'Password must be at least 8 characters.',
-          passwordMismatch: 'Passwords do not match.'
+          passwordMismatch: 'Passwords do not match.',
+          wrongCurrentPassword: 'Current password is incorrect.',
+          weakPassword: 'New password is too weak. Please choose a stronger password.',
+          sessionExpired: 'Your session has expired. Please sign out and sign in again before changing your password.'
         },
         actions: {
           save: 'Save Changes',
@@ -1422,6 +1441,7 @@ export const messages = {
       subscribers: 'المشتركون',
       videos: 'الفيديوهات',
       noCategories: 'لا توجد فئات محددة',
+      preview: 'معاينة',
       approve: 'موافقة',
       approving: 'جارٍ الموافقة...',
       approveError: 'فشل في إكمال الموافقة.',
@@ -1450,6 +1470,8 @@ export const messages = {
       subtitle: 'إدارة جميع المحتوى المعتمد عبر القنوات وقوائم التشغيل والفيديوهات',
       searchPlaceholder: 'البحث بالعنوان أو المعرّف أو الوصف...',
       loading: 'جارٍ تحميل المحتوى...',
+      loadingMore: 'جارٍ تحميل المزيد...',
+      allLoaded: 'تم تحميل جميع العناصر ({count})',
       retry: 'إعادة المحاولة',
       empty: 'لم يتم العثور على محتوى. جرب تعديل الفلاتر.',
       error: 'فشل تحميل المحتوى.',
@@ -1761,8 +1783,19 @@ export const messages = {
       summary: {
         selection: 'تم تحديد {count}'
       },
+      contentBrowser: {
+        title: 'تصفح المحتوى',
+        subtitle: 'اختر قناة أو قائمة تشغيل لإدارة الاستثناءات',
+        searchPlaceholder: 'البحث في المحتوى المعتمد...',
+        filterAll: 'الكل',
+        filterChannels: 'القنوات',
+        filterPlaylists: 'قوائم التشغيل',
+        noResults: 'لم يتم العثور على محتوى معتمد.',
+        allLoaded: 'تم تحميل جميع العناصر ({count})',
+        manualEntry: 'إدخال يدوي'
+      },
       dialog: {
-        title: 'إضافة استثناء',
+        title: 'إضافة استثناء (يدوي)',
         description: 'قدم معرّفات المصدر الأصلي والعنصر المستبعد لتسجيل استثناء يدوي.',
         parentTypeLabel: 'نوع المصدر الرئيسي',
         parentChannel: 'قناة',
@@ -1801,6 +1834,8 @@ export const messages = {
         videos: '{count} فيديو',
         tabs: {
           videos: 'الفيديوهات',
+          shorts: 'شورتس',
+          live: 'بث مباشر',
           playlists: 'قوائم التشغيل'
         },
         search: 'البحث داخل القناة...',
@@ -2447,6 +2482,7 @@ export const messages = {
       subscribers: 'Abonnees',
       videos: 'Video\'s',
       noCategories: 'Geen categorieën toegewezen',
+      preview: 'Voorbeeld',
       approve: 'Goedkeuren',
       approving: 'Goedkeuren...',
       approveError: 'Goedkeuren is mislukt.',
@@ -2475,6 +2511,8 @@ export const messages = {
       subtitle: 'Beheer alle goedgekeurde inhoud voor kanalen, afspeellijsten en video\'s',
       searchPlaceholder: 'Zoeken op titel, ID of beschrijving...',
       loading: 'Inhoud laden...',
+      loadingMore: 'Meer laden...',
+      allLoaded: 'Alle {count} items geladen',
       retry: 'Opnieuw proberen',
       empty: 'Geen inhoud gevonden. Probeer de filters aan te passen.',
       error: 'Inhoud laden is mislukt.',
@@ -2786,8 +2824,19 @@ export const messages = {
       summary: {
         selection: '{count} geselecteerd'
       },
+      contentBrowser: {
+        title: 'Inhoud bladeren',
+        subtitle: 'Selecteer een kanaal of afspeellijst om uitzonderingen te beheren',
+        searchPlaceholder: 'Goedgekeurde inhoud zoeken...',
+        filterAll: 'Alles',
+        filterChannels: 'Kanalen',
+        filterPlaylists: 'Afspeellijsten',
+        noResults: 'Geen goedgekeurde inhoud gevonden.',
+        allLoaded: 'Alle {count} items geladen',
+        manualEntry: 'Handmatige invoer'
+      },
       dialog: {
-        title: 'Uitzondering toevoegen',
+        title: 'Uitzondering toevoegen (handmatig)',
         description: 'Geef de bovenliggende en uitgesloten id\'s op om een handmatige uitzondering te registreren.',
         parentTypeLabel: 'Type bovenliggende bron',
         parentChannel: 'Kanaal',
@@ -2826,6 +2875,8 @@ export const messages = {
         videos: '{count} video\'s',
         tabs: {
           videos: 'Video\'s',
+          shorts: 'Shorts',
+          live: 'Live',
           playlists: 'Afspeellijsten'
         },
         search: 'Zoeken binnen kanaal...',

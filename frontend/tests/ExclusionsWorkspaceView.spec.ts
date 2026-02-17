@@ -51,6 +51,24 @@ vi.mock('@/components/exclusions/PlaylistDetailModal.vue', () => ({
   }
 }));
 
+vi.mock('@/components/exclusions/ContentBrowserModal.vue', () => ({
+  default: {
+    name: 'ContentBrowserModal',
+    props: ['open'],
+    emits: ['close', 'manual', 'updated'],
+    setup(props: any, { emit }: any) {
+      return () => props.open
+        ? h('div', { 'data-testid': 'content-browser-modal', role: 'dialog' }, [
+            h('button', {
+              'data-testid': 'manual-entry-btn',
+              onClick: () => emit('manual')
+            }, 'Manual Entry')
+          ])
+        : null;
+    }
+  }
+}));
+
 const i18n = createI18n({
   legacy: false,
   locale: 'en',
@@ -230,6 +248,10 @@ describe('ExclusionsWorkspaceView', () => {
 
     const trigger = await screen.findByRole('button', { name: /add exclusion/i });
     await fireEvent.click(trigger);
+
+    // Content browser opens first; click "Manual Entry" to get to the form
+    const manualEntryBtn = await screen.findByTestId('manual-entry-btn');
+    await fireEvent.click(manualEntryBtn);
 
     const parentIdField = await screen.findByLabelText(/parent id/i);
     const excludedIdField = screen.getByLabelText(/excluded id/i);

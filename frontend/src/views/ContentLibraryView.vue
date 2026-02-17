@@ -353,6 +353,25 @@
             </tbody>
           </table>
         </div>
+
+        <!-- Infinite Scroll Loading Indicator -->
+        <div v-if="isLoadingMore" class="loading-more-indicator">
+          <div class="spinner"></div>
+          <span>{{ t('contentLibrary.loadingMore') }}</span>
+        </div>
+
+        <!-- Load More Error -->
+        <div v-if="loadMoreError" class="load-more-error">
+          <p>{{ loadMoreError }}</p>
+          <button type="button" class="btn-retry" @click="retryLoadMore">
+            {{ t('contentLibrary.retry') }}
+          </button>
+        </div>
+
+        <!-- End of Content -->
+        <div v-if="!hasMoreContent && !loadMoreError && content.length > 0 && !isLoading && !paginationDisabled" class="end-of-content">
+          {{ t('contentLibrary.allLoaded', { count: content.length }) }}
+        </div>
         </template>
       </main>
     </div>
@@ -1011,62 +1030,85 @@ async function saveKeywords() {
 // Must not exceed backend's page size cap (100) since ContentLibraryController caps at Math.min(size, 100).
 // Reorder safety is enforced by isReorderSafe computed: disabled when truncated or totalItems > displayed.
 const CUSTOM_SORT_MAX_ITEMS = 100;
+const PAGE_SIZE = 25;
+
+// Infinite scroll state
+const currentPage = ref(0);
+const isLoadingMore = ref(false);
+const hasMoreContent = ref(false);
+const loadMoreError = ref<string | null>(null);
+
+// Name sorts and custom sort need all items loaded at once (no infinite scroll)
+// because client-side sorting produces incorrect visual order with incremental page loads
+const paginationDisabled = computed(() =>
+  sortBy.value === 'custom' || sortBy.value === 'name-asc' || sortBy.value === 'name-desc'
+);
+
+// Request versioning to prevent stale responses from overlapping requests
+let requestVersion = 0;
+
+function mapContentItem(item: any): ContentItem {
+  return {
+    id: item.id,
+    title: item.title,
+    type: item.type,
+    thumbnailUrl: item.thumbnailUrl,
+    categoryIds: item.categoryIds || [],
+    status: item.status?.toLowerCase() || 'pending',
+    createdAt: item.createdAt ? new Date(item.createdAt) : null,
+    youtubeId: item.youtubeId,
+    displayOrder: item.displayOrder ?? undefined,
+    keywords: item.keywords || []
+  };
+}
+
+function buildContentParams(page: number): Record<string, any> {
+  const pageSize = paginationDisabled.value ? CUSTOM_SORT_MAX_ITEMS : PAGE_SIZE;
+
+  const params: Record<string, any> = {
+    status: filters.value.status,
+    page,
+    size: pageSize
+  };
+
+  if (filters.value.types.length > 0) {
+    params.types = filters.value.types.join(',');
+  }
+
+  if (filters.value.category) {
+    params.category = filters.value.category;
+  }
+
+  if (searchQuery.value.trim()) {
+    params.search = searchQuery.value.trim();
+  }
+
+  if (sortBy.value === 'date-asc') {
+    params.sort = 'oldest';
+  } else {
+    params.sort = 'newest';
+  }
+
+  return params;
+}
 
 async function loadContent() {
+  const myVersion = ++requestVersion;
   isLoading.value = true;
   error.value = null;
+  loadMoreError.value = null;
+  currentPage.value = 0;
+  hasMoreContent.value = false;
 
   try {
-    // Use larger page size for custom sort mode to enable full reordering
-    const pageSize = sortBy.value === 'custom' ? CUSTOM_SORT_MAX_ITEMS : 100;
+    const params = buildContentParams(0);
 
-    // Build query parameters
-    const params: Record<string, any> = {
-      status: filters.value.status,
-      page: 0,
-      size: pageSize
-    };
-
-    // Add content types if not all selected
-    if (filters.value.types.length > 0) {
-      params.types = filters.value.types.join(',');
-    }
-
-    // Add category filter
-    if (filters.value.category) {
-      params.category = filters.value.category;
-    }
-
-    // Add search query
-    if (searchQuery.value.trim()) {
-      params.search = searchQuery.value.trim();
-    }
-
-    // Add sort parameter (only date-based sorts go to server; name sorts handled client-side)
-    if (sortBy.value === 'date-asc') {
-      params.sort = 'oldest';
-    } else {
-      params.sort = 'newest';
-    }
-
-    // Make API call
     const response = await apiClient.get('/api/admin/content', { params });
 
-    // Update content with response data
-    content.value = response.data.content.map((item: any) => ({
-      id: item.id,
-      title: item.title,
-      type: item.type,
-      thumbnailUrl: item.thumbnailUrl,
-      categoryIds: item.categoryIds || [],
-      status: item.status?.toLowerCase() || 'pending',
-      createdAt: item.createdAt ? new Date(item.createdAt) : null,
-      description: item.description,
-      count: item.count,
-      youtubeId: item.youtubeId,
-      displayOrder: item.displayOrder ?? null,
-      keywords: item.keywords || []
-    }));
+    // Discard stale response if filters/search changed while request was in flight
+    if (myVersion !== requestVersion) return;
+
+    content.value = response.data.content.map(mapContentItem);
 
     // Track what sort we used for this fetch
     lastServerSort = sortBy.value === 'date-asc' ? 'date-asc' : 'date-desc';
@@ -1076,6 +1118,11 @@ async function loadContent() {
 
     // Track total items for reorder safety check
     totalItemsFromServer.value = response.data.totalItems ?? content.value.length;
+
+    // Determine if there are more pages to load (disabled for client-side sorts)
+    if (!paginationDisabled.value) {
+      hasMoreContent.value = content.value.length < totalItemsFromServer.value;
+    }
 
     // Warn if custom sort mode has incomplete results
     if (sortBy.value === 'custom' && !isReorderSafe.value) {
@@ -1087,10 +1134,64 @@ async function loadContent() {
     sortContentLocally();
 
   } catch (err: any) {
+    // Discard stale error if context changed
+    if (myVersion !== requestVersion) return;
     console.error('Failed to load content:', err);
     error.value = err.response?.data?.message || err.message || t('contentLibrary.error');
   } finally {
-    isLoading.value = false;
+    if (myVersion === requestVersion) {
+      isLoading.value = false;
+    }
+  }
+}
+
+async function loadMoreContent() {
+  if (isLoadingMore.value || !hasMoreContent.value || paginationDisabled.value) return;
+
+  const myVersion = requestVersion; // Capture current version (don't increment — loadContent owns that)
+  isLoadingMore.value = true;
+  loadMoreError.value = null;
+  const nextPage = currentPage.value + 1;
+
+  try {
+    const params = buildContentParams(nextPage);
+    const response = await apiClient.get('/api/admin/content', { params });
+
+    // Discard stale response if a new loadContent() was triggered while this was in flight
+    if (myVersion !== requestVersion) return;
+
+    const newItems = response.data.content.map(mapContentItem);
+
+    content.value.push(...newItems);
+    currentPage.value = nextPage;
+
+    totalItemsFromServer.value = response.data.totalItems ?? totalItemsFromServer.value;
+    hasMoreContent.value = content.value.length < totalItemsFromServer.value;
+  } catch (err: any) {
+    if (myVersion !== requestVersion) return;
+    console.error('Failed to load more content:', err);
+    loadMoreError.value = err.response?.data?.message || err.message || t('contentLibrary.error');
+  } finally {
+    if (myVersion === requestVersion) {
+      isLoadingMore.value = false;
+    }
+  }
+}
+
+function retryLoadMore() {
+  loadMoreError.value = null;
+  loadMoreContent();
+}
+
+// Window scroll handler for infinite scroll
+function handleWindowScroll() {
+  if (isLoadingMore.value || !hasMoreContent.value || paginationDisabled.value) return;
+
+  const scrollBottom = window.innerHeight + window.scrollY;
+  const docHeight = document.documentElement.scrollHeight;
+
+  if (docHeight - scrollBottom < 300) {
+    loadMoreContent();
   }
 }
 
@@ -1255,10 +1356,12 @@ onMounted(() => {
   loadCategories();
   loadContent();
   window.addEventListener('resize', handleResize);
+  window.addEventListener('scroll', handleWindowScroll, { passive: true });
 });
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize);
+  window.removeEventListener('scroll', handleWindowScroll);
   // Clear debounced search timeout to prevent memory leak
   if (searchTimeout) {
     clearTimeout(searchTimeout);
@@ -1495,6 +1598,37 @@ onUnmounted(() => {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 0.75rem;
+}
+
+.loading-more-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1.5rem;
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+}
+
+.load-more-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.5rem;
+  gap: 0.75rem;
+  color: var(--color-danger, #ef4444);
+  font-size: 0.875rem;
+}
+
+.load-more-error p {
+  margin: 0;
+}
+
+.end-of-content {
+  text-align: center;
+  padding: 1.5rem;
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
 }
 
 .spinner {

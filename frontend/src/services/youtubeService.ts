@@ -78,14 +78,20 @@ export async function searchYouTube(
   };
 }
 
+/** Backend paginated response shape */
+interface PaginatedResponse<T> {
+  items: T[];
+  nextPageToken: string | null;
+}
+
 /**
  * Get channel details with videos and playlists
  */
 export async function getChannelDetails(channelId: string) {
   const [channelResponse, videosResponse, playlistsResponse] = await Promise.all([
     apiClient.get<ChannelDetailsDto>(`/api/admin/youtube/channels/${channelId}`),
-    apiClient.get<StreamItemDto[]>(`/api/admin/youtube/channels/${channelId}/videos`),
-    apiClient.get<PlaylistItemDto[]>(`/api/admin/youtube/channels/${channelId}/playlists`)
+    apiClient.get<PaginatedResponse<StreamItemDto>>(`/api/admin/youtube/channels/${channelId}/videos`),
+    apiClient.get<PaginatedResponse<PlaylistItemDto>>(`/api/admin/youtube/channels/${channelId}/playlists`)
   ]);
 
   // Map DTOs to EnrichedSearchResult shapes expected by transformers
@@ -99,25 +105,28 @@ export async function getChannelDetails(channelId: string) {
     type: 'channel'
   };
 
-  const videosAsSearchResults: EnrichedSearchResult[] = videosResponse.data.map(video => ({
+  const videos = videosResponse.data.items || [];
+  const playlists = playlistsResponse.data.items || [];
+
+  const videosAsSearchResults: EnrichedSearchResult[] = videos.map(video => ({
     id: video.id || '',
     title: video.name || '',
     thumbnailUrl: video.thumbnailUrl || '',
     description: '',
-    channelId: channelResponse.data.id || channelId, // Use parent channel ID
+    channelId: channelResponse.data.id || channelId,
     channelTitle: video.uploaderName || '',
     viewCount: video.viewCount || 0,
-    duration: video.duration ? `PT${video.duration}S` : 'PT0S', // Convert to ISO-8601 format for parseDuration
+    duration: video.duration ? `PT${video.duration}S` : 'PT0S',
     publishedAt: video.uploadDate || '',
     type: 'video'
   }));
 
-  const playlistsAsSearchResults: EnrichedSearchResult[] = playlistsResponse.data.map(playlist => ({
+  const playlistsAsSearchResults: EnrichedSearchResult[] = playlists.map(playlist => ({
     id: playlist.id || '',
     title: playlist.name || '',
     thumbnailUrl: playlist.thumbnailUrl || '',
     description: '',
-    channelId: channelResponse.data.id || channelId, // Use parent channel ID
+    channelId: channelResponse.data.id || channelId,
     channelTitle: playlist.uploaderName || '',
     itemCount: playlist.streamCount || 0,
     type: 'playlist'
@@ -299,80 +308,119 @@ function parseDuration(duration: string): number {
 // Additional YouTube functions for exclusions modals (powered by NewPipeExtractor)
 
 /**
- * Get videos from a YouTube channel
- * Note: Backend currently returns flat array without pagination support (no nextPageToken)
+ * Get videos from a YouTube channel with pagination
  */
 export async function getChannelVideos(
   channelId: string,
   pageToken?: string,
   searchQuery?: string
 ) {
-  // Warn if pagination is attempted (backend doesn't support it yet)
-  if (pageToken) {
-    console.warn(
-      '[getChannelVideos] Backend pagination is not supported yet. ' +
-      'The pageToken parameter will be ignored and all results will be returned. ' +
-      'Please update the backend to support pagination before using this feature.'
-    );
-  }
-
   const params: Record<string, string> = {};
-  // Do not send pageToken to backend as it's not supported
+  if (pageToken) params.pageToken = pageToken;
   if (searchQuery) params.q = searchQuery;
 
-  const response = await apiClient.get<StreamItemDto[]>(
+  const response = await apiClient.get<PaginatedResponse<StreamItemDto>>(
     `/api/admin/youtube/channels/${channelId}/videos`,
     { params }
   );
 
-  const items = response.data;
+  const data = response.data;
 
   return {
-    items: items.map(item => ({
+    items: (data.items || []).map(item => ({
       id: item.id || '',
       title: item.name || '',
       thumbnailUrl: item.thumbnailUrl || '',
-      publishedAt: item.uploadDate || ''
+      publishedAt: item.uploadDate || '',
+      streamType: item.streamType || 'VIDEO'
     })),
-    nextPageToken: undefined // Pagination not supported by backend yet
+    nextPageToken: data.nextPageToken || undefined
   };
 }
 
 /**
- * Get playlists from a YouTube channel
- * Note: Backend currently returns flat array without pagination support (no nextPageToken)
+ * Get shorts from a YouTube channel with pagination
+ */
+export async function getChannelShorts(
+  channelId: string,
+  pageToken?: string
+) {
+  const params: Record<string, string> = {};
+  if (pageToken) params.pageToken = pageToken;
+
+  const response = await apiClient.get<PaginatedResponse<StreamItemDto>>(
+    `/api/admin/youtube/channels/${channelId}/shorts`,
+    { params }
+  );
+
+  const data = response.data;
+
+  return {
+    items: (data.items || []).map(item => ({
+      id: item.id || '',
+      title: item.name || '',
+      thumbnailUrl: item.thumbnailUrl || '',
+      publishedAt: item.uploadDate || '',
+      streamType: item.streamType || 'SHORT'
+    })),
+    nextPageToken: data.nextPageToken || undefined
+  };
+}
+
+/**
+ * Get live streams from a YouTube channel with pagination
+ */
+export async function getChannelLiveStreams(
+  channelId: string,
+  pageToken?: string
+) {
+  const params: Record<string, string> = {};
+  if (pageToken) params.pageToken = pageToken;
+
+  const response = await apiClient.get<PaginatedResponse<StreamItemDto>>(
+    `/api/admin/youtube/channels/${channelId}/livestreams`,
+    { params }
+  );
+
+  const data = response.data;
+
+  return {
+    items: (data.items || []).map(item => ({
+      id: item.id || '',
+      title: item.name || '',
+      thumbnailUrl: item.thumbnailUrl || '',
+      publishedAt: item.uploadDate || '',
+      streamType: item.streamType || 'LIVESTREAM'
+    })),
+    nextPageToken: data.nextPageToken || undefined
+  };
+}
+
+/**
+ * Get playlists from a YouTube channel with pagination
  */
 export async function getChannelPlaylists(
   channelId: string,
   pageToken?: string
 ) {
-  // Warn if pagination is attempted (backend doesn't support it yet)
-  if (pageToken) {
-    console.warn(
-      '[getChannelPlaylists] Backend pagination is not supported yet. ' +
-      'The pageToken parameter will be ignored and all results will be returned. ' +
-      'Please update the backend to support pagination before using this feature.'
-    );
-  }
-
   const params: Record<string, string> = {};
-  // Do not send pageToken to backend as it's not supported
+  if (pageToken) params.pageToken = pageToken;
 
-  const response = await apiClient.get<PlaylistItemDto[]>(
+  const response = await apiClient.get<PaginatedResponse<PlaylistItemDto>>(
     `/api/admin/youtube/channels/${channelId}/playlists`,
     { params }
   );
 
-  const items = response.data;
+  const data = response.data;
 
   return {
-    items: items.map(item => ({
+    items: (data.items || []).map(item => ({
       id: item.id || '',
       title: item.name || '',
       thumbnailUrl: item.thumbnailUrl || '',
       itemCount: item.streamCount || 0
     })),
-    nextPageToken: undefined // Pagination not supported by backend yet
+    nextPageToken: data.nextPageToken || undefined
   };
 }
 
@@ -394,41 +442,31 @@ export async function getPlaylistDetails(playlistId: string) {
 }
 
 /**
- * Get videos in a YouTube playlist
- * Note: Backend currently returns flat array without pagination support (no nextPageToken)
+ * Get videos in a YouTube playlist with pagination
  */
 export async function getPlaylistVideos(
   playlistId: string,
   pageToken?: string,
   searchQuery?: string
 ) {
-  // Warn if pagination is attempted (backend doesn't support it yet)
-  if (pageToken) {
-    console.warn(
-      '[getPlaylistVideos] Backend pagination is not supported yet. ' +
-      'The pageToken parameter will be ignored and all results will be returned. ' +
-      'Please update the backend to support pagination before using this feature.'
-    );
-  }
-
   const params: Record<string, string> = {};
-  // Do not send pageToken to backend as it's not supported
+  if (pageToken) params.pageToken = pageToken;
   if (searchQuery) params.q = searchQuery;
 
-  const response = await apiClient.get<StreamItemDto[]>(
+  const response = await apiClient.get<PaginatedResponse<StreamItemDto>>(
     `/api/admin/youtube/playlists/${playlistId}/videos`,
     { params }
   );
 
-  const items = response.data;
+  const data = response.data;
 
   return {
-    items: items.map(item => ({
+    items: (data.items || []).map(item => ({
       id: item.id || '',
-      videoId: item.id || '', // StreamItemDto uses 'id' for video ID
+      videoId: item.id || '',
       title: item.name || '',
       thumbnailUrl: item.thumbnailUrl || ''
     })),
-    nextPageToken: undefined // Pagination not supported by backend yet
+    nextPageToken: data.nextPageToken || undefined
   };
 }

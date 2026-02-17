@@ -2,6 +2,7 @@ package com.albunyaan.tube.controller;
 
 import com.albunyaan.tube.dto.ChannelDetailsDto;
 import com.albunyaan.tube.dto.EnrichedSearchResult;
+import com.albunyaan.tube.dto.PaginatedItemsResponse;
 import com.albunyaan.tube.dto.PlaylistDetailsDto;
 import com.albunyaan.tube.dto.PlaylistItemDto;
 import com.albunyaan.tube.dto.SearchPageResponse;
@@ -268,36 +269,68 @@ public class YouTubeSearchController {
     }
 
     /**
-     * Get videos from a channel with optional search
+     * Get videos from a channel with optional search and pagination
      * @param channelId The YouTube channel ID
      * @param pageToken Optional pagination token
      * @param q Optional search query to filter videos
      */
     @GetMapping("/channels/{channelId}/videos")
-    public ResponseEntity<List<StreamItemDto>> getChannelVideos(
+    public ResponseEntity<PaginatedItemsResponse<StreamItemDto>> getChannelVideos(
             @PathVariable String channelId,
             @RequestParam(required = false) String pageToken,
             @RequestParam(required = false) String q
     ) {
         try {
-            List<StreamItemDto> dtos = youtubeService.getChannelVideosDto(channelId, pageToken, q);
-            return ResponseEntity.ok(dtos);
+            PaginatedItemsResponse<StreamItemDto> result = youtubeService.getChannelVideosDtoPaginated(channelId, pageToken, q);
+            return ResponseEntity.ok(result);
         } catch (IOException e) {
             return ResponseEntity.status(500).build();
         }
     }
 
     /**
-     * Get playlists from a channel
+     * Get shorts from a channel with pagination
      */
-    @GetMapping("/channels/{channelId}/playlists")
-    public ResponseEntity<List<PlaylistItemDto>> getChannelPlaylists(
+    @GetMapping("/channels/{channelId}/shorts")
+    public ResponseEntity<PaginatedItemsResponse<StreamItemDto>> getChannelShorts(
             @PathVariable String channelId,
             @RequestParam(required = false) String pageToken
     ) {
         try {
-            List<PlaylistItemDto> dtos = youtubeService.getChannelPlaylistsDto(channelId, pageToken);
-            return ResponseEntity.ok(dtos);
+            PaginatedItemsResponse<StreamItemDto> result = youtubeService.getChannelShortsDtoPaginated(channelId, pageToken);
+            return ResponseEntity.ok(result);
+        } catch (IOException e) {
+            return ResponseEntity.status(500).build();
+        }
+    }
+
+    /**
+     * Get live streams from a channel with pagination
+     */
+    @GetMapping("/channels/{channelId}/livestreams")
+    public ResponseEntity<PaginatedItemsResponse<StreamItemDto>> getChannelLiveStreams(
+            @PathVariable String channelId,
+            @RequestParam(required = false) String pageToken
+    ) {
+        try {
+            PaginatedItemsResponse<StreamItemDto> result = youtubeService.getChannelLiveStreamsDtoPaginated(channelId, pageToken);
+            return ResponseEntity.ok(result);
+        } catch (IOException e) {
+            return ResponseEntity.status(500).build();
+        }
+    }
+
+    /**
+     * Get playlists from a channel with pagination
+     */
+    @GetMapping("/channels/{channelId}/playlists")
+    public ResponseEntity<PaginatedItemsResponse<PlaylistItemDto>> getChannelPlaylists(
+            @PathVariable String channelId,
+            @RequestParam(required = false) String pageToken
+    ) {
+        try {
+            PaginatedItemsResponse<PlaylistItemDto> result = youtubeService.getChannelPlaylistsDtoPaginated(channelId, pageToken);
+            return ResponseEntity.ok(result);
         } catch (IOException e) {
             return ResponseEntity.status(500).build();
         }
@@ -320,20 +353,20 @@ public class YouTubeSearchController {
     }
 
     /**
-     * Get videos in a playlist with optional search (client-side filtering)
+     * Get videos in a playlist with optional search and pagination
      * @param playlistId The YouTube playlist ID
      * @param pageToken Optional pagination token
      * @param q Optional search query to filter videos by title/description
      */
     @GetMapping("/playlists/{playlistId}/videos")
-    public ResponseEntity<List<StreamItemDto>> getPlaylistVideos(
+    public ResponseEntity<PaginatedItemsResponse<StreamItemDto>> getPlaylistVideos(
             @PathVariable String playlistId,
             @RequestParam(required = false) String pageToken,
             @RequestParam(required = false) String q
     ) {
         try {
-            List<StreamItemDto> dtos = youtubeService.getPlaylistVideosDto(playlistId, pageToken, q);
-            return ResponseEntity.ok(dtos);
+            PaginatedItemsResponse<StreamItemDto> result = youtubeService.getPlaylistVideosDtoPaginated(playlistId, pageToken, q);
+            return ResponseEntity.ok(result);
         } catch (IOException e) {
             return ResponseEntity.status(500).build();
         }

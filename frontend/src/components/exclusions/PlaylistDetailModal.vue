@@ -64,8 +64,9 @@
               <div
                 v-for="(item, index) in items"
                 :key="item.id"
-                class="item"
-                :class="{ excluded: isExcluded(item.videoId) }"
+                class="item clickable"
+                :class="{ excluded: hasRegistryId && isExcluded(item.videoId) }"
+                @click="openVideoPreview(item)"
               >
                 <img
                   v-if="item.thumbnailUrl"
@@ -79,22 +80,25 @@
                     {{ $t('exclusions.playlistDetail.position', { position: index + 1 }) }}
                   </p>
                 </div>
-                <button
-                  v-if="isExcluded(item.videoId)"
-                  class="action-btn remove"
-                  @click="removeExclusion(item.videoId)"
-                  :disabled="actionLoading[item.videoId]"
-                >
-                  {{ $t('exclusions.playlistDetail.removeExclusion') }}
-                </button>
-                <button
-                  v-else
-                  class="action-btn exclude"
-                  @click="addExclusion(item.videoId)"
-                  :disabled="actionLoading[item.videoId]"
-                >
-                  {{ $t('exclusions.playlistDetail.exclude') }}
-                </button>
+                <!-- Exclusion buttons only shown when registry ID is available -->
+                <template v-if="hasRegistryId">
+                  <button
+                    v-if="isExcluded(item.videoId)"
+                    class="action-btn remove"
+                    @click.stop="removeExclusion(item.videoId)"
+                    :disabled="actionLoading[item.videoId]"
+                  >
+                    {{ $t('exclusions.playlistDetail.removeExclusion') }}
+                  </button>
+                  <button
+                    v-else
+                    class="action-btn exclude"
+                    @click.stop="addExclusion(item.videoId)"
+                    :disabled="actionLoading[item.videoId]"
+                  >
+                    {{ $t('exclusions.playlistDetail.exclude') }}
+                  </button>
+                </template>
               </div>
             </div>
 
@@ -119,15 +123,24 @@
         </div>
       </div>
     </Transition>
+
+    <!-- Nested Video Preview Modal -->
+    <VideoPreviewModal
+      :open="showVideoPreview"
+      :youtube-id="previewVideoId"
+      :title="previewVideoTitle"
+      @close="closeVideoPreview"
+    />
   </Teleport>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, reactive } from 'vue'
+import { ref, computed, watch, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useInfiniteScroll } from '@/composables/useInfiniteScroll'
 import { fetchPlaylistExclusions, addPlaylistExclusion, removePlaylistExclusion } from '@/services/exclusions'
 import { getPlaylistDetails, getPlaylistVideos } from '@/services/youtubeService'
+import VideoPreviewModal from '@/components/VideoPreviewModal.vue'
 
 const { t: $t } = useI18n()
 
@@ -143,6 +156,10 @@ const emit = defineEmits<{
   updated: []
 }>()
 
+// Whether we have a registry document ID (needed for exclusion APIs)
+// When opened from ChannelDetailModal with only a YouTube ID, this is false.
+const hasRegistryId = computed(() => !!props.playlistId)
+
 // State
 const searchQuery = ref('')
 const activeSearch = ref('')
@@ -154,6 +171,11 @@ const initialLoading = ref(false)
 const error = ref<string | null>(null)
 const playlistDetails = ref<any>(null)
 let requestIdCounter = 0 // Track in-flight requests to prevent race conditions
+
+// Video preview state
+const showVideoPreview = ref(false)
+const previewVideoId = ref('')
+const previewVideoTitle = ref('')
 
 // Infinite scroll
 const { containerRef, isLoading, hasMore, reset } = useInfiniteScroll({
@@ -193,9 +215,13 @@ async function loadInitialData() {
     const details = await getPlaylistDetails(props.playlistYoutubeId)
     playlistDetails.value = details
 
-    // Load exclusions
-    const exclusions = await fetchPlaylistExclusions(props.playlistId)
-    excludedIds.value = new Set(exclusions)
+    // Load exclusions only if we have a registry document ID
+    if (hasRegistryId.value) {
+      const exclusions = await fetchPlaylistExclusions(props.playlistId)
+      excludedIds.value = new Set(exclusions)
+    } else {
+      excludedIds.value = new Set()
+    }
 
     // Load initial items
     await loadMore()
@@ -307,6 +333,18 @@ async function removeExclusion(videoId: string) {
     actionLoading[videoId] = false
   }
 }
+
+function openVideoPreview(item: any) {
+  previewVideoId.value = item.videoId || item.id
+  previewVideoTitle.value = item.title
+  showVideoPreview.value = true
+}
+
+function closeVideoPreview() {
+  showVideoPreview.value = false
+  previewVideoId.value = ''
+  previewVideoTitle.value = ''
+}
 </script>
 
 <style scoped>
@@ -321,7 +359,7 @@ async function removeExclusion(videoId: string) {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: 1050;
   padding: 1rem;
 }
 
@@ -470,6 +508,10 @@ async function removeExclusion(videoId: string) {
 
 .item:hover {
   background: var(--color-surface-hover, #f9fafb);
+}
+
+.item.clickable {
+  cursor: pointer;
 }
 
 .item.excluded {

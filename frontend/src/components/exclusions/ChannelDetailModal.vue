@@ -36,6 +36,20 @@
             </button>
             <button
               class="tab"
+              :class="{ active: activeTab === 'shorts' }"
+              @click="switchTab('shorts')"
+            >
+              {{ $t('exclusions.channelDetail.tabs.shorts') }}
+            </button>
+            <button
+              class="tab"
+              :class="{ active: activeTab === 'live' }"
+              @click="switchTab('live')"
+            >
+              {{ $t('exclusions.channelDetail.tabs.live') }}
+            </button>
+            <button
+              class="tab"
               :class="{ active: activeTab === 'playlists' }"
               @click="switchTab('playlists')"
             >
@@ -43,8 +57,8 @@
             </button>
           </div>
 
-          <!-- Search Bar -->
-          <div class="search-bar">
+          <!-- Search Bar (only videos tab supports backend search) -->
+          <div v-if="activeTab === 'videos'" class="search-bar">
             <input
               v-model="searchQuery"
               type="text"
@@ -84,7 +98,8 @@
                 v-for="item in items"
                 :key="item.id"
                 class="item"
-                :class="{ excluded: isExcluded(item.id) }"
+                :class="{ excluded: isExcluded(item.id), clickable: true }"
+                @click="handleItemClick(item)"
               >
                 <img
                   v-if="item.thumbnailUrl"
@@ -95,18 +110,18 @@
                 <div class="item-details">
                   <h3 class="item-title">{{ item.title }}</h3>
                   <p class="item-meta">
-                    <span v-if="activeTab === 'videos'">
-                      {{ formatDate(item.publishedAt) }}
+                    <span v-if="activeTab === 'playlists'">
+                      {{ $t('exclusions.channelDetail.itemCount', { count: item.itemCount || 0 }) }}
                     </span>
                     <span v-else>
-                      {{ $t('exclusions.channelDetail.itemCount', { count: item.itemCount || 0 }) }}
+                      {{ formatDate(item.publishedAt) }}
                     </span>
                   </p>
                 </div>
                 <button
                   v-if="isExcluded(item.id)"
                   class="action-btn remove"
-                  @click="removeExclusion(item.id)"
+                  @click.stop="removeExclusion(item.id)"
                   :disabled="actionLoading[item.id]"
                 >
                   {{ $t('exclusions.channelDetail.removeExclusion') }}
@@ -114,7 +129,7 @@
                 <button
                   v-else
                   class="action-btn exclude"
-                  @click="addExclusion(item.id)"
+                  @click.stop="addExclusion(item.id)"
                   :disabled="actionLoading[item.id]"
                 >
                   {{ $t('exclusions.channelDetail.exclude') }}
@@ -143,6 +158,24 @@
         </div>
       </div>
     </Transition>
+
+    <!-- Nested Video Preview Modal -->
+    <VideoPreviewModal
+      v-if="previewVideoId"
+      :open="showVideoPreview"
+      :youtube-id="previewVideoId"
+      :title="previewVideoTitle"
+      @close="closeVideoPreview"
+    />
+
+    <!-- Nested Playlist Detail Modal (browse-only: no registry ID available from YouTube data) -->
+    <PlaylistDetailModal
+      v-if="nestedPlaylistYoutubeId"
+      :open="showNestedPlaylist"
+      :playlist-id="nestedPlaylistRegistryId"
+      :playlist-youtube-id="nestedPlaylistYoutubeId"
+      @close="closeNestedPlaylist"
+    />
   </Teleport>
 </template>
 
@@ -151,7 +184,9 @@ import { ref, watch, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useInfiniteScroll } from '@/composables/useInfiniteScroll'
 import { fetchChannelExclusions, addChannelExclusion, removeChannelExclusion } from '@/services/exclusions'
-import { getChannelDetails, getChannelVideos, getChannelPlaylists } from '@/services/youtubeService'
+import { getChannelDetails, getChannelVideos, getChannelPlaylists, getChannelShorts, getChannelLiveStreams } from '@/services/youtubeService'
+import VideoPreviewModal from '@/components/VideoPreviewModal.vue'
+import PlaylistDetailModal from '@/components/exclusions/PlaylistDetailModal.vue'
 
 const { t: $t } = useI18n()
 
@@ -168,7 +203,7 @@ const emit = defineEmits<{
 }>()
 
 // State
-const activeTab = ref<'videos' | 'playlists'>('videos')
+const activeTab = ref<'videos' | 'shorts' | 'live' | 'playlists'>('videos')
 const searchQuery = ref('')
 const activeSearch = ref('')
 const items = ref<any[]>([])
@@ -179,6 +214,14 @@ const initialLoading = ref(false)
 const error = ref<string | null>(null)
 const channelDetails = ref<any>(null)
 let requestIdCounter = 0 // Track in-flight requests to prevent race conditions
+
+// Nested modal state
+const showVideoPreview = ref(false)
+const previewVideoId = ref('')
+const previewVideoTitle = ref('')
+const showNestedPlaylist = ref(false)
+const nestedPlaylistYoutubeId = ref('')
+const nestedPlaylistRegistryId = ref('')
 
 // Infinite scroll
 const { containerRef, isLoading, hasMore, reset } = useInfiniteScroll({
@@ -223,10 +266,10 @@ async function loadInitialData() {
       videoCount: detailsResponse.videos?.length || 0
     }
 
-    // Load exclusions
+    // Load exclusions — videos/shorts/live all use the videos exclusion list
     const exclusions = await fetchChannelExclusions(props.channelId)
     excludedIds.value = new Set(
-      activeTab.value === 'videos' ? exclusions.videos : exclusions.playlists
+      activeTab.value === 'playlists' ? exclusions.playlists : exclusions.videos
     )
 
     // Load initial items
@@ -260,6 +303,16 @@ async function loadMore() {
         props.channelYoutubeId,
         capturedPageToken || undefined,
         capturedSearch || undefined
+      )
+    } else if (capturedTab === 'shorts') {
+      result = await getChannelShorts(
+        props.channelYoutubeId,
+        capturedPageToken || undefined
+      )
+    } else if (capturedTab === 'live') {
+      result = await getChannelLiveStreams(
+        props.channelYoutubeId,
+        capturedPageToken || undefined
       )
     } else {
       result = await getChannelPlaylists(
@@ -305,7 +358,7 @@ async function loadMore() {
   }
 }
 
-function switchTab(tab: 'videos' | 'playlists') {
+function switchTab(tab: 'videos' | 'shorts' | 'live' | 'playlists') {
   if (tab === activeTab.value) return
 
   // Invalidate any in-flight requests
@@ -343,7 +396,7 @@ async function addExclusion(itemId: string) {
   actionLoading[itemId] = true
 
   try {
-    const type = activeTab.value === 'videos' ? 'video' : 'playlist'
+    const type = activeTab.value === 'playlists' ? 'playlist' : 'video'
     await addChannelExclusion(props.channelId, type, itemId)
     excludedIds.value.add(itemId)
     emit('updated')
@@ -358,7 +411,7 @@ async function removeExclusion(itemId: string) {
   actionLoading[itemId] = true
 
   try {
-    const type = activeTab.value === 'videos' ? 'video' : 'playlist'
+    const type = activeTab.value === 'playlists' ? 'playlist' : 'video'
     await removeChannelExclusion(props.channelId, type, itemId)
     excludedIds.value.delete(itemId)
     emit('updated')
@@ -367,6 +420,35 @@ async function removeExclusion(itemId: string) {
   } finally {
     actionLoading[itemId] = false
   }
+}
+
+function handleItemClick(item: any) {
+  if (activeTab.value === 'playlists') {
+    // Open nested playlist detail modal
+    // item.id is a YouTube playlist ID from NewPipe, not a registry document ID.
+    // Pass empty registry ID — PlaylistDetailModal will work in browse-only mode
+    // (no exclusion management, just browsing videos).
+    nestedPlaylistYoutubeId.value = item.id
+    nestedPlaylistRegistryId.value = ''
+    showNestedPlaylist.value = true
+  } else {
+    // Open video preview for videos/shorts/live
+    previewVideoId.value = item.id
+    previewVideoTitle.value = item.title
+    showVideoPreview.value = true
+  }
+}
+
+function closeVideoPreview() {
+  showVideoPreview.value = false
+  previewVideoId.value = ''
+  previewVideoTitle.value = ''
+}
+
+function closeNestedPlaylist() {
+  showNestedPlaylist.value = false
+  nestedPlaylistYoutubeId.value = ''
+  nestedPlaylistRegistryId.value = ''
 }
 
 function formatNumber(num: number | null | undefined): string {
@@ -570,6 +652,10 @@ function formatDate(dateStr: string | null | undefined): string {
 
 .item:hover {
   background: var(--color-surface-hover, #f9fafb);
+}
+
+.item.clickable {
+  cursor: pointer;
 }
 
 .item.excluded {

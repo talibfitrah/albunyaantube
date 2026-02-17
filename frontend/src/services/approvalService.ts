@@ -13,6 +13,7 @@ import type { CursorPage } from '@/types/pagination';
 export interface PendingApproval {
   id: string;
   type: 'channel' | 'playlist' | 'video';
+  youtubeId: string;
   title: string;
   description: string;
   thumbnailUrl: string;
@@ -84,6 +85,7 @@ function mapPendingApprovalToUi(dto: PendingApprovalDto): PendingApproval {
   return {
     id: dto.id || '',
     type: contentType,
+    youtubeId: getString('youtubeId'),
     title: dto.title || '',
     description: getString('description'),
     thumbnailUrl: getString('thumbnailUrl'),
