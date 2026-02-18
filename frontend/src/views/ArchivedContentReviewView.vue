@@ -154,8 +154,8 @@
             </td>
             <td class="thumbnail-col">
               <img
-                v-if="item.thumbnailUrl"
-                :src="item.thumbnailUrl"
+                v-if="getThumbnailUrl(item, item.type?.toLowerCase() as 'channel' | 'playlist' | 'video')"
+                :src="getThumbnailUrl(item, item.type?.toLowerCase() as 'channel' | 'playlist' | 'video')!"
                 :alt="item.title"
                 class="thumbnail"
                 loading="lazy"
@@ -226,8 +226,8 @@
               @change="toggleSelection(item.id)"
             />
             <img
-              v-if="item.thumbnailUrl"
-              :src="item.thumbnailUrl"
+              v-if="getThumbnailUrl(item, item.type?.toLowerCase() as 'channel' | 'playlist' | 'video')"
+              :src="getThumbnailUrl(item, item.type?.toLowerCase() as 'channel' | 'playlist' | 'video')!"
               :alt="item.title"
               class="card-thumbnail"
               loading="lazy"
@@ -286,6 +286,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, watchEffect } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { getThumbnailUrl } from '@/utils/formatters';
 import type { ArchivedContent, ArchivedCounts, ContentType, ValidationRun } from '@/types/validation';
 import {
   getArchivedCounts,

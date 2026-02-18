@@ -219,6 +219,14 @@ watch(() => props.isOpen, async (isOpen) => {
 });
 
 function close() {
+  if (searchDebounce) {
+    clearTimeout(searchDebounce);
+    searchDebounce = null;
+  }
+  if (abortController) {
+    abortController.abort();
+    abortController = null;
+  }
   emit('close');
 }
 
@@ -243,6 +251,7 @@ function toggleFilter(filter: string) {
 }
 
 let searchDebounce: ReturnType<typeof setTimeout> | null = null;
+let abortController: AbortController | null = null;
 
 async function handleSearchInput() {
   if (!searchQuery.value || searchQuery.value.length < 2) {
@@ -256,6 +265,13 @@ async function handleSearchInput() {
 }
 
 async function performSearch() {
+  // Abort any in-flight request
+  if (abortController) {
+    abortController.abort();
+  }
+  abortController = new AbortController();
+  const signal = abortController.signal;
+
   searching.value = true;
   focusedIndex.value = 0;
 
@@ -277,25 +293,36 @@ async function performSearch() {
           search: searchQuery.value,
           types: apiTypes.join(','),
           size: 10
-        }
+        },
+        signal
       });
 
       const items = response.data?.items || [];
-      results.value = items.map((item: any) => ({
-        id: item.id || '',
-        type: (item.type?.toLowerCase() || 'content') as SearchResult['type'],
-        title: item.title || '',
-        subtitle: item.type || '',
-        route: '/content-library'
-      }));
+      results.value = items.map((item: any) => {
+        const itemType = (item.type?.toLowerCase() || 'content') as SearchResult['type'];
+        let route = '/content-library';
+        if (itemType === 'channel') route = '/content-library?type=CHANNEL';
+        else if (itemType === 'playlist') route = '/content-library?type=PLAYLIST';
+        else if (itemType === 'video') route = '/content-library?type=VIDEO';
+        return {
+          id: item.id || '',
+          type: itemType,
+          title: item.title || '',
+          subtitle: item.type || '',
+          route
+        };
+      });
     } else {
       results.value = [];
     }
   } catch (err) {
+    if (signal.aborted) return; // Ignore aborted requests
     console.error('Global search failed:', err);
     results.value = [];
   } finally {
-    searching.value = false;
+    if (!signal.aborted) {
+      searching.value = false;
+    }
   }
 }
 

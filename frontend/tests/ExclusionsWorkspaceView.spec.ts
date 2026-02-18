@@ -1,8 +1,9 @@
 import '@testing-library/jest-dom';
 import { render, screen, fireEvent, waitFor } from '@testing-library/vue';
 import { createI18n } from 'vue-i18n';
+import { createRouter, createMemoryHistory, RouterView } from 'vue-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { h } from 'vue';
+import { h, defineComponent } from 'vue';
 import ExclusionsWorkspaceView from '@/views/ExclusionsWorkspaceView.vue';
 import { messages } from '@/locales/messages';
 import {
@@ -75,10 +76,30 @@ const i18n = createI18n({
   messages
 });
 
-function renderView() {
-  return render(ExclusionsWorkspaceView, {
+function buildRouter() {
+  return createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/', name: 'exclusions', component: ExclusionsWorkspaceView },
+      { path: '/other', name: 'other', component: { template: '<div />' } }
+    ]
+  });
+}
+
+// Wrap in RouterView so onBeforeRouteLeave has an active route record
+const RouterWrapper = defineComponent({
+  setup() {
+    return () => h(RouterView);
+  }
+});
+
+async function renderView() {
+  const router = buildRouter();
+  router.push('/');
+  await router.isReady();
+  return render(RouterWrapper, {
     global: {
-      plugins: [i18n]
+      plugins: [i18n, router]
     }
   });
 }
@@ -175,7 +196,7 @@ describe('ExclusionsWorkspaceView', () => {
     fetchMock.mockResolvedValueOnce(firstPage);
     fetchMock.mockResolvedValueOnce(secondPage);
 
-    renderView();
+    await renderView();
 
     await screen.findByText('playlist:alqalam-foundation', { selector: '.entity-label' });
 
@@ -210,7 +231,7 @@ describe('ExclusionsWorkspaceView', () => {
     );
     fetchMock.mockResolvedValueOnce(createPage([]));
 
-    renderView();
+    await renderView();
 
     const checkbox = await screen.findByRole('checkbox', {
       name: /select playlist:alqalam-foundation for bulk action/i
@@ -244,7 +265,7 @@ describe('ExclusionsWorkspaceView', () => {
     };
     fetchMock.mockResolvedValueOnce(createPage([response]));
 
-    renderView();
+    await renderView();
 
     const trigger = await screen.findByRole('button', { name: /add exclusion/i });
     await fireEvent.click(trigger);
@@ -284,7 +305,7 @@ describe('ExclusionsWorkspaceView', () => {
   // NOTE: Edit exclusion functionality was removed from the UI - reason is now immutable after creation
 
   it('displays "View Details" button for each exclusion', async () => {
-    renderView();
+    await renderView();
 
     await waitFor(() => {
       const viewDetailsButtons = screen.getAllByRole('button', { name: /view details/i });
@@ -309,7 +330,7 @@ describe('ExclusionsWorkspaceView', () => {
       ])
     );
 
-    renderView();
+    await renderView();
 
     const viewDetailsButton = await screen.findByRole('button', { name: /view details/i });
     await fireEvent.click(viewDetailsButton);
@@ -339,7 +360,7 @@ describe('ExclusionsWorkspaceView', () => {
       ])
     );
 
-    renderView();
+    await renderView();
 
     const viewDetailsButton = await screen.findByRole('button', { name: /view details/i });
     await fireEvent.click(viewDetailsButton);
@@ -385,7 +406,7 @@ describe('ExclusionsWorkspaceView', () => {
     // Mock second load after modal update
     fetchMock.mockResolvedValueOnce(updatedPage);
 
-    renderView();
+    await renderView();
 
     // Wait for initial load
     await screen.findByText('video:test', { selector: '.entity-label' });

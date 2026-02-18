@@ -105,7 +105,7 @@
                         <span class="drag-handle" :title="t('contentSorting.dragToReorder')">&#x22EE;&#x22EE;</span>
                       </td>
                       <td class="col-thumb">
-                        <img v-if="item.thumbnailUrl" :src="item.thumbnailUrl" :alt="item.title" class="thumbnail" />
+                        <img v-if="getThumbnailUrl(item, item.contentType?.toLowerCase() as 'channel' | 'playlist' | 'video')" :src="getThumbnailUrl(item, item.contentType?.toLowerCase() as 'channel' | 'playlist' | 'video')!" :alt="item.title" class="thumbnail" />
                         <div v-else class="thumbnail-placeholder"></div>
                       </td>
                       <td class="col-content-name">{{ item.title }}</td>
@@ -141,6 +141,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { getThumbnailUrl } from '@/utils/formatters';
 import {
   getCategorySortOrder,
   reorderCategory,

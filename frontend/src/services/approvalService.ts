@@ -238,3 +238,20 @@ export async function rejectItem(
   await apiClient.post(`/api/admin/approvals/${itemId}/reject`, payload);
   toast.success(`${itemType.charAt(0).toUpperCase() + itemType.slice(1)} rejected`);
 }
+
+/**
+ * Get total count of pending items across all content types.
+ * Returns -1 if the backend is unavailable (caller should handle gracefully).
+ */
+export async function getPendingCount(): Promise<number> {
+  try {
+    const response = await apiClient.get<{ count: number }>('/api/admin/approvals/pending-count');
+    return response.data.count;
+  } catch (err: any) {
+    if (err.response?.status === 503) {
+      console.warn('Pending count service unavailable');
+      return -1;
+    }
+    throw err;
+  }
+}

@@ -12,6 +12,7 @@ import com.albunyaan.tube.R
 import com.albunyaan.tube.data.filters.FilterManager
 import com.albunyaan.tube.data.model.Category
 import com.albunyaan.tube.data.source.ContentService
+import com.albunyaan.tube.locale.LocaleManager
 import com.albunyaan.tube.databinding.FragmentCategoriesBinding
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -54,10 +55,12 @@ class CategoriesFragment : Fragment(R.layout.fragment_categories) {
         adapter = CategoryAdapter { category ->
             android.util.Log.d("CategoriesFragment", "Category clicked: ${category.name}, hasSubcategories: ${category.hasSubcategories}")
             if (category.hasSubcategories) {
-                // Navigate to subcategories
+                // Navigate to subcategories with localized name
+                val currentLocale = LocaleManager.getCurrentLocale(requireContext()).language
+                val localizedName = category.localizedNames?.get(currentLocale) ?: category.name
                 val args = bundleOf(
                     SubcategoriesFragment.ARG_CATEGORY_ID to category.id,
-                    SubcategoriesFragment.ARG_CATEGORY_NAME to category.name
+                    SubcategoriesFragment.ARG_CATEGORY_NAME to localizedName
                 )
                 try {
                     android.util.Log.d("CategoriesFragment", "Attempting navigation to subcategories...")
@@ -85,10 +88,12 @@ class CategoriesFragment : Fragment(R.layout.fragment_categories) {
 
                 // Step 2: Navigate to Videos tab (only if filter was applied successfully)
                 if (filterApplied) {
+                    val currentLocale = LocaleManager.getCurrentLocale(requireContext()).language
+                    val localizedName = category.localizedNames?.get(currentLocale) ?: category.name
                     // Show feedback before navigation while context is guaranteed valid
                     android.widget.Toast.makeText(
                         requireContext(),
-                        getString(R.string.category_filter_applied, category.name),
+                        getString(R.string.category_filter_applied, localizedName),
                         android.widget.Toast.LENGTH_SHORT
                     ).show()
                     try {

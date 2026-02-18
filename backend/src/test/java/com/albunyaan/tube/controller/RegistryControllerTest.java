@@ -430,7 +430,45 @@ class RegistryControllerTest {
         verify(playlistRepository).deleteById("playlist-123");
     }
 
-    // ===== VIDEO SECURITY TESTS =====
+    // ===== VIDEO TESTS =====
+
+    @Test
+    void addVideo_shouldAutoApprove_whenSubmittedByAdmin() throws Exception {
+        // Arrange
+        com.albunyaan.tube.model.Video newVideo = new com.albunyaan.tube.model.Video("dQw4w9WgXcQ");
+        newVideo.setTitle("Test Video");
+        newVideo.setStatus(null);
+        when(videoRepository.findByYoutubeId("dQw4w9WgXcQ")).thenReturn(Optional.empty());
+        when(videoRepository.save(any(com.albunyaan.tube.model.Video.class))).thenReturn(newVideo);
+
+        // Act
+        ResponseEntity<com.albunyaan.tube.model.Video> response = registryController.addVideo(newVideo, adminUser);
+
+        // Assert
+        assertEquals(HttpStatus.CREATED, response.getStatusCode());
+        assertEquals("APPROVED", newVideo.getStatus());
+        assertEquals("admin-uid", newVideo.getSubmittedBy());
+        assertEquals("admin-uid", newVideo.getApprovedBy());
+        verify(videoRepository).save(newVideo);
+    }
+
+    @Test
+    void addVideo_shouldPendApproval_whenSubmittedByModerator() throws Exception {
+        // Arrange
+        com.albunyaan.tube.model.Video newVideo = new com.albunyaan.tube.model.Video("dQw4w9WgXcQ");
+        newVideo.setTitle("Test Video");
+        when(videoRepository.findByYoutubeId("dQw4w9WgXcQ")).thenReturn(Optional.empty());
+        when(videoRepository.save(any(com.albunyaan.tube.model.Video.class))).thenReturn(newVideo);
+
+        // Act
+        ResponseEntity<com.albunyaan.tube.model.Video> response = registryController.addVideo(newVideo, moderatorUser);
+
+        // Assert
+        assertEquals(HttpStatus.CREATED, response.getStatusCode());
+        assertEquals("PENDING", newVideo.getStatus());
+        assertEquals("mod-uid", newVideo.getSubmittedBy());
+        assertNull(newVideo.getApprovedBy());
+    }
 
     @Test
     void addVideo_moderatorCannotSelfApprove_statusForcedToPending() throws Exception {
@@ -450,6 +488,251 @@ class RegistryControllerTest {
         assertEquals("PENDING", newVideo.getStatus());
         assertNull(newVideo.getApprovedBy());
         assertEquals("mod-uid", newVideo.getSubmittedBy());
+    }
+
+    @Test
+    void addVideo_adminCanExplicitlySetStatus() throws Exception {
+        // Arrange - admin sends status: PENDING explicitly
+        com.albunyaan.tube.model.Video newVideo = new com.albunyaan.tube.model.Video("dQw4w9WgXcQ");
+        newVideo.setTitle("Test Video");
+        newVideo.setStatus("PENDING");
+        when(videoRepository.findByYoutubeId("dQw4w9WgXcQ")).thenReturn(Optional.empty());
+        when(videoRepository.save(any(com.albunyaan.tube.model.Video.class))).thenReturn(newVideo);
+
+        // Act
+        ResponseEntity<com.albunyaan.tube.model.Video> response = registryController.addVideo(newVideo, adminUser);
+
+        // Assert - admin's explicit PENDING status is respected, approvedBy cleared
+        assertEquals(HttpStatus.CREATED, response.getStatusCode());
+        assertEquals("PENDING", newVideo.getStatus());
+        assertEquals("admin-uid", newVideo.getSubmittedBy());
+        assertNull(newVideo.getApprovedBy());
+    }
+
+    @Test
+    void addVideo_adminExplicitApproved_setsApprovedBy() throws Exception {
+        // Arrange - admin explicitly sends APPROVED
+        com.albunyaan.tube.model.Video newVideo = new com.albunyaan.tube.model.Video("dQw4w9WgXcQ");
+        newVideo.setTitle("Test Video");
+        newVideo.setStatus("APPROVED");
+        when(videoRepository.findByYoutubeId("dQw4w9WgXcQ")).thenReturn(Optional.empty());
+        when(videoRepository.save(any(com.albunyaan.tube.model.Video.class))).thenReturn(newVideo);
+
+        // Act
+        ResponseEntity<com.albunyaan.tube.model.Video> response = registryController.addVideo(newVideo, adminUser);
+
+        // Assert
+        assertEquals(HttpStatus.CREATED, response.getStatusCode());
+        assertEquals("APPROVED", newVideo.getStatus());
+        assertEquals("admin-uid", newVideo.getApprovedBy());
+    }
+
+    @Test
+    void addVideo_shouldReturnConflict_whenVideoAlreadyExists() throws Exception {
+        // Arrange
+        com.albunyaan.tube.model.Video existingVideo = new com.albunyaan.tube.model.Video("dQw4w9WgXcQ");
+        when(videoRepository.findByYoutubeId("dQw4w9WgXcQ")).thenReturn(Optional.of(existingVideo));
+
+        // Act
+        ResponseEntity<com.albunyaan.tube.model.Video> response = registryController.addVideo(existingVideo, adminUser);
+
+        // Assert
+        assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
+        verify(videoRepository, never()).save(any());
+    }
+
+    @Test
+    void toggleVideoStatus_shouldToggleFromApprovedToPending() throws Exception {
+        // Arrange
+        com.albunyaan.tube.model.Video video = new com.albunyaan.tube.model.Video("dQw4w9WgXcQ");
+        video.setId("video-123");
+        video.setStatus("APPROVED");
+        when(videoRepository.findById("video-123")).thenReturn(Optional.of(video));
+        when(videoRepository.save(any(com.albunyaan.tube.model.Video.class))).thenReturn(video);
+
+        // Act
+        ResponseEntity<com.albunyaan.tube.model.Video> response = registryController.toggleVideoStatus("video-123", adminUser);
+
+        // Assert
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("PENDING", video.getStatus());
+    }
+
+    @Test
+    void toggleVideoStatus_shouldToggleFromPendingToApproved() throws Exception {
+        // Arrange
+        com.albunyaan.tube.model.Video video = new com.albunyaan.tube.model.Video("dQw4w9WgXcQ");
+        video.setId("video-123");
+        video.setStatus("PENDING");
+        when(videoRepository.findById("video-123")).thenReturn(Optional.of(video));
+        when(videoRepository.save(any(com.albunyaan.tube.model.Video.class))).thenReturn(video);
+
+        // Act
+        ResponseEntity<com.albunyaan.tube.model.Video> response = registryController.toggleVideoStatus("video-123", adminUser);
+
+        // Assert
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("APPROVED", video.getStatus());
+        assertEquals("admin-uid", video.getApprovedBy());
+    }
+
+    @Test
+    void deleteVideo_shouldDeleteVideo_whenExists() throws Exception {
+        // Arrange
+        com.albunyaan.tube.model.Video video = new com.albunyaan.tube.model.Video("dQw4w9WgXcQ");
+        video.setId("video-123");
+        when(videoRepository.findById("video-123")).thenReturn(Optional.of(video));
+
+        // Act
+        ResponseEntity<Void> response = registryController.deleteVideo("video-123", adminUser);
+
+        // Assert
+        assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
+        verify(videoRepository).deleteById("video-123");
+    }
+
+    @Test
+    void deleteVideo_shouldReturn404_whenNotFound() throws Exception {
+        // Arrange
+        when(videoRepository.findById("nonexistent")).thenReturn(Optional.empty());
+
+        // Act
+        ResponseEntity<Void> response = registryController.deleteVideo("nonexistent", adminUser);
+
+        // Assert
+        assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
+        verify(videoRepository, never()).deleteById(any());
+    }
+
+    // ===== PLAYLIST ADDITIONAL SECURITY TESTS =====
+
+    @Test
+    void addPlaylist_adminCanExplicitlySetStatus() throws Exception {
+        // Arrange - admin sends status: PENDING explicitly
+        Playlist newPlaylist = new Playlist("PL-new-playlist");
+        newPlaylist.setTitle("New Playlist");
+        newPlaylist.setStatus("PENDING");
+        when(playlistRepository.findByYoutubeId("PL-new-playlist")).thenReturn(Optional.empty());
+        when(playlistRepository.save(any(Playlist.class))).thenReturn(newPlaylist);
+
+        // Act
+        ResponseEntity<Playlist> response = registryController.addPlaylist(newPlaylist, adminUser);
+
+        // Assert - admin's explicit PENDING status is respected, approvedBy cleared
+        assertEquals(HttpStatus.CREATED, response.getStatusCode());
+        assertEquals("PENDING", newPlaylist.getStatus());
+        assertEquals("admin-uid", newPlaylist.getSubmittedBy());
+        assertNull(newPlaylist.getApprovedBy());
+    }
+
+    @Test
+    void addPlaylist_adminExplicitApproved_setsApprovedBy() throws Exception {
+        // Arrange - admin explicitly sends APPROVED
+        Playlist newPlaylist = new Playlist("PL-new-playlist");
+        newPlaylist.setTitle("New Playlist");
+        newPlaylist.setStatus("APPROVED");
+        when(playlistRepository.findByYoutubeId("PL-new-playlist")).thenReturn(Optional.empty());
+        when(playlistRepository.save(any(Playlist.class))).thenReturn(newPlaylist);
+
+        // Act
+        ResponseEntity<Playlist> response = registryController.addPlaylist(newPlaylist, adminUser);
+
+        // Assert
+        assertEquals(HttpStatus.CREATED, response.getStatusCode());
+        assertEquals("APPROVED", newPlaylist.getStatus());
+        assertEquals("admin-uid", newPlaylist.getApprovedBy());
+    }
+
+    // ===== CHANNEL ADDITIONAL SECURITY TESTS =====
+
+    @Test
+    void addChannel_adminExplicitApproved_setsApprovedBy() throws Exception {
+        // Arrange - admin explicitly sends APPROVED
+        Channel newChannel = new Channel("UC-new-channel");
+        newChannel.setName("New Channel");
+        newChannel.setStatus("APPROVED");
+        when(channelRepository.findByYoutubeId("UC-new-channel")).thenReturn(Optional.empty());
+        when(channelRepository.save(any(Channel.class))).thenReturn(newChannel);
+
+        // Act
+        ResponseEntity<Channel> response = registryController.addChannel(newChannel, adminUser);
+
+        // Assert
+        assertEquals(HttpStatus.CREATED, response.getStatusCode());
+        assertEquals("APPROVED", newChannel.getStatus());
+        assertEquals("admin-uid", newChannel.getApprovedBy());
+    }
+
+    // ===== CROSS-ROLE CONSISTENCY TESTS =====
+
+    @Test
+    void allEntityTypes_moderatorAlwaysGetsPending() throws Exception {
+        // Verify consistent RBAC behavior across all 3 entity types
+
+        // Channel
+        Channel ch = new Channel("UC-ch");
+        ch.setName("Ch");
+        ch.setStatus("APPROVED");
+        when(channelRepository.findByYoutubeId("UC-ch")).thenReturn(Optional.empty());
+        when(channelRepository.save(any(Channel.class))).thenReturn(ch);
+        registryController.addChannel(ch, moderatorUser);
+        assertEquals("PENDING", ch.getStatus());
+        assertNull(ch.getApprovedBy());
+
+        // Playlist
+        Playlist pl = new Playlist("PL-pl");
+        pl.setTitle("Pl");
+        pl.setStatus("APPROVED");
+        when(playlistRepository.findByYoutubeId("PL-pl")).thenReturn(Optional.empty());
+        when(playlistRepository.save(any(Playlist.class))).thenReturn(pl);
+        registryController.addPlaylist(pl, moderatorUser);
+        assertEquals("PENDING", pl.getStatus());
+        assertNull(pl.getApprovedBy());
+
+        // Video
+        com.albunyaan.tube.model.Video vid = new com.albunyaan.tube.model.Video("vid-1");
+        vid.setTitle("Vid");
+        vid.setStatus("APPROVED");
+        when(videoRepository.findByYoutubeId("vid-1")).thenReturn(Optional.empty());
+        when(videoRepository.save(any(com.albunyaan.tube.model.Video.class))).thenReturn(vid);
+        registryController.addVideo(vid, moderatorUser);
+        assertEquals("PENDING", vid.getStatus());
+        assertNull(vid.getApprovedBy());
+    }
+
+    @Test
+    void allEntityTypes_adminAutoApprovesWhenNoStatus() throws Exception {
+        // Verify consistent auto-approve behavior across all 3 entity types
+
+        // Channel
+        Channel ch = new Channel("UC-ch");
+        ch.setName("Ch");
+        ch.setStatus(null);
+        when(channelRepository.findByYoutubeId("UC-ch")).thenReturn(Optional.empty());
+        when(channelRepository.save(any(Channel.class))).thenReturn(ch);
+        registryController.addChannel(ch, adminUser);
+        assertEquals("APPROVED", ch.getStatus());
+        assertEquals("admin-uid", ch.getApprovedBy());
+
+        // Playlist
+        Playlist pl = new Playlist("PL-pl");
+        pl.setTitle("Pl");
+        pl.setStatus(null);
+        when(playlistRepository.findByYoutubeId("PL-pl")).thenReturn(Optional.empty());
+        when(playlistRepository.save(any(Playlist.class))).thenReturn(pl);
+        registryController.addPlaylist(pl, adminUser);
+        assertEquals("APPROVED", pl.getStatus());
+        assertEquals("admin-uid", pl.getApprovedBy());
+
+        // Video
+        com.albunyaan.tube.model.Video vid = new com.albunyaan.tube.model.Video("vid-1");
+        vid.setTitle("Vid");
+        vid.setStatus(null);
+        when(videoRepository.findByYoutubeId("vid-1")).thenReturn(Optional.empty());
+        when(videoRepository.save(any(com.albunyaan.tube.model.Video.class))).thenReturn(vid);
+        registryController.addVideo(vid, adminUser);
+        assertEquals("APPROVED", vid.getStatus());
+        assertEquals("admin-uid", vid.getApprovedBy());
     }
 }
 

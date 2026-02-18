@@ -3,8 +3,10 @@ package com.albunyaan.tube.controller;
 import com.albunyaan.tube.dto.CursorPageDto;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
+import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
+import com.albunyaan.tube.repository.VideoRepository;
 import com.github.benmanes.caffeine.cache.Cache;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,6 +17,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -44,18 +47,23 @@ public class ExclusionsWorkspaceController {
     private static final int MAX_CHANNEL_EXCLUSIONS = 500;
     private static final int MAX_PLAYLIST_EXCLUSIONS = 1000;
     private static final int MAX_PAGE_LIMIT = 200;
+    /** Firestore document IDs must not contain slashes or colons (colons conflict with synthetic ID delimiter) */
+    private static final Pattern SAFE_ID_PATTERN = Pattern.compile("^[^/:]{1,1500}$");
 
     private final ChannelRepository channelRepository;
     private final PlaylistRepository playlistRepository;
+    private final VideoRepository videoRepository;
     private final Cache<String, Object> workspaceExclusionsCache;
 
     public ExclusionsWorkspaceController(
             ChannelRepository channelRepository,
             PlaylistRepository playlistRepository,
+            VideoRepository videoRepository,
             Cache<String, Object> workspaceExclusionsCache
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
+        this.videoRepository = videoRepository;
         this.workspaceExclusionsCache = workspaceExclusionsCache;
     }
 
@@ -89,6 +97,8 @@ public class ExclusionsWorkspaceController {
         public String parentName;      // Display name of the parent
         public String excludeType;     // Wire type: "VIDEO" or "PLAYLIST" only
         public String excludeId;       // YouTube ID of the excluded item
+        public String excludeTitle;    // Display title of excluded item (from Firestore lookup, may be null)
+        public String excludeThumbnailUrl; // Thumbnail URL (Firestore lookup or YouTube CDN fallback)
         public String reason;          // Content sub-type: "LIVESTREAM", "SHORT", "POST", or null
         public String createdAt;       // Parent's updatedAt as ISO string (best available timestamp)
         public Object createdBy;       // null (no per-exclusion creator tracked)
@@ -188,6 +198,11 @@ public class ExclusionsWorkspaceController {
 
         String pt = request.parentType.toUpperCase();
         String et = request.excludeType.toUpperCase();
+
+        // Validate IDs to prevent path traversal or malformed Firestore queries
+        if (!isSafeDocumentId(request.parentId) || !isSafeDocumentId(request.excludeId)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid parentId or excludeId"));
+        }
 
         // Validate excludeType is a wire type (VIDEO or PLAYLIST only)
         if (!"VIDEO".equals(et) && !"PLAYLIST".equals(et)) {
@@ -297,6 +312,11 @@ public class ExclusionsWorkspaceController {
         String parentId = parts[1];
         String et = parts[2].toUpperCase();
         String excludeId = parts[3];
+
+        // Validate IDs to prevent path traversal or malformed Firestore queries
+        if (!isSafeDocumentId(parentId) || !isSafeDocumentId(excludeId)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid parentId or excludeId in exclusion ID"));
+        }
 
         if ("CHANNEL".equals(pt)) {
             Channel channel = channelRepository.findById(parentId).orElse(null);
@@ -443,6 +463,9 @@ public class ExclusionsWorkspaceController {
             }
         }
 
+        // Enrich exclusions with title and thumbnail from Firestore lookups
+        enrichExclusions(allExclusions);
+
         // Sort by createdAt descending (newest first), with null-safe handling
         allExclusions.sort((a, b) -> {
             if (a.createdAt == null && b.createdAt == null) return 0;
@@ -455,6 +478,72 @@ public class ExclusionsWorkspaceController {
                 allExclusions.size(), channelsWithExclusions.size(), playlistsWithExclusions.size(), truncated);
 
         return new CachedExclusions(allExclusions, truncated);
+    }
+
+    /**
+     * Best-effort enrichment of exclusion DTOs with title and thumbnail.
+     * Batch-looks up excluded YouTube IDs against Video and Playlist collections.
+     * For VIDEO-type exclusions without a Firestore match, falls back to YouTube CDN thumbnail.
+     */
+    private void enrichExclusions(List<ExclusionDto> exclusions) {
+        // Collect unique YouTube IDs by exclude type
+        Set<String> videoYoutubeIds = new HashSet<>();
+        Set<String> playlistYoutubeIds = new HashSet<>();
+
+        for (ExclusionDto dto : exclusions) {
+            if ("VIDEO".equals(dto.excludeType)) {
+                videoYoutubeIds.add(dto.excludeId);
+            } else if ("PLAYLIST".equals(dto.excludeType)) {
+                playlistYoutubeIds.add(dto.excludeId);
+            }
+        }
+
+        // Batch lookup from Firestore
+        Map<String, Video> videoLookup = Map.of();
+        Map<String, Playlist> playlistLookup = Map.of();
+
+        try {
+            if (!videoYoutubeIds.isEmpty()) {
+                Map<String, Video> result = videoRepository.findByYoutubeIds(videoYoutubeIds);
+                if (result != null) videoLookup = result;
+            }
+        } catch (Exception e) {
+            log.warn("Failed to enrich video exclusions: {}", e.getMessage());
+        }
+
+        try {
+            if (!playlistYoutubeIds.isEmpty()) {
+                Map<String, Playlist> result = playlistRepository.findByYoutubeIds(playlistYoutubeIds);
+                if (result != null) playlistLookup = result;
+            }
+        } catch (Exception e) {
+            log.warn("Failed to enrich playlist exclusions: {}", e.getMessage());
+        }
+
+        // Populate enrichment fields
+        for (ExclusionDto dto : exclusions) {
+            if ("VIDEO".equals(dto.excludeType)) {
+                Video video = videoLookup.get(dto.excludeId);
+                if (video != null) {
+                    dto.excludeTitle = video.getTitle();
+                    dto.excludeThumbnailUrl = video.getThumbnailUrl();
+                }
+                // Fallback: YouTube CDN thumbnail for any video YouTube ID
+                if (dto.excludeThumbnailUrl == null && dto.excludeId != null) {
+                    dto.excludeThumbnailUrl = "https://i.ytimg.com/vi/" + java.net.URLEncoder.encode(dto.excludeId, java.nio.charset.StandardCharsets.UTF_8) + "/mqdefault.jpg";
+                }
+            } else if ("PLAYLIST".equals(dto.excludeType)) {
+                Playlist playlist = playlistLookup.get(dto.excludeId);
+                if (playlist != null) {
+                    dto.excludeTitle = playlist.getTitle();
+                    dto.excludeThumbnailUrl = playlist.getThumbnailUrl();
+                }
+            }
+        }
+
+        log.debug("Enriched exclusions: {} videos resolved out of {}, {} playlists resolved out of {}",
+                videoLookup.size(), videoYoutubeIds.size(),
+                playlistLookup.size(), playlistYoutubeIds.size());
     }
 
     private void flattenChannelExclusions(List<ExclusionDto> target, Channel channel,
@@ -480,6 +569,9 @@ public class ExclusionsWorkspaceController {
         if (exclusion.parentName != null && exclusion.parentName.toLowerCase(java.util.Locale.ROOT).contains(searchLower)) {
             return true;
         }
+        if (exclusion.excludeTitle != null && exclusion.excludeTitle.toLowerCase(java.util.Locale.ROOT).contains(searchLower)) {
+            return true;
+        }
         if (exclusion.excludeId != null && exclusion.excludeId.toLowerCase(java.util.Locale.ROOT).contains(searchLower)) {
             return true;
         }
@@ -494,6 +586,16 @@ public class ExclusionsWorkspaceController {
      * VIDEO + LIVESTREAM → LIVESTREAM, VIDEO + SHORT → SHORT, VIDEO + POST → POST,
      * VIDEO + null → VIDEO, PLAYLIST → PLAYLIST.
      */
+    /**
+     * Validate that a string is a safe Firestore document ID.
+     * Rejects slashes (path traversal), "." and ".." (relative paths), and overly long values.
+     */
+    private boolean isSafeDocumentId(String id) {
+        if (id == null || id.isEmpty()) return false;
+        if (".".equals(id) || "..".equals(id)) return false;
+        return SAFE_ID_PATTERN.matcher(id).matches();
+    }
+
     private String resolveStorageType(String wireExcludeType, String reason) {
         if ("VIDEO".equals(wireExcludeType) && reason != null) {
             switch (reason) {
@@ -515,7 +617,17 @@ public class ExclusionsWorkspaceController {
             case "POST": list = excluded.getPosts(); break;
             default: return false;
         }
-        if (list == null) return false;
+        // Defensive: Firestore deserialization may set lists to null for older documents
+        if (list == null) {
+            list = new java.util.ArrayList<>();
+            switch (excludeType) {
+                case "VIDEO": excluded.setVideos(list); break;
+                case "PLAYLIST": excluded.setPlaylists(list); break;
+                case "LIVESTREAM": excluded.setLiveStreams(list); break;
+                case "SHORT": excluded.setShorts(list); break;
+                case "POST": excluded.setPosts(list); break;
+            }
+        }
         if (!list.contains(excludeId)) {
             list.add(excludeId);
             return true;

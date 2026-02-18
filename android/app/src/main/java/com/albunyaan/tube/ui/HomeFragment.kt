@@ -42,6 +42,7 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
         setupRecyclerView(binding)
         setupClickListeners(binding)
         setupScrollListener(binding)
+        setupSwipeRefresh(binding)
         observeViewModel(binding)
 
         // Postpone card width calculation until the layout has been measured
@@ -71,16 +72,21 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
 
     private fun calculateCardWidth(screenWidth: Int, n: Int, margin: Int, spacing: Int): Int {
         if (n <= 0) return 0
-        return ((screenWidth - 2 * margin - (n - 1) * spacing).toFloat() / n * 0.95f).toInt()
+        return ((screenWidth - 2 * margin - (n - 1) * spacing).toFloat() / n * 0.98f).toInt()
     }
 
     private fun setupAdapter() {
         sectionAdapter = HomeSectionAdapter(
             onItemClick = { item -> handleItemClick(item) },
             onSeeAllClick = { section ->
-                Log.d(TAG, "See All clicked for category: ${section.categoryName}")
-                // Navigate to categories screen for now
-                findNavController().navigate(R.id.action_homeFragment_to_categoriesFragment)
+                Log.d(TAG, "See All clicked for category: ${section.categoryName} (${section.categoryId})")
+                findNavController().navigate(
+                    R.id.action_homeFragment_to_featuredListFragment,
+                    bundleOf(
+                        "categoryId" to section.categoryId,
+                        "categoryName" to section.categoryName
+                    )
+                )
             }
         )
     }
@@ -152,6 +158,13 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
         }
     }
 
+    private fun setupSwipeRefresh(binding: FragmentHomeNewBinding) {
+        binding.swipeRefresh.setColorSchemeResources(R.color.primary_green)
+        binding.swipeRefresh.setOnRefreshListener {
+            viewModel.refresh()
+        }
+    }
+
     private fun setupClickListeners(binding: FragmentHomeNewBinding) {
         binding.categoryPillCard.setOnClickListener {
             Log.d(TAG, "Category pill clicked")
@@ -181,6 +194,7 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
                     when (state) {
                         is HomeViewModel.HomeState.Loading -> {
                             Log.d(TAG, "Loading home feed...")
+                            binding.swipeRefresh.isRefreshing = false
                             binding.homeSkeleton.root.isVisible = true
                             binding.homeError.root.isVisible = false
                             binding.homeEmpty.root.isVisible = false
@@ -189,6 +203,7 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
                         }
                         is HomeViewModel.HomeState.Success -> {
                             Log.d(TAG, "Home feed loaded: ${state.sections.size} sections")
+                            binding.swipeRefresh.isRefreshing = false
                             binding.homeSkeleton.root.isVisible = false
                             binding.homeError.root.isVisible = false
                             binding.homeEmpty.root.isVisible = false
@@ -210,6 +225,7 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
                         }
                         is HomeViewModel.HomeState.Error -> {
                             Log.e(TAG, "Error loading home feed: ${state.message}")
+                            binding.swipeRefresh.isRefreshing = false
                             binding.homeSkeleton.root.isVisible = false
                             binding.homeSectionsRecyclerView.isVisible = false
                             binding.homeEmpty.root.isVisible = false
@@ -218,6 +234,7 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
                         }
                         is HomeViewModel.HomeState.Empty -> {
                             Log.d(TAG, "Home feed empty")
+                            binding.swipeRefresh.isRefreshing = false
                             binding.homeSkeleton.root.isVisible = false
                             binding.homeSectionsRecyclerView.isVisible = false
                             binding.homeError.root.isVisible = false

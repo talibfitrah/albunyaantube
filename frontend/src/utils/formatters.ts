@@ -18,6 +18,27 @@ export function formatDateTime(value: string, locale: string): string {
   return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
 }
 
+/**
+ * Get a thumbnail URL for content, falling back to YouTube's default thumbnail
+ * when the stored thumbnailUrl is null/empty.
+ *
+ * For videos: generates YouTube video thumbnail URL from youtubeId
+ * For channels/playlists: returns null (caller should show placeholder)
+ */
+export function getThumbnailUrl(
+  item: { thumbnailUrl?: string | null; youtubeId?: string | null; ytId?: string | null },
+  type?: 'channel' | 'playlist' | 'video'
+): string | null {
+  if (item.thumbnailUrl) return item.thumbnailUrl;
+
+  const ytId = item.youtubeId || item.ytId;
+  if (ytId && type === 'video') {
+    return `https://i.ytimg.com/vi/${ytId}/mqdefault.jpg`;
+  }
+
+  return null;
+}
+
 export function formatDuration(seconds: number, locale: string): string {
   if (!Number.isFinite(seconds) || seconds < 0) {
     return '–';

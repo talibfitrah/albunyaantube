@@ -72,6 +72,38 @@
               <p class="parent-name">{{ getParentName(dialogData.parentId) }}</p>
             </div>
 
+            <fieldset class="localized-names-group">
+              <legend>{{ t('categories.dialog.translations') }}</legend>
+              <div class="form-group">
+                <label for="category-name-en">{{ t('categories.dialog.nameEn') }}</label>
+                <input
+                  id="category-name-en"
+                  v-model="dialogData.localizedNames.en"
+                  type="text"
+                  placeholder="English name"
+                />
+              </div>
+              <div class="form-group">
+                <label for="category-name-ar">{{ t('categories.dialog.nameAr') }}</label>
+                <input
+                  id="category-name-ar"
+                  v-model="dialogData.localizedNames.ar"
+                  type="text"
+                  dir="rtl"
+                  placeholder="الاسم بالعربية"
+                />
+              </div>
+              <div class="form-group">
+                <label for="category-name-nl">{{ t('categories.dialog.nameNl') }}</label>
+                <input
+                  id="category-name-nl"
+                  v-model="dialogData.localizedNames.nl"
+                  type="text"
+                  placeholder="Nederlandse naam"
+                />
+              </div>
+            </fieldset>
+
             <div class="form-group">
               <label for="category-icon">{{ t('categories.dialog.icon') }}</label>
               <input
@@ -86,9 +118,11 @@
               <label for="category-order">{{ t('categories.dialog.displayOrder') }}</label>
               <input
                 id="category-order"
-                v-model.number="dialogData.displayOrder"
+                :value="dialogData.displayOrder ?? ''"
                 type="number"
                 min="0"
+                :placeholder="t('categories.dialog.displayOrderAuto')"
+                @input="dialogData.displayOrder = ($event.target as HTMLInputElement).value === '' ? null : Number(($event.target as HTMLInputElement).value)"
               />
             </div>
 
@@ -131,7 +165,8 @@ const dialogData = ref({
   name: '',
   parentId: null as string | null,
   icon: '',
-  displayOrder: 0
+  displayOrder: null as number | null,
+  localizedNames: { en: '', ar: '', nl: '' }
 });
 const isSubmitting = ref(false);
 const dialogError = ref<string | null>(null);
@@ -157,19 +192,22 @@ function openAddDialog(parentId: string | null) {
     name: '',
     parentId,
     icon: '',
-    displayOrder: 0
+    displayOrder: null,
+    localizedNames: { en: '', ar: '', nl: '' }
   };
   showDialog.value = true;
 }
 
 function openEditDialog(category: any) {
   dialogMode.value = 'edit';
+  const ln = category.localizedNames || {};
   dialogData.value = {
     id: category.id,
     name: category.label,
     parentId: category.parentId || null,
     icon: category.icon || '',
-    displayOrder: category.displayOrder || 0
+    displayOrder: category.displayOrder ?? null,
+    localizedNames: { en: ln.en || '', ar: ln.ar || '', nl: ln.nl || '' }
   };
   showDialog.value = true;
 }
@@ -189,20 +227,31 @@ async function handleSubmit() {
   dialogError.value = null;
 
   try {
+    // Build localizedNames map, only include non-empty values
+    const ln: Record<string, string> = {};
+    if (dialogData.value.localizedNames.en) ln.en = dialogData.value.localizedNames.en;
+    if (dialogData.value.localizedNames.ar) ln.ar = dialogData.value.localizedNames.ar;
+    if (dialogData.value.localizedNames.nl) ln.nl = dialogData.value.localizedNames.nl;
+
     if (dialogMode.value === 'add') {
       await createCategory({
         name: dialogData.value.name,
         parentId: dialogData.value.parentId,
         icon: dialogData.value.icon,
-        displayOrder: dialogData.value.displayOrder
+        displayOrder: dialogData.value.displayOrder,
+        localizedNames: ln
       });
       success(t('categories.createSuccess'));
     } else {
-      await updateCategory(dialogData.value.id, {
+      const updatePayload: Record<string, any> = {
         name: dialogData.value.name,
         icon: dialogData.value.icon,
-        displayOrder: dialogData.value.displayOrder
-      });
+        localizedNames: ln
+      };
+      if (dialogData.value.displayOrder !== null && dialogData.value.displayOrder !== undefined) {
+        updatePayload.displayOrder = dialogData.value.displayOrder;
+      }
+      await updateCategory(dialogData.value.id, updatePayload);
       success(t('categories.updateSuccess'));
     }
 
@@ -457,6 +506,22 @@ form {
   outline: none;
   border-color: var(--color-brand);
   box-shadow: 0 0 0 3px rgba(22, 131, 90, 0.1);
+}
+
+.localized-names-group {
+  border: 1.5px solid var(--color-border);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.localized-names-group legend {
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--color-text-primary);
+  padding: 0 0.5rem;
 }
 
 .parent-name {

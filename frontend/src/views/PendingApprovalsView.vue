@@ -6,9 +6,9 @@
         <p>{{ isModeratorView ? t('approvals.mySubmissionsSubtitle') : t('approvals.subtitle') }}</p>
       </div>
       <div class="header-stats">
-        <div class="stat-badge">
-          <span class="stat-value">{{ totalPending }}</span>
-          <span class="stat-label">{{ t('approvals.pending') }}</span>
+        <div :class="['stat-badge', { 'stat-unavailable': countUnavailable }]">
+          <span class="stat-value">{{ displayPendingCount }}</span>
+          <span class="stat-label">{{ countUnavailable ? t('approvals.pendingApprox') : t('approvals.pending') }}</span>
         </div>
       </div>
     </header>
@@ -106,7 +106,7 @@
 
         <div class="card-body">
           <div class="thumbnail">
-            <img v-if="item.thumbnailUrl" :src="item.thumbnailUrl" :alt="item.title" />
+            <img v-if="thumbnails[item.id]" :src="thumbnails[item.id]!" :alt="item.title" />
             <div v-else class="thumbnail-placeholder"></div>
           </div>
 
@@ -269,12 +269,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAuthStore } from '@/stores/auth';
+import { getThumbnailUrl } from '@/utils/formatters';
 import { useToast } from '@/composables/useToast';
 import { getAllCategories } from '@/services/categoryService';
-import { getPendingApprovals, getMySubmissions, approveItem, rejectItem as rejectItemApi, type PendingApproval, type SubmissionStatus, type MySubmission } from '@/services/approvalService';
+import { getPendingApprovals, getMySubmissions, approveItem, rejectItem as rejectItemApi, getPendingCount, type PendingApproval, type SubmissionStatus, type MySubmission } from '@/services/approvalService';
 import ChannelDetailModal from '@/components/exclusions/ChannelDetailModal.vue';
 import PlaylistDetailModal from '@/components/exclusions/PlaylistDetailModal.vue';
 import VideoPreviewModal from '@/components/VideoPreviewModal.vue';
@@ -315,6 +316,15 @@ const flatCategories = computed(() => {
   traverse(categories.value);
   return flattened;
 });
+// Pre-compute thumbnail URLs to avoid double getThumbnailUrl() calls in template
+const thumbnails = computed(() => {
+  const map: Record<string, string | null> = {};
+  for (const item of approvals.value) {
+    map[item.id] = getThumbnailUrl(item, item.type);
+  }
+  return map;
+});
+
 const categoryNameMap = computed(() => {
   const map = new Map<string, string>();
 
@@ -351,7 +361,13 @@ const contentTypes = [
   { value: 'videos' as const, labelKey: 'approvals.types.videos' }
 ];
 
-const totalPending = computed(() => approvals.value.length);
+const totalPending = ref<number | null>(null);
+const countUnavailable = ref(false);
+const displayPendingCount = computed(() => {
+  if (totalPending.value !== null) return totalPending.value;
+  // Before any count loads, show loaded items count as lower-bound
+  return approvals.value.length;
+});
 
 async function loadCategories() {
   try {
@@ -431,6 +447,7 @@ async function handleApprove(item: any) {
   try {
     await approveItem(item.id, item.type);
     await loadApprovals();
+    loadPendingCount();
   } catch (err) {
     error.value = err instanceof Error ? err.message : t('approvals.approveError');
   } finally {
@@ -465,6 +482,7 @@ async function handleReject() {
     await rejectItemApi(rejectItem.value!.id, rejectItem.value!.type, rejectReason.value);
     closeRejectDialog();
     await loadApprovals();
+    loadPendingCount();
   } catch (err) {
     rejectError.value = err instanceof Error ? err.message : t('approvals.rejectError');
   } finally {
@@ -495,9 +513,27 @@ function formatNumber(num: number): string {
   return num.toLocaleString();
 }
 
+async function loadPendingCount() {
+  try {
+    const count = await getPendingCount();
+    if (count >= 0) {
+      totalPending.value = count;
+      countUnavailable.value = false;
+    } else {
+      // -1 means service unavailable — use loaded items as lower-bound
+      countUnavailable.value = true;
+      totalPending.value = Math.max(totalPending.value ?? 0, approvals.value.length);
+    }
+  } catch {
+    countUnavailable.value = true;
+    totalPending.value = Math.max(totalPending.value ?? 0, approvals.value.length);
+  }
+}
+
 onMounted(() => {
   loadCategories();
   loadApprovals();
+  loadPendingCount();
 });
 </script>
 
@@ -556,6 +592,11 @@ onMounted(() => {
   color: var(--color-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+.stat-unavailable {
+  opacity: 0.7;
+  border-style: dashed;
 }
 
 .filters {

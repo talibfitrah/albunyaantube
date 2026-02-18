@@ -23,10 +23,14 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
@@ -80,7 +84,7 @@ public class PublicContentService {
     public CursorPageDto<ContentItemDto> getContent(
             String type, String cursor, int limit,
             String category, String length, String date, String sort
-    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+    ) throws ExecutionException, InterruptedException, TimeoutException {
 
         // Null-safe: default to HOME if type is null or blank
         if (type == null || type.isBlank()) {
@@ -88,7 +92,7 @@ public class PublicContentService {
         }
 
         // For content types that support real cursor pagination
-        switch (type.toUpperCase(java.util.Locale.ROOT)) {
+        switch (type.toUpperCase(Locale.ROOT)) {
             case "CHANNELS":
                 return getChannelsWithCursor(limit, category, cursor);
             case "PLAYLISTS":
@@ -105,7 +109,7 @@ public class PublicContentService {
         }
     }
 
-    private List<ContentItemDto> getMixedContent(int limit, String category) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+    private List<ContentItemDto> getMixedContent(int limit, String category) throws ExecutionException, InterruptedException, TimeoutException {
         List<ContentItemDto> mixed = new ArrayList<>();
 
         // Get mix of channels, playlists, and videos (roughly 1:2:3 ratio)
@@ -120,7 +124,7 @@ public class PublicContentService {
         return mixed;
     }
 
-    private List<ContentItemDto> getChannels(int limit, String category) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+    private List<ContentItemDto> getChannels(int limit, String category) throws ExecutionException, InterruptedException, TimeoutException {
         List<Channel> channels;
 
         // Use repository methods with limits for better performance
@@ -143,7 +147,7 @@ public class PublicContentService {
      * Get channels with real cursor-based pagination.
      */
     private CursorPageDto<ContentItemDto> getChannelsWithCursor(int limit, String category, String cursor)
-            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+            throws ExecutionException, InterruptedException, TimeoutException {
 
         ChannelRepository.PaginatedResult<Channel> result;
 
@@ -161,7 +165,7 @@ public class PublicContentService {
         return new CursorPageDto<>(items, result.getNextCursor());
     }
 
-    private List<ContentItemDto> getPlaylists(int limit, String category) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+    private List<ContentItemDto> getPlaylists(int limit, String category) throws ExecutionException, InterruptedException, TimeoutException {
         List<Playlist> playlists;
 
         // Use repository methods with limits for better performance
@@ -184,7 +188,7 @@ public class PublicContentService {
      * Get playlists with real cursor-based pagination.
      */
     private CursorPageDto<ContentItemDto> getPlaylistsWithCursor(int limit, String category, String cursor)
-            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+            throws ExecutionException, InterruptedException, TimeoutException {
 
         PlaylistRepository.PaginatedResult<Playlist> result;
 
@@ -209,7 +213,7 @@ public class PublicContentService {
      */
     private CursorPageDto<ContentItemDto> getVideosWithCursor(int limit, String category, String cursor,
                                                               String length, String date, String sort)
-            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+            throws ExecutionException, InterruptedException, TimeoutException {
 
         // For default case (no filters, newest first), use efficient cursor pagination
         boolean hasFilters = (length != null && !length.isBlank()) ||
@@ -240,7 +244,7 @@ public class PublicContentService {
     }
 
     private List<ContentItemDto> getVideos(int limit, String category,
-                                           String length, String date, String sort) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+                                           String length, String date, String sort) throws ExecutionException, InterruptedException, TimeoutException {
         List<Video> videos;
 
         // Use repository methods with limits for better performance
@@ -261,7 +265,7 @@ public class PublicContentService {
 
         // Apply sorting based on sort parameter
         if (sort != null && !sort.isBlank()) {
-            switch (sort.toUpperCase(java.util.Locale.ROOT)) {
+            switch (sort.toUpperCase(Locale.ROOT)) {
                 case "OLDEST":
                     stream = stream.sorted((v1, v2) -> {
                         if (v1.getUploadedAt() == null) return 1;
@@ -296,8 +300,39 @@ public class PublicContentService {
                 .collect(Collectors.toList());
     }
 
-    public List<CategoryDto> getCategories() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        return categoryRepository.findAll().stream()
+    @Cacheable(value = CacheConfig.CACHE_PUBLIC_CONTENT, key = "'active-categories'")
+    public List<CategoryDto> getCategories() throws ExecutionException, InterruptedException, TimeoutException {
+        // Collect all categoryIds that have at least one approved content item
+        Set<String> activeCategoryIds = new HashSet<>();
+
+        for (Channel ch : channelRepository.findByStatus("APPROVED")) {
+            if (ch.getCategoryIds() != null) activeCategoryIds.addAll(ch.getCategoryIds());
+        }
+        for (Playlist pl : playlistRepository.findByStatus("APPROVED")) {
+            if (pl.getCategoryIds() != null) activeCategoryIds.addAll(pl.getCategoryIds());
+        }
+        for (Video v : videoRepository.findByStatus("APPROVED")) {
+            if (v.getCategoryIds() != null) activeCategoryIds.addAll(v.getCategoryIds());
+        }
+
+        // Expand to include ancestor categories so parent categories remain navigable
+        // even when only their children have direct approved content
+        List<Category> allCategories = categoryRepository.findAll();
+        Map<String, Category> categoryById = allCategories.stream()
+                .collect(Collectors.toMap(Category::getId, c -> c, (a, b) -> a));
+
+        Set<String> visibleCategoryIds = new HashSet<>(activeCategoryIds);
+        for (String id : new HashSet<>(activeCategoryIds)) {
+            String parentId = categoryById.containsKey(id) ? categoryById.get(id).getParentCategoryId() : null;
+            while (parentId != null && visibleCategoryIds.add(parentId)) {
+                Category parent = categoryById.get(parentId);
+                parentId = parent != null ? parent.getParentCategoryId() : null;
+            }
+        }
+
+        // Return categories with approved content or that are ancestors of such categories
+        return allCategories.stream()
+                .filter(cat -> visibleCategoryIds.contains(cat.getId()))
                 .map(this::toCategoryDto)
                 .collect(Collectors.toList());
     }
@@ -440,9 +475,9 @@ public class PublicContentService {
                 }
             }
 
-            java.util.Map<String, Channel> channelMap = channelRepository.findAllByIds(channelIds);
-            java.util.Map<String, Playlist> playlistMap = playlistRepository.findAllByIds(playlistIds);
-            java.util.Map<String, Video> videoMap = videoRepository.findAllByIds(videoIds);
+            Map<String, Channel> channelMap = channelRepository.findAllByIds(channelIds);
+            Map<String, Playlist> playlistMap = playlistRepository.findAllByIds(playlistIds);
+            Map<String, Video> videoMap = videoRepository.findAllByIds(videoIds);
 
             // Resolve entries in order using batch-fetched maps
             List<ContentItemDto> items = new ArrayList<>();
@@ -496,9 +531,9 @@ public class PublicContentService {
      */
     private ContentItemDto resolveFromBatchMaps(
             CategoryContentOrder entry,
-            java.util.Map<String, Channel> channelMap,
-            java.util.Map<String, Playlist> playlistMap,
-            java.util.Map<String, Video> videoMap) {
+            Map<String, Channel> channelMap,
+            Map<String, Playlist> playlistMap,
+            Map<String, Video> videoMap) {
         switch (entry.getContentType()) {
             case "channel":
                 Channel ch = channelMap.get(entry.getContentId());
@@ -529,7 +564,7 @@ public class PublicContentService {
         );
     }
 
-    public Object getChannelDetails(String channelId) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+    public Object getChannelDetails(String channelId) throws ExecutionException, InterruptedException, TimeoutException {
         Channel channel = channelRepository.findByYoutubeId(channelId)
                 .orElseThrow(() -> new ResourceNotFoundException("Channel", channelId));
 
@@ -546,7 +581,7 @@ public class PublicContentService {
         return channel;
     }
 
-    public Object getPlaylistDetails(String playlistId) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+    public Object getPlaylistDetails(String playlistId) throws ExecutionException, InterruptedException, TimeoutException {
         Playlist playlist = playlistRepository.findByYoutubeId(playlistId)
                 .orElseThrow(() -> new ResourceNotFoundException("Playlist", playlistId));
 
@@ -563,7 +598,7 @@ public class PublicContentService {
         return playlist;
     }
 
-    public Video getVideoDetails(String videoId) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+    public Video getVideoDetails(String videoId) throws ExecutionException, InterruptedException, TimeoutException {
         Video video = videoRepository.findByYoutubeId(videoId)
                 .orElseThrow(() -> new ResourceNotFoundException("Video", videoId));
 
@@ -598,12 +633,12 @@ public class PublicContentService {
     @Cacheable(value = CacheConfig.CACHE_PUBLIC_CONTENT_SEARCH,
                key = "#query == null ? '' : #query.trim().toLowerCase(T(java.util.Locale).ROOT) + '-' + #type + '-' + #limit",
                condition = "#query != null && #query.trim().length() >= 2")
-    public List<ContentItemDto> search(String query, String type, int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+    public List<ContentItemDto> search(String query, String type, int limit) throws ExecutionException, InterruptedException, TimeoutException {
         if (query == null || query.trim().isEmpty()) {
             return new ArrayList<>();
         }
         // Normalize query for matching
-        String normalizedQuery = query.trim().toLowerCase(java.util.Locale.ROOT);
+        String normalizedQuery = query.trim().toLowerCase(Locale.ROOT);
 
         // Try to parse as YouTube URL/ID first
         YouTubeIdentifier identifier = parseYouTubeIdentifier(query);
@@ -627,7 +662,7 @@ public class PublicContentService {
      * This is the most efficient path - single document fetch.
      */
     private List<ContentItemDto> searchByYouTubeId(YouTubeIdentifier identifier, String type, int limit)
-            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+            throws ExecutionException, InterruptedException, TimeoutException {
         List<ContentItemDto> results = new ArrayList<>();
 
         switch (identifier.type) {
@@ -668,7 +703,7 @@ public class PublicContentService {
      * Uses bounded prefix queries with over-fetch, then filters in memory.
      */
     private List<ContentItemDto> searchByText(String normalizedQuery, String type, int limit)
-            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+            throws ExecutionException, InterruptedException, TimeoutException {
         List<ContentItemDto> results = new ArrayList<>();
 
         // Over-fetch factor to account for filtering and improve result quality
@@ -703,7 +738,7 @@ public class PublicContentService {
     }
 
     private List<ContentItemDto> searchChannelsByText(String normalizedQuery, int limit, int fetchLimit)
-            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+            throws ExecutionException, InterruptedException, TimeoutException {
         // Use nameLower field for true case-insensitive prefix search
         // normalizedQuery is already lowercase, nameLower is auto-maintained by setName()
         List<Channel> channels = new ArrayList<>(channelRepository.searchByNameLower(normalizedQuery, fetchLimit));
@@ -754,7 +789,7 @@ public class PublicContentService {
     }
 
     private List<ContentItemDto> searchPlaylistsByText(String normalizedQuery, int limit, int fetchLimit)
-            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+            throws ExecutionException, InterruptedException, TimeoutException {
         // Use titleLower field for true case-insensitive prefix search
         // normalizedQuery is already lowercase, titleLower is auto-maintained by setTitle()
         List<Playlist> playlists = new ArrayList<>(playlistRepository.searchByTitleLower(normalizedQuery, fetchLimit));
@@ -800,7 +835,7 @@ public class PublicContentService {
     }
 
     private List<ContentItemDto> searchVideosByText(String normalizedQuery, int limit, int fetchLimit)
-            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+            throws ExecutionException, InterruptedException, TimeoutException {
         // Use titleLower field for true case-insensitive prefix search
         // normalizedQuery is already lowercase, titleLower is auto-maintained by setTitle()
         List<Video> videos = new ArrayList<>(videoRepository.searchByTitleLower(normalizedQuery, fetchLimit));
@@ -850,13 +885,13 @@ public class PublicContentService {
      */
     private boolean matchesSearchQuery(String title, List<String> keywords, String normalizedQuery) {
         // Check title
-        if (title != null && title.toLowerCase(java.util.Locale.ROOT).contains(normalizedQuery)) {
+        if (title != null && title.toLowerCase(Locale.ROOT).contains(normalizedQuery)) {
             return true;
         }
         // Check keywords
         if (keywords != null) {
             for (String keyword : keywords) {
-                if (keyword != null && keyword.toLowerCase(java.util.Locale.ROOT).contains(normalizedQuery)) {
+                if (keyword != null && keyword.toLowerCase(Locale.ROOT).contains(normalizedQuery)) {
                     return true;
                 }
             }
@@ -1059,7 +1094,7 @@ public class PublicContentService {
         if (length == null || length.isBlank()) return true;
 
         int duration = video.getDurationSeconds() / 60; // Convert to minutes
-        switch (length.toUpperCase(java.util.Locale.ROOT)) {
+        switch (length.toUpperCase(Locale.ROOT)) {
             case "SHORT":
                 return duration < 4;
             case "MEDIUM":
@@ -1077,9 +1112,9 @@ public class PublicContentService {
 
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime uploadedAt = video.getUploadedAt().toDate().toInstant()
-                .atZone(java.time.ZoneId.systemDefault()).toLocalDateTime();
+                .atZone(ZoneId.systemDefault()).toLocalDateTime();
 
-        switch (date.toUpperCase(java.util.Locale.ROOT)) {
+        switch (date.toUpperCase(Locale.ROOT)) {
             case "LAST_24_HOURS":
                 return ChronoUnit.HOURS.between(uploadedAt, now) <= 24;
             case "LAST_7_DAYS":
@@ -1117,7 +1152,7 @@ public class PublicContentService {
     private ContentItemDto toDto(Video video) {
         int durationSeconds = video.getDurationSeconds() != null ? video.getDurationSeconds() : 0;
         LocalDateTime uploadedAt = video.getUploadedAt() != null ?
-            video.getUploadedAt().toDate().toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime() :
+            video.getUploadedAt().toDate().toInstant().atZone(ZoneId.systemDefault()).toLocalDateTime() :
             LocalDateTime.now();
         int uploadedDaysAgo = (int) ChronoUnit.DAYS.between(uploadedAt, LocalDateTime.now());
 

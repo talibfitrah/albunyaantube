@@ -3,6 +3,7 @@ package com.albunyaan.tube.util;
 import com.albunyaan.tube.model.Category;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
+import com.albunyaan.tube.model.Video;
 import com.google.cloud.Timestamp;
 
 import java.util.ArrayList;
@@ -107,6 +108,41 @@ public class TestDataBuilder {
         Playlist playlist = createPlaylist(youtubeId, title);
         playlist.setCategoryIds(List.of(categoryId));
         return playlist;
+    }
+
+    /**
+     * Create a test video with default values.
+     */
+    public static Video createVideo(String youtubeId, String title) {
+        Video video = new Video(youtubeId);
+        video.setTitle(title);
+        video.setDescription("Test video: " + title);
+        video.setThumbnailUrl("https://example.com/video-thumbnail.jpg");
+        video.setDurationSeconds(300);
+        video.setViewCount(5000L);
+        video.setStatus("PENDING");
+        video.setSubmittedBy("test-user");
+        video.setCategoryIds(new ArrayList<>());
+        return video;
+    }
+
+    /**
+     * Create an approved test video.
+     */
+    public static Video createApprovedVideo(String youtubeId, String title) {
+        Video video = createVideo(youtubeId, title);
+        video.setStatus("APPROVED");
+        video.setApprovedBy("test-admin");
+        return video;
+    }
+
+    /**
+     * Create a test video with category.
+     */
+    public static Video createVideoWithCategory(String youtubeId, String title, String categoryId) {
+        Video video = createVideo(youtubeId, title);
+        video.setCategoryIds(List.of(categoryId));
+        return video;
     }
 }
 

@@ -16,8 +16,6 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeoutException;
 
 /**
  * Admin endpoints for managing sort order of categories and content within categories.
@@ -44,9 +42,13 @@ public class SortOrderController {
      * Get all categories in sort order with content counts.
      */
     @GetMapping("/categories")
-    public ResponseEntity<List<CategorySortDto>> getCategorySortOrder()
-            throws ExecutionException, InterruptedException, TimeoutException {
-        return ResponseEntity.ok(sortOrderService.getCategorySortOrder());
+    public ResponseEntity<List<CategorySortDto>> getCategorySortOrder() {
+        try {
+            return ResponseEntity.ok(sortOrderService.getCategorySortOrder());
+        } catch (Exception e) {
+            log.error("Failed to get category sort order", e);
+            return ResponseEntity.internalServerError().build();
+        }
     }
 
     /**
@@ -57,8 +59,7 @@ public class SortOrderController {
      */
     @PutMapping("/categories/reorder")
     public ResponseEntity<List<CategorySortDto>> reorderCategory(
-            @Valid @RequestBody ReorderCategoryRequest request)
-            throws ExecutionException, InterruptedException, TimeoutException {
+            @Valid @RequestBody ReorderCategoryRequest request) {
         try {
             List<CategorySortDto> result = sortOrderService.reorderCategory(
                     request.categoryId, request.newPosition);
@@ -66,6 +67,9 @@ public class SortOrderController {
         } catch (IllegalArgumentException e) {
             log.warn("Category reorder failed: {}", e.getMessage());
             return ResponseEntity.badRequest().build();
+        } catch (Exception e) {
+            log.error("Failed to reorder category {}", request.categoryId, e);
+            return ResponseEntity.internalServerError().build();
         }
     }
 
@@ -77,9 +81,13 @@ public class SortOrderController {
      */
     @GetMapping("/categories/{categoryId}/content")
     public ResponseEntity<List<ContentSortDto>> getContentSortOrder(
-            @PathVariable String categoryId)
-            throws ExecutionException, InterruptedException, TimeoutException {
-        return ResponseEntity.ok(sortOrderService.getContentSortOrder(categoryId));
+            @PathVariable String categoryId) {
+        try {
+            return ResponseEntity.ok(sortOrderService.getContentSortOrder(categoryId));
+        } catch (Exception e) {
+            log.error("Failed to get content sort order for category {}", categoryId, e);
+            return ResponseEntity.internalServerError().build();
+        }
     }
 
     /**
@@ -91,8 +99,7 @@ public class SortOrderController {
     @PutMapping("/categories/{categoryId}/content/reorder")
     public ResponseEntity<List<ContentSortDto>> reorderContent(
             @PathVariable String categoryId,
-            @Valid @RequestBody ReorderContentRequest request)
-            throws ExecutionException, InterruptedException, TimeoutException {
+            @Valid @RequestBody ReorderContentRequest request) {
         try {
             List<ContentSortDto> result = sortOrderService.reorderContentInCategory(
                     categoryId, request.contentId, request.contentType, request.newPosition);
@@ -100,6 +107,9 @@ public class SortOrderController {
         } catch (IllegalArgumentException e) {
             log.warn("Content reorder failed in category {}: {}", categoryId, e.getMessage());
             return ResponseEntity.badRequest().build();
+        } catch (Exception e) {
+            log.error("Failed to reorder content in category {}", categoryId, e);
+            return ResponseEntity.internalServerError().build();
         }
     }
 

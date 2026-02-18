@@ -4122,6 +4122,7 @@ components:
         rejectionReason:
           type: string
           nullable: true
+          enum: [NOT_ISLAMIC, LOW_QUALITY, DUPLICATE, OTHER]
           description: Rejection reason if status is REJECTED
         reviewNotes:
           type: string

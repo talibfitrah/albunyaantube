@@ -1,20 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// We need to test the actual module logic, so we mock fetch globally
-// and the env variable
 const mockFetch = vi.fn();
-global.fetch = mockFetch;
-
-// Mock the env to provide API key
-vi.stubEnv('VITE_YOUTUBE_API_KEY', 'test-api-key');
 
 describe('youtubeDataApi', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubGlobal('fetch', mockFetch);
+    vi.stubEnv('VITE_YOUTUBE_API_KEY', 'test-api-key');
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
   });
 
   describe('listChannelUploads - UC prefix guard', () => {

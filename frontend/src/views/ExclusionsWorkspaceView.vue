@@ -104,9 +104,24 @@
               />
             </td>
             <td>
-              <div class="entity-cell">
-                <span class="entity-label">{{ entry.excludeId }}</span>
-                <span class="entity-subtle">{{ entitySummary(entry) }}</span>
+              <div class="entity-cell entity-cell--with-thumb">
+                <img
+                  v-if="entry.excludeThumbnailUrl"
+                  :src="entry.excludeThumbnailUrl"
+                  :alt="entry.excludeTitle || entry.excludeId"
+                  class="entity-thumb"
+                />
+                <img
+                  v-else-if="entry.excludeType === 'VIDEO'"
+                  :src="`https://i.ytimg.com/vi/${entry.excludeId}/mqdefault.jpg`"
+                  :alt="entry.excludeId"
+                  class="entity-thumb"
+                />
+                <div v-else class="entity-thumb entity-thumb--placeholder"></div>
+                <div>
+                  <span class="entity-label">{{ entry.excludeTitle || entry.excludeId }}</span>
+                  <span class="entity-subtle">{{ entry.excludeTitle ? entry.excludeId : resourceTypeLabel(entry.excludeType) }}</span>
+                </div>
               </div>
             </td>
             <td>
@@ -114,8 +129,8 @@
             </td>
             <td>
               <div class="entity-cell">
-                <span class="entity-label">{{ entry.parentId }}</span>
-                <span class="entity-subtle">{{ parentTypeLabel(entry.parentType) }}</span>
+                <span class="entity-label">{{ entry.parentName || entry.parentId }}</span>
+                <span class="entity-subtle">{{ entry.parentYoutubeId || parentTypeLabel(entry.parentType) }}</span>
               </div>
             </td>
             <td>
@@ -165,6 +180,7 @@
 
   <!-- Content Browser Modal -->
   <ContentBrowserModal
+    v-if="showContentBrowser"
     :open="showContentBrowser"
     @close="closeContentBrowser"
     @manual="openManualEntry"
@@ -275,6 +291,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { onBeforeRouteLeave } from 'vue-router';
 import { formatDateTime } from '@/utils/formatters';
 import { useFocusTrap } from '@/composables/useFocusTrap';
 import { useCursorPagination } from '@/composables/useCursorPagination';
@@ -426,6 +443,19 @@ async function reload() {
 onBeforeUnmount(() => {
   if (reloadTimeout) {
     clearTimeout(reloadTimeout);
+  }
+});
+
+onBeforeRouteLeave(() => {
+  showContentBrowser.value = false;
+  channelModalOpen.value = false;
+  playlistModalOpen.value = false;
+  selectedItem.value = null;
+  if (addDialog.visible) {
+    deactivateAddTrap();
+    addDialog.visible = false;
+    resetDialog();
+    isSubmitting.value = false;
   }
 });
 
@@ -926,6 +956,24 @@ td {
   gap: 0.2rem;
 }
 
+.entity-cell--with-thumb {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.entity-thumb {
+  width: 48px;
+  height: 36px;
+  border-radius: 4px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.entity-thumb--placeholder {
+  background: linear-gradient(135deg, var(--color-surface-alt), var(--color-border));
+}
+
 .entity-label {
   font-weight: 600;
 }
@@ -1082,6 +1130,41 @@ td {
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
   border: 0;
+}
+
+.table-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1.25rem;
+  background: var(--color-surface);
+  border-radius: 0 0 1rem 1rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.footer-status {
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+}
+
+.pager {
+  border: none;
+  border-radius: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: var(--color-surface-alt);
+  color: var(--color-text-primary);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.pager:hover:not(:disabled) {
+  background: var(--color-brand-soft);
+}
+
+.pager:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 @media (max-width: 960px) {

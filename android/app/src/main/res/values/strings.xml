@@ -223,6 +223,7 @@
     <string name="player_action_fullscreen">Toggle fullscreen</string>
     <string name="player_resize_mode_zoom">Fill screen</string>
     <string name="player_resize_mode_fit">Fit to screen</string>
+    <string name="player_fullscreen_zoom_hint">Double-tap to toggle zoom</string>
     <string name="player_action_settings">Player settings</string>
     <string name="player_action_play">Play</string>
     <string name="player_action_pause">Pause</string>

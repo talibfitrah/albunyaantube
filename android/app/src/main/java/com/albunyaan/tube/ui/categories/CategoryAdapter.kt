@@ -8,6 +8,7 @@ import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.albunyaan.tube.data.model.Category
 import com.albunyaan.tube.databinding.ItemCategoryBinding
+import com.albunyaan.tube.locale.LocaleManager
 
 class CategoryAdapter(
     private val onCategoryClick: (Category) -> Unit
@@ -32,7 +33,10 @@ class CategoryAdapter(
     ) : RecyclerView.ViewHolder(binding.root) {
 
         fun bind(category: Category) {
-            binding.categoryName.text = category.name
+            val context = binding.root.context
+            val currentLocale = LocaleManager.getCurrentLocale(context).language
+            val displayName = category.localizedNames?.get(currentLocale) ?: category.name
+            binding.categoryName.text = displayName
 
             // Show icon if available
             if (!category.icon.isNullOrBlank()) {

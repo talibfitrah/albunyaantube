@@ -48,6 +48,7 @@ import com.albunyaan.tube.ui.utils.isTablet
 import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.R
 import com.albunyaan.tube.databinding.FragmentPlayerBinding
+import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
 import com.albunyaan.tube.data.extractor.PlaybackSelection
 import com.albunyaan.tube.data.extractor.QualitySelectionOrigin
@@ -2767,6 +2768,24 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         // Update UI immediately (don't wait for orientation change callback)
         updateFullscreenUi()
+
+        // Show one-time hint on first fullscreen entry
+        if (isFullscreen) {
+            showFullscreenZoomHintOnce()
+        }
+    }
+
+    private fun showFullscreenZoomHintOnce() {
+        val prefs = requireContext().getSharedPreferences("player_prefs", android.content.Context.MODE_PRIVATE)
+        if (prefs.getBoolean("fullscreen_zoom_hint_shown", false)) return
+        prefs.edit().putBoolean("fullscreen_zoom_hint_shown", true).apply()
+
+        val view = binding?.root ?: return
+        Snackbar.make(
+            view,
+            R.string.player_fullscreen_zoom_hint,
+            Snackbar.LENGTH_LONG
+        ).show()
     }
 
     /**

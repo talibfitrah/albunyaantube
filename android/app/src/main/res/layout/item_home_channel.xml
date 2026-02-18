@@ -7,6 +7,7 @@
     android:layout_height="wrap_content"
     android:layout_marginEnd="@dimen/home_card_spacing"
     android:orientation="vertical"
+    android:layoutDirection="locale"
     android:gravity="center_horizontal"
     android:paddingTop="@dimen/spacing_sm"
     android:paddingBottom="@dimen/spacing_sm"
@@ -32,11 +33,12 @@
     <!-- Channel Name -->
     <TextView
         android:id="@+id/channelName"
-        android:layout_width="@dimen/home_channel_card_width"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="@dimen/spacing_sm"
         android:textAppearance="@style/TextAppearance.Home.ChannelName"
         android:gravity="center"
+        android:textAlignment="gravity"
         android:maxLines="2"
         android:ellipsize="end"
         tools:text="IslamQA"/>
@@ -44,11 +46,12 @@
     <!-- Subscriber Count -->
     <TextView
         android:id="@+id/subscriberCount"
-        android:layout_width="@dimen/home_channel_card_width"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="@dimen/spacing_xs"
         android:textAppearance="@style/TextAppearance.Home.ItemMeta"
         android:gravity="center"
+        android:textAlignment="gravity"
         tools:text="1.2M subscribers"/>
 
 </LinearLayout>

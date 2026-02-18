@@ -4,7 +4,6 @@
  */
 
 import apiClient from './api/client';
-import { toast } from '@/utils/toast';
 
 export interface Category {
   id: string;
@@ -72,17 +71,24 @@ export async function createCategory(data: {
   name: string;
   parentId?: string | null;
   icon?: string;
-  displayOrder?: number;
+  displayOrder?: number | null;
+  localizedNames?: Record<string, string>;
 }): Promise<Category> {
-  const payload = {
+  const payload: Record<string, any> = {
     name: data.name,
     parentCategoryId: data.parentId || null,
-    icon: data.icon || '',
-    displayOrder: data.displayOrder || 0
+    icon: data.icon || ''
   };
+  // Only include displayOrder when explicitly set (not null/undefined).
+  // Omitting it lets the backend auto-assign max+1.
+  if (data.displayOrder !== null && data.displayOrder !== undefined) {
+    payload.displayOrder = data.displayOrder;
+  }
+  if (data.localizedNames && Object.keys(data.localizedNames).length > 0) {
+    payload.localizedNames = data.localizedNames;
+  }
 
   const response = await apiClient.post<Category>('/api/admin/categories', payload);
-  toast.success(`Category "${data.name}" created successfully`);
   return response.data;
 }
 
@@ -95,10 +101,10 @@ export async function updateCategory(
     name?: string;
     icon?: string;
     displayOrder?: number;
+    localizedNames?: Record<string, string>;
   }
 ): Promise<Category> {
   const response = await apiClient.put<Category>(`/api/admin/categories/${id}`, data);
-  toast.success('Category updated successfully');
   return response.data;
 }
 
@@ -108,10 +114,8 @@ export async function updateCategory(
 export async function deleteCategory(id: string): Promise<void> {
   try {
     await apiClient.delete(`/api/admin/categories/${id}`);
-    toast.success('Category deleted successfully');
   } catch (error: any) {
     if (error.response?.status === 409) {
-      toast.error('Cannot delete category with subcategories');
       throw new Error('Category has subcategories');
     }
     throw error;

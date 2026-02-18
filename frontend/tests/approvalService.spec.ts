@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { getPendingApprovals, getMySubmissions, approveItem, rejectItem } from '@/services/approvalService';
+import { getPendingApprovals, getMySubmissions, approveItem, rejectItem, getPendingCount } from '@/services/approvalService';
 import apiClient from '@/services/api/client';
 
 vi.mock('@/services/api/client');
@@ -232,6 +232,38 @@ describe('ApprovalService', () => {
         reason: 'LOW_QUALITY'
         // reviewNotes is NOT in RejectionRequestDto schema
       });
+    });
+  });
+
+  describe('getPendingCount', () => {
+    it('should return count on success', async () => {
+      vi.mocked(apiClient.get).mockResolvedValueOnce({ data: { count: 42 } });
+
+      const count = await getPendingCount();
+
+      expect(count).toBe(42);
+      expect(apiClient.get).toHaveBeenCalledWith('/api/admin/approvals/pending-count');
+    });
+
+    it('should return -1 on 503 service unavailable', async () => {
+      vi.mocked(apiClient.get).mockRejectedValueOnce({
+        response: { status: 503 }
+      });
+
+      const count = await getPendingCount();
+
+      expect(count).toBe(-1);
+    });
+
+    it('should rethrow non-503 errors', async () => {
+      vi.mocked(apiClient.get).mockRejectedValueOnce({
+        response: { status: 500 },
+        message: 'Internal Server Error'
+      });
+
+      await expect(getPendingCount()).rejects.toEqual(
+        expect.objectContaining({ response: { status: 500 } })
+      );
     });
   });
 });

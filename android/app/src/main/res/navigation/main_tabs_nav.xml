@@ -154,7 +154,16 @@
     <fragment
         android:id="@+id/featuredListFragment"
         android:name="com.albunyaan.tube.ui.FeaturedListFragment"
-        android:label="Featured" />
+        android:label="Featured">
+        <argument
+            android:name="categoryId"
+            app:argType="string"
+            android:defaultValue="" />
+        <argument
+            android:name="categoryName"
+            app:argType="string"
+            android:defaultValue="" />
+    </fragment>
 
     <fragment
         android:id="@+id/playerFragment"

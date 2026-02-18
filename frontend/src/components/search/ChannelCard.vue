@@ -43,7 +43,7 @@
         class="action-button primary"
         @click="$emit('add', channel)"
       >
-        Add for Approval
+        {{ isAdmin ? 'Add' : 'Add for Approval' }}
       </button>
     </div>
   </div>
@@ -55,6 +55,7 @@ import type { AdminSearchChannelResult } from '@/types/registry';
 defineProps<{
   channel: AdminSearchChannelResult;
   alreadyAdded?: boolean;
+  isAdmin?: boolean;
 }>();
 
 defineEmits<{

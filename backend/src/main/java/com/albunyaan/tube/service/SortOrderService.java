@@ -151,9 +151,17 @@ public class SortOrderService {
 
         List<ContentSortDto> result = new ArrayList<>();
         for (CategoryContentOrder entry : orderEntries) {
-            ContentSortDto dto = resolveContentInfo(entry);
-            if (dto != null) {
-                result.add(dto);
+            try {
+                ContentSortDto dto = resolveContentInfo(entry);
+                if (dto != null) {
+                    result.add(dto);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw e;
+            } catch (Exception e) {
+                log.warn("Failed to resolve content info for {} {} in category {}: {}",
+                        entry.getContentType(), entry.getContentId(), categoryId, e.getMessage());
             }
         }
 

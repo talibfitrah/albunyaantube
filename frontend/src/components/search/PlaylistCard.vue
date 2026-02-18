@@ -5,7 +5,7 @@
         <div class="stack-layer stack-3"></div>
         <div class="stack-layer stack-2"></div>
         <div class="stack-layer stack-1">
-          <img v-if="playlist.thumbnailUrl" :src="playlist.thumbnailUrl" :alt="playlist.title" />
+          <img v-if="getThumbnailUrl(playlist, 'playlist')" :src="getThumbnailUrl(playlist, 'playlist')!" :alt="playlist.title" />
           <div v-else class="thumbnail-placeholder"></div>
           <!-- Playlist icon overlay -->
           <div class="playlist-icon-overlay">
@@ -62,7 +62,7 @@
         class="action-button primary"
         @click="$emit('add', playlist)"
       >
-        Add for Approval
+        {{ isAdmin ? 'Add' : 'Add for Approval' }}
       </button>
     </div>
   </div>
@@ -70,10 +70,12 @@
 
 <script setup lang="ts">
 import type { AdminSearchPlaylistResult } from '@/types/registry';
+import { getThumbnailUrl } from '@/utils/formatters';
 
 defineProps<{
   playlist: AdminSearchPlaylistResult;
   alreadyAdded?: boolean;
+  isAdmin?: boolean;
 }>();
 
 defineEmits<{

@@ -115,6 +115,26 @@ public class CategoryRepository {
     }
 
     /**
+     * Find the maximum displayOrder value across all categories.
+     * Returns 0 if no categories exist or none have a displayOrder set,
+     * so that the first category assigned via maxOrder + 1 gets displayOrder = 1.
+     */
+    public int findMaxDisplayOrder() throws ExecutionException, InterruptedException, TimeoutException {
+        QuerySnapshot snapshot = getCollection()
+                .orderBy("displayOrder", Query.Direction.DESCENDING)
+                .limit(1)
+                .get()
+                .get(timeoutProperties.getRead(), TimeUnit.SECONDS);
+
+        if (snapshot.isEmpty()) {
+            return 0;
+        }
+
+        Integer order = snapshot.getDocuments().get(0).toObject(Category.class).getDisplayOrder();
+        return order != null ? order : 0;
+    }
+
+    /**
      * Delete category by ID
      */
     public void deleteById(String id) throws ExecutionException, InterruptedException, TimeoutException {

@@ -3,8 +3,10 @@ package com.albunyaan.tube.controller;
 import com.albunyaan.tube.dto.CursorPageDto;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
+import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
+import com.albunyaan.tube.repository.VideoRepository;
 import com.github.benmanes.caffeine.cache.Cache;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -35,6 +37,9 @@ class ExclusionsWorkspaceControllerTest {
     private PlaylistRepository playlistRepository;
 
     @Mock
+    private VideoRepository videoRepository;
+
+    @Mock
     private Cache<String, Object> workspaceExclusionsCache;
 
     private ExclusionsWorkspaceController controller;
@@ -43,10 +48,14 @@ class ExclusionsWorkspaceControllerTest {
     private Playlist testPlaylist;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         controller = new ExclusionsWorkspaceController(
-                channelRepository, playlistRepository, workspaceExclusionsCache
+                channelRepository, playlistRepository, videoRepository, workspaceExclusionsCache
         );
+
+        // Default enrichment stubs (empty lookups) - individual tests can override
+        lenient().when(videoRepository.findByYoutubeIds(anyCollection())).thenReturn(Map.of());
+        lenient().when(playlistRepository.findByYoutubeIds(anyCollection())).thenReturn(Map.of());
 
         // Build a channel with exclusions across multiple storage types
         testChannel = new Channel("UC_test_channel");
@@ -1078,6 +1087,88 @@ class ExclusionsWorkspaceControllerTest {
 
         var response = controller.createExclusion(request);
         assertEquals(201, response.getStatusCode().value());
+    }
+
+    // ======================== Enrichment ========================
+
+    @Test
+    @DisplayName("GET - video exclusions are enriched with title and thumbnail from Firestore")
+    void getExclusions_enrichesVideoExclusions() throws Exception {
+        stubRepositoriesWithTestData();
+
+        // Stub video lookup: vid1 exists in Firestore with title and thumbnail
+        Video knownVideo = new Video("vid1");
+        knownVideo.setTitle("Surah Al-Fatiha Recitation");
+        knownVideo.setThumbnailUrl("https://example.com/vid1-thumb.jpg");
+        when(videoRepository.findByYoutubeIds(anyCollection()))
+                .thenReturn(Map.of("vid1", knownVideo));
+
+        ResponseEntity<CursorPageDto<ExclusionsWorkspaceController.ExclusionDto>> response =
+                controller.getExclusions(null, 50, null, null, "vid1");
+
+        assertEquals(200, response.getStatusCode().value());
+        assertEquals(1, response.getBody().getData().size());
+        ExclusionsWorkspaceController.ExclusionDto dto = response.getBody().getData().get(0);
+        assertEquals("Surah Al-Fatiha Recitation", dto.excludeTitle);
+        assertEquals("https://example.com/vid1-thumb.jpg", dto.excludeThumbnailUrl);
+    }
+
+    @Test
+    @DisplayName("GET - video exclusions without Firestore match get YouTube CDN thumbnail fallback")
+    void getExclusions_videoFallbackThumbnail() throws Exception {
+        stubRepositoriesWithTestData();
+
+        // Stub: no videos found in Firestore
+        when(videoRepository.findByYoutubeIds(anyCollection())).thenReturn(Map.of());
+
+        ResponseEntity<CursorPageDto<ExclusionsWorkspaceController.ExclusionDto>> response =
+                controller.getExclusions(null, 50, null, null, "vid2");
+
+        assertEquals(200, response.getStatusCode().value());
+        assertEquals(1, response.getBody().getData().size());
+        ExclusionsWorkspaceController.ExclusionDto dto = response.getBody().getData().get(0);
+        assertNull(dto.excludeTitle, "No Firestore match, title should be null");
+        assertEquals("https://i.ytimg.com/vi/vid2/mqdefault.jpg", dto.excludeThumbnailUrl,
+                "Should fall back to YouTube CDN thumbnail");
+    }
+
+    @Test
+    @DisplayName("GET - enrichment failure is non-fatal (logs warning, continues)")
+    void getExclusions_enrichmentFailureNonFatal() throws Exception {
+        stubRepositoriesWithTestData();
+
+        // Stub: video lookup throws exception
+        when(videoRepository.findByYoutubeIds(anyCollection()))
+                .thenThrow(new RuntimeException("Firestore unavailable"));
+
+        // Should not throw - enrichment failure is caught and logged
+        ResponseEntity<CursorPageDto<ExclusionsWorkspaceController.ExclusionDto>> response =
+                controller.getExclusions(null, 50, null, null, null);
+
+        assertEquals(200, response.getStatusCode().value());
+        // All exclusions still returned, just without enrichment
+        assertFalse(response.getBody().getData().isEmpty());
+    }
+
+    @Test
+    @DisplayName("GET - search matches enriched excludeTitle")
+    void getExclusions_searchMatchesExcludeTitle() throws Exception {
+        stubRepositoriesWithTestData();
+
+        // Enrich vid1 with a title
+        Video knownVideo = new Video("vid1");
+        knownVideo.setTitle("Beautiful Quran Recitation");
+        when(videoRepository.findByYoutubeIds(anyCollection()))
+                .thenReturn(Map.of("vid1", knownVideo));
+
+        // Search by title text
+        ResponseEntity<CursorPageDto<ExclusionsWorkspaceController.ExclusionDto>> response =
+                controller.getExclusions(null, 50, null, null, "Beautiful Quran");
+
+        assertEquals(200, response.getStatusCode().value());
+        // Should find vid1 via excludeTitle match
+        assertTrue(response.getBody().getData().stream()
+                .anyMatch(dto -> "vid1".equals(dto.excludeId)));
     }
 
     // ======================== Helpers ========================

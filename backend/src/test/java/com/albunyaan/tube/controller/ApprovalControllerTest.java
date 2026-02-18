@@ -27,6 +27,9 @@ class ApprovalControllerTest {
     private ApprovalService approvalService;
 
     @Mock
+    private com.albunyaan.tube.repository.ApprovalRepository approvalRepository;
+
+    @Mock
     private com.albunyaan.tube.service.PublicContentCacheService cacheService;
 
     @Mock
@@ -37,7 +40,7 @@ class ApprovalControllerTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        controller = new ApprovalController(approvalService, cacheService);
+        controller = new ApprovalController(approvalService, approvalRepository, cacheService);
 
         // Mock user details
         when(mockUser.getUid()).thenReturn("test_uid");
@@ -301,6 +304,92 @@ class ApprovalControllerTest {
         assertEquals(200, response.getStatusCodeValue());
         verify(approvalService).approve(eq("channel_1"), argThat(req ->
                 "new_category_id".equals(req.getCategoryOverride())), any(), any());
+    }
+
+    // --- BLOCKER FIX: 503 failure tests ---
+
+    @Test
+    void testGetPendingCount_Success() throws Exception {
+        // Arrange
+        when(approvalRepository.countAllPending()).thenReturn(42L);
+
+        // Act
+        ResponseEntity<java.util.Map<String, Long>> response = controller.getPendingCount();
+
+        // Assert
+        assertEquals(200, response.getStatusCodeValue());
+        assertNotNull(response.getBody());
+        assertEquals(42L, response.getBody().get("count"));
+    }
+
+    @Test
+    void testGetPendingCount_ServiceUnavailable_Returns503() throws Exception {
+        // Arrange - repository throws exception
+        when(approvalRepository.countAllPending())
+                .thenThrow(new RuntimeException("Firestore connection failed"));
+
+        // Act
+        ResponseEntity<java.util.Map<String, Long>> response = controller.getPendingCount();
+
+        // Assert - must return 503, NOT 200 with count=0
+        assertEquals(503, response.getStatusCodeValue());
+        assertNull(response.getBody());
+    }
+
+    @Test
+    void testGetPendingApprovals_ServiceUnavailable_Returns503() throws Exception {
+        // Arrange - service throws unexpected exception
+        when(approvalService.getPendingApprovals(any(), any(), any(), any()))
+                .thenThrow(new RuntimeException("Firestore timeout"));
+
+        // Act
+        ResponseEntity<CursorPageDto<PendingApprovalDto>> response =
+                controller.getPendingApprovals(null, null, 20, null, mockUser);
+
+        // Assert - must return 503, NOT 200 with empty data
+        assertEquals(503, response.getStatusCodeValue());
+    }
+
+    @Test
+    void testGetMySubmissions_ServiceUnavailable_Returns503() throws Exception {
+        // Arrange - service throws unexpected exception
+        when(approvalService.getMySubmissions(any(), any(), any(), any(), any()))
+                .thenThrow(new RuntimeException("Firestore timeout"));
+
+        // Act
+        ResponseEntity<CursorPageDto<PendingApprovalDto>> response =
+                controller.getMySubmissions("PENDING", null, 20, null, mockUser);
+
+        // Assert - must return 503, NOT 200 with empty data
+        assertEquals(503, response.getStatusCodeValue());
+    }
+
+    @Test
+    void testApprove_UnexpectedError_Returns500() throws Exception {
+        // Arrange
+        ApprovalRequestDto request = new ApprovalRequestDto("notes");
+        when(approvalService.approve(any(), any(), any(), any()))
+                .thenThrow(new RuntimeException("Unexpected error"));
+
+        // Act
+        ResponseEntity<ApprovalResponseDto> response = controller.approve("ch1", request, mockUser);
+
+        // Assert
+        assertEquals(500, response.getStatusCodeValue());
+    }
+
+    @Test
+    void testReject_UnexpectedError_Returns500() throws Exception {
+        // Arrange
+        RejectionRequestDto request = new RejectionRequestDto("LOW_QUALITY", "Bad content");
+        when(approvalService.reject(any(), any(), any(), any()))
+                .thenThrow(new RuntimeException("Unexpected error"));
+
+        // Act
+        ResponseEntity<ApprovalResponseDto> response = controller.reject("ch1", request, mockUser);
+
+        // Assert
+        assertEquals(500, response.getStatusCodeValue());
     }
 }
 

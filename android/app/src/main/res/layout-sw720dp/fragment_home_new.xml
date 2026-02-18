@@ -1,166 +1,173 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- TV/large tablet variant: same structure as phone. Dimensions adapt via qualifiers
      (bottom_nav_height=0dp, wider margins via home_horizontal_margin, etc.) -->
-<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.swiperefreshlayout.widget.SwipeRefreshLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:id="@+id/homeScrollView"
+    android:id="@+id/swipeRefresh"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:layoutDirection="locale"
-    android:background="@color/home_surface_background"
-    android:fillViewport="true"
-    android:overScrollMode="never">
+    android:layout_height="match_parent">
 
-    <LinearLayout
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/homeScrollView"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:paddingBottom="@dimen/bottom_nav_height">
+        android:layout_height="match_parent"
+        android:layoutDirection="locale"
+        android:background="@color/home_surface_background"
+        android:fillViewport="true"
+        android:overScrollMode="never">
 
-        <!-- Header -->
-        <androidx.constraintlayout.widget.ConstraintLayout
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:paddingStart="@dimen/home_horizontal_margin"
-            android:paddingEnd="@dimen/home_horizontal_margin"
-            android:paddingTop="@dimen/spacing_md"
-            android:paddingBottom="@dimen/spacing_sm">
+            android:orientation="vertical"
+            android:paddingBottom="@dimen/bottom_nav_height">
 
-            <TextView
-                android:id="@+id/titleText"
-                android:layout_width="wrap_content"
+            <!-- Header -->
+            <androidx.constraintlayout.widget.ConstraintLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/app_name"
-                android:textSize="24sp"
-                android:textStyle="bold"
-                android:textColor="@color/home_text_primary"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toTopOf="parent"
-                app:layout_constraintBottom_toBottomOf="parent"/>
-
-            <ImageButton
-                android:id="@+id/menuButton"
-                android:layout_width="@dimen/touch_target_min"
-                android:layout_height="@dimen/touch_target_min"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:src="@drawable/ic_action_more"
-                android:contentDescription="@string/menu"
-                app:tint="@color/primary_green"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintTop_toTopOf="parent"
-                app:layout_constraintBottom_toBottomOf="parent"/>
-
-            <ImageButton
-                android:id="@+id/searchButton"
-                android:layout_width="@dimen/touch_target_min"
-                android:layout_height="@dimen/touch_target_min"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:src="@android:drawable/ic_menu_search"
-                android:contentDescription="@string/search"
-                app:tint="@color/primary_green"
-                app:layout_constraintEnd_toStartOf="@id/menuButton"
-                app:layout_constraintTop_toTopOf="parent"
-                app:layout_constraintBottom_toBottomOf="parent"/>
-
-        </androidx.constraintlayout.widget.ConstraintLayout>
-
-        <!-- Category Filter Pill -->
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/categoryPillCard"
-            android:layout_width="wrap_content"
-            android:layout_height="@dimen/home_category_pill_height"
-            android:layout_marginStart="@dimen/home_horizontal_margin"
-            android:layout_marginEnd="@dimen/home_horizontal_margin"
-            android:layout_marginTop="@dimen/spacing_sm"
-            android:layout_marginBottom="@dimen/spacing_md"
-            android:clickable="true"
-            android:focusable="true"
-            android:foreground="?attr/selectableItemBackground"
-            android:contentDescription="@string/home_select_category"
-            app:cardCornerRadius="999dp"
-            app:cardBackgroundColor="@color/home_category_pill_bg"
-            app:cardElevation="1dp"
-            app:strokeWidth="0dp">
-
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="match_parent"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingStart="@dimen/home_category_pill_padding_horizontal"
-                android:paddingEnd="@dimen/home_category_pill_padding_horizontal">
-
-                <ImageView
-                    android:id="@+id/categoryIcon"
-                    android:layout_width="@dimen/home_category_pill_icon_size"
-                    android:layout_height="@dimen/home_category_pill_icon_size"
-                    android:src="@drawable/ic_category"
-                    app:tint="@color/primary_green"
-                    android:contentDescription="@null"/>
+                android:paddingStart="@dimen/home_horizontal_margin"
+                android:paddingEnd="@dimen/home_horizontal_margin"
+                android:paddingTop="@dimen/spacing_md"
+                android:paddingBottom="@dimen/spacing_sm">
 
                 <TextView
-                    android:id="@+id/categoryChip"
+                    android:id="@+id/titleText"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="@dimen/spacing_sm"
-                    android:text="@string/filter_category"
-                    android:textColor="@color/primary_green"
-                    android:textSize="14sp"
-                    android:textStyle="normal"
-                    android:fontFamily="sans-serif-medium"/>
+                    android:text="@string/app_name"
+                    android:textSize="24sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/home_text_primary"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:layout_constraintBottom_toBottomOf="parent"/>
 
-                <ImageView
-                    android:layout_width="@dimen/home_category_pill_icon_size"
-                    android:layout_height="@dimen/home_category_pill_icon_size"
-                    android:layout_marginStart="@dimen/spacing_xs"
-                    android:src="@drawable/ic_expand_more"
+                <ImageButton
+                    android:id="@+id/menuButton"
+                    android:layout_width="@dimen/touch_target_min"
+                    android:layout_height="@dimen/touch_target_min"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:src="@drawable/ic_action_more"
+                    android:contentDescription="@string/menu"
                     app:tint="@color/primary_green"
-                    android:contentDescription="@null"/>
+                    app:layout_constraintEnd_toEndOf="parent"
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:layout_constraintBottom_toBottomOf="parent"/>
 
-            </LinearLayout>
+                <ImageButton
+                    android:id="@+id/searchButton"
+                    android:layout_width="@dimen/touch_target_min"
+                    android:layout_height="@dimen/touch_target_min"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:src="@drawable/ic_search"
+                    android:contentDescription="@string/search"
+                    app:tint="@color/primary_green"
+                    app:layout_constraintEnd_toStartOf="@id/menuButton"
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:layout_constraintBottom_toBottomOf="parent"/>
 
-        </com.google.android.material.card.MaterialCardView>
+            </androidx.constraintlayout.widget.ConstraintLayout>
 
-        <!-- Loading skeleton (shown during initial load) -->
-        <include
-            android:id="@+id/homeSkeleton"
-            layout="@layout/home_section_skeleton"
-            android:visibility="gone" />
+            <!-- Category Filter Pill -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/categoryPillCard"
+                android:layout_width="wrap_content"
+                android:layout_height="@dimen/home_category_pill_height"
+                android:layout_marginStart="@dimen/home_horizontal_margin"
+                android:layout_marginEnd="@dimen/home_horizontal_margin"
+                android:layout_marginTop="@dimen/spacing_sm"
+                android:layout_marginBottom="@dimen/spacing_md"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?attr/selectableItemBackground"
+                android:contentDescription="@string/home_select_category"
+                app:cardCornerRadius="999dp"
+                app:cardBackgroundColor="@color/home_category_pill_bg"
+                app:cardElevation="1dp"
+                app:strokeWidth="0dp">
 
-        <!-- Error state (shown when initial load fails) -->
-        <include
-            android:id="@+id/homeError"
-            layout="@layout/home_section_error"
-            android:visibility="gone" />
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="match_parent"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingStart="@dimen/home_category_pill_padding_horizontal"
+                    android:paddingEnd="@dimen/home_category_pill_padding_horizontal">
 
-        <!-- Empty state (shown when no categories have content) -->
-        <include
-            android:id="@+id/homeEmpty"
-            layout="@layout/home_section_empty"
-            android:visibility="gone" />
+                    <ImageView
+                        android:id="@+id/categoryIcon"
+                        android:layout_width="@dimen/home_category_pill_icon_size"
+                        android:layout_height="@dimen/home_category_pill_icon_size"
+                        android:src="@drawable/ic_category"
+                        app:tint="@color/primary_green"
+                        android:contentDescription="@null"/>
 
-        <!-- Dynamic category sections RecyclerView -->
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/homeSectionsRecyclerView"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:nestedScrollingEnabled="false"
-            android:clipToPadding="false"
-            android:paddingBottom="@dimen/spacing_lg"
-            android:visibility="gone"/>
+                    <TextView
+                        android:id="@+id/categoryChip"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="@dimen/spacing_sm"
+                        android:text="@string/filter_category"
+                        android:textColor="@color/primary_green"
+                        android:textSize="14sp"
+                        android:textStyle="normal"
+                        android:fontFamily="sans-serif-medium"/>
 
-        <!-- Loading more indicator -->
-        <ProgressBar
-            android:id="@+id/loadingMoreIndicator"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center_horizontal"
-            android:layout_marginTop="@dimen/spacing_md"
-            android:layout_marginBottom="@dimen/spacing_lg"
-            android:visibility="gone"
-            android:contentDescription="@string/home_loading_more"
-            android:indeterminateTint="@color/primary_green"/>
+                    <ImageView
+                        android:layout_width="@dimen/home_category_pill_icon_size"
+                        android:layout_height="@dimen/home_category_pill_icon_size"
+                        android:layout_marginStart="@dimen/spacing_xs"
+                        android:src="@drawable/ic_expand_more"
+                        app:tint="@color/primary_green"
+                        android:contentDescription="@null"/>
 
-    </LinearLayout>
+                </LinearLayout>
 
-</androidx.core.widget.NestedScrollView>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Loading skeleton (shown during initial load) -->
+            <include
+                android:id="@+id/homeSkeleton"
+                layout="@layout/home_section_skeleton"
+                android:visibility="gone" />
+
+            <!-- Error state (shown when initial load fails) -->
+            <include
+                android:id="@+id/homeError"
+                layout="@layout/home_section_error"
+                android:visibility="gone" />
+
+            <!-- Empty state (shown when no categories have content) -->
+            <include
+                android:id="@+id/homeEmpty"
+                layout="@layout/home_section_empty"
+                android:visibility="gone" />
+
+            <!-- Dynamic category sections RecyclerView -->
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/homeSectionsRecyclerView"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:nestedScrollingEnabled="false"
+                android:clipToPadding="false"
+                android:paddingBottom="@dimen/spacing_lg"
+                android:visibility="gone"/>
+
+            <!-- Loading more indicator -->
+            <ProgressBar
+                android:id="@+id/loadingMoreIndicator"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="@dimen/spacing_md"
+                android:layout_marginBottom="@dimen/spacing_lg"
+                android:visibility="gone"
+                android:contentDescription="@string/home_loading_more"
+                android:indeterminateTint="@color/primary_green"/>
+
+        </LinearLayout>
+
+    </androidx.core.widget.NestedScrollView>
+
+</androidx.swiperefreshlayout.widget.SwipeRefreshLayout>

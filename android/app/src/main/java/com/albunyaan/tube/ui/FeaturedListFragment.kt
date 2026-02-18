@@ -51,6 +51,11 @@ class FeaturedListFragment : Fragment(R.layout.fragment_featured_list) {
         binding?.toolbar?.setNavigationOnClickListener {
             findNavController().navigateUp()
         }
+        // Set toolbar title from navigation argument (category name)
+        val categoryName = arguments?.getString("categoryName")
+        if (!categoryName.isNullOrEmpty()) {
+            binding?.toolbar?.title = categoryName
+        }
     }
 
     private fun setupRecyclerView() {

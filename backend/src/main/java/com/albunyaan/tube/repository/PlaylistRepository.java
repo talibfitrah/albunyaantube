@@ -793,6 +793,35 @@ public class PlaylistRepository {
     }
 
     /**
+     * Batch-fetch playlists by their YouTube IDs using chunked whereIn queries.
+     * Returns a map of youtubeId to Playlist for efficient lookup.
+     * Firestore whereIn supports up to 30 values per query.
+     */
+    public Map<String, Playlist> findByYoutubeIds(java.util.Collection<String> youtubeIds)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        Map<String, Playlist> result = new HashMap<>();
+        if (youtubeIds == null || youtubeIds.isEmpty()) return result;
+
+        List<String> idList = new ArrayList<>(youtubeIds);
+        int chunkSize = 30;
+        for (int i = 0; i < idList.size(); i += chunkSize) {
+            List<String> chunk = idList.subList(i, Math.min(i + chunkSize, idList.size()));
+            ApiFuture<QuerySnapshot> query = getCollection()
+                    .whereIn("youtubeId", new ArrayList<>(chunk))
+                    .get();
+            List<QueryDocumentSnapshot> docs = query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).getDocuments();
+            for (QueryDocumentSnapshot doc : docs) {
+                Playlist pl = doc.toObject(Playlist.class);
+                if (pl != null) {
+                    pl.setId(doc.getId());
+                    result.put(pl.getYoutubeId(), pl);
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
      * Batch-fetch playlists by their document IDs using Firestore getAll().
      * Returns a map of ID to Playlist for efficient lookup.
      */

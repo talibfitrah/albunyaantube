@@ -3,7 +3,6 @@ import { getAllCategories, createCategory, updateCategory, deleteCategory } from
 import apiClient from '@/services/api/client';
 
 vi.mock('@/services/api/client');
-vi.mock('@/utils/toast');
 
 describe('CategoryService', () => {
   beforeEach(() => {
@@ -102,6 +101,49 @@ describe('CategoryService', () => {
         icon: '',
         displayOrder: 0
       });
+    });
+
+    it('should omit displayOrder from payload when null (auto-assign)', async () => {
+      vi.mocked(apiClient.post).mockResolvedValueOnce({ data: { id: 'cat-auto' } });
+
+      await createCategory({
+        name: 'Auto Ordered',
+        parentId: null,
+        icon: '',
+        displayOrder: null
+      });
+
+      const payload = vi.mocked(apiClient.post).mock.calls[0][1] as Record<string, any>;
+      expect(payload).not.toHaveProperty('displayOrder');
+      expect(payload).toEqual({
+        name: 'Auto Ordered',
+        parentCategoryId: null,
+        icon: ''
+      });
+    });
+
+    it('should omit displayOrder from payload when undefined (auto-assign)', async () => {
+      vi.mocked(apiClient.post).mockResolvedValueOnce({ data: { id: 'cat-auto2' } });
+
+      await createCategory({
+        name: 'Auto Ordered 2',
+        icon: ''
+      });
+
+      const payload = vi.mocked(apiClient.post).mock.calls[0][1] as Record<string, any>;
+      expect(payload).not.toHaveProperty('displayOrder');
+    });
+
+    it('should include displayOrder: 0 in payload when explicitly set', async () => {
+      vi.mocked(apiClient.post).mockResolvedValueOnce({ data: { id: 'cat-zero' } });
+
+      await createCategory({
+        name: 'First Position',
+        displayOrder: 0
+      });
+
+      const payload = vi.mocked(apiClient.post).mock.calls[0][1] as Record<string, any>;
+      expect(payload.displayOrder).toBe(0);
     });
   });
 

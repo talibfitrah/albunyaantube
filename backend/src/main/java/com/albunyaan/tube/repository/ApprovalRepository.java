@@ -6,7 +6,6 @@ import com.albunyaan.tube.model.Playlist;
 import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.util.CursorUtils;
 import com.google.cloud.firestore.CollectionReference;
-import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.FieldPath;
 import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.Query;
@@ -154,6 +153,35 @@ public class ApprovalRepository {
     }
 
     // ========================================================================
+    // Count queries
+    // ========================================================================
+
+    /**
+     * Count all pending items across channels, playlists, and videos.
+     * Fires all three count queries in parallel for better latency.
+     */
+    public long countAllPending()
+            throws ExecutionException, InterruptedException, TimeoutException {
+        var channelsFuture = getChannelsCollection()
+                .whereEqualTo("status", "PENDING")
+                .count()
+                .get();
+        var playlistsFuture = getPlaylistsCollection()
+                .whereEqualTo("status", "PENDING")
+                .count()
+                .get();
+        var videosFuture = getVideosCollection()
+                .whereEqualTo("status", "PENDING")
+                .count()
+                .get();
+
+        long channels = channelsFuture.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).getCount();
+        long playlists = playlistsFuture.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).getCount();
+        long videos = videosFuture.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).getCount();
+        return channels + playlists + videos;
+    }
+
+    // ========================================================================
     // Generic pagination helper
     // ========================================================================
 
@@ -185,13 +213,17 @@ public class ApprovalRepository {
             if (cursorData == null) {
                 throw new IllegalArgumentException("Invalid cursor: failed to decode");
             }
-            DocumentReference cursorDoc = collection.document(cursorData.getId());
-            var cursorSnapshot = cursorDoc.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS);
-            if (cursorSnapshot.exists()) {
-                query = query.startAfter(cursorSnapshot);
+
+            // Use cursor field values for startAfter() so pagination works even if the
+            // cursor document has been deleted. The cursor contains the ordering field
+            // values (createdAt) and document ID, which is the full ordering tuple.
+            Object[] startAfterValues = CursorUtils.getStartAfterValues(cursorData, "createdAt");
+            if (startAfterValues != null && startAfterValues.length > 0 && startAfterValues[0] != null) {
+                // startAfter with (createdAt, documentId) to match the query's orderBy clause
+                query = query.startAfter(startAfterValues[0], cursorData.getId());
             } else {
-                throw new IllegalArgumentException(
-                        "Invalid cursor: document '" + cursorData.getId() + "' not found");
+                // Cursor is missing ordering fields - this is an invalid/corrupt cursor
+                throw new IllegalArgumentException("Invalid cursor: missing ordering fields");
             }
         }
 

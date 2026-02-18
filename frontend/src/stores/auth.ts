@@ -47,8 +47,8 @@ export const useAuthStore = defineStore('auth', () => {
   async function extractRole(user: User): Promise<UserRole> {
     try {
       const tokenResult = await user.getIdTokenResult();
-      const role = tokenResult.claims.role as string | undefined;
-      if (role) {
+      const role = tokenResult.claims.role;
+      if (role && typeof role === 'string') {
         const normalized = role.toUpperCase();
         if (normalized === 'ADMIN' || normalized === 'MODERATOR') {
           return normalized;

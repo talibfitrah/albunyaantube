@@ -1,6 +1,7 @@
 package com.albunyaan.tube.controller;
 
 import com.albunyaan.tube.dto.*;
+import com.albunyaan.tube.repository.ApprovalRepository;
 import com.albunyaan.tube.security.FirebaseUserDetails;
 import com.albunyaan.tube.service.ApprovalService;
 import com.albunyaan.tube.service.PublicContentCacheService;
@@ -28,11 +29,30 @@ public class ApprovalController {
     private static final Logger log = LoggerFactory.getLogger(ApprovalController.class);
 
     private final ApprovalService approvalService;
+    private final ApprovalRepository approvalRepository;
     private final PublicContentCacheService publicContentCacheService;
 
-    public ApprovalController(ApprovalService approvalService, PublicContentCacheService publicContentCacheService) {
+    public ApprovalController(ApprovalService approvalService, ApprovalRepository approvalRepository, PublicContentCacheService publicContentCacheService) {
         this.approvalService = approvalService;
+        this.approvalRepository = approvalRepository;
         this.publicContentCacheService = publicContentCacheService;
+    }
+
+    /**
+     * GET /api/admin/approvals/pending-count
+     *
+     * Returns the total count of pending items across all content types.
+     */
+    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    @GetMapping("/pending-count")
+    public ResponseEntity<java.util.Map<String, Long>> getPendingCount() {
+        try {
+            long count = approvalRepository.countAllPending();
+            return ResponseEntity.ok(java.util.Map.of("count", count));
+        } catch (Exception e) {
+            log.error("Failed to get pending count", e);
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+        }
     }
 
     /**
@@ -66,10 +86,11 @@ public class ApprovalController {
             return ResponseEntity.ok(result);
         } catch (IllegalArgumentException e) {
             log.warn("Invalid parameter in pending approvals: {}", e.getMessage());
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.badRequest().body(null);
         } catch (Exception e) {
-            log.error("Failed to get pending approvals", e);
-            return ResponseEntity.internalServerError().build();
+            log.error("Failed to get pending approvals - type={}, category={}, cursor={}",
+                    type, category, cursor, e);
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
         }
     }
 
@@ -81,7 +102,7 @@ public class ApprovalController {
      *
      * Query params:
      * - status: PENDING|APPROVED|REJECTED (default PENDING)
-     * - type: CHANNEL|PLAYLIST (optional)
+     * - type: CHANNEL|PLAYLIST|VIDEO (optional)
      * - limit: page size (default 20)
      * - cursor: pagination cursor (optional)
      */
@@ -105,10 +126,11 @@ public class ApprovalController {
             return ResponseEntity.ok(result);
         } catch (IllegalArgumentException e) {
             log.warn("Invalid parameter in my-submissions: {}", e.getMessage());
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.badRequest().body(null);
         } catch (Exception e) {
-            log.error("Failed to get my submissions for user {}", user.getUid(), e);
-            return ResponseEntity.internalServerError().build();
+            log.error("Failed to get my submissions for user {} - status={}, type={}, cursor={}",
+                    user.getUid(), status, type, cursor, e);
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
         }
     }
 

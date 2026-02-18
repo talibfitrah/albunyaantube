@@ -121,7 +121,14 @@ export const messages = {
         mostRecent: 'Most Recent',
         mostPopular: 'Most Popular',
         topRated: 'Top Rated'
-      }
+      },
+      loading: 'Loading...',
+      loadMore: 'Load More Results',
+      endOfResults: 'End of results',
+      addedApproved: '{type} added and approved with {count} categories',
+      addedQueue: '{type} added to approval queue with {count} categories',
+      alreadyExists: 'This content already exists in the registry',
+      addError: 'Failed to add content for approval'
     },
     categories: {
       heading: 'Categories',
@@ -150,10 +157,15 @@ export const messages = {
         icon: 'Icon (optional)',
         iconPlaceholder: 'Enter emoji or icon...',
         displayOrder: 'Display Order',
+        displayOrderAuto: 'Auto',
         cancel: 'Cancel',
         save: 'Save',
         saving: 'Saving...',
-        error: 'Failed to save category.'
+        error: 'Failed to save category.',
+        translations: 'Translations',
+        nameEn: 'English',
+        nameAr: 'العربية (Arabic)',
+        nameNl: 'Nederlands (Dutch)'
       }
     },
     approvals: {
@@ -162,6 +174,7 @@ export const messages = {
       mySubmissionsHeading: 'My Submissions',
       mySubmissionsSubtitle: 'Track the status of your content submissions',
       pending: 'Pending items',
+      pendingApprox: '~Pending',
       filters: {
         type: 'Content type',
         status: 'Status',
@@ -245,6 +258,7 @@ export const messages = {
       searchPlaceholder: 'Search by title, ID, or description...',
       loading: 'Loading content...',
       loadingMore: 'Loading more...',
+      loadMore: 'Load More ({current} of {total})',
       allLoaded: 'All {count} items loaded',
       retry: 'Retry',
       empty: 'No content found. Try adjusting your filters.',
@@ -1445,7 +1459,14 @@ export const messages = {
         relevant: 'الأكثر صلة',
         recent: 'الأحدث',
         popular: 'الأكثر شعبية'
-      }
+      },
+      loading: 'جارٍ التحميل...',
+      loadMore: 'تحميل المزيد من النتائج',
+      endOfResults: 'نهاية النتائج',
+      addedApproved: 'تم إضافة {type} والموافقة مع {count} فئة',
+      addedQueue: 'تم إضافة {type} لقائمة الموافقة مع {count} فئة',
+      alreadyExists: 'هذا المحتوى موجود بالفعل في السجل',
+      addError: 'فشل إضافة المحتوى للموافقة'
     },
     categories: {
       heading: 'الفئات',
@@ -1474,10 +1495,15 @@ export const messages = {
         icon: 'أيقونة (اختياري)',
         iconPlaceholder: 'أدخل رمز تعبيري أو أيقونة...',
         displayOrder: 'ترتيب العرض',
+        displayOrderAuto: 'تلقائي',
         cancel: 'إلغاء',
         save: 'حفظ',
         saving: 'جارٍ الحفظ...',
-        error: 'فشل حفظ الفئة.'
+        error: 'فشل حفظ الفئة.',
+        translations: 'الترجمات',
+        nameEn: 'English',
+        nameAr: 'العربية (Arabic)',
+        nameNl: 'Nederlands (Dutch)'
       }
     },
     approvals: {
@@ -1486,6 +1512,7 @@ export const messages = {
       mySubmissionsHeading: 'طلباتي',
       mySubmissionsSubtitle: 'تتبع حالة طلبات المحتوى الخاصة بك',
       pending: 'عناصر قيد الانتظار',
+      pendingApprox: '~قيد الانتظار',
       filters: {
         type: 'نوع المحتوى',
         status: 'الحالة',
@@ -1569,6 +1596,7 @@ export const messages = {
       searchPlaceholder: 'البحث بالعنوان أو المعرّف أو الوصف...',
       loading: 'جارٍ تحميل المحتوى...',
       loadingMore: 'جارٍ تحميل المزيد...',
+      loadMore: 'تحميل المزيد ({current} من {total})',
       allLoaded: 'تم تحميل جميع العناصر ({count})',
       retry: 'إعادة المحاولة',
       empty: 'لم يتم العثور على محتوى. جرب تعديل الفلاتر.',
@@ -2550,7 +2578,14 @@ export const messages = {
         relevant: 'Relevantie',
         recent: 'Meest recent',
         popular: 'Meest populair'
-      }
+      },
+      loading: 'Laden...',
+      loadMore: 'Meer resultaten laden',
+      endOfResults: 'Einde van resultaten',
+      addedApproved: '{type} toegevoegd en goedgekeurd met {count} categorieën',
+      addedQueue: '{type} toegevoegd aan wachtrij met {count} categorieën',
+      alreadyExists: 'Deze inhoud bestaat al in het register',
+      addError: 'Kon inhoud niet toevoegen ter goedkeuring'
     },
     categories: {
       heading: 'Categorieën',
@@ -2579,10 +2614,15 @@ export const messages = {
         icon: 'Icoon (optioneel)',
         iconPlaceholder: 'Voer emoji of icoon in...',
         displayOrder: 'Weergavevolgorde',
+        displayOrderAuto: 'Automatisch',
         cancel: 'Annuleren',
         save: 'Opslaan',
         saving: 'Opslaan...',
-        error: 'Categorie opslaan is mislukt.'
+        error: 'Categorie opslaan is mislukt.',
+        translations: 'Vertalingen',
+        nameEn: 'English',
+        nameAr: 'العربية (Arabic)',
+        nameNl: 'Nederlands (Dutch)'
       }
     },
     approvals: {
@@ -2591,6 +2631,7 @@ export const messages = {
       mySubmissionsHeading: 'Mijn indieningen',
       mySubmissionsSubtitle: 'Volg de status van je ingediende inhoud',
       pending: 'Items in behandeling',
+      pendingApprox: '~In behandeling',
       filters: {
         type: 'Type inhoud',
         status: 'Status',
@@ -2674,6 +2715,7 @@ export const messages = {
       searchPlaceholder: 'Zoeken op titel, ID of beschrijving...',
       loading: 'Inhoud laden...',
       loadingMore: 'Meer laden...',
+      loadMore: 'Meer laden ({current} van {total})',
       allLoaded: 'Alle {count} items geladen',
       retry: 'Opnieuw proberen',
       empty: 'Geen inhoud gevonden. Probeer de filters aan te passen.',

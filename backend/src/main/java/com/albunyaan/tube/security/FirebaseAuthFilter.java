@@ -18,6 +18,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 /**
  * FIREBASE-MIGRATE-02: Firebase Authentication Filter
@@ -35,6 +37,8 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
     private static final String AUTHORIZATION_HEADER = "Authorization";
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String ROLE_CLAIM = "role";
+    /** Only these role values are accepted from Firebase custom claims. Any other value falls back to "user". */
+    private static final Set<String> VALID_ROLES = Set.of("admin", "moderator");
 
     private final FirebaseAuth firebaseAuth;
 
@@ -63,14 +67,17 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
                 String uid = decodedToken.getUid();
                 String email = decodedToken.getEmail();
 
-                // Extract role from custom claims
-                String role = (String) decodedToken.getClaims().get(ROLE_CLAIM);
-                if (role == null) {
-                    role = "user"; // Default role if not set
+                // Extract role from custom claims with allowlist validation
+                Object roleClaim = decodedToken.getClaims().get(ROLE_CLAIM);
+                String role;
+                if (roleClaim instanceof String && VALID_ROLES.contains(((String) roleClaim).toLowerCase(Locale.ROOT))) {
+                    role = ((String) roleClaim).toLowerCase(Locale.ROOT);
+                } else {
+                    role = "user"; // Default role if not set or not in allowlist
                 }
 
                 // Create Spring Security authentication with role as authority
-                SimpleGrantedAuthority authority = new SimpleGrantedAuthority("ROLE_" + role.toUpperCase());
+                SimpleGrantedAuthority authority = new SimpleGrantedAuthority("ROLE_" + role.toUpperCase(Locale.ROOT));
                 FirebaseUserDetails userDetails = new FirebaseUserDetails(uid, email, role);
 
                 UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
@@ -82,7 +89,7 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContextHolder.getContext().setAuthentication(authentication);
 
-                logger.debug("✓ Authenticated user UID: {} with role: {} (authority: ROLE_{})", uid, role, role.toUpperCase());
+                logger.debug("✓ Authenticated user UID: {} with role: {} (authority: ROLE_{})", uid, role, role.toUpperCase(Locale.ROOT));
 
             } catch (FirebaseAuthException e) {
                 logger.error("Firebase token verification failed: {}", e.getMessage());

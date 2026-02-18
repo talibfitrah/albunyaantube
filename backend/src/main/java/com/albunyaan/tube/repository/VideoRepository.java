@@ -17,6 +17,7 @@ import com.albunyaan.tube.util.CursorUtils;
 import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -714,6 +715,35 @@ public class VideoRepository {
         public boolean hasNext() {
             return hasNext;
         }
+    }
+
+    /**
+     * Batch-fetch videos by their YouTube IDs using chunked whereIn queries.
+     * Returns a map of youtubeId to Video for efficient lookup.
+     * Firestore whereIn supports up to 30 values per query.
+     */
+    public Map<String, Video> findByYoutubeIds(Collection<String> youtubeIds)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        Map<String, Video> result = new HashMap<>();
+        if (youtubeIds == null || youtubeIds.isEmpty()) return result;
+
+        List<String> idList = new ArrayList<>(youtubeIds);
+        int chunkSize = 30;
+        for (int i = 0; i < idList.size(); i += chunkSize) {
+            List<String> chunk = idList.subList(i, Math.min(i + chunkSize, idList.size()));
+            ApiFuture<QuerySnapshot> query = getCollection()
+                    .whereIn("youtubeId", new ArrayList<>(chunk))
+                    .get();
+            List<QueryDocumentSnapshot> docs = query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).getDocuments();
+            for (QueryDocumentSnapshot doc : docs) {
+                Video v = doc.toObject(Video.class);
+                if (v != null) {
+                    v.setId(doc.getId());
+                    result.put(v.getYoutubeId(), v);
+                }
+            }
+        }
+        return result;
     }
 
     /**

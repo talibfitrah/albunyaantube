@@ -74,6 +74,7 @@
           :key="'channel-' + channel.id"
           :channel="channel"
           :already-added="isChannelAlreadyAdded(channel.ytId)"
+          :is-admin="authStore.isAdmin"
           @add="handleAddChannel"
         />
         <PlaylistCard
@@ -81,6 +82,7 @@
           :key="'playlist-' + playlist.id"
           :playlist="playlist"
           :already-added="isPlaylistAlreadyAdded(playlist.ytId)"
+          :is-admin="authStore.isAdmin"
           @add="handleAddPlaylist"
         />
         <VideoCard
@@ -88,19 +90,27 @@
           :key="'video-' + video.id"
           :video="video"
           :already-added="isVideoAlreadyAdded(video.ytId)"
+          :is-admin="authStore.isAdmin"
           @add="handleAddVideo"
         />
       </div>
 
-      <!-- Loading more indicator -->
-      <div v-if="isLoadingMore" class="loading-more">
-        <div class="spinner-small"></div>
-        <p>Loading more results...</p>
+      <!-- Load More button -->
+      <div v-if="hasMoreResults" class="load-more-container">
+        <button
+          type="button"
+          class="btn-load-more"
+          :disabled="isLoadingMore"
+          @click="loadMoreResults"
+        >
+          <span v-if="isLoadingMore" class="spinner-small"></span>
+          {{ isLoadingMore ? t('contentSearch.loading') : t('contentSearch.loadMore') }}
+        </button>
       </div>
 
       <!-- End of results message -->
-      <div v-else-if="hasSearched && !hasMoreResults && hasResults" class="end-of-results">
-        <p>End of results</p>
+      <div v-else-if="hasSearched && hasResults" class="end-of-results">
+        <p>{{ t('contentSearch.endOfResults') }}</p>
       </div>
     </div>
 
@@ -116,12 +126,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { toast } from '@/utils/toast';
 import { fetchAllCategories } from '@/services/categories';
 import { searchYouTube, addToPendingApprovals } from '@/services/youtubeService';
 import apiClient from '@/services/api/client';
+import { useAuthStore } from '@/stores/auth';
 import ChannelCard from '@/components/search/ChannelCard.vue';
 import PlaylistCard from '@/components/search/PlaylistCard.vue';
 import VideoCard from '@/components/search/VideoCard.vue';
@@ -129,6 +140,7 @@ import CategoryAssignmentModal from '@/components/CategoryAssignmentModal.vue';
 import type { AdminSearchChannelResult, AdminSearchPlaylistResult, AdminSearchVideoResult } from '@/types/registry';
 
 const { t } = useI18n();
+const authStore = useAuthStore();
 
 const searchQuery = ref('');
 const contentType = ref<'all' | 'channels' | 'playlists' | 'videos'>('all');
@@ -148,6 +160,12 @@ const hasMoreResults = ref(true);
 const currentPage = ref(0);
 const nextPageToken = ref<string | null>(null);
 
+// Monotonic sequence counter for stable pagination ordering.
+// Each item gets a seq number at insertion time so load-more appends
+// never cause existing items to jump positions.
+let insertionSeq = 0;
+const itemSequence = ref<Map<string, number>>(new Map());
+
 // Category modal state
 const isCategoryModalOpen = ref(false);
 const pendingContent = ref<{
@@ -162,7 +180,19 @@ const contentTypes: Array<{ value: 'all' | 'channels' | 'playlists' | 'videos'; 
   { value: 'videos', labelKey: 'contentSearch.types.videos' }
 ];
 
-// Unified sorted results - combines all types and sorts globally
+// Helper: get a stable key for sequence tracking
+function itemKey(type: string, data: any): string {
+  return `${type}:${data.ytId || data.id || ''}`;
+}
+
+// Helper: get the insertion sequence for an item (for stable sort tiebreaker)
+function getSeq(type: string, data: any): number {
+  return itemSequence.value.get(itemKey(type, data)) ?? 0;
+}
+
+// Unified sorted results - combines all types and sorts globally.
+// Uses insertion sequence as tiebreaker so load-more never causes
+// existing items to jump positions.
 const sortedResults = computed(() => {
   // Filter by content type
   let allItems: Array<{type: string; data: any}> = [];
@@ -177,18 +207,17 @@ const sortedResults = computed(() => {
     allItems.push(...videos.value.map(v => ({ type: 'video', data: v })));
   }
 
-  // Apply global sorting
+  // Apply global sorting with stable insertion-order tiebreaker
   switch (sortFilter.value) {
     case 'DATE':
-      // Sort all items by published date globally
-      return allItems.sort((a, b) => {
+      return [...allItems].sort((a, b) => {
         const dateA = new Date(a.data.publishedAt || 0).getTime();
         const dateB = new Date(b.data.publishedAt || 0).getTime();
-        return dateB - dateA; // Most recent first
+        const cmp = dateB - dateA;
+        return cmp !== 0 ? cmp : getSeq(a.type, a.data) - getSeq(b.type, b.data);
       });
     case 'POPULAR':
-      // Sort by popularity metric based on item type
-      return allItems.sort((a, b) => {
+      return [...allItems].sort((a, b) => {
         let valueA = 0;
         let valueB = 0;
 
@@ -200,10 +229,12 @@ const sortedResults = computed(() => {
         else if (b.type === 'video') valueB = b.data.viewCount || 0;
         else if (b.type === 'playlist') valueB = b.data.itemCount || 0;
 
-        return valueB - valueA; // Highest first
+        const cmp = valueB - valueA;
+        return cmp !== 0 ? cmp : getSeq(a.type, a.data) - getSeq(b.type, b.data);
       });
     default:
-      return allItems;
+      // Insertion order (API relevance order)
+      return [...allItems].sort((a, b) => getSeq(a.type, a.data) - getSeq(b.type, b.data));
   }
 });
 
@@ -252,10 +283,19 @@ async function handleSearch() {
     // Always search for 'all' types - contentType filter is applied client-side via computed properties
     const response = await searchYouTube(searchQuery.value, 'all');
 
+    // Reset sequence counter and map for new search
+    insertionSeq = 0;
+    itemSequence.value = new Map();
+
     // Store all results separately (sorting applied by computed properties)
     channels.value = response.channels;
     playlists.value = response.playlists;
     videos.value = response.videos;
+
+    // Assign insertion sequences to all initial results
+    for (const c of response.channels) itemSequence.value.set(itemKey('channel', c), insertionSeq++);
+    for (const p of response.playlists) itemSequence.value.set(itemKey('playlist', p), insertionSeq++);
+    for (const v of response.videos) itemSequence.value.set(itemKey('video', v), insertionSeq++);
 
     // Update pagination state
     nextPageToken.value = response.nextPageToken || null;
@@ -338,7 +378,11 @@ async function handleCategoryAssignment(categoryIds: string[]) {
     );
 
     const typeLabel = content.type.charAt(0).toUpperCase() + content.type.slice(1);
-    toast.success(`${typeLabel} added to approval queue with ${categoryIds.length} ${categoryIds.length === 1 ? 'category' : 'categories'}`);
+    if (authStore.isAdmin) {
+      toast.success(t('contentSearch.addedApproved', { type: typeLabel, count: categoryIds.length }));
+    } else {
+      toast.success(t('contentSearch.addedQueue', { type: typeLabel, count: categoryIds.length }));
+    }
 
     // Mark as already added
     if (content.type === 'channel') {
@@ -355,9 +399,9 @@ async function handleCategoryAssignment(categoryIds: string[]) {
   } catch (err: any) {
     console.error('Failed to add content for approval', err);
     if (err.response?.status === 409) {
-      toast.error('This content already exists in the registry');
+      toast.error(t('contentSearch.alreadyExists'));
     } else {
-      toast.error('Failed to add content for approval');
+      toast.error(t('contentSearch.addError'));
     }
   }
 }
@@ -365,22 +409,6 @@ async function handleCategoryAssignment(categoryIds: string[]) {
 function handleCategoryModalClose() {
   isCategoryModalOpen.value = false;
   pendingContent.value = null;
-}
-
-// Infinite scroll handler
-let isScrollListenerActive = false;
-
-function handleScroll() {
-  if (isLoadingMore.value || !hasMoreResults.value || !hasSearched.value) {
-    return;
-  }
-
-  const scrollPosition = window.innerHeight + window.scrollY;
-  const threshold = document.documentElement.scrollHeight - 300; // 300px before bottom
-
-  if (scrollPosition >= threshold) {
-    loadMoreResults();
-  }
 }
 
 async function loadMoreResults() {
@@ -393,6 +421,11 @@ async function loadMoreResults() {
   try {
     // Always load 'all' types for pagination since contentType filter is client-side
     const response = await searchYouTube(searchQuery.value, 'all', nextPageToken.value);
+
+    // Assign insertion sequences to new items before appending
+    for (const c of response.channels) itemSequence.value.set(itemKey('channel', c), insertionSeq++);
+    for (const p of response.playlists) itemSequence.value.set(itemKey('playlist', p), insertionSeq++);
+    for (const v of response.videos) itemSequence.value.set(itemKey('video', v), insertionSeq++);
 
     // Append new results to existing ones (sorting applied by computed properties)
     channels.value = [...channels.value, ...response.channels];
@@ -412,16 +445,6 @@ async function loadMoreResults() {
   }
 }
 
-onMounted(() => {
-  window.addEventListener('scroll', handleScroll);
-  isScrollListenerActive = true;
-});
-
-onUnmounted(() => {
-  if (isScrollListenerActive) {
-    window.removeEventListener('scroll', handleScroll);
-  }
-});
 </script>
 
 <style scoped>
@@ -642,13 +665,36 @@ onUnmounted(() => {
   gap: 1rem;
 }
 
-.loading-more {
+.load-more-container {
   display: flex;
-  flex-direction: column;
+  justify-content: center;
+  padding: 1.5rem 0;
+}
+
+.btn-load-more {
+  display: inline-flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 2rem;
-  color: var(--color-text-secondary);
+  gap: 0.5rem;
+  padding: 0.75rem 2rem;
+  background: var(--color-brand);
+  color: var(--color-text-inverse);
+  border: none;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-load-more:hover:not(:disabled) {
+  background: var(--color-accent);
+  box-shadow: 0 4px 12px rgba(22, 131, 90, 0.25);
+  transform: translateY(-1px);
+}
+
+.btn-load-more:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 
 .spinner-small {

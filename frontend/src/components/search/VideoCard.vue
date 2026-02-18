@@ -1,7 +1,7 @@
 <template>
   <div class="search-result-card video-card">
     <div class="card-thumbnail video-thumbnail">
-      <img v-if="video.thumbnailUrl" :src="video.thumbnailUrl" :alt="video.title" />
+      <img v-if="getThumbnailUrl(video, 'video')" :src="getThumbnailUrl(video, 'video')!" :alt="video.title" />
       <div v-else class="thumbnail-placeholder"></div>
       <span v-if="video.durationSeconds" class="duration-badge">
         {{ formatDuration(video.durationSeconds) }}
@@ -49,7 +49,7 @@
         class="action-button primary"
         @click="$emit('add', video)"
       >
-        Add for Approval
+        {{ isAdmin ? 'Add' : 'Add for Approval' }}
       </button>
     </div>
   </div>
@@ -57,10 +57,12 @@
 
 <script setup lang="ts">
 import type { AdminSearchVideoResult } from '@/types/registry';
+import { getThumbnailUrl } from '@/utils/formatters';
 
 defineProps<{
   video: AdminSearchVideoResult;
   alreadyAdded?: boolean;
+  isAdmin?: boolean;
 }>();
 
 defineEmits<{

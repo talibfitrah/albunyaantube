@@ -197,8 +197,8 @@
 
             <div class="card-thumbnail">
               <img
-                v-if="item.thumbnailUrl"
-                :src="item.thumbnailUrl"
+                v-if="getThumbnailUrl(item, item.type)"
+                :src="getThumbnailUrl(item, item.type)!"
                 :alt="item.title"
                 @error="handleThumbnailError($event, item)"
               />
@@ -312,8 +312,8 @@
                 <td class="col-title">
                   <div class="title-cell">
                     <img
-                      v-if="item.thumbnailUrl"
-                      :src="item.thumbnailUrl"
+                      v-if="getThumbnailUrl(item, item.type)"
+                      :src="getThumbnailUrl(item, item.type)!"
                       :alt="item.title"
                       class="thumbnail"
                       @error="handleThumbnailError($event, item)"
@@ -354,7 +354,14 @@
           </table>
         </div>
 
-        <!-- Infinite Scroll Loading Indicator -->
+        <!-- Load More Button -->
+        <div v-if="hasMoreContent && !isLoadingMore && !loadMoreError && !paginationDisabled" class="load-more-container">
+          <button type="button" class="btn-load-more" @click="loadMoreContent">
+            {{ t('contentLibrary.loadMore', { current: content.length, total: totalItemsFromServer }) }}
+          </button>
+        </div>
+
+        <!-- Loading More Indicator -->
         <div v-if="isLoadingMore" class="loading-more-indicator">
           <div class="spinner"></div>
           <span>{{ t('contentLibrary.loadingMore') }}</span>
@@ -536,6 +543,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import apiClient from '@/services/api/client';
+import { getThumbnailUrl } from '@/utils/formatters';
 import ChannelDetailModal from '@/components/exclusions/ChannelDetailModal.vue';
 import PlaylistDetailModal from '@/components/exclusions/PlaylistDetailModal.vue';
 import VideoPreviewModal from '@/components/VideoPreviewModal.vue';
@@ -1183,18 +1191,6 @@ function retryLoadMore() {
   loadMoreContent();
 }
 
-// Window scroll handler for infinite scroll
-function handleWindowScroll() {
-  if (isLoadingMore.value || !hasMoreContent.value || paginationDisabled.value) return;
-
-  const scrollBottom = window.innerHeight + window.scrollY;
-  const docHeight = document.documentElement.scrollHeight;
-
-  if (docHeight - scrollBottom < 300) {
-    loadMoreContent();
-  }
-}
-
 async function loadCategories() {
   try {
     const response = await apiClient.get('/api/admin/categories');
@@ -1356,12 +1352,10 @@ onMounted(() => {
   loadCategories();
   loadContent();
   window.addEventListener('resize', handleResize);
-  window.addEventListener('scroll', handleWindowScroll, { passive: true });
 });
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize);
-  window.removeEventListener('scroll', handleWindowScroll);
   // Clear debounced search timeout to prevent memory leak
   if (searchTimeout) {
     clearTimeout(searchTimeout);
@@ -1598,6 +1592,29 @@ onUnmounted(() => {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 0.75rem;
+}
+
+.load-more-container {
+  display: flex;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.btn-load-more {
+  padding: 0.75rem 2rem;
+  background: var(--color-brand);
+  color: var(--color-text-inverse);
+  border: none;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-load-more:hover {
+  background: var(--color-accent);
+  box-shadow: 0 2px 8px rgba(22, 131, 90, 0.25);
 }
 
 .loading-more-indicator {

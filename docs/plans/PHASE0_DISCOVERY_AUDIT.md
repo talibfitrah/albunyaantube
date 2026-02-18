@@ -130,6 +130,16 @@ Frontend Admin Dashboard
 | Display thumbnails | Backend extracts from NewPipe | YouTube thumbnail URLs (direct) |
 | View counts/durations | Backend extracts from NewPipe | YouTube Data API v3 response |
 
+### YouTube Data API Quota & Key Management
+
+| Concern | Details |
+|---|---|
+| Daily quota | 10,000 units/day (default). search.list = 100 units, others = 1 unit |
+| Key exposure | Browser-restricted API key embedded in frontend bundle. MUST set HTTP referrer restrictions in Google Cloud Console |
+| Cost per search | ~101 units (search.list + videos.list enrichment). ~2 units for playlistItems.list + videos.list |
+| Monitoring | Track usage via Google Cloud Console > APIs & Services > Quotas |
+| Fallback | When VITE_YOUTUBE_API_KEY is not set, falls back to backend NewPipe proxy (no quota limits) |
+
 ### Transactional Payload (Frontend → Backend on Submit)
 Current submission payload to `POST /api/admin/registry/{type}`:
 ```json
@@ -208,9 +218,9 @@ When an admin adds content via `RegistryController.POST`, it's auto-approved (st
 ## 5. Recommended Execution Priority
 
 1. **Frontend RBAC** (Phase 1) - Extract role from Firebase token, add route guards and nav filtering
-2. **Moderator Submission Scoping** (Phase 2) - Add `submittedBy` filtering to approval/registry queries
-3. **Mock Code Removal** (Phase 4, P0 items) - Fix NotificationsPanel and GlobalSearchModal
+2. **Mock Code Removal** (P0 items) - Fix NotificationsPanel and GlobalSearchModal (must fix before production)
+3. **Moderator Submission Scoping** (Phase 2) - Add `submittedBy` filtering to approval/registry queries
 4. **YouTube Split** (Phase 3) - Move search/browse to YouTube Data API in frontend
-5. **Dashboard TODOs** (Phase 4, P1 items) - Fix period comparison stubs
+5. **Dashboard TODOs** (P1 items) - Fix period comparison stubs
 6. **Testing** (Phase 5) - Add RBAC tests, workflow tests
 7. **Rollout** (Phase 6) - Feature flags, migration plan

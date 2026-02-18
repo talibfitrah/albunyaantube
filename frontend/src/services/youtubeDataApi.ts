@@ -14,13 +14,19 @@ const YOUTUBE_API_BASE = 'https://www.googleapis.com/youtube/v3';
 
 function getApiKey(): string | null {
   const key = import.meta.env.VITE_YOUTUBE_API_KEY || null;
-  if (key && import.meta.env.DEV && !apiKeyWarningShown) {
+  if (key && !apiKeyWarningShown) {
     apiKeyWarningShown = true;
-    console.warn(
-      '[youtubeDataApi] VITE_YOUTUBE_API_KEY is embedded in the client-side bundle. ' +
-      'Ensure this key has HTTP referrer restrictions configured in Google Cloud Console ' +
-      'to prevent unauthorized usage. See: https://cloud.google.com/docs/authentication/api-keys#securing'
-    );
+    if (import.meta.env.DEV) {
+      console.warn(
+        '[youtubeDataApi] VITE_YOUTUBE_API_KEY is embedded in the client-side bundle.\n' +
+        'REQUIRED: Configure HTTP referrer restrictions in Google Cloud Console:\n' +
+        '  1. Go to APIs & Services > Credentials\n' +
+        '  2. Edit the API key > Application restrictions > HTTP referrers\n' +
+        '  3. Add your production domain(s) and localhost for development\n' +
+        'Without referrer restrictions, this key can be extracted and abused.\n' +
+        'See: https://cloud.google.com/docs/authentication/api-keys#securing'
+      );
+    }
   }
   return key;
 }
@@ -170,9 +176,13 @@ export async function searchAll(query: string, pageToken?: string): Promise<Sear
         publishedAt: item.snippet.publishedAt
       };
     } else {
-      const stats = playlistStats.get(item.id.playlistId!);
+      const playlistId = item.id.playlistId || '';
+      if (!playlistId) {
+        console.warn('[youtubeDataApi] Search result missing playlistId:', item.id);
+      }
+      const stats = playlistStats.get(playlistId);
       return {
-        id: item.id.playlistId!,
+        id: playlistId,
         type: 'playlist' as const,
         title: item.snippet.title,
         description: item.snippet.description,
