@@ -192,9 +192,7 @@ const entityFilters = computed(() => [
   { value: 'all', label: t('globalSearch.filters.all') },
   { value: 'channels', label: t('globalSearch.filters.channels') },
   { value: 'playlists', label: t('globalSearch.filters.playlists') },
-  { value: 'videos', label: t('globalSearch.filters.videos') },
-  { value: 'categories', label: t('globalSearch.filters.categories') },
-  { value: 'users', label: t('globalSearch.filters.users') }
+  { value: 'videos', label: t('globalSearch.filters.videos') }
 ]);
 
 const suggestions = computed<string[]>(() => {
@@ -398,6 +396,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleGlobalKeydown);
+  if (searchDebounce) clearTimeout(searchDebounce);
 });
 </script>
 

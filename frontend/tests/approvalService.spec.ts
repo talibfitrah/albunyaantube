@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { getPendingApprovals, approveItem, rejectItem } from '@/services/approvalService';
+import { getPendingApprovals, getMySubmissions, approveItem, rejectItem } from '@/services/approvalService';
 import apiClient from '@/services/api/client';
 
 vi.mock('@/services/api/client');
@@ -39,11 +39,12 @@ describe('ApprovalService', () => {
       const result = await getPendingApprovals();
 
       expect(apiClient.get).toHaveBeenCalledWith('/api/admin/approvals/pending', {
-        params: { limit: 100 }
+        params: { limit: 20 }
       });
-      expect(result).toHaveLength(2);
-      expect(result[0].type).toBe('channel');
-      expect(result[1].type).toBe('playlist');
+      expect(result.items).toHaveLength(2);
+      expect(result.items[0].type).toBe('channel');
+      expect(result.items[1].type).toBe('playlist');
+      expect(result.nextCursor).toBeNull();
     });
 
     it('should filter by type: channels only', async () => {
@@ -54,7 +55,7 @@ describe('ApprovalService', () => {
       await getPendingApprovals({ type: 'channels' });
 
       expect(apiClient.get).toHaveBeenCalledWith('/api/admin/approvals/pending', {
-        params: { limit: 100, type: 'CHANNEL' }
+        params: { limit: 20, type: 'CHANNEL' }
       });
     });
 
@@ -66,7 +67,7 @@ describe('ApprovalService', () => {
       await getPendingApprovals({ type: 'playlists' });
 
       expect(apiClient.get).toHaveBeenCalledWith('/api/admin/approvals/pending', {
-        params: { limit: 100, type: 'PLAYLIST' }
+        params: { limit: 20, type: 'PLAYLIST' }
       });
     });
 
@@ -78,27 +79,114 @@ describe('ApprovalService', () => {
       await getPendingApprovals({ category: 'cat-1' });
 
       expect(apiClient.get).toHaveBeenCalledWith('/api/admin/approvals/pending', {
-        params: { limit: 100, category: 'cat-1' }
+        params: { limit: 20, category: 'cat-1' }
       });
     });
 
-    it('should sort results by newest first', async () => {
-      const mockApprovals = [
-        { id: 'ch-1', type: 'CHANNEL', title: 'Channel 1', submittedAt: '2024-01-01T00:00:00Z', submittedBy: 'user1' },
-        { id: 'ch-2', type: 'CHANNEL', title: 'Channel 2', submittedAt: '2024-01-02T00:00:00Z', submittedBy: 'user2' }
+    it('should return nextCursor for pagination', async () => {
+      vi.mocked(apiClient.get).mockResolvedValueOnce({
+        data: {
+          data: [{ id: 'ch-1', type: 'CHANNEL', title: 'Channel 1', submittedAt: '2024-01-01T00:00:00Z', submittedBy: 'user1' }],
+          pageInfo: { nextCursor: 'cursor_abc', hasNext: true }
+        }
+      });
+
+      const result = await getPendingApprovals();
+
+      expect(result.nextCursor).toBe('cursor_abc');
+      expect(result.items).toHaveLength(1);
+    });
+
+    it('should pass cursor for next page', async () => {
+      vi.mocked(apiClient.get).mockResolvedValueOnce({
+        data: { data: [], pageInfo: { nextCursor: null, hasNext: false } }
+      });
+
+      await getPendingApprovals({ cursor: 'cursor_abc' });
+
+      expect(apiClient.get).toHaveBeenCalledWith('/api/admin/approvals/pending', {
+        params: { limit: 20, cursor: 'cursor_abc' }
+      });
+    });
+  });
+
+  describe('getMySubmissions', () => {
+    it('should fetch submissions with status filter', async () => {
+      const mockSubmissions = [
+        {
+          id: 'ch-1',
+          type: 'CHANNEL',
+          title: 'My Channel',
+          submittedAt: '2024-01-01T00:00:00Z',
+          submittedBy: 'mod@example.com',
+          status: 'PENDING'
+        }
       ];
 
       vi.mocked(apiClient.get).mockResolvedValueOnce({
         data: {
-          data: mockApprovals,
+          data: mockSubmissions,
           pageInfo: { nextCursor: null, hasNext: false }
         }
       });
 
-      const result = await getPendingApprovals({ sort: 'newest' });
+      const result = await getMySubmissions({ status: 'PENDING' });
 
-      expect(result[0].id).toBe('ch-2');
-      expect(result[1].id).toBe('ch-1');
+      expect(apiClient.get).toHaveBeenCalledWith('/api/admin/approvals/my-submissions', {
+        params: { status: 'PENDING', limit: 20 }
+      });
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].status).toBe('PENDING');
+    });
+
+    it('should filter by VIDEO type', async () => {
+      vi.mocked(apiClient.get).mockResolvedValueOnce({
+        data: { data: [], pageInfo: { nextCursor: null, hasNext: false } }
+      });
+
+      await getMySubmissions({ type: 'videos' });
+
+      expect(apiClient.get).toHaveBeenCalledWith('/api/admin/approvals/my-submissions', {
+        params: { type: 'VIDEO', limit: 20 }
+      });
+    });
+
+    it('should pass cursor for pagination', async () => {
+      vi.mocked(apiClient.get).mockResolvedValueOnce({
+        data: { data: [], pageInfo: { nextCursor: null, hasNext: false } }
+      });
+
+      await getMySubmissions({ cursor: 'cursor_xyz' });
+
+      expect(apiClient.get).toHaveBeenCalledWith('/api/admin/approvals/my-submissions', {
+        params: { limit: 20, cursor: 'cursor_xyz' }
+      });
+    });
+
+    it('should map status, rejectionReason, and reviewNotes from DTO', async () => {
+      const mockSubmission = {
+        id: 'ch-1',
+        type: 'CHANNEL',
+        title: 'Rejected Channel',
+        submittedAt: '2024-01-01T00:00:00Z',
+        submittedBy: 'mod@example.com',
+        status: 'REJECTED',
+        rejectionReason: 'LOW_QUALITY',
+        reviewNotes: 'Not enough content'
+      };
+
+      vi.mocked(apiClient.get).mockResolvedValueOnce({
+        data: {
+          data: [mockSubmission],
+          pageInfo: { nextCursor: null, hasNext: false }
+        }
+      });
+
+      const result = await getMySubmissions({ status: 'REJECTED' });
+
+      expect(result.items[0].status).toBe('REJECTED');
+      expect(result.items[0].rejectionReason).toBe('LOW_QUALITY');
+      expect(result.items[0].reviewNotes).toBe('Not enough content');
     });
   });
 

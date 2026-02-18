@@ -6,6 +6,7 @@ import com.albunyaan.tube.service.ApprovalService;
 import com.albunyaan.tube.service.PublicContentCacheService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -40,7 +41,7 @@ public class ApprovalController {
      * List pending approvals with filters
      *
      * Query params:
-     * - type: CHANNEL|PLAYLIST (optional)
+     * - type: CHANNEL|PLAYLIST|VIDEO (optional)
      * - category: category ID (optional)
      * - limit: page size (default 20)
      * - cursor: pagination cursor (optional)
@@ -63,6 +64,9 @@ public class ApprovalController {
                     type, category, limit, cursor);
 
             return ResponseEntity.ok(result);
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid parameter in pending approvals: {}", e.getMessage());
+            return ResponseEntity.badRequest().build();
         } catch (Exception e) {
             log.error("Failed to get pending approvals", e);
             return ResponseEntity.internalServerError().build();
@@ -81,6 +85,7 @@ public class ApprovalController {
      * - limit: page size (default 20)
      * - cursor: pagination cursor (optional)
      */
+    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
     @GetMapping("/my-submissions")
     public ResponseEntity<CursorPageDto<PendingApprovalDto>> getMySubmissions(
             @RequestParam(required = false) String status,
@@ -98,6 +103,9 @@ public class ApprovalController {
                     user.getUid(), status, type, limit, cursor);
 
             return ResponseEntity.ok(result);
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid parameter in my-submissions: {}", e.getMessage());
+            return ResponseEntity.badRequest().build();
         } catch (Exception e) {
             log.error("Failed to get my submissions for user {}", user.getUid(), e);
             return ResponseEntity.internalServerError().build();
@@ -135,6 +143,9 @@ public class ApprovalController {
             }
 
             return ResponseEntity.ok(response);
+        } catch (IllegalStateException e) {
+            log.warn("Approval failed - invalid state: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
         } catch (IllegalArgumentException e) {
             log.warn("Approval failed - item not found: {}", id);
             return ResponseEntity.notFound().build();
@@ -176,6 +187,9 @@ public class ApprovalController {
             }
 
             return ResponseEntity.ok(response);
+        } catch (IllegalStateException e) {
+            log.warn("Rejection failed - invalid state: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
         } catch (IllegalArgumentException e) {
             log.warn("Rejection failed - item not found: {}", id);
             return ResponseEntity.notFound().build();

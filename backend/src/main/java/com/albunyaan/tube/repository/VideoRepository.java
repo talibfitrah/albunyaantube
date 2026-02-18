@@ -63,6 +63,34 @@ public class VideoRepository {
         return video;
     }
 
+    /**
+     * Atomically save a video only if its current status matches the expected value.
+     * Uses a Firestore transaction to prevent concurrent approve/reject race conditions.
+     */
+    public Video saveIfStatus(Video video, String expectedStatus)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        if (video == null || video.getId() == null || expectedStatus == null) {
+            throw new IllegalArgumentException("Video, video ID, and expectedStatus must not be null for conditional save");
+        }
+        video.touch();
+
+        DocumentReference docRef = getCollection().document(video.getId());
+        return firestore.runTransaction(transaction -> {
+            com.google.cloud.firestore.DocumentSnapshot snapshot = transaction.get(docRef).get();
+            if (!snapshot.exists()) {
+                throw new IllegalArgumentException("Video not found: " + video.getId());
+            }
+            String currentStatus = snapshot.getString("status");
+            if (!expectedStatus.equals(currentStatus)) {
+                throw new IllegalStateException(
+                        "Cannot update video " + video.getId() +
+                        ": expected status " + expectedStatus + " but found " + currentStatus);
+            }
+            transaction.set(docRef, video);
+            return video;
+        }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+    }
+
     public Optional<Video> findById(String id) throws ExecutionException, InterruptedException, TimeoutException {
         DocumentReference docRef = getCollection().document(id);
         Video video = docRef.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS).toObject(Video.class);

@@ -73,6 +73,34 @@ public class PlaylistRepository {
         return playlist;
     }
 
+    /**
+     * Atomically save a playlist only if its current status matches the expected value.
+     * Uses a Firestore transaction to prevent concurrent approve/reject race conditions.
+     */
+    public Playlist saveIfStatus(Playlist playlist, String expectedStatus)
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        if (playlist == null || playlist.getId() == null || expectedStatus == null) {
+            throw new IllegalArgumentException("Playlist, playlist ID, and expectedStatus must not be null for conditional save");
+        }
+        playlist.touch();
+
+        DocumentReference docRef = getCollection().document(playlist.getId());
+        return firestore.runTransaction(transaction -> {
+            com.google.cloud.firestore.DocumentSnapshot snapshot = transaction.get(docRef).get();
+            if (!snapshot.exists()) {
+                throw new IllegalArgumentException("Playlist not found: " + playlist.getId());
+            }
+            String currentStatus = snapshot.getString("status");
+            if (!expectedStatus.equals(currentStatus)) {
+                throw new IllegalStateException(
+                        "Cannot update playlist " + playlist.getId() +
+                        ": expected status " + expectedStatus + " but found " + currentStatus);
+            }
+            transaction.set(docRef, playlist);
+            return playlist;
+        }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+    }
+
     public Optional<Playlist> findById(String id) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         DocumentReference docRef = getCollection().document(id);
         Playlist playlist = docRef.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS).toObject(Playlist.class);

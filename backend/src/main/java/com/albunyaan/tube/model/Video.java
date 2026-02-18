@@ -84,6 +84,11 @@ public class Video {
     private String approvedBy;
 
     /**
+     * Approval metadata (reviewer info, notes, rejection reason).
+     */
+    private ApprovalMetadata approvalMetadata;
+
+    /**
      * Display order for custom sorting in Content Library.
      * Lower values appear first. Null by default until explicitly set.
      */
@@ -285,6 +290,14 @@ public class Video {
 
     public void setLastValidatedAt(Timestamp lastValidatedAt) {
         this.lastValidatedAt = lastValidatedAt;
+    }
+
+    public ApprovalMetadata getApprovalMetadata() {
+        return approvalMetadata;
+    }
+
+    public void setApprovalMetadata(ApprovalMetadata approvalMetadata) {
+        this.approvalMetadata = approvalMetadata;
     }
 
     public void touch() {

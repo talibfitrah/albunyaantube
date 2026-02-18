@@ -164,6 +164,7 @@ export const messages = {
       pending: 'Pending items',
       filters: {
         type: 'Content type',
+        status: 'Status',
         category: 'Category',
         allCategories: 'All categories',
         sort: 'Sort by',
@@ -194,6 +195,9 @@ export const messages = {
       submittedBy: 'Submitted by',
       unknown: 'Unknown',
       loading: 'Loading approvals...',
+      loadMore: 'Load more',
+      loadingMore: 'Loading more...',
+      loadMoreError: 'Failed to load more items.',
       retry: 'Retry',
       empty: 'No pending approvals found.',
       emptySubmissions: 'No submissions found with this status.',
@@ -1062,6 +1066,36 @@ export const messages = {
         viewAll: 'View all activity'
       }
     },
+    globalSearch: {
+      placeholder: 'Search content...',
+      clearSearch: 'Clear search',
+      close: 'Close',
+      recentSearches: 'Recent Searches',
+      clearRecent: 'Clear',
+      suggestions: 'Suggestions',
+      resultsCount: '{count} results',
+      searching: 'Searching...',
+      noResults: 'No results found',
+      emptyState: 'Search for channels, playlists, or videos',
+      emptyHint: 'Type at least 2 characters to search',
+      navigate: 'Navigate',
+      select: 'Select',
+      closeHint: 'Close',
+      filters: {
+        all: 'All',
+        channels: 'Channels',
+        playlists: 'Playlists',
+        videos: 'Videos'
+      },
+      entityTypes: {
+        channel: 'Channel',
+        playlist: 'Playlist',
+        video: 'Video',
+        category: 'Category',
+        user: 'User',
+        content: 'Content'
+      }
+    },
     categoryModal: {
       headingSingle: 'Assign Category',
       headingMulti: 'Assign Categories',
@@ -1454,6 +1488,7 @@ export const messages = {
       pending: 'عناصر قيد الانتظار',
       filters: {
         type: 'نوع المحتوى',
+        status: 'الحالة',
         category: 'الفئة',
         allCategories: 'جميع الفئات',
         sort: 'ترتيب حسب',
@@ -1484,6 +1519,9 @@ export const messages = {
       submittedBy: 'مقدم من',
       unknown: 'غير معروف',
       loading: 'جارٍ تحميل الموافقات...',
+      loadMore: 'تحميل المزيد',
+      loadingMore: 'جارٍ تحميل المزيد...',
+      loadMoreError: 'فشل تحميل المزيد من العناصر.',
       retry: 'إعادة المحاولة',
       empty: 'لا توجد موافقات معلقة.',
       emptySubmissions: 'لا توجد طلبات بهذه الحالة.',
@@ -2364,6 +2402,36 @@ export const messages = {
         close: 'إغلاق',
         viewAll: 'عرض كل النشاط'
       }
+    },
+    globalSearch: {
+      placeholder: 'البحث عن المحتوى...',
+      clearSearch: 'مسح البحث',
+      close: 'إغلاق',
+      recentSearches: 'عمليات البحث الأخيرة',
+      clearRecent: 'مسح',
+      suggestions: 'اقتراحات',
+      resultsCount: '{count} نتيجة',
+      searching: 'جارٍ البحث...',
+      noResults: 'لم يتم العثور على نتائج',
+      emptyState: 'البحث عن القنوات أو قوائم التشغيل أو الفيديوهات',
+      emptyHint: 'اكتب حرفين على الأقل للبحث',
+      navigate: 'التنقل',
+      select: 'اختيار',
+      closeHint: 'إغلاق',
+      filters: {
+        all: 'الكل',
+        channels: 'القنوات',
+        playlists: 'قوائم التشغيل',
+        videos: 'الفيديوهات'
+      },
+      entityTypes: {
+        channel: 'قناة',
+        playlist: 'قائمة تشغيل',
+        video: 'فيديو',
+        category: 'فئة',
+        user: 'مستخدم',
+        content: 'محتوى'
+      }
     }
   },
   nl: {
@@ -2525,6 +2593,7 @@ export const messages = {
       pending: 'Items in behandeling',
       filters: {
         type: 'Type inhoud',
+        status: 'Status',
         category: 'Categorie',
         allCategories: 'Alle categorieën',
         sort: 'Sorteren op',
@@ -2555,6 +2624,9 @@ export const messages = {
       submittedBy: 'Ingediend door',
       unknown: 'Onbekend',
       loading: 'Goedkeuringen laden...',
+      loadMore: 'Meer laden',
+      loadingMore: 'Meer laden...',
+      loadMoreError: 'Kan geen extra items laden.',
       retry: 'Opnieuw proberen',
       empty: 'Geen goedkeuringen in behandeling.',
       emptySubmissions: 'Geen indieningen gevonden met deze status.',
@@ -3408,6 +3480,36 @@ export const messages = {
         successful: 'gelukt',
         skipped: 'overgeslagen',
         failed: 'mislukt'
+      }
+    },
+    globalSearch: {
+      placeholder: 'Zoek inhoud...',
+      clearSearch: 'Zoekopdracht wissen',
+      close: 'Sluiten',
+      recentSearches: 'Recente zoekopdrachten',
+      clearRecent: 'Wissen',
+      suggestions: 'Suggesties',
+      resultsCount: '{count} resultaten',
+      searching: 'Zoeken...',
+      noResults: 'Geen resultaten gevonden',
+      emptyState: 'Zoek naar kanalen, afspeellijsten of video\'s',
+      emptyHint: 'Typ minimaal 2 tekens om te zoeken',
+      navigate: 'Navigeren',
+      select: 'Selecteren',
+      closeHint: 'Sluiten',
+      filters: {
+        all: 'Alles',
+        channels: 'Kanalen',
+        playlists: 'Afspeellijsten',
+        videos: 'Video\'s'
+      },
+      entityTypes: {
+        channel: 'Kanaal',
+        playlist: 'Afspeellijst',
+        video: 'Video',
+        category: 'Categorie',
+        user: 'Gebruiker',
+        content: 'Inhoud'
       }
     }
   }

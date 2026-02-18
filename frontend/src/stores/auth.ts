@@ -169,6 +169,7 @@ export const useAuthStore = defineStore('auth', () => {
 
     try {
       idToken.value = await currentUser.value.getIdToken(true); // force refresh
+      userRole.value = await extractRole(currentUser.value); // re-extract role from refreshed token
       return true;
     } catch (err) {
       console.error('Token refresh failed', err);

@@ -119,21 +119,31 @@ function mapToMySubmission(dto: PendingApprovalDto): MySubmission {
   const base = mapPendingApprovalToUi(dto);
   return {
     ...base,
-    status: ((dto as any).status as SubmissionStatus) || 'PENDING',
-    rejectionReason: (dto as any).rejectionReason || undefined,
-    reviewNotes: (dto as any).reviewNotes || undefined
+    status: (dto.status as SubmissionStatus) || 'PENDING',
+    rejectionReason: dto.rejectionReason || undefined,
+    reviewNotes: dto.reviewNotes || undefined
   };
+}
+
+/**
+ * Response type for paginated submission queries.
+ */
+export interface PaginatedSubmissions {
+  items: MySubmission[];
+  nextCursor: string | null;
 }
 
 /**
  * Get the current user's own submissions filtered by status.
  * Used by moderators to view their submission history.
+ * Supports cursor-based pagination.
  */
 export async function getMySubmissions(filters?: {
   status?: SubmissionStatus;
   type?: 'all' | 'channels' | 'playlists' | 'videos';
-  sort?: 'oldest' | 'newest';
-}): Promise<MySubmission[]> {
+  cursor?: string;
+  limit?: number;
+}): Promise<PaginatedSubmissions> {
   const params: Record<string, string | number> = {};
 
   if (filters?.status) params.status = filters.status;
@@ -144,30 +154,35 @@ export async function getMySubmissions(filters?: {
   else if (filters?.type === 'videos') typeParam = 'VIDEO';
   if (typeParam) params.type = typeParam;
 
-  params.limit = 100;
+  params.limit = filters?.limit || 20;
+  if (filters?.cursor) params.cursor = filters.cursor;
 
   const response = await apiClient.get<CursorPage<PendingApprovalDto>>('/api/admin/approvals/my-submissions', { params });
-  const data = response.data.data;
 
-  const submissions: MySubmission[] = data.map(mapToMySubmission);
-
-  if (filters?.sort === 'newest') {
-    submissions.sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
-  } else {
-    submissions.sort((a, b) => new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime());
-  }
-
-  return submissions;
+  return {
+    items: response.data.data.map(mapToMySubmission),
+    nextCursor: response.data.pageInfo?.nextCursor || null
+  };
 }
 
 /**
- * Get pending approvals using the proper approval endpoint
+ * Response type for paginated approval queries.
+ */
+export interface PaginatedApprovals {
+  items: PendingApproval[];
+  nextCursor: string | null;
+}
+
+/**
+ * Get pending approvals using the proper approval endpoint.
+ * Supports cursor-based pagination.
  */
 export async function getPendingApprovals(filters?: {
   type?: 'all' | 'channels' | 'playlists' | 'videos';
   category?: string;
-  sort?: 'oldest' | 'newest';
-}): Promise<PendingApproval[]> {
+  cursor?: string;
+  limit?: number;
+}): Promise<PaginatedApprovals> {
   // Map frontend filter type to backend type param
   let typeParam: string | undefined;
   if (filters?.type === 'channels') typeParam = 'CHANNEL';
@@ -177,22 +192,15 @@ export async function getPendingApprovals(filters?: {
   const params: Record<string, string | number> = {};
   if (typeParam) params.type = typeParam;
   if (filters?.category) params.category = filters.category;
-  params.limit = 100; // Get all for now
+  params.limit = filters?.limit || 20;
+  if (filters?.cursor) params.cursor = filters.cursor;
 
   const response = await apiClient.get<CursorPage<PendingApprovalDto>>('/api/admin/approvals/pending', { params });
-  const data = response.data.data;
 
-  // Map API DTOs to UI domain models
-  const approvals: PendingApproval[] = data.map(mapPendingApprovalToUi);
-
-  // Apply sorting
-  if (filters?.sort === 'newest') {
-    approvals.sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
-  } else {
-    approvals.sort((a, b) => new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime());
-  }
-
-  return approvals;
+  return {
+    items: response.data.data.map(mapPendingApprovalToUi),
+    nextCursor: response.data.pageInfo?.nextCursor || null
+  };
 }
 
 /**

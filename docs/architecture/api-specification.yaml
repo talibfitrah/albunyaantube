@@ -1906,6 +1906,58 @@ paths:
         '200':
           description: Item rejected
 
+  /admin/approvals/my-submissions:
+    get:
+      summary: List authenticated user's own submissions
+      description: |
+        Returns the authenticated user's own submissions filtered by status.
+        Available to both admins and moderators.
+
+        Supports cursor-based pagination and filtering by content type.
+      operationId: getMySubmissions
+      tags: [Approvals]
+      parameters:
+        - name: status
+          in: query
+          description: Filter by submission status (default PENDING)
+          schema:
+            type: string
+            enum: [PENDING, APPROVED, REJECTED]
+            default: PENDING
+        - name: type
+          in: query
+          description: Filter by content type. Omit to get all types merged.
+          schema:
+            type: string
+            enum: [CHANNEL, PLAYLIST, VIDEO]
+        - name: limit
+          in: query
+          description: Number of items per page (default 20)
+          schema:
+            type: integer
+            default: 20
+        - name: cursor
+          in: query
+          description: Opaque cursor token from previous response's pageInfo.nextCursor
+          schema:
+            type: string
+      responses:
+        '200':
+          description: User's submissions
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CursorPageDto'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/PendingApprovalDto'
+        '400':
+          description: Invalid type parameter
+
   # ============================================================================
   # PLAYER (Public)
   # ============================================================================
@@ -4062,6 +4114,19 @@ components:
           format: date-time
         submittedBy:
           type: string
+        status:
+          type: string
+          nullable: true
+          enum: [PENDING, APPROVED, REJECTED]
+          description: Current approval status (included in my-submissions responses)
+        rejectionReason:
+          type: string
+          nullable: true
+          description: Rejection reason if status is REJECTED
+        reviewNotes:
+          type: string
+          nullable: true
+          description: Review notes from the admin reviewer
         metadata:
           type: object
           additionalProperties: true

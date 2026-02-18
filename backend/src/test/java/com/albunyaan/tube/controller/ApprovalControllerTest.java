@@ -160,6 +160,129 @@ class ApprovalControllerTest {
     }
 
     @Test
+    void testGetMySubmissions_Success() throws Exception {
+        // Arrange
+        PendingApprovalDto submission = new PendingApprovalDto();
+        submission.setId("channel_1");
+        submission.setType("CHANNEL");
+        submission.setTitle("My Channel");
+        submission.setStatus("PENDING");
+
+        CursorPageDto<PendingApprovalDto> expectedResult = new CursorPageDto<>();
+        expectedResult.setData(Arrays.asList(submission));
+        expectedResult.setPageInfo(new CursorPageDto.PageInfo(null));
+
+        when(approvalService.getMySubmissions(eq("test_uid"), any(), any(), any(), any()))
+                .thenReturn(expectedResult);
+
+        // Act
+        ResponseEntity<CursorPageDto<PendingApprovalDto>> response =
+                controller.getMySubmissions("PENDING", "CHANNEL", 20, null, mockUser);
+
+        // Assert
+        assertEquals(200, response.getStatusCodeValue());
+        assertNotNull(response.getBody());
+        assertEquals(1, response.getBody().getData().size());
+        verify(approvalService).getMySubmissions("test_uid", "PENDING", "CHANNEL", 20, null);
+    }
+
+    @Test
+    void testGetMySubmissions_InvalidType_Returns400() throws Exception {
+        // Arrange
+        when(approvalService.getMySubmissions(any(), any(), eq("INVALID"), any(), any()))
+                .thenThrow(new IllegalArgumentException("Invalid type: INVALID"));
+
+        // Act
+        ResponseEntity<CursorPageDto<PendingApprovalDto>> response =
+                controller.getMySubmissions(null, "INVALID", null, null, mockUser);
+
+        // Assert
+        assertEquals(400, response.getStatusCodeValue());
+    }
+
+    @Test
+    void testGetMySubmissions_VideoType() throws Exception {
+        // Arrange
+        PendingApprovalDto videoSubmission = new PendingApprovalDto();
+        videoSubmission.setId("video_1");
+        videoSubmission.setType("VIDEO");
+        videoSubmission.setTitle("My Video");
+        videoSubmission.setStatus("APPROVED");
+
+        CursorPageDto<PendingApprovalDto> expectedResult = new CursorPageDto<>();
+        expectedResult.setData(Arrays.asList(videoSubmission));
+        expectedResult.setPageInfo(new CursorPageDto.PageInfo(null));
+
+        when(approvalService.getMySubmissions(eq("test_uid"), any(), eq("VIDEO"), any(), any()))
+                .thenReturn(expectedResult);
+
+        // Act
+        ResponseEntity<CursorPageDto<PendingApprovalDto>> response =
+                controller.getMySubmissions("APPROVED", "VIDEO", 20, null, mockUser);
+
+        // Assert
+        assertEquals(200, response.getStatusCodeValue());
+        assertNotNull(response.getBody());
+        assertEquals("VIDEO", response.getBody().getData().get(0).getType());
+    }
+
+    @Test
+    void testGetPendingApprovals_InvalidCursor_Returns400() throws Exception {
+        // Arrange
+        when(approvalService.getPendingApprovals(any(), any(), any(), eq("bad-cursor")))
+                .thenThrow(new IllegalArgumentException("Invalid cursor format"));
+
+        // Act
+        ResponseEntity<CursorPageDto<PendingApprovalDto>> response =
+                controller.getPendingApprovals(null, null, 20, "bad-cursor", mockUser);
+
+        // Assert
+        assertEquals(400, response.getStatusCodeValue());
+    }
+
+    @Test
+    void testGetPendingApprovals_InvalidType_Returns400() throws Exception {
+        // Arrange
+        when(approvalService.getPendingApprovals(eq("INVALID"), any(), any(), any()))
+                .thenThrow(new IllegalArgumentException("Invalid type: INVALID"));
+
+        // Act
+        ResponseEntity<CursorPageDto<PendingApprovalDto>> response =
+                controller.getPendingApprovals("INVALID", null, 20, null, mockUser);
+
+        // Assert
+        assertEquals(400, response.getStatusCodeValue());
+    }
+
+    @Test
+    void testApprove_AlreadyApproved_Returns409() throws Exception {
+        // Arrange
+        ApprovalRequestDto request = new ApprovalRequestDto("Duplicate approval");
+        when(approvalService.approve(any(), any(), any(), any()))
+                .thenThrow(new IllegalStateException("Cannot approve channel ch1: current status is APPROVED"));
+
+        // Act
+        ResponseEntity<ApprovalResponseDto> response = controller.approve("ch1", request, mockUser);
+
+        // Assert
+        assertEquals(409, response.getStatusCodeValue());
+    }
+
+    @Test
+    void testReject_AlreadyApproved_Returns409() throws Exception {
+        // Arrange
+        RejectionRequestDto request = new RejectionRequestDto("LOW_QUALITY", "Changed mind");
+        when(approvalService.reject(any(), any(), any(), any()))
+                .thenThrow(new IllegalStateException("Cannot reject channel ch1: current status is APPROVED"));
+
+        // Act
+        ResponseEntity<ApprovalResponseDto> response = controller.reject("ch1", request, mockUser);
+
+        // Assert
+        assertEquals(409, response.getStatusCodeValue());
+    }
+
+    @Test
     void testApprove_WithCategoryOverride() throws Exception {
         // Arrange
         ApprovalRequestDto request = new ApprovalRequestDto("Content fits better in another category");

@@ -71,6 +71,36 @@ public class ChannelRepository {
         return channel;
     }
 
+    /**
+     * Atomically save a channel only if its current status matches the expected value.
+     * Uses a Firestore transaction to prevent concurrent approve/reject race conditions.
+     */
+    public Channel saveIfStatus(Channel channel, String expectedStatus)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        if (channel == null || channel.getId() == null || expectedStatus == null) {
+            throw new IllegalArgumentException("Channel, channel ID, and expectedStatus must not be null for conditional save");
+        }
+        channel.touch();
+        channel.setStatus(channel.getStatus());
+        channel.setExcludedItems(channel.getExcludedItems());
+
+        DocumentReference docRef = getCollection().document(channel.getId());
+        return firestore.runTransaction(transaction -> {
+            DocumentSnapshot snapshot = transaction.get(docRef).get();
+            if (!snapshot.exists()) {
+                throw new IllegalArgumentException("Channel not found: " + channel.getId());
+            }
+            String currentStatus = snapshot.getString("status");
+            if (!expectedStatus.equals(currentStatus)) {
+                throw new IllegalStateException(
+                        "Cannot update channel " + channel.getId() +
+                        ": expected status " + expectedStatus + " but found " + currentStatus);
+            }
+            transaction.set(docRef, channel);
+            return channel;
+        }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+    }
+
     public Optional<Channel> findById(String id) throws ExecutionException, InterruptedException, TimeoutException {
         DocumentReference docRef = getCollection().document(id);
         Channel channel = docRef.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS).toObject(Channel.class);

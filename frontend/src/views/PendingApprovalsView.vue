@@ -16,7 +16,7 @@
     <!-- Status Tabs (moderator view) -->
     <div v-if="isModeratorView" class="filters">
       <div class="filter-group">
-        <label>{{ t('approvals.filters.type') }}</label>
+        <label>{{ t('approvals.filters.status') }}</label>
         <div class="filter-tabs">
           <button
             v-for="tab in statusTabs"
@@ -30,28 +30,18 @@
         </div>
       </div>
 
-      <div class="filter-row">
-        <div class="filter-item">
-          <label>{{ t('approvals.filters.type') }}</label>
-          <div class="filter-tabs">
-            <button
-              v-for="type in contentTypes"
-              :key="type.value"
-              type="button"
-              :class="['filter-tab', { active: contentType === type.value }]"
-              @click="contentType = type.value; handleFilterChange()"
-            >
-              {{ t(type.labelKey) }}
-            </button>
-          </div>
-        </div>
-
-        <div class="filter-item">
-          <label>{{ t('approvals.filters.sort') }}</label>
-          <select v-model="sortFilter" @change="handleFilterChange">
-            <option value="oldest">{{ t('approvals.filters.oldest') }}</option>
-            <option value="newest">{{ t('approvals.filters.newest') }}</option>
-          </select>
+      <div class="filter-group">
+        <label>{{ t('approvals.filters.type') }}</label>
+        <div class="filter-tabs">
+          <button
+            v-for="type in contentTypes"
+            :key="type.value"
+            type="button"
+            :class="['filter-tab', { active: contentType === type.value }]"
+            @click="contentType = type.value; handleFilterChange()"
+          >
+            {{ t(type.labelKey) }}
+          </button>
         </div>
       </div>
     </div>
@@ -73,24 +63,14 @@
         </div>
       </div>
 
-      <div class="filter-row">
-        <div class="filter-item">
-          <label>{{ t('approvals.filters.category') }}</label>
-          <select v-model="categoryFilter" @change="handleFilterChange">
-            <option value="">{{ t('approvals.filters.allCategories') }}</option>
-            <option v-for="cat in flatCategories" :key="cat.id" :value="cat.id">
-              {{ cat.label }}
-            </option>
-          </select>
-        </div>
-
-        <div class="filter-item">
-          <label>{{ t('approvals.filters.sort') }}</label>
-          <select v-model="sortFilter" @change="handleFilterChange">
-            <option value="oldest">{{ t('approvals.filters.oldest') }}</option>
-            <option value="newest">{{ t('approvals.filters.newest') }}</option>
-          </select>
-        </div>
+      <div class="filter-group">
+        <label>{{ t('approvals.filters.category') }}</label>
+        <select v-model="categoryFilter" @change="handleFilterChange">
+          <option value="">{{ t('approvals.filters.allCategories') }}</option>
+          <option v-for="cat in flatCategories" :key="cat.id" :value="cat.id">
+            {{ cat.label }}
+          </option>
+        </select>
       </div>
     </div>
 
@@ -103,7 +83,7 @@
     <!-- Error State -->
     <div v-else-if="error" class="error-panel" role="alert">
       <p>{{ error }}</p>
-      <button type="button" @click="loadApprovals">{{ t('approvals.retry') }}</button>
+      <button type="button" @click="loadApprovals()">{{ t('approvals.retry') }}</button>
     </div>
 
     <!-- Empty State -->
@@ -213,6 +193,14 @@
       </div>
     </div>
 
+    <!-- Load More Button -->
+    <div v-if="nextCursor && !isLoading" class="load-more">
+      <button type="button" class="button secondary" :disabled="isLoadingMore" @click="loadMore">
+        <span v-if="isLoadingMore">{{ t('approvals.loadingMore') }}</span>
+        <span v-else>{{ t('approvals.loadMore') }}</span>
+      </button>
+    </div>
+
     <!-- Preview Modals -->
     <ChannelDetailModal
       v-if="previewItem?.type === 'channel'"
@@ -284,20 +272,21 @@
 import { ref, computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAuthStore } from '@/stores/auth';
+import { useToast } from '@/composables/useToast';
 import { getAllCategories } from '@/services/categoryService';
-import { getPendingApprovals, getMySubmissions, approveItem, rejectItem as rejectItemApi, type PendingApproval, type SubmissionStatus } from '@/services/approvalService';
+import { getPendingApprovals, getMySubmissions, approveItem, rejectItem as rejectItemApi, type PendingApproval, type SubmissionStatus, type MySubmission } from '@/services/approvalService';
 import ChannelDetailModal from '@/components/exclusions/ChannelDetailModal.vue';
 import PlaylistDetailModal from '@/components/exclusions/PlaylistDetailModal.vue';
 import VideoPreviewModal from '@/components/VideoPreviewModal.vue';
 
 const { t } = useI18n();
 const authStore = useAuthStore();
+const toast = useToast();
 
 const isModeratorView = computed(() => !authStore.isAdmin);
 
 const contentType = ref<'all' | 'channels' | 'playlists' | 'videos'>('all');
 const categoryFilter = ref('');
-const sortFilter = ref('oldest');
 const statusFilter = ref<SubmissionStatus>('PENDING');
 
 const statusTabs = [
@@ -306,7 +295,9 @@ const statusTabs = [
   { value: 'REJECTED' as SubmissionStatus, labelKey: 'approvals.statusTabs.rejected' }
 ];
 
-const approvals = ref<any[]>([]);
+const approvals = ref<MySubmission[]>([]);
+const nextCursor = ref<string | null>(null);
+const isLoadingMore = ref(false);
 const categories = ref<any[]>([]);
 const flatCategories = computed(() => {
   const flattened: { id: string; label: string }[] = [];
@@ -371,35 +362,66 @@ async function loadCategories() {
   }
 }
 
-async function loadApprovals() {
-  isLoading.value = true;
-  error.value = null;
+async function loadApprovals(append = false) {
+  if (append) {
+    isLoadingMore.value = true;
+  } else {
+    isLoading.value = true;
+    nextCursor.value = null;
+    error.value = null;
+  }
 
   try {
     if (isModeratorView.value) {
-      const items = await getMySubmissions({
+      const result = await getMySubmissions({
         status: statusFilter.value,
         type: contentType.value,
-        sort: sortFilter.value as 'oldest' | 'newest'
+        cursor: append ? (nextCursor.value || undefined) : undefined
       });
-      approvals.value = items;
+      if (append) {
+        approvals.value = [...approvals.value, ...result.items];
+      } else {
+        approvals.value = result.items;
+      }
+      nextCursor.value = result.nextCursor;
     } else {
-      const items = await getPendingApprovals({
+      const result = await getPendingApprovals({
         type: contentType.value,
         category: categoryFilter.value || undefined,
-        sort: sortFilter.value as 'oldest' | 'newest'
+        cursor: append ? (nextCursor.value || undefined) : undefined
       });
-      approvals.value = items;
+      // Map PendingApproval items to MySubmission with default status
+      const mapped: MySubmission[] = result.items.map(item => ({
+        ...item,
+        status: 'PENDING' as const
+      }));
+      if (append) {
+        approvals.value = [...approvals.value, ...mapped];
+      } else {
+        approvals.value = mapped;
+      }
+      nextCursor.value = result.nextCursor;
     }
   } catch (err) {
-    error.value = err instanceof Error ? err.message : t('approvals.error');
+    if (!append) {
+      error.value = err instanceof Error ? err.message : t('approvals.error');
+    } else {
+      toast.warning(t('approvals.loadMoreError'));
+    }
   } finally {
     isLoading.value = false;
+    isLoadingMore.value = false;
   }
 }
 
 function handleFilterChange() {
   loadApprovals();
+}
+
+function loadMore() {
+  if (nextCursor.value && !isLoadingMore.value) {
+    loadApprovals(true);
+  }
 }
 
 async function handleApprove(item: any) {
@@ -1222,5 +1244,11 @@ onMounted(() => {
     flex-direction: column;
     gap: 0.75rem;
   }
+}
+
+.load-more {
+  display: flex;
+  justify-content: center;
+  padding: 1rem 0;
 }
 </style>

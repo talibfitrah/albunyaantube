@@ -13,8 +13,18 @@ import type { EnrichedSearchResult, SearchPageResponse } from '@/types/api';
 const YOUTUBE_API_BASE = 'https://www.googleapis.com/youtube/v3';
 
 function getApiKey(): string | null {
-  return import.meta.env.VITE_YOUTUBE_API_KEY || null;
+  const key = import.meta.env.VITE_YOUTUBE_API_KEY || null;
+  if (key && import.meta.env.DEV && !apiKeyWarningShown) {
+    apiKeyWarningShown = true;
+    console.warn(
+      '[youtubeDataApi] VITE_YOUTUBE_API_KEY is embedded in the client-side bundle. ' +
+      'Ensure this key has HTTP referrer restrictions configured in Google Cloud Console ' +
+      'to prevent unauthorized usage. See: https://cloud.google.com/docs/authentication/api-keys#securing'
+    );
+  }
+  return key;
 }
+let apiKeyWarningShown = false;
 
 /**
  * Check if YouTube Data API is available (API key configured)
@@ -64,6 +74,22 @@ interface YouTubePlaylistItem {
   contentDetails: { itemCount: number };
 }
 
+interface YouTubePlaylistItemEntry {
+  snippet: {
+    title: string;
+    description: string;
+    thumbnails: { high?: { url: string }; medium?: { url: string }; default?: { url: string } };
+    resourceId: { kind: string; videoId: string };
+    position: number;
+  };
+}
+
+interface YouTubePlaylistItemsResponse {
+  items: YouTubePlaylistItemEntry[];
+  nextPageToken?: string;
+  pageInfo?: { totalResults: number; resultsPerPage: number };
+}
+
 async function youtubeGet<T>(endpoint: string, params: Record<string, string>): Promise<T> {
   const apiKey = getApiKey();
   if (!apiKey) throw new Error('YouTube Data API key not configured');
@@ -92,7 +118,7 @@ export async function searchAll(query: string, pageToken?: string): Promise<Sear
     q: query,
     type: 'video,channel,playlist',
     maxResults: '20',
-    pageToken: pageToken || ''
+    ...(pageToken ? { pageToken } : {})
   });
 
   // Collect IDs for enrichment
@@ -290,4 +316,339 @@ async function getPlaylistStats(ids: string[]): Promise<Map<string, YouTubePlayl
     map.set(item.id, item);
   }
   return map;
+}
+
+/**
+ * Parse ISO 8601 duration to seconds (e.g., "PT1H2M30S" -> 3750)
+ */
+function parseDurationToSeconds(duration: string): number {
+  if (!duration) return 0;
+  const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!match) return 0;
+  return parseInt(match[1] || '0') * 3600 + parseInt(match[2] || '0') * 60 + parseInt(match[3] || '0');
+}
+
+// ============================================================================
+// Channel/Playlist Browsing Functions (Direct YouTube Data API v3)
+// ============================================================================
+
+export interface ChannelDetails {
+  id: string;
+  name: string;
+  description: string;
+  thumbnailUrl: string;
+  subscriberCount: number;
+  videoCount: number;
+  viewCount: number;
+}
+
+export interface VideoEntry {
+  id: string;
+  title: string;
+  thumbnailUrl: string;
+  publishedAt: string;
+  durationSeconds: number;
+  viewCount: number;
+  channelId: string;
+  channelTitle: string;
+}
+
+export interface PlaylistEntry {
+  id: string;
+  title: string;
+  thumbnailUrl: string;
+  itemCount: number;
+  channelId: string;
+  channelTitle: string;
+}
+
+export interface PaginatedResult<T> {
+  items: T[];
+  nextPageToken?: string;
+}
+
+/**
+ * Get channel details by ID.
+ */
+export async function getChannel(channelId: string): Promise<ChannelDetails> {
+  const data = await youtubeGet<{ items: YouTubeChannelItem[] }>('channels', {
+    part: 'snippet,statistics,brandingSettings',
+    id: channelId
+  });
+
+  if (!data.items || data.items.length === 0) {
+    throw new Error(`Channel not found: ${channelId}`);
+  }
+
+  const ch = data.items[0];
+  return {
+    id: ch.id,
+    name: ch.snippet.title,
+    description: ch.snippet.description,
+    thumbnailUrl: ch.snippet.thumbnails.high?.url || ch.snippet.thumbnails.medium?.url || '',
+    subscriberCount: parseInt(ch.statistics.subscriberCount || '0'),
+    videoCount: parseInt(ch.statistics.videoCount || '0'),
+    viewCount: parseInt(ch.statistics.viewCount || '0')
+  };
+}
+
+/**
+ * List a channel's uploads via the uploads playlist (UC→UU).
+ * Cost: 2 units (playlistItems.list + videos.list) vs 101 for search.list.
+ * Use this for browsing without a search query.
+ */
+export async function listChannelUploads(
+  channelId: string,
+  pageToken?: string
+): Promise<PaginatedResult<VideoEntry>> {
+  if (!channelId.startsWith('UC')) {
+    // Non-standard channel ID (e.g. custom handle); fall back to search
+    return searchChannelVideos(channelId, pageToken);
+  }
+  // Every YouTube channel UCxxx has an uploads playlist UUxxx
+  const uploadsPlaylistId = 'UU' + channelId.slice(2);
+  return listPlaylistVideos(uploadsPlaylistId, pageToken);
+}
+
+/**
+ * Search a channel's videos by text query.
+ * Cost: 101 units (search.list + videos.list). Only use when a query is provided.
+ */
+export async function searchChannelVideos(
+  channelId: string,
+  pageToken?: string,
+  query?: string
+): Promise<PaginatedResult<VideoEntry>> {
+  const params: Record<string, string> = {
+    part: 'snippet',
+    channelId,
+    type: 'video',
+    order: 'date',
+    maxResults: '20',
+    ...(pageToken ? { pageToken } : {})
+  };
+  if (query) params.q = query;
+
+  const searchData = await youtubeGet<YouTubeSearchResponse>('search', params);
+
+  const videoIds = searchData.items
+    .map(item => item.id.videoId)
+    .filter((id): id is string => !!id);
+
+  if (videoIds.length === 0) {
+    return { items: [], nextPageToken: searchData.nextPageToken };
+  }
+
+  const stats = await getVideoStats(videoIds);
+
+  const items: VideoEntry[] = searchData.items
+    .filter(item => item.id.videoId)
+    .map(item => {
+      const id = item.id.videoId!;
+      const s = stats.get(id);
+      return {
+        id,
+        title: s?.snippet.title || item.snippet.title,
+        thumbnailUrl: s?.snippet.thumbnails.high?.url || item.snippet.thumbnails.high?.url || '',
+        publishedAt: s?.snippet.publishedAt || item.snippet.publishedAt,
+        durationSeconds: s ? parseDurationToSeconds(s.contentDetails.duration) : 0,
+        viewCount: s ? parseInt(s.statistics.viewCount || '0') : 0,
+        channelId: item.snippet.channelId,
+        channelTitle: item.snippet.channelTitle
+      };
+    });
+
+  return { items, nextPageToken: searchData.nextPageToken };
+}
+
+/**
+ * Search a channel's Shorts (duration <= 60s).
+ * Uses videoDuration=short filter (< 4 min) then post-filters enriched results to <= 60s.
+ * Note: Post-filtering may return fewer items than maxResults per page since the YouTube API
+ * has no native Shorts filter. This is acceptable for the admin browsing tool.
+ */
+export async function searchChannelShorts(
+  channelId: string,
+  pageToken?: string
+): Promise<PaginatedResult<VideoEntry>> {
+  const searchData = await youtubeGet<YouTubeSearchResponse>('search', {
+    part: 'snippet',
+    channelId,
+    type: 'video',
+    videoDuration: 'short',
+    order: 'date',
+    maxResults: '20',
+    ...(pageToken ? { pageToken } : {})
+  });
+
+  const videoIds = searchData.items
+    .map(item => item.id.videoId)
+    .filter((id): id is string => !!id);
+
+  if (videoIds.length === 0) {
+    return { items: [], nextPageToken: searchData.nextPageToken };
+  }
+
+  const stats = await getVideoStats(videoIds);
+
+  const items: VideoEntry[] = searchData.items
+    .filter(item => item.id.videoId)
+    .map(item => {
+      const id = item.id.videoId!;
+      const s = stats.get(id);
+      return {
+        id,
+        title: s?.snippet.title || item.snippet.title,
+        thumbnailUrl: s?.snippet.thumbnails.high?.url || item.snippet.thumbnails.high?.url || '',
+        publishedAt: s?.snippet.publishedAt || item.snippet.publishedAt,
+        durationSeconds: s ? parseDurationToSeconds(s.contentDetails.duration) : 0,
+        viewCount: s ? parseInt(s.statistics.viewCount || '0') : 0,
+        channelId: item.snippet.channelId,
+        channelTitle: item.snippet.channelTitle
+      };
+    })
+    .filter(v => v.durationSeconds <= 60);
+
+  return { items, nextPageToken: searchData.nextPageToken };
+}
+
+/**
+ * Search a channel's completed live streams.
+ */
+export async function searchChannelLiveStreams(
+  channelId: string,
+  pageToken?: string
+): Promise<PaginatedResult<VideoEntry>> {
+  const searchData = await youtubeGet<YouTubeSearchResponse>('search', {
+    part: 'snippet',
+    channelId,
+    type: 'video',
+    eventType: 'completed',
+    order: 'date',
+    maxResults: '20',
+    ...(pageToken ? { pageToken } : {})
+  });
+
+  const videoIds = searchData.items
+    .map(item => item.id.videoId)
+    .filter((id): id is string => !!id);
+
+  if (videoIds.length === 0) {
+    return { items: [], nextPageToken: searchData.nextPageToken };
+  }
+
+  const stats = await getVideoStats(videoIds);
+
+  const items: VideoEntry[] = searchData.items
+    .filter(item => item.id.videoId)
+    .map(item => {
+      const id = item.id.videoId!;
+      const s = stats.get(id);
+      return {
+        id,
+        title: s?.snippet.title || item.snippet.title,
+        thumbnailUrl: s?.snippet.thumbnails.high?.url || item.snippet.thumbnails.high?.url || '',
+        publishedAt: s?.snippet.publishedAt || item.snippet.publishedAt,
+        durationSeconds: s ? parseDurationToSeconds(s.contentDetails.duration) : 0,
+        viewCount: s ? parseInt(s.statistics.viewCount || '0') : 0,
+        channelId: item.snippet.channelId,
+        channelTitle: item.snippet.channelTitle
+      };
+    });
+
+  return { items, nextPageToken: searchData.nextPageToken };
+}
+
+/**
+ * List a channel's playlists.
+ */
+export async function listChannelPlaylists(
+  channelId: string,
+  pageToken?: string
+): Promise<PaginatedResult<PlaylistEntry>> {
+  const data = await youtubeGet<{ items: YouTubePlaylistItem[]; nextPageToken?: string }>('playlists', {
+    part: 'snippet,contentDetails',
+    channelId,
+    maxResults: '20',
+    ...(pageToken ? { pageToken } : {})
+  });
+
+  const items: PlaylistEntry[] = (data.items || []).map(item => ({
+    id: item.id,
+    title: item.snippet.title,
+    thumbnailUrl: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.medium?.url || '',
+    itemCount: item.contentDetails.itemCount,
+    channelId: item.snippet.channelId,
+    channelTitle: item.snippet.channelTitle
+  }));
+
+  return { items, nextPageToken: data.nextPageToken };
+}
+
+/**
+ * Get a single playlist's details.
+ */
+export async function getPlaylist(playlistId: string): Promise<PlaylistEntry> {
+  const data = await youtubeGet<{ items: YouTubePlaylistItem[] }>('playlists', {
+    part: 'snippet,contentDetails',
+    id: playlistId
+  });
+
+  if (!data.items || data.items.length === 0) {
+    throw new Error(`Playlist not found: ${playlistId}`);
+  }
+
+  const pl = data.items[0];
+  return {
+    id: pl.id,
+    title: pl.snippet.title,
+    thumbnailUrl: pl.snippet.thumbnails.high?.url || pl.snippet.thumbnails.medium?.url || '',
+    itemCount: pl.contentDetails.itemCount,
+    channelId: pl.snippet.channelId,
+    channelTitle: pl.snippet.channelTitle
+  };
+}
+
+/**
+ * List videos in a playlist with enrichment.
+ */
+export async function listPlaylistVideos(
+  playlistId: string,
+  pageToken?: string
+): Promise<PaginatedResult<VideoEntry>> {
+  const data = await youtubeGet<YouTubePlaylistItemsResponse>('playlistItems', {
+    part: 'snippet',
+    playlistId,
+    maxResults: '20',
+    ...(pageToken ? { pageToken } : {})
+  });
+
+  const videoIds = data.items
+    .map(item => item.snippet.resourceId.videoId)
+    .filter(Boolean);
+
+  if (videoIds.length === 0) {
+    return { items: [], nextPageToken: data.nextPageToken };
+  }
+
+  const stats = await getVideoStats(videoIds);
+
+  const items: VideoEntry[] = data.items
+    .filter(item => item.snippet.resourceId.videoId)
+    .map(item => {
+      const id = item.snippet.resourceId.videoId;
+      const s = stats.get(id);
+      return {
+        id,
+        title: s?.snippet.title || item.snippet.title,
+        thumbnailUrl: s?.snippet.thumbnails.high?.url || item.snippet.thumbnails.high?.url || '',
+        publishedAt: s?.snippet.publishedAt || '',
+        durationSeconds: s ? parseDurationToSeconds(s.contentDetails.duration) : 0,
+        viewCount: s ? parseInt(s.statistics.viewCount || '0') : 0,
+        channelId: s?.snippet.channelId || '',
+        channelTitle: s?.snippet.channelTitle || ''
+      };
+    });
+
+  return { items, nextPageToken: data.nextPageToken };
 }

@@ -2,8 +2,10 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useFocusTrap } from '@/composables/useFocusTrap';
+import { useAuthStore } from '@/stores/auth';
 
 const { t } = useI18n();
+const authStore = useAuthStore();
 
 interface Notification {
   id: string;
@@ -218,8 +220,8 @@ watch(isOpen, (open) => {
           </button>
         </div>
 
-        <!-- Panel Footer -->
-        <div class="panel-footer">
+        <!-- Panel Footer (admin-only: activity log route requires ADMIN role) -->
+        <div v-if="authStore.isAdmin" class="panel-footer">
           <router-link to="/activity" @click="closePanel" class="view-all-link">
             {{ t('notifications.actions.viewAll') }} →
           </router-link>

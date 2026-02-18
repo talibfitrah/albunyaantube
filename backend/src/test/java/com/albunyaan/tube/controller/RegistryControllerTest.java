@@ -183,6 +183,45 @@ class RegistryControllerTest {
     }
 
     @Test
+    void addChannel_moderatorCannotSelfApprove_statusForcedToPending() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        // Arrange - moderator sends status: APPROVED in request body
+        Channel newChannel = new Channel("UC-new-channel");
+        newChannel.setName("New Channel");
+        newChannel.setStatus("APPROVED");
+        newChannel.setApprovedBy("fake-admin-uid");
+        when(channelRepository.findByYoutubeId("UC-new-channel")).thenReturn(Optional.empty());
+        when(channelRepository.save(any(Channel.class))).thenReturn(newChannel);
+
+        // Act
+        ResponseEntity<Channel> response = registryController.addChannel(newChannel, moderatorUser);
+
+        // Assert - status must be PENDING, approvedBy must be cleared
+        assertEquals(HttpStatus.CREATED, response.getStatusCode());
+        assertEquals("PENDING", newChannel.getStatus());
+        assertNull(newChannel.getApprovedBy());
+        assertEquals("mod-uid", newChannel.getSubmittedBy());
+    }
+
+    @Test
+    void addChannel_adminCanExplicitlySetStatus() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        // Arrange - admin sends status: PENDING explicitly
+        Channel newChannel = new Channel("UC-new-channel");
+        newChannel.setName("New Channel");
+        newChannel.setStatus("PENDING");
+        when(channelRepository.findByYoutubeId("UC-new-channel")).thenReturn(Optional.empty());
+        when(channelRepository.save(any(Channel.class))).thenReturn(newChannel);
+
+        // Act
+        ResponseEntity<Channel> response = registryController.addChannel(newChannel, adminUser);
+
+        // Assert - admin's explicit PENDING status is respected, approvedBy cleared
+        assertEquals(HttpStatus.CREATED, response.getStatusCode());
+        assertEquals("PENDING", newChannel.getStatus());
+        assertEquals("admin-uid", newChannel.getSubmittedBy());
+        assertNull(newChannel.getApprovedBy());
+    }
+
+    @Test
     void addChannel_shouldReturnConflict_whenChannelAlreadyExists() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         when(channelRepository.findByYoutubeId("UC-test-channel")).thenReturn(Optional.of(testChannel));
@@ -312,6 +351,26 @@ class RegistryControllerTest {
     }
 
     @Test
+    void addPlaylist_moderatorCannotSelfApprove_statusForcedToPending() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        // Arrange - moderator sends status: APPROVED in request body
+        Playlist newPlaylist = new Playlist("PL-new-playlist");
+        newPlaylist.setTitle("New Playlist");
+        newPlaylist.setStatus("APPROVED");
+        newPlaylist.setApprovedBy("fake-admin-uid");
+        when(playlistRepository.findByYoutubeId("PL-new-playlist")).thenReturn(Optional.empty());
+        when(playlistRepository.save(any(Playlist.class))).thenReturn(newPlaylist);
+
+        // Act
+        ResponseEntity<Playlist> response = registryController.addPlaylist(newPlaylist, moderatorUser);
+
+        // Assert - status must be PENDING, approvedBy must be cleared
+        assertEquals(HttpStatus.CREATED, response.getStatusCode());
+        assertEquals("PENDING", newPlaylist.getStatus());
+        assertNull(newPlaylist.getApprovedBy());
+        assertEquals("mod-uid", newPlaylist.getSubmittedBy());
+    }
+
+    @Test
     void addPlaylist_shouldReturnConflict_whenPlaylistAlreadyExists() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         when(playlistRepository.findByYoutubeId("PL-test-playlist")).thenReturn(Optional.of(testPlaylist));
@@ -369,6 +428,28 @@ class RegistryControllerTest {
         // Assert
         assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
         verify(playlistRepository).deleteById("playlist-123");
+    }
+
+    // ===== VIDEO SECURITY TESTS =====
+
+    @Test
+    void addVideo_moderatorCannotSelfApprove_statusForcedToPending() throws Exception {
+        // Arrange - moderator sends status: APPROVED in request body
+        com.albunyaan.tube.model.Video newVideo = new com.albunyaan.tube.model.Video("dQw4w9WgXcQ");
+        newVideo.setTitle("Test Video");
+        newVideo.setStatus("APPROVED");
+        newVideo.setApprovedBy("fake-admin-uid");
+        when(videoRepository.findByYoutubeId("dQw4w9WgXcQ")).thenReturn(Optional.empty());
+        when(videoRepository.save(any(com.albunyaan.tube.model.Video.class))).thenReturn(newVideo);
+
+        // Act
+        ResponseEntity<com.albunyaan.tube.model.Video> response = registryController.addVideo(newVideo, moderatorUser);
+
+        // Assert - status must be PENDING, approvedBy must be cleared
+        assertEquals(HttpStatus.CREATED, response.getStatusCode());
+        assertEquals("PENDING", newVideo.getStatus());
+        assertNull(newVideo.getApprovedBy());
+        assertEquals("mod-uid", newVideo.getSubmittedBy());
     }
 }
 
