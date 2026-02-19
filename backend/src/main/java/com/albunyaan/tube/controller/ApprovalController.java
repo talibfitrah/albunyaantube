@@ -24,6 +24,7 @@ import java.util.concurrent.TimeoutException;
  */
 @RestController
 @RequestMapping("/api/admin/approvals")
+@PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
 public class ApprovalController {
 
     private static final Logger log = LoggerFactory.getLogger(ApprovalController.class);

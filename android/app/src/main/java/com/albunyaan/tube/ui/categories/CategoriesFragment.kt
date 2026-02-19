@@ -54,10 +54,10 @@ class CategoriesFragment : Fragment(R.layout.fragment_categories) {
     private fun setupRecyclerView() {
         adapter = CategoryAdapter { category ->
             android.util.Log.d("CategoriesFragment", "Category clicked: ${category.name}, hasSubcategories: ${category.hasSubcategories}")
+            val lang = LocaleManager.getCurrentLocale(requireContext()).language
             if (category.hasSubcategories) {
                 // Navigate to subcategories with localized name
-                val currentLocale = LocaleManager.getCurrentLocale(requireContext()).language
-                val localizedName = category.localizedNames?.get(currentLocale) ?: category.name
+                val localizedName = category.localizedNames?.get(lang) ?: category.name
                 val args = bundleOf(
                     SubcategoriesFragment.ARG_CATEGORY_ID to category.id,
                     SubcategoriesFragment.ARG_CATEGORY_NAME to localizedName
@@ -74,7 +74,8 @@ class CategoriesFragment : Fragment(R.layout.fragment_categories) {
 
                 // Step 1: Set the category filter
                 val filterApplied = try {
-                    filterManager.setCategory(category.id)
+                    val displayName = category.localizedNames?.get(lang) ?: category.name
+                    filterManager.setCategory(category.id, displayName)
                     true
                 } catch (e: Exception) {
                     android.util.Log.e("CategoriesFragment", "Failed to set category filter", e)
@@ -88,8 +89,7 @@ class CategoriesFragment : Fragment(R.layout.fragment_categories) {
 
                 // Step 2: Navigate to Videos tab (only if filter was applied successfully)
                 if (filterApplied) {
-                    val currentLocale = LocaleManager.getCurrentLocale(requireContext()).language
-                    val localizedName = category.localizedNames?.get(currentLocale) ?: category.name
+                    val localizedName = category.localizedNames?.get(lang) ?: category.name
                     // Show feedback before navigation while context is guaranteed valid
                     android.widget.Toast.makeText(
                         requireContext(),

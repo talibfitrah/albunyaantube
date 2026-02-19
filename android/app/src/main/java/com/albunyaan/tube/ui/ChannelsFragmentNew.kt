@@ -12,6 +12,7 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.albunyaan.tube.R
+import com.albunyaan.tube.data.filters.FilterManager
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.source.ContentService
@@ -20,7 +21,9 @@ import com.albunyaan.tube.ui.adapters.ChannelAdapter
 import com.albunyaan.tube.ui.detail.ChannelDetailFragment
 import com.albunyaan.tube.ui.utils.AutofillPaginationHelper
 import com.albunyaan.tube.ui.utils.isTablet
+import com.albunyaan.tube.ui.utils.updateCategoryFilter
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Named
@@ -34,6 +37,9 @@ class ChannelsFragmentNew : Fragment(R.layout.fragment_channels_new) {
     @Inject
     @Named("real")
     lateinit var contentService: ContentService
+
+    @Inject
+    lateinit var filterManager: FilterManager
 
     private val viewModel: ContentListViewModel by viewModels {
         ContentListViewModel.Factory(
@@ -50,8 +56,23 @@ class ChannelsFragmentNew : Fragment(R.layout.fragment_channels_new) {
 
         setupRecyclerView()
         setupSwipeRefresh()
+        observeFilters()
         observeViewModel()
         setupCategoriesFab()
+    }
+
+    private fun observeFilters() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            filterManager.state.collectLatest { filterState ->
+                Log.d(TAG, "Filter state changed: category=${filterState.category}")
+                autofillHelper.reset()
+                viewModel.setFilters(filterState)
+                binding?.filterChip.updateCategoryFilter(filterState.category, filterState.categoryName) {
+                    Log.d(TAG, "Clearing category filter")
+                    filterManager.setCategory(null)
+                }
+            }
+        }
     }
 
     private fun setupCategoriesFab() {

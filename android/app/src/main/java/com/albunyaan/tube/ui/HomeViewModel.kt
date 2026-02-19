@@ -93,11 +93,18 @@ class HomeViewModel @Inject constructor(
                     categoryLimit = CATEGORY_LIMIT,
                     contentLimit = contentLimit
                 )
-                sections.addAll(result.sections)
+                val existingIds = sections.map { it.categoryId }.toSet()
+                val newSections = result.sections.filter { it.categoryId !in existingIds }
+                sections.addAll(newSections)
                 nextCursor = result.nextCursor
-                hasMore = result.hasMore
+                // Stop pagination if:
+                // 1. Backend says no more (result.hasMore=false), OR
+                // 2. Backend returned sections but ALL were duplicates after dedupe
+                //    (newSections empty + result non-empty → cursor regressed, stop to avoid infinite loop), OR
+                // 3. Backend returned an empty page with hasMore=true (backend bug guard)
+                hasMore = result.hasMore && (newSections.isNotEmpty() || result.sections.isEmpty())
                 isLoadingMore = false
-                Log.d(TAG, "Loaded ${result.sections.size} more sections (total=${sections.size}, hasMore=$hasMore)")
+                Log.d(TAG, "Loaded ${result.sections.size} more sections (added=${newSections.size}, total=${sections.size}, hasMore=$hasMore)")
                 _homeState.value = HomeState.Success(sections.toList(), hasMore)
             } catch (e: Exception) {
                 if (e is CancellationException) throw e

@@ -1,6 +1,9 @@
 package com.albunyaan.tube.ui.utils
 
 import android.content.Context
+import android.view.View
+import com.albunyaan.tube.R
+import com.google.android.material.chip.Chip
 
 /**
  * Extension functions for views and responsive layout calculations.
@@ -62,4 +65,23 @@ fun Context.isLargeScreen(): Boolean {
  */
 fun Context.useTwoPaneLayout(): Boolean {
     return resources.getBoolean(com.albunyaan.tube.R.bool.use_two_pane_layout)
+}
+
+/**
+ * Update a filter Chip to show the active category filter, or hide it when no filter is active.
+ * Used by ChannelsFragmentNew, PlaylistsFragmentNew, and VideosFragmentNew.
+ */
+fun Chip?.updateCategoryFilter(
+    categoryId: String?,
+    categoryName: String?,
+    onClear: () -> Unit
+) {
+    this ?: return
+    if (categoryId.isNullOrEmpty()) {
+        visibility = View.GONE
+    } else {
+        visibility = View.VISIBLE
+        text = context.getString(R.string.filtering_by_category, categoryName ?: categoryId)
+        setOnCloseIconClickListener { onClear() }
+    }
 }

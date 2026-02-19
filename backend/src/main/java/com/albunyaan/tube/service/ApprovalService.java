@@ -29,6 +29,7 @@ public class ApprovalService {
     private static final Logger log = LoggerFactory.getLogger(ApprovalService.class);
 
     private static final java.util.Set<String> VALID_TYPES = java.util.Set.of("CHANNEL", "PLAYLIST", "VIDEO");
+    private static final java.util.Set<String> VALID_STATUSES = java.util.Set.of("PENDING", "APPROVED", "REJECTED");
 
     private final ChannelRepository channelRepository;
     private final PlaylistRepository playlistRepository;
@@ -73,7 +74,8 @@ public class ApprovalService {
         if (type != null && !type.isEmpty()) {
             String normalizedType = type.toUpperCase();
             if (!VALID_TYPES.contains(normalizedType)) {
-                throw new IllegalArgumentException("Invalid type: " + type + ". Must be one of: CHANNEL, PLAYLIST, VIDEO");
+                String safeType = type.length() > 20 ? type.substring(0, 20) + "..." : type;
+                throw new IllegalArgumentException("Invalid type: " + safeType + ". Must be one of: CHANNEL, PLAYLIST, VIDEO");
             }
         }
 
@@ -347,12 +349,17 @@ public class ApprovalService {
 
         int pageSize = Math.min((limit != null && limit > 0) ? limit : 20, 100);
         String normalizedStatus = (status != null) ? status.toUpperCase() : "PENDING";
+        if (!VALID_STATUSES.contains(normalizedStatus)) {
+            String safe = (status != null && status.length() > 20) ? status.substring(0, 20) + "..." : String.valueOf(status);
+            throw new IllegalArgumentException("Invalid status: " + safe + ". Must be one of: PENDING, APPROVED, REJECTED");
+        }
 
         // Validate type parameter if provided
         if (type != null && !type.isEmpty()) {
             String normalizedType = type.toUpperCase();
             if (!VALID_TYPES.contains(normalizedType)) {
-                throw new IllegalArgumentException("Invalid type: " + type + ". Must be one of: CHANNEL, PLAYLIST, VIDEO");
+                String safeType = type.length() > 20 ? type.substring(0, 20) + "..." : type;
+                throw new IllegalArgumentException("Invalid type: " + safeType + ". Must be one of: CHANNEL, PLAYLIST, VIDEO");
             }
         }
 

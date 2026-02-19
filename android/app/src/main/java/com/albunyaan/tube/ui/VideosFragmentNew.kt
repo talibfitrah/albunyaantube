@@ -19,6 +19,7 @@ import com.albunyaan.tube.databinding.FragmentSimpleListBinding
 import com.albunyaan.tube.ui.adapters.VideoGridAdapter
 import com.albunyaan.tube.ui.utils.AutofillPaginationHelper
 import com.albunyaan.tube.ui.utils.calculateGridSpanCount
+import com.albunyaan.tube.ui.utils.updateCategoryFilter
 import com.albunyaan.tube.player.StreamPrefetchService
 import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
@@ -68,19 +69,7 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
                 Log.d(TAG, "Filter state changed: category=${filterState.category}")
                 autofillHelper.reset()
                 viewModel.setFilters(filterState)
-                updateFilterChip(filterState.category)
-            }
-        }
-    }
-
-    private fun updateFilterChip(categoryId: String?) {
-        binding?.filterChip?.apply {
-            if (categoryId.isNullOrEmpty()) {
-                visibility = View.GONE
-            } else {
-                visibility = View.VISIBLE
-                text = getString(R.string.filtering_by_category, categoryId)
-                setOnCloseIconClickListener {
+                binding?.filterChip.updateCategoryFilter(filterState.category, filterState.categoryName) {
                     Log.d(TAG, "Clearing category filter")
                     filterManager.setCategory(null)
                 }

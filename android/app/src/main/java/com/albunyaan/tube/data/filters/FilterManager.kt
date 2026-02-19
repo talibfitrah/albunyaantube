@@ -27,6 +27,7 @@ class FilterManager(
                 .collect { prefs ->
                     _state.value = FilterState(
                         category = prefs[KEY_CATEGORY],
+                        categoryName = prefs[KEY_CATEGORY_NAME],
                         videoLength = prefs[KEY_LENGTH]?.let { enumOrNull<VideoLength>(it) } ?: VideoLength.ANY,
                         publishedDate = prefs[KEY_DATE]?.let { enumOrNull<PublishedDate>(it) } ?: PublishedDate.ANY,
                         sortOption = prefs[KEY_SORT]?.let { enumOrNull<SortOption>(it) } ?: SortOption.DEFAULT
@@ -35,10 +36,16 @@ class FilterManager(
         }
     }
 
-    fun setCategory(category: String?) {
+    fun setCategory(category: String?, categoryName: String? = null) {
         scope.launch {
             dataStore.edit { prefs ->
-                if (category.isNullOrEmpty()) prefs.remove(KEY_CATEGORY) else prefs[KEY_CATEGORY] = category
+                if (category.isNullOrEmpty()) {
+                    prefs.remove(KEY_CATEGORY)
+                    prefs.remove(KEY_CATEGORY_NAME)
+                } else {
+                    prefs[KEY_CATEGORY] = category
+                    if (categoryName != null) prefs[KEY_CATEGORY_NAME] = categoryName else prefs.remove(KEY_CATEGORY_NAME)
+                }
             }
         }
     }
@@ -58,6 +65,7 @@ class FilterManager(
     suspend fun clearAll() {
         dataStore.edit { prefs ->
             prefs.remove(KEY_CATEGORY)
+            prefs.remove(KEY_CATEGORY_NAME)
             prefs.remove(KEY_LENGTH)
             prefs.remove(KEY_DATE)
             prefs.remove(KEY_SORT)
@@ -66,6 +74,7 @@ class FilterManager(
 
     companion object {
         private val KEY_CATEGORY = stringPreferencesKey("filter_category")
+        private val KEY_CATEGORY_NAME = stringPreferencesKey("filter_category_name")
         private val KEY_LENGTH = stringPreferencesKey("filter_length")
         private val KEY_DATE = stringPreferencesKey("filter_date")
         private val KEY_SORT = stringPreferencesKey("filter_sort")

@@ -17,6 +17,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 
 /**
@@ -28,6 +29,8 @@ import java.util.concurrent.ExecutionException;
 @RestController
 @RequestMapping("/api/admin/registry")
 public class RegistryController {
+
+    private static final Set<String> VALID_STATUSES = Set.of("APPROVED", "PENDING", "REJECTED");
 
     private final ChannelRepository channelRepository;
     private final PlaylistRepository playlistRepository;
@@ -81,7 +84,11 @@ public class RegistryController {
             @PathVariable String status,
             @RequestParam(defaultValue = "100") int limit
     ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        List<Channel> channels = channelRepository.findByStatus(status.toUpperCase(), limit);
+        String normalized = status.toUpperCase(java.util.Locale.ROOT);
+        if (!VALID_STATUSES.contains(normalized)) {
+            return ResponseEntity.badRequest().build();
+        }
+        List<Channel> channels = channelRepository.findByStatus(normalized, limit);
         return ResponseEntity.ok(channels);
     }
 
@@ -114,6 +121,16 @@ public class RegistryController {
             }
         }
 
+        // Clear server-controlled fields to prevent mass assignment:
+        // - id=null forces auto-generation in repository (prevents document overwrite)
+        // - createdAt set to server time (prevents timestamp forgery)
+        // - approval/validation metadata cleared (only set by approval workflow)
+        channel.setId(null);
+        channel.setCreatedAt(com.google.cloud.Timestamp.now());
+        channel.setApprovalMetadata(null);
+        channel.setValidationStatus(null);
+        channel.setLastValidatedAt(null);
+        channel.setDisplayOrder(null);
         channel.setSubmittedBy(user.getUid());
 
         // Non-admin users always get PENDING status regardless of request body
@@ -255,7 +272,11 @@ public class RegistryController {
             @PathVariable String status,
             @RequestParam(defaultValue = "100") int limit
     ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        List<Playlist> playlists = playlistRepository.findByStatus(status.toUpperCase(), limit);
+        String normalized = status.toUpperCase(java.util.Locale.ROOT);
+        if (!VALID_STATUSES.contains(normalized)) {
+            return ResponseEntity.badRequest().build();
+        }
+        List<Playlist> playlists = playlistRepository.findByStatus(normalized, limit);
         return ResponseEntity.ok(playlists);
     }
 
@@ -288,6 +309,13 @@ public class RegistryController {
             }
         }
 
+        // Clear server-controlled fields to prevent mass assignment
+        playlist.setId(null);
+        playlist.setCreatedAt(com.google.cloud.Timestamp.now());
+        playlist.setApprovalMetadata(null);
+        playlist.setValidationStatus(null);
+        playlist.setLastValidatedAt(null);
+        playlist.setDisplayOrder(null);
         playlist.setSubmittedBy(user.getUid());
 
         // Non-admin users always get PENDING status regardless of request body
@@ -524,7 +552,11 @@ public class RegistryController {
             @PathVariable String status,
             @RequestParam(defaultValue = "100") int limit
     ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        List<Video> videos = videoRepository.findByStatus(status.toUpperCase(), limit);
+        String normalized = status.toUpperCase(java.util.Locale.ROOT);
+        if (!VALID_STATUSES.contains(normalized)) {
+            return ResponseEntity.badRequest().build();
+        }
+        List<Video> videos = videoRepository.findByStatus(normalized, limit);
         return ResponseEntity.ok(videos);
     }
 
@@ -557,6 +589,13 @@ public class RegistryController {
             }
         }
 
+        // Clear server-controlled fields to prevent mass assignment
+        video.setId(null);
+        video.setCreatedAt(com.google.cloud.Timestamp.now());
+        video.setApprovalMetadata(null);
+        video.setValidationStatus(null);
+        video.setLastValidatedAt(null);
+        video.setDisplayOrder(null);
         video.setSubmittedBy(user.getUid());
 
         // Non-admin users always get PENDING status regardless of request body

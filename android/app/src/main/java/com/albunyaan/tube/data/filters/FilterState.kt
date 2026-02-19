@@ -6,6 +6,7 @@ package com.albunyaan.tube.data.filters
  */
 data class FilterState(
     val category: String? = null,
+    val categoryName: String? = null,
     val videoLength: VideoLength = VideoLength.ANY,
     val publishedDate: PublishedDate = PublishedDate.ANY,
     val sortOption: SortOption = SortOption.DEFAULT

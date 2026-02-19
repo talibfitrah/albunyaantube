@@ -33,6 +33,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
@@ -51,19 +54,22 @@ public class PublicContentService {
     private final VideoRepository videoRepository;
     private final CategoryRepository categoryRepository;
     private final CategoryContentOrderRepository orderRepository;
+    private final Executor contentExecutor;
 
     public PublicContentService(
             ChannelRepository channelRepository,
             PlaylistRepository playlistRepository,
             VideoRepository videoRepository,
             CategoryRepository categoryRepository,
-            CategoryContentOrderRepository orderRepository
+            CategoryContentOrderRepository orderRepository,
+            @org.springframework.beans.factory.annotation.Qualifier("publicContentExecutor") Executor contentExecutor
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
         this.videoRepository = videoRepository;
         this.categoryRepository = categoryRepository;
         this.orderRepository = orderRepository;
+        this.contentExecutor = contentExecutor;
     }
 
     /**
@@ -403,33 +409,79 @@ public class PublicContentService {
         List<HomeCategoryDto> sections = new ArrayList<>();
         int fetchLimit = categoryLimit + 1;
 
-        for (Category cat : remaining) {
-            if (sections.size() >= fetchLimit) break;
+        // Parallelize in batches: scan categories until we have enough non-empty sections.
+        // Each batch launches parallel content + count queries. Empty categories are skipped
+        // and we continue to the next batch, ensuring sparse categories don't truncate the page.
+        record CategoryFuture(Category category,
+                              CompletableFuture<List<ContentItemDto>> itemsFuture,
+                              CompletableFuture<Long> countFuture) {}
 
-            List<ContentItemDto> items = getCategoryContentItems(cat.getId(), contentLimit);
-            if (items.isEmpty()) continue; // Skip empty categories
+        int index = 0;
+        int failureCount = 0;
+        while (sections.size() < fetchLimit && index < remaining.size()) {
+            int needed = fetchLimit - sections.size();
+            // Over-fetch by 3x to account for empty categories in this batch
+            int batchSize = Math.min(remaining.size() - index, needed * 3);
+            List<Category> batch = remaining.subList(index, index + batchSize);
+            index += batchSize;
 
-            long totalCount = orderRepository.countByCategoryId(cat.getId());
-            // When no sort order has been initialized yet, countByCategoryId returns 0
-            // even though items were returned via the fallback path. Use items.size()
-            // as a lower-bound so the client doesn't see totalContentCount=0.
-            if (totalCount == 0 && !items.isEmpty()) {
-                totalCount = items.size();
+            // Launch all content + count queries for this batch in parallel
+            List<CategoryFuture> futures = new ArrayList<>();
+            for (Category cat : batch) {
+                CompletableFuture<List<ContentItemDto>> itemsFuture =
+                        asyncSupply(() -> getCategoryContentItems(cat.getId(), contentLimit));
+                CompletableFuture<Long> countFuture =
+                        asyncSupply(() -> orderRepository.countByCategoryId(cat.getId()));
+                futures.add(new CategoryFuture(cat, itemsFuture, countFuture));
             }
 
-            String slug = cat.getSlug() != null ? cat.getSlug() :
-                    cat.getName().toLowerCase().replace(" ", "-");
+            // Collect results in order, skipping empty or failed categories
+            for (CategoryFuture cf : futures) {
+                if (sections.size() >= fetchLimit) break;
 
-            sections.add(new HomeCategoryDto(
-                    cat.getId(),
-                    cat.getName(),
-                    slug,
-                    cat.getLocalizedNames(),
-                    cat.getDisplayOrder(),
-                    cat.getIcon(),
-                    items,
-                    (int) totalCount
-            ));
+                List<ContentItemDto> items;
+                try {
+                    items = cf.itemsFuture().join();
+                } catch (CompletionException e) {
+                    Throwable cause = e.getCause();
+                    Throwable root = cause != null && cause.getCause() != null ? cause.getCause() : cause;
+                    log.error("Error loading content for category {}: {}", cf.category().getId(),
+                            root != null ? root.getMessage() : e.getMessage());
+                    failureCount++;
+                    continue;
+                }
+                if (items.isEmpty()) continue;
+
+                long totalCount;
+                try {
+                    totalCount = cf.countFuture().join();
+                } catch (CompletionException e) {
+                    totalCount = 0;
+                }
+                if (totalCount == 0) {
+                    totalCount = items.size();
+                }
+
+                Category cat = cf.category();
+                String slug = cat.getSlug() != null ? cat.getSlug() :
+                        cat.getName().toLowerCase().replace(" ", "-");
+
+                sections.add(new HomeCategoryDto(
+                        cat.getId(),
+                        cat.getName(),
+                        slug,
+                        cat.getLocalizedNames(),
+                        cat.getDisplayOrder(),
+                        cat.getIcon(),
+                        items,
+                        (int) totalCount
+                ));
+            }
+        }
+
+        // Prevent caching a degraded empty response when failures occurred
+        if (sections.isEmpty() && failureCount > 0) {
+            throw new ExecutionException("All category content fetches failed (" + failureCount + " failures)", null);
         }
 
         // Build cursor from last included category
@@ -475,6 +527,9 @@ public class PublicContentService {
                 }
             }
 
+            // Synchronous batch fetches — this method already runs on contentExecutor
+            // (scheduled by getHomeFeed). Nesting asyncSupply + join() on the same bounded
+            // pool can deadlock when all threads are occupied by outer tasks.
             Map<String, Channel> channelMap = channelRepository.findAllByIds(channelIds);
             Map<String, Playlist> playlistMap = playlistRepository.findAllByIds(playlistIds);
             Map<String, Video> videoMap = videoRepository.findAllByIds(videoIds);
@@ -491,11 +546,18 @@ public class PublicContentService {
             return items;
         }
 
-        // Fall back to default sort: repository default order (no guaranteed sort by subscribers/itemCount/uploadedAt)
-        List<ContentItemDto> items = new ArrayList<>();
+        // Fall back to default sort: synchronous queries — this method already runs on
+        // contentExecutor (scheduled by getHomeFeed). Nesting asyncSupply + join() on the
+        // same bounded pool can deadlock.
+        // Video fetch uses limit*2 (not perType*2) so videos can fill the gap when
+        // channels/playlists are sparse.
         int perType = Math.max(1, limit / 3);
 
         List<Channel> channels = channelRepository.findByCategoryId(categoryId, perType * 2);
+        List<Playlist> playlists = playlistRepository.findByCategoryId(categoryId, perType * 2);
+
+        List<ContentItemDto> items = new ArrayList<>();
+
         channels.stream()
                 .filter(this::isApproved)
                 .filter(this::isAvailable)
@@ -503,7 +565,6 @@ public class PublicContentService {
                 .map(this::toDto)
                 .forEach(items::add);
 
-        List<Playlist> playlists = playlistRepository.findByCategoryId(categoryId, perType * 2);
         playlists.stream()
                 .filter(this::isApproved)
                 .filter(this::isAvailable)
@@ -511,6 +572,7 @@ public class PublicContentService {
                 .map(this::toDto)
                 .forEach(items::add);
 
+        // Only fetch videos if channels+playlists didn't fill the limit (avoids wasted Firestore query)
         int videoLimit = limit - items.size();
         if (videoLimit > 0) {
             List<Video> videos = videoRepository.findByCategoryId(categoryId, videoLimit * 2);
@@ -1174,6 +1236,23 @@ public class PublicContentService {
 
     private String encodeCursor(int offset) {
         return Base64.getEncoder().encodeToString(String.valueOf(offset).getBytes());
+    }
+
+    /** Supplier that can throw checked exceptions. */
+    @FunctionalInterface
+    private interface CheckedSupplier<T> {
+        T get() throws Exception;
+    }
+
+    /** Wrap a checked-exception supplier into a CompletableFuture using the bounded executor. */
+    private <T> CompletableFuture<T> asyncSupply(CheckedSupplier<T> supplier) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                return supplier.get();
+            } catch (Exception e) {
+                throw (e instanceof RuntimeException re) ? re : new RuntimeException(e);
+            }
+        }, contentExecutor);
     }
 }
 

@@ -25,7 +25,19 @@ class HomeFeaturedAdapter(
 ) : ListAdapter<ContentItem, RecyclerView.ViewHolder>(DIFF_CALLBACK) {
 
     var cardWidth: Int = 0
+        set(value) {
+            if (field != value) {
+                field = value
+                if (itemCount > 0) notifyItemRangeChanged(0, itemCount, PAYLOAD_WIDTH)
+            }
+        }
     var channelCardWidth: Int = 0
+        set(value) {
+            if (field != value) {
+                field = value
+                if (itemCount > 0) notifyItemRangeChanged(0, itemCount, PAYLOAD_WIDTH)
+            }
+        }
 
     override fun getItemViewType(position: Int): Int {
         return when (getItem(position)) {
@@ -54,36 +66,32 @@ class HomeFeaturedAdapter(
         }
     }
 
+    override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int, payloads: MutableList<Any>) {
+        if (payloads.contains(PAYLOAD_WIDTH)) {
+            // Width-only change — just update layout params without full rebind
+            applyWidth(holder)
+            return
+        }
+        super.onBindViewHolder(holder, position, payloads)
+    }
+
+    private fun applyWidth(holder: RecyclerView.ViewHolder) {
+        val width = if (holder is ChannelViewHolder) channelCardWidth else cardWidth
+        if (width > 0) {
+            holder.itemView.layoutParams?.let { lp ->
+                lp.width = width
+                holder.itemView.layoutParams = lp
+            }
+        }
+    }
+
     override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+        applyWidth(holder)
         val item = getItem(position)
         when (holder) {
-            is ChannelViewHolder -> {
-                if (channelCardWidth > 0) {
-                    holder.itemView.layoutParams?.let { lp ->
-                        lp.width = channelCardWidth
-                        holder.itemView.layoutParams = lp
-                    }
-                }
-                holder.bind(item as ContentItem.Channel)
-            }
-            is PlaylistViewHolder -> {
-                if (cardWidth > 0) {
-                    holder.itemView.layoutParams?.let { lp ->
-                        lp.width = cardWidth
-                        holder.itemView.layoutParams = lp
-                    }
-                }
-                holder.bind(item as ContentItem.Playlist)
-            }
-            is VideoViewHolder -> {
-                if (cardWidth > 0) {
-                    holder.itemView.layoutParams?.let { lp ->
-                        lp.width = cardWidth
-                        holder.itemView.layoutParams = lp
-                    }
-                }
-                holder.bind(item as ContentItem.Video)
-            }
+            is ChannelViewHolder -> holder.bind(item as ContentItem.Channel)
+            is PlaylistViewHolder -> holder.bind(item as ContentItem.Playlist)
+            is VideoViewHolder -> holder.bind(item as ContentItem.Video)
         }
     }
 
@@ -218,6 +226,7 @@ class HomeFeaturedAdapter(
     }
 
     companion object {
+        private const val PAYLOAD_WIDTH = "payload_width"
         private const val VIEW_TYPE_CHANNEL = 0
         private const val VIEW_TYPE_PLAYLIST = 1
         private const val VIEW_TYPE_VIDEO = 2

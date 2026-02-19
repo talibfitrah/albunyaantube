@@ -25,6 +25,7 @@
     <string name="category_filter_error">Failed to apply category filter</string>
     <string name="navigation_error">Navigation failed. Please try again.</string>
     <string name="category_filter_active">Active category filter. Double tap to clear.</string>
+    <string name="close_filter">Clear filter</string>
     <string name="filtering_by_category">Category: %1$s</string>
     <string name="channel_tab_videos">Videos</string>
     <string name="channel_tab_live">Live</string>
@@ -223,7 +224,7 @@
     <string name="player_action_fullscreen">Toggle fullscreen</string>
     <string name="player_resize_mode_zoom">Fill screen</string>
     <string name="player_resize_mode_fit">Fit to screen</string>
-    <string name="player_fullscreen_zoom_hint">Double-tap to toggle zoom</string>
+    <string name="player_fullscreen_zoom_hint">Double-tap to toggle fit/zoom</string>
     <string name="player_action_settings">Player settings</string>
     <string name="player_action_play">Play</string>
     <string name="player_action_pause">Pause</string>

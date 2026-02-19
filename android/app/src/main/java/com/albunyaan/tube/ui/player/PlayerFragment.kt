@@ -117,8 +117,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private var pendingResumePlayWhenReady: Boolean? = null
     private lateinit var gestureDetector: GestureDetector
     private var isFullscreen = false
-    /** Current resize mode in fullscreen: FIT (letterbox, default) or ZOOM (fills screen, crops). Toggled by double-tap. */
-    private var fullscreenResizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+    /** Current resize mode in fullscreen: ZOOM (fills screen, default) or FIT (letterbox). Toggled by double-tap. */
+    private var fullscreenResizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
     /** Tracks whether we programmatically locked orientation (to avoid unlocking locks set by other code) */
     private var weLockedOrientation = false
     /** The target orientation we requested when locking (LANDSCAPE or PORTRAIT) */
@@ -514,6 +514,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         if (isFullscreen) {
             restoreSystemUiOnExit()
         }
+        // Unconditionally restore shell root — guards against edge case where
+        // fitsSystemWindows was set to false but isFullscreen hasn't been set yet
+        restoreShellRootView()
 
         // Clean up recovery manager
         recoveryManager?.cancel()
@@ -2250,9 +2253,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Clearing adaptive fallback flag (new stream)")
                 adaptiveFailedForCurrentStream = null
             }
-            // Reset fullscreen resize mode to FIT (default) - each video starts fresh
-            if (fullscreenResizeMode != AspectRatioFrameLayout.RESIZE_MODE_FIT) {
-                fullscreenResizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+            // Reset fullscreen resize mode to ZOOM (default) - each video starts fresh
+            if (fullscreenResizeMode != AspectRatioFrameLayout.RESIZE_MODE_ZOOM) {
+                fullscreenResizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                 // Apply immediately if currently in fullscreen
                 if (isFullscreen) {
                     binding?.playerView?.resizeMode = fullscreenResizeMode
@@ -2864,6 +2867,15 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // Hide bottom navigation FIRST (this sets it to View.GONE)
             (activity as? com.albunyaan.tube.ui.MainActivity)?.setBottomNavVisibility(false)
 
+            // Disable fitsSystemWindows on the parent shell fragment's root view.
+            // Without this, the MainShellFragment's CoordinatorLayout (fitsSystemWindows=true)
+            // adds status bar padding, creating a visible gap at the top in fullscreen.
+            findShellRootView()?.let { shellRoot ->
+                shellRoot.fitsSystemWindows = false
+                shellRoot.setPadding(0, 0, 0, 0)
+                shellRoot.setBackgroundColor(android.graphics.Color.BLACK)
+            }
+
             // Enter fullscreen - Use WindowInsetsController on API 30+, fall back to legacy flags
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -2891,6 +2903,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
                 }
             }
+
+            // Set background to pure black so no surface color peeks through
+            binding.root.setBackgroundColor(android.graphics.Color.BLACK)
 
             // Hide scrollable content
             binding.playerScrollView.visibility = View.GONE
@@ -2979,6 +2994,14 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
             // Show bottom navigation - do this AFTER restoring system UI to avoid layout issues
             (activity as? com.albunyaan.tube.ui.MainActivity)?.setBottomNavVisibility(true)
+
+            // Restore fitsSystemWindows on the parent shell fragment's root view
+            restoreShellRootView()
+
+            // Restore surface background color
+            val typedValue = android.util.TypedValue()
+            requireContext().theme.resolveAttribute(com.google.android.material.R.attr.colorSurface, typedValue, true)
+            binding.root.setBackgroundColor(typedValue.data)
 
             // Show scrollable content
             binding.playerScrollView.visibility = View.VISIBLE
@@ -3089,10 +3112,38 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         // Show bottom navigation
         (activity as? com.albunyaan.tube.ui.MainActivity)?.setBottomNavVisibility(true)
 
+        // Restore fitsSystemWindows on the parent shell fragment's root view
+        restoreShellRootView()
+
         // Force insets to be reapplied after restoring system UI
         // Note: requestApplyInsets() is available since API 20, no version gate needed
         window.decorView.post {
             window.decorView.requestApplyInsets()
+        }
+    }
+
+    /**
+     * Find the MainShellFragment's root view by traversing up the fragment hierarchy.
+     * PlayerFragment → NavHostFragment → MainShellFragment
+     */
+    private fun findShellRootView(): View? {
+        val shellRoot = parentFragment?.parentFragment?.view
+        if (shellRoot == null && BuildConfig.DEBUG) {
+            android.util.Log.w("PlayerFragment", "findShellRootView: could not traverse to MainShellFragment root (hierarchy changed?)")
+        }
+        return shellRoot
+    }
+
+    /**
+     * Restore the MainShellFragment's root view after exiting fullscreen.
+     */
+    private fun restoreShellRootView() {
+        findShellRootView()?.let { shellRoot ->
+            shellRoot.fitsSystemWindows = true
+            // Clear the explicit black background set during fullscreen.
+            // The shell root originally has no explicit background (relies on theme window bg).
+            shellRoot.background = null
+            shellRoot.requestApplyInsets()
         }
     }
 

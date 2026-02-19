@@ -512,4 +512,14 @@
 
     <!-- Search error missing -->
     <string name="search_error_generic">Zoeken mislukt. Probeer het opnieuw.</string>
+
+    <!-- Category filter -->
+    <string name="category_filter_applied">Filteren op: %1$s</string>
+    <string name="category_filter_active">Categoriefilter actief. Dubbeltik om te wissen.</string>
+    <string name="close_filter">Filter wissen</string>
+    <string name="filtering_by_category">Categorie: %1$s</string>
+
+    <!-- Player fullscreen hint -->
+    <string name="player_fullscreen_zoom_hint">Dubbeltik om te wisselen tussen passend/vullen</string>
+
 </resources>

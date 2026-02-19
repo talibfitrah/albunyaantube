@@ -54,7 +54,8 @@ class PublicContentServicePaginationTest {
                 playlistRepository,
                 videoRepository,
                 categoryRepository,
-                orderRepository
+                orderRepository,
+                Runnable::run  // Direct executor for synchronous test execution
         );
     }
 

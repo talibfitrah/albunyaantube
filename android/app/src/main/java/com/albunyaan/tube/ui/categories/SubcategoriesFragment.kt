@@ -9,6 +9,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.filters.FilterManager
 import com.albunyaan.tube.data.source.ContentService
+import com.albunyaan.tube.locale.LocaleManager
 import com.albunyaan.tube.databinding.FragmentSubcategoriesBinding
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -52,8 +53,10 @@ class SubcategoriesFragment : Fragment(R.layout.fragment_subcategories) {
             android.util.Log.d(TAG, "Subcategory clicked: ${subcategory.name}, applying filter")
 
             // Set the category filter to the subcategory
+            val currentLocale = LocaleManager.getCurrentLocale(requireContext()).language
+            val displayName = subcategory.localizedNames?.get(currentLocale) ?: subcategory.name
             val filterApplied = try {
-                filterManager.setCategory(subcategory.id)
+                filterManager.setCategory(subcategory.id, displayName)
                 true
             } catch (e: Exception) {
                 android.util.Log.e(TAG, "Failed to apply category filter", e)
@@ -71,7 +74,7 @@ class SubcategoriesFragment : Fragment(R.layout.fragment_subcategories) {
                 // Show feedback before navigation while context is guaranteed valid
                 android.widget.Toast.makeText(
                     requireContext(),
-                    getString(R.string.category_filter_applied, subcategory.name),
+                    getString(R.string.category_filter_applied, displayName),
                     android.widget.Toast.LENGTH_SHORT
                 ).show()
                 // Navigate to Videos tab with proper back stack management

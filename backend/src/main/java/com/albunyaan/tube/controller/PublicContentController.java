@@ -9,11 +9,13 @@ import com.albunyaan.tube.service.PublicContentService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Public API controller for Android app content browsing.
@@ -52,7 +54,12 @@ public class PublicContentController {
 
         try {
             CursorPageDto<HomeCategoryDto> feed = contentService.getHomeFeed(cursor, validCategoryLimit, validContentLimit);
-            return ResponseEntity.ok(feed);
+            // cachePublic() is safe here because this endpoint is unauthenticated and returns
+            // identical content for all users. If auth/personalisation is ever added, switch
+            // to cachePrivate() to prevent shared proxy caches from leaking user-specific data.
+            return ResponseEntity.ok()
+                    .cacheControl(CacheControl.maxAge(5, TimeUnit.MINUTES).cachePublic())
+                    .body(feed);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error("Interrupted while fetching home feed", e);
