@@ -18,7 +18,8 @@ interface ContentService {
     suspend fun fetchHomeFeed(
         cursor: String?,
         categoryLimit: Int,
-        contentLimit: Int
+        contentLimit: Int,
+        category: String? = null
     ): HomeFeedResult
 
     suspend fun search(query: String, type: String? = null, limit: Int = 20): List<ContentItem>

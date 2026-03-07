@@ -36,7 +36,8 @@ interface ContentApi {
     suspend fun fetchHomeFeed(
         @Query("cursor") cursor: String?,
         @Query("categoryLimit") categoryLimit: Int,
-        @Query("contentLimit") contentLimit: Int
+        @Query("contentLimit") contentLimit: Int,
+        @Query("category") category: String? = null
     ): HomeFeedResponse
 }
 

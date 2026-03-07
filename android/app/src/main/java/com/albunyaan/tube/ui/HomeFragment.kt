@@ -14,6 +14,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.albunyaan.tube.R
+import com.albunyaan.tube.data.filters.FilterManager
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.player.StreamPrefetchService
 import dagger.hilt.android.AndroidEntryPoint
@@ -32,6 +33,9 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
     @Inject
     lateinit var prefetchService: StreamPrefetchService
 
+    @Inject
+    lateinit var filterManager: FilterManager
+
     private lateinit var sectionAdapter: HomeSectionAdapter
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -44,6 +48,7 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
         setupScrollListener(binding)
         setupSwipeRefresh(binding)
         observeViewModel(binding)
+        observeFilter(binding)
 
         // Postpone card width calculation until the layout has been measured
         view.post { calculateAndSetCardWidths(binding) }
@@ -243,6 +248,16 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
                             binding.loadingMoreIndicator.isVisible = false
                         }
                     }
+                }
+            }
+        }
+    }
+
+    private fun observeFilter(binding: FragmentHomeNewBinding) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                filterManager.state.collect { state ->
+                    binding.categoryChip.text = state.categoryName ?: getString(R.string.filter_category)
                 }
             }
         }

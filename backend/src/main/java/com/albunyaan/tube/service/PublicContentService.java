@@ -357,14 +357,24 @@ public class PublicContentService {
      * @return Paginated home feed
      */
     @Cacheable(value = CacheConfig.CACHE_PUBLIC_CONTENT,
-               key = "'home-' + #cursor + '-' + #categoryLimit + '-' + #contentLimit")
-    public CursorPageDto<HomeCategoryDto> getHomeFeed(String cursor, int categoryLimit, int contentLimit)
+               key = "'home-' + #cursor + '-' + #categoryLimit + '-' + #contentLimit + '-' + #category")
+    public CursorPageDto<HomeCategoryDto> getHomeFeed(String cursor, int categoryLimit, int contentLimit, String category)
             throws ExecutionException, InterruptedException, TimeoutException {
 
         // Fetch categories sorted by displayOrder. Categories are admin-managed
         // and typically < 50, so findAll() is bounded in practice.
         // Re-sort by (displayOrder, id) to match cursor tiebreaker format.
         List<Category> allCategories = new ArrayList<>(categoryRepository.findAll());
+
+        // If category filter is specified, only include that category (and its children)
+        if (category != null && !category.isBlank()) {
+            allCategories.removeIf(cat -> {
+                String catId = cat.getId();
+                String parentId = cat.getParentCategoryId();
+                // Keep if category ID matches, or if it's a child of the requested category
+                return !category.equals(catId) && !category.equals(parentId);
+            });
+        }
         allCategories.sort((a, b) -> {
             int orderA = a.getDisplayOrder() != null ? a.getDisplayOrder() : Integer.MAX_VALUE;
             int orderB = b.getDisplayOrder() != null ? b.getDisplayOrder() : Integer.MAX_VALUE;

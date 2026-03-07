@@ -47,13 +47,16 @@ public class PublicContentController {
     public ResponseEntity<?> getHomeFeed(
             @RequestParam(required = false) String cursor,
             @RequestParam(required = false, defaultValue = "5") int categoryLimit,
-            @RequestParam(required = false, defaultValue = "10") int contentLimit
+            @RequestParam(required = false, defaultValue = "10") int contentLimit,
+            @RequestParam(required = false) String category
     ) {
         int validCategoryLimit = Math.min(Math.max(categoryLimit, 1), 10);
         int validContentLimit = Math.min(Math.max(contentLimit, 1), 20);
+        // Normalize: trim whitespace and treat empty/blank as null to avoid cache key pollution
+        String normalizedCategory = (category != null && !category.isBlank()) ? category.trim() : null;
 
         try {
-            CursorPageDto<HomeCategoryDto> feed = contentService.getHomeFeed(cursor, validCategoryLimit, validContentLimit);
+            CursorPageDto<HomeCategoryDto> feed = contentService.getHomeFeed(cursor, validCategoryLimit, validContentLimit, normalizedCategory);
             // cachePublic() is safe here because this endpoint is unauthenticated and returns
             // identical content for all users. If auth/personalisation is ever added, switch
             // to cachePrivate() to prevent shared proxy caches from leaking user-specific data.

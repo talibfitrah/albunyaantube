@@ -72,9 +72,10 @@ class RetrofitContentService(
     override suspend fun fetchHomeFeed(
         cursor: String?,
         categoryLimit: Int,
-        contentLimit: Int
+        contentLimit: Int,
+        category: String?
     ): HomeFeedResult {
-        val response = api.fetchHomeFeed(cursor, categoryLimit, contentLimit)
+        val response = api.fetchHomeFeed(cursor, categoryLimit, contentLimit, category)
         val sections = response.data.map { it.toDomain() }
         return HomeFeedResult(
             sections = sections,

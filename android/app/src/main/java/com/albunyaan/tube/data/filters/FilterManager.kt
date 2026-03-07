@@ -37,15 +37,21 @@ class FilterManager(
     }
 
     fun setCategory(category: String?, categoryName: String? = null) {
-        scope.launch {
-            dataStore.edit { prefs ->
-                if (category.isNullOrEmpty()) {
-                    prefs.remove(KEY_CATEGORY)
-                    prefs.remove(KEY_CATEGORY_NAME)
-                } else {
-                    prefs[KEY_CATEGORY] = category
-                    if (categoryName != null) prefs[KEY_CATEGORY_NAME] = categoryName else prefs.remove(KEY_CATEGORY_NAME)
-                }
+        scope.launch { setCategoryInternal(category, categoryName) }
+    }
+
+    suspend fun setCategoryAndAwait(category: String?, categoryName: String? = null) {
+        setCategoryInternal(category, categoryName)
+    }
+
+    private suspend fun setCategoryInternal(category: String?, categoryName: String?) {
+        dataStore.edit { prefs ->
+            if (category.isNullOrEmpty()) {
+                prefs.remove(KEY_CATEGORY)
+                prefs.remove(KEY_CATEGORY_NAME)
+            } else {
+                prefs[KEY_CATEGORY] = category
+                if (categoryName != null) prefs[KEY_CATEGORY_NAME] = categoryName else prefs.remove(KEY_CATEGORY_NAME)
             }
         }
     }

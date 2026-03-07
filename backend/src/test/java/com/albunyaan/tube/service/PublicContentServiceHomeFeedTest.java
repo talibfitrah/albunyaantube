@@ -50,7 +50,7 @@ class PublicContentServiceHomeFeedTest {
     void getHomeFeed_returnsEmptyWhenNoCategories() throws Exception {
         when(categoryRepository.findAll()).thenReturn(Collections.emptyList());
 
-        CursorPageDto<HomeCategoryDto> result = service.getHomeFeed(null, 5, 10);
+        CursorPageDto<HomeCategoryDto> result = service.getHomeFeed(null, 5, 10, null);
 
         assertTrue(result.getData().isEmpty());
         assertNull(result.getPageInfo().getNextCursor());
@@ -66,7 +66,7 @@ class PublicContentServiceHomeFeedTest {
         when(playlistRepository.findByCategoryId(eq("c1"), anyInt())).thenReturn(Collections.emptyList());
         when(videoRepository.findByCategoryId(eq("c1"), anyInt())).thenReturn(Collections.emptyList());
 
-        CursorPageDto<HomeCategoryDto> result = service.getHomeFeed(null, 5, 10);
+        CursorPageDto<HomeCategoryDto> result = service.getHomeFeed(null, 5, 10, null);
 
         assertTrue(result.getData().isEmpty());
     }
@@ -90,7 +90,7 @@ class PublicContentServiceHomeFeedTest {
         when(playlistRepository.findAllByIds(anyList())).thenReturn(Collections.emptyMap());
         when(videoRepository.findAllByIds(anyList())).thenReturn(Collections.emptyMap());
 
-        CursorPageDto<HomeCategoryDto> result = service.getHomeFeed(null, 5, 10);
+        CursorPageDto<HomeCategoryDto> result = service.getHomeFeed(null, 5, 10, null);
 
         assertEquals(1, result.getData().size());
         HomeCategoryDto section = result.getData().get(0);
@@ -125,7 +125,7 @@ class PublicContentServiceHomeFeedTest {
         when(videoRepository.findAllByIds(anyList())).thenReturn(Collections.emptyMap());
 
         // First page: 2 categories
-        CursorPageDto<HomeCategoryDto> page1 = service.getHomeFeed(null, 2, 10);
+        CursorPageDto<HomeCategoryDto> page1 = service.getHomeFeed(null, 2, 10, null);
 
         assertEquals(2, page1.getData().size());
         assertNotNull(page1.getPageInfo().getNextCursor());
@@ -151,7 +151,7 @@ class PublicContentServiceHomeFeedTest {
         when(playlistRepository.findAllByIds(anyList())).thenReturn(Collections.emptyMap());
         when(videoRepository.findAllByIds(anyList())).thenReturn(Collections.emptyMap());
 
-        CursorPageDto<HomeCategoryDto> result = service.getHomeFeed(null, 5, 10);
+        CursorPageDto<HomeCategoryDto> result = service.getHomeFeed(null, 5, 10, null);
 
         assertEquals(42, result.getData().get(0).getTotalContentCount());
     }
@@ -193,7 +193,7 @@ class PublicContentServiceHomeFeedTest {
             when(channelRepository.findAllByIds(List.of("ch_" + catId))).thenReturn(Map.of("ch_" + catId, ch));
         }
 
-        CursorPageDto<HomeCategoryDto> result = service.getHomeFeed(null, 3, 10);
+        CursorPageDto<HomeCategoryDto> result = service.getHomeFeed(null, 3, 10, null);
 
         assertEquals(3, result.getData().size());
         assertEquals("c6", result.getData().get(0).getId());
@@ -230,7 +230,7 @@ class PublicContentServiceHomeFeedTest {
         }
         when(videoRepository.findByCategoryId(eq("c1"), anyInt())).thenReturn(videos);
 
-        CursorPageDto<HomeCategoryDto> result = service.getHomeFeed(null, 5, 10);
+        CursorPageDto<HomeCategoryDto> result = service.getHomeFeed(null, 5, 10, null);
 
         assertEquals(1, result.getData().size());
         HomeCategoryDto section = result.getData().get(0);
@@ -253,7 +253,7 @@ class PublicContentServiceHomeFeedTest {
                 .thenThrow(new RuntimeException("Firestore unavailable"));
         when(orderRepository.countByCategoryId(anyString())).thenReturn(0L);
 
-        assertThrows(RuntimeException.class, () -> service.getHomeFeed(null, 5, 10));
+        assertThrows(Exception.class, () -> service.getHomeFeed(null, 5, 10, null));
     }
 
     @Test
@@ -289,7 +289,7 @@ class PublicContentServiceHomeFeedTest {
         ch3.setId("ch3"); ch3.setYoutubeId("UC3"); ch3.setName("Chan 3"); ch3.setStatus("APPROVED");
         when(channelRepository.findAllByIds(List.of("ch3"))).thenReturn(Map.of("ch3", ch3));
 
-        CursorPageDto<HomeCategoryDto> result = service.getHomeFeed(null, 5, 10);
+        CursorPageDto<HomeCategoryDto> result = service.getHomeFeed(null, 5, 10, null);
 
         // c1 and c3 succeed, c2 failed silently
         assertEquals(2, result.getData().size());
@@ -317,11 +317,71 @@ class PublicContentServiceHomeFeedTest {
         when(playlistRepository.findAllByIds(anyList())).thenReturn(Collections.emptyMap());
         when(videoRepository.findAllByIds(anyList())).thenReturn(Collections.emptyMap());
 
-        CursorPageDto<HomeCategoryDto> result = service.getHomeFeed(null, 5, 10);
+        CursorPageDto<HomeCategoryDto> result = service.getHomeFeed(null, 5, 10, null);
 
         assertEquals(1, result.getData().size());
         // Count failed → fallback: totalCount = items.size() = 1
         assertEquals(1, result.getData().get(0).getTotalContentCount());
+    }
+
+    @Test
+    void getHomeFeed_filtersByCategoryId() throws Exception {
+        Category cat1 = makeCategory("quran", "Quran", 0);
+        Category cat2 = makeCategory("kids", "Kids", 1);
+        when(categoryRepository.findAll()).thenReturn(List.of(cat1, cat2));
+
+        // Only "quran" will be queried (kids is filtered out)
+        when(channelRepository.findAllByIds(anyList())).thenReturn(Collections.emptyMap());
+        when(playlistRepository.findAllByIds(anyList())).thenReturn(Collections.emptyMap());
+        when(videoRepository.findAllByIds(anyList())).thenReturn(Collections.emptyMap());
+        when(orderRepository.countByCategoryId("quran")).thenReturn(1L);
+
+        CategoryContentOrder entry = new CategoryContentOrder("quran", "ch_quran", "channel", 0);
+        when(orderRepository.findByCategoryIdOrderByPosition("quran")).thenReturn(List.of(entry));
+
+        Channel ch = new Channel();
+        ch.setId("ch_quran");
+        ch.setYoutubeId("UC_quran");
+        ch.setName("Channel quran");
+        ch.setStatus("APPROVED");
+        when(channelRepository.findAllByIds(List.of("ch_quran"))).thenReturn(Map.of("ch_quran", ch));
+
+        // Filter by "quran" category
+        CursorPageDto<HomeCategoryDto> result = service.getHomeFeed(null, 5, 10, "quran");
+
+        assertEquals(1, result.getData().size());
+        assertEquals("quran", result.getData().get(0).getId());
+    }
+
+    @Test
+    void getHomeFeed_includesChildCategoriesWhenFiltering() throws Exception {
+        Category parent = makeCategory("quran", "Quran", 0);
+        Category child = makeCategory("tafsir", "Tafsir", 1);
+        child.setParentCategoryId("quran");
+        Category other = makeCategory("kids", "Kids", 2);
+        when(categoryRepository.findAll()).thenReturn(List.of(parent, child, other));
+
+        when(channelRepository.findAllByIds(anyList())).thenReturn(Collections.emptyMap());
+        when(playlistRepository.findAllByIds(anyList())).thenReturn(Collections.emptyMap());
+        when(videoRepository.findAllByIds(anyList())).thenReturn(Collections.emptyMap());
+        when(orderRepository.countByCategoryId(anyString())).thenReturn(1L);
+
+        // Only quran and tafsir will be queried (kids filtered out)
+        for (String catId : List.of("quran", "tafsir")) {
+            CategoryContentOrder entry = new CategoryContentOrder(catId, "ch_" + catId, "channel", 0);
+            when(orderRepository.findByCategoryIdOrderByPosition(catId)).thenReturn(List.of(entry));
+            Channel ch = new Channel();
+            ch.setId("ch_" + catId); ch.setYoutubeId("UC_" + catId);
+            ch.setName("Chan " + catId); ch.setStatus("APPROVED");
+            when(channelRepository.findAllByIds(List.of("ch_" + catId))).thenReturn(Map.of("ch_" + catId, ch));
+        }
+
+        // Filter by "quran" should include quran + tafsir (child), exclude kids
+        CursorPageDto<HomeCategoryDto> result = service.getHomeFeed(null, 5, 10, "quran");
+
+        assertEquals(2, result.getData().size());
+        assertTrue(result.getData().stream().anyMatch(s -> "quran".equals(s.getId())));
+        assertTrue(result.getData().stream().anyMatch(s -> "tafsir".equals(s.getId())));
     }
 
     // --- Helper ---

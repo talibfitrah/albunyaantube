@@ -108,8 +108,10 @@ async function youtubeGet<T>(endpoint: string, params: Record<string, string>): 
 
   const response = await fetch(url.toString());
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`YouTube API error ${response.status}: ${body}`);
+    const status = response.status;
+    // Log full error for debugging but don't expose raw API response to callers
+    console.error(`YouTube API error ${status}:`, await response.text());
+    throw new Error(`YouTube API request failed (HTTP ${status})`);
   }
   return response.json();
 }

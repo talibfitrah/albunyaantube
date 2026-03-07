@@ -71,52 +71,23 @@ class CategoriesFragment : Fragment(R.layout.fragment_categories) {
                 }
             } else {
                 android.util.Log.d("CategoriesFragment", "Category has no subcategories, applying filter")
-
-                // Step 1: Set the category filter
-                val filterApplied = try {
-                    val displayName = category.localizedNames?.get(lang) ?: category.name
-                    filterManager.setCategory(category.id, displayName)
-                    true
-                } catch (e: Exception) {
-                    android.util.Log.e("CategoriesFragment", "Failed to set category filter", e)
-                    android.widget.Toast.makeText(
-                        requireContext(),
-                        getString(R.string.category_filter_error),
-                        android.widget.Toast.LENGTH_SHORT
-                    ).show()
-                    false
-                }
-
-                // Step 2: Navigate to Videos tab (only if filter was applied successfully)
-                if (filterApplied) {
-                    val localizedName = category.localizedNames?.get(lang) ?: category.name
-                    // Show feedback before navigation while context is guaranteed valid
-                    android.widget.Toast.makeText(
-                        requireContext(),
-                        getString(R.string.category_filter_applied, localizedName),
-                        android.widget.Toast.LENGTH_SHORT
-                    ).show()
+                val displayName = category.localizedNames?.get(lang) ?: category.name
+                viewLifecycleOwner.lifecycleScope.launch {
                     try {
-                        // Use NavOptions to pop and navigate atomically, avoiding flash
-                        findNavController().navigate(
-                            R.id.videosFragment,
-                            null,
-                            androidx.navigation.NavOptions.Builder()
-                                .setPopUpTo(R.id.homeFragment, false)
-                                .build()
-                        )
+                        filterManager.setCategoryAndAwait(category.id, displayName)
+                        val ctx = context ?: return@launch
+                        android.widget.Toast.makeText(
+                            ctx,
+                            ctx.getString(R.string.category_filter_applied, displayName),
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                        findNavController().navigateUp()
                     } catch (e: Exception) {
-                        android.util.Log.e("CategoriesFragment", "Navigation to videos failed", e)
-                        // Clear filter to avoid inconsistent state (filter applied but not on Videos tab)
-                        try {
-                            filterManager.setCategory(null)
-                        } catch (clearError: Exception) {
-                            android.util.Log.e("CategoriesFragment", "Failed to clear filter", clearError)
-                        }
+                        android.util.Log.e("CategoriesFragment", "Failed to set category filter", e)
                         context?.let { ctx ->
                             android.widget.Toast.makeText(
                                 ctx,
-                                getString(R.string.category_filter_error),
+                                ctx.getString(R.string.category_filter_error),
                                 android.widget.Toast.LENGTH_SHORT
                             ).show()
                         }
