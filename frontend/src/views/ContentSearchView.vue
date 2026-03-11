@@ -92,6 +92,7 @@
           :already-added="isVideoAlreadyAdded(video.ytId)"
           :is-admin="authStore.isAdmin"
           @add="handleAddVideo"
+          @preview="handlePreviewVideo"
         />
       </div>
 
@@ -122,6 +123,14 @@
       @assign="handleCategoryAssignment"
     />
 
+    <!-- Video Preview Modal -->
+    <VideoPreviewModal
+      :open="isPreviewOpen"
+      :youtube-id="previewVideoId"
+      :title="previewVideoTitle"
+      @close="isPreviewOpen = false"
+    />
+
   </div>
 </template>
 
@@ -137,6 +146,7 @@ import ChannelCard from '@/components/search/ChannelCard.vue';
 import PlaylistCard from '@/components/search/PlaylistCard.vue';
 import VideoCard from '@/components/search/VideoCard.vue';
 import CategoryAssignmentModal from '@/components/CategoryAssignmentModal.vue';
+import VideoPreviewModal from '@/components/VideoPreviewModal.vue';
 import type { AdminSearchChannelResult, AdminSearchPlaylistResult, AdminSearchVideoResult } from '@/types/registry';
 
 const { t } = useI18n();
@@ -165,6 +175,11 @@ const nextPageToken = ref<string | null>(null);
 // never cause existing items to jump positions.
 let insertionSeq = 0;
 const itemSequence = ref<Map<string, number>>(new Map());
+
+// Video preview modal state
+const isPreviewOpen = ref(false);
+const previewVideoId = ref('');
+const previewVideoTitle = ref('');
 
 // Category modal state
 const isCategoryModalOpen = ref(false);
@@ -351,6 +366,12 @@ async function handleAddPlaylist(playlist: AdminSearchPlaylistResult) {
   // Open category modal instead of directly submitting
   pendingContent.value = { data: playlist, type: 'playlist' };
   isCategoryModalOpen.value = true;
+}
+
+function handlePreviewVideo(video: AdminSearchVideoResult) {
+  previewVideoId.value = video.ytId;
+  previewVideoTitle.value = video.title || '';
+  isPreviewOpen.value = true;
 }
 
 async function handleAddVideo(video: AdminSearchVideoResult) {
