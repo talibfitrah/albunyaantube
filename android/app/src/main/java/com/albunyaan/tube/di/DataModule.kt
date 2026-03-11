@@ -234,7 +234,7 @@ object DataModule {
             .crossfade(true)
             .memoryCache {
                 MemoryCache.Builder(context)
-                    .maxSizePercent(0.25)
+                    .maxSizePercent(0.10)
                     .build()
             }
             .diskCache {

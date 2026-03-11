@@ -4,6 +4,7 @@ import android.app.Application
 import android.util.Log
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
 import com.albunyaan.tube.download.DownloadScheduler
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
@@ -22,6 +23,9 @@ class AlBunyaanApplication : Application(), Configuration.Provider {
 
     @Inject
     lateinit var downloadScheduler: DownloadScheduler
+
+    @Inject
+    lateinit var extractorClient: NewPipeExtractorClient
 
     override fun onCreate() {
         super.onCreate()
@@ -46,6 +50,15 @@ class AlBunyaanApplication : Application(), Configuration.Provider {
         if (level >= 60) {
             com.albunyaan.tube.player.MultiQualityMediaSourceFactory.releaseCache()
             Log.d(TAG, "Cache released due to memory pressure (level: $level)")
+        }
+
+        // Clear stream URL cache only when process kill is imminent (level 80+).
+        // NOT at level 60: clearing during moderate background pressure breaks URL refresh
+        // fallback if user returns to the app mid-playback.
+        // 80 == ComponentCallbacks2.TRIM_MEMORY_COMPLETE
+        if (level >= 80) {
+            val cleared = extractorClient.clearStreamCache()
+            Log.d(TAG, "Stream cache cleared ($cleared entries) due to critical memory pressure (level: $level)")
         }
     }
 

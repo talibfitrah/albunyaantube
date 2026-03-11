@@ -46,6 +46,11 @@ class MediaSessionMetadataManager @Inject constructor(
 ) {
     private val imageLoader = ImageLoader.Builder(context)
         .crossfade(false)  // No animation needed for notification artwork
+        .memoryCache {
+            coil.memory.MemoryCache.Builder(context)
+                .maxSizePercent(0.05) // 5% of heap — only caches 1-2 notification artworks
+                .build()
+        }
         .build()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
