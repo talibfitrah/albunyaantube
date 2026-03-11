@@ -18,14 +18,13 @@
         </div>
         <div class="modal-body">
           <iframe
-            :src="`https://www.youtube-nocookie.com/embed/${youtubeId}?origin=${embedOrigin}`"
+            :src="`https://www.youtube-nocookie.com/embed/${youtubeId}`"
             :title="title"
             width="100%"
             height="360"
             frameborder="0"
-            referrerpolicy="no-referrer"
-            sandbox="allow-scripts allow-same-origin allow-presentation allow-popups"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            referrerpolicy="strict-origin-when-cross-origin"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
             allowfullscreen
           />
         </div>
@@ -35,7 +34,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, useId } from 'vue';
+import { ref, watch, nextTick, useId } from 'vue';
 
 const props = defineProps<{
   open: boolean;
@@ -49,7 +48,6 @@ defineEmits<{
 
 const overlayRef = ref<HTMLElement | null>(null);
 const titleId = `video-modal-title-${useId()}`;
-const embedOrigin = computed(() => encodeURIComponent(window.location.origin));
 
 watch(() => props.open, async (isOpen) => {
   if (isOpen) {
