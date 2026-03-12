@@ -295,6 +295,138 @@ public class SortOrderService {
     }
 
     /**
+     * Add multiple content items to a category's sort order and update their categoryIds.
+     *
+     * Validates all content items exist before writing. If a write fails mid-batch,
+     * already-written entries are rolled back (sort-order docs deleted, categoryIds reverted).
+     * Returns the updated content list for the category.
+     *
+     * @param items list of (contentId, contentType) pairs
+     */
+    public List<ContentSortDto> addMultipleContentToCategory(
+            String categoryId,
+            List<String[]> items)
+            throws ExecutionException, InterruptedException, TimeoutException {
+
+        // Verify category exists
+        categoryRepository.findById(categoryId)
+                .orElseThrow(() -> new IllegalArgumentException("Category not found: " + categoryId));
+
+        // Phase 1: Validate all content items exist before writing anything.
+        // Note: contentExists does a findById read that is repeated in addCategoryIdToContent.
+        // For small batch sizes (admin UI) this 2N read is acceptable vs. the complexity
+        // of pre-fetching heterogeneous entity types.
+        for (String[] item : items) {
+            if (item == null || item.length < 2) {
+                throw new IllegalArgumentException("Malformed content item, expected [contentId, contentType]");
+            }
+            if (!contentExists(item[0], item[1])) {
+                throw new IllegalArgumentException(item[1] + " not found: " + item[0]);
+            }
+        }
+
+        // Phase 2: Write sort-order entries and update categoryIds with rollback on failure
+        List<String[]> writtenSortOrders = new ArrayList<>();
+        List<String[]> writtenCategoryIds = new ArrayList<>();
+
+        try {
+            for (String[] item : items) {
+                String contentId = item[0];
+                String contentType = item[1];
+
+                addContentToCategory(categoryId, contentId, contentType);
+                writtenSortOrders.add(item);
+
+                addCategoryIdToContent(contentId, contentType, categoryId);
+                writtenCategoryIds.add(item);
+            }
+        } catch (Exception e) {
+            // Rollback: remove sort-order docs and revert categoryIds for items already written
+            log.warn("Add batch failed after {} items, rolling back: {}", writtenSortOrders.size(), e.getMessage());
+            for (String[] written : writtenSortOrders) {
+                try {
+                    removeContentFromCategory(categoryId, written[0], written[1]);
+                } catch (Exception rollbackEx) {
+                    log.error("Rollback failed for sort-order {}/{}: {}", written[1], written[0], rollbackEx.getMessage());
+                }
+            }
+            for (String[] written : writtenCategoryIds) {
+                try {
+                    removeCategoryIdFromContent(written[0], written[1], categoryId);
+                } catch (Exception rollbackEx) {
+                    log.error("Rollback failed for categoryId {}/{}: {}", written[1], written[0], rollbackEx.getMessage());
+                }
+            }
+            throw e;
+        }
+
+        cacheService.evictPublicContentCaches();
+        return getContentSortOrder(categoryId);
+    }
+
+    /**
+     * Check whether a content document exists in Firestore.
+     */
+    private boolean contentExists(String contentId, String contentType)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        switch (contentType) {
+            case "channel":  return channelRepository.findById(contentId).isPresent();
+            case "playlist": return playlistRepository.findById(contentId).isPresent();
+            case "video":    return videoRepository.findById(contentId).isPresent();
+            default:         return false;
+        }
+    }
+
+    /**
+     * Add a category ID to a content item's categoryIds list (if not already present).
+     * Throws on failure so callers know the update did not succeed.
+     *
+     * Note: The switch-per-type pattern mirrors removeCategoryIdFromContent and resolveContentInfo.
+     * The entities (Channel, Playlist, Video) don't share a categoryIds interface, so each case
+     * is handled explicitly. If a 4th content type is added, all three methods must be updated.
+     */
+    private void addCategoryIdToContent(String contentId, String contentType, String categoryId)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        switch (contentType) {
+            case "channel": {
+                Channel ch = channelRepository.findById(contentId)
+                        .orElseThrow(() -> new IllegalArgumentException("Channel not found: " + contentId));
+                List<String> cats = ch.getCategoryIds() != null ? new ArrayList<>(ch.getCategoryIds()) : new ArrayList<>();
+                if (!cats.contains(categoryId)) {
+                    cats.add(categoryId);
+                    ch.setCategoryIds(cats);
+                    channelRepository.save(ch);
+                }
+                break;
+            }
+            case "playlist": {
+                Playlist pl = playlistRepository.findById(contentId)
+                        .orElseThrow(() -> new IllegalArgumentException("Playlist not found: " + contentId));
+                List<String> cats = pl.getCategoryIds() != null ? new ArrayList<>(pl.getCategoryIds()) : new ArrayList<>();
+                if (!cats.contains(categoryId)) {
+                    cats.add(categoryId);
+                    pl.setCategoryIds(cats);
+                    playlistRepository.save(pl);
+                }
+                break;
+            }
+            case "video": {
+                Video v = videoRepository.findById(contentId)
+                        .orElseThrow(() -> new IllegalArgumentException("Video not found: " + contentId));
+                List<String> cats = v.getCategoryIds() != null ? new ArrayList<>(v.getCategoryIds()) : new ArrayList<>();
+                if (!cats.contains(categoryId)) {
+                    cats.add(categoryId);
+                    v.setCategoryIds(cats);
+                    videoRepository.save(v);
+                }
+                break;
+            }
+            default:
+                throw new IllegalArgumentException("Unknown content type: " + contentType);
+        }
+    }
+
+    /**
      * Remove a content item from a category's sort order and renumber remaining items.
      */
     public void removeContentFromCategory(String categoryId, String contentId, String contentType)
@@ -318,6 +450,82 @@ public class SortOrderService {
 
         log.debug("Removed {} {} from category {} and renumbered {} remaining items",
                 contentType, contentId, categoryId, remaining.size());
+    }
+
+    /**
+     * Remove a content item from a category's sort order and also remove the category
+     * from the content item's categoryIds. Updates categoryIds first (idempotent/recoverable),
+     * then removes the sort-order entry. Returns the updated content list.
+     */
+    public List<ContentSortDto> removeContentFromCategoryAndUpdate(
+            String categoryId, String contentId, String contentType)
+            throws ExecutionException, InterruptedException, TimeoutException {
+
+        // Update categoryIds first — if this fails, nothing has been deleted
+        removeCategoryIdFromContent(contentId, contentType, categoryId);
+        // Then remove sort-order entry — if this fails, categoryId is already removed
+        // which is the safer partial state (orphan sort-order row vs stale categoryId)
+        removeContentFromCategory(categoryId, contentId, contentType);
+        cacheService.evictPublicContentCaches();
+        return getContentSortOrder(categoryId);
+    }
+
+    /**
+     * Remove a category ID from a content item's categoryIds list.
+     * If the content document no longer exists (e.g., deleted), logs a warning
+     * but does not throw — the sort-order entry was already removed.
+     */
+    private void removeCategoryIdFromContent(String contentId, String contentType, String categoryId)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        switch (contentType) {
+            case "channel": {
+                Channel ch = channelRepository.findById(contentId).orElse(null);
+                if (ch == null) {
+                    log.warn("Channel {} not found during category removal — sort-order entry already removed", contentId);
+                    return;
+                }
+                List<String> cats = ch.getCategoryIds();
+                if (cats != null && cats.contains(categoryId)) {
+                    cats = new ArrayList<>(cats);
+                    cats.remove(categoryId);
+                    ch.setCategoryIds(cats);
+                    channelRepository.save(ch);
+                }
+                break;
+            }
+            case "playlist": {
+                Playlist pl = playlistRepository.findById(contentId).orElse(null);
+                if (pl == null) {
+                    log.warn("Playlist {} not found during category removal — sort-order entry already removed", contentId);
+                    return;
+                }
+                List<String> cats = pl.getCategoryIds();
+                if (cats != null && cats.contains(categoryId)) {
+                    cats = new ArrayList<>(cats);
+                    cats.remove(categoryId);
+                    pl.setCategoryIds(cats);
+                    playlistRepository.save(pl);
+                }
+                break;
+            }
+            case "video": {
+                Video v = videoRepository.findById(contentId).orElse(null);
+                if (v == null) {
+                    log.warn("Video {} not found during category removal — sort-order entry already removed", contentId);
+                    return;
+                }
+                List<String> cats = v.getCategoryIds();
+                if (cats != null && cats.contains(categoryId)) {
+                    cats = new ArrayList<>(cats);
+                    cats.remove(categoryId);
+                    v.setCategoryIds(cats);
+                    videoRepository.save(v);
+                }
+                break;
+            }
+            default:
+                throw new IllegalArgumentException("Unknown content type: " + contentType);
+        }
     }
 
     // ======================== LIFECYCLE HELPERS ========================

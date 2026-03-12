@@ -6,6 +6,7 @@ import com.albunyaan.tube.service.SortOrderService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import org.slf4j.Logger;
@@ -15,6 +16,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -113,6 +115,58 @@ public class SortOrderController {
         }
     }
 
+    /**
+     * POST /api/admin/sort/categories/{categoryId}/content/add
+     *
+     * Add content items directly to a category's sort order.
+     * Also updates each content item's categoryIds to include this category.
+     */
+    @PostMapping("/categories/{categoryId}/content/add")
+    public ResponseEntity<List<ContentSortDto>> addContentToCategory(
+            @PathVariable String categoryId,
+            @Valid @RequestBody AddContentRequest request) {
+        try {
+            // Map controller DTOs to service-level type (String[] = {contentId, contentType})
+            List<String[]> serviceItems = new ArrayList<>();
+            for (AddContentItem item : request.items) {
+                serviceItems.add(new String[]{item.contentId, item.contentType});
+            }
+            List<ContentSortDto> result = sortOrderService.addMultipleContentToCategory(
+                    categoryId, serviceItems);
+            return ResponseEntity.ok(result);
+        } catch (IllegalArgumentException e) {
+            log.warn("Add content to category failed: {}", e.getMessage());
+            return ResponseEntity.badRequest().build();
+        } catch (Exception e) {
+            log.error("Failed to add content to category {}", categoryId, e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * DELETE /api/admin/sort/categories/{categoryId}/content/{contentType}/{contentId}
+     *
+     * Remove a content item from a category's sort order.
+     * Also removes the category from the content item's categoryIds.
+     */
+    @DeleteMapping("/categories/{categoryId}/content/{contentType}/{contentId}")
+    public ResponseEntity<List<ContentSortDto>> removeContentFromCategory(
+            @PathVariable String categoryId,
+            @PathVariable @Pattern(regexp = "^(channel|playlist|video)$") String contentType,
+            @PathVariable String contentId) {
+        try {
+            List<ContentSortDto> result = sortOrderService.removeContentFromCategoryAndUpdate(
+                    categoryId, contentId, contentType);
+            return ResponseEntity.ok(result);
+        } catch (IllegalArgumentException e) {
+            log.warn("Remove content from category failed: {}", e.getMessage());
+            return ResponseEntity.badRequest().build();
+        } catch (Exception e) {
+            log.error("Failed to remove content {} from category {}", contentId, categoryId, e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
     // ======================== REQUEST DTOs ========================
 
     public static class ReorderCategoryRequest {
@@ -138,5 +192,23 @@ public class SortOrderController {
         @NotNull(message = "New position cannot be null")
         @Min(value = 0, message = "Position must be >= 0")
         public Integer newPosition;
+    }
+
+    public static class AddContentRequest {
+        @NotNull(message = "Items cannot be null")
+        @NotEmpty(message = "Items cannot be empty")
+        @Valid
+        public List<AddContentItem> items;
+    }
+
+    public static class AddContentItem {
+        @NotNull(message = "Content ID cannot be null")
+        @NotBlank(message = "Content ID cannot be blank")
+        public String contentId;
+
+        @NotNull(message = "Content type cannot be null")
+        @NotBlank(message = "Content type cannot be blank")
+        @Pattern(regexp = "^(channel|playlist|video)$", message = "Content type must be one of: channel, playlist, video")
+        public String contentType;
     }
 }

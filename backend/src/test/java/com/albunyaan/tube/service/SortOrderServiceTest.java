@@ -1,6 +1,7 @@
 package com.albunyaan.tube.service;
 
 import com.albunyaan.tube.dto.CategorySortDto;
+import com.albunyaan.tube.dto.ContentSortDto;
 import com.albunyaan.tube.model.Category;
 import com.albunyaan.tube.model.CategoryContentOrder;
 import com.albunyaan.tube.model.Channel;
@@ -246,6 +247,247 @@ class SortOrderServiceTest {
         assertEquals("pl1", saved.get(1).getContentId());
         assertEquals("playlist", saved.get(1).getContentType());
         assertEquals(1, saved.get(1).getPosition());
+    }
+
+    // --- addMultipleContentToCategory ---
+
+    @Test
+    void addMultipleContentToCategory_happyPath() throws Exception {
+        // Category exists
+        Category cat = makeCategory("cat1", "Quran", 0);
+        when(categoryRepository.findById("cat1")).thenReturn(Optional.of(cat));
+
+        // Channel exists (returned for contentExists, addCategoryIdToContent, resolveContentInfo)
+        Channel ch = new Channel();
+        ch.setId("ch1");
+        ch.setName("Test Channel");
+        ch.setYoutubeId("yt-ch1");
+        ch.setCategoryIds(new ArrayList<>());
+        when(channelRepository.findById("ch1")).thenReturn(Optional.of(ch));
+
+        // Sort-order entry doesn't exist yet
+        String docId = CategoryContentOrder.generateId("cat1", "channel", "ch1");
+        when(orderRepository.findById(docId)).thenReturn(Optional.empty());
+        when(orderRepository.countByCategoryId("cat1")).thenReturn(0L);
+
+        // After add, getContentSortOrder returns the new entry
+        CategoryContentOrder order = makeOrder("cat1", "ch1", "channel", 0);
+        when(orderRepository.findByCategoryIdOrderByPosition("cat1")).thenReturn(List.of(order));
+
+        List<String[]> items = Collections.singletonList(new String[]{"ch1", "channel"});
+        List<ContentSortDto> result = service.addMultipleContentToCategory("cat1", items);
+
+        // Verify sort-order entry saved
+        verify(orderRepository).save(any(CategoryContentOrder.class));
+        // Verify categoryIds updated on channel
+        assertTrue(ch.getCategoryIds().contains("cat1"));
+        verify(channelRepository).save(ch);
+        // Verify cache evicted
+        verify(cacheService).evictPublicContentCaches();
+        // Verify result returned
+        assertEquals(1, result.size());
+        assertEquals("ch1", result.get(0).getContentId());
+    }
+
+    @Test
+    void addMultipleContentToCategory_throwsWhenCategoryNotFound() throws Exception {
+        when(categoryRepository.findById("nonexistent")).thenReturn(Optional.empty());
+
+        List<String[]> items = Collections.singletonList(new String[]{"ch1", "channel"});
+        assertThrows(IllegalArgumentException.class, () ->
+                service.addMultipleContentToCategory("nonexistent", items)
+        );
+        // No writes should have happened
+        verify(orderRepository, never()).save(any());
+        verify(cacheService, never()).evictPublicContentCaches();
+    }
+
+    @Test
+    void addMultipleContentToCategory_throwsWhenContentNotFound() throws Exception {
+        Category cat = makeCategory("cat1", "Quran", 0);
+        when(categoryRepository.findById("cat1")).thenReturn(Optional.of(cat));
+        when(channelRepository.findById("nonexistent")).thenReturn(Optional.empty());
+
+        List<String[]> items = Collections.singletonList(new String[]{"nonexistent", "channel"});
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () ->
+                service.addMultipleContentToCategory("cat1", items)
+        );
+        assertTrue(ex.getMessage().contains("not found"));
+        // Validation failed before any writes
+        verify(orderRepository, never()).save(any());
+    }
+
+    @Test
+    void addMultipleContentToCategory_rollsBackOnMidBatchFailure() throws Exception {
+        Category cat = makeCategory("cat1", "Quran", 0);
+        when(categoryRepository.findById("cat1")).thenReturn(Optional.of(cat));
+
+        // ch1 exists and will succeed
+        Channel ch1 = new Channel();
+        ch1.setId("ch1");
+        ch1.setCategoryIds(new ArrayList<>());
+        when(channelRepository.findById("ch1")).thenReturn(Optional.of(ch1));
+
+        // pl1 exists for validation but save will fail
+        Playlist pl1 = new Playlist();
+        pl1.setId("pl1");
+        pl1.setCategoryIds(new ArrayList<>());
+        when(playlistRepository.findById("pl1")).thenReturn(Optional.of(pl1));
+
+        // Sort-order entries don't exist yet
+        when(orderRepository.findById(any())).thenReturn(Optional.empty());
+        when(orderRepository.countByCategoryId("cat1")).thenReturn(0L, 1L);
+
+        // pl1 save throws (ch1 save succeeds via Mockito default)
+        doThrow(new RuntimeException("Firestore write failed")).when(playlistRepository).save(any(Playlist.class));
+
+        // Rollback needs: removeContentFromCategory calls findById then deleteById
+        String ch1DocId = CategoryContentOrder.generateId("cat1", "channel", "ch1");
+        String pl1DocId = CategoryContentOrder.generateId("cat1", "playlist", "pl1");
+        // For rollback, sort-order entries now exist
+        when(orderRepository.findById(ch1DocId))
+                .thenReturn(Optional.empty())  // first call in addContentToCategory
+                .thenReturn(Optional.of(new CategoryContentOrder())); // second call in rollback removeContentFromCategory
+        when(orderRepository.findById(pl1DocId))
+                .thenReturn(Optional.empty())  // first call in addContentToCategory
+                .thenReturn(Optional.of(new CategoryContentOrder())); // second call in rollback
+        when(orderRepository.findByCategoryIdOrderByPosition("cat1")).thenReturn(Collections.emptyList());
+
+        List<String[]> items = Arrays.asList(
+                new String[]{"ch1", "channel"},
+                new String[]{"pl1", "playlist"}
+        );
+
+        assertThrows(RuntimeException.class, () ->
+                service.addMultipleContentToCategory("cat1", items)
+        );
+
+        // Verify rollback: sort-order entries deleted
+        verify(orderRepository).deleteById(ch1DocId);
+        verify(orderRepository).deleteById(pl1DocId);
+        // Verify rollback: ch1 categoryIds reverted (removeCategoryIdFromContent called)
+        // ch1 was in writtenCategoryIds, so its categoryIds should have been cleaned
+        // Cache should NOT have been evicted (batch failed)
+        verify(cacheService, never()).evictPublicContentCaches();
+    }
+
+    @Test
+    void addMultipleContentToCategory_skipsAlreadyAssignedCategoryId() throws Exception {
+        Category cat = makeCategory("cat1", "Quran", 0);
+        when(categoryRepository.findById("cat1")).thenReturn(Optional.of(cat));
+
+        // Channel already has cat1 in categoryIds
+        Channel ch = new Channel();
+        ch.setId("ch1");
+        ch.setName("Test Channel");
+        ch.setYoutubeId("yt-ch1");
+        ch.setCategoryIds(new ArrayList<>(List.of("cat1")));
+        when(channelRepository.findById("ch1")).thenReturn(Optional.of(ch));
+
+        String docId = CategoryContentOrder.generateId("cat1", "channel", "ch1");
+        when(orderRepository.findById(docId)).thenReturn(Optional.empty());
+        when(orderRepository.countByCategoryId("cat1")).thenReturn(0L);
+
+        CategoryContentOrder order = makeOrder("cat1", "ch1", "channel", 0);
+        when(orderRepository.findByCategoryIdOrderByPosition("cat1")).thenReturn(List.of(order));
+
+        List<String[]> items = Collections.singletonList(new String[]{"ch1", "channel"});
+        service.addMultipleContentToCategory("cat1", items);
+
+        // Channel should NOT be saved again since categoryId was already present
+        verify(channelRepository, never()).save(any(Channel.class));
+    }
+
+    // --- removeContentFromCategoryAndUpdate ---
+
+    @Test
+    void removeContentFromCategoryAndUpdate_removesEntryAndUpdatesCategoryIds() throws Exception {
+        // Channel has cat1 in categoryIds
+        Channel ch = new Channel();
+        ch.setId("ch1");
+        ch.setName("Test Channel");
+        ch.setYoutubeId("yt-ch1");
+        ch.setCategoryIds(new ArrayList<>(List.of("cat1", "cat2")));
+        when(channelRepository.findById("ch1")).thenReturn(Optional.of(ch));
+
+        // Sort-order entry exists
+        String docId = CategoryContentOrder.generateId("cat1", "channel", "ch1");
+        when(orderRepository.findById(docId)).thenReturn(Optional.of(new CategoryContentOrder()));
+        when(orderRepository.findByCategoryIdOrderByPosition("cat1")).thenReturn(Collections.emptyList());
+
+        List<ContentSortDto> result = service.removeContentFromCategoryAndUpdate("cat1", "ch1", "channel");
+
+        // categoryIds updated: cat1 removed, cat2 remains
+        verify(channelRepository).save(ch);
+        assertFalse(ch.getCategoryIds().contains("cat1"));
+        assertTrue(ch.getCategoryIds().contains("cat2"));
+        // Sort-order entry deleted
+        verify(orderRepository).deleteById(docId);
+        // Cache evicted
+        verify(cacheService).evictPublicContentCaches();
+    }
+
+    @Test
+    void removeContentFromCategoryAndUpdate_handlesDeletedContent() throws Exception {
+        // Content no longer exists (deleted)
+        when(channelRepository.findById("ch-gone")).thenReturn(Optional.empty());
+
+        // Sort-order entry exists
+        String docId = CategoryContentOrder.generateId("cat1", "channel", "ch-gone");
+        when(orderRepository.findById(docId)).thenReturn(Optional.of(new CategoryContentOrder()));
+        when(orderRepository.findByCategoryIdOrderByPosition("cat1")).thenReturn(Collections.emptyList());
+
+        // Should not throw — removeCategoryIdFromContent handles missing content gracefully
+        List<ContentSortDto> result = service.removeContentFromCategoryAndUpdate("cat1", "ch-gone", "channel");
+
+        // Sort-order entry still deleted even though content is gone
+        verify(orderRepository).deleteById(docId);
+        verify(cacheService).evictPublicContentCaches();
+    }
+
+    // --- contentExists ---
+
+    @Test
+    void contentExists_channel() throws Exception {
+        Channel ch = new Channel();
+        ch.setId("ch1");
+        when(channelRepository.findById("ch1")).thenReturn(Optional.of(ch));
+        when(channelRepository.findById("ch-missing")).thenReturn(Optional.empty());
+
+        Category cat = makeCategory("cat1", "Quran", 0);
+        when(categoryRepository.findById("cat1")).thenReturn(Optional.of(cat));
+
+        // Existing channel passes validation
+        List<String[]> items = Collections.singletonList(new String[]{"ch1", "channel"});
+        // contentExists is private, test via addMultipleContentToCategory validation
+        // If validation fails, it throws
+        // Setup remaining mocks for the full method
+        String docId = CategoryContentOrder.generateId("cat1", "channel", "ch1");
+        when(orderRepository.findById(docId)).thenReturn(Optional.empty());
+        when(orderRepository.countByCategoryId("cat1")).thenReturn(0L);
+        ch.setCategoryIds(new ArrayList<>());
+        when(orderRepository.findByCategoryIdOrderByPosition("cat1"))
+                .thenReturn(List.of(makeOrder("cat1", "ch1", "channel", 0)));
+
+        // Should not throw
+        service.addMultipleContentToCategory("cat1", items);
+
+        // Missing channel fails validation
+        List<String[]> missingItems = Collections.singletonList(new String[]{"ch-missing", "channel"});
+        assertThrows(IllegalArgumentException.class, () ->
+                service.addMultipleContentToCategory("cat1", missingItems)
+        );
+    }
+
+    @Test
+    void contentExists_unknownTypeFails() throws Exception {
+        Category cat = makeCategory("cat1", "Quran", 0);
+        when(categoryRepository.findById("cat1")).thenReturn(Optional.of(cat));
+
+        List<String[]> items = Collections.singletonList(new String[]{"id1", "unknown_type"});
+        assertThrows(IllegalArgumentException.class, () ->
+                service.addMultipleContentToCategory("cat1", items)
+        );
     }
 
     // --- Helpers ---
