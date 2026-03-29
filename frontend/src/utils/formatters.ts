@@ -19,17 +19,39 @@ export function formatDateTime(value: string, locale: string): string {
 }
 
 /**
+ * Strip signed query params from YouTube thumbnail URLs.
+ * Signed URLs (sqp=, rs=) expire and cause load failures.
+ * Unsigned i.ytimg.com URLs are stable and always resolve.
+ */
+function sanitizeYtImgUrl(url: string): string {
+  if (url.includes('i.ytimg.com/')) {
+    return url.split('?')[0];
+  }
+  return url;
+}
+
+/**
+ * Extract a video ID from a ytimg thumbnail URL.
+ * e.g. "https://i.ytimg.com/vi/5N7cldicyto/hqdefault.jpg" → "5N7cldicyto"
+ */
+function extractVideoIdFromYtImg(url: string): string | null {
+  const match = url.match(/i\.ytimg\.com\/vi\/([^/]+)\//);
+  return match ? match[1] : null;
+}
+
+/**
  * Get a thumbnail URL for content, falling back to YouTube's default thumbnail
  * when the stored thumbnailUrl is null/empty.
  *
  * For videos: generates YouTube video thumbnail URL from youtubeId
- * For channels/playlists: returns null (caller should show placeholder)
+ * For playlists: extracts video ID from ytimg URL for a stable fallback
+ * For channels: returns stored URL or null
  */
 export function getThumbnailUrl(
   item: { thumbnailUrl?: string | null; youtubeId?: string | null; ytId?: string | null },
   type?: 'channel' | 'playlist' | 'video'
 ): string | null {
-  if (item.thumbnailUrl) return item.thumbnailUrl;
+  if (item.thumbnailUrl) return sanitizeYtImgUrl(item.thumbnailUrl);
 
   const ytId = item.youtubeId || item.ytId;
   if (ytId && type === 'video') {
@@ -37,6 +59,54 @@ export function getThumbnailUrl(
   }
 
   return null;
+}
+
+/**
+ * Build an ordered list of fallback thumbnail URLs to try when the primary fails.
+ * Returns URLs in priority order; caller should try each in sequence.
+ * URLs are sanitized (no signed params) so they can be compared directly to img.src.
+ */
+export function getThumbnailFallbacks(
+  item: { thumbnailUrl?: string | null; youtubeId?: string | null; ytId?: string | null },
+  type?: 'channel' | 'playlist' | 'video'
+): string[] {
+  const fallbacks: string[] = [];
+
+  if (type === 'video') {
+    const ytId = item.youtubeId || item.ytId;
+    if (ytId) {
+      fallbacks.push(
+        `https://i.ytimg.com/vi/${ytId}/mqdefault.jpg`,
+        `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`,
+        `https://i.ytimg.com/vi/${ytId}/default.jpg`
+      );
+    }
+  }
+
+  if (type === 'playlist') {
+    // Sanitize first — the stored URL may have signed params
+    const sanitized = item.thumbnailUrl ? sanitizeYtImgUrl(item.thumbnailUrl) : null;
+    const vidId = sanitized ? extractVideoIdFromYtImg(sanitized) : null;
+    if (vidId) {
+      fallbacks.push(
+        `https://i.ytimg.com/vi/${vidId}/mqdefault.jpg`,
+        `https://i.ytimg.com/vi/${vidId}/hqdefault.jpg`,
+        `https://i.ytimg.com/vi/${vidId}/default.jpg`
+      );
+    }
+  }
+
+  if (type === 'channel' && item.thumbnailUrl) {
+    const url = item.thumbnailUrl;
+    if (url.includes('yt3.googleusercontent.com') || url.includes('yt3.ggpht.com')) {
+      // Strip the =s{size}-... suffix that controls avatar size/format.
+      // e.g. "...XQ=s72-c-k-c0x00ffffff-no-rj" → "...XQ" (serves default size)
+      const base = url.replace(/=s\d+[^/]*$/, '');
+      if (base !== url) fallbacks.push(base);
+    }
+  }
+
+  return fallbacks;
 }
 
 export function formatDuration(seconds: number, locale: string): string {
