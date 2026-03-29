@@ -75,7 +75,8 @@ public class SortOrderService {
                     cat.getIcon(),
                     cat.getLocalizedNames(),
                     cat.getDisplayOrder(),
-                    (int) count
+                    (int) count,
+                    cat.getParentCategoryId()
             ));
         }
 

@@ -7,6 +7,48 @@ export interface CategorySortItem {
   localizedNames: Record<string, string> | null;
   displayOrder: number;
   contentCount: number;
+  parentCategoryId: string | null;
+  subcategories?: CategorySortItem[];
+}
+
+/**
+ * Build a hierarchical tree from a flat category list, then flatten it
+ * back into a display-order list where subcategories follow their parent.
+ */
+export interface DisplayCategory extends CategorySortItem {
+  isSubcategory: boolean;
+}
+
+export function buildDisplayCategories(flat: CategorySortItem[]): DisplayCategory[] {
+  const map = new Map<string, CategorySortItem & { subcategories: CategorySortItem[] }>();
+  const roots: (CategorySortItem & { subcategories: CategorySortItem[] })[] = [];
+
+  for (const cat of flat) {
+    map.set(cat.id, { ...cat, subcategories: [] });
+  }
+
+  for (const cat of flat) {
+    const node = map.get(cat.id)!;
+    if (cat.parentCategoryId) {
+      const parent = map.get(cat.parentCategoryId);
+      if (parent) {
+        parent.subcategories.push(node);
+      } else {
+        roots.push(node);
+      }
+    } else {
+      roots.push(node);
+    }
+  }
+
+  const result: DisplayCategory[] = [];
+  for (const parent of roots) {
+    result.push({ ...parent, isSubcategory: false });
+    for (const sub of parent.subcategories) {
+      result.push({ ...sub, isSubcategory: true });
+    }
+  }
+  return result;
 }
 
 export interface ContentSortItem {

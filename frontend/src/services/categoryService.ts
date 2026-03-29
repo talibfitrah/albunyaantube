@@ -102,6 +102,7 @@ export async function updateCategory(
     icon?: string;
     displayOrder?: number;
     localizedNames?: Record<string, string>;
+    parentCategoryId?: string | null;
   }
 ): Promise<Category> {
   const response = await apiClient.put<Category>(`/api/admin/categories/${id}`, data);

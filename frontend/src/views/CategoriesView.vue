@@ -246,7 +246,8 @@ async function handleSubmit() {
       const updatePayload: Record<string, any> = {
         name: dialogData.value.name,
         icon: dialogData.value.icon,
-        localizedNames: ln
+        localizedNames: ln,
+        parentCategoryId: dialogData.value.parentId || null
       };
       if (dialogData.value.displayOrder !== null && dialogData.value.displayOrder !== undefined) {
         updatePayload.displayOrder = dialogData.value.displayOrder;

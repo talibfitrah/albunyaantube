@@ -29,21 +29,16 @@
           </tr>
         </thead>
         <tbody>
-          <template v-for="(cat, index) in categories" :key="cat.id">
-            <!-- Category row -->
+          <template v-for="cat in displayCats" :key="cat.id">
+            <!-- Category row (drag disabled — use position input to reorder) -->
             <tr
               class="category-row"
-              :class="{ 'drag-over': dragOverIndex === index, 'expanded': expandedCategoryId === cat.id }"
-              draggable="true"
-              @dragstart="handleCatDragStart($event, index)"
-              @dragover.prevent="handleCatDragOver($event, index)"
-              @dragleave="handleCatDragLeave"
-              @drop="handleCatDrop($event, index)"
-              @dragend="handleCatDragEnd"
+              :class="{
+                'expanded': expandedCategoryId === cat.id,
+                'subcategory-row': cat.isSubcategory
+              }"
             >
-              <td class="col-drag">
-                <span class="drag-handle" :title="t('contentSorting.dragToReorder')">&#x22EE;&#x22EE;</span>
-              </td>
+              <td class="col-drag"></td>
               <td class="col-name" @click="toggleCategory(cat.id)">
                 <span class="expand-icon">{{ expandedCategoryId === cat.id ? '&#9660;' : '&#9654;' }}</span>
                 <span v-if="cat.icon" class="category-icon">{{ cat.icon }}</span>
@@ -267,9 +262,11 @@ import {
   addContentToCategorySort,
   getApprovedContent,
   removeContentFromCategorySort,
+  buildDisplayCategories,
   type CategorySortItem,
   type ContentSortItem,
-  type ApprovedContentItem
+  type ApprovedContentItem,
+  type DisplayCategory
 } from '@/services/sortOrder';
 import { toast } from '@/utils/toast';
 import { useFocusTrap } from '@/composables/useFocusTrap';
@@ -288,6 +285,7 @@ const typeFilters = computed(() => [
 // ==================== Category state ====================
 
 const categories = ref<CategorySortItem[]>([]);
+const displayCats = computed<DisplayCategory[]>(() => buildDisplayCategories(categories.value));
 const isLoading = ref(false);
 const error = ref<string | null>(null);
 
@@ -307,10 +305,6 @@ const activeFilterLabel = computed(() => {
   const f = typeFilters.value.find(tf => tf.value === contentTypeFilter.value);
   return f?.label ?? contentTypeFilter.value;
 });
-
-// Category drag state
-const dragOverIndex = ref<number | null>(null);
-let dragStartIndex: number | null = null;
 
 // Content drag state
 const contentDragOverIndex = ref<number | null>(null);
@@ -393,50 +387,6 @@ async function toggleCategory(categoryId: string) {
       contentLoading.value = false;
     }
   }
-}
-
-// ==================== Category drag-and-drop ====================
-
-function handleCatDragStart(e: DragEvent, index: number) {
-  dragStartIndex = index;
-  if (e.dataTransfer) {
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', String(index));
-  }
-}
-
-function handleCatDragOver(e: DragEvent, index: number) {
-  e.preventDefault();
-  dragOverIndex.value = index;
-}
-
-function handleCatDragLeave() {
-  dragOverIndex.value = null;
-}
-
-async function handleCatDrop(e: DragEvent, dropIndex: number) {
-  e.preventDefault();
-  dragOverIndex.value = null;
-
-  if (dragStartIndex === null || dragStartIndex === dropIndex) return;
-
-  const cat = categories.value[dragStartIndex];
-  if (!cat) return;
-
-  try {
-    categories.value = await reorderCategory(cat.id, dropIndex);
-    toast.success(t('contentSorting.categoryReordered'));
-  } catch (e: any) {
-    toast.error(e.message || 'Failed to reorder category');
-    await loadCategories();
-  }
-
-  dragStartIndex = null;
-}
-
-function handleCatDragEnd() {
-  dragOverIndex.value = null;
-  dragStartIndex = null;
 }
 
 // Track last-submitted positions to prevent duplicate Enter+blur API calls
@@ -775,6 +725,15 @@ tr.drag-over {
 
 .category-name {
   font-weight: 500;
+}
+
+.subcategory-row .col-name {
+  padding-inline-start: 2.5rem;
+}
+
+.subcategory-row .category-name {
+  font-weight: 400;
+  font-size: 0.9em;
 }
 
 .position-input {

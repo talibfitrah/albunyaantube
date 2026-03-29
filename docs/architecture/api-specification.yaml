@@ -2907,6 +2907,10 @@ components:
           nullable: true
         contentCount:
           type: integer
+        parentCategoryId:
+          type: string
+          nullable: true
+          description: Parent category ID (null for top-level categories)
 
     ContentSortDto:
       type: object

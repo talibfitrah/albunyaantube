@@ -181,10 +181,16 @@ public class Category {
         this.slug = slug;
     }
 
+    /**
+     * Alias for parentCategoryId — excluded from Firestore to prevent
+     * a duplicate field that overwrites parentCategoryId during deserialization.
+     */
+    @Exclude
     public String getParentId() {
         return parentCategoryId;
     }
 
+    @Exclude
     public void setParentId(String parentId) {
         setParentCategoryId(parentId);
     }
