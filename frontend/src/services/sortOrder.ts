@@ -43,7 +43,9 @@ export function buildDisplayCategories(flat: CategorySortItem[]): DisplayCategor
 
   const result: DisplayCategory[] = [];
   for (const parent of roots) {
-    result.push({ ...parent, isSubcategory: false });
+    // Aggregate subcategory counts into the parent's contentCount
+    const subTotal = parent.subcategories.reduce((sum, sub) => sum + sub.contentCount, 0);
+    result.push({ ...parent, contentCount: parent.contentCount + subTotal, isSubcategory: false });
     for (const sub of parent.subcategories) {
       result.push({ ...sub, isSubcategory: true });
     }

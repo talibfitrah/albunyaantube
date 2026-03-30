@@ -221,17 +221,20 @@ class SortOrderServiceTest {
 
     @Test
     void initializeCategoryContentOrder_seedsInDefaultOrder() throws Exception {
+        // initializeCategoryContentOrder now resolves child categories and uses findByCategoryIds
+        when(categoryRepository.findByParentId("cat1")).thenReturn(Collections.emptyList());
+
         Channel ch = new Channel();
         ch.setId("ch1");
         ch.setSubscribers(1000L);
-        when(channelRepository.findByCategoryId(eq("cat1"), eq(500))).thenReturn(List.of(ch));
+        when(channelRepository.findByCategoryIds(eq(List.of("cat1")), eq(500))).thenReturn(List.of(ch));
 
         Playlist pl = new Playlist();
         pl.setId("pl1");
         pl.setItemCount(10);
-        when(playlistRepository.findByCategoryId(eq("cat1"), eq(500))).thenReturn(List.of(pl));
+        when(playlistRepository.findByCategoryIds(eq(List.of("cat1")), eq(500))).thenReturn(List.of(pl));
 
-        when(videoRepository.findByCategoryId(eq("cat1"), eq(500))).thenReturn(Collections.emptyList());
+        when(videoRepository.findByCategoryIds(eq(List.of("cat1")), eq(500))).thenReturn(Collections.emptyList());
 
         service.initializeCategoryContentOrder("cat1");
 

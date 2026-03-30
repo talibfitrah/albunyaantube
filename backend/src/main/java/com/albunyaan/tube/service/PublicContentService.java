@@ -27,6 +27,7 @@ import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -97,25 +98,34 @@ public class PublicContentService {
             type = "HOME";
         }
 
+        // Resolve parent category → parent + children for aggregation.
+        // If category is a parent, allCategoryIds includes it and all its subcategories.
+        // This ensures "See All" and content list views show aggregated content.
+        List<String> allCategoryIds = null;
+        if (category != null && !category.isBlank()) {
+            allCategoryIds = resolveAllCategoryIds(category);
+        }
+
         // For content types that support real cursor pagination
         switch (type.toUpperCase(Locale.ROOT)) {
             case "CHANNELS":
-                return getChannelsWithCursor(limit, category, cursor);
+                return getChannelsWithCursor(limit, category, allCategoryIds, cursor);
             case "PLAYLISTS":
-                return getPlaylistsWithCursor(limit, category, cursor);
+                return getPlaylistsWithCursor(limit, category, allCategoryIds, cursor);
             case "VIDEOS":
-                return getVideosWithCursor(limit, category, cursor, length, date, sort);
+                return getVideosWithCursor(limit, category, allCategoryIds, cursor, length, date, sort);
             case "HOME":
             default:
                 // HOME type mixes content types, so cursor doesn't apply cleanly
                 // Use legacy approach for mixed content
-                List<ContentItemDto> items = getMixedContent(limit, category);
+                List<ContentItemDto> items = getMixedContent(limit, category, allCategoryIds);
                 String nextCursor = items.size() >= limit ? encodeCursor(limit) : null;
                 return new CursorPageDto<>(items, nextCursor);
         }
     }
 
-    private List<ContentItemDto> getMixedContent(int limit, String category) throws ExecutionException, InterruptedException, TimeoutException {
+    private List<ContentItemDto> getMixedContent(int limit, String category, List<String> allCategoryIds)
+            throws ExecutionException, InterruptedException, TimeoutException {
         List<ContentItemDto> mixed = new ArrayList<>();
 
         // Get mix of channels, playlists, and videos (roughly 1:2:3 ratio)
@@ -123,19 +133,22 @@ public class PublicContentService {
         int playlistCount = (limit / 6) * 2;
         int videoCount = limit - channelCount - playlistCount;
 
-        mixed.addAll(getChannels(channelCount, category));
-        mixed.addAll(getPlaylists(playlistCount, category));
-        mixed.addAll(getVideos(videoCount, category, null, null, null));
+        mixed.addAll(getChannels(channelCount, category, allCategoryIds));
+        mixed.addAll(getPlaylists(playlistCount, category, allCategoryIds));
+        mixed.addAll(getVideos(videoCount, category, allCategoryIds, null, null, null));
 
         return mixed;
     }
 
-    private List<ContentItemDto> getChannels(int limit, String category) throws ExecutionException, InterruptedException, TimeoutException {
+    private List<ContentItemDto> getChannels(int limit, String category, List<String> allCategoryIds)
+            throws ExecutionException, InterruptedException, TimeoutException {
         List<Channel> channels;
 
         // Use repository methods with limits for better performance
-        // This reduces data transfer from Firestore
-        if (category != null && !category.isBlank()) {
+        if (allCategoryIds != null && allCategoryIds.size() > 1) {
+            // Parent category with subcategories: aggregate across all
+            channels = channelRepository.findByCategoryIds(allCategoryIds, limit * 2);
+        } else if (category != null && !category.isBlank()) {
             channels = channelRepository.findByCategoryOrderBySubscribersDesc(category, limit * 2);
         } else {
             channels = channelRepository.findAllByOrderBySubscribersDesc(limit * 2);
@@ -151,9 +164,19 @@ public class PublicContentService {
 
     /**
      * Get channels with real cursor-based pagination.
+     * When allCategoryIds has multiple entries (parent + children), falls back to
+     * non-cursor aggregation since cursor pagination across multiple categories is complex.
      */
-    private CursorPageDto<ContentItemDto> getChannelsWithCursor(int limit, String category, String cursor)
+    private CursorPageDto<ContentItemDto> getChannelsWithCursor(int limit, String category,
+                                                                 List<String> allCategoryIds, String cursor)
             throws ExecutionException, InterruptedException, TimeoutException {
+
+        // Multi-category aggregation: use non-cursor approach
+        if (allCategoryIds != null && allCategoryIds.size() > 1) {
+            List<ContentItemDto> items = getChannels(limit, category, allCategoryIds);
+            String nextCursor = items.size() >= limit ? encodeCursor(limit) : null;
+            return new CursorPageDto<>(items, nextCursor);
+        }
 
         ChannelRepository.PaginatedResult<Channel> result;
 
@@ -171,12 +194,14 @@ public class PublicContentService {
         return new CursorPageDto<>(items, result.getNextCursor());
     }
 
-    private List<ContentItemDto> getPlaylists(int limit, String category) throws ExecutionException, InterruptedException, TimeoutException {
+    private List<ContentItemDto> getPlaylists(int limit, String category, List<String> allCategoryIds)
+            throws ExecutionException, InterruptedException, TimeoutException {
         List<Playlist> playlists;
 
         // Use repository methods with limits for better performance
-        // This reduces data transfer from Firestore
-        if (category != null && !category.isBlank()) {
+        if (allCategoryIds != null && allCategoryIds.size() > 1) {
+            playlists = playlistRepository.findByCategoryIds(allCategoryIds, limit * 2);
+        } else if (category != null && !category.isBlank()) {
             playlists = playlistRepository.findByCategoryOrderByItemCountDesc(category, limit * 2);
         } else {
             playlists = playlistRepository.findAllByOrderByItemCountDesc(limit * 2);
@@ -192,9 +217,17 @@ public class PublicContentService {
 
     /**
      * Get playlists with real cursor-based pagination.
+     * When allCategoryIds has multiple entries, falls back to non-cursor aggregation.
      */
-    private CursorPageDto<ContentItemDto> getPlaylistsWithCursor(int limit, String category, String cursor)
+    private CursorPageDto<ContentItemDto> getPlaylistsWithCursor(int limit, String category,
+                                                                  List<String> allCategoryIds, String cursor)
             throws ExecutionException, InterruptedException, TimeoutException {
+
+        if (allCategoryIds != null && allCategoryIds.size() > 1) {
+            List<ContentItemDto> items = getPlaylists(limit, category, allCategoryIds);
+            String nextCursor = items.size() >= limit ? encodeCursor(limit) : null;
+            return new CursorPageDto<>(items, nextCursor);
+        }
 
         PlaylistRepository.PaginatedResult<Playlist> result;
 
@@ -214,12 +247,19 @@ public class PublicContentService {
 
     /**
      * Get videos with real cursor-based pagination.
-     * Note: When length/date/sort filters are applied, cursor pagination may be less efficient
-     * as filtering happens client-side after fetching.
+     * When allCategoryIds has multiple entries, falls back to non-cursor aggregation.
      */
-    private CursorPageDto<ContentItemDto> getVideosWithCursor(int limit, String category, String cursor,
+    private CursorPageDto<ContentItemDto> getVideosWithCursor(int limit, String category,
+                                                              List<String> allCategoryIds, String cursor,
                                                               String length, String date, String sort)
             throws ExecutionException, InterruptedException, TimeoutException {
+
+        // Multi-category aggregation: fall back to non-cursor approach
+        if (allCategoryIds != null && allCategoryIds.size() > 1) {
+            List<ContentItemDto> items = getVideos(limit, category, allCategoryIds, length, date, sort);
+            String nextCursor = items.size() >= limit ? encodeCursor(limit) : null;
+            return new CursorPageDto<>(items, nextCursor);
+        }
 
         // For default case (no filters, newest first), use efficient cursor pagination
         boolean hasFilters = (length != null && !length.isBlank()) ||
@@ -244,19 +284,21 @@ public class PublicContentService {
         }
 
         // Fall back to legacy approach when filters are applied
-        List<ContentItemDto> items = getVideos(limit, category, length, date, sort);
+        List<ContentItemDto> items = getVideos(limit, category, allCategoryIds, length, date, sort);
         String nextCursor = items.size() >= limit ? encodeCursor(limit) : null;
         return new CursorPageDto<>(items, nextCursor);
     }
 
-    private List<ContentItemDto> getVideos(int limit, String category,
+    private List<ContentItemDto> getVideos(int limit, String category, List<String> allCategoryIds,
                                            String length, String date, String sort) throws ExecutionException, InterruptedException, TimeoutException {
         List<Video> videos;
 
         // Use repository methods with limits for better performance
         // Fetch more than needed to account for filters
         int fetchLimit = limit * 3; // 3x buffer for filters
-        if (category != null && !category.isBlank()) {
+        if (allCategoryIds != null && allCategoryIds.size() > 1) {
+            videos = videoRepository.findByCategoryIds(allCategoryIds, fetchLimit);
+        } else if (category != null && !category.isBlank()) {
             videos = videoRepository.findByCategoryOrderByUploadedAtDesc(category, fetchLimit);
         } else {
             videos = videoRepository.findAllByOrderByUploadedAtDesc(fetchLimit);
@@ -361,21 +403,31 @@ public class PublicContentService {
     public CursorPageDto<HomeCategoryDto> getHomeFeed(String cursor, int categoryLimit, int contentLimit, String category)
             throws ExecutionException, InterruptedException, TimeoutException {
 
-        // Fetch categories sorted by displayOrder. Categories are admin-managed
-        // and typically < 50, so findAll() is bounded in practice.
-        // Re-sort by (displayOrder, id) to match cursor tiebreaker format.
+        // Fetch all categories to build parent→children map.
+        // Categories are admin-managed and typically < 50, so findAll() is bounded.
         List<Category> allCategories = new ArrayList<>(categoryRepository.findAll());
 
-        // If category filter is specified, only include that category (and its children)
-        if (category != null && !category.isBlank()) {
-            allCategories.removeIf(cat -> {
-                String catId = cat.getId();
-                String parentId = cat.getParentCategoryId();
-                // Keep if category ID matches, or if it's a child of the requested category
-                return !category.equals(catId) && !category.equals(parentId);
-            });
+        // Build parent → children mapping for subcategory aggregation
+        Map<String, List<String>> childrenMap = new HashMap<>();
+        for (Category cat : allCategories) {
+            if (cat.getParentCategoryId() != null) {
+                childrenMap.computeIfAbsent(cat.getParentCategoryId(), k -> new ArrayList<>())
+                        .add(cat.getId());
+            }
         }
-        allCategories.sort((a, b) -> {
+
+        // Filter to parent (top-level) categories only for home feed display.
+        // Subcategory content is aggregated under its parent section.
+        List<Category> parentCategories = allCategories.stream()
+                .filter(cat -> cat.getParentCategoryId() == null)
+                .collect(Collectors.toList());
+
+        // If category filter is specified, only include that category
+        if (category != null && !category.isBlank()) {
+            parentCategories.removeIf(cat -> !category.equals(cat.getId()));
+        }
+
+        parentCategories.sort((a, b) -> {
             int orderA = a.getDisplayOrder() != null ? a.getDisplayOrder() : Integer.MAX_VALUE;
             int orderB = b.getDisplayOrder() != null ? b.getDisplayOrder() : Integer.MAX_VALUE;
             if (orderA != orderB) return Integer.compare(orderA, orderB);
@@ -400,7 +452,7 @@ public class PublicContentService {
         // Filter categories past the cursor
         List<Category> remaining = new ArrayList<>();
         boolean pastCursor = (cursor == null || cursor.isEmpty());
-        for (Category cat : allCategories) {
+        for (Category cat : parentCategories) {
             if (pastCursor) {
                 remaining.add(cat);
             } else {
@@ -423,6 +475,7 @@ public class PublicContentService {
         // Each batch launches parallel content + count queries. Empty categories are skipped
         // and we continue to the next batch, ensuring sparse categories don't truncate the page.
         record CategoryFuture(Category category,
+                              List<String> allCategoryIds,
                               CompletableFuture<List<ContentItemDto>> itemsFuture,
                               CompletableFuture<Long> countFuture) {}
 
@@ -438,11 +491,19 @@ public class PublicContentService {
             // Launch all content + count queries for this batch in parallel
             List<CategoryFuture> futures = new ArrayList<>();
             for (Category cat : batch) {
+                // Resolve parent + all child category IDs for aggregation
+                List<String> allIds = new ArrayList<>();
+                allIds.add(cat.getId());
+                List<String> children = childrenMap.get(cat.getId());
+                if (children != null) {
+                    allIds.addAll(children);
+                }
+
                 CompletableFuture<List<ContentItemDto>> itemsFuture =
-                        asyncSupply(() -> getCategoryContentItems(cat.getId(), contentLimit));
+                        asyncSupply(() -> getCategoryContentItems(allIds, contentLimit));
                 CompletableFuture<Long> countFuture =
-                        asyncSupply(() -> orderRepository.countByCategoryId(cat.getId()));
-                futures.add(new CategoryFuture(cat, itemsFuture, countFuture));
+                        asyncSupply(() -> orderRepository.countByCategoryIds(allIds));
+                futures.add(new CategoryFuture(cat, allIds, itemsFuture, countFuture));
             }
 
             // Collect results in order, skipping empty or failed categories
@@ -511,14 +572,33 @@ public class PublicContentService {
     }
 
     /**
-     * Get content items for a category, using admin-defined sort order if available,
-     * falling back to default sort.
+     * Resolve all category IDs for a given category: itself + any child subcategories.
+     * Used by getContent() to aggregate subcategory content when filtering by a parent.
      */
-    private List<ContentItemDto> getCategoryContentItems(String categoryId, int limit)
+    private List<String> resolveAllCategoryIds(String categoryId)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        List<String> allIds = new ArrayList<>();
+        allIds.add(categoryId);
+
+        List<Category> children = categoryRepository.findByParentId(categoryId);
+        for (Category child : children) {
+            allIds.add(child.getId());
+        }
+        return allIds;
+    }
+
+    /**
+     * Get content items for one or more categories (parent + subcategories),
+     * using admin-defined sort order if available, falling back to default sort.
+     *
+     * @param categoryIds List of category IDs (parent first, then children)
+     * @param limit Max items to return
+     */
+    private List<ContentItemDto> getCategoryContentItems(List<String> categoryIds, int limit)
             throws ExecutionException, InterruptedException, TimeoutException {
 
-        // Try admin-defined sort order first
-        List<CategoryContentOrder> orderEntries = orderRepository.findByCategoryIdOrderByPosition(categoryId);
+        // Try admin-defined sort order: merge entries from all category IDs
+        List<CategoryContentOrder> orderEntries = orderRepository.findByCategoryIdsOrderByPosition(categoryIds);
 
         if (!orderEntries.isEmpty()) {
             // Batch-fetch content by type to avoid N+1 individual findById calls
@@ -556,15 +636,13 @@ public class PublicContentService {
             return items;
         }
 
-        // Fall back to default sort: synchronous queries — this method already runs on
-        // contentExecutor (scheduled by getHomeFeed). Nesting asyncSupply + join() on the
-        // same bounded pool can deadlock.
+        // Fall back to default sort: query across all category IDs.
         // Video fetch uses limit*2 (not perType*2) so videos can fill the gap when
         // channels/playlists are sparse.
         int perType = Math.max(1, limit / 3);
 
-        List<Channel> channels = channelRepository.findByCategoryId(categoryId, perType * 2);
-        List<Playlist> playlists = playlistRepository.findByCategoryId(categoryId, perType * 2);
+        List<Channel> channels = channelRepository.findByCategoryIds(categoryIds, perType * 2);
+        List<Playlist> playlists = playlistRepository.findByCategoryIds(categoryIds, perType * 2);
 
         List<ContentItemDto> items = new ArrayList<>();
 
@@ -585,7 +663,7 @@ public class PublicContentService {
         // Only fetch videos if channels+playlists didn't fill the limit (avoids wasted Firestore query)
         int videoLimit = limit - items.size();
         if (videoLimit > 0) {
-            List<Video> videos = videoRepository.findByCategoryId(categoryId, videoLimit * 2);
+            List<Video> videos = videoRepository.findByCategoryIds(categoryIds, videoLimit * 2);
             videos.stream()
                     .filter(this::isApproved)
                     .filter(this::isAvailable)

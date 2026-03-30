@@ -144,7 +144,7 @@ public class SortOrderService {
         List<CategoryContentOrder> orderEntries = orderRepository.findByCategoryIdOrderByPosition(categoryId);
 
         // If no order entries exist, initialize from existing approved content.
-        // Re-check after initialization to guard against concurrent calls both seeing empty.
+        // For parent categories, this aggregates content from all subcategories.
         if (orderEntries.isEmpty()) {
             initializeCategoryContentOrder(categoryId);
             orderEntries = orderRepository.findByCategoryIdOrderByPosition(categoryId);
@@ -228,36 +228,57 @@ public class SortOrderService {
             return;
         }
 
+        // Resolve category IDs to query: for parent categories, include all subcategories
+        // so the parent's sort order aggregates all content for the home screen.
+        List<String> queryIds = new ArrayList<>();
+        queryIds.add(categoryId);
+
+        List<Category> children = categoryRepository.findByParentId(categoryId);
+        for (Category child : children) {
+            queryIds.add(child.getId());
+        }
+
+        if (queryIds.size() > 1) {
+            log.info("Initializing parent category {} with content from {} subcategories", categoryId, children.size());
+        }
+
         List<CategoryContentOrder> entries = new ArrayList<>();
         int position = 0;
 
         // Bounded fetch: limit to 500 per content type to prevent unbounded reads
         int initLimit = 500;
 
-        // Add channels in this category, sorted by subscribers desc as default
-        List<Channel> channels = new ArrayList<>(channelRepository.findByCategoryId(categoryId, initLimit));
+        // Dedup sets to avoid adding the same content twice (may appear in multiple subcategories)
+        Set<String> seenIds = new HashSet<>();
+
+        // Add channels, sorted by subscribers desc as default
+        List<Channel> channels = new ArrayList<>(channelRepository.findByCategoryIds(queryIds, initLimit));
         channels.sort((a, b) -> {
             long sa = a.getSubscribers() != null ? a.getSubscribers() : 0;
             long sb = b.getSubscribers() != null ? b.getSubscribers() : 0;
             return Long.compare(sb, sa);
         });
         for (Channel ch : channels) {
-            entries.add(new CategoryContentOrder(categoryId, ch.getId(), "channel", position++));
+            if (seenIds.add("channel:" + ch.getId())) {
+                entries.add(new CategoryContentOrder(categoryId, ch.getId(), "channel", position++));
+            }
         }
 
-        // Add playlists in this category, sorted by itemCount desc as default
-        List<Playlist> playlists = new ArrayList<>(playlistRepository.findByCategoryId(categoryId, initLimit));
+        // Add playlists, sorted by itemCount desc as default
+        List<Playlist> playlists = new ArrayList<>(playlistRepository.findByCategoryIds(queryIds, initLimit));
         playlists.sort((a, b) -> {
             int ia = a.getItemCount() != null ? a.getItemCount() : 0;
             int ib = b.getItemCount() != null ? b.getItemCount() : 0;
             return Integer.compare(ib, ia);
         });
         for (Playlist pl : playlists) {
-            entries.add(new CategoryContentOrder(categoryId, pl.getId(), "playlist", position++));
+            if (seenIds.add("playlist:" + pl.getId())) {
+                entries.add(new CategoryContentOrder(categoryId, pl.getId(), "playlist", position++));
+            }
         }
 
-        // Add videos in this category, sorted by uploadedAt desc as default
-        List<Video> videos = new ArrayList<>(videoRepository.findByCategoryId(categoryId, initLimit));
+        // Add videos, sorted by uploadedAt desc as default
+        List<Video> videos = new ArrayList<>(videoRepository.findByCategoryIds(queryIds, initLimit));
         videos.sort((a, b) -> {
             if (a.getUploadedAt() == null && b.getUploadedAt() == null) return 0;
             if (a.getUploadedAt() == null) return 1;
@@ -265,7 +286,9 @@ public class SortOrderService {
             return b.getUploadedAt().compareTo(a.getUploadedAt());
         });
         for (Video v : videos) {
-            entries.add(new CategoryContentOrder(categoryId, v.getId(), "video", position++));
+            if (seenIds.add("video:" + v.getId())) {
+                entries.add(new CategoryContentOrder(categoryId, v.getId(), "video", position++));
+            }
         }
 
         if (!entries.isEmpty()) {

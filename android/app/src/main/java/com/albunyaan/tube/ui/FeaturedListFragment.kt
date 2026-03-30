@@ -12,6 +12,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.databinding.FragmentFeaturedListBinding
@@ -108,6 +109,19 @@ class FeaturedListFragment : Fragment(R.layout.fragment_featured_list) {
             // Use single column for consistent layout with mixed content types
             layoutManager = LinearLayoutManager(requireContext())
             adapter = this@FeaturedListFragment.adapter
+
+            addOnScrollListener(object : RecyclerView.OnScrollListener() {
+                override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                    if (dy <= 0) return  // Only on scroll down
+                    val lm = recyclerView.layoutManager as LinearLayoutManager
+                    val totalItemCount = lm.itemCount
+                    val lastVisible = lm.findLastVisibleItemPosition()
+                    // Load more when within 5 items of the end
+                    if (lastVisible >= totalItemCount - 5 && viewModel.canLoadMore) {
+                        viewModel.loadMore()
+                    }
+                }
+            })
         }
     }
 
@@ -127,13 +141,25 @@ class FeaturedListFragment : Fragment(R.layout.fragment_featured_list) {
                             binding?.progressBar?.isVisible = true
                             binding?.errorContainer?.isVisible = false
                             binding?.recyclerView?.isVisible = false
+                            binding?.loadingMoreIndicator?.isVisible = false
                         }
                         is FeaturedListViewModel.FeaturedState.Success -> {
                             Log.d(TAG, "Featured content loaded: ${state.items.size} items")
                             binding?.progressBar?.isVisible = false
                             binding?.errorContainer?.isVisible = false
                             binding?.recyclerView?.isVisible = true
+                            binding?.loadingMoreIndicator?.isVisible = state.isLoadingMore
                             adapter.submitList(state.items)
+
+                            // Auto-load more if all items fit on screen (tablet/TV)
+                            binding?.recyclerView?.post {
+                                if (viewModel.canLoadMore) {
+                                    val rv = binding?.recyclerView ?: return@post
+                                    if (!rv.canScrollVertically(1)) {
+                                        viewModel.loadMore()
+                                    }
+                                }
+                            }
                         }
                         is FeaturedListViewModel.FeaturedState.Error -> {
                             Log.e(TAG, "Error loading featured: ${state.message}")
@@ -141,6 +167,7 @@ class FeaturedListFragment : Fragment(R.layout.fragment_featured_list) {
                             binding?.recyclerView?.isVisible = false
                             binding?.errorContainer?.isVisible = true
                             binding?.errorText?.text = state.message
+                            binding?.loadingMoreIndicator?.isVisible = false
                         }
                     }
                 }

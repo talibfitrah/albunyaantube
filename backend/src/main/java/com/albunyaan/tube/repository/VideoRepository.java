@@ -12,11 +12,12 @@ import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.Query;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.google.cloud.firestore.QuerySnapshot;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import com.google.cloud.firestore.WriteResult;
 import com.albunyaan.tube.util.CursorUtils;
 import org.springframework.stereotype.Repository;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -249,6 +250,34 @@ public class VideoRepository {
                 .get();
 
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
+    }
+
+    /**
+     * Find approved videos across multiple category IDs (parent + children aggregation).
+     * Uses one query per category ID to avoid Firestore limitations.
+     * Results are deduped by document ID and sorted by uploadedAt descending.
+     */
+    public List<Video> findByCategoryIds(List<String> categoryIds, int limit) throws ExecutionException, InterruptedException, TimeoutException {
+        if (categoryIds == null || categoryIds.isEmpty()) return List.of();
+
+        int perCategoryLimit = Math.max(limit / categoryIds.size(), 5);
+        LinkedHashMap<String, Video> deduped = new LinkedHashMap<>();
+        for (String catId : categoryIds) {
+            List<Video> batch = findByCategoryOrderByUploadedAtDesc(catId, perCategoryLimit);
+            for (Video v : batch) {
+                deduped.putIfAbsent(v.getId(), v);
+            }
+        }
+
+        return new ArrayList<>(deduped.values()).stream()
+                .sorted((a, b) -> {
+                    if (a.getUploadedAt() == null && b.getUploadedAt() == null) return 0;
+                    if (a.getUploadedAt() == null) return 1;
+                    if (b.getUploadedAt() == null) return -1;
+                    return b.getUploadedAt().compareTo(a.getUploadedAt());
+                })
+                .limit(limit)
+                .collect(java.util.stream.Collectors.toList());
     }
 
     public List<Video> findByCategoryOrderByUploadedAtDesc(String category) throws ExecutionException, InterruptedException, TimeoutException {

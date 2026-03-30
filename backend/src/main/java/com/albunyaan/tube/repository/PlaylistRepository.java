@@ -12,13 +12,14 @@ import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.Query;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.google.cloud.firestore.QuerySnapshot;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import com.google.cloud.firestore.WriteResult;
 import com.albunyaan.tube.util.CursorUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -222,6 +223,33 @@ public class PlaylistRepository {
                 .get();
 
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
+    }
+
+    /**
+     * Find approved playlists across multiple category IDs (parent + children aggregation).
+     * Uses one query per category ID to avoid Firestore limitations.
+     * Results are deduped by document ID and sorted by itemCount descending.
+     */
+    public List<Playlist> findByCategoryIds(List<String> categoryIds, int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        if (categoryIds == null || categoryIds.isEmpty()) return List.of();
+
+        int perCategoryLimit = Math.max(limit / categoryIds.size(), 5);
+        LinkedHashMap<String, Playlist> deduped = new LinkedHashMap<>();
+        for (String catId : categoryIds) {
+            List<Playlist> batch = findByCategoryId(catId, perCategoryLimit);
+            for (Playlist pl : batch) {
+                deduped.putIfAbsent(pl.getId(), pl);
+            }
+        }
+
+        return new ArrayList<>(deduped.values()).stream()
+                .sorted((a, b) -> {
+                    int ca = a.getItemCount() != null ? a.getItemCount() : 0;
+                    int cb = b.getItemCount() != null ? b.getItemCount() : 0;
+                    return Integer.compare(cb, ca);
+                })
+                .limit(limit)
+                .collect(java.util.stream.Collectors.toList());
     }
 
     public List<Playlist> findByCategoryOrderByItemCountDesc(String category) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {

@@ -13,6 +13,8 @@ import com.google.cloud.firestore.DocumentSnapshot;
 import com.google.cloud.firestore.Query;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.google.cloud.firestore.QuerySnapshot;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import com.google.cloud.firestore.WriteResult;
 import com.albunyaan.tube.util.CursorUtils;
 import org.slf4j.Logger;
@@ -307,6 +309,34 @@ public class ChannelRepository {
                 .get();
 
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
+    }
+
+    /**
+     * Find approved channels across multiple category IDs (parent + children aggregation).
+     * Uses one query per category ID to avoid Firestore whereArrayContainsAny + orderBy limitations.
+     * Results are deduped by document ID and sorted by subscribers descending.
+     */
+    public List<Channel> findByCategoryIds(List<String> categoryIds, int limit) throws ExecutionException, InterruptedException, TimeoutException {
+        if (categoryIds == null || categoryIds.isEmpty()) return List.of();
+
+        // Fetch limit per subcategory (not per total) but cap to avoid waste
+        int perCategoryLimit = Math.max(limit / categoryIds.size(), 5);
+        LinkedHashMap<String, Channel> deduped = new LinkedHashMap<>();
+        for (String catId : categoryIds) {
+            List<Channel> batch = findByCategoryOrderBySubscribersDesc(catId, perCategoryLimit);
+            for (Channel ch : batch) {
+                deduped.putIfAbsent(ch.getId(), ch);
+            }
+        }
+
+        return new ArrayList<>(deduped.values()).stream()
+                .sorted((a, b) -> {
+                    long sa = a.getSubscribers() != null ? a.getSubscribers() : 0;
+                    long sb = b.getSubscribers() != null ? b.getSubscribers() : 0;
+                    return Long.compare(sb, sa);
+                })
+                .limit(limit)
+                .collect(java.util.stream.Collectors.toList());
     }
 
     public List<Channel> findByCategoryOrderBySubscribersDesc(String category, int limit) throws ExecutionException, InterruptedException, TimeoutException {

@@ -63,14 +63,29 @@
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recyclerView"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
         android:clipToPadding="false"
         android:overScrollMode="never"
-        android:padding="@dimen/spacing_md"
+        android:paddingTop="@dimen/spacing_md"
+        android:paddingStart="@dimen/spacing_md"
+        android:paddingEnd="@dimen/spacing_md"
         android:paddingBottom="@dimen/bottom_nav_height"
         android:visibility="gone"
         tools:visibility="visible"
         tools:listitem="@layout/item_video_grid"
         tools:itemCount="5"/>
+
+    <!-- Loading more indicator -->
+    <ProgressBar
+        android:id="@+id/loadingMoreIndicator"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginBottom="@dimen/bottom_nav_height"
+        android:contentDescription="@string/loading_more"
+        android:indeterminateTint="@color/primary_green"
+        android:visibility="gone"
+        tools:visibility="gone"/>
 
 </LinearLayout>
