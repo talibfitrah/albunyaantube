@@ -352,10 +352,7 @@ class PublicContentServiceHomeFeedTest {
         child.setParentCategoryId("quran");
         Category other = makeCategory("kids", "Kids", 2);
         when(categoryRepository.findAll()).thenReturn(List.of(parent, child, other));
-
-        when(channelRepository.findAllByIds(anyList())).thenReturn(Collections.emptyMap());
-        when(playlistRepository.findAllByIds(anyList())).thenReturn(Collections.emptyMap());
-        when(videoRepository.findAllByIds(anyList())).thenReturn(Collections.emptyMap());
+        when(categoryRepository.findByParentId("quran")).thenReturn(List.of(child));
 
         // quran has sort order entries from both quran and tafsir
         CategoryContentOrder e1 = new CategoryContentOrder("quran", "ch_quran", "channel", 0);
@@ -373,6 +370,12 @@ class PublicContentServiceHomeFeedTest {
         ch2.setName("Tafsir Channel"); ch2.setStatus("APPROVED");
         when(channelRepository.findAllByIds(List.of("ch_quran", "ch_tafsir")))
                 .thenReturn(Map.of("ch_quran", ch1, "ch_tafsir", ch2));
+        when(channelRepository.findByCategoryIds(eq(List.of("quran", "tafsir")), anyInt()))
+                .thenReturn(Collections.emptyList());
+        when(playlistRepository.findByCategoryIds(eq(List.of("quran", "tafsir")), anyInt()))
+                .thenReturn(Collections.emptyList());
+        when(videoRepository.findByCategoryIds(eq(List.of("quran", "tafsir")), anyInt()))
+                .thenReturn(Collections.emptyList());
 
         // kids category is also a parent, set up separately
         when(orderRepository.findByCategoryIdsOrderByPosition(List.of("kids"))).thenReturn(Collections.emptyList());

@@ -252,6 +252,48 @@ class SortOrderServiceTest {
         assertEquals(1, saved.get(1).getPosition());
     }
 
+    @Test
+    void getContentSortOrder_synchronizesMissingEntriesBeforeReturning() throws Exception {
+        when(categoryRepository.findByParentId("cat1")).thenReturn(Collections.emptyList());
+
+        CategoryContentOrder existing = makeOrder("cat1", "ch1", "channel", 0);
+        when(orderRepository.findByCategoryIdOrderByPosition("cat1"))
+                .thenReturn(List.of(existing));
+
+        Channel ch1 = new Channel();
+        ch1.setId("ch1");
+        ch1.setName("Channel 1");
+        ch1.setYoutubeId("yt-ch1");
+
+        Channel ch2 = new Channel();
+        ch2.setId("ch2");
+        ch2.setName("Channel 2");
+        ch2.setYoutubeId("yt-ch2");
+
+        when(channelRepository.findByCategoryIds(eq(List.of("cat1")), eq(500))).thenReturn(List.of(ch1, ch2));
+        when(playlistRepository.findByCategoryIds(eq(List.of("cat1")), eq(500))).thenReturn(Collections.emptyList());
+        when(videoRepository.findByCategoryIds(eq(List.of("cat1")), eq(500))).thenReturn(Collections.emptyList());
+        when(channelRepository.findById("ch1")).thenReturn(Optional.of(ch1));
+        when(channelRepository.findById("ch2")).thenReturn(Optional.of(ch2));
+
+        List<ContentSortDto> result = service.getContentSortOrder("cat1");
+
+        assertEquals(2, result.size());
+        assertEquals("ch1", result.get(0).getContentId());
+        assertEquals("ch2", result.get(1).getContentId());
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<CategoryContentOrder>> captor = ArgumentCaptor.forClass(List.class);
+        verify(orderRepository).batchSave(captor.capture());
+        List<CategoryContentOrder> saved = captor.getValue();
+        assertEquals(2, saved.size());
+        assertEquals("ch1", saved.get(0).getContentId());
+        assertEquals(0, saved.get(0).getPosition());
+        assertEquals("ch2", saved.get(1).getContentId());
+        assertEquals(1, saved.get(1).getPosition());
+        verify(cacheService).evictPublicContentCaches();
+    }
+
     // --- addMultipleContentToCategory ---
 
     @Test
@@ -491,6 +533,60 @@ class SortOrderServiceTest {
         assertThrows(IllegalArgumentException.class, () ->
                 service.addMultipleContentToCategory("cat1", items)
         );
+    }
+
+    // --- getOrSynchronizeCategoryContentOrder: append-only on GET ---
+
+    @Test
+    void getContentSortOrder_doesNotDeleteTailWhenExistingOrderExceedsFetchCap() throws Exception {
+        // Simulate a category where the stored order has 600 entries (exceeds the 500-item
+        // cap of buildDefaultCategoryContentOrder). Synchronization during a GET must NOT
+        // delete the tail entries that fall outside the capped snapshot.
+        when(categoryRepository.findByParentId("cat1")).thenReturn(Collections.emptyList());
+
+        // Build 600 stored entries: ch-0 through ch-599
+        List<CategoryContentOrder> storedEntries = new ArrayList<>();
+        for (int i = 0; i < 600; i++) {
+            storedEntries.add(makeOrder("cat1", "ch-" + i, "channel", i));
+        }
+        when(orderRepository.findByCategoryIdOrderByPosition("cat1")).thenReturn(storedEntries);
+
+        // buildDefaultCategoryContentOrder returns only the first 500 (capped)
+        List<Channel> cappedChannels = new ArrayList<>();
+        for (int i = 0; i < 500; i++) {
+            Channel ch = new Channel();
+            ch.setId("ch-" + i);
+            ch.setSubscribers((long) (500 - i));
+            cappedChannels.add(ch);
+        }
+        when(channelRepository.findByCategoryIds(eq(List.of("cat1")), eq(500))).thenReturn(cappedChannels);
+        when(playlistRepository.findByCategoryIds(eq(List.of("cat1")), eq(500))).thenReturn(Collections.emptyList());
+        when(videoRepository.findByCategoryIds(eq(List.of("cat1")), eq(500))).thenReturn(Collections.emptyList());
+
+        // resolveContentInfo will be called for all 600 entries
+        for (int i = 0; i < 600; i++) {
+            Channel ch = new Channel();
+            ch.setId("ch-" + i);
+            ch.setName("Channel " + i);
+            ch.setYoutubeId("yt-ch-" + i);
+            when(channelRepository.findById("ch-" + i)).thenReturn(Optional.of(ch));
+        }
+
+        List<ContentSortDto> result = service.getContentSortOrder("cat1");
+
+        // All 600 entries must be preserved (no tail deletion)
+        assertEquals(600, result.size());
+        assertEquals("ch-0", result.get(0).getContentId());
+        assertEquals("ch-599", result.get(599).getContentId());
+
+        // Verify position order is preserved across the full range
+        for (int i = 0; i < 600; i++) {
+            assertEquals("ch-" + i, result.get(i).getContentId(),
+                    "Entry at position " + i + " should be ch-" + i);
+        }
+
+        // Verify no deletions occurred
+        verify(orderRepository, never()).deleteById(anyString());
     }
 
     // --- Helpers ---

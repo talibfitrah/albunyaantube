@@ -106,8 +106,8 @@
 
         <div class="card-body">
           <div class="thumbnail">
-            <img v-if="thumbnails[item.id]" :src="thumbnails[item.id]!" :alt="item.title" />
-            <div v-else class="thumbnail-placeholder"></div>
+            <img v-if="getThumbnailUrl(item, item.type)" :src="getThumbnailUrl(item, item.type)!" :alt="item.title" @error="handleThumbnailError($event, item)" />
+            <div class="thumbnail-placeholder" :style="getThumbnailUrl(item, item.type) ? 'display:none' : ''"></div>
           </div>
 
           <div class="content-info">
@@ -272,7 +272,7 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAuthStore } from '@/stores/auth';
-import { getThumbnailUrl } from '@/utils/formatters';
+import { getThumbnailUrl, getThumbnailFallbacks } from '@/utils/formatters';
 import { useToast } from '@/composables/useToast';
 import { getAllCategories } from '@/services/categoryService';
 import { getPendingApprovals, getMySubmissions, approveItem, rejectItem as rejectItemApi, getPendingCount, type PendingApproval, type SubmissionStatus, type MySubmission } from '@/services/approvalService';
@@ -316,14 +316,27 @@ const flatCategories = computed(() => {
   traverse(categories.value);
   return flattened;
 });
-// Pre-compute thumbnail URLs to avoid double getThumbnailUrl() calls in template
-const thumbnails = computed(() => {
-  const map: Record<string, string | null> = {};
-  for (const item of approvals.value) {
-    map[item.id] = getThumbnailUrl(item, item.type);
+// Thumbnail fallback state — DOM-based pattern to avoid reactive cascade re-renders
+const thumbnailFallbackIndex = new Map<string, number>();
+
+function handleThumbnailError(event: Event, item: any) {
+  const img = event.target as HTMLImageElement;
+  const id = item.id;
+  const idx = thumbnailFallbackIndex.get(id) ?? 0;
+  const fallbacks = getThumbnailFallbacks(item, item.type);
+  let nextIdx = Math.min(idx + 1, fallbacks.length);
+  if (nextIdx < fallbacks.length) {
+    thumbnailFallbackIndex.set(id, nextIdx + 1);
+    img.src = fallbacks[nextIdx];
+    return;
   }
-  return map;
-});
+  // All fallbacks exhausted — hide img and show placeholder via DOM (no reactive cascade)
+  img.style.display = 'none';
+  const placeholder = img.nextElementSibling;
+  if (placeholder && placeholder.classList.contains('thumbnail-placeholder')) {
+    (placeholder as HTMLElement).style.display = '';
+  }
+}
 
 const categoryNameMap = computed(() => {
   const map = new Map<string, string>();

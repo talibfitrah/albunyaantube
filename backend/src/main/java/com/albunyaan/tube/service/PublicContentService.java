@@ -87,7 +87,7 @@ public class PublicContentService {
      * @return Paginated content
      */
     @Cacheable(value = CacheConfig.CACHE_PUBLIC_CONTENT,
-               key = "(#type == null || #type.isBlank() ? 'HOME' : #type).toUpperCase(T(java.util.Locale).ROOT) + '-' + #cursor + '-' + #limit + '-' + #category + '-' + #length + '-' + #date + '-' + #sort")
+               key = "(#type == null || #type.isBlank() ? 'HOME' : #type).toUpperCase(T(java.util.Locale).ROOT) + '-' + T(com.albunyaan.tube.service.PublicContentService).cacheCursorKey(#type, #cursor) + '-' + #limit + '-' + #category + '-' + #length + '-' + #date + '-' + #sort")
     public CursorPageDto<ContentItemDto> getContent(
             String type, String cursor, int limit,
             String category, String length, String date, String sort
@@ -116,11 +116,25 @@ public class PublicContentService {
                 return getVideosWithCursor(limit, category, allCategoryIds, cursor, length, date, sort);
             case "HOME":
             default:
-                // HOME type mixes content types, so cursor doesn't apply cleanly
-                // Use legacy approach for mixed content
-                List<ContentItemDto> items = getMixedContent(limit, category, allCategoryIds);
-                String nextCursor = items.size() >= limit ? encodeCursor(limit) : null;
-                return new CursorPageDto<>(items, nextCursor);
+                List<ContentItemDto> items;
+                if (allCategoryIds != null) {
+                    // Category specified: use admin-defined sort order with offset pagination.
+                    // Over-fetch by 1 to reliably detect whether a next page exists,
+                    // avoiding phantom cursors when total items are an exact multiple of limit.
+                    int offset = decodeCursorOffset(cursor);
+                    items = getCategoryContentItems(allCategoryIds, limit + 1, offset);
+                    boolean hasNext = items.size() > limit;
+                    if (hasNext) {
+                        items = items.subList(0, limit);
+                    }
+                    String nc = hasNext ? encodeCursor(offset + limit) : null;
+                    return new CursorPageDto<>(items, nc);
+                } else {
+                    // No category filter: mix content types with default sorting.
+                    // getMixedContent does not support offset/cursor, so no next page.
+                    items = getMixedContent(limit, category, allCategoryIds);
+                    return new CursorPageDto<>(items, null);
+                }
         }
     }
 
@@ -399,7 +413,7 @@ public class PublicContentService {
      * @return Paginated home feed
      */
     @Cacheable(value = CacheConfig.CACHE_PUBLIC_CONTENT,
-               key = "'home-' + #cursor + '-' + #categoryLimit + '-' + #contentLimit + '-' + #category")
+               key = "'home-' + T(com.albunyaan.tube.service.PublicContentService).normalizeCursor(#cursor) + '-' + #categoryLimit + '-' + #contentLimit + '-' + #category")
     public CursorPageDto<HomeCategoryDto> getHomeFeed(String cursor, int categoryLimit, int contentLimit, String category)
             throws ExecutionException, InterruptedException, TimeoutException {
 
@@ -427,7 +441,19 @@ public class PublicContentService {
         if (category != null && !category.isBlank()) {
             boolean isParent = parentCategories.stream().anyMatch(cat -> category.equals(cat.getId()));
             if (isParent) {
-                parentCategories.removeIf(cat -> !category.equals(cat.getId()));
+                List<String> children = childrenMap.get(category);
+                if (children != null && !children.isEmpty()) {
+                    // Parent has subcategories: show each as its own section
+                    Set<String> childSet = new HashSet<>(children);
+                    List<Category> subcats = allCategories.stream()
+                            .filter(cat -> childSet.contains(cat.getId()))
+                            .collect(Collectors.toList());
+                    parentCategories.clear();
+                    parentCategories.addAll(subcats);
+                } else {
+                    // Leaf parent (no children): keep as single section
+                    parentCategories.removeIf(cat -> !category.equals(cat.getId()));
+                }
             } else {
                 // Subcategory filter: show the subcategory itself as a standalone section
                 Category subcategory = allCategories.stream()
@@ -517,7 +543,7 @@ public class PublicContentService {
                 }
 
                 CompletableFuture<List<ContentItemDto>> itemsFuture =
-                        asyncSupply(() -> getCategoryContentItems(allIds, contentLimit));
+                        asyncSupply(() -> getCategoryContentItems(allIds, contentLimit, 0));
                 CompletableFuture<Long> countFuture =
                         asyncSupply(() -> orderRepository.countByCategoryIds(allIds));
                 futures.add(new CategoryFuture(cat, allIds, itemsFuture, countFuture));
@@ -610,86 +636,185 @@ public class PublicContentService {
      *
      * @param categoryIds List of category IDs (parent first, then children)
      * @param limit Max items to return
+     * @param offset Number of valid items to skip (for pagination)
      */
-    private List<ContentItemDto> getCategoryContentItems(List<String> categoryIds, int limit)
+    private List<ContentItemDto> getCategoryContentItems(List<String> categoryIds, int limit, int offset)
             throws ExecutionException, InterruptedException, TimeoutException {
 
-        // Try admin-defined sort order: merge entries from all category IDs
-        List<CategoryContentOrder> orderEntries = orderRepository.findByCategoryIdsOrderByPosition(categoryIds);
+        // Build subcategory name map when serving a parent category with children.
+        Map<String, String> subcatNameMap = null;
+        if (categoryIds.size() > 1) {
+            String parentId = categoryIds.get(0);
+            try {
+                List<Category> children = categoryRepository.findByParentId(parentId);
+                subcatNameMap = new HashMap<>();
+                for (Category child : children) {
+                    subcatNameMap.put(child.getId(), child.getName());
+                }
+            } catch (Exception e) {
+                log.warn("Could not fetch subcategories for {}: {}", parentId, e.getMessage());
+            }
+        }
 
+        int totalNeeded = offset + limit;
+        List<ContentItemDto> orderedItems = new ArrayList<>();
+        Set<String> seenContentKeys = new HashSet<>();
+
+        // Prefer the parent category's explicit order when present. Child-category sort rows
+        // should not override a parent's aggregate order on public "See All" and home screens.
+        List<CategoryContentOrder> orderEntries = getEffectiveOrderEntries(categoryIds);
         if (!orderEntries.isEmpty()) {
-            // Batch-fetch content by type to avoid N+1 individual findById calls
             List<String> channelIds = new ArrayList<>();
             List<String> playlistIds = new ArrayList<>();
             List<String> videoIds = new ArrayList<>();
 
-            // Only process entries up to a reasonable bound (limit * 2 to account for filtered-out items)
-            int fetchBound = Math.min(orderEntries.size(), limit * 2);
-            for (int i = 0; i < fetchBound; i++) {
-                CategoryContentOrder entry = orderEntries.get(i);
+            for (CategoryContentOrder entry : orderEntries) {
                 switch (entry.getContentType()) {
                     case "channel": channelIds.add(entry.getContentId()); break;
                     case "playlist": playlistIds.add(entry.getContentId()); break;
                     case "video": videoIds.add(entry.getContentId()); break;
+                    default: break;
                 }
             }
 
-            // Synchronous batch fetches — this method already runs on contentExecutor
-            // (scheduled by getHomeFeed). Nesting asyncSupply + join() on the same bounded
-            // pool can deadlock when all threads are occupied by outer tasks.
             Map<String, Channel> channelMap = channelRepository.findAllByIds(channelIds);
             Map<String, Playlist> playlistMap = playlistRepository.findAllByIds(playlistIds);
             Map<String, Video> videoMap = videoRepository.findAllByIds(videoIds);
 
-            // Resolve entries in order using batch-fetched maps
-            List<ContentItemDto> items = new ArrayList<>();
-            for (int i = 0; i < fetchBound && items.size() < limit; i++) {
-                CategoryContentOrder entry = orderEntries.get(i);
+            for (CategoryContentOrder entry : orderEntries) {
+                if (orderedItems.size() >= totalNeeded) break;
+
                 ContentItemDto dto = resolveFromBatchMaps(entry, channelMap, playlistMap, videoMap);
-                if (dto != null) {
-                    items.add(dto);
+                if (dto == null) {
+                    continue;
                 }
+
+                String contentKey = toContentKey(entry.getContentType(), entry.getContentId());
+                if (!seenContentKeys.add(contentKey)) {
+                    continue;
+                }
+
+                enrichSubcategoryName(dto, entry, channelMap, playlistMap, videoMap, subcatNameMap);
+                orderedItems.add(dto);
             }
-            return items;
         }
 
-        // Fall back to default sort: query across all category IDs.
-        // Video fetch uses limit*2 (not perType*2) so videos can fill the gap when
-        // channels/playlists are sparse.
-        int perType = Math.max(1, limit / 3);
+        // Append any approved content that is missing from the stored order rows.
+        // This keeps pagination complete even when category_content_order is stale or partial.
+        int missingItemsNeeded = Math.max(0, totalNeeded - orderedItems.size());
+        if (missingItemsNeeded > 0) {
+            orderedItems.addAll(getFallbackCategoryContentItems(
+                    categoryIds,
+                    missingItemsNeeded,
+                    subcatNameMap,
+                    seenContentKeys
+            ));
+        }
 
-        List<Channel> channels = channelRepository.findByCategoryIds(categoryIds, perType * 2);
-        List<Playlist> playlists = playlistRepository.findByCategoryIds(categoryIds, perType * 2);
+        if (offset >= orderedItems.size()) {
+            return new ArrayList<>();
+        }
+        int end = Math.min(offset + limit, orderedItems.size());
+        return new ArrayList<>(orderedItems.subList(offset, end));
+    }
+
+    private List<CategoryContentOrder> getEffectiveOrderEntries(List<String> categoryIds)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        if (categoryIds == null || categoryIds.isEmpty()) {
+            return List.of();
+        }
+
+        if (categoryIds.size() > 1) {
+            List<CategoryContentOrder> parentEntries =
+                    orderRepository.findByCategoryIdOrderByPosition(categoryIds.get(0));
+            if (parentEntries != null && !parentEntries.isEmpty()) {
+                return parentEntries;
+            }
+        }
+
+        List<CategoryContentOrder> mergedEntries =
+                orderRepository.findByCategoryIdsOrderByPosition(categoryIds);
+        return mergedEntries != null ? mergedEntries : List.of();
+    }
+
+    private List<ContentItemDto> getFallbackCategoryContentItems(
+            List<String> categoryIds,
+            int needed,
+            Map<String, String> subcatNameMap,
+            Set<String> seenContentKeys)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        if (needed <= 0) {
+            return List.of();
+        }
 
         List<ContentItemDto> items = new ArrayList<>();
+        int fetchLimit = Math.max(needed, 1);
 
-        channels.stream()
-                .filter(this::isApproved)
-                .filter(this::isAvailable)
-                .limit(perType)
-                .map(this::toDto)
-                .forEach(items::add);
+        List<Channel> channels = channelRepository.findByCategoryIds(categoryIds, fetchLimit);
+        if (channels == null) {
+            channels = List.of();
+        }
+        for (Channel channel : channels) {
+            if (!isApproved(channel) || !isAvailable(channel)) {
+                continue;
+            }
+            if (!seenContentKeys.add(toContentKey("channel", channel.getId()))) {
+                continue;
+            }
 
-        playlists.stream()
-                .filter(this::isApproved)
-                .filter(this::isAvailable)
-                .limit(perType)
-                .map(this::toDto)
-                .forEach(items::add);
+            ContentItemDto dto = toDto(channel);
+            enrichSubcategoryName(dto, channel.getCategoryIds(), subcatNameMap);
+            items.add(dto);
+            if (items.size() >= needed) {
+                return items;
+            }
+        }
 
-        // Only fetch videos if channels+playlists didn't fill the limit (avoids wasted Firestore query)
-        int videoLimit = limit - items.size();
-        if (videoLimit > 0) {
-            List<Video> videos = videoRepository.findByCategoryIds(categoryIds, videoLimit * 2);
-            videos.stream()
-                    .filter(this::isApproved)
-                    .filter(this::isAvailable)
-                    .limit(videoLimit)
-                    .map(this::toDto)
-                    .forEach(items::add);
+        List<Playlist> playlists = playlistRepository.findByCategoryIds(categoryIds, fetchLimit);
+        if (playlists == null) {
+            playlists = List.of();
+        }
+        for (Playlist playlist : playlists) {
+            if (!isApproved(playlist) || !isAvailable(playlist)) {
+                continue;
+            }
+            if (!seenContentKeys.add(toContentKey("playlist", playlist.getId()))) {
+                continue;
+            }
+
+            ContentItemDto dto = toDto(playlist);
+            enrichSubcategoryName(dto, playlist.getCategoryIds(), subcatNameMap);
+            items.add(dto);
+            if (items.size() >= needed) {
+                return items;
+            }
+        }
+
+        List<Video> videos = videoRepository.findByCategoryIds(categoryIds, fetchLimit);
+        if (videos == null) {
+            videos = List.of();
+        }
+        for (Video video : videos) {
+            if (!isApproved(video) || !isAvailable(video)) {
+                continue;
+            }
+            if (!seenContentKeys.add(toContentKey("video", video.getId()))) {
+                continue;
+            }
+
+            ContentItemDto dto = toDto(video);
+            enrichSubcategoryName(dto, video.getCategoryIds(), subcatNameMap);
+            items.add(dto);
+            if (items.size() >= needed) {
+                return items;
+            }
         }
 
         return items;
+    }
+
+    private String toContentKey(String contentType, String contentId) {
+        return contentType + ":" + contentId;
     }
 
     /**
@@ -716,6 +841,50 @@ public class PublicContentService {
                 return null;
             default:
                 return null;
+        }
+    }
+
+    /**
+     * Enrich a DTO with subcategory name using the content's categoryIds from batch maps.
+     * Used by the admin-ordered path where we have the CategoryContentOrder entry.
+     */
+    private void enrichSubcategoryName(ContentItemDto dto, CategoryContentOrder entry,
+                                        Map<String, Channel> channelMap,
+                                        Map<String, Playlist> playlistMap,
+                                        Map<String, Video> videoMap,
+                                        Map<String, String> subcatNameMap) {
+        if (subcatNameMap == null || subcatNameMap.isEmpty()) return;
+        List<String> catIds = null;
+        switch (entry.getContentType()) {
+            case "channel":
+                Channel ch = channelMap.get(entry.getContentId());
+                if (ch != null) catIds = ch.getCategoryIds();
+                break;
+            case "playlist":
+                Playlist pl = playlistMap.get(entry.getContentId());
+                if (pl != null) catIds = pl.getCategoryIds();
+                break;
+            case "video":
+                Video v = videoMap.get(entry.getContentId());
+                if (v != null) catIds = v.getCategoryIds();
+                break;
+        }
+        enrichSubcategoryName(dto, catIds, subcatNameMap);
+    }
+
+    /**
+     * Set the DTO's category to the matching subcategory name, if the content
+     * belongs to one of the subcategories in the map.
+     */
+    private void enrichSubcategoryName(ContentItemDto dto, List<String> contentCategoryIds,
+                                        Map<String, String> subcatNameMap) {
+        if (dto == null || subcatNameMap == null || subcatNameMap.isEmpty() || contentCategoryIds == null) return;
+        for (String catId : contentCategoryIds) {
+            String subcatName = subcatNameMap.get(catId);
+            if (subcatName != null) {
+                dto.setCategory(subcatName);
+                return;
+            }
         }
     }
 
@@ -1339,8 +1508,52 @@ public class PublicContentService {
         );
     }
 
+    /**
+     * Normalize a Base64-encoded cursor to its integer offset for use in cache keys.
+     * Prevents cache pollution: arbitrary/invalid cursors all normalize to "0".
+     * Must be public+static so Spring SpEL can reference it in @Cacheable key expressions.
+     */
+    public static String normalizeCursor(String cursor) {
+        if (cursor == null || cursor.isEmpty()) return "0";
+        try {
+            String decoded = new String(Base64.getDecoder().decode(cursor));
+            return String.valueOf(Math.max(0, Integer.parseInt(decoded)));
+        } catch (Exception e) {
+            return "0";
+        }
+    }
+
+    /**
+     * Type-aware cache key for cursors. HOME uses numeric offset cursors that should be
+     * normalized to prevent cache pollution. CHANNELS/PLAYLISTS/VIDEOS use opaque Firestore
+     * cursors (JSON/Base64) that must be preserved as-is; normalizing them would collapse
+     * different pages into the same cache entry.
+     *
+     * Must be public+static so Spring SpEL can reference it in @Cacheable key expressions.
+     */
+    public static String cacheCursorKey(String type, String cursor) {
+        if (cursor == null || cursor.isEmpty()) return "0";
+        String resolvedType = (type == null || type.isBlank()) ? "HOME" : type.toUpperCase(Locale.ROOT);
+        if ("HOME".equals(resolvedType)) {
+            return normalizeCursor(cursor);
+        }
+        // Opaque cursor for CHANNELS/PLAYLISTS/VIDEOS — return as-is
+        return cursor;
+    }
+
     private String encodeCursor(int offset) {
         return Base64.getEncoder().encodeToString(String.valueOf(offset).getBytes());
+    }
+
+    private int decodeCursorOffset(String cursor) {
+        if (cursor == null || cursor.isEmpty()) return 0;
+        try {
+            String decoded = new String(Base64.getDecoder().decode(cursor));
+            return Math.max(0, Integer.parseInt(decoded));
+        } catch (Exception e) {
+            log.warn("Invalid content cursor: {}", cursor);
+            return 0;
+        }
     }
 
     /** Supplier that can throw checked exceptions. */
@@ -1360,4 +1573,3 @@ public class PublicContentService {
         }, contentExecutor);
     }
 }
-

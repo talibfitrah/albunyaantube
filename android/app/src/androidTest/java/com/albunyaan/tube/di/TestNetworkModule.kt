@@ -1,10 +1,10 @@
 package com.albunyaan.tube.di
 
+import com.albunyaan.tube.data.source.api.CategoryResponse
 import com.albunyaan.tube.data.source.api.ContentApi
 import com.albunyaan.tube.data.source.api.CursorPage
 import com.albunyaan.tube.data.source.api.DownloadApi
 import com.albunyaan.tube.data.source.api.HomeFeedResponse
-import com.albunyaan.tube.data.model.api.models.Category
 import com.albunyaan.tube.data.model.api.models.ContentItemDto
 import com.albunyaan.tube.data.model.api.models.DownloadCompletedEvent
 import com.albunyaan.tube.data.model.api.models.DownloadFailedEvent
@@ -84,7 +84,7 @@ class FakeContentApi : ContentApi {
         )
     }
 
-    override suspend fun fetchCategories(): List<Category> {
+    override suspend fun fetchCategories(): List<CategoryResponse> {
         return emptyList()
     }
 
@@ -99,7 +99,8 @@ class FakeContentApi : ContentApi {
     override suspend fun fetchHomeFeed(
         cursor: String?,
         categoryLimit: Int,
-        contentLimit: Int
+        contentLimit: Int,
+        category: String?
     ): HomeFeedResponse {
         return HomeFeedResponse(
             data = emptyList(),

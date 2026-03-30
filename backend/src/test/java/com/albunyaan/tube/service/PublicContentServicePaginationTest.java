@@ -2,6 +2,8 @@ package com.albunyaan.tube.service;
 
 import com.albunyaan.tube.dto.ContentItemDto;
 import com.albunyaan.tube.dto.CursorPageDto;
+import com.albunyaan.tube.model.Category;
+import com.albunyaan.tube.model.CategoryContentOrder;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
 import com.albunyaan.tube.model.Video;
@@ -18,6 +20,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -238,6 +241,126 @@ class PublicContentServicePaginationTest {
         verify(videoRepository).findAllByOrderByUploadedAtDesc(anyInt());
     }
 
+    @Test
+    void getContent_homeWithCategory_fallbackPaginationLoadsPastFirstPage_whenOnlyOneTypeExists() throws Exception {
+        when(categoryRepository.findByParentId("kids")).thenReturn(Collections.emptyList());
+        when(channelRepository.findByCategoryIds(eq(List.of("kids")), anyInt())).thenReturn(Collections.emptyList());
+        when(videoRepository.findByCategoryIds(eq(List.of("kids")), anyInt())).thenReturn(Collections.emptyList());
+
+        List<Playlist> playlists = createTestPlaylists(80);
+        when(playlistRepository.findByCategoryIds(eq(List.of("kids")), anyInt())).thenReturn(playlists);
+
+        CursorPageDto<ContentItemDto> firstPage = publicContentService.getContent(
+                "HOME", null, 50, "kids", null, null, null
+        );
+        CursorPageDto<ContentItemDto> secondPage = publicContentService.getContent(
+                "HOME", firstPage.getPageInfo().getNextCursor(), 50, "kids", null, null, null
+        );
+
+        assertEquals(50, firstPage.getData().size());
+        assertNotNull(firstPage.getPageInfo().getNextCursor());
+        assertEquals(30, secondPage.getData().size());
+        assertNull(secondPage.getPageInfo().getNextCursor());
+        assertNotEquals(firstPage.getData().get(49).getId(), secondPage.getData().get(0).getId());
+    }
+
+    @Test
+    void getContent_homeWithParentCategory_prefersParentOrderAndAppendsMissingChildContent() throws Exception {
+        Category child = new Category();
+        child.setId("child");
+        child.setParentCategoryId("parent");
+        when(categoryRepository.findByParentId("parent")).thenReturn(List.of(child));
+
+        CategoryContentOrder parentEntry = new CategoryContentOrder("parent", "channel-1", "channel", 0);
+        when(orderRepository.findByCategoryIdOrderByPosition("parent")).thenReturn(List.of(parentEntry));
+
+        Channel parentChannel = new Channel();
+        parentChannel.setId("channel-1");
+        parentChannel.setYoutubeId("yt-parent");
+        parentChannel.setName("Parent Ordered");
+        parentChannel.setStatus("APPROVED");
+        parentChannel.setCategoryIds(List.of("parent"));
+
+        Channel childChannel = new Channel();
+        childChannel.setId("channel-2");
+        childChannel.setYoutubeId("yt-child");
+        childChannel.setName("Child Fallback");
+        childChannel.setStatus("APPROVED");
+        childChannel.setCategoryIds(List.of("child"));
+
+        when(channelRepository.findAllByIds(List.of("channel-1")))
+                .thenReturn(java.util.Map.of("channel-1", parentChannel));
+        when(channelRepository.findByCategoryIds(eq(List.of("parent", "child")), anyInt()))
+                .thenReturn(List.of(parentChannel, childChannel));
+        when(playlistRepository.findByCategoryIds(eq(List.of("parent", "child")), anyInt()))
+                .thenReturn(Collections.emptyList());
+        when(videoRepository.findByCategoryIds(eq(List.of("parent", "child")), anyInt()))
+                .thenReturn(Collections.emptyList());
+
+        CursorPageDto<ContentItemDto> response = publicContentService.getContent(
+                "HOME", null, 10, "parent", null, null, null
+        );
+
+        assertEquals(2, response.getData().size());
+        assertEquals("yt-parent", response.getData().get(0).getId());
+        assertEquals("yt-child", response.getData().get(1).getId());
+        verify(orderRepository, never()).findByCategoryIdsOrderByPosition(List.of("parent", "child"));
+    }
+
+    @Test
+    void getContent_homeWithCategory_rejectsNegativeCursor() throws Exception {
+        // Encode a negative offset as a cursor
+        String negativeCursor = java.util.Base64.getEncoder()
+                .encodeToString("-5".getBytes());
+
+        when(categoryRepository.findByParentId("kids")).thenReturn(Collections.emptyList());
+
+        // getCategoryContentItems resolves order via getEffectiveOrderEntries,
+        // then falls back to findByCategoryIds when no order entries exist.
+        when(orderRepository.findByCategoryIdsOrderByPosition(List.of("kids")))
+                .thenReturn(Collections.emptyList());
+
+        // Fallback fetches channels first (empty), then playlists (has items).
+        // Once enough items are collected, videos are never fetched (early return).
+        when(channelRepository.findByCategoryIds(eq(List.of("kids")), anyInt())).thenReturn(Collections.emptyList());
+        List<Playlist> playlists = createTestPlaylists(10);
+        when(playlistRepository.findByCategoryIds(eq(List.of("kids")), anyInt())).thenReturn(playlists);
+
+        // Should not throw — negative offset is clamped to 0
+        CursorPageDto<ContentItemDto> response = publicContentService.getContent(
+                "HOME", negativeCursor, 5, "kids", null, null, null
+        );
+
+        assertNotNull(response);
+        // Should return items starting from offset 0 (clamped)
+        assertFalse(response.getData().isEmpty());
+    }
+
+    @Test
+    void getContent_homeWithCategory_exactMultipleDoesNotEmitPhantomCursor() throws Exception {
+        // Total items = 20, limit = 20. First page should NOT emit a next cursor
+        // because there are no more items beyond the first page.
+        when(categoryRepository.findByParentId("kids")).thenReturn(Collections.emptyList());
+
+        // No stored sort order — fall back to findByCategoryIds
+        when(orderRepository.findByCategoryIdsOrderByPosition(List.of("kids")))
+                .thenReturn(Collections.emptyList());
+
+        List<Playlist> playlists = createTestPlaylists(20);
+        when(playlistRepository.findByCategoryIds(eq(List.of("kids")), anyInt())).thenReturn(playlists);
+        when(channelRepository.findByCategoryIds(eq(List.of("kids")), anyInt())).thenReturn(Collections.emptyList());
+        when(videoRepository.findByCategoryIds(eq(List.of("kids")), anyInt())).thenReturn(Collections.emptyList());
+
+        CursorPageDto<ContentItemDto> response = publicContentService.getContent(
+                "HOME", null, 20, "kids", null, null, null
+        );
+
+        assertEquals(20, response.getData().size());
+        // No phantom next cursor: we over-fetched by 1, got exactly 20, so hasNext=false
+        assertNull(response.getPageInfo().getNextCursor());
+        assertFalse(response.getPageInfo().isHasNext());
+    }
+
     // Helper methods to create test data
 
     private List<Channel> createTestChannels(int count) {
@@ -266,6 +389,77 @@ class PublicContentServicePaginationTest {
             playlists.add(playlist);
         }
         return playlists;
+    }
+
+    // ============ cacheCursorKey tests ============
+
+    @Test
+    void cacheCursorKey_homeCursor_normalizesToNumericOffset() {
+        // HOME type uses numeric offset cursors encoded as Base64
+        String cursor = java.util.Base64.getEncoder().encodeToString("20".getBytes());
+        String key = PublicContentService.cacheCursorKey("HOME", cursor);
+        assertEquals("20", key);
+    }
+
+    @Test
+    void cacheCursorKey_nullType_normalizesAsHome() {
+        String cursor = java.util.Base64.getEncoder().encodeToString("10".getBytes());
+        String key = PublicContentService.cacheCursorKey(null, cursor);
+        assertEquals("10", key);
+    }
+
+    @Test
+    void cacheCursorKey_blankType_normalizesAsHome() {
+        String cursor = java.util.Base64.getEncoder().encodeToString("10".getBytes());
+        String key = PublicContentService.cacheCursorKey("", cursor);
+        assertEquals("10", key);
+    }
+
+    @Test
+    void cacheCursorKey_channelsCursor_preservedAsIs() {
+        // CHANNELS uses opaque Firestore cursors — must NOT be normalized
+        String opaqueCursor = CursorUtils.encodeFromDocumentId("channel-42");
+        String key = PublicContentService.cacheCursorKey("CHANNELS", opaqueCursor);
+        assertEquals(opaqueCursor, key, "Opaque CHANNELS cursor must be preserved as-is");
+    }
+
+    @Test
+    void cacheCursorKey_playlistsCursor_preservedAsIs() {
+        String opaqueCursor = CursorUtils.encodeFromDocumentId("playlist-99");
+        String key = PublicContentService.cacheCursorKey("PLAYLISTS", opaqueCursor);
+        assertEquals(opaqueCursor, key, "Opaque PLAYLISTS cursor must be preserved as-is");
+    }
+
+    @Test
+    void cacheCursorKey_videosCursor_preservedAsIs() {
+        String opaqueCursor = CursorUtils.encodeFromDocumentId("video-17");
+        String key = PublicContentService.cacheCursorKey("VIDEOS", opaqueCursor);
+        assertEquals(opaqueCursor, key, "Opaque VIDEOS cursor must be preserved as-is");
+    }
+
+    @Test
+    void cacheCursorKey_differentOpaqueCursors_produceDifferentKeys() {
+        // This is the bug: before the fix, both would normalize to "0"
+        String cursor1 = CursorUtils.encodeFromDocumentId("channel-1");
+        String cursor2 = CursorUtils.encodeFromDocumentId("channel-2");
+
+        String key1 = PublicContentService.cacheCursorKey("CHANNELS", cursor1);
+        String key2 = PublicContentService.cacheCursorKey("CHANNELS", cursor2);
+
+        assertNotEquals(key1, key2,
+                "Different opaque cursors must produce different cache keys to avoid serving stale pages");
+    }
+
+    @Test
+    void cacheCursorKey_nullCursor_returnsZero() {
+        assertEquals("0", PublicContentService.cacheCursorKey("CHANNELS", null));
+        assertEquals("0", PublicContentService.cacheCursorKey("HOME", null));
+    }
+
+    @Test
+    void cacheCursorKey_emptyCursor_returnsZero() {
+        assertEquals("0", PublicContentService.cacheCursorKey("VIDEOS", ""));
+        assertEquals("0", PublicContentService.cacheCursorKey("HOME", ""));
     }
 
     private List<Video> createTestVideos(int count) {

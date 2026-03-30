@@ -117,8 +117,13 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private var pendingResumePlayWhenReady: Boolean? = null
     private lateinit var gestureDetector: GestureDetector
     private var isFullscreen = false
-    /** Current resize mode in fullscreen: ZOOM (fills screen, default) or FIT (letterbox). Toggled by double-tap. */
-    private var fullscreenResizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+    /** Current resize mode in fullscreen. Default depends on screen aspect ratio. */
+    private var fullscreenResizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+    /** Device-specific default fullscreen resize mode (FIT on tall screens, ZOOM on 16:9-ish screens). */
+    private var defaultFullscreenResizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+    /** When true, user explicitly exited fullscreen via button while in landscape.
+     *  Prevents auto-re-entering fullscreen on landscape orientation change until cleared. */
+    private var userDismissedFullscreen = false
     /** Tracks whether we programmatically locked orientation (to avoid unlocking locks set by other code) */
     private var weLockedOrientation = false
     /** The target orientation we requested when locking (LANDSCAPE or PORTRAIT) */
@@ -127,9 +132,36 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private val orientationHandler = android.os.Handler(android.os.Looper.getMainLooper())
     /** Pending runnable for orientation unlock (fallback if config change doesn't fire) */
     private var orientationUnlockRunnable: Runnable? = null
+    /** Pending runnable for fullscreen retry (delayed hide of system bars on OEM skins) */
+    private var fullscreenRetryRunnable: Runnable? = null
+    @Suppress("DEPRECATION")
+    private val legacyFullscreenUiFlags = (
+        View.SYSTEM_UI_FLAG_FULLSCREEN
+        or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+        or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+        or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+        or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+        or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+    )
+    @Suppress("DEPRECATION")
+    private val legacySystemUiVisibilityChangeListener = View.OnSystemUiVisibilityChangeListener { visibility ->
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R || !isFullscreen) {
+            return@OnSystemUiVisibilityChangeListener
+        }
+        if (visibility and View.SYSTEM_UI_FLAG_HIDE_NAVIGATION == 0) {
+            binding?.root?.postDelayed({
+                val activity = activity ?: return@postDelayed
+                if (isFullscreen) {
+                    applyLegacyFullscreenSystemUi(activity.window)
+                }
+            }, 75)
+        }
+    }
     private var castContext: com.google.android.gms.cast.framework.CastContext? = null
     private var exoNextButton: View? = null
     private var exoPrevButton: View? = null
+    /** Saved root background before fullscreen (restored on exit to avoid EMUI dark mode color mismatch) */
+    private var savedRootBackground: android.graphics.drawable.Drawable? = null
     /** Tracks whether current media source is adaptive (HLS/DASH) vs progressive */
     private var preparedIsAdaptive: Boolean = false
     /** Tracks the type of adaptive source prepared (SYNTHETIC_DASH needs special handling) */
@@ -243,6 +275,13 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         // Use MenuProvider API instead of deprecated setHasOptionsMenu(true)
         requireActivity().addMenuProvider(menuProvider, viewLifecycleOwner, Lifecycle.State.RESUMED)
         val binding = FragmentPlayerBinding.bind(view).also { binding = it }
+
+        // Set default fullscreen resize mode based on screen aspect ratio.
+        // 16:9 screens (ratio ≤ 1.79): ZOOM fills screen without visible cropping.
+        // Taller screens (18:9, 19.5:9, 20:9, etc.): FIT preserves ratio with black bars;
+        // double-tap center to toggle to ZOOM.
+        defaultFullscreenResizeMode = determineDefaultFullscreenResizeMode()
+        fullscreenResizeMode = defaultFullscreenResizeMode
 
         // Initialize Cast context
         try {
@@ -456,21 +495,29 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
-        // Sync fullscreen state with actual orientation
-        // This handles both user-initiated rotation and programmatic rotation
         val isLandscape = newConfig.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
         val orientationChanged = isLandscape != isFullscreen
-        if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onConfigurationChanged: isLandscape=$isLandscape, isFullscreen=$isFullscreen, orientationChanged=$orientationChanged")
+        if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onConfigurationChanged: isLandscape=$isLandscape, isFullscreen=$isFullscreen, orientationChanged=$orientationChanged, userDismissedFullscreen=$userDismissedFullscreen")
+
+        // Clear the dismiss flag when user rotates back to portrait — next landscape rotation
+        // should auto-enter fullscreen again.
+        if (!isLandscape) {
+            userDismissedFullscreen = false
+        }
 
         if (orientationChanged) {
-            // Update state and UI when orientation changes
-            isFullscreen = isLandscape
-            if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onConfigurationChanged: calling updateFullscreenUi (orientation changed)")
-            updateFullscreenUi()
+            // Don't auto-enter fullscreen if user explicitly exited via button while in landscape.
+            // This prevents the "exit → orientation unlock → re-enter" loop.
+            if (isLandscape && userDismissedFullscreen) {
+                if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onConfigurationChanged: skipping auto-fullscreen (user dismissed)")
+            } else {
+                isFullscreen = isLandscape
+                if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onConfigurationChanged: calling updateFullscreenUi (orientation changed)")
+                updateFullscreenUi()
+            }
         } else if (isFullscreen) {
             // Even if orientation didn't change (e.g., 180° rotation while in landscape),
             // reapply fullscreen UI to ensure system bars and layout remain correct.
-            // Some devices/skins may reset UI state on configuration changes.
             if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onConfigurationChanged: calling updateFullscreenUi (already fullscreen)")
             updateFullscreenUi()
         }
@@ -501,6 +548,18 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     }
 
     override fun onDestroyView() {
+        savedRootBackground = null
+
+        // Remove legacy system UI visibility listener to prevent leaks
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            @Suppress("DEPRECATION")
+            activity?.window?.decorView?.setOnSystemUiVisibilityChangeListener(null)
+        }
+
+        // Cancel any pending fullscreen retry runnables
+        fullscreenRetryRunnable?.let { activity?.window?.decorView?.removeCallbacks(it) }
+        fullscreenRetryRunnable = null
+
         // Cancel any pending orientation unlock
         cancelOrientationUnlock()
 
@@ -2253,9 +2312,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Clearing adaptive fallback flag (new stream)")
                 adaptiveFailedForCurrentStream = null
             }
-            // Reset fullscreen resize mode to ZOOM (default) - each video starts fresh
-            if (fullscreenResizeMode != AspectRatioFrameLayout.RESIZE_MODE_ZOOM) {
-                fullscreenResizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+            // Reset fullscreen resize mode to the device default for each new stream.
+            if (fullscreenResizeMode != defaultFullscreenResizeMode) {
+                fullscreenResizeMode = defaultFullscreenResizeMode
                 // Apply immediately if currently in fullscreen
                 if (isFullscreen) {
                     binding?.playerView?.resizeMode = fullscreenResizeMode
@@ -2741,6 +2800,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         val isCurrentlyLandscape = currentConfig.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
 
         if (isFullscreen) {
+            // Entering fullscreen via button — clear dismiss flag so auto-fullscreen works
+            userDismissedFullscreen = false
             // Request landscape orientation - will trigger onConfigurationChanged
             // Mark that WE locked orientation - but DON'T schedule unlock for fullscreen entry.
             // We keep it locked to SENSOR_LANDSCAPE until user exits fullscreen.
@@ -2750,10 +2811,16 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             requireActivity().requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
             // NO scheduleOrientationUnlock() - lock stays until user exits fullscreen
         } else {
+            // Exiting fullscreen via button — if currently landscape, mark that user
+            // deliberately dismissed so onConfigurationChanged won't re-enter fullscreen
+            // when orientation unlock restores UNSPECIFIED and device is still landscape.
+            if (isCurrentlyLandscape) {
+                userDismissedFullscreen = true
+            }
             // Request portrait orientation - will trigger onConfigurationChanged
             weLockedOrientation = true
             targetOrientationIsLandscape = false
-            if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "toggleFullscreen: lock set, target=PORTRAIT, current=${if (isCurrentlyLandscape) "LANDSCAPE" else "PORTRAIT"}")
+            if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "toggleFullscreen: lock set, target=PORTRAIT, current=${if (isCurrentlyLandscape) "LANDSCAPE" else "PORTRAIT"}, userDismissed=$userDismissedFullscreen")
             requireActivity().requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
 
             // Check if already in target orientation - onConfigurationChanged may not fire
@@ -2853,6 +2920,43 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         return true
     }
 
+    private fun determineDefaultFullscreenResizeMode(): Int {
+        val screenRatio: Float = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try {
+                val windowMetrics = requireActivity().windowManager.currentWindowMetrics
+                val bounds = windowMetrics.bounds
+                maxOf(bounds.width(), bounds.height()).toFloat() /
+                    minOf(bounds.width(), bounds.height()).toFloat()
+            } catch (e: Exception) {
+                // Fallback to displayMetrics if windowManager fails on some OEMs
+                val dm = resources.displayMetrics
+                maxOf(dm.widthPixels, dm.heightPixels).toFloat() /
+                    minOf(dm.widthPixels, dm.heightPixels).toFloat()
+            }
+        } else {
+            val dm = resources.displayMetrics
+            maxOf(dm.widthPixels, dm.heightPixels).toFloat() /
+                minOf(dm.widthPixels, dm.heightPixels).toFloat()
+        }
+        if (BuildConfig.DEBUG) {
+            android.util.Log.d(
+                "PlayerFragment",
+                "Screen ratio: $screenRatio (threshold: 1.79, API: ${Build.VERSION.SDK_INT})"
+            )
+        }
+        return if (screenRatio <= 1.79f) {
+            AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+        } else {
+            AspectRatioFrameLayout.RESIZE_MODE_FIT
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun applyLegacyFullscreenSystemUi(window: android.view.Window) {
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN)
+        window.decorView.systemUiVisibility = legacyFullscreenUiFlags
+    }
+
     /**
      * Update fullscreen UI state without changing orientation.
      * Called from both toggleFullscreen() and onConfigurationChanged().
@@ -2876,27 +2980,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 shellRoot.setBackgroundColor(android.graphics.Color.BLACK)
             }
 
-            // Enter fullscreen - Use WindowInsetsController on API 30+, fall back to legacy flags
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                WindowCompat.setDecorFitsSystemWindows(window, false)
-                window.insetsController?.let { controller ->
-                    controller.hide(android.view.WindowInsets.Type.systemBars())
-                    controller.systemBarsBehavior =
-                        android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                }
-            } else {
-                @Suppress("DEPRECATION")
-                window.decorView.systemUiVisibility = (
-                    View.SYSTEM_UI_FLAG_FULLSCREEN
-                    or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                    or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                    or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                    or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                    or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                )
-            }
-
-            // Handle display cutout (notch) - draw content into the cutout area
+            // Handle display cutout (notch) BEFORE hiding system bars to avoid layout flicker
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 window.attributes = window.attributes.apply {
                     layoutInDisplayCutoutMode =
@@ -2904,7 +2988,48 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 }
             }
 
-            // Set background to pure black so no surface color peeks through
+            // Enter fullscreen - Use WindowInsetsController on API 30+, fall back to legacy flags
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                WindowCompat.setDecorFitsSystemWindows(window, false)
+                window.insetsController?.let { controller ->
+                    // Set behavior BEFORE hide for reliable OEM compat
+                    controller.systemBarsBehavior =
+                        android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    // Hide each bar type explicitly — some OEM skins need separate calls
+                    controller.hide(android.view.WindowInsets.Type.statusBars())
+                    controller.hide(android.view.WindowInsets.Type.navigationBars())
+                }
+                // Delayed retry: some OEM skins (Huawei/Samsung) need a second attempt
+                fullscreenRetryRunnable?.let { window.decorView.removeCallbacks(it) }
+                val retryRunnable = Runnable {
+                    if (isFullscreen) {
+                        window.insetsController?.let { controller ->
+                            controller.hide(android.view.WindowInsets.Type.statusBars())
+                            controller.hide(android.view.WindowInsets.Type.navigationBars())
+                        }
+                    }
+                }
+                fullscreenRetryRunnable = retryRunnable
+                window.decorView.postDelayed(retryRunnable, 150)
+            } else {
+                // Legacy path (API < 30): Use both window flag and decorView flags
+                // for more reliable fullscreen on OEM skins (Huawei EMUI, etc.)
+                @Suppress("DEPRECATION")
+                window.decorView.setOnSystemUiVisibilityChangeListener(legacySystemUiVisibilityChangeListener)
+                applyLegacyFullscreenSystemUi(window)
+                // Delayed retry: EMUI may reset flags on first touch/layout pass
+                fullscreenRetryRunnable?.let { window.decorView.removeCallbacks(it) }
+                val legacyRetryRunnable = Runnable {
+                    if (isFullscreen) {
+                        applyLegacyFullscreenSystemUi(window)
+                    }
+                }
+                fullscreenRetryRunnable = legacyRetryRunnable
+                window.decorView.postDelayed(legacyRetryRunnable, 200)
+            }
+
+            // Save original background and set to black so no surface color peeks through
+            savedRootBackground = binding.root.background
             binding.root.setBackgroundColor(android.graphics.Color.BLACK)
 
             // Hide scrollable content
@@ -2962,24 +3087,30 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // Exit fullscreen - Restore system UI using WindowInsetsController on API 30+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 WindowCompat.setDecorFitsSystemWindows(window, true)
-                window.insetsController?.show(android.view.WindowInsets.Type.systemBars())
+                window.insetsController?.let { controller ->
+                    controller.show(android.view.WindowInsets.Type.statusBars())
+                    controller.show(android.view.WindowInsets.Type.navigationBars())
+                }
             } else {
-                // On pre-API 30, we need to properly restore system UI flags.
-                // LIGHT_STATUS_BAR should only be set in light theme (dark icons on light background).
-                // In dark theme, we want light icons on dark background (no LIGHT_STATUS_BAR flag).
-                val isNightMode = (resources.configuration.uiMode and
-                    android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
-                    android.content.res.Configuration.UI_MODE_NIGHT_YES
+                // On pre-API 30, restore system UI visibility flags.
+                // Derive icon mode from the saved background instead of MaterialColors
+                // which is unreliable on EMUI (applies dark mode outside the theme system).
+                val isDarkSurface = when (val bg = savedRootBackground) {
+                    is android.graphics.drawable.ColorDrawable ->
+                        androidx.core.graphics.ColorUtils.calculateLuminance(bg.color) < 0.5
+                    else -> true // Assume dark for non-color backgrounds (safe default)
+                }
 
+                @Suppress("DEPRECATION")
+                window.decorView.setOnSystemUiVisibilityChangeListener(null)
                 @Suppress("DEPRECATION")
                 val baseFlags = View.SYSTEM_UI_FLAG_VISIBLE or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                 @Suppress("DEPRECATION")
-                window.decorView.systemUiVisibility = if (isNightMode) {
-                    baseFlags  // Dark theme: light icons (no LIGHT_STATUS_BAR)
+                window.decorView.systemUiVisibility = if (isDarkSurface) {
+                    baseFlags  // Dark surface: light status bar icons
                 } else {
-                    baseFlags or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR  // Light theme: dark icons
+                    baseFlags or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR  // Light surface: dark icons
                 }
-                // Also clear status bar flags to restore normal appearance
                 @Suppress("DEPRECATION")
                 window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN)
             }
@@ -2998,10 +3129,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // Restore fitsSystemWindows on the parent shell fragment's root view
             restoreShellRootView()
 
-            // Restore surface background color
-            val typedValue = android.util.TypedValue()
-            requireContext().theme.resolveAttribute(com.google.android.material.R.attr.colorSurface, typedValue, true)
-            binding.root.setBackgroundColor(typedValue.data)
+            // Restore original background saved before fullscreen.
+            // EMUI applies dark mode at the framework level — programmatically resolving
+            // colorSurface returns the base (light) theme value, causing a light-mode flash.
+            // Restoring the saved Drawable preserves the EMUI-overridden dark background.
+            binding.root.background = savedRootBackground
 
             // Show scrollable content
             binding.playerScrollView.visibility = View.VISIBLE
@@ -3077,6 +3209,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         val activity = activity ?: return
         val window = activity.window
 
+        // Cancel any pending fullscreen retry runnables
+        fullscreenRetryRunnable?.let { window.decorView.removeCallbacks(it) }
+        fullscreenRetryRunnable = null
+
         // Restore system bars using modern API or legacy flags
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             WindowCompat.setDecorFitsSystemWindows(window, true)
@@ -3089,6 +3225,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
                 android.content.res.Configuration.UI_MODE_NIGHT_YES
 
+            @Suppress("DEPRECATION")
+            window.decorView.setOnSystemUiVisibilityChangeListener(null)
             @Suppress("DEPRECATION")
             val baseFlags = View.SYSTEM_UI_FLAG_VISIBLE or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
             @Suppress("DEPRECATION")

@@ -106,18 +106,13 @@
             <td>
               <div class="entity-cell entity-cell--with-thumb">
                 <img
-                  v-if="entry.excludeThumbnailUrl"
-                  :src="entry.excludeThumbnailUrl"
+                  v-if="getThumbnailUrl({ youtubeId: entry.excludeId, thumbnailUrl: entry.excludeThumbnailUrl }, (entry.excludeType || '').toLowerCase() as 'video' | 'playlist' | 'channel')"
+                  :src="getThumbnailUrl({ youtubeId: entry.excludeId, thumbnailUrl: entry.excludeThumbnailUrl }, (entry.excludeType || '').toLowerCase() as 'video' | 'playlist' | 'channel')!"
                   :alt="entry.excludeTitle || entry.excludeId"
                   class="entity-thumb"
+                  @error="handleThumbnailError($event, entry)"
                 />
-                <img
-                  v-else-if="entry.excludeType === 'VIDEO'"
-                  :src="`https://i.ytimg.com/vi/${entry.excludeId}/mqdefault.jpg`"
-                  :alt="entry.excludeId"
-                  class="entity-thumb"
-                />
-                <div v-else class="entity-thumb entity-thumb--placeholder"></div>
+                <div class="entity-thumb entity-thumb--placeholder" :style="getThumbnailUrl({ youtubeId: entry.excludeId, thumbnailUrl: entry.excludeThumbnailUrl }, (entry.excludeType || '').toLowerCase() as 'video' | 'playlist' | 'channel') ? 'display:none' : ''"></div>
                 <div>
                   <span class="entity-label">{{ entry.excludeTitle || entry.excludeId }}</span>
                   <span class="entity-subtle">{{ entry.excludeTitle ? entry.excludeId : resourceTypeLabel(entry.excludeType) }}</span>
@@ -292,7 +287,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { onBeforeRouteLeave } from 'vue-router';
-import { formatDateTime } from '@/utils/formatters';
+import { formatDateTime, getThumbnailUrl, getThumbnailFallbacks } from '@/utils/formatters';
 import { useFocusTrap } from '@/composables/useFocusTrap';
 import { useCursorPagination } from '@/composables/useCursorPagination';
 import {
@@ -323,6 +318,8 @@ const isSubmitting = ref(false);
 const formError = ref<string | null>(null);
 const isBulkProcessing = ref(false);
 const removingIds = ref<string[]>([]);
+
+const thumbnailFallbackIndex = new Map<string, number>();
 
 const actionMessageId = 'exclusions-action-message';
 const searchInputId = 'exclusions-search-input';
@@ -480,6 +477,32 @@ function onSearchChange(event: Event) {
 
 function clearSearch() {
   searchQuery.value = '';
+}
+
+function handleThumbnailError(event: Event, entry: any) {
+  const img = event.target as HTMLImageElement;
+  const id = entry.excludeId || entry.id;
+  const idx = thumbnailFallbackIndex.get(id) ?? 0;
+  // Build a synthetic item for getThumbnailFallbacks
+  const type = (entry.excludeType || '').toLowerCase() as 'channel' | 'playlist' | 'video';
+  const syntheticItem = { id: entry.excludeId, youtubeId: entry.excludeId, thumbnailUrl: entry.excludeThumbnailUrl };
+  const fallbacks = getThumbnailFallbacks(syntheticItem, type);
+  const currentSrc = img.src.replace(/\/$/, '');
+  let nextIdx = idx;
+  while (nextIdx < fallbacks.length && fallbacks[nextIdx] === currentSrc) {
+    nextIdx++;
+  }
+  if (nextIdx < fallbacks.length) {
+    thumbnailFallbackIndex.set(id, nextIdx + 1);
+    img.src = fallbacks[nextIdx];
+    return;
+  }
+  // All fallbacks exhausted — hide img and show placeholder via DOM (no reactive cascade)
+  img.style.display = 'none';
+  const placeholder = img.nextElementSibling;
+  if (placeholder && placeholder.classList.contains('entity-thumb--placeholder')) {
+    (placeholder as HTMLElement).style.display = '';
+  }
 }
 
 function setTypeFilter(value: TypeFilterValue) {

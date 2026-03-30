@@ -48,13 +48,14 @@ function extractVideoIdFromYtImg(url: string): string | null {
  * For channels: returns stored URL or null
  */
 export function getThumbnailUrl(
-  item: { thumbnailUrl?: string | null; youtubeId?: string | null; ytId?: string | null },
+  item: { thumbnailUrl?: string | null; youtubeId?: string | null; ytId?: string | null; contentId?: string | null; id?: string | null },
   type?: 'channel' | 'playlist' | 'video'
 ): string | null {
   if (item.thumbnailUrl) return sanitizeYtImgUrl(item.thumbnailUrl);
 
-  const ytId = item.youtubeId || item.ytId;
-  if (ytId && type === 'video') {
+  // For videos and playlists without thumbnailUrl, generate from YouTube ID
+  const ytId = item.youtubeId || item.ytId || item.contentId || item.id;
+  if (ytId && (type === 'video' || type === 'playlist')) {
     return `https://i.ytimg.com/vi/${ytId}/mqdefault.jpg`;
   }
 
@@ -67,13 +68,13 @@ export function getThumbnailUrl(
  * URLs are sanitized (no signed params) so they can be compared directly to img.src.
  */
 export function getThumbnailFallbacks(
-  item: { thumbnailUrl?: string | null; youtubeId?: string | null; ytId?: string | null },
+  item: { thumbnailUrl?: string | null; youtubeId?: string | null; ytId?: string | null; contentId?: string | null; id?: string | null },
   type?: 'channel' | 'playlist' | 'video'
 ): string[] {
   const fallbacks: string[] = [];
 
   if (type === 'video') {
-    const ytId = item.youtubeId || item.ytId;
+    const ytId = item.youtubeId || item.ytId || item.contentId || item.id;
     if (ytId) {
       fallbacks.push(
         `https://i.ytimg.com/vi/${ytId}/mqdefault.jpg`,
@@ -84,14 +85,16 @@ export function getThumbnailFallbacks(
   }
 
   if (type === 'playlist') {
-    // Sanitize first — the stored URL may have signed params
+    // Try extracting video ID from thumbnail URL first
     const sanitized = item.thumbnailUrl ? sanitizeYtImgUrl(item.thumbnailUrl) : null;
     const vidId = sanitized ? extractVideoIdFromYtImg(sanitized) : null;
-    if (vidId) {
+    // Fall back to the playlist's own YouTube ID (some playlists use their ID as thumbnail key)
+    const playlistYtId = vidId || item.youtubeId || item.ytId || item.contentId || item.id;
+    if (playlistYtId && playlistYtId.length === 11 && !playlistYtId.startsWith('PL')) {
       fallbacks.push(
-        `https://i.ytimg.com/vi/${vidId}/mqdefault.jpg`,
-        `https://i.ytimg.com/vi/${vidId}/hqdefault.jpg`,
-        `https://i.ytimg.com/vi/${vidId}/default.jpg`
+        `https://i.ytimg.com/vi/${playlistYtId}/mqdefault.jpg`,
+        `https://i.ytimg.com/vi/${playlistYtId}/hqdefault.jpg`,
+        `https://i.ytimg.com/vi/${playlistYtId}/default.jpg`
       );
     }
   }
@@ -99,10 +102,15 @@ export function getThumbnailFallbacks(
   if (type === 'channel' && item.thumbnailUrl) {
     const url = item.thumbnailUrl;
     if (url.includes('yt3.googleusercontent.com') || url.includes('yt3.ggpht.com')) {
-      // Strip the =s{size}-... suffix that controls avatar size/format.
-      // e.g. "...XQ=s72-c-k-c0x00ffffff-no-rj" → "...XQ" (serves default size)
+      // Strip any existing size suffix to get the base URL
       const base = url.replace(/=s\d+[^/]*$/, '');
-      if (base !== url) fallbacks.push(base);
+      // Try multiple size variants — the stored URL may have a broken size suffix
+      fallbacks.push(
+        base + '=s176-c-k-c0x00ffffff-no-rj',
+        base + '=s800-c-k-c0x00ffffff-no-rj',
+        base + '=s72-c-k-c0x00ffffff-no-rj',
+        base  // No suffix — serves default size
+      );
     }
   }
 

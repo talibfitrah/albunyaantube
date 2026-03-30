@@ -9,6 +9,8 @@ import com.albunyaan.tube.R
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.databinding.ItemPlaylistBinding
 import com.albunyaan.tube.util.ImageLoading.loadThumbnailUrl
+import com.albunyaan.tube.util.ImageLoading.loadYouTubeThumbnail
+import com.albunyaan.tube.util.ThumbnailUrlHelper
 import com.google.android.material.chip.Chip
 
 class PlaylistAdapter(
@@ -44,8 +46,13 @@ class PlaylistAdapter(
                 playlist.itemCount
             )
 
-            // Load thumbnail with aggressive caching
-            binding.playlistThumbnail.loadThumbnailUrl(playlist.thumbnailUrl)
+            // Load thumbnail with YouTube fallback chain
+            val videoId = ThumbnailUrlHelper.extractVideoId(playlist.thumbnailUrl)
+            if (videoId != null) {
+                binding.playlistThumbnail.loadYouTubeThumbnail(playlist.thumbnailUrl, videoId)
+            } else {
+                binding.playlistThumbnail.loadThumbnailUrl(playlist.thumbnailUrl)
+            }
 
             // Add category chip
             binding.categoryChipsContainer.removeAllViews()

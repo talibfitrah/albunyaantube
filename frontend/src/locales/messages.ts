@@ -382,7 +382,8 @@ export const messages = {
         retrying: 'Retrying...'
       },
       retry: 'Retry',
-      close: 'Close'
+      close: 'Close',
+      opensInNewTab: 'opens in a new tab'
     },
     videoPreview: {
       noVideo: 'No video available',
@@ -707,7 +708,9 @@ export const messages = {
         noMoreItems: 'No more items',
         excludeError: 'Error adding exclusion',
         removeError: 'Error removing exclusion',
-        itemCount: '{count} items'
+        fetchError: 'Channel details could not be fetched. YouTube may have changed the page layout, or the channel may be temporarily unavailable.',
+        itemCount: '{count} items',
+        openOnYoutube: 'Open on YouTube'
       },
       playlistDetail: {
         title: 'Playlist Details',
@@ -1743,7 +1746,8 @@ export const messages = {
         retrying: 'جارٍ إعادة المحاولة...'
       },
       retry: 'إعادة المحاولة',
-      close: 'إغلاق'
+      close: 'إغلاق',
+      opensInNewTab: 'يفتح في علامة تبويب جديدة'
     },
     videoPreview: {
       noVideo: 'لا يوجد فيديو متاح',
@@ -2018,7 +2022,9 @@ export const messages = {
         noMoreItems: 'لا توجد عناصر أخرى',
         excludeError: 'خطأ في إضافة الاستثناء',
         removeError: 'خطأ في إزالة الاستثناء',
-        itemCount: '{count} عنصر'
+        fetchError: 'تعذر جلب تفاصيل القناة. قد يكون يوتيوب قد غيّر تخطيط الصفحة، أو القناة غير متاحة مؤقتاً.',
+        itemCount: '{count} عنصر',
+        openOnYoutube: 'فتح على يوتيوب'
       },
       playlistDetail: {
         title: 'تفاصيل قائمة التشغيل',
@@ -2885,7 +2891,8 @@ export const messages = {
         retrying: 'Opnieuw proberen...'
       },
       retry: 'Opnieuw proberen',
-      close: 'Sluiten'
+      close: 'Sluiten',
+      opensInNewTab: 'opent in een nieuw tabblad'
     },
     videoPreview: {
       noVideo: 'Geen video beschikbaar',
@@ -3160,7 +3167,9 @@ export const messages = {
         noMoreItems: 'Geen items meer',
         excludeError: 'Fout bij toevoegen van uitzondering',
         removeError: 'Fout bij verwijderen van uitzondering',
-        itemCount: '{count} items'
+        fetchError: 'Kanaalgegevens konden niet worden opgehaald. YouTube heeft mogelijk de pagina-indeling gewijzigd, of het kanaal is tijdelijk niet beschikbaar.',
+        itemCount: '{count} items',
+        openOnYoutube: 'Openen op YouTube'
       },
       playlistDetail: {
         title: 'Afspeellijstdetails',

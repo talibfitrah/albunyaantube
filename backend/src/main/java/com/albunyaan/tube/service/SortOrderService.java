@@ -141,14 +141,7 @@ public class SortOrderService {
     public List<ContentSortDto> getContentSortOrder(String categoryId)
             throws ExecutionException, InterruptedException, TimeoutException {
 
-        List<CategoryContentOrder> orderEntries = orderRepository.findByCategoryIdOrderByPosition(categoryId);
-
-        // If no order entries exist, initialize from existing approved content.
-        // For parent categories, this aggregates content from all subcategories.
-        if (orderEntries.isEmpty()) {
-            initializeCategoryContentOrder(categoryId);
-            orderEntries = orderRepository.findByCategoryIdOrderByPosition(categoryId);
-        }
+        List<CategoryContentOrder> orderEntries = getOrSynchronizeCategoryContentOrder(categoryId);
 
         List<ContentSortDto> result = new ArrayList<>();
         for (CategoryContentOrder entry : orderEntries) {
@@ -176,7 +169,7 @@ public class SortOrderService {
             String categoryId, String contentId, String contentType, int newPosition)
             throws ExecutionException, InterruptedException, TimeoutException {
 
-        List<CategoryContentOrder> entries = orderRepository.findByCategoryIdOrderByPosition(categoryId);
+        List<CategoryContentOrder> entries = getOrSynchronizeCategoryContentOrder(categoryId);
 
         // Find and remove the target entry
         CategoryContentOrder target = null;
@@ -228,68 +221,7 @@ public class SortOrderService {
             return;
         }
 
-        // Resolve category IDs to query: for parent categories, include all subcategories
-        // so the parent's sort order aggregates all content for the home screen.
-        List<String> queryIds = new ArrayList<>();
-        queryIds.add(categoryId);
-
-        List<Category> children = categoryRepository.findByParentId(categoryId);
-        for (Category child : children) {
-            queryIds.add(child.getId());
-        }
-
-        if (queryIds.size() > 1) {
-            log.info("Initializing parent category {} with content from {} subcategories", categoryId, children.size());
-        }
-
-        List<CategoryContentOrder> entries = new ArrayList<>();
-        int position = 0;
-
-        // Bounded fetch: limit to 500 per content type to prevent unbounded reads
-        int initLimit = 500;
-
-        // Dedup sets to avoid adding the same content twice (may appear in multiple subcategories)
-        Set<String> seenIds = new HashSet<>();
-
-        // Add channels, sorted by subscribers desc as default
-        List<Channel> channels = new ArrayList<>(channelRepository.findByCategoryIds(queryIds, initLimit));
-        channels.sort((a, b) -> {
-            long sa = a.getSubscribers() != null ? a.getSubscribers() : 0;
-            long sb = b.getSubscribers() != null ? b.getSubscribers() : 0;
-            return Long.compare(sb, sa);
-        });
-        for (Channel ch : channels) {
-            if (seenIds.add("channel:" + ch.getId())) {
-                entries.add(new CategoryContentOrder(categoryId, ch.getId(), "channel", position++));
-            }
-        }
-
-        // Add playlists, sorted by itemCount desc as default
-        List<Playlist> playlists = new ArrayList<>(playlistRepository.findByCategoryIds(queryIds, initLimit));
-        playlists.sort((a, b) -> {
-            int ia = a.getItemCount() != null ? a.getItemCount() : 0;
-            int ib = b.getItemCount() != null ? b.getItemCount() : 0;
-            return Integer.compare(ib, ia);
-        });
-        for (Playlist pl : playlists) {
-            if (seenIds.add("playlist:" + pl.getId())) {
-                entries.add(new CategoryContentOrder(categoryId, pl.getId(), "playlist", position++));
-            }
-        }
-
-        // Add videos, sorted by uploadedAt desc as default
-        List<Video> videos = new ArrayList<>(videoRepository.findByCategoryIds(queryIds, initLimit));
-        videos.sort((a, b) -> {
-            if (a.getUploadedAt() == null && b.getUploadedAt() == null) return 0;
-            if (a.getUploadedAt() == null) return 1;
-            if (b.getUploadedAt() == null) return -1;
-            return b.getUploadedAt().compareTo(a.getUploadedAt());
-        });
-        for (Video v : videos) {
-            if (seenIds.add("video:" + v.getId())) {
-                entries.add(new CategoryContentOrder(categoryId, v.getId(), "video", position++));
-            }
-        }
+        List<CategoryContentOrder> entries = buildDefaultCategoryContentOrder(categoryId);
 
         if (!entries.isEmpty()) {
             orderRepository.batchSave(entries);
@@ -631,5 +563,166 @@ public class SortOrderService {
                 log.warn("Unknown content type: {}", entry.getContentType());
                 return null;
         }
+    }
+
+    private List<CategoryContentOrder> getOrSynchronizeCategoryContentOrder(String categoryId)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        List<CategoryContentOrder> existing = orderRepository.findByCategoryIdOrderByPosition(categoryId);
+        List<CategoryContentOrder> defaultEntries = buildDefaultCategoryContentOrder(categoryId);
+
+        if (existing.isEmpty()) {
+            if (!defaultEntries.isEmpty()) {
+                orderRepository.batchSave(defaultEntries);
+                cacheService.evictPublicContentCaches();
+                log.info("Initialized missing sort order for category {} with {} items", categoryId, defaultEntries.size());
+            }
+            return defaultEntries;
+        }
+
+        // If we can't resolve the current approved content snapshot, keep the stored manual
+        // order instead of treating "no data" as a destructive sync source.
+        if (defaultEntries.isEmpty()) {
+            return existing;
+        }
+
+        // Collect keys from the capped snapshot for detecting newly approved content.
+        Set<String> defaultKeys = new LinkedHashSet<>();
+        for (CategoryContentOrder entry : defaultEntries) {
+            defaultKeys.add(contentKey(entry));
+        }
+
+        // Start with ALL existing entries (never delete on a read operation).
+        // The buildDefaultCategoryContentOrder snapshot is capped (e.g. 500 per type)
+        // and must not be treated as authoritative for deletions.
+        List<CategoryContentOrder> normalized = new ArrayList<>();
+        Set<String> includedKeys = new HashSet<>();
+
+        for (CategoryContentOrder entry : existing) {
+            String key = contentKey(entry);
+            if (includedKeys.add(key)) {
+                normalized.add(new CategoryContentOrder(
+                        categoryId,
+                        entry.getContentId(),
+                        entry.getContentType(),
+                        normalized.size()
+                ));
+            }
+        }
+
+        // Append newly discovered approved content that is missing from the stored order.
+        int newEntriesAdded = 0;
+        for (CategoryContentOrder entry : defaultEntries) {
+            String key = contentKey(entry);
+            if (includedKeys.add(key)) {
+                normalized.add(new CategoryContentOrder(
+                        categoryId,
+                        entry.getContentId(),
+                        entry.getContentType(),
+                        normalized.size()
+                ));
+                newEntriesAdded++;
+            }
+        }
+
+        // Only persist and evict caches when new items were actually appended.
+        // This ensures pure reads (no new content) are side-effect-free.
+        if (newEntriesAdded > 0 && ordersDiffer(existing, normalized)) {
+            if (!normalized.isEmpty()) {
+                orderRepository.batchSave(normalized);
+            }
+            cacheService.evictPublicContentCaches();
+            log.info("Synchronized sort order for category {} (stored={}, normalized={}, newEntries={})",
+                    categoryId, existing.size(), normalized.size(), newEntriesAdded);
+        }
+
+        return normalized;
+    }
+
+    private List<CategoryContentOrder> buildDefaultCategoryContentOrder(String categoryId)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        List<String> queryIds = resolveCategoryIdsForSortOrder(categoryId);
+        if (queryIds.size() > 1) {
+            log.info("Building aggregate sort order for parent category {} from {} child categories",
+                    categoryId, queryIds.size() - 1);
+        }
+
+        List<CategoryContentOrder> entries = new ArrayList<>();
+        int position = 0;
+        int initLimit = 500;
+        Set<String> seenIds = new HashSet<>();
+
+        List<Channel> channels = new ArrayList<>(channelRepository.findByCategoryIds(queryIds, initLimit));
+        channels.sort((a, b) -> {
+            long sa = a.getSubscribers() != null ? a.getSubscribers() : 0;
+            long sb = b.getSubscribers() != null ? b.getSubscribers() : 0;
+            return Long.compare(sb, sa);
+        });
+        for (Channel ch : channels) {
+            if (seenIds.add("channel:" + ch.getId())) {
+                entries.add(new CategoryContentOrder(categoryId, ch.getId(), "channel", position++));
+            }
+        }
+
+        List<Playlist> playlists = new ArrayList<>(playlistRepository.findByCategoryIds(queryIds, initLimit));
+        playlists.sort((a, b) -> {
+            int ia = a.getItemCount() != null ? a.getItemCount() : 0;
+            int ib = b.getItemCount() != null ? b.getItemCount() : 0;
+            return Integer.compare(ib, ia);
+        });
+        for (Playlist pl : playlists) {
+            if (seenIds.add("playlist:" + pl.getId())) {
+                entries.add(new CategoryContentOrder(categoryId, pl.getId(), "playlist", position++));
+            }
+        }
+
+        List<Video> videos = new ArrayList<>(videoRepository.findByCategoryIds(queryIds, initLimit));
+        videos.sort((a, b) -> {
+            if (a.getUploadedAt() == null && b.getUploadedAt() == null) return 0;
+            if (a.getUploadedAt() == null) return 1;
+            if (b.getUploadedAt() == null) return -1;
+            return b.getUploadedAt().compareTo(a.getUploadedAt());
+        });
+        for (Video v : videos) {
+            if (seenIds.add("video:" + v.getId())) {
+                entries.add(new CategoryContentOrder(categoryId, v.getId(), "video", position++));
+            }
+        }
+
+        return entries;
+    }
+
+    private List<String> resolveCategoryIdsForSortOrder(String categoryId)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        List<String> queryIds = new ArrayList<>();
+        queryIds.add(categoryId);
+
+        List<Category> children = categoryRepository.findByParentId(categoryId);
+        for (Category child : children) {
+            queryIds.add(child.getId());
+        }
+
+        return queryIds;
+    }
+
+    private boolean ordersDiffer(List<CategoryContentOrder> existing, List<CategoryContentOrder> normalized) {
+        if (existing.size() != normalized.size()) {
+            return true;
+        }
+
+        for (int i = 0; i < existing.size(); i++) {
+            CategoryContentOrder current = existing.get(i);
+            CategoryContentOrder expected = normalized.get(i);
+            if (!Objects.equals(current.getContentId(), expected.getContentId())
+                    || !Objects.equals(current.getContentType(), expected.getContentType())
+                    || !Objects.equals(current.getPosition(), expected.getPosition())) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private String contentKey(CategoryContentOrder entry) {
+        return entry.getContentType() + ":" + entry.getContentId();
     }
 }

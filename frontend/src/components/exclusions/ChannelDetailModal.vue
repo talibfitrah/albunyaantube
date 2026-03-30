@@ -82,6 +82,15 @@
             <!-- Error State -->
             <div v-else-if="error" class="error-state">
               <p>{{ error }}</p>
+              <a
+                :href="`https://www.youtube.com/channel/${channelYoutubeId}`"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="youtube-link-btn"
+                :aria-label="$t('exclusions.channelDetail.openOnYoutube') + ' (' + $t('common.opensInNewTab') + ')'"
+              >
+                {{ $t('exclusions.channelDetail.openOnYoutube') }} ↗
+              </a>
               <button class="retry-btn" @click="loadInitialData">
                 {{ $t('common.retry') }}
               </button>
@@ -118,22 +127,25 @@
                     </span>
                   </p>
                 </div>
-                <button
-                  v-if="isExcluded(item.id)"
-                  class="action-btn remove"
-                  @click.stop="removeExclusion(item.id)"
-                  :disabled="actionLoading[item.id]"
-                >
-                  {{ $t('exclusions.channelDetail.removeExclusion') }}
-                </button>
-                <button
-                  v-else
-                  class="action-btn exclude"
-                  @click.stop="addExclusion(item.id)"
-                  :disabled="actionLoading[item.id]"
-                >
-                  {{ $t('exclusions.channelDetail.exclude') }}
-                </button>
+                <!-- Exclusion buttons only shown when registry ID is available -->
+                <template v-if="hasRegistryId">
+                  <button
+                    v-if="isExcluded(item.id)"
+                    class="action-btn remove"
+                    @click.stop="removeExclusion(item.id)"
+                    :disabled="actionLoading[item.id]"
+                  >
+                    {{ $t('exclusions.channelDetail.removeExclusion') }}
+                  </button>
+                  <button
+                    v-else
+                    class="action-btn exclude"
+                    @click.stop="addExclusion(item.id)"
+                    :disabled="actionLoading[item.id]"
+                  >
+                    {{ $t('exclusions.channelDetail.exclude') }}
+                  </button>
+                </template>
               </div>
             </div>
 
@@ -180,7 +192,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, reactive } from 'vue'
+import { ref, watch, reactive, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useInfiniteScroll } from '@/composables/useInfiniteScroll'
 import { fetchChannelExclusions, addChannelExclusion, removeChannelExclusion } from '@/services/exclusions'
@@ -201,6 +213,10 @@ const emit = defineEmits<{
   close: []
   updated: []
 }>()
+
+// Whether we have a registry document ID (needed for exclusion APIs).
+// When opened from search/archive with only a YouTube ID, this is false.
+const hasRegistryId = computed(() => !!props.channelId)
 
 // State
 const activeTab = ref<'videos' | 'shorts' | 'live' | 'playlists'>('videos')
@@ -267,15 +283,25 @@ async function loadInitialData() {
     }
 
     // Load exclusions — videos/shorts/live all use the videos exclusion list
-    const exclusions = await fetchChannelExclusions(props.channelId)
-    excludedIds.value = new Set(
-      activeTab.value === 'playlists' ? exclusions.playlists : exclusions.videos
-    )
+    // Skip when channelId is empty (e.g., previewing from search results)
+    if (props.channelId) {
+      const exclusions = await fetchChannelExclusions(props.channelId)
+      excludedIds.value = new Set(
+        activeTab.value === 'playlists' ? exclusions.playlists : exclusions.videos
+      )
+    } else {
+      excludedIds.value = new Set()
+    }
 
     // Load initial items
     await loadMore()
   } catch (err: any) {
-    error.value = err.message || $t('common.error')
+    const status = err?.response?.status;
+    if (status === 404) {
+      error.value = $t('exclusions.channelDetail.fetchError');
+    } else {
+      error.value = err.message || $t('common.error');
+    }
   } finally {
     initialLoading.value = false
   }
@@ -393,6 +419,7 @@ function isExcluded(id: string): boolean {
 }
 
 async function addExclusion(itemId: string) {
+  if (!hasRegistryId.value) return
   actionLoading[itemId] = true
 
   try {
@@ -408,6 +435,7 @@ async function addExclusion(itemId: string) {
 }
 
 async function removeExclusion(itemId: string) {
+  if (!hasRegistryId.value) return
   actionLoading[itemId] = true
 
   try {
@@ -609,6 +637,19 @@ function formatDate(dateStr: string | null | undefined): string {
   justify-content: center;
   padding: 3rem 1rem;
   color: var(--color-text-secondary, #6b7280);
+  gap: 0.75rem;
+}
+.youtube-link-btn {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  background: #ff0000;
+  color: white;
+  text-decoration: none;
+  border-radius: 6px;
+  font-size: 0.875rem;
+}
+.youtube-link-btn:hover {
+  background: #cc0000;
 }
 
 .spinner {

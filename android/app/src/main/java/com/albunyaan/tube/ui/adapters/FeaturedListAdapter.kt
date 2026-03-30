@@ -13,6 +13,8 @@ import com.albunyaan.tube.databinding.ItemPlaylistBinding
 import com.albunyaan.tube.databinding.ItemVideoListBinding
 import com.albunyaan.tube.locale.LocaleManager
 import com.albunyaan.tube.util.ImageLoading.loadThumbnailUrl
+import com.albunyaan.tube.util.ImageLoading.loadYouTubeThumbnail
+import com.albunyaan.tube.util.ThumbnailUrlHelper
 import com.google.android.material.chip.Chip
 import java.text.NumberFormat
 import java.util.Locale
@@ -127,7 +129,12 @@ class FeaturedListAdapter(
                 playlist.itemCount
             )
 
-            binding.playlistThumbnail.loadThumbnailUrl(playlist.thumbnailUrl)
+            val playlistVideoId = ThumbnailUrlHelper.extractVideoId(playlist.thumbnailUrl)
+            if (playlistVideoId != null) {
+                binding.playlistThumbnail.loadYouTubeThumbnail(playlist.thumbnailUrl, playlistVideoId)
+            } else {
+                binding.playlistThumbnail.loadThumbnailUrl(playlist.thumbnailUrl)
+            }
 
             binding.categoryChipsContainer.removeAllViews()
             val chip = Chip(binding.root.context).apply {
@@ -176,7 +183,7 @@ class FeaturedListAdapter(
                 timeAgo
             }
 
-            binding.videoThumbnail.loadThumbnailUrl(video.thumbnailUrl)
+            binding.videoThumbnail.loadYouTubeThumbnail(video.thumbnailUrl, video.id)
 
             binding.categoryChipsContainer.removeAllViews()
             val chip = Chip(binding.root.context).apply {

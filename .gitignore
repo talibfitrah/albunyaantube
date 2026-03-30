@@ -134,6 +134,12 @@ backend/src/generated/
 /docs/**/.~lock*
 
 # -----------------------
+# Error/debug screenshots
+# -----------------------
+err_*.jpeg
+err_*.png
+
+# -----------------------
 # Misc language & tooling
 # -----------------------
 *.bak

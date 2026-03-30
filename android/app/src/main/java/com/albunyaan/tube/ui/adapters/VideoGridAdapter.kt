@@ -10,7 +10,7 @@ import com.albunyaan.tube.R
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.databinding.ItemVideoGridBinding
 import com.albunyaan.tube.locale.LocaleManager
-import com.albunyaan.tube.util.ImageLoading.loadThumbnailUrl
+import com.albunyaan.tube.util.ImageLoading.loadYouTubeThumbnail
 import com.google.android.material.chip.Chip
 import java.text.NumberFormat
 import java.util.Locale
@@ -63,8 +63,8 @@ class VideoGridAdapter(
                 timeAgo
             }
 
-            // Load thumbnail with aggressive caching
-            binding.videoThumbnail.loadThumbnailUrl(video.thumbnailUrl)
+            // Load thumbnail with YouTube fallback chain
+            binding.videoThumbnail.loadYouTubeThumbnail(video.thumbnailUrl, video.id)
 
             // Add category chip
             binding.categoryChipsContainer.removeAllViews()

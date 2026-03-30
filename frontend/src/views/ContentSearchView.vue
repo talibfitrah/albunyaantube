@@ -76,6 +76,7 @@
           :already-added="isChannelAlreadyAdded(channel.ytId)"
           :is-admin="authStore.isAdmin"
           @add="handleAddChannel"
+          @preview="handlePreviewChannel"
         />
         <PlaylistCard
           v-for="playlist in filteredPlaylists"
@@ -84,6 +85,7 @@
           :already-added="isPlaylistAlreadyAdded(playlist.ytId)"
           :is-admin="authStore.isAdmin"
           @add="handleAddPlaylist"
+          @preview="handlePreviewPlaylist"
         />
         <VideoCard
           v-for="video in filteredVideos"
@@ -123,7 +125,19 @@
       @assign="handleCategoryAssignment"
     />
 
-    <!-- Video Preview Modal -->
+    <!-- Preview Modals -->
+    <ChannelDetailModal
+      :open="isChannelPreviewOpen"
+      :channel-id="''"
+      :channel-youtube-id="previewChannelYtId"
+      @close="isChannelPreviewOpen = false"
+    />
+    <PlaylistDetailModal
+      :open="isPlaylistPreviewOpen"
+      :playlist-id="''"
+      :playlist-youtube-id="previewPlaylistYtId"
+      @close="isPlaylistPreviewOpen = false"
+    />
     <VideoPreviewModal
       :open="isPreviewOpen"
       :youtube-id="previewVideoId"
@@ -147,6 +161,8 @@ import PlaylistCard from '@/components/search/PlaylistCard.vue';
 import VideoCard from '@/components/search/VideoCard.vue';
 import CategoryAssignmentModal from '@/components/CategoryAssignmentModal.vue';
 import VideoPreviewModal from '@/components/VideoPreviewModal.vue';
+import ChannelDetailModal from '@/components/exclusions/ChannelDetailModal.vue';
+import PlaylistDetailModal from '@/components/exclusions/PlaylistDetailModal.vue';
 import type { AdminSearchChannelResult, AdminSearchPlaylistResult, AdminSearchVideoResult } from '@/types/registry';
 
 const { t } = useI18n();
@@ -176,10 +192,14 @@ const nextPageToken = ref<string | null>(null);
 let insertionSeq = 0;
 const itemSequence = ref<Map<string, number>>(new Map());
 
-// Video preview modal state
+// Preview modal state
 const isPreviewOpen = ref(false);
 const previewVideoId = ref('');
 const previewVideoTitle = ref('');
+const isChannelPreviewOpen = ref(false);
+const previewChannelYtId = ref('');
+const isPlaylistPreviewOpen = ref(false);
+const previewPlaylistYtId = ref('');
 
 // Category modal state
 const isCategoryModalOpen = ref(false);
@@ -366,6 +386,16 @@ async function handleAddPlaylist(playlist: AdminSearchPlaylistResult) {
   // Open category modal instead of directly submitting
   pendingContent.value = { data: playlist, type: 'playlist' };
   isCategoryModalOpen.value = true;
+}
+
+function handlePreviewChannel(channel: AdminSearchChannelResult) {
+  previewChannelYtId.value = channel.ytId;
+  isChannelPreviewOpen.value = true;
+}
+
+function handlePreviewPlaylist(playlist: AdminSearchPlaylistResult) {
+  previewPlaylistYtId.value = playlist.ytId;
+  isPlaylistPreviewOpen.value = true;
 }
 
 function handlePreviewVideo(video: AdminSearchVideoResult) {

@@ -327,11 +327,34 @@ public class ContentLibraryController {
     private BoundedFetchResult<Channel> fetchChannelsBounded(String status, String category, String search, String sort, int limit)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
 
+        // When search is active, use Firestore-level keyword search to find matches
+        // across the ENTIRE collection, not just the first 200 items.
+        if (search != null && !search.isBlank()) {
+            String searchLower = search.toLowerCase(java.util.Locale.ROOT);
+            List<Channel> keywordResults = channelRepository.searchByKeyword(searchLower, MAX_ITEMS_PER_TYPE);
+            List<Channel> nameResults = channelRepository.searchByNameLower(searchLower, MAX_ITEMS_PER_TYPE);
+            // Merge and deduplicate by ID
+            Map<String, Channel> merged = new java.util.LinkedHashMap<>();
+            for (Channel ch : nameResults) merged.put(ch.getId(), ch);
+            for (Channel ch : keywordResults) merged.putIfAbsent(ch.getId(), ch);
+            List<Channel> results = new ArrayList<>(merged.values());
+            // Filter by status/category if specified
+            if (category != null && !category.isBlank()) {
+                results.removeIf(ch -> ch.getCategoryIds() == null || !ch.getCategoryIds().contains(category));
+            }
+            if (!"all".equalsIgnoreCase(status)) {
+                results.removeIf(ch -> !status.equalsIgnoreCase(ch.getStatus()));
+            }
+            // Detect truncation: if either query returned exactly MAX_ITEMS_PER_TYPE, more may exist
+            boolean hitLimit = keywordResults.size() >= MAX_ITEMS_PER_TYPE
+                    || nameResults.size() >= MAX_ITEMS_PER_TYPE
+                    || results.size() > limit;
+            if (results.size() > limit) results = new ArrayList<>(results.subList(0, limit));
+            return new BoundedFetchResult<>(results, hitLimit);
+        }
+
         // Fetch limit+1 to detect if more results exist (prevents false-negative after filtering)
         int queryLimit = limit + 1;
-
-        // Search filtering is now done in-memory to support keyword + description matching
-        // Fetch by status/category at Firestore level, then caller applies search filter
 
         // Category + status filter - use bounded query at Firestore level
         if (category != null && !category.isBlank()) {
@@ -381,11 +404,32 @@ public class ContentLibraryController {
     private BoundedFetchResult<Playlist> fetchPlaylistsBounded(String status, String category, String search, String sort, int limit)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
 
+        // When search is active, use Firestore-level keyword + title search
+        if (search != null && !search.isBlank()) {
+            String searchLower = search.toLowerCase(java.util.Locale.ROOT);
+            List<Playlist> keywordResults = playlistRepository.searchByKeyword(searchLower, MAX_ITEMS_PER_TYPE);
+            List<Playlist> titleResults = playlistRepository.searchByTitleLower(searchLower, MAX_ITEMS_PER_TYPE);
+            // Merge and deduplicate by ID (title results first for relevance)
+            Map<String, Playlist> merged = new java.util.LinkedHashMap<>();
+            for (Playlist pl : titleResults) merged.put(pl.getId(), pl);
+            for (Playlist pl : keywordResults) merged.putIfAbsent(pl.getId(), pl);
+            List<Playlist> results = new ArrayList<>(merged.values());
+            if (category != null && !category.isBlank()) {
+                results.removeIf(pl -> pl.getCategoryIds() == null || !pl.getCategoryIds().contains(category));
+            }
+            if (!"all".equalsIgnoreCase(status)) {
+                results.removeIf(pl -> !status.equalsIgnoreCase(pl.getStatus()));
+            }
+            // Detect truncation: if either query returned exactly MAX_ITEMS_PER_TYPE, more may exist
+            boolean hitLimit = keywordResults.size() >= MAX_ITEMS_PER_TYPE
+                    || titleResults.size() >= MAX_ITEMS_PER_TYPE
+                    || results.size() > limit;
+            if (results.size() > limit) results = new ArrayList<>(results.subList(0, limit));
+            return new BoundedFetchResult<>(results, hitLimit);
+        }
+
         // Fetch limit+1 to detect if more results exist (prevents false-negative after filtering)
         int queryLimit = limit + 1;
-
-        // Search filtering is now done in-memory to support keyword + description matching
-        // Fetch by status/category at Firestore level, then caller applies search filter
 
         // Category + status filter - use bounded query at Firestore level
         if (category != null && !category.isBlank()) {
@@ -435,11 +479,32 @@ public class ContentLibraryController {
     private BoundedFetchResult<Video> fetchVideosBounded(String status, String category, String search, String sort, int limit)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
 
+        // When search is active, use Firestore-level keyword + title search
+        if (search != null && !search.isBlank()) {
+            String searchLower = search.toLowerCase(java.util.Locale.ROOT);
+            List<Video> keywordResults = videoRepository.searchByKeyword(searchLower, MAX_ITEMS_PER_TYPE);
+            List<Video> titleResults = videoRepository.searchByTitleLower(searchLower, MAX_ITEMS_PER_TYPE);
+            // Merge and deduplicate by ID (title results first for relevance)
+            Map<String, Video> merged = new java.util.LinkedHashMap<>();
+            for (Video v : titleResults) merged.put(v.getId(), v);
+            for (Video v : keywordResults) merged.putIfAbsent(v.getId(), v);
+            List<Video> results = new ArrayList<>(merged.values());
+            if (category != null && !category.isBlank()) {
+                results.removeIf(v -> v.getCategoryIds() == null || !v.getCategoryIds().contains(category));
+            }
+            if (!"all".equalsIgnoreCase(status)) {
+                results.removeIf(v -> !status.equalsIgnoreCase(v.getStatus()));
+            }
+            // Detect truncation: if either query returned exactly MAX_ITEMS_PER_TYPE, more may exist
+            boolean hitLimit = keywordResults.size() >= MAX_ITEMS_PER_TYPE
+                    || titleResults.size() >= MAX_ITEMS_PER_TYPE
+                    || results.size() > limit;
+            if (results.size() > limit) results = new ArrayList<>(results.subList(0, limit));
+            return new BoundedFetchResult<>(results, hitLimit);
+        }
+
         // Fetch limit+1 to detect if more results exist (prevents false-negative after filtering)
         int queryLimit = limit + 1;
-
-        // Search filtering is now done in-memory to support keyword + description matching
-        // Fetch by status/category at Firestore level, then caller applies search filter
 
         // Category + status filter - use bounded query at Firestore level
         if (category != null && !category.isBlank()) {

@@ -121,8 +121,14 @@
                         <span v-if="contentTypeFilter === 'all'" class="drag-handle" :title="t('contentSorting.dragToReorder')">&#x22EE;&#x22EE;</span>
                       </td>
                       <td class="col-thumb">
-                        <img v-if="getThumbnailUrl(item, item.contentType?.toLowerCase() as 'channel' | 'playlist' | 'video')" :src="getThumbnailUrl(item, item.contentType?.toLowerCase() as 'channel' | 'playlist' | 'video')!" :alt="item.title" class="thumbnail" />
-                        <div v-else class="thumbnail-placeholder"></div>
+                        <img
+                          v-if="getThumbnailUrl(item, item.contentType?.toLowerCase() as 'channel' | 'playlist' | 'video')"
+                          :src="getThumbnailUrl(item, item.contentType?.toLowerCase() as 'channel' | 'playlist' | 'video')!"
+                          :alt="item.title"
+                          class="thumbnail"
+                          @error="handleThumbnailError($event, item)"
+                        />
+                        <div class="thumbnail-placeholder" :style="getThumbnailUrl(item, item.contentType?.toLowerCase() as 'channel' | 'playlist' | 'video') ? 'display:none' : ''"></div>
                       </td>
                       <td class="col-content-name">{{ item.title }}</td>
                       <td class="col-content-type">
@@ -218,8 +224,14 @@
                     @click.stop
                     @change="toggleAddSelection(item)"
                   />
-                  <img v-if="getThumbnailUrl(item, item.type?.toLowerCase() as 'channel' | 'playlist' | 'video')" :src="getThumbnailUrl(item, item.type?.toLowerCase() as 'channel' | 'playlist' | 'video')!" :alt="item.title" class="thumbnail" />
-                  <div v-else class="thumbnail-placeholder"></div>
+                  <img
+                    v-if="getThumbnailUrl(item, item.type?.toLowerCase() as 'channel' | 'playlist' | 'video')"
+                    :src="getThumbnailUrl(item, item.type?.toLowerCase() as 'channel' | 'playlist' | 'video')!"
+                    :alt="item.title"
+                    class="thumbnail"
+                    @error="handleThumbnailError($event, item)"
+                  />
+                  <div class="thumbnail-placeholder" :style="getThumbnailUrl(item, item.type?.toLowerCase() as 'channel' | 'playlist' | 'video') ? 'display:none' : ''"></div>
                   <div class="add-content-info">
                     <span class="add-content-title">{{ item.title }}</span>
                     <span class="type-badge" :class="'type-' + item.type">{{ item.type }}</span>
@@ -253,7 +265,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { getThumbnailUrl } from '@/utils/formatters';
+import { getThumbnailUrl, getThumbnailFallbacks } from '@/utils/formatters';
 import {
   getCategorySortOrder,
   reorderCategory,
@@ -312,6 +324,35 @@ let contentDragStartIndex: number | null = null;
 
 // Request token to prevent stale responses from overwriting newer ones
 let contentLoadToken = 0;
+
+// ==================== Thumbnail fallback state ====================
+
+const thumbnailFallbackIndex = new Map<string, number>();
+
+function handleThumbnailError(event: Event, item: any) {
+  const img = event.target as HTMLImageElement;
+  const id = item.id || item.contentId;
+  const idx = thumbnailFallbackIndex.get(id) ?? 0;
+  const type = (item.type || item.contentType || '').toLowerCase();
+  const fallbacks = getThumbnailFallbacks(item, type as 'channel' | 'playlist' | 'video');
+  const currentSrc = img.src.replace(/\/$/, '');
+  let nextIdx = idx;
+  while (nextIdx < fallbacks.length && fallbacks[nextIdx].replace(/\/$/, '') === currentSrc) {
+    nextIdx++;
+  }
+  if (nextIdx < fallbacks.length) {
+    thumbnailFallbackIndex.set(id, nextIdx + 1);
+    img.src = fallbacks[nextIdx];
+    return;
+  }
+  // All fallbacks exhausted — hide img and show placeholder via DOM
+  // (avoids reactive Set cascade that re-renders all list items)
+  img.style.display = 'none';
+  const placeholder = img.nextElementSibling;
+  if (placeholder && placeholder.classList.contains('thumbnail-placeholder')) {
+    (placeholder as HTMLElement).style.display = '';
+  }
+}
 
 // ==================== Add Content Modal state ====================
 

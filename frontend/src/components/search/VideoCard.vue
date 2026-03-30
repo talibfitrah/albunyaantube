@@ -1,8 +1,8 @@
 <template>
   <div class="search-result-card video-card">
     <div class="card-thumbnail video-thumbnail" role="button" tabindex="0" @click="$emit('preview', video)" @keydown.enter="$emit('preview', video)">
-      <img v-if="getThumbnailUrl(video, 'video')" :src="getThumbnailUrl(video, 'video')!" :alt="video.title" />
-      <div v-else class="thumbnail-placeholder"></div>
+      <img v-if="getThumbnailUrl(video, 'video')" :src="getThumbnailUrl(video, 'video')!" :alt="video.title" @error="handleThumbnailError($event)" />
+      <div class="thumbnail-placeholder" :style="getThumbnailUrl(video, 'video') ? 'display:none' : ''"></div>
       <div class="play-overlay">
         <svg class="play-icon" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21" /></svg>
       </div>
@@ -59,10 +59,13 @@
 </template>
 
 <script setup lang="ts">
+import { ref, watch } from 'vue';
 import type { AdminSearchVideoResult } from '@/types/registry';
-import { getThumbnailUrl } from '@/utils/formatters';
+import { getThumbnailUrl, getThumbnailFallbacks } from '@/utils/formatters';
 
-defineProps<{
+const fallbackIndex = ref(0);
+
+const props = defineProps<{
   video: AdminSearchVideoResult;
   alreadyAdded?: boolean;
   isAdmin?: boolean;
@@ -72,6 +75,28 @@ defineEmits<{
   add: [video: AdminSearchVideoResult];
   preview: [video: AdminSearchVideoResult];
 }>();
+
+watch(() => props.video.ytId, () => { fallbackIndex.value = 0 });
+
+function handleThumbnailError(event: Event) {
+  const img = event.target as HTMLImageElement;
+  const fallbacks = getThumbnailFallbacks(props.video, 'video');
+  const currentSrc = img.src.replace(/\/$/, '');
+  let nextIdx = fallbackIndex.value;
+  while (nextIdx < fallbacks.length && fallbacks[nextIdx].replace(/\/$/, '') === currentSrc) {
+    nextIdx++;
+  }
+  if (nextIdx < fallbacks.length) {
+    fallbackIndex.value = nextIdx + 1;
+    img.src = fallbacks[nextIdx];
+    return;
+  }
+  img.style.display = 'none';
+  const placeholder = img.nextElementSibling;
+  if (placeholder && placeholder.classList.contains('thumbnail-placeholder')) {
+    (placeholder as HTMLElement).style.display = '';
+  }
+}
 
 function formatDuration(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
