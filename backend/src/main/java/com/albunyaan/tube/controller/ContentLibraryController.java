@@ -9,6 +9,7 @@ import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import com.albunyaan.tube.service.PublicContentCacheService;
 import com.albunyaan.tube.service.SortOrderService;
+import com.albunyaan.tube.service.TagEnrichmentService;
 import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.DocumentSnapshot;
 import com.google.cloud.firestore.Firestore;
@@ -57,6 +58,7 @@ public class ContentLibraryController {
     private final FirestoreTimeoutProperties timeoutProperties;
     private final PublicContentCacheService publicContentCacheService;
     private final SortOrderService sortOrderService;
+    private final TagEnrichmentService tagEnrichmentService;
 
     public ContentLibraryController(
             ChannelRepository channelRepository,
@@ -65,7 +67,8 @@ public class ContentLibraryController {
             Firestore firestore,
             FirestoreTimeoutProperties timeoutProperties,
             PublicContentCacheService publicContentCacheService,
-            SortOrderService sortOrderService
+            SortOrderService sortOrderService,
+            TagEnrichmentService tagEnrichmentService
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
@@ -74,6 +77,7 @@ public class ContentLibraryController {
         this.timeoutProperties = timeoutProperties;
         this.publicContentCacheService = publicContentCacheService;
         this.sortOrderService = sortOrderService;
+        this.tagEnrichmentService = tagEnrichmentService;
     }
 
     /**
@@ -1649,6 +1653,67 @@ public class ContentLibraryController {
             this.successCount = successCount;
             this.errors = errors;
             this.failedKeys = failedKeys != null ? failedKeys : Set.of();
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Tag Enrichment
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Enrich content with multilingual search tags.
+     *
+     * Generates keywords from category mappings, title/description extraction,
+     * YouTube tags (when real YouTube IDs exist), and cross-language translations.
+     *
+     * @param type          Optional: "channel", "playlist", or "video" (null = all types)
+     * @param force         If true, re-enrich items that already have keywords
+     * @param fetchYouTube  If true, fetch tags from YouTube for items with real YouTube IDs
+     * @return Enrichment statistics
+     */
+    @PostMapping("/enrich-tags")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> enrichTags(
+            @RequestParam(required = false) String type,
+            @RequestParam(required = false, defaultValue = "false") boolean force,
+            @RequestParam(required = false, defaultValue = "false") boolean fetchYouTube
+    ) {
+        log.info("Tag enrichment requested: type={}, force={}, fetchYouTube={}", type, force, fetchYouTube);
+
+        try {
+            if (type != null && !type.isEmpty()) {
+                TagEnrichmentService.EnrichmentResult result;
+                switch (type.toLowerCase()) {
+                    case "channel":
+                        result = tagEnrichmentService.enrichChannels(force, fetchYouTube);
+                        break;
+                    case "playlist":
+                        result = tagEnrichmentService.enrichPlaylists(force, fetchYouTube);
+                        break;
+                    case "video":
+                        result = tagEnrichmentService.enrichVideos(force, fetchYouTube);
+                        break;
+                    default:
+                        return ResponseEntity.badRequest().body(Map.of(
+                                "error", "Invalid type",
+                                "message", "Type must be one of: channel, playlist, video"
+                        ));
+                }
+                publicContentCacheService.evictPublicContentCaches();
+                return ResponseEntity.ok(result.toMap());
+            }
+
+            TagEnrichmentService.EnrichmentResult result =
+                    tagEnrichmentService.enrichAllContent(force, fetchYouTube);
+            publicContentCacheService.evictPublicContentCaches();
+            return ResponseEntity.ok(result.toMap());
+
+        } catch (Exception e) {
+            log.error("Tag enrichment failed: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
+                    "error", "Enrichment failed",
+                    "message", "Internal server error during enrichment"
+            ));
         }
     }
 }
