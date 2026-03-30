@@ -113,12 +113,26 @@
                         android:fontFamily="sans-serif-medium"/>
 
                     <ImageView
+                        android:id="@+id/categoryExpandIcon"
                         android:layout_width="@dimen/home_category_pill_icon_size"
                         android:layout_height="@dimen/home_category_pill_icon_size"
                         android:layout_marginStart="@dimen/spacing_xs"
                         android:src="@drawable/ic_expand_more"
                         app:tint="@color/primary_green"
                         android:contentDescription="@null"/>
+
+                    <ImageView
+                        android:id="@+id/categoryClearButton"
+                        android:layout_width="@dimen/touch_target_min"
+                        android:layout_height="@dimen/touch_target_min"
+                        android:padding="@dimen/spacing_sm"
+                        android:src="@drawable/ic_close"
+                        app:tint="@color/primary_green"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:contentDescription="@string/clear_filters"
+                        android:visibility="gone"/>
 
                 </LinearLayout>
 

@@ -422,9 +422,26 @@ public class PublicContentService {
                 .filter(cat -> cat.getParentCategoryId() == null)
                 .collect(Collectors.toList());
 
-        // If category filter is specified, only include that category
+        // If category filter is specified, only include that category.
+        // Handle both parent and subcategory IDs.
         if (category != null && !category.isBlank()) {
-            parentCategories.removeIf(cat -> !category.equals(cat.getId()));
+            boolean isParent = parentCategories.stream().anyMatch(cat -> category.equals(cat.getId()));
+            if (isParent) {
+                parentCategories.removeIf(cat -> !category.equals(cat.getId()));
+            } else {
+                // Subcategory filter: show the subcategory itself as a standalone section
+                Category subcategory = allCategories.stream()
+                        .filter(cat -> category.equals(cat.getId()))
+                        .findFirst()
+                        .orElse(null);
+                parentCategories.clear();
+                if (subcategory != null) {
+                    parentCategories.add(subcategory);
+                } else {
+                    // Unknown category ID — return empty without caching garbage
+                    return new CursorPageDto<>(List.of(), null);
+                }
+            }
         }
 
         parentCategories.sort((a, b) -> {

@@ -176,6 +176,13 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
             findNavController().navigate(R.id.action_homeFragment_to_categoriesFragment)
         }
 
+        binding.categoryClearButton.setOnClickListener {
+            Log.d(TAG, "Category clear clicked")
+            viewLifecycleOwner.lifecycleScope.launch {
+                filterManager.setCategoryAndAwait(null, null)
+            }
+        }
+
         binding.homeError.retryButton.setOnClickListener {
             Log.d(TAG, "Retry clicked")
             viewModel.refresh()
@@ -257,7 +264,10 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 filterManager.state.collect { state ->
+                    val hasCategory = state.category != null
                     binding.categoryChip.text = state.categoryName ?: getString(R.string.filter_category)
+                    binding.categoryClearButton.isVisible = hasCategory
+                    binding.categoryExpandIcon.isVisible = !hasCategory
                 }
             }
         }

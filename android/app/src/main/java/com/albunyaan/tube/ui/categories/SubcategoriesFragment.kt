@@ -52,7 +52,8 @@ class SubcategoriesFragment : Fragment(R.layout.fragment_subcategories) {
         adapter = CategoryAdapter { subcategory ->
             android.util.Log.d(TAG, "Subcategory clicked: ${subcategory.name}, applying filter")
             val currentLocale = LocaleManager.getCurrentLocale(requireContext()).language
-            val displayName = subcategory.localizedNames?.get(currentLocale) ?: subcategory.name
+            val subName = subcategory.localizedNames?.get(currentLocale) ?: subcategory.name
+            val displayName = "$categoryName > $subName"
             viewLifecycleOwner.lifecycleScope.launch {
                 try {
                     filterManager.setCategoryAndAwait(subcategory.id, displayName)

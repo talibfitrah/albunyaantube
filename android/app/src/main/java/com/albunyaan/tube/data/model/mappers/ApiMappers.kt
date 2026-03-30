@@ -3,9 +3,9 @@ package com.albunyaan.tube.data.model.mappers
 import com.albunyaan.tube.data.model.Category as DomainCategory
 import com.albunyaan.tube.data.model.ContentItem as DomainContentItem
 import com.albunyaan.tube.data.model.HomeSection
-import com.albunyaan.tube.data.model.api.models.Category as ApiCategory
 import com.albunyaan.tube.data.model.api.models.ContentItem as ApiContentItem
 import com.albunyaan.tube.data.model.api.models.ContentItemDto as ApiContentItemDto
+import com.albunyaan.tube.data.source.api.CategoryResponse
 import com.albunyaan.tube.data.source.api.HomeCategorySection
 
 /**
@@ -17,15 +17,15 @@ import com.albunyaan.tube.data.source.api.HomeCategorySection
  */
 
 /**
- * Map API Category DTO to domain Category model
+ * Map public API CategoryResponse to domain Category model
  */
-fun ApiCategory.toDomain(): DomainCategory {
+fun CategoryResponse.toDomain(): DomainCategory {
     return DomainCategory(
         id = this.id,
         name = this.name,
         slug = this.slug,
-        parentId = this.parentCategoryId,
-        hasSubcategories = false, // Will be computed by repository
+        parentId = this.parentId,
+        hasSubcategories = false, // Computed by RetrofitContentService
         icon = this.icon,
         displayOrder = this.displayOrder,
         localizedNames = this.localizedNames
@@ -119,10 +119,6 @@ private fun computeDaysAgo(createdAt: java.time.OffsetDateTime?): Int {
 /**
  * Extension to map list of API DTOs to domain models
  */
-fun List<ApiCategory>.toDomain(): List<DomainCategory> {
-    return this.map { it.toDomain() }
-}
-
 fun List<ApiContentItem>.toDomainContentItems(defaultCategory: String = "General"): List<DomainContentItem> {
     return this.mapNotNull { it.toDomain(defaultCategory) }
 }

@@ -9,9 +9,9 @@ import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.model.CursorResponse
 import com.albunyaan.tube.data.model.HomeFeedResult
-import com.albunyaan.tube.data.model.mappers.toDomain
 import com.albunyaan.tube.data.model.mappers.toDomainContentItems
 import com.albunyaan.tube.data.extractor.MetadataHydrator
+import com.albunyaan.tube.data.model.mappers.toDomain
 import com.albunyaan.tube.data.source.api.ContentApi
 import kotlinx.coroutines.CancellationException
 
@@ -93,20 +93,17 @@ class RetrofitContentService(
     override suspend fun fetchCategories(): List<Category> {
         val response = api.fetchCategories()
         // Filter to only top-level categories (those without parentId)
-        val topLevelCategories = response.filter { it.parentCategoryId == null }
-        return topLevelCategories.map { apiCategory ->
-            // Check if this category has any subcategories
-            val hasSubcategories = response.any { it.parentCategoryId == apiCategory.id }
-            // Use mapper and update hasSubcategories (which is computed)
-            apiCategory.toDomain().copy(hasSubcategories = hasSubcategories)
+        val topLevelCategories = response.filter { it.parentId == null }
+        return topLevelCategories.map { cat ->
+            val hasSubcategories = response.any { it.parentId == cat.id }
+            cat.toDomain().copy(hasSubcategories = hasSubcategories)
         }
     }
 
     override suspend fun fetchSubcategories(parentId: String): List<Category> {
         val response = api.fetchCategories()
-        // Filter to only categories with matching parentId and use mapper
         return response
-            .filter { it.parentCategoryId == parentId }
+            .filter { it.parentId == parentId }
             .map { it.toDomain() }
     }
 }
