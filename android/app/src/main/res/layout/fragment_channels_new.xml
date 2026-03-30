@@ -1,46 +1,68 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:orientation="vertical">
 
-    <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
-        android:id="@+id/swipeRefresh"
+    <!-- Filter indicator bar (hidden by default) -->
+    <com.google.android.material.chip.Chip
+        android:id="@+id/filterChip"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_margin="@dimen/spacing_sm"
+        android:visibility="gone"
+        android:contentDescription="@string/category_filter_active"
+        app:closeIconVisible="true"
+        app:chipIcon="@drawable/ic_filter"
+        tools:text="Category: Education"
+        tools:visibility="visible" />
+
+    <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="match_parent">
+        android:layout_height="0dp"
+        android:layout_weight="1">
 
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/recyclerView"
+        <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+            android:id="@+id/swipeRefresh"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:clipToPadding="false"
-            android:overScrollMode="never"
-            android:padding="@dimen/spacing_md"
-            android:paddingBottom="@dimen/bottom_nav_height" />
+            android:layout_height="match_parent">
 
-    </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/recyclerView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:overScrollMode="never"
+                android:padding="@dimen/spacing_md"
+                android:paddingBottom="@dimen/bottom_nav_height" />
 
-    <!-- Bottom loading indicator for pagination -->
-    <ProgressBar
-        android:id="@+id/loadingMore"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|center_horizontal"
-        android:layout_marginBottom="88dp"
-        android:indeterminate="true"
-        android:visibility="gone" />
+        </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 
-    <!-- Categories FAB - positioned above bottom nav -->
-    <com.google.android.material.floatingactionbutton.FloatingActionButton
-        android:id="@+id/categoriesFab"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|end"
-        android:layout_marginEnd="@dimen/spacing_lg"
-        android:layout_marginBottom="@dimen/fab_margin_bottom"
-        android:contentDescription="@string/categories"
-        android:src="@android:drawable/ic_menu_sort_by_size"
-        app:backgroundTint="@color/primary_green"
-        app:tint="@android:color/white" />
+        <!-- Bottom loading indicator for pagination -->
+        <ProgressBar
+            android:id="@+id/loadingMore"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|center_horizontal"
+            android:layout_marginBottom="@dimen/bottom_nav_height"
+            android:indeterminate="true"
+            android:visibility="gone" />
 
-</FrameLayout>
+        <!-- Categories FAB - positioned above bottom nav -->
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/categoriesFab"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|end"
+            android:layout_marginEnd="@dimen/spacing_lg"
+            android:layout_marginBottom="@dimen/fab_margin_bottom"
+            android:contentDescription="@string/categories"
+            android:src="@drawable/ic_category"
+            app:backgroundTint="@color/primary_green"
+            app:tint="@color/onPrimary" />
+
+    </FrameLayout>
+
+</LinearLayout>

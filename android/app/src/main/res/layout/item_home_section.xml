@@ -5,6 +5,7 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
+    android:layoutDirection="locale"
     android:layout_marginTop="@dimen/home_vertical_section_spacing">
 
     <!-- Section Header: Category Name + See All -->
@@ -20,6 +21,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:textAppearance="@style/TextAppearance.Home.SectionTitle"
+            android:textAlignment="viewStart"
             android:maxLines="1"
             android:ellipsize="end"
             app:layout_constraintStart_toStartOf="parent"

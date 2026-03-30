@@ -9,6 +9,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.filters.FilterManager
 import com.albunyaan.tube.data.source.ContentService
+import com.albunyaan.tube.locale.LocaleManager
 import com.albunyaan.tube.databinding.FragmentSubcategoriesBinding
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -50,45 +51,26 @@ class SubcategoriesFragment : Fragment(R.layout.fragment_subcategories) {
     private fun setupRecyclerView() {
         adapter = CategoryAdapter { subcategory ->
             android.util.Log.d(TAG, "Subcategory clicked: ${subcategory.name}, applying filter")
-
-            // Set the category filter to the subcategory
-            val filterApplied = try {
-                filterManager.setCategory(subcategory.id)
-                true
-            } catch (e: Exception) {
-                android.util.Log.e(TAG, "Failed to apply category filter", e)
-                context?.let { ctx ->
+            val currentLocale = LocaleManager.getCurrentLocale(requireContext()).language
+            val subName = subcategory.localizedNames?.get(currentLocale) ?: subcategory.name
+            val displayName = "$categoryName > $subName"
+            viewLifecycleOwner.lifecycleScope.launch {
+                try {
+                    filterManager.setCategoryAndAwait(subcategory.id, displayName)
+                    val ctx = context ?: return@launch
                     android.widget.Toast.makeText(
                         ctx,
-                        getString(R.string.category_filter_error),
+                        ctx.getString(R.string.category_filter_applied, displayName),
                         android.widget.Toast.LENGTH_SHORT
                     ).show()
-                }
-                false
-            }
-
-            if (filterApplied) {
-                // Show feedback before navigation while context is guaranteed valid
-                android.widget.Toast.makeText(
-                    requireContext(),
-                    getString(R.string.category_filter_applied, subcategory.name),
-                    android.widget.Toast.LENGTH_SHORT
-                ).show()
-                // Navigate to Videos tab with proper back stack management
-                try {
-                    findNavController().navigate(
-                        R.id.videosFragment,
-                        null,
-                        androidx.navigation.NavOptions.Builder()
-                            .setPopUpTo(R.id.homeFragment, false)
-                            .build()
-                    )
+                    // Pop past CategoriesFragment to return to wherever the user came from
+                    findNavController().popBackStack(R.id.categoriesFragment, true)
                 } catch (e: Exception) {
-                    android.util.Log.e(TAG, "Navigation to videos failed", e)
+                    android.util.Log.e(TAG, "Failed to apply category filter", e)
                     context?.let { ctx ->
                         android.widget.Toast.makeText(
                             ctx,
-                            getString(R.string.navigation_error),
+                            ctx.getString(R.string.category_filter_error),
                             android.widget.Toast.LENGTH_SHORT
                         ).show()
                     }

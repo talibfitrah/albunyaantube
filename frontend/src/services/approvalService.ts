@@ -99,13 +99,90 @@ function mapPendingApprovalToUi(dto: PendingApprovalDto): PendingApproval {
 }
 
 /**
- * Get pending approvals using the proper approval endpoint
+ * Submission status for moderator "My Submissions" view
+ */
+export type SubmissionStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
+/**
+ * Extended approval item with status info for "My Submissions"
+ */
+export interface MySubmission extends PendingApproval {
+  status: SubmissionStatus;
+  rejectionReason?: string;
+  reviewNotes?: string;
+}
+
+/**
+ * Map API DTO to MySubmission (includes status fields)
+ */
+function mapToMySubmission(dto: PendingApprovalDto): MySubmission {
+  const base = mapPendingApprovalToUi(dto);
+  return {
+    ...base,
+    status: (dto.status as SubmissionStatus) || 'PENDING',
+    rejectionReason: dto.rejectionReason || undefined,
+    reviewNotes: dto.reviewNotes || undefined
+  };
+}
+
+/**
+ * Response type for paginated submission queries.
+ */
+export interface PaginatedSubmissions {
+  items: MySubmission[];
+  nextCursor: string | null;
+}
+
+/**
+ * Get the current user's own submissions filtered by status.
+ * Used by moderators to view their submission history.
+ * Supports cursor-based pagination.
+ */
+export async function getMySubmissions(filters?: {
+  status?: SubmissionStatus;
+  type?: 'all' | 'channels' | 'playlists' | 'videos';
+  cursor?: string;
+  limit?: number;
+}): Promise<PaginatedSubmissions> {
+  const params: Record<string, string | number> = {};
+
+  if (filters?.status) params.status = filters.status;
+
+  let typeParam: string | undefined;
+  if (filters?.type === 'channels') typeParam = 'CHANNEL';
+  else if (filters?.type === 'playlists') typeParam = 'PLAYLIST';
+  else if (filters?.type === 'videos') typeParam = 'VIDEO';
+  if (typeParam) params.type = typeParam;
+
+  params.limit = filters?.limit || 20;
+  if (filters?.cursor) params.cursor = filters.cursor;
+
+  const response = await apiClient.get<CursorPage<PendingApprovalDto>>('/api/admin/approvals/my-submissions', { params });
+
+  return {
+    items: response.data.data.map(mapToMySubmission),
+    nextCursor: response.data.pageInfo?.nextCursor || null
+  };
+}
+
+/**
+ * Response type for paginated approval queries.
+ */
+export interface PaginatedApprovals {
+  items: PendingApproval[];
+  nextCursor: string | null;
+}
+
+/**
+ * Get pending approvals using the proper approval endpoint.
+ * Supports cursor-based pagination.
  */
 export async function getPendingApprovals(filters?: {
   type?: 'all' | 'channels' | 'playlists' | 'videos';
   category?: string;
-  sort?: 'oldest' | 'newest';
-}): Promise<PendingApproval[]> {
+  cursor?: string;
+  limit?: number;
+}): Promise<PaginatedApprovals> {
   // Map frontend filter type to backend type param
   let typeParam: string | undefined;
   if (filters?.type === 'channels') typeParam = 'CHANNEL';
@@ -115,22 +192,15 @@ export async function getPendingApprovals(filters?: {
   const params: Record<string, string | number> = {};
   if (typeParam) params.type = typeParam;
   if (filters?.category) params.category = filters.category;
-  params.limit = 100; // Get all for now
+  params.limit = filters?.limit || 20;
+  if (filters?.cursor) params.cursor = filters.cursor;
 
   const response = await apiClient.get<CursorPage<PendingApprovalDto>>('/api/admin/approvals/pending', { params });
-  const data = response.data.data;
 
-  // Map API DTOs to UI domain models
-  const approvals: PendingApproval[] = data.map(mapPendingApprovalToUi);
-
-  // Apply sorting
-  if (filters?.sort === 'newest') {
-    approvals.sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
-  } else {
-    approvals.sort((a, b) => new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime());
-  }
-
-  return approvals;
+  return {
+    items: response.data.data.map(mapPendingApprovalToUi),
+    nextCursor: response.data.pageInfo?.nextCursor || null
+  };
 }
 
 /**
@@ -167,4 +237,21 @@ export async function rejectItem(
 
   await apiClient.post(`/api/admin/approvals/${itemId}/reject`, payload);
   toast.success(`${itemType.charAt(0).toUpperCase() + itemType.slice(1)} rejected`);
+}
+
+/**
+ * Get total count of pending items across all content types.
+ * Returns -1 if the backend is unavailable (caller should handle gracefully).
+ */
+export async function getPendingCount(): Promise<number> {
+  try {
+    const response = await apiClient.get<{ count: number }>('/api/admin/approvals/pending-count');
+    return response.data.count;
+  } catch (err: any) {
+    if (err.response?.status === 503) {
+      console.warn('Pending count service unavailable');
+      return -1;
+    }
+    throw err;
+  }
 }

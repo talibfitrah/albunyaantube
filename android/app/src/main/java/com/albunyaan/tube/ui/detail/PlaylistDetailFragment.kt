@@ -102,18 +102,14 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
             toolbar.setNavigationOnClickListener {
                 findNavController().navigateUp()
             }
-            // Only show title on tablets; phones show title in the header content area
-            val isTablet = resources.getBoolean(R.bool.is_tablet)
-            toolbar.title = if (isTablet) (playlistTitleArg ?: getString(R.string.app_name)) else ""
+            toolbar.title = playlistTitleArg ?: getString(R.string.app_name)
 
             val listener = AppBarLayout.OnOffsetChangedListener { appBarLayout, verticalOffset ->
                 val collapsed = appBarLayout.totalScrollRange + verticalOffset <= 0
                 val expandedColor = ContextCompat.getColor(requireContext(), android.R.color.white)
                 val collapsedColor = MaterialColors.getColor(toolbar, com.google.android.material.R.attr.colorOnSurface)
                 toolbar.navigationIcon?.mutate()?.setTint(if (collapsed) collapsedColor else expandedColor)
-                if (isTablet) {
-                    toolbar.setTitleTextColor(if (collapsed) collapsedColor else expandedColor)
-                }
+                toolbar.setTitleTextColor(if (collapsed) collapsedColor else expandedColor)
             }
             appBarLayout.addOnOffsetChangedListener(listener)
             appBarOffsetListener = listener
@@ -315,11 +311,8 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
 
     private fun bindHeader(header: PlaylistHeader) {
         binding?.apply {
-            // Update toolbar title only on tablets; phones show title in content area
-            val isTablet = resources.getBoolean(R.bool.is_tablet)
-            if (isTablet) {
-                toolbar.title = header.title
-            }
+            // Keep the collapsed toolbar populated on all devices.
+            toolbar.title = header.title
 
             // Title
             playlistTitle.text = header.title

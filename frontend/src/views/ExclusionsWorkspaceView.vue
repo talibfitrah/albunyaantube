@@ -104,9 +104,19 @@
               />
             </td>
             <td>
-              <div class="entity-cell">
-                <span class="entity-label">{{ entry.excludeId }}</span>
-                <span class="entity-subtle">{{ entitySummary(entry) }}</span>
+              <div class="entity-cell entity-cell--with-thumb">
+                <img
+                  v-if="getThumbnailUrl({ youtubeId: entry.excludeId, thumbnailUrl: entry.excludeThumbnailUrl }, (entry.excludeType || '').toLowerCase() as 'video' | 'playlist' | 'channel')"
+                  :src="getThumbnailUrl({ youtubeId: entry.excludeId, thumbnailUrl: entry.excludeThumbnailUrl }, (entry.excludeType || '').toLowerCase() as 'video' | 'playlist' | 'channel')!"
+                  :alt="entry.excludeTitle || entry.excludeId"
+                  class="entity-thumb"
+                  @error="handleThumbnailError($event, entry)"
+                />
+                <div class="entity-thumb entity-thumb--placeholder" :style="getThumbnailUrl({ youtubeId: entry.excludeId, thumbnailUrl: entry.excludeThumbnailUrl }, (entry.excludeType || '').toLowerCase() as 'video' | 'playlist' | 'channel') ? 'display:none' : ''"></div>
+                <div>
+                  <span class="entity-label">{{ entry.excludeTitle || entry.excludeId }}</span>
+                  <span class="entity-subtle">{{ entry.excludeTitle ? entry.excludeId : resourceTypeLabel(entry.excludeType) }}</span>
+                </div>
               </div>
             </td>
             <td>
@@ -114,8 +124,8 @@
             </td>
             <td>
               <div class="entity-cell">
-                <span class="entity-label">{{ entry.parentId }}</span>
-                <span class="entity-subtle">{{ parentTypeLabel(entry.parentType) }}</span>
+                <span class="entity-label">{{ entry.parentName || entry.parentId }}</span>
+                <span class="entity-subtle">{{ entry.parentYoutubeId || parentTypeLabel(entry.parentType) }}</span>
               </div>
             </td>
             <td>
@@ -165,6 +175,7 @@
 
   <!-- Content Browser Modal -->
   <ContentBrowserModal
+    v-if="showContentBrowser"
     :open="showContentBrowser"
     @close="closeContentBrowser"
     @manual="openManualEntry"
@@ -275,7 +286,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { formatDateTime } from '@/utils/formatters';
+import { onBeforeRouteLeave } from 'vue-router';
+import { formatDateTime, getThumbnailUrl, getThumbnailFallbacks } from '@/utils/formatters';
 import { useFocusTrap } from '@/composables/useFocusTrap';
 import { useCursorPagination } from '@/composables/useCursorPagination';
 import {
@@ -306,6 +318,8 @@ const isSubmitting = ref(false);
 const formError = ref<string | null>(null);
 const isBulkProcessing = ref(false);
 const removingIds = ref<string[]>([]);
+
+const thumbnailFallbackIndex = new Map<string, number>();
 
 const actionMessageId = 'exclusions-action-message';
 const searchInputId = 'exclusions-search-input';
@@ -429,6 +443,19 @@ onBeforeUnmount(() => {
   }
 });
 
+onBeforeRouteLeave(() => {
+  showContentBrowser.value = false;
+  channelModalOpen.value = false;
+  playlistModalOpen.value = false;
+  selectedItem.value = null;
+  if (addDialog.visible) {
+    deactivateAddTrap();
+    addDialog.visible = false;
+    resetDialog();
+    isSubmitting.value = false;
+  }
+});
+
 function parseFilter(value: TypeFilterValue):
   | { kind: 'parent'; value: ExclusionParentType }
   | { kind: 'exclude'; value: ExclusionResourceType }
@@ -450,6 +477,32 @@ function onSearchChange(event: Event) {
 
 function clearSearch() {
   searchQuery.value = '';
+}
+
+function handleThumbnailError(event: Event, entry: any) {
+  const img = event.target as HTMLImageElement;
+  const id = entry.excludeId || entry.id;
+  const idx = thumbnailFallbackIndex.get(id) ?? 0;
+  // Build a synthetic item for getThumbnailFallbacks
+  const type = (entry.excludeType || '').toLowerCase() as 'channel' | 'playlist' | 'video';
+  const syntheticItem = { id: entry.excludeId, youtubeId: entry.excludeId, thumbnailUrl: entry.excludeThumbnailUrl };
+  const fallbacks = getThumbnailFallbacks(syntheticItem, type);
+  const currentSrc = img.src.replace(/\/$/, '');
+  let nextIdx = idx;
+  while (nextIdx < fallbacks.length && fallbacks[nextIdx] === currentSrc) {
+    nextIdx++;
+  }
+  if (nextIdx < fallbacks.length) {
+    thumbnailFallbackIndex.set(id, nextIdx + 1);
+    img.src = fallbacks[nextIdx];
+    return;
+  }
+  // All fallbacks exhausted — hide img and show placeholder via DOM (no reactive cascade)
+  img.style.display = 'none';
+  const placeholder = img.nextElementSibling;
+  if (placeholder && placeholder.classList.contains('entity-thumb--placeholder')) {
+    (placeholder as HTMLElement).style.display = '';
+  }
 }
 
 function setTypeFilter(value: TypeFilterValue) {
@@ -926,6 +979,24 @@ td {
   gap: 0.2rem;
 }
 
+.entity-cell--with-thumb {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.entity-thumb {
+  width: 48px;
+  height: 36px;
+  border-radius: 4px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.entity-thumb--placeholder {
+  background: linear-gradient(135deg, var(--color-surface-alt), var(--color-border));
+}
+
 .entity-label {
   font-weight: 600;
 }
@@ -1082,6 +1153,41 @@ td {
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
   border: 0;
+}
+
+.table-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1.25rem;
+  background: var(--color-surface);
+  border-radius: 0 0 1rem 1rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.footer-status {
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+}
+
+.pager {
+  border: none;
+  border-radius: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: var(--color-surface-alt);
+  color: var(--color-text-primary);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.pager:hover:not(:disabled) {
+  background: var(--color-brand-soft);
+}
+
+.pager:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 @media (max-width: 960px) {

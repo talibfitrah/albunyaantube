@@ -122,9 +122,15 @@ class FakeContentService : ContentService {
     override suspend fun fetchHomeFeed(
         cursor: String?,
         categoryLimit: Int,
-        contentLimit: Int
+        contentLimit: Int,
+        category: String?
     ): HomeFeedResult {
-        val allSections = categories.mapIndexed { index, categoryName ->
+        val filteredCategories = if (category != null) {
+            categories.filter { it.equals(category, ignoreCase = true) }
+        } else {
+            categories
+        }
+        val allSections = filteredCategories.mapIndexed { index, categoryName ->
             val categoryItems = (videos.filter { it.category == categoryName } +
                 channels.filter { it.category == categoryName } +
                 playlists.filter { it.category == categoryName })

@@ -1,6 +1,5 @@
 package com.albunyaan.tube.data.source.api
 
-import com.albunyaan.tube.data.model.api.models.Category
 import com.albunyaan.tube.data.model.api.models.ContentItemDto
 import com.albunyaan.tube.data.model.api.models.PageInfo
 import com.squareup.moshi.JsonClass
@@ -23,7 +22,7 @@ interface ContentApi {
     ): CursorPage
 
     @GET("api/v1/categories")
-    suspend fun fetchCategories(): List<Category>
+    suspend fun fetchCategories(): List<CategoryResponse>
 
     @GET("api/v1/search")
     suspend fun search(
@@ -36,7 +35,8 @@ interface ContentApi {
     suspend fun fetchHomeFeed(
         @Query("cursor") cursor: String?,
         @Query("categoryLimit") categoryLimit: Int,
-        @Query("contentLimit") contentLimit: Int
+        @Query("contentLimit") contentLimit: Int,
+        @Query("category") category: String? = null
     ): HomeFeedResponse
 }
 

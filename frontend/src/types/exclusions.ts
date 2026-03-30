@@ -22,6 +22,10 @@ export interface Exclusion {
   parentName?: string | null;
   excludeType: ExclusionResourceType;
   excludeId: string;
+  /** Display title of the excluded item (from Firestore lookup, may be null) */
+  excludeTitle?: string | null;
+  /** Thumbnail URL of the excluded item (Firestore or YouTube CDN fallback) */
+  excludeThumbnailUrl?: string | null;
   reason?: string | null;
   createdAt?: string | null;
   createdBy?: ExclusionAdminUser | null;

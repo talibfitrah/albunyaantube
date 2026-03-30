@@ -26,7 +26,7 @@ object ImageLoading {
     private val FALLBACK_REQUEST_TAG_KEY = R.id.thumbnail_fallback_request_tag
     /**
      * Extension function to load thumbnail images for content items.
-     * Uses appropriate placeholders and transformations based on content type.
+     * Uses YouTube fallback chain for videos and playlists; simple loading for channels.
      */
     fun ImageView.loadThumbnail(
         item: ContentItem,
@@ -35,23 +35,49 @@ object ImageLoading {
         val placeholder = getPlaceholderForItem(item)
         val url = getUrlForItem(item)
 
-        // Handle null or blank URLs by showing placeholder immediately
-        if (!isUrlValid(url)) {
-            setImageResource(placeholder)
-            return
-        }
-
-        load(url) {
-            placeholder(placeholder)
-            error(placeholder)
-            if (crossfade) crossfade(true)
-            if (shouldApplyCircleCrop(item)) {
-                transformations(CircleCropTransformation())
+        when (item) {
+            is ContentItem.Video -> {
+                // Videos: use full fallback chain (video ID is the YouTube ID)
+                loadYouTubeThumbnail(
+                    primaryUrl = url,
+                    videoId = item.id,
+                    isShort = false,
+                    placeholder = placeholder,
+                    crossfade = crossfade
+                )
             }
-            // Aggressive caching for reliable thumbnail display
-            memoryCachePolicy(CachePolicy.ENABLED)
-            diskCachePolicy(CachePolicy.ENABLED)
-            networkCachePolicy(CachePolicy.ENABLED)
+            is ContentItem.Playlist -> {
+                // Playlists: try to extract video ID from thumbnail URL for fallback
+                val videoId = ThumbnailUrlHelper.extractVideoId(url)
+                if (videoId != null) {
+                    loadYouTubeThumbnail(
+                        primaryUrl = url,
+                        videoId = videoId,
+                        isShort = false,
+                        placeholder = placeholder,
+                        crossfade = crossfade
+                    )
+                } else {
+                    // No video ID extractable — simple loading
+                    loadThumbnailUrl(url, placeholder, crossfade = crossfade)
+                }
+            }
+            is ContentItem.Channel -> {
+                // Channels use yt3.googleusercontent.com — no YouTube fallback chain
+                if (!isUrlValid(url)) {
+                    setImageResource(placeholder)
+                    return
+                }
+                load(url) {
+                    placeholder(placeholder)
+                    error(placeholder)
+                    if (crossfade) crossfade(true)
+                    transformations(CircleCropTransformation())
+                    memoryCachePolicy(CachePolicy.ENABLED)
+                    diskCachePolicy(CachePolicy.ENABLED)
+                    networkCachePolicy(CachePolicy.ENABLED)
+                }
+            }
         }
     }
 

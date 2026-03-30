@@ -61,6 +61,40 @@ public class AsyncConfig {
     }
 
     /**
+     * Bounded executor for public-content fan-out queries (home feed, category content).
+     *
+     * Uses a separate pool from validationExecutor because:
+     * - Public content requests are read-only Firestore queries (lighter than validation writes)
+     * - Multiple concurrent /api/v1/home requests can be active simultaneously
+     * - Common pool has limited threads (CPU cores) and blocks under concurrent fan-out
+     *
+     * Configuration rationale:
+     * - corePoolSize=4: Handle typical concurrent request fan-out
+     * - maxPoolSize=8: Burst capacity for parallel category loading
+     * - queueCapacity=50: Buffer for spikes; CallerRunsPolicy degrades gracefully
+     * - CallerRunsPolicy: When pool is saturated, calling thread runs the task (back-pressure).
+     *   RISK: Under extreme load, the calling thread is a Tomcat HTTP thread, so it will block
+     *   for the duration of a Firestore query. With all 8 pool threads + 50 queue slots full,
+     *   this is unlikely in normal operation but could cascade under sustained high concurrency.
+     *   Monitor for saturation and increase pool/queue if needed.
+     */
+    @Bean(name = "publicContentExecutor")
+    public Executor publicContentExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(4);
+        executor.setMaxPoolSize(8);
+        executor.setQueueCapacity(50);
+        executor.setKeepAliveSeconds(60);
+        executor.setThreadNamePrefix("pub-content-");
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(15);
+        // CallerRunsPolicy: if pool saturated, request thread runs task directly (graceful degradation)
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.initialize();
+        return executor;
+    }
+
+    /**
      * Expose the rejection handler as a bean so its metrics can be monitored.
      * Use this to track validation executor overload events.
      */

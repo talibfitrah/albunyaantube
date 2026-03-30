@@ -6,6 +6,7 @@
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
     android:layout_marginEnd="@dimen/home_card_spacing"
+    android:layoutDirection="locale"
     android:clickable="true"
     android:focusable="true"
     android:foreground="@drawable/card_focus_state">
@@ -63,6 +64,7 @@
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:textAppearance="@style/TextAppearance.Home.ItemTitle"
+                android:textAlignment="viewStart"
                 android:maxLines="2"
                 android:ellipsize="end"
                 android:gravity="top"

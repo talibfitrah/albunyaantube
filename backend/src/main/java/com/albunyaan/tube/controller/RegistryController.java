@@ -17,6 +17,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 
 /**
@@ -28,6 +29,8 @@ import java.util.concurrent.ExecutionException;
 @RestController
 @RequestMapping("/api/admin/registry")
 public class RegistryController {
+
+    private static final Set<String> VALID_STATUSES = Set.of("APPROVED", "PENDING", "REJECTED");
 
     private final ChannelRepository channelRepository;
     private final PlaylistRepository playlistRepository;
@@ -61,7 +64,7 @@ public class RegistryController {
      * @param limit Maximum number of channels to return (default: 100)
      */
     @GetMapping("/channels")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<Channel>> getAllChannels(
             @RequestParam(defaultValue = "100") int limit
     ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
@@ -76,12 +79,16 @@ public class RegistryController {
      * @param limit Maximum number of channels to return (default: 100)
      */
     @GetMapping("/channels/status/{status}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<Channel>> getChannelsByStatus(
             @PathVariable String status,
             @RequestParam(defaultValue = "100") int limit
     ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        List<Channel> channels = channelRepository.findByStatus(status.toUpperCase(), limit);
+        String normalized = status.toUpperCase(java.util.Locale.ROOT);
+        if (!VALID_STATUSES.contains(normalized)) {
+            return ResponseEntity.badRequest().build();
+        }
+        List<Channel> channels = channelRepository.findByStatus(normalized, limit);
         return ResponseEntity.ok(channels);
     }
 
@@ -89,7 +96,7 @@ public class RegistryController {
      * Get channel by ID
      */
     @GetMapping("/channels/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Channel> getChannelById(@PathVariable String id)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         return channelRepository.findById(id)
@@ -114,19 +121,33 @@ public class RegistryController {
             }
         }
 
+        // Clear server-controlled fields to prevent mass assignment:
+        // - id=null forces auto-generation in repository (prevents document overwrite)
+        // - createdAt set to server time (prevents timestamp forgery)
+        // - approval/validation metadata cleared (only set by approval workflow)
+        channel.setId(null);
+        channel.setCreatedAt(com.google.cloud.Timestamp.now());
+        channel.setApprovalMetadata(null);
+        channel.setValidationStatus(null);
+        channel.setLastValidatedAt(null);
+        channel.setDisplayOrder(null);
         channel.setSubmittedBy(user.getUid());
 
-        // Respect the status if explicitly set, otherwise auto-approve for admins
-        if (channel.getStatus() == null || channel.getStatus().isEmpty()) {
-            if (user.isAdmin()) {
-                channel.setStatus("APPROVED");
-                channel.setApprovedBy(user.getUid());
-            } else {
-                channel.setStatus("PENDING");
-            }
+        // Non-admin users always get PENDING status regardless of request body
+        if (!user.isAdmin()) {
+            channel.setStatus("PENDING");
+            channel.setApprovedBy(null);
+        } else if (channel.getStatus() == null || channel.getStatus().isEmpty()) {
+            // Admin with no explicit status: auto-approve
+            channel.setStatus("APPROVED");
+            channel.setApprovedBy(user.getUid());
+        } else if ("APPROVED".equals(channel.getStatus())) {
+            // Admin explicitly approving: ensure approvedBy is set to current admin
+            channel.setApprovedBy(user.getUid());
+        } else {
+            // Admin setting PENDING/REJECTED: clear approvedBy
+            channel.setApprovedBy(null);
         }
-        // If status is explicitly set to PENDING, keep it pending even for admins
-        // This supports the approval workflow where admins add items for review
 
         Channel saved = channelRepository.save(channel);
         if ("APPROVED".equals(saved.getStatus()) && saved.getCategoryIds() != null) {
@@ -143,7 +164,7 @@ public class RegistryController {
      * Update channel in registry
      */
     @PutMapping("/channels/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Channel> updateChannel(
             @PathVariable String id,
             @RequestBody Channel channel,
@@ -231,7 +252,7 @@ public class RegistryController {
      * @param limit Maximum number of playlists to return (default: 100)
      */
     @GetMapping("/playlists")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<Playlist>> getAllPlaylists(
             @RequestParam(defaultValue = "100") int limit
     ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
@@ -246,12 +267,16 @@ public class RegistryController {
      * @param limit Maximum number of playlists to return (default: 100)
      */
     @GetMapping("/playlists/status/{status}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<Playlist>> getPlaylistsByStatus(
             @PathVariable String status,
             @RequestParam(defaultValue = "100") int limit
     ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        List<Playlist> playlists = playlistRepository.findByStatus(status.toUpperCase(), limit);
+        String normalized = status.toUpperCase(java.util.Locale.ROOT);
+        if (!VALID_STATUSES.contains(normalized)) {
+            return ResponseEntity.badRequest().build();
+        }
+        List<Playlist> playlists = playlistRepository.findByStatus(normalized, limit);
         return ResponseEntity.ok(playlists);
     }
 
@@ -259,7 +284,7 @@ public class RegistryController {
      * Get playlist by ID
      */
     @GetMapping("/playlists/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Playlist> getPlaylistById(@PathVariable String id)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         return playlistRepository.findById(id)
@@ -284,19 +309,30 @@ public class RegistryController {
             }
         }
 
+        // Clear server-controlled fields to prevent mass assignment
+        playlist.setId(null);
+        playlist.setCreatedAt(com.google.cloud.Timestamp.now());
+        playlist.setApprovalMetadata(null);
+        playlist.setValidationStatus(null);
+        playlist.setLastValidatedAt(null);
+        playlist.setDisplayOrder(null);
         playlist.setSubmittedBy(user.getUid());
 
-        // Respect the status if explicitly set, otherwise auto-approve for admins
-        if (playlist.getStatus() == null || playlist.getStatus().isEmpty()) {
-            if (user.isAdmin()) {
-                playlist.setStatus("APPROVED");
-                playlist.setApprovedBy(user.getUid());
-            } else {
-                playlist.setStatus("PENDING");
-            }
+        // Non-admin users always get PENDING status regardless of request body
+        if (!user.isAdmin()) {
+            playlist.setStatus("PENDING");
+            playlist.setApprovedBy(null);
+        } else if (playlist.getStatus() == null || playlist.getStatus().isEmpty()) {
+            // Admin with no explicit status: auto-approve
+            playlist.setStatus("APPROVED");
+            playlist.setApprovedBy(user.getUid());
+        } else if ("APPROVED".equals(playlist.getStatus())) {
+            // Admin explicitly approving: ensure approvedBy is set to current admin
+            playlist.setApprovedBy(user.getUid());
+        } else {
+            // Admin setting PENDING/REJECTED: clear approvedBy
+            playlist.setApprovedBy(null);
         }
-        // If status is explicitly set to PENDING, keep it pending even for admins
-        // This supports the approval workflow where admins add items for review
 
         Playlist saved = playlistRepository.save(playlist);
         if ("APPROVED".equals(saved.getStatus()) && saved.getCategoryIds() != null) {
@@ -313,7 +349,7 @@ public class RegistryController {
      * Update playlist in registry
      */
     @PutMapping("/playlists/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Playlist> updatePlaylist(
             @PathVariable String id,
             @RequestBody Playlist playlist,
@@ -496,7 +532,7 @@ public class RegistryController {
      * @param limit Maximum number of videos to return (default: 100)
      */
     @GetMapping("/videos")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<Video>> getAllVideos(
             @RequestParam(defaultValue = "100") int limit
     ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
@@ -511,12 +547,16 @@ public class RegistryController {
      * @param limit Maximum number of videos to return (default: 100)
      */
     @GetMapping("/videos/status/{status}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<Video>> getVideosByStatus(
             @PathVariable String status,
             @RequestParam(defaultValue = "100") int limit
     ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        List<Video> videos = videoRepository.findByStatus(status.toUpperCase(), limit);
+        String normalized = status.toUpperCase(java.util.Locale.ROOT);
+        if (!VALID_STATUSES.contains(normalized)) {
+            return ResponseEntity.badRequest().build();
+        }
+        List<Video> videos = videoRepository.findByStatus(normalized, limit);
         return ResponseEntity.ok(videos);
     }
 
@@ -524,7 +564,7 @@ public class RegistryController {
      * Get video by ID
      */
     @GetMapping("/videos/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Video> getVideoById(@PathVariable String id)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         return videoRepository.findById(id)
@@ -549,19 +589,30 @@ public class RegistryController {
             }
         }
 
+        // Clear server-controlled fields to prevent mass assignment
+        video.setId(null);
+        video.setCreatedAt(com.google.cloud.Timestamp.now());
+        video.setApprovalMetadata(null);
+        video.setValidationStatus(null);
+        video.setLastValidatedAt(null);
+        video.setDisplayOrder(null);
         video.setSubmittedBy(user.getUid());
 
-        // Respect the status if explicitly set, otherwise auto-approve for admins
-        if (video.getStatus() == null || video.getStatus().isEmpty()) {
-            if (user.isAdmin()) {
-                video.setStatus("APPROVED");
-                video.setApprovedBy(user.getUid());
-            } else {
-                video.setStatus("PENDING");
-            }
+        // Non-admin users always get PENDING status regardless of request body
+        if (!user.isAdmin()) {
+            video.setStatus("PENDING");
+            video.setApprovedBy(null);
+        } else if (video.getStatus() == null || video.getStatus().isEmpty()) {
+            // Admin with no explicit status: auto-approve
+            video.setStatus("APPROVED");
+            video.setApprovedBy(user.getUid());
+        } else if ("APPROVED".equals(video.getStatus())) {
+            // Admin explicitly approving: ensure approvedBy is set to current admin
+            video.setApprovedBy(user.getUid());
+        } else {
+            // Admin setting PENDING/REJECTED: clear approvedBy
+            video.setApprovedBy(null);
         }
-        // If status is explicitly set to PENDING, keep it pending even for admins
-        // This supports the approval workflow where admins add items for review
 
         Video saved = videoRepository.save(video);
         if ("APPROVED".equals(saved.getStatus()) && saved.getCategoryIds() != null) {
@@ -578,7 +629,7 @@ public class RegistryController {
      * Update video in registry
      */
     @PutMapping("/videos/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Video> updateVideo(
             @PathVariable String id,
             @RequestBody Video video,

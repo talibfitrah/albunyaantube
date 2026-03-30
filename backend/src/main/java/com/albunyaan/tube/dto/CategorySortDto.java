@@ -13,17 +13,19 @@ public class CategorySortDto {
     private Map<String, String> localizedNames;
     private Integer displayOrder;
     private int contentCount;
+    private String parentCategoryId;
 
     public CategorySortDto() {}
 
     public CategorySortDto(String id, String name, String icon, Map<String, String> localizedNames,
-                           Integer displayOrder, int contentCount) {
+                           Integer displayOrder, int contentCount, String parentCategoryId) {
         this.id = id;
         this.name = name;
         this.icon = icon;
         this.localizedNames = localizedNames;
         this.displayOrder = displayOrder;
         this.contentCount = contentCount;
+        this.parentCategoryId = parentCategoryId;
     }
 
     public String getId() { return id; }
@@ -43,4 +45,7 @@ public class CategorySortDto {
 
     public int getContentCount() { return contentCount; }
     public void setContentCount(int contentCount) { this.contentCount = contentCount; }
+
+    public String getParentCategoryId() { return parentCategoryId; }
+    public void setParentCategoryId(String parentCategoryId) { this.parentCategoryId = parentCategoryId; }
 }

@@ -541,4 +541,14 @@
     <string name="player_recovery_exhausted_message">تعذر استعادة التشغيل تلقائياً. يرجى المحاولة مرة أخرى.</string>
     <string name="player_refresh_rate_limited">يرجى الانتظار لحظة قبل التحديث مرة أخرى</string>
     <string name="player_auto_audio_stall">تم التبديل إلى الصوت فقط بسبب بطء الاتصال</string>
+
+    <!-- Category filter -->
+    <string name="category_filter_applied">التصفية حسب: %1$s</string>
+    <string name="category_filter_active">فلتر التصنيف نشط. انقر مرتين للمسح.</string>
+    <string name="close_filter">مسح الفلتر</string>
+    <string name="filtering_by_category">التصنيف: %1$s</string>
+
+    <!-- Player fullscreen hint -->
+    <string name="player_fullscreen_zoom_hint">انقر مرتين للتبديل بين الملاءمة/الملء</string>
+
 </resources>

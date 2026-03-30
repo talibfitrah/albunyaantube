@@ -4,8 +4,12 @@ import android.content.Context
 import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.data.source.api.ContentApi
 import com.albunyaan.tube.data.source.api.DownloadApi
+import com.squareup.moshi.FromJson
 import com.squareup.moshi.Moshi
+import com.squareup.moshi.ToJson
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import java.time.OffsetDateTime
+import java.time.format.DateTimeFormatter
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -57,6 +61,7 @@ object NetworkModule {
     @Singleton
     fun provideMoshi(): Moshi {
         return Moshi.Builder()
+            .add(OffsetDateTimeAdapter())
             .addLast(KotlinJsonAdapterFactory())
             .build()
     }
@@ -100,5 +105,25 @@ object NetworkModule {
     @Singleton
     fun provideDownloadApi(retrofit: Retrofit): DownloadApi {
         return retrofit.create(DownloadApi::class.java)
+    }
+}
+
+/** Moshi adapter for java.time.OffsetDateTime used in OpenAPI-generated models. */
+class OffsetDateTimeAdapter {
+    @FromJson
+    fun fromJson(value: String?): OffsetDateTime? {
+        return value?.let {
+            try {
+                OffsetDateTime.parse(it)
+            } catch (e: Exception) {
+                android.util.Log.w("OffsetDateTimeAdapter", "Failed to parse OffsetDateTime: \"$it\"", e)
+                null
+            }
+        }
+    }
+
+    @ToJson
+    fun toJson(value: OffsetDateTime?): String? {
+        return value?.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
     }
 }

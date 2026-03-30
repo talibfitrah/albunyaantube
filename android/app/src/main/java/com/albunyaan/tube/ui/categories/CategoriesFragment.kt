@@ -12,6 +12,7 @@ import com.albunyaan.tube.R
 import com.albunyaan.tube.data.filters.FilterManager
 import com.albunyaan.tube.data.model.Category
 import com.albunyaan.tube.data.source.ContentService
+import com.albunyaan.tube.locale.LocaleManager
 import com.albunyaan.tube.databinding.FragmentCategoriesBinding
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -53,11 +54,13 @@ class CategoriesFragment : Fragment(R.layout.fragment_categories) {
     private fun setupRecyclerView() {
         adapter = CategoryAdapter { category ->
             android.util.Log.d("CategoriesFragment", "Category clicked: ${category.name}, hasSubcategories: ${category.hasSubcategories}")
+            val lang = LocaleManager.getCurrentLocale(requireContext()).language
             if (category.hasSubcategories) {
-                // Navigate to subcategories
+                // Navigate to subcategories with localized name
+                val localizedName = category.localizedNames?.get(lang) ?: category.name
                 val args = bundleOf(
                     SubcategoriesFragment.ARG_CATEGORY_ID to category.id,
-                    SubcategoriesFragment.ARG_CATEGORY_NAME to category.name
+                    SubcategoriesFragment.ARG_CATEGORY_NAME to localizedName
                 )
                 try {
                     android.util.Log.d("CategoriesFragment", "Attempting navigation to subcategories...")
@@ -68,50 +71,23 @@ class CategoriesFragment : Fragment(R.layout.fragment_categories) {
                 }
             } else {
                 android.util.Log.d("CategoriesFragment", "Category has no subcategories, applying filter")
-
-                // Step 1: Set the category filter
-                val filterApplied = try {
-                    filterManager.setCategory(category.id)
-                    true
-                } catch (e: Exception) {
-                    android.util.Log.e("CategoriesFragment", "Failed to set category filter", e)
-                    android.widget.Toast.makeText(
-                        requireContext(),
-                        getString(R.string.category_filter_error),
-                        android.widget.Toast.LENGTH_SHORT
-                    ).show()
-                    false
-                }
-
-                // Step 2: Navigate to Videos tab (only if filter was applied successfully)
-                if (filterApplied) {
-                    // Show feedback before navigation while context is guaranteed valid
-                    android.widget.Toast.makeText(
-                        requireContext(),
-                        getString(R.string.category_filter_applied, category.name),
-                        android.widget.Toast.LENGTH_SHORT
-                    ).show()
+                val displayName = category.localizedNames?.get(lang) ?: category.name
+                viewLifecycleOwner.lifecycleScope.launch {
                     try {
-                        // Use NavOptions to pop and navigate atomically, avoiding flash
-                        findNavController().navigate(
-                            R.id.videosFragment,
-                            null,
-                            androidx.navigation.NavOptions.Builder()
-                                .setPopUpTo(R.id.homeFragment, false)
-                                .build()
-                        )
+                        filterManager.setCategoryAndAwait(category.id, displayName)
+                        val ctx = context ?: return@launch
+                        android.widget.Toast.makeText(
+                            ctx,
+                            ctx.getString(R.string.category_filter_applied, displayName),
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                        findNavController().navigateUp()
                     } catch (e: Exception) {
-                        android.util.Log.e("CategoriesFragment", "Navigation to videos failed", e)
-                        // Clear filter to avoid inconsistent state (filter applied but not on Videos tab)
-                        try {
-                            filterManager.setCategory(null)
-                        } catch (clearError: Exception) {
-                            android.util.Log.e("CategoriesFragment", "Failed to clear filter", clearError)
-                        }
+                        android.util.Log.e("CategoriesFragment", "Failed to set category filter", e)
                         context?.let { ctx ->
                             android.widget.Toast.makeText(
                                 ctx,
-                                getString(R.string.category_filter_error),
+                                ctx.getString(R.string.category_filter_error),
                                 android.widget.Toast.LENGTH_SHORT
                             ).show()
                         }

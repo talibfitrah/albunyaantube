@@ -83,8 +83,8 @@
                 @keydown.space.prevent="openDetail(item)"
               >
                 <img
-                  v-if="item.thumbnailUrl"
-                  :src="item.thumbnailUrl"
+                  v-if="thumbnails[item.id]"
+                  :src="thumbnails[item.id]!"
                   :alt="item.title"
                   class="card-thumbnail"
                 />
@@ -152,9 +152,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import apiClient from '@/services/api/client'
+import { getThumbnailUrl } from '@/utils/formatters'
 import ChannelDetailModal from '@/components/exclusions/ChannelDetailModal.vue'
 import PlaylistDetailModal from '@/components/exclusions/PlaylistDetailModal.vue'
 
@@ -189,6 +190,15 @@ const currentPage = ref(0)
 const searchQuery = ref('')
 const activeSearch = ref('')
 const typeFilter = ref<'all' | 'channel' | 'playlist'>('all')
+
+// Pre-compute thumbnail URLs to avoid double getThumbnailUrl() calls in template
+const thumbnails = computed(() => {
+  const map: Record<string, string | null> = {};
+  for (const item of items.value) {
+    map[item.id] = getThumbnailUrl(item, item.type === 'channel' ? 'channel' : undefined);
+  }
+  return map;
+});
 
 // Nested modals
 const showChannelDetail = ref(false)

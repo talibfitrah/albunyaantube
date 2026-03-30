@@ -12,11 +12,13 @@ import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.Query;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.google.cloud.firestore.QuerySnapshot;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import com.google.cloud.firestore.WriteResult;
 import com.albunyaan.tube.util.CursorUtils;
 import org.springframework.stereotype.Repository;
 
-import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -61,6 +63,34 @@ public class VideoRepository {
 
         result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
         return video;
+    }
+
+    /**
+     * Atomically save a video only if its current status matches the expected value.
+     * Uses a Firestore transaction to prevent concurrent approve/reject race conditions.
+     */
+    public Video saveIfStatus(Video video, String expectedStatus)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        if (video == null || video.getId() == null || expectedStatus == null) {
+            throw new IllegalArgumentException("Video, video ID, and expectedStatus must not be null for conditional save");
+        }
+        video.touch();
+
+        DocumentReference docRef = getCollection().document(video.getId());
+        return firestore.runTransaction(transaction -> {
+            com.google.cloud.firestore.DocumentSnapshot snapshot = transaction.get(docRef).get();
+            if (!snapshot.exists()) {
+                throw new IllegalArgumentException("Video not found: " + video.getId());
+            }
+            String currentStatus = snapshot.getString("status");
+            if (!expectedStatus.equals(currentStatus)) {
+                throw new IllegalStateException(
+                        "Cannot update video " + video.getId() +
+                        ": expected status " + expectedStatus + " but found " + currentStatus);
+            }
+            transaction.set(docRef, video);
+            return video;
+        }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
     }
 
     public Optional<Video> findById(String id) throws ExecutionException, InterruptedException, TimeoutException {
@@ -220,6 +250,34 @@ public class VideoRepository {
                 .get();
 
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
+    }
+
+    /**
+     * Find approved videos across multiple category IDs (parent + children aggregation).
+     * Uses one query per category ID to avoid Firestore limitations.
+     * Results are deduped by document ID and sorted by uploadedAt descending.
+     */
+    public List<Video> findByCategoryIds(List<String> categoryIds, int limit) throws ExecutionException, InterruptedException, TimeoutException {
+        if (categoryIds == null || categoryIds.isEmpty()) return List.of();
+
+        int perCategoryLimit = Math.max(limit / categoryIds.size(), 5);
+        LinkedHashMap<String, Video> deduped = new LinkedHashMap<>();
+        for (String catId : categoryIds) {
+            List<Video> batch = findByCategoryOrderByUploadedAtDesc(catId, perCategoryLimit);
+            for (Video v : batch) {
+                deduped.putIfAbsent(v.getId(), v);
+            }
+        }
+
+        return new ArrayList<>(deduped.values()).stream()
+                .sorted((a, b) -> {
+                    if (a.getUploadedAt() == null && b.getUploadedAt() == null) return 0;
+                    if (a.getUploadedAt() == null) return 1;
+                    if (b.getUploadedAt() == null) return -1;
+                    return b.getUploadedAt().compareTo(a.getUploadedAt());
+                })
+                .limit(limit)
+                .collect(java.util.stream.Collectors.toList());
     }
 
     public List<Video> findByCategoryOrderByUploadedAtDesc(String category) throws ExecutionException, InterruptedException, TimeoutException {
@@ -686,6 +744,35 @@ public class VideoRepository {
         public boolean hasNext() {
             return hasNext;
         }
+    }
+
+    /**
+     * Batch-fetch videos by their YouTube IDs using chunked whereIn queries.
+     * Returns a map of youtubeId to Video for efficient lookup.
+     * Firestore whereIn supports up to 30 values per query.
+     */
+    public Map<String, Video> findByYoutubeIds(Collection<String> youtubeIds)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        Map<String, Video> result = new HashMap<>();
+        if (youtubeIds == null || youtubeIds.isEmpty()) return result;
+
+        List<String> idList = new ArrayList<>(youtubeIds);
+        int chunkSize = 30;
+        for (int i = 0; i < idList.size(); i += chunkSize) {
+            List<String> chunk = idList.subList(i, Math.min(i + chunkSize, idList.size()));
+            ApiFuture<QuerySnapshot> query = getCollection()
+                    .whereIn("youtubeId", new ArrayList<>(chunk))
+                    .get();
+            List<QueryDocumentSnapshot> docs = query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).getDocuments();
+            for (QueryDocumentSnapshot doc : docs) {
+                Video v = doc.toObject(Video.class);
+                if (v != null) {
+                    v.setId(doc.getId());
+                    result.put(v.getYoutubeId(), v);
+                }
+            }
+        }
+        return result;
     }
 
     /**

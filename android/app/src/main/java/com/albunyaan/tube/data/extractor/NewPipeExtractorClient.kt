@@ -8,7 +8,6 @@ import com.albunyaan.tube.data.extractor.cache.MetadataCache
 import com.albunyaan.tube.data.model.ContentType
 import java.io.IOException
 import java.util.Locale
-import java.util.concurrent.ConcurrentHashMap
 import java.util.regex.Pattern
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -57,7 +56,14 @@ class NewPipeExtractorClient(
     private val playlistLinkHandlerFactory = YoutubePlaylistLinkHandlerFactory.getInstance()
     private val localization = Localization.fromLocale(Locale.US)
     private val contentCountry = ContentCountry("US")
-    private val streamCache = ConcurrentHashMap<String, CacheEntry<ResolvedStreams>>()
+    private val streamCache = object : LinkedHashMap<String, CacheEntry<ResolvedStreams>>(
+        MAX_STREAM_CACHE_SIZE, 0.75f, true // accessOrder=true for LRU
+    ) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CacheEntry<ResolvedStreams>>?): Boolean {
+            return size > MAX_STREAM_CACHE_SIZE
+        }
+    }
+    private val streamCacheLock = Any()
 
     init {
         initializeNewPipe()
@@ -74,12 +80,15 @@ class NewPipeExtractorClient(
         val now = clock()
         // Only use cache if not forcing refresh and entry has matching timebase version
         if (!forceRefresh) {
-            streamCache[videoId]?.takeIf { entry ->
-                entry.timebaseVersion == CACHE_TIMEBASE_VERSION &&
-                    (now - entry.timestamp) <= STREAM_CACHE_TTL_MILLIS
-            }?.let {
+            val cached = synchronized(streamCacheLock) {
+                streamCache[videoId]?.takeIf { entry ->
+                    entry.timebaseVersion == CACHE_TIMEBASE_VERSION &&
+                        (now - entry.timestamp) <= STREAM_CACHE_TTL_MILLIS
+                }
+            }
+            if (cached != null) {
                 metrics.onCacheHit(ContentType.VIDEOS, 1)
-                return@withContext it.value
+                return@withContext cached.value
             }
         }
         // Don't remove cache entry before fetch - successful fetch will overwrite it,
@@ -102,7 +111,7 @@ class NewPipeExtractorClient(
             val info = StreamInfo.getInfo(extractor)
             val urlGeneratedAt = clock()
             val resolved = info.toResolvedStreams(videoId, urlGeneratedAt) ?: return@withContext null
-            streamCache[videoId] = CacheEntry(resolved, urlGeneratedAt)
+            synchronized(streamCacheLock) { streamCache[videoId] = CacheEntry(resolved, urlGeneratedAt) }
             metrics.onStreamResolveSuccess(videoId, clock() - start)
             resolved
         } catch (c: CancellationException) {
@@ -789,8 +798,11 @@ class NewPipeExtractorClient(
      *         concurrent modifications between size read and clear - acceptable for debug/ops)
      */
     fun clearStreamCache(): Int {
-        val count = streamCache.size
-        streamCache.clear()
+        val count: Int
+        synchronized(streamCacheLock) {
+            count = streamCache.size
+            streamCache.clear()
+        }
         if (BuildConfig.DEBUG) {
             android.util.Log.d(ADAPTIVE_PROBE_TAG, "clearStreamCache: cleared $count entries")
         }
@@ -801,6 +813,7 @@ class NewPipeExtractorClient(
         // Increased cache TTL to 30 minutes for better performance
         // YouTube stream URLs typically expire after 6 hours
         private const val STREAM_CACHE_TTL_MILLIS = 30 * 60 * 1000L
+        private const val MAX_STREAM_CACHE_SIZE = 50
         private val YOUTUBE_ID_PATTERN: Pattern = Pattern.compile("^[a-zA-Z0-9_-]{11}")
 
         /**

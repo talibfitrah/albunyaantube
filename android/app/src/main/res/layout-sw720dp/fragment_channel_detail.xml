@@ -12,8 +12,7 @@
         android:id="@+id/appBarLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="?attr/colorSurface"
-        android:fitsSystemWindows="true">
+        android:background="?attr/colorSurface">
 
         <!-- Collapsing content: Toolbar + Banner + Channel Info -->
         <com.google.android.material.appbar.CollapsingToolbarLayout
@@ -179,13 +178,13 @@
                 android:id="@+id/toolbar"
                 android:layout_width="match_parent"
                 android:layout_height="?attr/actionBarSize"
-                android:background="@android:color/transparent"
+                android:background="@drawable/toolbar_scrim_gradient"
                 android:focusable="true"
                 app:layout_collapseMode="pin"
                 app:navigationIcon="@drawable/ic_arrow_back"
-                app:navigationIconTint="?attr/colorOnSurface"
+                app:navigationIconTint="@android:color/white"
                 app:title="@string/app_name"
-                app:titleTextColor="?attr/colorOnSurface" />
+                app:titleTextColor="@android:color/white" />
 
         </com.google.android.material.appbar.CollapsingToolbarLayout>
 

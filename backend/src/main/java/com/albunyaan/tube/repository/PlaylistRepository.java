@@ -12,13 +12,14 @@ import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.Query;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.google.cloud.firestore.QuerySnapshot;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import com.google.cloud.firestore.WriteResult;
 import com.albunyaan.tube.util.CursorUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -71,6 +72,34 @@ public class PlaylistRepository {
 
         result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
         return playlist;
+    }
+
+    /**
+     * Atomically save a playlist only if its current status matches the expected value.
+     * Uses a Firestore transaction to prevent concurrent approve/reject race conditions.
+     */
+    public Playlist saveIfStatus(Playlist playlist, String expectedStatus)
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        if (playlist == null || playlist.getId() == null || expectedStatus == null) {
+            throw new IllegalArgumentException("Playlist, playlist ID, and expectedStatus must not be null for conditional save");
+        }
+        playlist.touch();
+
+        DocumentReference docRef = getCollection().document(playlist.getId());
+        return firestore.runTransaction(transaction -> {
+            com.google.cloud.firestore.DocumentSnapshot snapshot = transaction.get(docRef).get();
+            if (!snapshot.exists()) {
+                throw new IllegalArgumentException("Playlist not found: " + playlist.getId());
+            }
+            String currentStatus = snapshot.getString("status");
+            if (!expectedStatus.equals(currentStatus)) {
+                throw new IllegalStateException(
+                        "Cannot update playlist " + playlist.getId() +
+                        ": expected status " + expectedStatus + " but found " + currentStatus);
+            }
+            transaction.set(docRef, playlist);
+            return playlist;
+        }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
     }
 
     public Optional<Playlist> findById(String id) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
@@ -194,6 +223,33 @@ public class PlaylistRepository {
                 .get();
 
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
+    }
+
+    /**
+     * Find approved playlists across multiple category IDs (parent + children aggregation).
+     * Uses one query per category ID to avoid Firestore limitations.
+     * Results are deduped by document ID and sorted by itemCount descending.
+     */
+    public List<Playlist> findByCategoryIds(List<String> categoryIds, int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        if (categoryIds == null || categoryIds.isEmpty()) return List.of();
+
+        int perCategoryLimit = Math.max(limit / categoryIds.size(), 5);
+        LinkedHashMap<String, Playlist> deduped = new LinkedHashMap<>();
+        for (String catId : categoryIds) {
+            List<Playlist> batch = findByCategoryId(catId, perCategoryLimit);
+            for (Playlist pl : batch) {
+                deduped.putIfAbsent(pl.getId(), pl);
+            }
+        }
+
+        return new ArrayList<>(deduped.values()).stream()
+                .sorted((a, b) -> {
+                    int ca = a.getItemCount() != null ? a.getItemCount() : 0;
+                    int cb = b.getItemCount() != null ? b.getItemCount() : 0;
+                    return Integer.compare(cb, ca);
+                })
+                .limit(limit)
+                .collect(java.util.stream.Collectors.toList());
     }
 
     public List<Playlist> findByCategoryOrderByItemCountDesc(String category) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
@@ -762,6 +818,35 @@ public class PlaylistRepository {
         public boolean hasNext() {
             return hasNext;
         }
+    }
+
+    /**
+     * Batch-fetch playlists by their YouTube IDs using chunked whereIn queries.
+     * Returns a map of youtubeId to Playlist for efficient lookup.
+     * Firestore whereIn supports up to 30 values per query.
+     */
+    public Map<String, Playlist> findByYoutubeIds(java.util.Collection<String> youtubeIds)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        Map<String, Playlist> result = new HashMap<>();
+        if (youtubeIds == null || youtubeIds.isEmpty()) return result;
+
+        List<String> idList = new ArrayList<>(youtubeIds);
+        int chunkSize = 30;
+        for (int i = 0; i < idList.size(); i += chunkSize) {
+            List<String> chunk = idList.subList(i, Math.min(i + chunkSize, idList.size()));
+            ApiFuture<QuerySnapshot> query = getCollection()
+                    .whereIn("youtubeId", new ArrayList<>(chunk))
+                    .get();
+            List<QueryDocumentSnapshot> docs = query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).getDocuments();
+            for (QueryDocumentSnapshot doc : docs) {
+                Playlist pl = doc.toObject(Playlist.class);
+                if (pl != null) {
+                    pl.setId(doc.getId());
+                    result.put(pl.getYoutubeId(), pl);
+                }
+            }
+        }
+        return result;
     }
 
     /**

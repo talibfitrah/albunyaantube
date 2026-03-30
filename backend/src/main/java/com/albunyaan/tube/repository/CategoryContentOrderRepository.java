@@ -10,9 +10,12 @@ import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -54,6 +57,59 @@ public class CategoryContentOrderRepository {
 
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS)
                 .toObjects(CategoryContentOrder.class);
+    }
+
+    /**
+     * Find order entries for multiple categories, merged and sorted by position ASC.
+     * Used for aggregating parent + subcategory content on the home feed.
+     * Results are deduped by contentId+contentType (same content in multiple subcategories
+     * appears once, at its lowest position).
+     */
+    public List<CategoryContentOrder> findByCategoryIdsOrderByPosition(List<String> categoryIds)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        if (categoryIds == null || categoryIds.isEmpty()) return List.of();
+
+        // Query each category separately and merge (Firestore whereIn on categoryId
+        // would work but doesn't guarantee position ordering across categories)
+        Map<String, CategoryContentOrder> deduped = new LinkedHashMap<>();
+        for (String catId : categoryIds) {
+            List<CategoryContentOrder> entries = findByCategoryIdOrderByPosition(catId);
+            for (CategoryContentOrder entry : entries) {
+                String key = entry.getContentType() + ":" + entry.getContentId();
+                deduped.merge(key, entry, (existing, candidate) -> {
+                    int existingPos = existing.getPosition() != null ? existing.getPosition() : Integer.MAX_VALUE;
+                    int candidatePos = candidate.getPosition() != null ? candidate.getPosition() : Integer.MAX_VALUE;
+                    return candidatePos < existingPos ? candidate : existing;
+                });
+            }
+        }
+
+        List<CategoryContentOrder> merged = new ArrayList<>(deduped.values());
+        merged.sort((a, b) -> Integer.compare(
+                a.getPosition() != null ? a.getPosition() : Integer.MAX_VALUE,
+                b.getPosition() != null ? b.getPosition() : Integer.MAX_VALUE));
+        return merged;
+    }
+
+    /**
+     * Count unique content entries across multiple category IDs.
+     * Deduplicates by contentType+contentId to avoid double-counting content
+     * that appears in multiple subcategories.
+     */
+    public long countByCategoryIds(List<String> categoryIds)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        if (categoryIds == null || categoryIds.isEmpty()) return 0;
+        if (categoryIds.size() == 1) return countByCategoryId(categoryIds.get(0));
+
+        // Must dedup: same content can appear in multiple subcategories
+        Set<String> uniqueKeys = new HashSet<>();
+        for (String catId : categoryIds) {
+            List<CategoryContentOrder> entries = findByCategoryIdOrderByPosition(catId);
+            for (CategoryContentOrder entry : entries) {
+                uniqueKeys.add(entry.getContentType() + ":" + entry.getContentId());
+            }
+        }
+        return uniqueKeys.size();
     }
 
     /**

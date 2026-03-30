@@ -11,8 +11,10 @@ import {
   toggleIncludeState
 } from '@/services/youtubeService';
 import apiClient from '@/services/api/client';
+import * as youtubeDataApi from '@/services/youtubeDataApi';
 
 vi.mock('@/services/api/client');
+vi.mock('@/services/youtubeDataApi');
 
 describe('YouTubeService', () => {
   beforeEach(() => {
@@ -24,173 +26,164 @@ describe('YouTubeService', () => {
   });
 
   describe('searchYouTube', () => {
-    it('should search for channels and transform results', async () => {
-      const mockChannels = [
-        {
-          id: 'channel-1',
-          type: 'channel',
-          title: 'Test Channel',
-          thumbnailUrl: 'https://example.com/thumb.jpg',
-          subscriberCount: 1000
-        }
-      ];
+    it('should throw when YouTube Data API key is not configured', async () => {
+      vi.mocked(youtubeDataApi.isYouTubeDataApiAvailable).mockReturnValue(false);
 
-      vi.mocked(apiClient.get).mockResolvedValueOnce({ data: mockChannels });
-
-      const result = await searchYouTube('test', 'channels');
-
-      expect(apiClient.get).toHaveBeenCalledWith('/api/admin/youtube/search/channels', {
-        params: { query: 'test' }
-      });
-      expect(result.channels).toHaveLength(1);
-      expect(result.channels[0]).toMatchObject({
-        id: 'channel-1',
-        name: 'Test Channel',
-        subscriberCount: 1000
-      });
-    });
-
-    it('should search for playlists', async () => {
-      const mockPlaylists = [
-        {
-          id: 'playlist-1',
-          type: 'playlist',
-          title: 'Test Playlist',
-          thumbnailUrl: 'https://example.com/thumb.jpg',
-          itemCount: 10,
-          channelId: 'channel-1',
-          channelTitle: 'Owner Channel'
-        }
-      ];
-
-      vi.mocked(apiClient.get).mockResolvedValueOnce({ data: mockPlaylists });
-
-      const result = await searchYouTube('test', 'playlists');
-
-      expect(result.playlists).toHaveLength(1);
-      expect(result.playlists[0].title).toBe('Test Playlist');
-      expect(result.playlists[0].itemCount).toBe(10);
-    });
-
-    it('should search for videos', async () => {
-      const mockVideos = [
-        {
-          id: 'video-1',
-          type: 'video',
-          title: 'Test Video',
-          thumbnailUrl: 'https://example.com/thumb.jpg',
-          publishedAt: '2024-01-01T00:00:00Z',
-          channelId: 'channel-1',
-          channelTitle: 'Owner Channel',
-          duration: 'PT4M13S',
-          viewCount: 5000
-        }
-      ];
-
-      vi.mocked(apiClient.get).mockResolvedValueOnce({ data: mockVideos });
-
-      const result = await searchYouTube('test', 'videos');
-
-      expect(result.videos).toHaveLength(1);
-      expect(result.videos[0].title).toBe('Test Video');
+      await expect(searchYouTube('test', 'channels')).rejects.toThrow(
+        'YouTube Data API key not configured'
+      );
     });
   });
 
   describe('getChannelDetails', () => {
     it('should fetch channel details with videos and playlists', async () => {
-      const mockChannel = {
-        id: 'channel-1',
-        snippet: { title: 'Test Channel' },
-        statistics: { subscriberCount: '1000' }
-      };
-      const mockVideos = { items: [{ id: 'video-1' }], nextPageToken: null };
-      const mockPlaylists = { items: [{ id: 'playlist-1' }], nextPageToken: null };
+      vi.mocked(youtubeDataApi.getChannel).mockResolvedValue({
+        id: 'UC123',
+        name: 'Test Channel',
+        description: 'A test channel',
+        thumbnailUrl: 'https://example.com/thumb.jpg',
+        subscriberCount: 1000,
+        videoCount: 50,
+        viewCount: 100000
+      });
 
-      vi.mocked(apiClient.get)
-        .mockResolvedValueOnce({ data: mockChannel })
-        .mockResolvedValueOnce({ data: mockVideos })
-        .mockResolvedValueOnce({ data: mockPlaylists });
+      vi.mocked(youtubeDataApi.listChannelUploads).mockResolvedValue({
+        items: [{
+          id: 'vid-1',
+          title: 'Video 1',
+          thumbnailUrl: 'https://example.com/vid.jpg',
+          publishedAt: '2024-01-01',
+          durationSeconds: 120,
+          viewCount: 500,
+          channelId: 'UC123',
+          channelTitle: 'Test Channel'
+        }]
+      });
 
-      const result = await getChannelDetails('channel-1');
+      vi.mocked(youtubeDataApi.listChannelPlaylists).mockResolvedValue({
+        items: [{
+          id: 'PL123',
+          title: 'Playlist 1',
+          thumbnailUrl: 'https://example.com/pl.jpg',
+          itemCount: 10,
+          channelId: 'UC123',
+          channelTitle: 'Test Channel'
+        }]
+      });
 
-      expect(apiClient.get).toHaveBeenCalledTimes(3);
+      const result = await getChannelDetails('UC123');
+
+      expect(youtubeDataApi.getChannel).toHaveBeenCalledWith('UC123');
+      expect(youtubeDataApi.listChannelUploads).toHaveBeenCalledWith('UC123');
+      expect(youtubeDataApi.listChannelPlaylists).toHaveBeenCalledWith('UC123');
       expect(result.channel).toBeDefined();
+      expect(result.channel.name).toBe('Test Channel');
       expect(result.videos).toHaveLength(1);
       expect(result.playlists).toHaveLength(1);
     });
   });
 
   describe('getChannelVideos', () => {
-    it('should fetch paginated videos', async () => {
-      vi.mocked(apiClient.get).mockResolvedValueOnce({
-        data: {
-          items: [{ id: 'vid-1', name: 'Video 1', thumbnailUrl: '', uploadDate: '2024-01-01' }],
-          nextPageToken: 'token2'
-        }
+    it('should use uploads playlist when no search query (2 units)', async () => {
+      vi.mocked(youtubeDataApi.listChannelUploads).mockResolvedValue({
+        items: [{
+          id: 'vid-1',
+          title: 'Video 1',
+          thumbnailUrl: '',
+          publishedAt: '2024-01-01',
+          durationSeconds: 120,
+          viewCount: 500,
+          channelId: 'UC123',
+          channelTitle: 'Test Channel'
+        }],
+        nextPageToken: 'token2'
       });
 
       const result = await getChannelVideos('UC123');
 
-      expect(apiClient.get).toHaveBeenCalledWith('/api/admin/youtube/channels/UC123/videos', { params: {} });
+      expect(youtubeDataApi.listChannelUploads).toHaveBeenCalledWith('UC123', undefined);
+      expect(youtubeDataApi.searchChannelVideos).not.toHaveBeenCalled();
       expect(result.items).toHaveLength(1);
       expect(result.items[0].id).toBe('vid-1');
       expect(result.nextPageToken).toBe('token2');
     });
 
-    it('should pass pageToken and search query', async () => {
-      vi.mocked(apiClient.get).mockResolvedValueOnce({
-        data: { items: [], nextPageToken: null }
+    it('should use search when query is provided (101 units)', async () => {
+      vi.mocked(youtubeDataApi.searchChannelVideos).mockResolvedValue({
+        items: [],
+        nextPageToken: undefined
       });
 
       await getChannelVideos('UC123', 'page2', 'searchTerm');
 
-      expect(apiClient.get).toHaveBeenCalledWith('/api/admin/youtube/channels/UC123/videos', {
-        params: { pageToken: 'page2', q: 'searchTerm' }
+      expect(youtubeDataApi.searchChannelVideos).toHaveBeenCalledWith('UC123', 'page2', 'searchTerm');
+      expect(youtubeDataApi.listChannelUploads).not.toHaveBeenCalled();
+    });
+
+    it('should pass pageToken for uploads', async () => {
+      vi.mocked(youtubeDataApi.listChannelUploads).mockResolvedValue({
+        items: [],
+        nextPageToken: undefined
       });
+
+      await getChannelVideos('UC123', 'page2');
+
+      expect(youtubeDataApi.listChannelUploads).toHaveBeenCalledWith('UC123', 'page2');
     });
   });
 
   describe('getChannelShorts', () => {
     it('should fetch paginated shorts', async () => {
-      vi.mocked(apiClient.get).mockResolvedValueOnce({
-        data: {
-          items: [{ id: 'short-1', name: 'Short 1', thumbnailUrl: '', streamType: 'SHORT' }],
-          nextPageToken: null
-        }
+      vi.mocked(youtubeDataApi.searchChannelShorts).mockResolvedValue({
+        items: [{
+          id: 'short-1',
+          title: 'Short 1',
+          thumbnailUrl: '',
+          publishedAt: '2024-01-01',
+          durationSeconds: 30,
+          viewCount: 100,
+          channelId: 'UC123',
+          channelTitle: 'Test Channel'
+        }]
       });
 
       const result = await getChannelShorts('UC123');
 
-      expect(apiClient.get).toHaveBeenCalledWith('/api/admin/youtube/channels/UC123/shorts', { params: {} });
+      expect(youtubeDataApi.searchChannelShorts).toHaveBeenCalledWith('UC123', undefined);
       expect(result.items).toHaveLength(1);
       expect(result.items[0].streamType).toBe('SHORT');
     });
 
     it('should pass pageToken', async () => {
-      vi.mocked(apiClient.get).mockResolvedValueOnce({
-        data: { items: [], nextPageToken: null }
+      vi.mocked(youtubeDataApi.searchChannelShorts).mockResolvedValue({
+        items: []
       });
 
       await getChannelShorts('UC123', 'page2');
 
-      expect(apiClient.get).toHaveBeenCalledWith('/api/admin/youtube/channels/UC123/shorts', {
-        params: { pageToken: 'page2' }
-      });
+      expect(youtubeDataApi.searchChannelShorts).toHaveBeenCalledWith('UC123', 'page2');
     });
   });
 
   describe('getChannelLiveStreams', () => {
     it('should fetch paginated live streams', async () => {
-      vi.mocked(apiClient.get).mockResolvedValueOnce({
-        data: {
-          items: [{ id: 'live-1', name: 'Live 1', thumbnailUrl: '', streamType: 'LIVESTREAM' }],
-          nextPageToken: 'liveToken2'
-        }
+      vi.mocked(youtubeDataApi.searchChannelLiveStreams).mockResolvedValue({
+        items: [{
+          id: 'live-1',
+          title: 'Live 1',
+          thumbnailUrl: '',
+          publishedAt: '2024-01-01',
+          durationSeconds: 3600,
+          viewCount: 1000,
+          channelId: 'UC123',
+          channelTitle: 'Test Channel'
+        }],
+        nextPageToken: 'liveToken2'
       });
 
       const result = await getChannelLiveStreams('UC123');
 
-      expect(apiClient.get).toHaveBeenCalledWith('/api/admin/youtube/channels/UC123/livestreams', { params: {} });
+      expect(youtubeDataApi.searchChannelLiveStreams).toHaveBeenCalledWith('UC123', undefined);
       expect(result.items).toHaveLength(1);
       expect(result.items[0].streamType).toBe('LIVESTREAM');
       expect(result.nextPageToken).toBe('liveToken2');
@@ -199,16 +192,20 @@ describe('YouTubeService', () => {
 
   describe('getChannelPlaylists', () => {
     it('should fetch paginated playlists', async () => {
-      vi.mocked(apiClient.get).mockResolvedValueOnce({
-        data: {
-          items: [{ id: 'PL123', name: 'Playlist 1', thumbnailUrl: '', streamCount: 15 }],
-          nextPageToken: null
-        }
+      vi.mocked(youtubeDataApi.listChannelPlaylists).mockResolvedValue({
+        items: [{
+          id: 'PL123',
+          title: 'Playlist 1',
+          thumbnailUrl: '',
+          itemCount: 15,
+          channelId: 'UC123',
+          channelTitle: 'Test Channel'
+        }]
       });
 
       const result = await getChannelPlaylists('UC123');
 
-      expect(apiClient.get).toHaveBeenCalledWith('/api/admin/youtube/channels/UC123/playlists', { params: {} });
+      expect(youtubeDataApi.listChannelPlaylists).toHaveBeenCalledWith('UC123', undefined);
       expect(result.items).toHaveLength(1);
       expect(result.items[0].id).toBe('PL123');
       expect(result.items[0].itemCount).toBe(15);
@@ -217,17 +214,18 @@ describe('YouTubeService', () => {
 
   describe('getPlaylistDetails', () => {
     it('should fetch playlist details', async () => {
-      vi.mocked(apiClient.get).mockResolvedValueOnce({
-        data: {
-          name: 'My Playlist',
-          thumbnailUrl: 'https://example.com/thumb.jpg',
-          streamCount: 42
-        }
+      vi.mocked(youtubeDataApi.getPlaylist).mockResolvedValue({
+        id: 'PL123',
+        title: 'My Playlist',
+        thumbnailUrl: 'https://example.com/thumb.jpg',
+        itemCount: 42,
+        channelId: 'UC123',
+        channelTitle: 'Test Channel'
       });
 
       const result = await getPlaylistDetails('PL123');
 
-      expect(apiClient.get).toHaveBeenCalledWith('/api/admin/youtube/playlists/PL123');
+      expect(youtubeDataApi.getPlaylist).toHaveBeenCalledWith('PL123');
       expect(result.title).toBe('My Playlist');
       expect(result.itemCount).toBe(42);
     });
@@ -235,31 +233,53 @@ describe('YouTubeService', () => {
 
   describe('getPlaylistVideos', () => {
     it('should fetch paginated playlist videos', async () => {
-      vi.mocked(apiClient.get).mockResolvedValueOnce({
-        data: {
-          items: [{ id: 'vid-1', name: 'Video 1', thumbnailUrl: '' }],
-          nextPageToken: 'plToken2'
-        }
+      vi.mocked(youtubeDataApi.listPlaylistVideos).mockResolvedValue({
+        items: [{
+          id: 'vid-1',
+          title: 'Video 1',
+          thumbnailUrl: '',
+          publishedAt: '2024-01-01',
+          durationSeconds: 120,
+          viewCount: 500,
+          channelId: 'UC123',
+          channelTitle: 'Test Channel'
+        }],
+        nextPageToken: 'plToken2'
       });
 
       const result = await getPlaylistVideos('PL123');
 
-      expect(apiClient.get).toHaveBeenCalledWith('/api/admin/youtube/playlists/PL123/videos', { params: {} });
+      expect(youtubeDataApi.listPlaylistVideos).toHaveBeenCalledWith('PL123', undefined);
       expect(result.items).toHaveLength(1);
       expect(result.items[0].videoId).toBe('vid-1');
       expect(result.nextPageToken).toBe('plToken2');
     });
 
-    it('should pass pageToken and search query', async () => {
-      vi.mocked(apiClient.get).mockResolvedValueOnce({
-        data: { items: [], nextPageToken: null }
+    it('should pass pageToken', async () => {
+      vi.mocked(youtubeDataApi.listPlaylistVideos).mockResolvedValue({
+        items: [],
+        nextPageToken: undefined
       });
 
-      await getPlaylistVideos('PL123', 'page2', 'query');
+      await getPlaylistVideos('PL123', 'page2');
 
-      expect(apiClient.get).toHaveBeenCalledWith('/api/admin/youtube/playlists/PL123/videos', {
-        params: { pageToken: 'page2', q: 'query' }
+      expect(youtubeDataApi.listPlaylistVideos).toHaveBeenCalledWith('PL123', 'page2');
+    });
+
+    it('should filter items client-side when searchQuery is provided', async () => {
+      vi.mocked(youtubeDataApi.listPlaylistVideos).mockResolvedValue({
+        items: [
+          { id: 'vid-1', title: 'React Tutorial', thumbnailUrl: '', publishedAt: '', durationSeconds: 0, viewCount: 0, channelId: '', channelTitle: '' },
+          { id: 'vid-2', title: 'Vue Guide', thumbnailUrl: '', publishedAt: '', durationSeconds: 0, viewCount: 0, channelId: '', channelTitle: '' },
+          { id: 'vid-3', title: 'React Hooks', thumbnailUrl: '', publishedAt: '', durationSeconds: 0, viewCount: 0, channelId: '', channelTitle: '' }
+        ]
       });
+
+      const result = await getPlaylistVideos('PL123', undefined, 'react');
+
+      expect(result.items).toHaveLength(2);
+      expect(result.items[0].title).toBe('React Tutorial');
+      expect(result.items[1].title).toBe('React Hooks');
     });
   });
 
@@ -278,6 +298,14 @@ describe('YouTubeService', () => {
       await toggleIncludeState('playlist-1', 'playlist', 'INCLUDED');
 
       expect(apiClient.patch).toHaveBeenCalledWith('/api/admin/registry/playlists/playlist-1/toggle');
+    });
+
+    it('should toggle video include state', async () => {
+      vi.mocked(apiClient.patch).mockResolvedValueOnce({ data: {} });
+
+      await toggleIncludeState('video-1', 'video', 'INCLUDED');
+
+      expect(apiClient.patch).toHaveBeenCalledWith('/api/admin/registry/videos/video-1/toggle');
     });
   });
 });

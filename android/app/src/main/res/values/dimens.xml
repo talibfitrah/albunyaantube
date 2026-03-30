@@ -141,7 +141,7 @@
     <dimen name="home_see_all_size">14sp</dimen>
 
     <!-- Home Responsive Card Counts -->
-    <integer name="home_cards_visible_channels">3</integer>
+    <integer name="home_cards_visible_channels">2</integer>
     <integer name="home_cards_visible_playlists">2</integer>
     <integer name="home_cards_visible_videos">2</integer>
 

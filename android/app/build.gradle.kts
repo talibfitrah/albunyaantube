@@ -33,8 +33,8 @@ android {
         applicationId = "com.albunyaan.tube"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 16
+        versionName = "1.0.0-beta.1"
 
         testInstrumentationRunner = "com.albunyaan.tube.HiltTestRunner"
         vectorDrawables.useSupportLibrary = true
@@ -120,6 +120,15 @@ android {
             matchingFallbacks += listOf("release")
             manifestPlaceholders["profileable"] = "true"
             buildConfigField("boolean", "ENABLE_THUMBNAIL_IMAGES", "false")
+        }
+    }
+
+    applicationVariants.all {
+        val variant = this
+        outputs.all {
+            val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+            val versionName = variant.versionName
+            output.outputFileName = "fitrahtube-${versionName}.apk"
         }
     }
 
@@ -244,14 +253,33 @@ dependencies {
     testImplementation("androidx.work:work-testing:2.10.0")
     testImplementation("androidx.test:core:1.6.1")
     testImplementation("org.robolectric:robolectric:4.14.1")
+    androidTestImplementation("androidx.test:core:1.6.1")
+    androidTestImplementation("androidx.test:core-ktx:1.6.1")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
-    androidTestImplementation("androidx.test:core-ktx:1.6.1")
     androidTestImplementation("androidx.test.espresso:espresso-contrib:3.6.1")
     androidTestImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     androidTestImplementation("androidx.test:rules:1.6.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("com.google.dagger:hilt-android-testing:2.54")
     androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     kspAndroidTest("com.google.dagger:hilt-compiler:2.54")
     debugImplementation("androidx.fragment:fragment-testing:1.8.6")
+}
+
+// Force consistent AndroidX test versions across debug and androidTest configurations.
+// fragment-testing:1.8.6 (debugImplementation) pulls test:core:1.5.0 / monitor:1.6.0 into the
+// runtime classpath. The Gradle consistent resolution strategy then creates {strictly X} constraints
+// that conflict with the newer versions required by runner:1.6.2 and espresso:3.6.1.
+// Fix: force all configurations to align on the versions required by the test dependencies.
+configurations.all {
+    resolutionStrategy {
+        force(
+            "androidx.test:core:1.6.1",
+            "androidx.test:core-ktx:1.6.1",
+            "androidx.test:monitor:1.7.2",
+            "androidx.test:runner:1.6.2",
+            "androidx.test:rules:1.6.1"
+        )
+    }
 }

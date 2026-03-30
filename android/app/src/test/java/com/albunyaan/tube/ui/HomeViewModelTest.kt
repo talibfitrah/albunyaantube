@@ -4,6 +4,10 @@ import android.app.Application
 import android.app.UiModeManager
 import android.content.Context
 import android.content.res.Configuration
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.Preferences
+import com.albunyaan.tube.data.filters.FilterManager
 import com.albunyaan.tube.data.filters.FilterState
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
@@ -12,13 +16,16 @@ import com.albunyaan.tube.data.model.HomeFeedResult
 import com.albunyaan.tube.data.model.HomeSection
 import com.albunyaan.tube.data.model.Category
 import com.albunyaan.tube.data.source.ContentService
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import java.io.File
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -47,13 +54,20 @@ import org.robolectric.annotation.Config
 class HomeViewModelTest {
 
     private val testDispatcher = StandardTestDispatcher()
+    private val testScope = TestScope(testDispatcher)
     private lateinit var fakeContentService: FakeContentService
+    private lateinit var filterManager: FilterManager
     private lateinit var viewModel: HomeViewModel
 
     @Before
     fun setup() {
         Dispatchers.setMain(testDispatcher)
         fakeContentService = FakeContentService()
+        val dataStore: DataStore<Preferences> = PreferenceDataStoreFactory.create(
+            scope = testScope,
+            produceFile = { File.createTempFile("test_prefs", ".preferences_pb") }
+        )
+        filterManager = FilterManager(dataStore, testScope)
     }
 
     @After
@@ -64,7 +78,7 @@ class HomeViewModelTest {
     private fun createViewModel(): HomeViewModel {
         val app = RuntimeEnvironment.getApplication()
         setDeviceMode(app, Configuration.UI_MODE_TYPE_NORMAL) // Phone mode = 10 item limit
-        return HomeViewModel(app, fakeContentService)
+        return HomeViewModel(app, fakeContentService, filterManager)
     }
 
     @Test
@@ -188,7 +202,7 @@ class HomeViewModelTest {
 
         val app = RuntimeEnvironment.getApplication()
         setDeviceMode(app, Configuration.UI_MODE_TYPE_NORMAL)
-        viewModel = HomeViewModel(app, fakeContentService)
+        viewModel = HomeViewModel(app, fakeContentService, filterManager)
         advanceUntilIdle()
 
         assertEquals(10, fakeContentService.lastContentLimit)
@@ -202,7 +216,7 @@ class HomeViewModelTest {
 
         val app = RuntimeEnvironment.getApplication()
         setDeviceMode(app, Configuration.UI_MODE_TYPE_TELEVISION)
-        viewModel = HomeViewModel(app, fakeContentService)
+        viewModel = HomeViewModel(app, fakeContentService, filterManager)
         advanceUntilIdle()
 
         assertEquals(20, fakeContentService.lastContentLimit)
@@ -247,7 +261,8 @@ class HomeViewModelTest {
         override suspend fun fetchHomeFeed(
             cursor: String?,
             categoryLimit: Int,
-            contentLimit: Int
+            contentLimit: Int,
+            category: String?
         ): HomeFeedResult {
             lastContentLimit = contentLimit
             val callIndex = homeFeedCallCount++

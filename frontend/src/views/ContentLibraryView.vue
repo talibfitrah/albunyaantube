@@ -197,12 +197,14 @@
 
             <div class="card-thumbnail">
               <img
-                v-if="item.thumbnailUrl"
-                :src="item.thumbnailUrl"
+                v-if="thumbnailUrls[item.id]"
+                :src="thumbnailUrls[item.id]!"
                 :alt="item.title"
                 @error="handleThumbnailError($event, item)"
               />
-              <div v-else class="thumbnail-placeholder"></div>
+              <div v-else class="thumbnail-placeholder">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="20" height="20" rx="2"/><circle cx="8.5" cy="8.5" r="2"/><path d="m21 15-5-5L5 21"/></svg>
+              </div>
               <span class="type-badge-card" :class="`type-${item.type}`">
                 {{ t(`contentLibrary.types.${item.type}`) }}
               </span>
@@ -312,13 +314,15 @@
                 <td class="col-title">
                   <div class="title-cell">
                     <img
-                      v-if="item.thumbnailUrl"
-                      :src="item.thumbnailUrl"
+                      v-if="thumbnailUrls[item.id]"
+                      :src="thumbnailUrls[item.id]!"
                       :alt="item.title"
                       class="thumbnail"
                       @error="handleThumbnailError($event, item)"
                     />
-                    <div v-else class="thumbnail-placeholder-sm"></div>
+                    <div v-else class="thumbnail-placeholder-sm">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="20" height="20" rx="2"/><circle cx="8.5" cy="8.5" r="2"/><path d="m21 15-5-5L5 21"/></svg>
+                    </div>
                     <span class="title-text">{{ item.title }}</span>
                   </div>
                 </td>
@@ -354,7 +358,14 @@
           </table>
         </div>
 
-        <!-- Infinite Scroll Loading Indicator -->
+        <!-- Load More Button -->
+        <div v-if="hasMoreContent && !isLoadingMore && !loadMoreError && !paginationDisabled" class="load-more-container">
+          <button type="button" class="btn-load-more" @click="loadMoreContent">
+            {{ t('contentLibrary.loadMore', { current: content.length, total: totalItemsFromServer }) }}
+          </button>
+        </div>
+
+        <!-- Loading More Indicator -->
         <div v-if="isLoadingMore" class="loading-more-indicator">
           <div class="spinner"></div>
           <span>{{ t('contentLibrary.loadingMore') }}</span>
@@ -533,9 +544,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import apiClient from '@/services/api/client';
+import { getThumbnailUrl, getThumbnailFallbacks } from '@/utils/formatters';
 import ChannelDetailModal from '@/components/exclusions/ChannelDetailModal.vue';
 import PlaylistDetailModal from '@/components/exclusions/PlaylistDetailModal.vue';
 import VideoPreviewModal from '@/components/VideoPreviewModal.vue';
@@ -1099,6 +1111,7 @@ async function loadContent() {
   loadMoreError.value = null;
   currentPage.value = 0;
   hasMoreContent.value = false;
+  clearThumbnailState();
 
   try {
     const params = buildContentParams(0);
@@ -1183,18 +1196,6 @@ function retryLoadMore() {
   loadMoreContent();
 }
 
-// Window scroll handler for infinite scroll
-function handleWindowScroll() {
-  if (isLoadingMore.value || !hasMoreContent.value || paginationDisabled.value) return;
-
-  const scrollBottom = window.innerHeight + window.scrollY;
-  const docHeight = document.documentElement.scrollHeight;
-
-  if (docHeight - scrollBottom < 300) {
-    loadMoreContent();
-  }
-}
-
 async function loadCategories() {
   try {
     const response = await apiClient.get('/api/admin/categories');
@@ -1237,12 +1238,49 @@ function formatDate(date: Date | null | undefined): string {
   }).format(d);
 }
 
-// Handle thumbnail load errors by hiding the image and showing placeholder
+// Track fallback state per item: maps item.id → index into fallback list
+const thumbnailFallbackIndex = new Map<string, number>();
+// Items where all fallback URLs have been exhausted
+const thumbnailExhausted = reactive(new Set<string>());
+
+function clearThumbnailState() {
+  thumbnailFallbackIndex.clear();
+  thumbnailExhausted.clear();
+}
+
+// Pre-compute thumbnail URLs to avoid calling getThumbnailUrl() twice per item in templates
+const thumbnailUrls = computed(() => {
+  const map: Record<string, string | null> = {};
+  for (const item of content.value) {
+    map[item.id] = thumbnailExhausted.has(item.id) ? null : getThumbnailUrl(item, item.type);
+  }
+  return map;
+});
+
 function handleThumbnailError(event: Event, item: ContentItem) {
   const img = event.target as HTMLImageElement;
-  img.style.display = 'none';
-  // Set thumbnailUrl to empty to show placeholder
-  item.thumbnailUrl = '';
+  const idx = thumbnailFallbackIndex.get(item.id) ?? 0;
+  const fallbacks = getThumbnailFallbacks(item, item.type);
+
+  // Normalize img.src for comparison — browsers resolve to absolute URL which
+  // should already match our absolute fallback strings, but strip any trailing
+  // slash the browser might add to be safe.
+  const currentSrc = img.src.replace(/\/$/, '');
+
+  // Find the next fallback that differs from the current src
+  let nextIdx = idx;
+  while (nextIdx < fallbacks.length && fallbacks[nextIdx] === currentSrc) {
+    nextIdx++;
+  }
+
+  if (nextIdx < fallbacks.length) {
+    thumbnailFallbackIndex.set(item.id, nextIdx + 1);
+    img.src = fallbacks[nextIdx];
+    return;
+  }
+
+  // All fallbacks exhausted — mark so template hides img and shows placeholder
+  thumbnailExhausted.add(item.id);
 }
 
 // Drag-drop handlers for custom ordering
@@ -1356,12 +1394,10 @@ onMounted(() => {
   loadCategories();
   loadContent();
   window.addEventListener('resize', handleResize);
-  window.addEventListener('scroll', handleWindowScroll, { passive: true });
 });
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize);
-  window.removeEventListener('scroll', handleWindowScroll);
   // Clear debounced search timeout to prevent memory leak
   if (searchTimeout) {
     clearTimeout(searchTimeout);
@@ -1600,6 +1636,29 @@ onUnmounted(() => {
   border-radius: 0.75rem;
 }
 
+.load-more-container {
+  display: flex;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.btn-load-more {
+  padding: 0.75rem 2rem;
+  background: var(--color-brand);
+  color: var(--color-text-inverse);
+  border: none;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-load-more:hover {
+  background: var(--color-accent);
+  box-shadow: 0 2px 8px rgba(22, 131, 90, 0.25);
+}
+
 .loading-more-indicator {
   display: flex;
   align-items: center;
@@ -1714,6 +1773,15 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   background: linear-gradient(135deg, #e5e7eb 0%, #f3f4f6 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9ca3af;
+}
+
+.thumbnail-placeholder svg {
+  width: 40px;
+  height: 40px;
 }
 
 .type-badge-card {
@@ -1867,6 +1935,16 @@ onUnmounted(() => {
   height: 36px;
   background: var(--color-border);
   border-radius: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9ca3af;
+  flex-shrink: 0;
+}
+
+.thumbnail-placeholder-sm svg {
+  width: 20px;
+  height: 20px;
 }
 
 .type-badge,

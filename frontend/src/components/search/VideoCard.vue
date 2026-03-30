@@ -1,8 +1,11 @@
 <template>
   <div class="search-result-card video-card">
-    <div class="card-thumbnail video-thumbnail">
-      <img v-if="video.thumbnailUrl" :src="video.thumbnailUrl" :alt="video.title" />
-      <div v-else class="thumbnail-placeholder"></div>
+    <div class="card-thumbnail video-thumbnail" role="button" tabindex="0" @click="$emit('preview', video)" @keydown.enter="$emit('preview', video)">
+      <img v-if="getThumbnailUrl(video, 'video')" :src="getThumbnailUrl(video, 'video')!" :alt="video.title" @error="handleThumbnailError($event)" />
+      <div class="thumbnail-placeholder" :style="getThumbnailUrl(video, 'video') ? 'display:none' : ''"></div>
+      <div class="play-overlay">
+        <svg class="play-icon" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21" /></svg>
+      </div>
       <span v-if="video.durationSeconds" class="duration-badge">
         {{ formatDuration(video.durationSeconds) }}
       </span>
@@ -49,23 +52,51 @@
         class="action-button primary"
         @click="$emit('add', video)"
       >
-        Add for Approval
+        {{ isAdmin ? 'Add' : 'Add for Approval' }}
       </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { ref, watch } from 'vue';
 import type { AdminSearchVideoResult } from '@/types/registry';
+import { getThumbnailUrl, getThumbnailFallbacks } from '@/utils/formatters';
 
-defineProps<{
+const fallbackIndex = ref(0);
+
+const props = defineProps<{
   video: AdminSearchVideoResult;
   alreadyAdded?: boolean;
+  isAdmin?: boolean;
 }>();
 
 defineEmits<{
   add: [video: AdminSearchVideoResult];
+  preview: [video: AdminSearchVideoResult];
 }>();
+
+watch(() => props.video.ytId, () => { fallbackIndex.value = 0 });
+
+function handleThumbnailError(event: Event) {
+  const img = event.target as HTMLImageElement;
+  const fallbacks = getThumbnailFallbacks(props.video, 'video');
+  const currentSrc = img.src.replace(/\/$/, '');
+  let nextIdx = fallbackIndex.value;
+  while (nextIdx < fallbacks.length && fallbacks[nextIdx].replace(/\/$/, '') === currentSrc) {
+    nextIdx++;
+  }
+  if (nextIdx < fallbacks.length) {
+    fallbackIndex.value = nextIdx + 1;
+    img.src = fallbacks[nextIdx];
+    return;
+  }
+  img.style.display = 'none';
+  const placeholder = img.nextElementSibling;
+  if (placeholder && placeholder.classList.contains('thumbnail-placeholder')) {
+    (placeholder as HTMLElement).style.display = '';
+  }
+}
 
 function formatDuration(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
@@ -152,10 +183,43 @@ function formatRelativeTime(dateStr: string): string {
   border-radius: 0.625rem;
 }
 
+.video-thumbnail {
+  cursor: pointer;
+}
+
 .video-thumbnail img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.play-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.video-thumbnail:hover .play-overlay,
+.video-thumbnail:focus-visible .play-overlay {
+  opacity: 1;
+}
+
+.video-thumbnail:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  transform: translateY(-2px);
+}
+
+.play-icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.4));
 }
 
 .duration-badge {

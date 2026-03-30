@@ -48,6 +48,21 @@ public class PendingApprovalDto {
     private String submittedBy;
 
     /**
+     * Current status: PENDING, APPROVED, REJECTED
+     */
+    private String status;
+
+    /**
+     * Rejection reason (if rejected)
+     */
+    private String rejectionReason;
+
+    /**
+     * Review notes from the admin (if approved or rejected)
+     */
+    private String reviewNotes;
+
+    /**
      * Additional metadata (subscribers, video count, etc.)
      */
     private Map<String, Object> metadata;
@@ -112,6 +127,30 @@ public class PendingApprovalDto {
 
     public void setSubmittedBy(String submittedBy) {
         this.submittedBy = submittedBy;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    public String getRejectionReason() {
+        return rejectionReason;
+    }
+
+    public void setRejectionReason(String rejectionReason) {
+        this.rejectionReason = rejectionReason;
+    }
+
+    public String getReviewNotes() {
+        return reviewNotes;
+    }
+
+    public void setReviewNotes(String reviewNotes) {
+        this.reviewNotes = reviewNotes;
     }
 
     public Map<String, Object> getMetadata() {

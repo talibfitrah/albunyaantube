@@ -8,6 +8,7 @@ import com.albunyaan.tube.repository.CategoryRepository;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
+import com.albunyaan.tube.service.TagEnrichmentService;
 import com.google.cloud.Timestamp;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -527,6 +528,10 @@ public class FirestoreDataSeeder implements CommandLineRunner {
             excludedItems.setPosts(new ArrayList<>(seed.exclusions().posts()));
             channel.setExcludedItems(excludedItems);
 
+            // Generate comprehensive multilingual keywords from category, name, description
+            channel.setKeywords(TagEnrichmentService.generateTagsStatic(
+                    seed.name(), seed.description(), seed.categoryIds()));
+
             Channel saved = channelRepository.save(channel);
             channels.put(seed.id(), saved);
         }
@@ -576,6 +581,10 @@ public class FirestoreDataSeeder implements CommandLineRunner {
             }
 
             playlist.setExcludedVideoIds(new ArrayList<>(seed.excludedVideoIds()));
+
+            // Generate comprehensive multilingual keywords
+            playlist.setKeywords(TagEnrichmentService.generateTagsStatic(
+                    seed.title(), seed.description(), seed.categoryIds()));
 
             if (!channels.containsKey(seed.channelId())) {
                 log.warn("⚠️ Playlist seed '{}' references unknown channel '{}'", seed.id(), seed.channelId());
@@ -633,6 +642,11 @@ public class FirestoreDataSeeder implements CommandLineRunner {
                 video.setChannelId(channel.getId());
                 video.setChannelTitle(channel.getName());
                 video.setCategoryIds(new ArrayList<>(channel.getCategoryIds()));
+
+                // Generate comprehensive multilingual keywords from title, description, categories
+                video.setKeywords(TagEnrichmentService.generateTagsStatic(
+                        video.getTitle(), video.getDescription(),
+                        new ArrayList<>(channel.getCategoryIds())));
 
                 video.setSubmittedBy(seed.submittedBy());
                 if ("APPROVED".equalsIgnoreCase(seed.status()) && index < topics.size()) {

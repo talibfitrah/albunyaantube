@@ -378,7 +378,8 @@ class ContentListViewModelTest {
         override suspend fun fetchHomeFeed(
             cursor: String?,
             categoryLimit: Int,
-            contentLimit: Int
+            contentLimit: Int,
+            category: String?
         ): HomeFeedResult {
             return HomeFeedResult(emptyList(), null, false)
         }

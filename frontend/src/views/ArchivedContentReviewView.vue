@@ -153,19 +153,22 @@
               />
             </td>
             <td class="thumbnail-col">
-              <img
-                v-if="item.thumbnailUrl"
-                :src="item.thumbnailUrl"
-                :alt="item.title"
-                class="thumbnail"
-                loading="lazy"
-              />
-              <div v-else class="thumbnail-placeholder">
-                {{ getTypeIcon(item.type) }}
-              </div>
+              <a href="#" class="thumbnail-link" @click.prevent="openPreview(item)">
+                <img
+                  v-if="getThumbnailUrl(item, item.type?.toLowerCase() as 'channel' | 'playlist' | 'video')"
+                  :src="getThumbnailUrl(item, item.type?.toLowerCase() as 'channel' | 'playlist' | 'video')!"
+                  :alt="item.title"
+                  class="thumbnail"
+                  loading="lazy"
+                  @error="handleThumbnailError($event, item)"
+                />
+                <div class="thumbnail-placeholder" :style="getThumbnailUrl(item, item.type?.toLowerCase() as 'channel' | 'playlist' | 'video') ? 'display:none' : ''">
+                  {{ getTypeIcon(item.type) }}
+                </div>
+              </a>
             </td>
             <td class="title-col">
-              <span class="item-title">{{ item.title }}</span>
+              <a class="item-title preview-link" href="#" @click.prevent="openPreview(item)">{{ item.title }}</a>
             </td>
             <td class="youtube-id-col">
               <code class="youtube-id">{{ item.youtubeId }}</code>
@@ -225,19 +228,24 @@
               :checked="selectedIds.includes(item.id)"
               @change="toggleSelection(item.id)"
             />
-            <img
-              v-if="item.thumbnailUrl"
-              :src="item.thumbnailUrl"
-              :alt="item.title"
-              class="card-thumbnail"
-              loading="lazy"
-            />
-            <div v-else class="card-thumbnail-placeholder">
-              {{ getTypeIcon(item.type) }}
-            </div>
+            <a href="#" class="thumbnail-link" @click.prevent="openPreview(item)">
+              <img
+                v-if="getThumbnailUrl(item, item.type?.toLowerCase() as 'channel' | 'playlist' | 'video')"
+                :src="getThumbnailUrl(item, item.type?.toLowerCase() as 'channel' | 'playlist' | 'video')!"
+                :alt="item.title"
+                class="card-thumbnail"
+                loading="lazy"
+                @error="handleThumbnailError($event, item)"
+              />
+              <div class="card-thumbnail-placeholder" :style="getThumbnailUrl(item, item.type?.toLowerCase() as 'channel' | 'playlist' | 'video') ? 'display:none' : ''">
+                {{ getTypeIcon(item.type) }}
+              </div>
+            </a>
           </div>
           <div class="card-body">
-            <h4 class="card-title">{{ item.title }}</h4>
+            <h4 class="card-title">
+              <a class="preview-link" href="#" @click.prevent="openPreview(item)">{{ item.title }}</a>
+            </h4>
             <p class="card-youtube-id">
               <code>{{ item.youtubeId }}</code>
             </p>
@@ -280,12 +288,39 @@
         </div>
       </div>
     </Teleport>
+
+    <!-- Preview modals by content type -->
+    <ChannelDetailModal
+      v-if="previewItem?.type === 'CHANNEL'"
+      :open="showPreview"
+      :channel-id="previewItem.id"
+      :channel-youtube-id="previewItem.youtubeId"
+      @close="closePreview"
+    />
+    <PlaylistDetailModal
+      v-if="previewItem?.type === 'PLAYLIST'"
+      :open="showPreview"
+      :playlist-id="previewItem.id"
+      :playlist-youtube-id="previewItem.youtubeId"
+      @close="closePreview"
+    />
+    <VideoPreviewModal
+      v-if="previewItem?.type === 'VIDEO'"
+      :open="showPreview"
+      :youtube-id="previewItem.youtubeId"
+      :title="previewItem.title"
+      @close="closePreview"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, watchEffect } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { getThumbnailUrl, getThumbnailFallbacks } from '@/utils/formatters';
+import ChannelDetailModal from '@/components/exclusions/ChannelDetailModal.vue';
+import PlaylistDetailModal from '@/components/exclusions/PlaylistDetailModal.vue';
+import VideoPreviewModal from '@/components/VideoPreviewModal.vue';
 import type { ArchivedContent, ArchivedCounts, ContentType, ValidationRun } from '@/types/validation';
 import {
   getArchivedCounts,
@@ -328,6 +363,13 @@ const MAX_POLLING_ERRORS = 5;
 // Backpressure state (503 Service Unavailable handling)
 const retryCountdown = ref(0);
 const retryCountdownInterval = ref<ReturnType<typeof setInterval> | null>(null);
+
+// Thumbnail fallback state
+const thumbnailFallbackIndex = new Map<string, number>();
+
+// Preview state
+const showPreview = ref(false);
+const previewItem = ref<ArchivedContent | null>(null);
 
 // Computed progress values
 const progressPercent = computed(() => validationRun.value?.progressPercent ?? 0);
@@ -432,6 +474,42 @@ function getTypeIcon(type: ContentType): string {
   }
 }
 
+// Thumbnail URLs resolved inline via getThumbnailUrl() in template — no computed map
+// to avoid reactive cascades when thumbnails fail and re-render all items.
+
+function handleThumbnailError(event: Event, item: ArchivedContent) {
+  const img = event.target as HTMLImageElement;
+  const idx = thumbnailFallbackIndex.get(item.id) ?? 0;
+  const type = item.type?.toLowerCase() as 'channel' | 'playlist' | 'video' | undefined;
+  const fallbacks = getThumbnailFallbacks(item, type);
+  const currentSrc = img.src.replace(/\/$/, '');
+  let nextIdx = idx;
+  while (nextIdx < fallbacks.length && fallbacks[nextIdx].replace(/\/$/, '') === currentSrc) {
+    nextIdx++;
+  }
+  if (nextIdx < fallbacks.length) {
+    thumbnailFallbackIndex.set(item.id, nextIdx + 1);
+    img.src = fallbacks[nextIdx];
+    return;
+  }
+  // All fallbacks exhausted — hide img and show placeholder via DOM (no reactive cascade)
+  img.style.display = 'none';
+  const placeholder = img.nextElementSibling;
+  if (placeholder && (placeholder.classList.contains('thumbnail-placeholder') || placeholder.classList.contains('card-thumbnail-placeholder'))) {
+    (placeholder as HTMLElement).style.display = '';
+  }
+}
+
+function openPreview(item: ArchivedContent) {
+  previewItem.value = item;
+  showPreview.value = true;
+}
+
+function closePreview() {
+  showPreview.value = false;
+  previewItem.value = null;
+}
+
 function toggleSelectAll() {
   if (isAllSelected.value) {
     selectedIds.value = [];
@@ -452,6 +530,7 @@ function toggleSelection(id: string) {
 async function loadData() {
   isLoading.value = true;
   errorMessage.value = null;
+  thumbnailFallbackIndex.clear();
 
   try {
     const [countsData, channelsData, playlistsData, videosData] = await Promise.all([
@@ -1041,6 +1120,19 @@ onUnmounted(() => {
 .item-title {
   font-weight: 500;
   color: var(--color-text-primary);
+}
+.preview-link {
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+.preview-link:hover {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+.thumbnail-link {
+  display: block;
+  cursor: pointer;
 }
 
 .youtube-id {

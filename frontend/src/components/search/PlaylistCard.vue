@@ -1,12 +1,12 @@
 <template>
   <div class="search-result-card playlist-card">
-    <div class="card-thumbnail playlist-thumbnail">
+    <div class="card-thumbnail playlist-thumbnail" style="cursor:pointer" role="button" tabindex="0" @click="$emit('preview', playlist)" @keydown.enter="$emit('preview', playlist)" @keydown.space.prevent="$emit('preview', playlist)">
       <div class="playlist-stack">
         <div class="stack-layer stack-3"></div>
         <div class="stack-layer stack-2"></div>
         <div class="stack-layer stack-1">
-          <img v-if="playlist.thumbnailUrl" :src="playlist.thumbnailUrl" :alt="playlist.title" />
-          <div v-else class="thumbnail-placeholder"></div>
+          <img v-if="getThumbnailUrl(playlist, 'playlist')" :src="getThumbnailUrl(playlist, 'playlist')!" :alt="playlist.title" @error="handleThumbnailError($event)" />
+          <div class="thumbnail-placeholder" :style="getThumbnailUrl(playlist, 'playlist') ? 'display:none' : ''"></div>
           <!-- Playlist icon overlay -->
           <div class="playlist-icon-overlay">
             <svg viewBox="0 0 24 24" fill="currentColor">
@@ -19,7 +19,7 @@
       </div>
     </div>
     <div class="card-content">
-      <h3 class="card-title">{{ playlist.title }}</h3>
+      <h3 class="card-title" style="cursor:pointer" role="button" tabindex="0" @click="$emit('preview', playlist)" @keydown.enter="$emit('preview', playlist)" @keydown.space.prevent="$emit('preview', playlist)">{{ playlist.title }}</h3>
       <div class="card-meta">
         <span class="meta-item">
           <svg class="meta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -62,23 +62,51 @@
         class="action-button primary"
         @click="$emit('add', playlist)"
       >
-        Add for Approval
+        {{ isAdmin ? 'Add' : 'Add for Approval' }}
       </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { ref, watch } from 'vue';
 import type { AdminSearchPlaylistResult } from '@/types/registry';
+import { getThumbnailUrl, getThumbnailFallbacks } from '@/utils/formatters';
 
-defineProps<{
+const fallbackIndex = ref(0);
+
+const props = defineProps<{
   playlist: AdminSearchPlaylistResult;
   alreadyAdded?: boolean;
+  isAdmin?: boolean;
 }>();
 
 defineEmits<{
   add: [playlist: AdminSearchPlaylistResult];
+  preview: [playlist: AdminSearchPlaylistResult];
 }>();
+
+watch(() => props.playlist.ytId, () => { fallbackIndex.value = 0 });
+
+function handleThumbnailError(event: Event) {
+  const img = event.target as HTMLImageElement;
+  const fallbacks = getThumbnailFallbacks(props.playlist, 'playlist');
+  const currentSrc = img.src.replace(/\/$/, '');
+  let nextIdx = fallbackIndex.value;
+  while (nextIdx < fallbacks.length && fallbacks[nextIdx].replace(/\/$/, '') === currentSrc) {
+    nextIdx++;
+  }
+  if (nextIdx < fallbacks.length) {
+    fallbackIndex.value = nextIdx + 1;
+    img.src = fallbacks[nextIdx];
+    return;
+  }
+  img.style.display = 'none';
+  const placeholder = img.nextElementSibling;
+  if (placeholder && placeholder.classList.contains('thumbnail-placeholder')) {
+    (placeholder as HTMLElement).style.display = '';
+  }
+}
 
 function formatVideoCount(count: number): string {
   if (count >= 1_000_000_000) {

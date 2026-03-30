@@ -9,6 +9,7 @@ import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import com.albunyaan.tube.service.PublicContentCacheService;
 import com.albunyaan.tube.service.SortOrderService;
+import com.albunyaan.tube.service.TagEnrichmentService;
 import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.DocumentSnapshot;
 import com.google.cloud.firestore.Firestore;
@@ -43,7 +44,7 @@ import java.util.stream.Collectors;
  */
 @RestController
 @RequestMapping("/api/admin/content")
-@PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+@PreAuthorize("hasRole('ADMIN')")
 @Validated
 public class ContentLibraryController {
 
@@ -57,6 +58,7 @@ public class ContentLibraryController {
     private final FirestoreTimeoutProperties timeoutProperties;
     private final PublicContentCacheService publicContentCacheService;
     private final SortOrderService sortOrderService;
+    private final TagEnrichmentService tagEnrichmentService;
 
     public ContentLibraryController(
             ChannelRepository channelRepository,
@@ -65,7 +67,8 @@ public class ContentLibraryController {
             Firestore firestore,
             FirestoreTimeoutProperties timeoutProperties,
             PublicContentCacheService publicContentCacheService,
-            SortOrderService sortOrderService
+            SortOrderService sortOrderService,
+            TagEnrichmentService tagEnrichmentService
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
@@ -74,6 +77,7 @@ public class ContentLibraryController {
         this.timeoutProperties = timeoutProperties;
         this.publicContentCacheService = publicContentCacheService;
         this.sortOrderService = sortOrderService;
+        this.tagEnrichmentService = tagEnrichmentService;
     }
 
     /**
@@ -323,11 +327,34 @@ public class ContentLibraryController {
     private BoundedFetchResult<Channel> fetchChannelsBounded(String status, String category, String search, String sort, int limit)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
 
+        // When search is active, use Firestore-level keyword search to find matches
+        // across the ENTIRE collection, not just the first 200 items.
+        if (search != null && !search.isBlank()) {
+            String searchLower = search.toLowerCase(java.util.Locale.ROOT);
+            List<Channel> keywordResults = channelRepository.searchByKeyword(searchLower, MAX_ITEMS_PER_TYPE);
+            List<Channel> nameResults = channelRepository.searchByNameLower(searchLower, MAX_ITEMS_PER_TYPE);
+            // Merge and deduplicate by ID
+            Map<String, Channel> merged = new java.util.LinkedHashMap<>();
+            for (Channel ch : nameResults) merged.put(ch.getId(), ch);
+            for (Channel ch : keywordResults) merged.putIfAbsent(ch.getId(), ch);
+            List<Channel> results = new ArrayList<>(merged.values());
+            // Filter by status/category if specified
+            if (category != null && !category.isBlank()) {
+                results.removeIf(ch -> ch.getCategoryIds() == null || !ch.getCategoryIds().contains(category));
+            }
+            if (!"all".equalsIgnoreCase(status)) {
+                results.removeIf(ch -> !status.equalsIgnoreCase(ch.getStatus()));
+            }
+            // Detect truncation: if either query returned exactly MAX_ITEMS_PER_TYPE, more may exist
+            boolean hitLimit = keywordResults.size() >= MAX_ITEMS_PER_TYPE
+                    || nameResults.size() >= MAX_ITEMS_PER_TYPE
+                    || results.size() > limit;
+            if (results.size() > limit) results = new ArrayList<>(results.subList(0, limit));
+            return new BoundedFetchResult<>(results, hitLimit);
+        }
+
         // Fetch limit+1 to detect if more results exist (prevents false-negative after filtering)
         int queryLimit = limit + 1;
-
-        // Search filtering is now done in-memory to support keyword + description matching
-        // Fetch by status/category at Firestore level, then caller applies search filter
 
         // Category + status filter - use bounded query at Firestore level
         if (category != null && !category.isBlank()) {
@@ -377,11 +404,32 @@ public class ContentLibraryController {
     private BoundedFetchResult<Playlist> fetchPlaylistsBounded(String status, String category, String search, String sort, int limit)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
 
+        // When search is active, use Firestore-level keyword + title search
+        if (search != null && !search.isBlank()) {
+            String searchLower = search.toLowerCase(java.util.Locale.ROOT);
+            List<Playlist> keywordResults = playlistRepository.searchByKeyword(searchLower, MAX_ITEMS_PER_TYPE);
+            List<Playlist> titleResults = playlistRepository.searchByTitleLower(searchLower, MAX_ITEMS_PER_TYPE);
+            // Merge and deduplicate by ID (title results first for relevance)
+            Map<String, Playlist> merged = new java.util.LinkedHashMap<>();
+            for (Playlist pl : titleResults) merged.put(pl.getId(), pl);
+            for (Playlist pl : keywordResults) merged.putIfAbsent(pl.getId(), pl);
+            List<Playlist> results = new ArrayList<>(merged.values());
+            if (category != null && !category.isBlank()) {
+                results.removeIf(pl -> pl.getCategoryIds() == null || !pl.getCategoryIds().contains(category));
+            }
+            if (!"all".equalsIgnoreCase(status)) {
+                results.removeIf(pl -> !status.equalsIgnoreCase(pl.getStatus()));
+            }
+            // Detect truncation: if either query returned exactly MAX_ITEMS_PER_TYPE, more may exist
+            boolean hitLimit = keywordResults.size() >= MAX_ITEMS_PER_TYPE
+                    || titleResults.size() >= MAX_ITEMS_PER_TYPE
+                    || results.size() > limit;
+            if (results.size() > limit) results = new ArrayList<>(results.subList(0, limit));
+            return new BoundedFetchResult<>(results, hitLimit);
+        }
+
         // Fetch limit+1 to detect if more results exist (prevents false-negative after filtering)
         int queryLimit = limit + 1;
-
-        // Search filtering is now done in-memory to support keyword + description matching
-        // Fetch by status/category at Firestore level, then caller applies search filter
 
         // Category + status filter - use bounded query at Firestore level
         if (category != null && !category.isBlank()) {
@@ -431,11 +479,32 @@ public class ContentLibraryController {
     private BoundedFetchResult<Video> fetchVideosBounded(String status, String category, String search, String sort, int limit)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
 
+        // When search is active, use Firestore-level keyword + title search
+        if (search != null && !search.isBlank()) {
+            String searchLower = search.toLowerCase(java.util.Locale.ROOT);
+            List<Video> keywordResults = videoRepository.searchByKeyword(searchLower, MAX_ITEMS_PER_TYPE);
+            List<Video> titleResults = videoRepository.searchByTitleLower(searchLower, MAX_ITEMS_PER_TYPE);
+            // Merge and deduplicate by ID (title results first for relevance)
+            Map<String, Video> merged = new java.util.LinkedHashMap<>();
+            for (Video v : titleResults) merged.put(v.getId(), v);
+            for (Video v : keywordResults) merged.putIfAbsent(v.getId(), v);
+            List<Video> results = new ArrayList<>(merged.values());
+            if (category != null && !category.isBlank()) {
+                results.removeIf(v -> v.getCategoryIds() == null || !v.getCategoryIds().contains(category));
+            }
+            if (!"all".equalsIgnoreCase(status)) {
+                results.removeIf(v -> !status.equalsIgnoreCase(v.getStatus()));
+            }
+            // Detect truncation: if either query returned exactly MAX_ITEMS_PER_TYPE, more may exist
+            boolean hitLimit = keywordResults.size() >= MAX_ITEMS_PER_TYPE
+                    || titleResults.size() >= MAX_ITEMS_PER_TYPE
+                    || results.size() > limit;
+            if (results.size() > limit) results = new ArrayList<>(results.subList(0, limit));
+            return new BoundedFetchResult<>(results, hitLimit);
+        }
+
         // Fetch limit+1 to detect if more results exist (prevents false-negative after filtering)
         int queryLimit = limit + 1;
-
-        // Search filtering is now done in-memory to support keyword + description matching
-        // Fetch by status/category at Firestore level, then caller applies search filter
 
         // Category + status filter - use bounded query at Firestore level
         if (category != null && !category.isBlank()) {
@@ -1649,6 +1718,67 @@ public class ContentLibraryController {
             this.successCount = successCount;
             this.errors = errors;
             this.failedKeys = failedKeys != null ? failedKeys : Set.of();
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Tag Enrichment
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Enrich content with multilingual search tags.
+     *
+     * Generates keywords from category mappings, title/description extraction,
+     * YouTube tags (when real YouTube IDs exist), and cross-language translations.
+     *
+     * @param type          Optional: "channel", "playlist", or "video" (null = all types)
+     * @param force         If true, re-enrich items that already have keywords
+     * @param fetchYouTube  If true, fetch tags from YouTube for items with real YouTube IDs
+     * @return Enrichment statistics
+     */
+    @PostMapping("/enrich-tags")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> enrichTags(
+            @RequestParam(required = false) String type,
+            @RequestParam(required = false, defaultValue = "false") boolean force,
+            @RequestParam(required = false, defaultValue = "false") boolean fetchYouTube
+    ) {
+        log.info("Tag enrichment requested: type={}, force={}, fetchYouTube={}", type, force, fetchYouTube);
+
+        try {
+            if (type != null && !type.isEmpty()) {
+                TagEnrichmentService.EnrichmentResult result;
+                switch (type.toLowerCase()) {
+                    case "channel":
+                        result = tagEnrichmentService.enrichChannels(force, fetchYouTube);
+                        break;
+                    case "playlist":
+                        result = tagEnrichmentService.enrichPlaylists(force, fetchYouTube);
+                        break;
+                    case "video":
+                        result = tagEnrichmentService.enrichVideos(force, fetchYouTube);
+                        break;
+                    default:
+                        return ResponseEntity.badRequest().body(Map.of(
+                                "error", "Invalid type",
+                                "message", "Type must be one of: channel, playlist, video"
+                        ));
+                }
+                publicContentCacheService.evictPublicContentCaches();
+                return ResponseEntity.ok(result.toMap());
+            }
+
+            TagEnrichmentService.EnrichmentResult result =
+                    tagEnrichmentService.enrichAllContent(force, fetchYouTube);
+            publicContentCacheService.evictPublicContentCaches();
+            return ResponseEntity.ok(result.toMap());
+
+        } catch (Exception e) {
+            log.error("Tag enrichment failed: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
+                    "error", "Enrichment failed",
+                    "message", "Internal server error during enrichment"
+            ));
         }
     }
 }

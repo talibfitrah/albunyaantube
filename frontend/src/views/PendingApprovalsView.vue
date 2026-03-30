@@ -2,19 +2,52 @@
   <div class="approvals-view">
     <header class="approvals-header">
       <div>
-        <h1>{{ t('approvals.heading') }}</h1>
-        <p>{{ t('approvals.subtitle') }}</p>
+        <h1>{{ isModeratorView ? t('approvals.mySubmissionsHeading') : t('approvals.heading') }}</h1>
+        <p>{{ isModeratorView ? t('approvals.mySubmissionsSubtitle') : t('approvals.subtitle') }}</p>
       </div>
       <div class="header-stats">
-        <div class="stat-badge">
-          <span class="stat-value">{{ totalPending }}</span>
-          <span class="stat-label">{{ t('approvals.pending') }}</span>
+        <div :class="['stat-badge', { 'stat-unavailable': countUnavailable }]">
+          <span class="stat-value">{{ displayPendingCount }}</span>
+          <span class="stat-label">{{ countUnavailable ? t('approvals.pendingApprox') : t('approvals.pending') }}</span>
         </div>
       </div>
     </header>
 
-    <!-- Filters -->
-    <div class="filters">
+    <!-- Status Tabs (moderator view) -->
+    <div v-if="isModeratorView" class="filters">
+      <div class="filter-group">
+        <label>{{ t('approvals.filters.status') }}</label>
+        <div class="filter-tabs">
+          <button
+            v-for="tab in statusTabs"
+            :key="tab.value"
+            type="button"
+            :class="['filter-tab', { active: statusFilter === tab.value }]"
+            @click="statusFilter = tab.value; handleFilterChange()"
+          >
+            {{ t(tab.labelKey) }}
+          </button>
+        </div>
+      </div>
+
+      <div class="filter-group">
+        <label>{{ t('approvals.filters.type') }}</label>
+        <div class="filter-tabs">
+          <button
+            v-for="type in contentTypes"
+            :key="type.value"
+            type="button"
+            :class="['filter-tab', { active: contentType === type.value }]"
+            @click="contentType = type.value; handleFilterChange()"
+          >
+            {{ t(type.labelKey) }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Admin Filters -->
+    <div v-else class="filters">
       <div class="filter-group">
         <label>{{ t('approvals.filters.type') }}</label>
         <div class="filter-tabs">
@@ -30,24 +63,14 @@
         </div>
       </div>
 
-      <div class="filter-row">
-        <div class="filter-item">
-          <label>{{ t('approvals.filters.category') }}</label>
-          <select v-model="categoryFilter" @change="handleFilterChange">
-            <option value="">{{ t('approvals.filters.allCategories') }}</option>
-            <option v-for="cat in flatCategories" :key="cat.id" :value="cat.id">
-              {{ cat.label }}
-            </option>
-          </select>
-        </div>
-
-        <div class="filter-item">
-          <label>{{ t('approvals.filters.sort') }}</label>
-          <select v-model="sortFilter" @change="handleFilterChange">
-            <option value="oldest">{{ t('approvals.filters.oldest') }}</option>
-            <option value="newest">{{ t('approvals.filters.newest') }}</option>
-          </select>
-        </div>
+      <div class="filter-group">
+        <label>{{ t('approvals.filters.category') }}</label>
+        <select v-model="categoryFilter" @change="handleFilterChange">
+          <option value="">{{ t('approvals.filters.allCategories') }}</option>
+          <option v-for="cat in flatCategories" :key="cat.id" :value="cat.id">
+            {{ cat.label }}
+          </option>
+        </select>
       </div>
     </div>
 
@@ -60,12 +83,12 @@
     <!-- Error State -->
     <div v-else-if="error" class="error-panel" role="alert">
       <p>{{ error }}</p>
-      <button type="button" @click="loadApprovals">{{ t('approvals.retry') }}</button>
+      <button type="button" @click="loadApprovals()">{{ t('approvals.retry') }}</button>
     </div>
 
     <!-- Empty State -->
     <div v-else-if="approvals.length === 0" class="empty-state">
-      <p>{{ t('approvals.empty') }}</p>
+      <p>{{ isModeratorView ? t('approvals.emptySubmissions') : t('approvals.empty') }}</p>
     </div>
 
     <!-- Approvals Grid -->
@@ -73,13 +96,18 @@
       <div v-for="item in approvals" :key="item.id" class="approval-card">
         <div class="card-header">
           <span class="content-type">{{ t(`approvals.types.${item.type}`) }}</span>
-          <span class="submitted-date">{{ formatDate(item.submittedAt) }}</span>
+          <div class="card-header-right">
+            <span v-if="isModeratorView && item.status" :class="['status-badge', `status-${item.status.toLowerCase()}`]">
+              {{ t(`approvals.statusTabs.${item.status.toLowerCase()}`) }}
+            </span>
+            <span class="submitted-date">{{ formatDate(item.submittedAt) }}</span>
+          </div>
         </div>
 
         <div class="card-body">
           <div class="thumbnail">
-            <img v-if="item.thumbnailUrl" :src="item.thumbnailUrl" :alt="item.title" />
-            <div v-else class="thumbnail-placeholder"></div>
+            <img v-if="getThumbnailUrl(item, item.type)" :src="getThumbnailUrl(item, item.type)!" :alt="item.title" @error="handleThumbnailError($event, item)" />
+            <div class="thumbnail-placeholder" :style="getThumbnailUrl(item, item.type) ? 'display:none' : ''"></div>
           </div>
 
           <div class="content-info">
@@ -115,6 +143,18 @@
           </div>
         </div>
 
+        <!-- Rejection/Review info for moderator view -->
+        <div v-if="isModeratorView && (item.rejectionReason || item.reviewNotes)" class="review-info">
+          <div v-if="item.rejectionReason" class="review-detail">
+            <span class="meta-label">{{ t('approvals.rejectedReason') }}:</span>
+            <span>{{ item.rejectionReason }}</span>
+          </div>
+          <div v-if="item.reviewNotes" class="review-detail">
+            <span class="meta-label">{{ t('approvals.adminNotes') }}:</span>
+            <span>{{ item.reviewNotes }}</span>
+          </div>
+        </div>
+
         <div class="card-footer">
           <div class="submitted-by">
             <span class="meta-label">{{ t('approvals.submittedBy') }}:</span>
@@ -130,6 +170,7 @@
               {{ t('approvals.preview') }}
             </button>
             <button
+              v-if="authStore.isAdmin"
               type="button"
               class="action-btn reject"
               :disabled="processingId === item.id"
@@ -138,6 +179,7 @@
               {{ t('approvals.reject') }}
             </button>
             <button
+              v-if="authStore.isAdmin"
               type="button"
               class="action-btn approve"
               :disabled="processingId === item.id"
@@ -149,6 +191,14 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- Load More Button -->
+    <div v-if="nextCursor && !isLoading" class="load-more">
+      <button type="button" class="button secondary" :disabled="isLoadingMore" @click="loadMore">
+        <span v-if="isLoadingMore">{{ t('approvals.loadingMore') }}</span>
+        <span v-else>{{ t('approvals.loadMore') }}</span>
+      </button>
     </div>
 
     <!-- Preview Modals -->
@@ -219,21 +269,36 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useAuthStore } from '@/stores/auth';
+import { getThumbnailUrl, getThumbnailFallbacks } from '@/utils/formatters';
+import { useToast } from '@/composables/useToast';
 import { getAllCategories } from '@/services/categoryService';
-import { getPendingApprovals, approveItem, rejectItem as rejectItemApi, type PendingApproval } from '@/services/approvalService';
+import { getPendingApprovals, getMySubmissions, approveItem, rejectItem as rejectItemApi, getPendingCount, type PendingApproval, type SubmissionStatus, type MySubmission } from '@/services/approvalService';
 import ChannelDetailModal from '@/components/exclusions/ChannelDetailModal.vue';
 import PlaylistDetailModal from '@/components/exclusions/PlaylistDetailModal.vue';
 import VideoPreviewModal from '@/components/VideoPreviewModal.vue';
 
 const { t } = useI18n();
+const authStore = useAuthStore();
+const toast = useToast();
+
+const isModeratorView = computed(() => !authStore.isAdmin);
 
 const contentType = ref<'all' | 'channels' | 'playlists' | 'videos'>('all');
 const categoryFilter = ref('');
-const sortFilter = ref('oldest');
+const statusFilter = ref<SubmissionStatus>('PENDING');
 
-const approvals = ref<any[]>([]);
+const statusTabs = [
+  { value: 'PENDING' as SubmissionStatus, labelKey: 'approvals.statusTabs.pending' },
+  { value: 'APPROVED' as SubmissionStatus, labelKey: 'approvals.statusTabs.approved' },
+  { value: 'REJECTED' as SubmissionStatus, labelKey: 'approvals.statusTabs.rejected' }
+];
+
+const approvals = ref<MySubmission[]>([]);
+const nextCursor = ref<string | null>(null);
+const isLoadingMore = ref(false);
 const categories = ref<any[]>([]);
 const flatCategories = computed(() => {
   const flattened: { id: string; label: string }[] = [];
@@ -251,6 +316,28 @@ const flatCategories = computed(() => {
   traverse(categories.value);
   return flattened;
 });
+// Thumbnail fallback state — DOM-based pattern to avoid reactive cascade re-renders
+const thumbnailFallbackIndex = new Map<string, number>();
+
+function handleThumbnailError(event: Event, item: any) {
+  const img = event.target as HTMLImageElement;
+  const id = item.id;
+  const idx = thumbnailFallbackIndex.get(id) ?? 0;
+  const fallbacks = getThumbnailFallbacks(item, item.type);
+  let nextIdx = Math.min(idx + 1, fallbacks.length);
+  if (nextIdx < fallbacks.length) {
+    thumbnailFallbackIndex.set(id, nextIdx + 1);
+    img.src = fallbacks[nextIdx];
+    return;
+  }
+  // All fallbacks exhausted — hide img and show placeholder via DOM (no reactive cascade)
+  img.style.display = 'none';
+  const placeholder = img.nextElementSibling;
+  if (placeholder && placeholder.classList.contains('thumbnail-placeholder')) {
+    (placeholder as HTMLElement).style.display = '';
+  }
+}
+
 const categoryNameMap = computed(() => {
   const map = new Map<string, string>();
 
@@ -287,7 +374,13 @@ const contentTypes = [
   { value: 'videos' as const, labelKey: 'approvals.types.videos' }
 ];
 
-const totalPending = computed(() => approvals.value.length);
+const totalPending = ref<number | null>(null);
+const countUnavailable = ref(false);
+const displayPendingCount = computed(() => {
+  if (totalPending.value !== null) return totalPending.value;
+  // Before any count loads, show loaded items count as lower-bound
+  return approvals.value.length;
+});
 
 async function loadCategories() {
   try {
@@ -298,26 +391,66 @@ async function loadCategories() {
   }
 }
 
-async function loadApprovals() {
-  isLoading.value = true;
-  error.value = null;
+async function loadApprovals(append = false) {
+  if (append) {
+    isLoadingMore.value = true;
+  } else {
+    isLoading.value = true;
+    nextCursor.value = null;
+    error.value = null;
+  }
 
   try {
-    const items = await getPendingApprovals({
-      type: contentType.value,
-      category: categoryFilter.value || undefined,
-      sort: sortFilter.value as 'oldest' | 'newest'
-    });
-    approvals.value = items;
+    if (isModeratorView.value) {
+      const result = await getMySubmissions({
+        status: statusFilter.value,
+        type: contentType.value,
+        cursor: append ? (nextCursor.value || undefined) : undefined
+      });
+      if (append) {
+        approvals.value = [...approvals.value, ...result.items];
+      } else {
+        approvals.value = result.items;
+      }
+      nextCursor.value = result.nextCursor;
+    } else {
+      const result = await getPendingApprovals({
+        type: contentType.value,
+        category: categoryFilter.value || undefined,
+        cursor: append ? (nextCursor.value || undefined) : undefined
+      });
+      // Map PendingApproval items to MySubmission with default status
+      const mapped: MySubmission[] = result.items.map(item => ({
+        ...item,
+        status: 'PENDING' as const
+      }));
+      if (append) {
+        approvals.value = [...approvals.value, ...mapped];
+      } else {
+        approvals.value = mapped;
+      }
+      nextCursor.value = result.nextCursor;
+    }
   } catch (err) {
-    error.value = err instanceof Error ? err.message : t('approvals.error');
+    if (!append) {
+      error.value = err instanceof Error ? err.message : t('approvals.error');
+    } else {
+      toast.warning(t('approvals.loadMoreError'));
+    }
   } finally {
     isLoading.value = false;
+    isLoadingMore.value = false;
   }
 }
 
 function handleFilterChange() {
   loadApprovals();
+}
+
+function loadMore() {
+  if (nextCursor.value && !isLoadingMore.value) {
+    loadApprovals(true);
+  }
 }
 
 async function handleApprove(item: any) {
@@ -327,6 +460,7 @@ async function handleApprove(item: any) {
   try {
     await approveItem(item.id, item.type);
     await loadApprovals();
+    loadPendingCount();
   } catch (err) {
     error.value = err instanceof Error ? err.message : t('approvals.approveError');
   } finally {
@@ -361,6 +495,7 @@ async function handleReject() {
     await rejectItemApi(rejectItem.value!.id, rejectItem.value!.type, rejectReason.value);
     closeRejectDialog();
     await loadApprovals();
+    loadPendingCount();
   } catch (err) {
     rejectError.value = err instanceof Error ? err.message : t('approvals.rejectError');
   } finally {
@@ -391,9 +526,27 @@ function formatNumber(num: number): string {
   return num.toLocaleString();
 }
 
+async function loadPendingCount() {
+  try {
+    const count = await getPendingCount();
+    if (count >= 0) {
+      totalPending.value = count;
+      countUnavailable.value = false;
+    } else {
+      // -1 means service unavailable — use loaded items as lower-bound
+      countUnavailable.value = true;
+      totalPending.value = Math.max(totalPending.value ?? 0, approvals.value.length);
+    }
+  } catch {
+    countUnavailable.value = true;
+    totalPending.value = Math.max(totalPending.value ?? 0, approvals.value.length);
+  }
+}
+
 onMounted(() => {
   loadCategories();
   loadApprovals();
+  loadPendingCount();
 });
 </script>
 
@@ -452,6 +605,11 @@ onMounted(() => {
   color: var(--color-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+.stat-unavailable {
+  opacity: 0.7;
+  border-style: dashed;
 }
 
 .filters {
@@ -621,6 +779,52 @@ onMounted(() => {
   padding: 1rem 1.5rem;
   background: var(--color-surface-alt);
   border-bottom: 1px solid var(--color-border);
+}
+
+.card-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.status-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.25rem 0.625rem;
+  border-radius: 999px;
+}
+
+.status-pending {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.status-approved {
+  background: rgba(21, 128, 61, 0.1);
+  color: var(--color-success);
+}
+
+.status-rejected {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.review-info {
+  padding: 1rem 1.5rem;
+  background: var(--color-surface-alt);
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.review-detail {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
 }
 
 .content-type {
@@ -1094,5 +1298,11 @@ onMounted(() => {
     flex-direction: column;
     gap: 0.75rem;
   }
+}
+
+.load-more {
+  display: flex;
+  justify-content: center;
+  padding: 1rem 0;
 }
 </style>

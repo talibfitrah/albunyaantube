@@ -121,7 +121,14 @@ export const messages = {
         mostRecent: 'Most Recent',
         mostPopular: 'Most Popular',
         topRated: 'Top Rated'
-      }
+      },
+      loading: 'Loading...',
+      loadMore: 'Load More Results',
+      endOfResults: 'End of results',
+      addedApproved: '{type} added and approved with {count} categories',
+      addedQueue: '{type} added to approval queue with {count} categories',
+      alreadyExists: 'This content already exists in the registry',
+      addError: 'Failed to add content for approval'
     },
     categories: {
       heading: 'Categories',
@@ -150,18 +157,27 @@ export const messages = {
         icon: 'Icon (optional)',
         iconPlaceholder: 'Enter emoji or icon...',
         displayOrder: 'Display Order',
+        displayOrderAuto: 'Auto',
         cancel: 'Cancel',
         save: 'Save',
         saving: 'Saving...',
-        error: 'Failed to save category.'
+        error: 'Failed to save category.',
+        translations: 'Translations',
+        nameEn: 'English',
+        nameAr: 'العربية (Arabic)',
+        nameNl: 'Nederlands (Dutch)'
       }
     },
     approvals: {
       heading: 'Pending Approvals',
       subtitle: 'Review and approve or reject content submissions',
+      mySubmissionsHeading: 'My Submissions',
+      mySubmissionsSubtitle: 'Track the status of your content submissions',
       pending: 'Pending items',
+      pendingApprox: '~Pending',
       filters: {
         type: 'Content type',
+        status: 'Status',
         category: 'Category',
         allCategories: 'All categories',
         sort: 'Sort by',
@@ -192,9 +208,20 @@ export const messages = {
       submittedBy: 'Submitted by',
       unknown: 'Unknown',
       loading: 'Loading approvals...',
+      loadMore: 'Load more',
+      loadingMore: 'Loading more...',
+      loadMoreError: 'Failed to load more items.',
       retry: 'Retry',
       empty: 'No pending approvals found.',
+      emptySubmissions: 'No submissions found with this status.',
       error: 'Failed to load approvals.',
+      statusTabs: {
+        pending: 'Pending',
+        approved: 'Approved',
+        rejected: 'Rejected'
+      },
+      rejectedReason: 'Reason',
+      adminNotes: 'Admin notes',
       rejectDialog: {
         title: 'Reject Submission',
         reason: 'Rejection reason',
@@ -223,7 +250,30 @@ export const messages = {
       contentTitle: 'Title',
       type: 'Type',
       categoryReordered: 'Category order updated',
-      contentReordered: 'Content order updated'
+      contentReordered: 'Content order updated',
+      addContent: 'Add Content',
+      addContentTitle: 'Add Content to Category',
+      addContentSearch: 'Search approved content...',
+      addContentEmpty: 'No approved content available to add',
+      addContentNoResults: 'No results found',
+      addContentLoading: 'Loading approved content...',
+      addContentSelected: '{count} selected',
+      addContentConfirm: 'Add to Category',
+      addContentSuccess: '{count} item(s) added to category',
+      addContentError: 'Failed to add content to category',
+      addContentLoadError: 'Failed to load approved content',
+      filterAll: 'All',
+      filterChannels: 'Channels',
+      filterPlaylists: 'Playlists',
+      filterVideos: 'Videos',
+      removeContent: 'Remove',
+      removeContentConfirm: 'Remove "{title}" from this category?',
+      removeContentSuccess: 'Content removed from category',
+      removeContentError: 'Failed to remove content',
+      addContentTruncated: 'Showing {count} items. Some content may not be listed due to volume.',
+      noFilterResults: 'No {type} content in this category',
+      cancel: 'Cancel',
+      close: 'Close'
     },
     contentLibrary: {
       heading: 'Content Library',
@@ -231,6 +281,7 @@ export const messages = {
       searchPlaceholder: 'Search by title, ID, or description...',
       loading: 'Loading content...',
       loadingMore: 'Loading more...',
+      loadMore: 'Load More ({current} of {total})',
       allLoaded: 'All {count} items loaded',
       retry: 'Retry',
       empty: 'No content found. Try adjusting your filters.',
@@ -331,7 +382,8 @@ export const messages = {
         retrying: 'Retrying...'
       },
       retry: 'Retry',
-      close: 'Close'
+      close: 'Close',
+      opensInNewTab: 'opens in a new tab'
     },
     videoPreview: {
       noVideo: 'No video available',
@@ -656,7 +708,9 @@ export const messages = {
         noMoreItems: 'No more items',
         excludeError: 'Error adding exclusion',
         removeError: 'Error removing exclusion',
-        itemCount: '{count} items'
+        fetchError: 'Channel details could not be fetched. YouTube may have changed the page layout, or the channel may be temporarily unavailable.',
+        itemCount: '{count} items',
+        openOnYoutube: 'Open on YouTube'
       },
       playlistDetail: {
         title: 'Playlist Details',
@@ -1052,6 +1106,36 @@ export const messages = {
         viewAll: 'View all activity'
       }
     },
+    globalSearch: {
+      placeholder: 'Search content...',
+      clearSearch: 'Clear search',
+      close: 'Close',
+      recentSearches: 'Recent Searches',
+      clearRecent: 'Clear',
+      suggestions: 'Suggestions',
+      resultsCount: '{count} results',
+      searching: 'Searching...',
+      noResults: 'No results found',
+      emptyState: 'Search for channels, playlists, or videos',
+      emptyHint: 'Type at least 2 characters to search',
+      navigate: 'Navigate',
+      select: 'Select',
+      closeHint: 'Close',
+      filters: {
+        all: 'All',
+        channels: 'Channels',
+        playlists: 'Playlists',
+        videos: 'Videos'
+      },
+      entityTypes: {
+        channel: 'Channel',
+        playlist: 'Playlist',
+        video: 'Video',
+        category: 'Category',
+        user: 'User',
+        content: 'Content'
+      }
+    },
     categoryModal: {
       headingSingle: 'Assign Category',
       headingMulti: 'Assign Categories',
@@ -1401,7 +1485,14 @@ export const messages = {
         relevant: 'الأكثر صلة',
         recent: 'الأحدث',
         popular: 'الأكثر شعبية'
-      }
+      },
+      loading: 'جارٍ التحميل...',
+      loadMore: 'تحميل المزيد من النتائج',
+      endOfResults: 'نهاية النتائج',
+      addedApproved: 'تم إضافة {type} والموافقة مع {count} فئة',
+      addedQueue: 'تم إضافة {type} لقائمة الموافقة مع {count} فئة',
+      alreadyExists: 'هذا المحتوى موجود بالفعل في السجل',
+      addError: 'فشل إضافة المحتوى للموافقة'
     },
     categories: {
       heading: 'الفئات',
@@ -1430,18 +1521,27 @@ export const messages = {
         icon: 'أيقونة (اختياري)',
         iconPlaceholder: 'أدخل رمز تعبيري أو أيقونة...',
         displayOrder: 'ترتيب العرض',
+        displayOrderAuto: 'تلقائي',
         cancel: 'إلغاء',
         save: 'حفظ',
         saving: 'جارٍ الحفظ...',
-        error: 'فشل حفظ الفئة.'
+        error: 'فشل حفظ الفئة.',
+        translations: 'الترجمات',
+        nameEn: 'English',
+        nameAr: 'العربية (Arabic)',
+        nameNl: 'Nederlands (Dutch)'
       }
     },
     approvals: {
       heading: 'الموافقات المعلقة',
       subtitle: 'مراجعة المحتوى المرسل والموافقة عليه أو رفضه',
+      mySubmissionsHeading: 'طلباتي',
+      mySubmissionsSubtitle: 'تتبع حالة طلبات المحتوى الخاصة بك',
       pending: 'عناصر قيد الانتظار',
+      pendingApprox: '~قيد الانتظار',
       filters: {
         type: 'نوع المحتوى',
+        status: 'الحالة',
         category: 'الفئة',
         allCategories: 'جميع الفئات',
         sort: 'ترتيب حسب',
@@ -1472,9 +1572,20 @@ export const messages = {
       submittedBy: 'مقدم من',
       unknown: 'غير معروف',
       loading: 'جارٍ تحميل الموافقات...',
+      loadMore: 'تحميل المزيد',
+      loadingMore: 'جارٍ تحميل المزيد...',
+      loadMoreError: 'فشل تحميل المزيد من العناصر.',
       retry: 'إعادة المحاولة',
       empty: 'لا توجد موافقات معلقة.',
+      emptySubmissions: 'لا توجد طلبات بهذه الحالة.',
       error: 'فشل تحميل الموافقات.',
+      statusTabs: {
+        pending: 'قيد الانتظار',
+        approved: 'مقبولة',
+        rejected: 'مرفوضة'
+      },
+      rejectedReason: 'السبب',
+      adminNotes: 'ملاحظات المسؤول',
       rejectDialog: {
         title: 'رفض الطلب',
         reason: 'سبب الرفض',
@@ -1503,7 +1614,30 @@ export const messages = {
       contentTitle: 'العنوان',
       type: 'النوع',
       categoryReordered: 'تم تحديث ترتيب الفئة',
-      contentReordered: 'تم تحديث ترتيب المحتوى'
+      contentReordered: 'تم تحديث ترتيب المحتوى',
+      addContent: 'إضافة محتوى',
+      addContentTitle: 'إضافة محتوى إلى الفئة',
+      addContentSearch: 'البحث في المحتوى المعتمد...',
+      addContentEmpty: 'لا يوجد محتوى معتمد متاح للإضافة',
+      addContentNoResults: 'لم يتم العثور على نتائج',
+      addContentLoading: 'جارٍ تحميل المحتوى المعتمد...',
+      addContentSelected: '{count} محدد',
+      addContentConfirm: 'إضافة إلى الفئة',
+      addContentSuccess: 'تمت إضافة {count} عنصر(عناصر) إلى الفئة',
+      addContentError: 'فشل في إضافة المحتوى إلى الفئة',
+      addContentLoadError: 'فشل في تحميل المحتوى المعتمد',
+      filterAll: 'الكل',
+      filterChannels: 'القنوات',
+      filterPlaylists: 'قوائم التشغيل',
+      filterVideos: 'الفيديوهات',
+      removeContent: 'إزالة',
+      removeContentConfirm: 'إزالة "{title}" من هذه الفئة؟',
+      removeContentSuccess: 'تمت إزالة المحتوى من الفئة',
+      removeContentError: 'فشل في إزالة المحتوى',
+      addContentTruncated: 'عرض {count} عنصر. قد لا يتم عرض بعض المحتوى بسبب الحجم.',
+      noFilterResults: 'لا يوجد محتوى من نوع {type} في هذه الفئة',
+      cancel: 'إلغاء',
+      close: 'إغلاق'
     },
     contentLibrary: {
       heading: 'مكتبة المحتوى',
@@ -1511,6 +1645,7 @@ export const messages = {
       searchPlaceholder: 'البحث بالعنوان أو المعرّف أو الوصف...',
       loading: 'جارٍ تحميل المحتوى...',
       loadingMore: 'جارٍ تحميل المزيد...',
+      loadMore: 'تحميل المزيد ({current} من {total})',
       allLoaded: 'تم تحميل جميع العناصر ({count})',
       retry: 'إعادة المحاولة',
       empty: 'لم يتم العثور على محتوى. جرب تعديل الفلاتر.',
@@ -1611,7 +1746,8 @@ export const messages = {
         retrying: 'جارٍ إعادة المحاولة...'
       },
       retry: 'إعادة المحاولة',
-      close: 'إغلاق'
+      close: 'إغلاق',
+      opensInNewTab: 'يفتح في علامة تبويب جديدة'
     },
     videoPreview: {
       noVideo: 'لا يوجد فيديو متاح',
@@ -1886,7 +2022,9 @@ export const messages = {
         noMoreItems: 'لا توجد عناصر أخرى',
         excludeError: 'خطأ في إضافة الاستثناء',
         removeError: 'خطأ في إزالة الاستثناء',
-        itemCount: '{count} عنصر'
+        fetchError: 'تعذر جلب تفاصيل القناة. قد يكون يوتيوب قد غيّر تخطيط الصفحة، أو القناة غير متاحة مؤقتاً.',
+        itemCount: '{count} عنصر',
+        openOnYoutube: 'فتح على يوتيوب'
       },
       playlistDetail: {
         title: 'تفاصيل قائمة التشغيل',
@@ -2344,6 +2482,36 @@ export const messages = {
         close: 'إغلاق',
         viewAll: 'عرض كل النشاط'
       }
+    },
+    globalSearch: {
+      placeholder: 'البحث عن المحتوى...',
+      clearSearch: 'مسح البحث',
+      close: 'إغلاق',
+      recentSearches: 'عمليات البحث الأخيرة',
+      clearRecent: 'مسح',
+      suggestions: 'اقتراحات',
+      resultsCount: '{count} نتيجة',
+      searching: 'جارٍ البحث...',
+      noResults: 'لم يتم العثور على نتائج',
+      emptyState: 'البحث عن القنوات أو قوائم التشغيل أو الفيديوهات',
+      emptyHint: 'اكتب حرفين على الأقل للبحث',
+      navigate: 'التنقل',
+      select: 'اختيار',
+      closeHint: 'إغلاق',
+      filters: {
+        all: 'الكل',
+        channels: 'القنوات',
+        playlists: 'قوائم التشغيل',
+        videos: 'الفيديوهات'
+      },
+      entityTypes: {
+        channel: 'قناة',
+        playlist: 'قائمة تشغيل',
+        video: 'فيديو',
+        category: 'فئة',
+        user: 'مستخدم',
+        content: 'محتوى'
+      }
     }
   },
   nl: {
@@ -2462,7 +2630,14 @@ export const messages = {
         relevant: 'Relevantie',
         recent: 'Meest recent',
         popular: 'Meest populair'
-      }
+      },
+      loading: 'Laden...',
+      loadMore: 'Meer resultaten laden',
+      endOfResults: 'Einde van resultaten',
+      addedApproved: '{type} toegevoegd en goedgekeurd met {count} categorieën',
+      addedQueue: '{type} toegevoegd aan wachtrij met {count} categorieën',
+      alreadyExists: 'Deze inhoud bestaat al in het register',
+      addError: 'Kon inhoud niet toevoegen ter goedkeuring'
     },
     categories: {
       heading: 'Categorieën',
@@ -2491,18 +2666,27 @@ export const messages = {
         icon: 'Icoon (optioneel)',
         iconPlaceholder: 'Voer emoji of icoon in...',
         displayOrder: 'Weergavevolgorde',
+        displayOrderAuto: 'Automatisch',
         cancel: 'Annuleren',
         save: 'Opslaan',
         saving: 'Opslaan...',
-        error: 'Categorie opslaan is mislukt.'
+        error: 'Categorie opslaan is mislukt.',
+        translations: 'Vertalingen',
+        nameEn: 'English',
+        nameAr: 'العربية (Arabic)',
+        nameNl: 'Nederlands (Dutch)'
       }
     },
     approvals: {
       heading: 'Goedkeuringen in behandeling',
       subtitle: 'Beoordeel en keur ingediende inhoud goed of af',
+      mySubmissionsHeading: 'Mijn indieningen',
+      mySubmissionsSubtitle: 'Volg de status van je ingediende inhoud',
       pending: 'Items in behandeling',
+      pendingApprox: '~In behandeling',
       filters: {
         type: 'Type inhoud',
+        status: 'Status',
         category: 'Categorie',
         allCategories: 'Alle categorieën',
         sort: 'Sorteren op',
@@ -2533,9 +2717,20 @@ export const messages = {
       submittedBy: 'Ingediend door',
       unknown: 'Onbekend',
       loading: 'Goedkeuringen laden...',
+      loadMore: 'Meer laden',
+      loadingMore: 'Meer laden...',
+      loadMoreError: 'Kan geen extra items laden.',
       retry: 'Opnieuw proberen',
       empty: 'Geen goedkeuringen in behandeling.',
+      emptySubmissions: 'Geen indieningen gevonden met deze status.',
       error: 'Goedkeuringen kunnen niet worden geladen.',
+      statusTabs: {
+        pending: 'In behandeling',
+        approved: 'Goedgekeurd',
+        rejected: 'Afgewezen'
+      },
+      rejectedReason: 'Reden',
+      adminNotes: 'Opmerkingen beheerder',
       rejectDialog: {
         title: 'Indiening afwijzen',
         reason: 'Reden voor afwijzing',
@@ -2564,7 +2759,30 @@ export const messages = {
       contentTitle: 'Titel',
       type: 'Type',
       categoryReordered: 'Categorievolgorde bijgewerkt',
-      contentReordered: 'Inhoudsvolgorde bijgewerkt'
+      contentReordered: 'Inhoudsvolgorde bijgewerkt',
+      addContent: 'Inhoud toevoegen',
+      addContentTitle: 'Inhoud toevoegen aan categorie',
+      addContentSearch: 'Zoek goedgekeurde inhoud...',
+      addContentEmpty: 'Geen goedgekeurde inhoud beschikbaar om toe te voegen',
+      addContentNoResults: 'Geen resultaten gevonden',
+      addContentLoading: 'Goedgekeurde inhoud laden...',
+      addContentSelected: '{count} geselecteerd',
+      addContentConfirm: 'Toevoegen aan categorie',
+      addContentSuccess: '{count} item(s) toegevoegd aan categorie',
+      addContentError: 'Inhoud toevoegen aan categorie mislukt',
+      addContentLoadError: 'Goedgekeurde inhoud laden mislukt',
+      filterAll: 'Alle',
+      filterChannels: 'Kanalen',
+      filterPlaylists: 'Afspeellijsten',
+      filterVideos: "Video's",
+      removeContent: 'Verwijderen',
+      removeContentConfirm: '"{title}" uit deze categorie verwijderen?',
+      removeContentSuccess: 'Inhoud verwijderd uit categorie',
+      removeContentError: 'Inhoud verwijderen mislukt',
+      addContentTruncated: '{count} items weergegeven. Sommige inhoud wordt mogelijk niet weergegeven vanwege volume.',
+      noFilterResults: 'Geen {type} inhoud in deze categorie',
+      cancel: 'Annuleren',
+      close: 'Sluiten'
     },
     contentLibrary: {
       heading: 'Inhoudsbibliotheek',
@@ -2572,6 +2790,7 @@ export const messages = {
       searchPlaceholder: 'Zoeken op titel, ID of beschrijving...',
       loading: 'Inhoud laden...',
       loadingMore: 'Meer laden...',
+      loadMore: 'Meer laden ({current} van {total})',
       allLoaded: 'Alle {count} items geladen',
       retry: 'Opnieuw proberen',
       empty: 'Geen inhoud gevonden. Probeer de filters aan te passen.',
@@ -2672,7 +2891,8 @@ export const messages = {
         retrying: 'Opnieuw proberen...'
       },
       retry: 'Opnieuw proberen',
-      close: 'Sluiten'
+      close: 'Sluiten',
+      opensInNewTab: 'opent in een nieuw tabblad'
     },
     videoPreview: {
       noVideo: 'Geen video beschikbaar',
@@ -2947,7 +3167,9 @@ export const messages = {
         noMoreItems: 'Geen items meer',
         excludeError: 'Fout bij toevoegen van uitzondering',
         removeError: 'Fout bij verwijderen van uitzondering',
-        itemCount: '{count} items'
+        fetchError: 'Kanaalgegevens konden niet worden opgehaald. YouTube heeft mogelijk de pagina-indeling gewijzigd, of het kanaal is tijdelijk niet beschikbaar.',
+        itemCount: '{count} items',
+        openOnYoutube: 'Openen op YouTube'
       },
       playlistDetail: {
         title: 'Afspeellijstdetails',
@@ -3378,6 +3600,36 @@ export const messages = {
         successful: 'gelukt',
         skipped: 'overgeslagen',
         failed: 'mislukt'
+      }
+    },
+    globalSearch: {
+      placeholder: 'Zoek inhoud...',
+      clearSearch: 'Zoekopdracht wissen',
+      close: 'Sluiten',
+      recentSearches: 'Recente zoekopdrachten',
+      clearRecent: 'Wissen',
+      suggestions: 'Suggesties',
+      resultsCount: '{count} resultaten',
+      searching: 'Zoeken...',
+      noResults: 'Geen resultaten gevonden',
+      emptyState: 'Zoek naar kanalen, afspeellijsten of video\'s',
+      emptyHint: 'Typ minimaal 2 tekens om te zoeken',
+      navigate: 'Navigeren',
+      select: 'Selecteren',
+      closeHint: 'Sluiten',
+      filters: {
+        all: 'Alles',
+        channels: 'Kanalen',
+        playlists: 'Afspeellijsten',
+        videos: 'Video\'s'
+      },
+      entityTypes: {
+        channel: 'Kanaal',
+        playlist: 'Afspeellijst',
+        video: 'Video',
+        category: 'Categorie',
+        user: 'Gebruiker',
+        content: 'Inhoud'
       }
     }
   }

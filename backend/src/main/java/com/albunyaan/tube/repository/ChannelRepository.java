@@ -13,6 +13,8 @@ import com.google.cloud.firestore.DocumentSnapshot;
 import com.google.cloud.firestore.Query;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.google.cloud.firestore.QuerySnapshot;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import com.google.cloud.firestore.WriteResult;
 import com.albunyaan.tube.util.CursorUtils;
 import org.slf4j.Logger;
@@ -69,6 +71,36 @@ public class ChannelRepository {
 
         result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
         return channel;
+    }
+
+    /**
+     * Atomically save a channel only if its current status matches the expected value.
+     * Uses a Firestore transaction to prevent concurrent approve/reject race conditions.
+     */
+    public Channel saveIfStatus(Channel channel, String expectedStatus)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        if (channel == null || channel.getId() == null || expectedStatus == null) {
+            throw new IllegalArgumentException("Channel, channel ID, and expectedStatus must not be null for conditional save");
+        }
+        channel.touch();
+        channel.setStatus(channel.getStatus());
+        channel.setExcludedItems(channel.getExcludedItems());
+
+        DocumentReference docRef = getCollection().document(channel.getId());
+        return firestore.runTransaction(transaction -> {
+            DocumentSnapshot snapshot = transaction.get(docRef).get();
+            if (!snapshot.exists()) {
+                throw new IllegalArgumentException("Channel not found: " + channel.getId());
+            }
+            String currentStatus = snapshot.getString("status");
+            if (!expectedStatus.equals(currentStatus)) {
+                throw new IllegalStateException(
+                        "Cannot update channel " + channel.getId() +
+                        ": expected status " + expectedStatus + " but found " + currentStatus);
+            }
+            transaction.set(docRef, channel);
+            return channel;
+        }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
     }
 
     public Optional<Channel> findById(String id) throws ExecutionException, InterruptedException, TimeoutException {
@@ -277,6 +309,34 @@ public class ChannelRepository {
                 .get();
 
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
+    }
+
+    /**
+     * Find approved channels across multiple category IDs (parent + children aggregation).
+     * Uses one query per category ID to avoid Firestore whereArrayContainsAny + orderBy limitations.
+     * Results are deduped by document ID and sorted by subscribers descending.
+     */
+    public List<Channel> findByCategoryIds(List<String> categoryIds, int limit) throws ExecutionException, InterruptedException, TimeoutException {
+        if (categoryIds == null || categoryIds.isEmpty()) return List.of();
+
+        // Fetch limit per subcategory (not per total) but cap to avoid waste
+        int perCategoryLimit = Math.max(limit / categoryIds.size(), 5);
+        LinkedHashMap<String, Channel> deduped = new LinkedHashMap<>();
+        for (String catId : categoryIds) {
+            List<Channel> batch = findByCategoryOrderBySubscribersDesc(catId, perCategoryLimit);
+            for (Channel ch : batch) {
+                deduped.putIfAbsent(ch.getId(), ch);
+            }
+        }
+
+        return new ArrayList<>(deduped.values()).stream()
+                .sorted((a, b) -> {
+                    long sa = a.getSubscribers() != null ? a.getSubscribers() : 0;
+                    long sb = b.getSubscribers() != null ? b.getSubscribers() : 0;
+                    return Long.compare(sb, sa);
+                })
+                .limit(limit)
+                .collect(java.util.stream.Collectors.toList());
     }
 
     public List<Channel> findByCategoryOrderBySubscribersDesc(String category, int limit) throws ExecutionException, InterruptedException, TimeoutException {
