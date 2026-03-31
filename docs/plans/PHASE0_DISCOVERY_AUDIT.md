@@ -20,7 +20,7 @@
 | `/actuator/**` | Yes | **No** | Spring actuator |
 | `/api/admin/users/**` | Yes | **No** | User management |
 | `/api/admin/categories/**` (POST/PUT/DELETE) | Yes | **No** | Category CRUD |
-| `/api/admin/categories/**` (GET) | Yes | Yes | Category read (cached, public) |
+| `/api/admin/categories/**` (GET) | Yes | Yes | Authenticated read (all roles), publicly cached |
 | `/api/admin/**` (DELETE) | Yes | **No** | All admin delete |
 | `/api/admin/**` (GET/POST/PUT) | Yes | Yes | Catch-all for admin |
 
@@ -75,7 +75,7 @@
 - **Router** (`router/index.ts`) has only `requiresAuth` checks, **no role-based guards**
 - **Navigation** (`constants/navigation.ts`) shows ALL items to ALL authenticated users
 - **API client** (`services/api/client.ts`) shows 403 toast but doesn't prevent navigation
-- Moderator sees all 19 nav items and can navigate to all pages (backend returns 403 on action)
+- Moderator sees all 16 nav items and can navigate to all pages (backend returns 403 on action)
 
 ---
 

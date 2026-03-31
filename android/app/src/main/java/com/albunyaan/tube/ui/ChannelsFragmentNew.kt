@@ -67,7 +67,7 @@ class ChannelsFragmentNew : Fragment(R.layout.fragment_channels_new) {
                 Log.d(TAG, "Filter state changed: category=${filterState.category}")
                 autofillHelper.reset()
                 viewModel.setFilters(filterState)
-                binding?.filterChip.updateCategoryFilter(filterState.category, filterState.categoryName) {
+                binding?.filterChip?.updateCategoryFilter(filterState.category, filterState.categoryName) {
                     Log.d(TAG, "Clearing category filter")
                     filterManager.setCategory(null)
                 }

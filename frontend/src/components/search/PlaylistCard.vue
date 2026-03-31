@@ -19,7 +19,7 @@
       </div>
     </div>
     <div class="card-content">
-      <h3 class="card-title" style="cursor:pointer" role="button" tabindex="0" @click="$emit('preview', playlist)" @keydown.enter="$emit('preview', playlist)" @keydown.space.prevent="$emit('preview', playlist)">{{ playlist.title }}</h3>
+      <h3 class="card-title"><button type="button" class="card-title-button" @click="$emit('preview', playlist)">{{ playlist.title }}</button></h3>
       <div class="card-meta">
         <span class="meta-item">
           <svg class="meta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -259,6 +259,14 @@ function formatRelativeTime(dateStr: string): string {
   font-weight: 600;
   color: var(--color-text-primary);
   line-height: 1.4;
+}
+
+.card-title-button {
+  all: unset;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
 }
 
 .card-meta {

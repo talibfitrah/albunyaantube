@@ -64,6 +64,7 @@ class SubcategoriesFragment : Fragment(R.layout.fragment_subcategories) {
                         android.widget.Toast.LENGTH_SHORT
                     ).show()
                     // Pop past CategoriesFragment to return to wherever the user came from
+                    if (!isAdded || view == null) return@launch
                     findNavController().popBackStack(R.id.categoriesFragment, true)
                 } catch (e: Exception) {
                     android.util.Log.e(TAG, "Failed to apply category filter", e)

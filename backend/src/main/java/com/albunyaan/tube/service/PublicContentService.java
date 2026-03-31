@@ -185,11 +185,10 @@ public class PublicContentService {
                                                                  List<String> allCategoryIds, String cursor)
             throws ExecutionException, InterruptedException, TimeoutException {
 
-        // Multi-category aggregation: use non-cursor approach
+        // Multi-category aggregation: no cursor support (getChannels lacks offset)
         if (allCategoryIds != null && allCategoryIds.size() > 1) {
             List<ContentItemDto> items = getChannels(limit, category, allCategoryIds);
-            String nextCursor = items.size() >= limit ? encodeCursor(limit) : null;
-            return new CursorPageDto<>(items, nextCursor);
+            return new CursorPageDto<>(items, null);
         }
 
         ChannelRepository.PaginatedResult<Channel> result;
@@ -237,10 +236,10 @@ public class PublicContentService {
                                                                   List<String> allCategoryIds, String cursor)
             throws ExecutionException, InterruptedException, TimeoutException {
 
+        // Multi-category aggregation: no cursor support (getPlaylists lacks offset)
         if (allCategoryIds != null && allCategoryIds.size() > 1) {
             List<ContentItemDto> items = getPlaylists(limit, category, allCategoryIds);
-            String nextCursor = items.size() >= limit ? encodeCursor(limit) : null;
-            return new CursorPageDto<>(items, nextCursor);
+            return new CursorPageDto<>(items, null);
         }
 
         PlaylistRepository.PaginatedResult<Playlist> result;
@@ -268,11 +267,10 @@ public class PublicContentService {
                                                               String length, String date, String sort)
             throws ExecutionException, InterruptedException, TimeoutException {
 
-        // Multi-category aggregation: fall back to non-cursor approach
+        // Multi-category aggregation: no cursor support (getVideos lacks offset)
         if (allCategoryIds != null && allCategoryIds.size() > 1) {
             List<ContentItemDto> items = getVideos(limit, category, allCategoryIds, length, date, sort);
-            String nextCursor = items.size() >= limit ? encodeCursor(limit) : null;
-            return new CursorPageDto<>(items, nextCursor);
+            return new CursorPageDto<>(items, null);
         }
 
         // For default case (no filters, newest first), use efficient cursor pagination
@@ -1509,7 +1507,10 @@ public class PublicContentService {
     }
 
     /**
-     * Normalize a Base64-encoded cursor to its integer offset for use in cache keys.
+     * Normalize a Base64-encoded cursor to a stable string for use in cache keys.
+     * Handles two cursor formats:
+     * - Home feed: "displayOrder:categoryId" (e.g. "5:abc123") → extracts displayOrder
+     * - Content: plain integer offset (e.g. "10") → parsed directly
      * Prevents cache pollution: arbitrary/invalid cursors all normalize to "0".
      * Must be public+static so Spring SpEL can reference it in @Cacheable key expressions.
      */
@@ -1517,6 +1518,14 @@ public class PublicContentService {
         if (cursor == null || cursor.isEmpty()) return "0";
         try {
             String decoded = new String(Base64.getDecoder().decode(cursor));
+            if (decoded.contains(":")) {
+                // Home feed cursors: "displayOrder:categoryId"
+                // Include both parts in the key so two categories with the same displayOrder
+                // but different IDs don't collide (e.g. "5:abc" vs "5:xyz").
+                String[] parts = decoded.split(":", 2);
+                int order = Math.max(0, Integer.parseInt(parts[0]));
+                return order + "-" + parts[1].hashCode();
+            }
             return String.valueOf(Math.max(0, Integer.parseInt(decoded)));
         } catch (Exception e) {
             return "0";

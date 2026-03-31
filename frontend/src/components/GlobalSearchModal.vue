@@ -424,6 +424,10 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('keydown', handleGlobalKeydown);
   if (searchDebounce) clearTimeout(searchDebounce);
+  if (abortController) {
+    abortController.abort();
+    abortController = null;
+  }
 });
 </script>
 

@@ -59,6 +59,38 @@ public class RegistryController {
     }
 
     /**
+     * Normalize status and approvedBy for a new registry item based on user role.
+     * Non-admins always get PENDING. Admins can specify a valid status or default to APPROVED.
+     *
+     * @return the normalized status, or null if the admin-provided status is invalid (caller should return 400)
+     */
+    private String normalizeStatusAndApprovedBy(FirebaseUserDetails user, String requestedStatus,
+                                                 java.util.function.Consumer<String> setStatus,
+                                                 java.util.function.Consumer<String> setApprovedBy) {
+        if (!user.isAdmin()) {
+            setStatus.accept("PENDING");
+            setApprovedBy.accept(null);
+            return "PENDING";
+        }
+        if (requestedStatus == null || requestedStatus.isEmpty()) {
+            setStatus.accept("APPROVED");
+            setApprovedBy.accept(user.getUid());
+            return "APPROVED";
+        }
+        String normalized = requestedStatus.toUpperCase(java.util.Locale.ROOT);
+        if (!VALID_STATUSES.contains(normalized)) {
+            return null; // invalid status
+        }
+        setStatus.accept(normalized);
+        if ("APPROVED".equals(normalized)) {
+            setApprovedBy.accept(user.getUid());
+        } else {
+            setApprovedBy.accept(null);
+        }
+        return normalized;
+    }
+
+    /**
      * Get all channels in registry
      *
      * @param limit Maximum number of channels to return (default: 100)
@@ -133,20 +165,10 @@ public class RegistryController {
         channel.setDisplayOrder(null);
         channel.setSubmittedBy(user.getUid());
 
-        // Non-admin users always get PENDING status regardless of request body
-        if (!user.isAdmin()) {
-            channel.setStatus("PENDING");
-            channel.setApprovedBy(null);
-        } else if (channel.getStatus() == null || channel.getStatus().isEmpty()) {
-            // Admin with no explicit status: auto-approve
-            channel.setStatus("APPROVED");
-            channel.setApprovedBy(user.getUid());
-        } else if ("APPROVED".equals(channel.getStatus())) {
-            // Admin explicitly approving: ensure approvedBy is set to current admin
-            channel.setApprovedBy(user.getUid());
-        } else {
-            // Admin setting PENDING/REJECTED: clear approvedBy
-            channel.setApprovedBy(null);
+        String status = normalizeStatusAndApprovedBy(user, channel.getStatus(),
+                channel::setStatus, channel::setApprovedBy);
+        if (status == null) {
+            return ResponseEntity.badRequest().build();
         }
 
         Channel saved = channelRepository.save(channel);
@@ -318,20 +340,10 @@ public class RegistryController {
         playlist.setDisplayOrder(null);
         playlist.setSubmittedBy(user.getUid());
 
-        // Non-admin users always get PENDING status regardless of request body
-        if (!user.isAdmin()) {
-            playlist.setStatus("PENDING");
-            playlist.setApprovedBy(null);
-        } else if (playlist.getStatus() == null || playlist.getStatus().isEmpty()) {
-            // Admin with no explicit status: auto-approve
-            playlist.setStatus("APPROVED");
-            playlist.setApprovedBy(user.getUid());
-        } else if ("APPROVED".equals(playlist.getStatus())) {
-            // Admin explicitly approving: ensure approvedBy is set to current admin
-            playlist.setApprovedBy(user.getUid());
-        } else {
-            // Admin setting PENDING/REJECTED: clear approvedBy
-            playlist.setApprovedBy(null);
+        String playlistStatus = normalizeStatusAndApprovedBy(user, playlist.getStatus(),
+                playlist::setStatus, playlist::setApprovedBy);
+        if (playlistStatus == null) {
+            return ResponseEntity.badRequest().build();
         }
 
         Playlist saved = playlistRepository.save(playlist);
@@ -598,20 +610,10 @@ public class RegistryController {
         video.setDisplayOrder(null);
         video.setSubmittedBy(user.getUid());
 
-        // Non-admin users always get PENDING status regardless of request body
-        if (!user.isAdmin()) {
-            video.setStatus("PENDING");
-            video.setApprovedBy(null);
-        } else if (video.getStatus() == null || video.getStatus().isEmpty()) {
-            // Admin with no explicit status: auto-approve
-            video.setStatus("APPROVED");
-            video.setApprovedBy(user.getUid());
-        } else if ("APPROVED".equals(video.getStatus())) {
-            // Admin explicitly approving: ensure approvedBy is set to current admin
-            video.setApprovedBy(user.getUid());
-        } else {
-            // Admin setting PENDING/REJECTED: clear approvedBy
-            video.setApprovedBy(null);
+        String videoStatus = normalizeStatusAndApprovedBy(user, video.getStatus(),
+                video::setStatus, video::setApprovedBy);
+        if (videoStatus == null) {
+            return ResponseEntity.badRequest().build();
         }
 
         Video saved = videoRepository.save(video);

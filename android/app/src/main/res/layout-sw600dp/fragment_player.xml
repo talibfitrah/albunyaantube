@@ -45,7 +45,7 @@
                     app:resize_mode="fit"
                     app:shutter_background_color="@android:color/black"
                     app:use_artwork="false"
-                    app:show_buffering="when_playing"
+                    app:show_buffering="always"
                     app:use_controller="true"
                     app:show_subtitle_button="true"
                     app:show_shuffle_button="false"
@@ -247,6 +247,16 @@
                         android:contentDescription="@string/player_quality_selector"
                         android:tint="@android:color/white" />
 
+                    <!-- Fullscreen Button - same row as cast/quality, respects RTL -->
+                    <ImageButton
+                        android:id="@+id/fullscreenButton"
+                        android:layout_width="@dimen/touch_target_min"
+                        android:layout_height="@dimen/touch_target_min"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:src="@drawable/ic_fullscreen"
+                        android:contentDescription="@string/player_action_fullscreen"
+                        app:tint="@android:color/white" />
+
                     <!-- Chromecast Button -->
                     <androidx.mediarouter.app.MediaRouteButton
                         android:id="@+id/castButton"
@@ -257,19 +267,6 @@
                         app:mediaRouteButtonTint="@android:color/white" />
 
                 </LinearLayout>
-
-                <!-- Fullscreen Button - Bottom Right (inside overlay controls) -->
-                <ImageButton
-                    android:id="@+id/fullscreenButton"
-                    android:layout_width="@dimen/touch_target_min"
-                    android:layout_height="@dimen/touch_target_min"
-                    android:layout_gravity="bottom|end"
-                    android:layout_marginEnd="@dimen/spacing_md"
-                    android:layout_marginBottom="@dimen/player_controls_offset"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:src="@drawable/ic_fullscreen"
-                    android:contentDescription="@string/player_action_fullscreen"
-                    app:tint="@android:color/white" />
 
             </FrameLayout>
 

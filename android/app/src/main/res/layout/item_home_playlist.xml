@@ -77,6 +77,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/spacing_xs"
                 android:textAppearance="@style/TextAppearance.Home.ItemMeta"
+                android:textAlignment="viewStart"
                 android:maxLines="2"
                 android:ellipsize="end"
                 tools:text="General"/>

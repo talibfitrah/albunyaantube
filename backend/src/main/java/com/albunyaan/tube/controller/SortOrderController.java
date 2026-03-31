@@ -86,6 +86,9 @@ public class SortOrderController {
             @PathVariable String categoryId) {
         try {
             return ResponseEntity.ok(sortOrderService.getContentSortOrder(categoryId));
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid request for content sort order in category {}: {}", categoryId, e.getMessage());
+            return ResponseEntity.badRequest().build();
         } catch (Exception e) {
             log.error("Failed to get content sort order for category {}", categoryId, e);
             return ResponseEntity.internalServerError().build();
@@ -153,7 +156,7 @@ public class SortOrderController {
     public ResponseEntity<List<ContentSortDto>> removeContentFromCategory(
             @PathVariable String categoryId,
             @PathVariable @Pattern(regexp = "^(channel|playlist|video)$") String contentType,
-            @PathVariable String contentId) {
+            @PathVariable @NotBlank String contentId) {
         try {
             List<ContentSortDto> result = sortOrderService.removeContentFromCategoryAndUpdate(
                     categoryId, contentId, contentType);

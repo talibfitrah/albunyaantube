@@ -429,6 +429,11 @@ export async function getPlaylistDetails(playlistId: string) {
  * Get videos in a YouTube playlist with pagination.
  * Uses playlistItems.list + videos.list (2 units).
  * Search query filters client-side (playlistItems API has no q param).
+ *
+ * NOTE: When searchQuery is provided, results are filtered client-side after fetching
+ * a single page from the API. This means the returned page may contain fewer items than
+ * expected, and nextPageToken reflects the API's pagination, not the filtered results.
+ * Callers should be aware that page sizes may be inconsistent when searching.
  */
 export async function getPlaylistVideos(
   playlistId: string,

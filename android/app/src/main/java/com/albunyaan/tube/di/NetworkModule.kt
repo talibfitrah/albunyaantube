@@ -10,12 +10,12 @@ import com.squareup.moshi.ToJson
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
-import okhttp3.Cache
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -69,16 +69,20 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideOkHttpClient(@ApplicationContext context: Context): OkHttpClient {
+        // One-time cleanup: delete stale HTTP cache left by prior versions that
+        // cached API responses (e.g. categories missing due to a backend bug).
+        // Runs on a background thread to avoid blocking DI initialization.
+        val cacheDir = File(context.cacheDir, "http_cache")
+        if (cacheDir.exists()) {
+            Thread { cacheDir.deleteRecursively() }.start()
+        }
+
         return OkHttpClient.Builder()
             .addInterceptor(HttpLoggingInterceptor().apply {
                 level = HttpLoggingInterceptor.Level.BASIC
             })
-            .cache(
-                Cache(
-                    directory = File(context.cacheDir, "http_cache"),
-                    maxSize = 30L * 1024 * 1024 // 30 MB
-                )
-            )
+            // No HTTP cache — API responses are admin-curated and change frequently.
+            // Server-side Caffeine cache handles backend performance.
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .writeTimeout(20, TimeUnit.SECONDS)
@@ -115,7 +119,7 @@ class OffsetDateTimeAdapter {
         return value?.let {
             try {
                 OffsetDateTime.parse(it)
-            } catch (e: Exception) {
+            } catch (e: DateTimeParseException) {
                 android.util.Log.w("OffsetDateTimeAdapter", "Failed to parse OffsetDateTime: \"$it\"", e)
                 null
             }

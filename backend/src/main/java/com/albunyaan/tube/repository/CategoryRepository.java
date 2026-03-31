@@ -14,8 +14,10 @@ import com.google.cloud.firestore.WriteBatch;
 import com.google.cloud.firestore.WriteResult;
 import org.springframework.stereotype.Repository;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,6 +38,17 @@ public class CategoryRepository {
     private static final Logger log = LoggerFactory.getLogger(CategoryRepository.class);
     private static final String COLLECTION_NAME = "categories";
     private static final int FIRESTORE_BATCH_LIMIT = 500;
+
+    /**
+     * Null-safe comparator for sorting categories by displayOrder then name.
+     * Categories with null displayOrder sort after those with a value set.
+     * Firestore's orderBy() silently excludes documents missing the ordered field,
+     * so we fetch unordered and sort in Java to include all categories.
+     */
+    private static final Comparator<Category> DISPLAY_ORDER_COMPARATOR =
+            Comparator.comparing(Category::getDisplayOrder, Comparator.nullsLast(Comparator.naturalOrder()))
+                    .thenComparing(Category::getName, Comparator.nullsLast(Comparator.naturalOrder()));
+
     private final Firestore firestore;
     private final FirestoreTimeoutProperties timeoutProperties;
 
@@ -79,39 +92,47 @@ public class CategoryRepository {
     }
 
     /**
-     * Find all categories
+     * Find all categories.
+     * Fetches without Firestore orderBy to include categories with null displayOrder
+     * (Firestore silently excludes documents missing an ordered field), then sorts in Java.
      */
     public List<Category> findAll() throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> query = getCollection()
-                .orderBy("displayOrder", Query.Direction.ASCENDING)
-                .orderBy("name", Query.Direction.ASCENDING)
-                .get();
+        ApiFuture<QuerySnapshot> query = getCollection().get();
 
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Category.class);
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Category.class)
+                .stream()
+                .sorted(DISPLAY_ORDER_COMPARATOR)
+                .collect(Collectors.toList());
     }
 
     /**
-     * Find top-level categories (no parent)
+     * Find top-level categories (no parent).
+     * Uses whereEqualTo filter only (no orderBy) to avoid excluding categories with null displayOrder.
      */
     public List<Category> findTopLevel() throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereEqualTo("parentCategoryId", null)
-                .orderBy("displayOrder", Query.Direction.ASCENDING)
                 .get();
 
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Category.class);
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Category.class)
+                .stream()
+                .sorted(DISPLAY_ORDER_COMPARATOR)
+                .collect(Collectors.toList());
     }
 
     /**
-     * Find subcategories of a parent category
+     * Find subcategories of a parent category.
+     * Uses whereEqualTo filter only (no orderBy) to avoid excluding subcategories with null displayOrder.
      */
     public List<Category> findByParentId(String parentId) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereEqualTo("parentCategoryId", parentId)
-                .orderBy("displayOrder", Query.Direction.ASCENDING)
                 .get();
 
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Category.class);
+        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Category.class)
+                .stream()
+                .sorted(DISPLAY_ORDER_COMPARATOR)
+                .collect(Collectors.toList());
     }
 
     /**

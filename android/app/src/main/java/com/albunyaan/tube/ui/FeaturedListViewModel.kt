@@ -71,6 +71,7 @@ class FeaturedListViewModel @Inject constructor(
 
         loadJob = viewModelScope.launch {
             _state.value = FeaturedState.Loading
+            var probeFailed = false
             try {
                 // Probe the home feed endpoint — if it returns multiple sections,
                 // this category has subcategories and we show sections mode.
@@ -89,17 +90,19 @@ class FeaturedListViewModel @Inject constructor(
                     Log.d(TAG, "Sections mode: ${allSections.size} sections, hasMore=${sectionsNextCursor != null}")
                     _state.value = FeaturedState.Sections(allSections.toList(), isLoadingMore = false)
                 } else {
-                    // Single or no sections → flat list mode
-                    loadFlatList()
+                    probeFailed = true
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 Log.e(TAG, "Error probing home feed for category $categoryId, falling back to flat list", e)
+                probeFailed = true
+            }
+            if (probeFailed) {
                 try {
                     loadFlatList()
-                } catch (e2: Exception) {
-                    if (e2 is CancellationException) throw e2
-                    _state.value = FeaturedState.Error(e2.message ?: "Unknown error")
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    _state.value = FeaturedState.Error(e.message ?: "Unknown error")
                 }
             }
         }

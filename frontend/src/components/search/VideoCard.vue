@@ -1,6 +1,6 @@
 <template>
   <div class="search-result-card video-card">
-    <div class="card-thumbnail video-thumbnail" role="button" tabindex="0" @click="$emit('preview', video)" @keydown.enter="$emit('preview', video)">
+    <div class="card-thumbnail video-thumbnail" role="button" tabindex="0" @click="$emit('preview', video)" @keydown.enter="$emit('preview', video)" @keydown.space.prevent="$emit('preview', video)">
       <img v-if="getThumbnailUrl(video, 'video')" :src="getThumbnailUrl(video, 'video')!" :alt="video.title" @error="handleThumbnailError($event)" />
       <div class="thumbnail-placeholder" :style="getThumbnailUrl(video, 'video') ? 'display:none' : ''"></div>
       <div class="play-overlay">

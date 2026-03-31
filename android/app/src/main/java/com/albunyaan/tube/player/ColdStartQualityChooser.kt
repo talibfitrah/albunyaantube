@@ -315,19 +315,22 @@ class ColdStartQualityChooser @Inject constructor() {
         screenClass: ScreenClass,
         persistedHint: Int?
     ): Int {
-        // Start with network-based recommendation
+        // Start with network-based recommendation.
+        // Prioritize fast first frame (TTFF) over initial quality — ABR upgrades after playback.
+        // Lower initial quality also increases the chance of selecting a muxed progressive track
+        // (which avoids MergingMediaSource A/V sync overhead from separate audio+video streams).
         val networkRecommendation = when (networkType) {
             NetworkType.WIFI -> when (screenClass) {
-                ScreenClass.LARGE_TABLET_TV -> QUALITY_HIGH // 1080p for large screens on WiFi
-                ScreenClass.TABLET -> QUALITY_HIGH          // 1080p for tablets on WiFi
-                ScreenClass.PHONE -> QUALITY_MEDIUM         // 720p for phones on WiFi
+                ScreenClass.LARGE_TABLET_TV -> QUALITY_MEDIUM // 720p, ABR upgrades to 1080p+
+                ScreenClass.TABLET -> QUALITY_MEDIUM          // 720p, ABR upgrades
+                ScreenClass.PHONE -> QUALITY_MEDIUM           // 720p — WiFi can handle this without visible pixelation
             }
             NetworkType.CELLULAR_FAST -> when (screenClass) {
-                ScreenClass.LARGE_TABLET_TV -> QUALITY_MEDIUM // 720p max for fast cellular
-                ScreenClass.TABLET -> QUALITY_MEDIUM          // 720p for tablets on LTE
+                ScreenClass.LARGE_TABLET_TV -> QUALITY_LOW    // 480p, ABR upgrades if stable
+                ScreenClass.TABLET -> QUALITY_LOW             // 480p for tablets on LTE
                 ScreenClass.PHONE -> QUALITY_LOW              // 480p for phones on LTE
             }
-            NetworkType.CELLULAR_SLOW, NetworkType.METERED -> QUALITY_LOW // 480p for slow/metered
+            NetworkType.CELLULAR_SLOW, NetworkType.METERED -> QUALITY_MINIMUM // 360p for slow/metered
             NetworkType.OFFLINE -> QUALITY_MINIMUM // 360p when offline (cached content only)
         }
 

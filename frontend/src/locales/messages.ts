@@ -710,7 +710,7 @@ export const messages = {
         removeError: 'Error removing exclusion',
         fetchError: 'Channel details could not be fetched. YouTube may have changed the page layout, or the channel may be temporarily unavailable.',
         itemCount: '{count} items',
-        openOnYoutube: 'Open on YouTube'
+        openOnYouTube: 'Open on YouTube'
       },
       playlistDetail: {
         title: 'Playlist Details',
@@ -2024,7 +2024,7 @@ export const messages = {
         removeError: 'خطأ في إزالة الاستثناء',
         fetchError: 'تعذر جلب تفاصيل القناة. قد يكون يوتيوب قد غيّر تخطيط الصفحة، أو القناة غير متاحة مؤقتاً.',
         itemCount: '{count} عنصر',
-        openOnYoutube: 'فتح على يوتيوب'
+        openOnYouTube: 'فتح على يوتيوب'
       },
       playlistDetail: {
         title: 'تفاصيل قائمة التشغيل',
@@ -3169,7 +3169,7 @@ export const messages = {
         removeError: 'Fout bij verwijderen van uitzondering',
         fetchError: 'Kanaalgegevens konden niet worden opgehaald. YouTube heeft mogelijk de pagina-indeling gewijzigd, of het kanaal is tijdelijk niet beschikbaar.',
         itemCount: '{count} items',
-        openOnYoutube: 'Openen op YouTube'
+        openOnYouTube: 'Openen op YouTube'
       },
       playlistDetail: {
         title: 'Afspeellijstdetails',

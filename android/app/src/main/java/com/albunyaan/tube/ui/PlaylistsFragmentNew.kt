@@ -66,7 +66,7 @@ class PlaylistsFragmentNew : Fragment(R.layout.fragment_simple_list) {
                 Log.d(TAG, "Filter state changed: category=${filterState.category}")
                 autofillHelper.reset()
                 viewModel.setFilters(filterState)
-                binding?.filterChip.updateCategoryFilter(filterState.category, filterState.categoryName) {
+                binding?.filterChip?.updateCategoryFilter(filterState.category, filterState.categoryName) {
                     Log.d(TAG, "Clearing category filter")
                     filterManager.setCategory(null)
                 }

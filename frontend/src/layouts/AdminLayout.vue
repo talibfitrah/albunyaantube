@@ -138,7 +138,7 @@ const windowWidth = ref(window.innerWidth);
 function canAccess(item: NavRoute): boolean {
   if (!item.requiredRole) return true;
   if (item.requiredRole === 'ADMIN') return authStore.isAdmin;
-  return true;
+  return false;
 }
 
 const filteredNavRoutes = computed(() =>
