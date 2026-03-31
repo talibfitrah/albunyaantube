@@ -63,7 +63,7 @@ public class ApprovalRepository {
                 .whereEqualTo("status", "PENDING")
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .orderBy(FieldPath.documentId(), Query.Direction.ASCENDING);
-        return executePaginatedQuery(query, getChannelsCollection(), limit, cursor, Channel.class, Channel::setId);
+        return executePaginatedQuery(query, limit, cursor, Channel.class, Channel::setId);
     }
 
     public PaginatedResult<Channel> findPendingChannelsByCategoryWithCursor(String category, int limit, String cursor)
@@ -73,7 +73,7 @@ public class ApprovalRepository {
                 .whereArrayContains("categoryIds", category)
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .orderBy(FieldPath.documentId(), Query.Direction.ASCENDING);
-        return executePaginatedQuery(query, getChannelsCollection(), limit, cursor, Channel.class, Channel::setId);
+        return executePaginatedQuery(query, limit, cursor, Channel.class, Channel::setId);
     }
 
     public PaginatedResult<Channel> findChannelsBySubmitterAndStatus(String submittedBy, String status, int limit, String cursor)
@@ -83,7 +83,7 @@ public class ApprovalRepository {
                 .whereEqualTo("status", status)
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .orderBy(FieldPath.documentId(), Query.Direction.ASCENDING);
-        return executePaginatedQuery(query, getChannelsCollection(), limit, cursor, Channel.class, Channel::setId);
+        return executePaginatedQuery(query, limit, cursor, Channel.class, Channel::setId);
     }
 
     // ========================================================================
@@ -96,7 +96,7 @@ public class ApprovalRepository {
                 .whereEqualTo("status", "PENDING")
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .orderBy(FieldPath.documentId(), Query.Direction.ASCENDING);
-        return executePaginatedQuery(query, getPlaylistsCollection(), limit, cursor, Playlist.class, Playlist::setId);
+        return executePaginatedQuery(query, limit, cursor, Playlist.class, Playlist::setId);
     }
 
     public PaginatedResult<Playlist> findPendingPlaylistsByCategoryWithCursor(String category, int limit, String cursor)
@@ -106,7 +106,7 @@ public class ApprovalRepository {
                 .whereArrayContains("categoryIds", category)
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .orderBy(FieldPath.documentId(), Query.Direction.ASCENDING);
-        return executePaginatedQuery(query, getPlaylistsCollection(), limit, cursor, Playlist.class, Playlist::setId);
+        return executePaginatedQuery(query, limit, cursor, Playlist.class, Playlist::setId);
     }
 
     public PaginatedResult<Playlist> findPlaylistsBySubmitterAndStatus(String submittedBy, String status, int limit, String cursor)
@@ -116,7 +116,7 @@ public class ApprovalRepository {
                 .whereEqualTo("status", status)
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .orderBy(FieldPath.documentId(), Query.Direction.ASCENDING);
-        return executePaginatedQuery(query, getPlaylistsCollection(), limit, cursor, Playlist.class, Playlist::setId);
+        return executePaginatedQuery(query, limit, cursor, Playlist.class, Playlist::setId);
     }
 
     // ========================================================================
@@ -129,7 +129,7 @@ public class ApprovalRepository {
                 .whereEqualTo("status", "PENDING")
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .orderBy(FieldPath.documentId(), Query.Direction.ASCENDING);
-        return executePaginatedQuery(query, getVideosCollection(), limit, cursor, Video.class, Video::setId);
+        return executePaginatedQuery(query, limit, cursor, Video.class, Video::setId);
     }
 
     public PaginatedResult<Video> findPendingVideosByCategoryWithCursor(String category, int limit, String cursor)
@@ -139,7 +139,7 @@ public class ApprovalRepository {
                 .whereArrayContains("categoryIds", category)
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .orderBy(FieldPath.documentId(), Query.Direction.ASCENDING);
-        return executePaginatedQuery(query, getVideosCollection(), limit, cursor, Video.class, Video::setId);
+        return executePaginatedQuery(query, limit, cursor, Video.class, Video::setId);
     }
 
     public PaginatedResult<Video> findVideosBySubmitterAndStatus(String submittedBy, String status, int limit, String cursor)
@@ -149,7 +149,7 @@ public class ApprovalRepository {
                 .whereEqualTo("status", status)
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .orderBy(FieldPath.documentId(), Query.Direction.ASCENDING);
-        return executePaginatedQuery(query, getVideosCollection(), limit, cursor, Video.class, Video::setId);
+        return executePaginatedQuery(query, limit, cursor, Video.class, Video::setId);
     }
 
     // ========================================================================
@@ -199,7 +199,6 @@ public class ApprovalRepository {
      */
     private <T> PaginatedResult<T> executePaginatedQuery(
             Query baseQuery,
-            CollectionReference collection,
             int limit,
             String cursor,
             Class<T> clazz,

@@ -55,7 +55,10 @@ export function getThumbnailUrl(
 
   // For videos and playlists without thumbnailUrl, generate from YouTube ID
   const ytId = item.youtubeId || item.ytId || item.contentId || item.id;
-  if (ytId && (type === 'video' || type === 'playlist')) {
+  if (ytId && type === 'video') {
+    return `https://i.ytimg.com/vi/${ytId}/mqdefault.jpg`;
+  }
+  if (ytId && type === 'playlist' && ytId.length === 11 && !ytId.startsWith('PL')) {
     return `https://i.ytimg.com/vi/${ytId}/mqdefault.jpg`;
   }
 

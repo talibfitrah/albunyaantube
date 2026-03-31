@@ -646,7 +646,7 @@ public class FirestoreDataSeeder implements CommandLineRunner {
                 // Generate comprehensive multilingual keywords from title, description, categories
                 video.setKeywords(TagEnrichmentService.generateTagsStatic(
                         video.getTitle(), video.getDescription(),
-                        new ArrayList<>(channel.getCategoryIds())));
+                        channel.getCategoryIds()));
 
                 video.setSubmittedBy(seed.submittedBy());
                 if ("APPROVED".equalsIgnoreCase(seed.status()) && index < topics.size()) {

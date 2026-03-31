@@ -13,7 +13,6 @@ import com.google.cloud.firestore.DocumentSnapshot;
 import com.google.cloud.firestore.Query;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.google.cloud.firestore.QuerySnapshot;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import com.google.cloud.firestore.WriteResult;
 import com.albunyaan.tube.util.CursorUtils;
@@ -88,7 +87,7 @@ public class ChannelRepository {
 
         DocumentReference docRef = getCollection().document(channel.getId());
         return firestore.runTransaction(transaction -> {
-            DocumentSnapshot snapshot = transaction.get(docRef).get();
+            DocumentSnapshot snapshot = transaction.get(docRef).get(timeoutProperties.getRead(), TimeUnit.SECONDS);
             if (!snapshot.exists()) {
                 throw new IllegalArgumentException("Channel not found: " + channel.getId());
             }

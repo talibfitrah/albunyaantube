@@ -335,9 +335,9 @@ async function getPlaylistStats(ids: string[]): Promise<Map<string, YouTubePlayl
  */
 function parseDurationToSeconds(duration: string): number {
   if (!duration) return 0;
-  const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  const match = duration.match(/P(?:(\d+)D)?T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
   if (!match) return 0;
-  return parseInt(match[1] || '0') * 3600 + parseInt(match[2] || '0') * 60 + parseInt(match[3] || '0');
+  return parseInt(match[1] || '0') * 86400 + parseInt(match[2] || '0') * 3600 + parseInt(match[3] || '0') * 60 + parseInt(match[4] || '0');
 }
 
 // ============================================================================
@@ -519,7 +519,7 @@ export async function searchChannelShorts(
         channelTitle: item.snippet.channelTitle
       };
     })
-    .filter(v => v.durationSeconds <= 60);
+    .filter(v => v.durationSeconds > 0 && v.durationSeconds <= 60);
 
   return { items, nextPageToken: searchData.nextPageToken };
 }

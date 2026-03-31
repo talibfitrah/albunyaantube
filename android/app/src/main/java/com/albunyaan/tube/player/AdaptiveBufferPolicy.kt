@@ -52,24 +52,25 @@ class AdaptiveBufferPolicy @Inject constructor(
         private const val HIGH_MEMORY_CLASS = 256
 
         // Conservative profile (low-memory devices)
+        // Slightly higher thresholds than NORMAL/HIGH to reduce rebuffering on slow storage
         private const val LOW_MIN_BUFFER_MS = 15_000      // 15s min buffer
         private const val LOW_MAX_BUFFER_MS = 60_000      // 1 minute max buffer
-        private const val LOW_PLAYBACK_BUFFER_MS = 2_500  // 2.5s before playback
-        private const val LOW_REBUFFER_BUFFER_MS = 5_000  // 5s after rebuffer
+        private const val LOW_PLAYBACK_BUFFER_MS = 2_000  // 2s before playback (safer for slow eMMC)
+        private const val LOW_REBUFFER_BUFFER_MS = 3_500  // 3.5s after rebuffer
         private const val LOW_BACK_BUFFER_MS = 30_000     // 30s back buffer
 
         // Balanced profile (normal devices)
         private const val NORMAL_MIN_BUFFER_MS = 25_000   // 25s min buffer
         private const val NORMAL_MAX_BUFFER_MS = 120_000  // 2 minutes max buffer
-        private const val NORMAL_PLAYBACK_BUFFER_MS = 2_000 // 2s before playback
-        private const val NORMAL_REBUFFER_BUFFER_MS = 4_000 // 4s after rebuffer
+        private const val NORMAL_PLAYBACK_BUFFER_MS = 1_500 // 1.5s before playback (fast TTFF)
+        private const val NORMAL_REBUFFER_BUFFER_MS = 3_000 // 3s after rebuffer
         private const val NORMAL_BACK_BUFFER_MS = 45_000  // 45s back buffer
 
         // Aggressive profile (high-memory devices)
         private const val HIGH_MIN_BUFFER_MS = 30_000     // 30s min buffer
         private const val HIGH_MAX_BUFFER_MS = 180_000    // 3 minutes max buffer
-        private const val HIGH_PLAYBACK_BUFFER_MS = 2_000 // 2s before playback
-        private const val HIGH_REBUFFER_BUFFER_MS = 4_000 // 4s after rebuffer
+        private const val HIGH_PLAYBACK_BUFFER_MS = 1_500 // 1.5s before playback (fast TTFF)
+        private const val HIGH_REBUFFER_BUFFER_MS = 3_000 // 3s after rebuffer
         private const val HIGH_BACK_BUFFER_MS = 60_000    // 60s back buffer
     }
 

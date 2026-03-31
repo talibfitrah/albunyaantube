@@ -78,7 +78,7 @@ public class VideoRepository {
 
         DocumentReference docRef = getCollection().document(video.getId());
         return firestore.runTransaction(transaction -> {
-            com.google.cloud.firestore.DocumentSnapshot snapshot = transaction.get(docRef).get();
+            com.google.cloud.firestore.DocumentSnapshot snapshot = transaction.get(docRef).get(timeoutProperties.getRead(), TimeUnit.SECONDS);
             if (!snapshot.exists()) {
                 throw new IllegalArgumentException("Video not found: " + video.getId());
             }

@@ -160,6 +160,7 @@
     <!-- Empty/Error/Loading States -->
     <string name="loading">Loading…</string>
     <string name="clear_filters">Clear filters</string>
+    <string name="clear_filter">Clear filter</string>
     <string name="retry">Retry</string>
     <string name="empty_state_no_content">No content found</string>
     <string name="empty_state_adjust_filters">Try adjusting your filters or search terms</string>

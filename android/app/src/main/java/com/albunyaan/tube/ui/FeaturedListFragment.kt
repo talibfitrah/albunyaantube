@@ -112,7 +112,9 @@ class FeaturedListFragment : Fragment(R.layout.fragment_featured_list) {
                 // Use the destination ID directly instead of an action ID so this works
                 // regardless of which fragment we are currently on (HomeFragment or
                 // FeaturedListFragment itself).
-                val locale = LocaleManager.getCurrentLocale(requireContext())
+                val safeContext = context ?: return@HomeSectionAdapter
+                if (!isAdded || view == null) return@HomeSectionAdapter
+                val locale = LocaleManager.getCurrentLocale(safeContext)
                 val localizedName = section.localizedNames?.get(locale.language)
                 findNavController().navigate(
                     R.id.featuredListFragment,

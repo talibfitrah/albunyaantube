@@ -329,7 +329,7 @@ public class SortOrderService {
             case "channel":  return channelRepository.findById(contentId).isPresent();
             case "playlist": return playlistRepository.findById(contentId).isPresent();
             case "video":    return videoRepository.findById(contentId).isPresent();
-            default:         return false;
+            default:         throw new IllegalArgumentException("Unknown content type: " + contentType);
         }
     }
 

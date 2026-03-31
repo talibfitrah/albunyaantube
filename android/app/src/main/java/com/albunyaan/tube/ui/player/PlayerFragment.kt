@@ -162,6 +162,17 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private var exoPrevButton: View? = null
     /** Saved root background before fullscreen (restored on exit to avoid EMUI dark mode color mismatch) */
     private var savedRootBackground: android.graphics.drawable.Drawable? = null
+    /**
+     * A/V sync: when non-null, audio is muted until onRenderedFirstFrame() fires
+     * so the user doesn't hear audio before the first video frame is visible.
+     * Audio codecs initialize faster than video, especially with DASH/synthetic DASH
+     * where audio and video are separate streams.
+     * Stores the stream key (Pair<streamId, audioOnly>) it was set for, so a stale
+     * mute from a previous stream doesn't accidentally unmute on the wrong stream's first frame.
+     */
+    private var mutedForStreamKey: Pair<String, Boolean>? = null
+    private val firstFrameHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var firstFrameTimeoutRunnable: Runnable? = null
     /** Tracks whether current media source is adaptive (HLS/DASH) vs progressive */
     private var preparedIsAdaptive: Boolean = false
     /** Tracks the type of adaptive source prepared (SYNTHETIC_DASH needs special handling) */
@@ -210,6 +221,41 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         val hash = Integer.toHexString(url.hashCode())
         val host = runCatching { Uri.parse(url).host }.getOrNull()
         return if (!host.isNullOrBlank()) "$host#$hash" else "hash#$hash"
+    }
+
+    /**
+     * Workaround for a known Media3 crash in PlayerControlView's settings RecyclerView.
+     * The AudioTrackSelectionAdapter can trigger an IndexOutOfBoundsException in
+     * RecyclerView.GapWorker when the track list changes while the settings menu
+     * is open or being scrolled. We replace the internal LinearLayoutManager with
+     * one that catches the exception to prevent a full app crash.
+     */
+    private fun patchExoSettingsRecyclerView(playerView: androidx.media3.ui.PlayerView) {
+        try {
+            val settingsRv = playerView.findViewById<androidx.recyclerview.widget.RecyclerView>(
+                androidx.media3.ui.R.id.exo_settings_listview
+            ) ?: return
+            settingsRv.layoutManager = object : androidx.recyclerview.widget.LinearLayoutManager(requireContext()) {
+                // Disable predictive animations to prevent GapWorker from prefetching
+                // at stale positions when the AudioTrackSelectionAdapter changes size.
+                // This is the actual crash path: GapWorker.prefetchPositionWithDeadline →
+                // Recycler.tryGetViewHolderForPositionByDeadline → IndexOutOfBoundsException.
+                override fun supportsPredictiveItemAnimations(): Boolean = false
+
+                override fun onLayoutChildren(
+                    recycler: androidx.recyclerview.widget.RecyclerView.Recycler,
+                    state: androidx.recyclerview.widget.RecyclerView.State
+                ) {
+                    try {
+                        super.onLayoutChildren(recycler, state)
+                    } catch (e: IndexOutOfBoundsException) {
+                        android.util.Log.w("PlayerFragment", "Caught Media3 settings RecyclerView inconsistency", e)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("PlayerFragment", "Could not patch exo_settings_listview", e)
+        }
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -326,6 +372,12 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             }
             // If no arguments, ViewModel will use default stub queue (for testing)
         }
+
+        // Workaround for Media3 PlayerControlView RecyclerView crash:
+        // AudioTrackSelectionAdapter can trigger IndexOutOfBoundsException in GapWorker
+        // when the track list changes while the settings menu is open. Replace the internal
+        // settings RecyclerView's LinearLayoutManager with one that catches the exception.
+        patchExoSettingsRecyclerView(binding.playerView)
 
         // Access Media3's internal navigation buttons
         // Note: These IDs are part of Media3's default player controls layout
@@ -549,6 +601,16 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
     override fun onDestroyView() {
         savedRootBackground = null
+
+        // Cancel any pending first-frame timeout and restore volume to prevent leaks.
+        // Must restore volume BEFORE clearing the flag — if the player instance survives
+        // this view (e.g. reused via PlaybackService), it would stay muted otherwise.
+        firstFrameTimeoutRunnable?.let { firstFrameHandler.removeCallbacks(it) }
+        firstFrameTimeoutRunnable = null
+        if (mutedForStreamKey != null) {
+            player?.volume = 1f
+            mutedForStreamKey = null
+        }
 
         // Remove legacy system UI visibility listener to prevent leaks
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
@@ -890,6 +952,18 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             }
 
             override fun onRenderedFirstFrame() {
+                // A/V sync: first video frame is now visible — unmute audio so
+                // the user hears audio exactly when they see the first frame.
+                // Only unmute if this callback belongs to the stream we muted for,
+                // preventing a stale mute from a previous stream triggering here.
+                if (mutedForStreamKey != null && mutedForStreamKey == preparedStreamKey) {
+                    firstFrameTimeoutRunnable?.let { firstFrameHandler.removeCallbacks(it) }
+                    firstFrameTimeoutRunnable = null
+                    mutedForStreamKey = null
+                    if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "First frame rendered, unmuting audio")
+                    player?.volume = 1f
+                }
+
                 // Phase 0 metrics: track first frame rendered (for TTFF)
                 viewModel.state.value.currentItem?.streamId?.let { streamId ->
                     viewModel.metrics.onFirstFrameRendered(streamId)
@@ -2454,13 +2528,36 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 currentPlayer.seekTo(savedPosition)
             }
 
+            // A/V sync: mute audio until the first video frame renders.
+            // Audio codecs initialize faster than video, so without this the user
+            // hears audio while the video surface is still black (especially with
+            // DASH/synthetic DASH where audio and video are separate streams).
+            // Skip for audio-only, quality switches (already visible), and resume.
+            // Scoped to this stream's key so onRenderedFirstFrame from a stale stream is ignored.
+            if (!state.audioOnly && !isQualitySwitch && !hasPendingResume) {
+                mutedForStreamKey = key
+                currentPlayer.volume = 0f
+                // Safety timeout: unmute after 3s if first frame never renders
+                // (e.g. audio-only content misdetected as video)
+                firstFrameTimeoutRunnable?.let { firstFrameHandler.removeCallbacks(it) }
+                val timeoutRunnable = Runnable {
+                    if (mutedForStreamKey == key) {
+                        if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "First-frame safety timeout, unmuting audio")
+                        mutedForStreamKey = null
+                        player?.volume = 1f
+                    }
+                }
+                firstFrameTimeoutRunnable = timeoutRunnable
+                firstFrameHandler.postDelayed(timeoutRunnable, 3000)
+            }
+
             currentPlayer.playWhenReady = shouldPlay
             preparedStreamKey = key
             // Use the actual URL from the MediaSourceResult - this is the true source identity
             preparedStreamUrl = mediaSourceResult.actualSourceUrl
             if (BuildConfig.DEBUG) android.util.Log.d(
                 "PlayerFragment",
-                "Stream prepared successfully: ${streamState.streamId}, isAdaptive=$preparedIsAdaptive, type=${mediaSourceResult.adaptiveType}, actualSource=${sourceIdentityForLog(preparedStreamUrl)}"
+                "Stream prepared successfully: ${streamState.streamId}, isAdaptive=$preparedIsAdaptive, type=${mediaSourceResult.adaptiveType}, mutedForStream=${mutedForStreamKey != null}, actualSource=${sourceIdentityForLog(preparedStreamUrl)}"
             )
 
             // Notify recovery manager of new stream - pass streamId, adaptive flag, and live flag

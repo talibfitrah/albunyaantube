@@ -106,7 +106,7 @@
 
         <div class="card-body">
           <div class="thumbnail">
-            <img v-if="getThumbnailUrl(item, item.type)" :src="getThumbnailUrl(item, item.type)!" :alt="item.title" @error="handleThumbnailError($event, item)" />
+            <img v-if="getThumbnailUrl(item, item.type)" :src="getThumbnailUrl(item, item.type) ?? ''" :alt="item.title" @error="handleThumbnailError($event, item)" />
             <div class="thumbnail-placeholder" :style="getThumbnailUrl(item, item.type) ? 'display:none' : ''"></div>
           </div>
 
@@ -269,7 +269,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAuthStore } from '@/stores/auth';
 import { getThumbnailUrl, getThumbnailFallbacks } from '@/utils/formatters';
@@ -324,8 +324,8 @@ function handleThumbnailError(event: Event, item: any) {
   const id = item.id;
   const idx = thumbnailFallbackIndex.get(id) ?? 0;
   const fallbacks = getThumbnailFallbacks(item, item.type);
-  let nextIdx = Math.min(idx + 1, fallbacks.length);
-  if (nextIdx < fallbacks.length) {
+  const nextIdx = Math.min(idx, fallbacks.length - 1);
+  if (nextIdx < fallbacks.length && nextIdx >= 0) {
     thumbnailFallbackIndex.set(id, nextIdx + 1);
     img.src = fallbacks[nextIdx];
     return;

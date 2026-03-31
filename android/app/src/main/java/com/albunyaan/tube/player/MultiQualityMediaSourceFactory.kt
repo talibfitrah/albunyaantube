@@ -137,16 +137,13 @@ class MultiQualityMediaSourceFactory(
 
         /**
          * Fallback initial quality ceiling when ColdStartQualityChooser is unavailable.
-         * 720p offers a good balance of quality and bandwidth for most connections.
-         *
-         * For progressive/synthetic DASH streams (no ABR), if throughput can't keep up:
-         * - BufferHealthMonitor will detect declining buffer and trigger proactive downshift
-         * - Early-stall exception handles critical situations during grace period
-         * - Predictive downshift catches gradual depletion before stall
-         *
-         * Phase 3: Prefer using ColdStartQualityChooser for context-aware initial quality.
+         * 480p prioritizes fast first frame (TTFF) over initial quality. ABR/BufferHealthMonitor
+         * will upgrade after playback starts if bandwidth supports it. Muxed progressive
+         * tracks (which avoid MergingMediaSource A/V sync overhead) are most commonly
+         * available at 360-480p, so this ceiling also reduces the chance of needing
+         * separate audio+video streams.
          */
-        private const val FALLBACK_INITIAL_QUALITY_HEIGHT = 720
+        private const val FALLBACK_INITIAL_QUALITY_HEIGHT = 480
 
         private var simpleCache: SimpleCache? = null
 

@@ -116,7 +116,10 @@ class HomeViewModel @Inject constructor(
                 val newSections = result.sections.filter { it.categoryId !in existingIds }
                 sections.addAll(newSections)
                 nextCursor = result.nextCursor
-                hasMore = result.hasMore && (newSections.isNotEmpty() || result.sections.isEmpty())
+                // Stop pagination when: server says no more, OR server returned an empty page
+                // (no cursor to advance). Keep paginating if server has more data even when
+                // all returned sections were duplicates — the next page may have new ones.
+                hasMore = result.hasMore && result.nextCursor != null
                 isLoadingMore = false
                 Log.d(TAG, "Loaded ${result.sections.size} more sections (added=${newSections.size}, total=${sections.size}, hasMore=$hasMore)")
                 _homeState.value = HomeState.Success(sections.toList(), hasMore)

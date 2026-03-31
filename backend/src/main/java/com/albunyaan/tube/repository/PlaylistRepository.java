@@ -842,7 +842,9 @@ public class PlaylistRepository {
                 Playlist pl = doc.toObject(Playlist.class);
                 if (pl != null) {
                     pl.setId(doc.getId());
-                    result.put(pl.getYoutubeId(), pl);
+                    if (pl.getYoutubeId() != null) {
+                        result.put(pl.getYoutubeId(), pl);
+                    }
                 }
             }
         }

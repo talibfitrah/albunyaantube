@@ -400,7 +400,18 @@ public class TagEnrichmentService {
                 List<String> translations = entry.getValue();
                 boolean matched = false;
                 for (String t : translations) {
-                    if (t.equalsIgnoreCase(tagLower) || tagLower.contains(t.toLowerCase(Locale.ROOT))) {
+                    String tLower = t.toLowerCase(Locale.ROOT);
+                    if (tLower.equals(tagLower)) {
+                        matched = true;
+                        break;
+                    }
+                    // Word-boundary match avoids false positives (e.g. "islam" in "islamabad").
+                    // Uses Unicode-aware \b boundary (Pattern.UNICODE_CHARACTER_CLASS) so that
+                    // Arabic/non-Latin word boundaries are detected correctly (\W is ASCII-only).
+                    String escaped = java.util.regex.Pattern.quote(tLower);
+                    if (java.util.regex.Pattern.compile("(?:^|\\b)" + escaped + "(?:$|\\b)",
+                            java.util.regex.Pattern.UNICODE_CHARACTER_CLASS)
+                            .matcher(tagLower).find()) {
                         matched = true;
                         break;
                     }
@@ -1006,7 +1017,7 @@ public class TagEnrichmentService {
                 "\u062e\u0637\u0628\u0629",
                 "preek", "vrijdagpreek"));
         d.put("halaqah", List.of(
-                "halaqah", "halaqa", "halaka", "halakah", "halaqa",
+                "halaqah", "halaqa", "halaka", "halakah",
                 "study circle",
                 "\u062d\u0644\u0642\u0629",
                 "studiekring"));

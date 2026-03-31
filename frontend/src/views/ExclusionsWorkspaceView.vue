@@ -407,6 +407,7 @@ const paginationSummary = computed(() => {
 watch(entries, (items) => {
   const visibleIds = new Set(items.map((entry) => entry.id));
   selectedIds.value = selectedIds.value.filter((id) => visibleIds.has(id));
+  thumbnailFallbackIndex.clear();
 });
 
 watch(typeFilter, () => {
@@ -441,6 +442,7 @@ onBeforeUnmount(() => {
   if (reloadTimeout) {
     clearTimeout(reloadTimeout);
   }
+  thumbnailFallbackIndex.clear();
 });
 
 onBeforeRouteLeave(() => {

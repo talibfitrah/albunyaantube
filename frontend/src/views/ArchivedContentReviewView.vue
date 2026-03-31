@@ -315,7 +315,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch, watchEffect } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch, watchEffect, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { getThumbnailUrl, getThumbnailFallbacks } from '@/utils/formatters';
 import ChannelDetailModal from '@/components/exclusions/ChannelDetailModal.vue';
@@ -507,7 +507,10 @@ function openPreview(item: ArchivedContent) {
 
 function closePreview() {
   showPreview.value = false;
-  previewItem.value = null;
+  // Delay clearing previewItem so the modal can process open=false and run close animation
+  nextTick(() => {
+    previewItem.value = null;
+  });
 }
 
 function toggleSelectAll() {

@@ -58,14 +58,16 @@ class HomeViewModelTest {
     private lateinit var fakeContentService: FakeContentService
     private lateinit var filterManager: FilterManager
     private lateinit var viewModel: HomeViewModel
+    private lateinit var tempPrefsFile: File
 
     @Before
     fun setup() {
         Dispatchers.setMain(testDispatcher)
         fakeContentService = FakeContentService()
+        tempPrefsFile = File.createTempFile("test_prefs", ".preferences_pb")
         val dataStore: DataStore<Preferences> = PreferenceDataStoreFactory.create(
             scope = testScope,
-            produceFile = { File.createTempFile("test_prefs", ".preferences_pb") }
+            produceFile = { tempPrefsFile }
         )
         filterManager = FilterManager(dataStore, testScope)
     }
@@ -73,6 +75,7 @@ class HomeViewModelTest {
     @After
     fun tearDown() {
         Dispatchers.resetMain()
+        tempPrefsFile.delete()
     }
 
     private fun createViewModel(): HomeViewModel {

@@ -87,9 +87,9 @@
                 target="_blank"
                 rel="noopener noreferrer"
                 class="youtube-link-btn"
-                :aria-label="$t('exclusions.channelDetail.openOnYoutube') + ' (' + $t('common.opensInNewTab') + ')'"
+                :aria-label="$t('exclusions.channelDetail.openOnYouTube') + ' (' + $t('common.opensInNewTab') + ')'"
               >
-                {{ $t('exclusions.channelDetail.openOnYoutube') }} ↗
+                {{ $t('exclusions.channelDetail.openOnYouTube') }} ↗
               </a>
               <button class="retry-btn" @click="loadInitialData">
                 {{ $t('common.retry') }}

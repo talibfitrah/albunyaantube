@@ -81,6 +81,7 @@ class CategoriesFragment : Fragment(R.layout.fragment_categories) {
                             ctx.getString(R.string.category_filter_applied, displayName),
                             android.widget.Toast.LENGTH_SHORT
                         ).show()
+                        if (!isAdded || view == null) return@launch
                         findNavController().navigateUp()
                     } catch (e: Exception) {
                         android.util.Log.e("CategoriesFragment", "Failed to set category filter", e)

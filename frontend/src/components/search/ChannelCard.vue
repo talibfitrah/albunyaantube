@@ -1,8 +1,8 @@
 <template>
   <div class="search-result-card channel-card">
     <div class="card-thumbnail channel-thumbnail" style="cursor:pointer" role="button" tabindex="0" @click="$emit('preview', channel)" @keydown.enter="$emit('preview', channel)" @keydown.space.prevent="$emit('preview', channel)">
-      <img v-if="channel.avatarUrl" :src="channel.avatarUrl" :alt="channel.name" @error="handleThumbnailError($event)" />
-      <div class="thumbnail-placeholder" :style="channel.avatarUrl ? 'display:none' : ''"></div>
+      <img v-if="channel.avatarUrl && !avatarFailed" :src="currentAvatarSrc" :alt="channel.name" @error="handleThumbnailError" />
+      <div v-if="!channel.avatarUrl || avatarFailed" class="thumbnail-placeholder"></div>
     </div>
     <div class="card-content">
       <h3 class="card-title" style="cursor:pointer" role="button" tabindex="0" @click="$emit('preview', channel)" @keydown.enter="$emit('preview', channel)" @keydown.space.prevent="$emit('preview', channel)">{{ channel.name }}</h3>
@@ -50,11 +50,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { ref, computed, watch } from 'vue';
 import type { AdminSearchChannelResult } from '@/types/registry';
 import { getThumbnailFallbacks } from '@/utils/formatters';
 
 const fallbackIndex = ref(0);
+const avatarFailed = ref(false);
 
 const props = defineProps<{
   channel: AdminSearchChannelResult;
@@ -67,29 +68,32 @@ defineEmits<{
   preview: [channel: AdminSearchChannelResult];
 }>();
 
-watch(() => props.channel.ytId, () => { fallbackIndex.value = 0 });
+watch(() => props.channel.ytId, () => { fallbackIndex.value = 0; avatarFailed.value = false; });
 
-function handleThumbnailError(event: Event) {
-  const img = event.target as HTMLImageElement;
+const currentAvatarSrc = computed(() => {
+  if (avatarFailed.value) return '';
   const fallbacks = getThumbnailFallbacks(
     { thumbnailUrl: props.channel.avatarUrl, ytId: props.channel.ytId },
     'channel'
   );
-  const currentSrc = img.src.replace(/\/$/, '');
-  let nextIdx = fallbackIndex.value;
-  while (nextIdx < fallbacks.length && fallbacks[nextIdx] === currentSrc) {
-    nextIdx++;
-  }
+  const idx = fallbackIndex.value;
+  if (idx === 0) return props.channel.avatarUrl;
+  if (idx - 1 < fallbacks.length) return fallbacks[idx - 1];
+  // All fallbacks exhausted — return empty to prevent infinite error loop
+  // (returning the original URL would trigger @error → increment → same URL → @error)
+  return '';
+});
+
+function handleThumbnailError() {
+  const fallbacks = getThumbnailFallbacks(
+    { thumbnailUrl: props.channel.avatarUrl, ytId: props.channel.ytId },
+    'channel'
+  );
+  const nextIdx = fallbackIndex.value;
   if (nextIdx < fallbacks.length) {
     fallbackIndex.value = nextIdx + 1;
-    img.src = fallbacks[nextIdx];
-    return;
-  }
-  // All fallbacks exhausted — hide img and show placeholder via DOM
-  img.style.display = 'none';
-  const placeholder = img.nextElementSibling;
-  if (placeholder && placeholder.classList.contains('thumbnail-placeholder')) {
-    (placeholder as HTMLElement).style.display = '';
+  } else {
+    avatarFailed.value = true;
   }
 }
 

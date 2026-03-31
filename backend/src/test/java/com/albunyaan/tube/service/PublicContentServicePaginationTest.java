@@ -462,6 +462,73 @@ class PublicContentServicePaginationTest {
         assertEquals("0", PublicContentService.cacheCursorKey("HOME", ""));
     }
 
+    // ============ normalizeCursor tests ============
+
+    @Test
+    void normalizeCursor_compoundHomeFeedCursor_includesOrderAndIdHash() {
+        // Home feed cursors use "displayOrder:categoryId" format
+        String cursor = java.util.Base64.getEncoder().encodeToString("5:cat-anasheed-uuid".getBytes());
+        String result = PublicContentService.normalizeCursor(cursor);
+        assertTrue(result.startsWith("5-"), "Should start with displayOrder: " + result);
+    }
+
+    @Test
+    void normalizeCursor_compoundCursor_differentOrders_produceDifferentKeys() {
+        String cursor5 = java.util.Base64.getEncoder().encodeToString("5:cat-abc".getBytes());
+        String cursor10 = java.util.Base64.getEncoder().encodeToString("10:cat-xyz".getBytes());
+        assertNotEquals(
+                PublicContentService.normalizeCursor(cursor5),
+                PublicContentService.normalizeCursor(cursor10),
+                "Different displayOrder values must produce different cache keys"
+        );
+    }
+
+    @Test
+    void normalizeCursor_sameOrder_differentIds_produceDifferentKeys() {
+        // Two categories with same displayOrder but different IDs must not collide
+        String cursorA = java.util.Base64.getEncoder().encodeToString("5:cat-abc".getBytes());
+        String cursorB = java.util.Base64.getEncoder().encodeToString("5:cat-xyz".getBytes());
+        assertNotEquals(
+                PublicContentService.normalizeCursor(cursorA),
+                PublicContentService.normalizeCursor(cursorB),
+                "Same displayOrder but different categoryId must produce different cache keys"
+        );
+    }
+
+    @Test
+    void normalizeCursor_plainIntegerCursor_parsesDirectly() {
+        String cursor = java.util.Base64.getEncoder().encodeToString("20".getBytes());
+        assertEquals("20", PublicContentService.normalizeCursor(cursor));
+    }
+
+    @Test
+    void normalizeCursor_nullCursor_returnsZero() {
+        assertEquals("0", PublicContentService.normalizeCursor(null));
+    }
+
+    @Test
+    void normalizeCursor_emptyCursor_returnsZero() {
+        assertEquals("0", PublicContentService.normalizeCursor(""));
+    }
+
+    @Test
+    void normalizeCursor_garbageInput_returnsZero() {
+        assertEquals("0", PublicContentService.normalizeCursor("not-base64-!!!"));
+    }
+
+    @Test
+    void normalizeCursor_negativeOffset_clampedToZero() {
+        String cursor = java.util.Base64.getEncoder().encodeToString("-5:cat-id".getBytes());
+        String result = PublicContentService.normalizeCursor(cursor);
+        assertTrue(result.startsWith("0-"), "Negative displayOrder should clamp to 0: " + result);
+    }
+
+    @Test
+    void normalizeCursor_negativeSimpleOffset_clampedToZero() {
+        String cursor = java.util.Base64.getEncoder().encodeToString("-3".getBytes());
+        assertEquals("0", PublicContentService.normalizeCursor(cursor));
+    }
+
     private List<Video> createTestVideos(int count) {
         List<Video> videos = new ArrayList<>();
         for (int i = 1; i <= count; i++) {
