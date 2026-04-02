@@ -341,6 +341,159 @@ function parseDurationToSeconds(duration: string): number {
 }
 
 // ============================================================================
+// YouTube URL Detection & Direct Lookup
+// ============================================================================
+
+export interface YouTubeUrlInfo {
+  type: 'video' | 'channel' | 'playlist';
+  id: string;
+}
+
+/**
+ * Detect if a string is a YouTube URL and extract the content type + ID.
+ */
+export function parseYouTubeUrl(input: string): YouTubeUrlInfo | null {
+  const trimmed = input.trim();
+
+  if (!trimmed.match(/^https?:\/\//i) && !trimmed.match(/^(www\.)?youtu(\.be|be\.com)/i)) {
+    return null;
+  }
+
+  let url: URL;
+  try {
+    url = new URL(trimmed.startsWith('http') ? trimmed : `https://${trimmed}`);
+  } catch {
+    return null;
+  }
+
+  const hostname = url.hostname.replace(/^www\./, '');
+  if (hostname !== 'youtube.com' && hostname !== 'youtu.be' && hostname !== 'm.youtube.com') {
+    return null;
+  }
+
+  // youtu.be/VIDEO_ID
+  if (hostname === 'youtu.be') {
+    const id = url.pathname.slice(1).split('/')[0];
+    return id ? { type: 'video', id } : null;
+  }
+
+  const path = url.pathname;
+
+  // /watch?v=VIDEO_ID
+  if (path === '/watch') {
+    const id = url.searchParams.get('v');
+    return id ? { type: 'video', id } : null;
+  }
+
+  // /shorts/VIDEO_ID or /live/VIDEO_ID
+  const shortsMatch = path.match(/^\/(shorts|live)\/([^/?]+)/);
+  if (shortsMatch) {
+    return { type: 'video', id: shortsMatch[2] };
+  }
+
+  // /playlist?list=PLAYLIST_ID
+  if (path === '/playlist') {
+    const id = url.searchParams.get('list');
+    return id ? { type: 'playlist', id } : null;
+  }
+
+  // /channel/CHANNEL_ID
+  const channelMatch = path.match(/^\/channel\/([^/?]+)/);
+  if (channelMatch) {
+    return { type: 'channel', id: channelMatch[1] };
+  }
+
+  // /c/CUSTOM_NAME, /user/NAME, /@handle — resolve via channels.list forHandle
+  const handleMatch = path.match(/^\/(c|user|@)([^/?]+)/);
+  if (handleMatch) {
+    return { type: 'channel', id: `@${handleMatch[2]}` };
+  }
+
+  return null;
+}
+
+/**
+ * Look up a single YouTube item by URL info using the Data API.
+ * Returns results in SearchPageResponse format.
+ */
+export async function lookupByYouTubeUrl(urlInfo: YouTubeUrlInfo): Promise<SearchPageResponse> {
+  const items: EnrichedSearchResult[] = [];
+
+  if (urlInfo.type === 'video') {
+    const stats = await getVideoStats([urlInfo.id]);
+    const video = stats.get(urlInfo.id);
+    if (video) {
+      items.push({
+        id: video.id,
+        type: 'video',
+        title: video.snippet.title,
+        description: video.snippet.description,
+        thumbnailUrl: video.snippet.thumbnails.high?.url || video.snippet.thumbnails.medium?.url || '',
+        channelId: video.snippet.channelId,
+        channelTitle: video.snippet.channelTitle,
+        viewCount: parseInt(video.statistics.viewCount || '0'),
+        duration: video.contentDetails.duration,
+        publishedAt: video.snippet.publishedAt
+      });
+    }
+  } else if (urlInfo.type === 'channel') {
+    let channelId = urlInfo.id;
+
+    // Resolve handle/custom URL to channel ID using channels.list (1 unit vs 100 for search)
+    if (channelId.startsWith('@')) {
+      const data = await youtubeGet<{ items: YouTubeChannelItem[] }>('channels', {
+        part: 'snippet,statistics',
+        forHandle: channelId
+      });
+      if (data.items && data.items.length > 0) {
+        const ch = data.items[0];
+        items.push({
+          id: ch.id,
+          type: 'channel',
+          title: ch.snippet.title,
+          description: ch.snippet.description,
+          thumbnailUrl: ch.snippet.thumbnails.high?.url || ch.snippet.thumbnails.medium?.url || '',
+          subscriberCount: parseInt(ch.statistics.subscriberCount || '0'),
+          videoCount: parseInt(ch.statistics.videoCount || '0')
+        });
+      }
+      return { items, nextPageToken: null, totalResults: items.length };
+    }
+
+    const stats = await getChannelStats([channelId]);
+    const channel = stats.get(channelId);
+    if (channel) {
+      items.push({
+        id: channel.id,
+        type: 'channel',
+        title: channel.snippet.title,
+        description: channel.snippet.description,
+        thumbnailUrl: channel.snippet.thumbnails.high?.url || channel.snippet.thumbnails.medium?.url || '',
+        subscriberCount: parseInt(channel.statistics.subscriberCount || '0'),
+        videoCount: parseInt(channel.statistics.videoCount || '0')
+      });
+    }
+  } else if (urlInfo.type === 'playlist') {
+    const stats = await getPlaylistStats([urlInfo.id]);
+    const playlist = stats.get(urlInfo.id);
+    if (playlist) {
+      items.push({
+        id: playlist.id,
+        type: 'playlist',
+        title: playlist.snippet.title,
+        description: playlist.snippet.description,
+        thumbnailUrl: playlist.snippet.thumbnails.high?.url || playlist.snippet.thumbnails.medium?.url || '',
+        channelId: playlist.snippet.channelId,
+        channelTitle: playlist.snippet.channelTitle,
+        itemCount: playlist.contentDetails.itemCount
+      });
+    }
+  }
+
+  return { items, nextPageToken: null, totalResults: items.length };
+}
+
+// ============================================================================
 // Channel/Playlist Browsing Functions (Direct YouTube Data API v3)
 // ============================================================================
 

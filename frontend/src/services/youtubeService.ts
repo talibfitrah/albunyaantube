@@ -17,7 +17,10 @@ import {
   searchChannelLiveStreams,
   listChannelPlaylists as ytListChannelPlaylists,
   getPlaylist,
-  listPlaylistVideos as ytListPlaylistVideos
+  listPlaylistVideos as ytListPlaylistVideos,
+  parseYouTubeUrl,
+  lookupByYouTubeUrl,
+  type YouTubeUrlInfo
 } from './youtubeDataApi';
 import type { AdminSearchChannelResult, AdminSearchPlaylistResult, AdminSearchVideoResult } from '@/types/registry';
 import type {
@@ -26,6 +29,10 @@ import type {
   Playlist,
   Video
 } from '@/types/api';
+
+// Re-export for use in components
+export { parseYouTubeUrl } from './youtubeDataApi';
+export type { YouTubeUrlInfo } from './youtubeDataApi';
 
 interface YouTubeSearchResponse {
   channels: AdminSearchChannelResult[];
@@ -37,6 +44,7 @@ interface YouTubeSearchResponse {
 
 /**
  * Search YouTube for channels, playlists, or videos with pagination support.
+ * Automatically detects YouTube URLs and performs a direct lookup instead of searching.
  *
  * Requires VITE_YOUTUBE_API_KEY to be configured.
  * Calls YouTube Data API v3 directly from the browser (no backend proxy).
@@ -50,7 +58,39 @@ export async function searchYouTube(
     throw new Error('YouTube Data API key not configured. Set VITE_YOUTUBE_API_KEY in your environment.');
   }
 
+  // Detect YouTube URLs and do a direct lookup instead of search
+  if (!pageToken) {
+    const urlInfo = parseYouTubeUrl(query);
+    if (urlInfo) {
+      return lookupByUrlDirect(urlInfo);
+    }
+  }
+
   return searchYouTubeDirect(query, type, pageToken);
+}
+
+/**
+ * Direct lookup by YouTube URL — fetches the specific item by ID.
+ */
+async function lookupByUrlDirect(urlInfo: YouTubeUrlInfo): Promise<YouTubeSearchResponse> {
+  const response = await lookupByYouTubeUrl(urlInfo);
+
+  const channels: EnrichedSearchResult[] = [];
+  const playlists: EnrichedSearchResult[] = [];
+  const videos: EnrichedSearchResult[] = [];
+
+  response.items.forEach(item => {
+    if (item.type === 'channel') channels.push(item);
+    else if (item.type === 'playlist') playlists.push(item);
+    else if (item.type === 'video') videos.push(item);
+  });
+
+  return {
+    channels: transformChannelResults(channels),
+    playlists: transformPlaylistResults(playlists),
+    videos: transformVideoResults(videos),
+    totalResults: response.totalResults
+  };
 }
 
 /**

@@ -19,6 +19,9 @@
           <span>{{ t('contentSearch.search') }}</span>
         </button>
       </div>
+      <p v-if="detectedUrl" class="url-hint">
+        {{ t('contentSearch.urlDetected', { type: detectedUrl.type }) }}
+      </p>
     </div>
 
     <!-- Content Type Filter -->
@@ -61,7 +64,7 @@
     </div>
 
     <div v-else-if="hasSearched && !hasResults" class="empty-state">
-      <p>{{ t('contentSearch.noResults') }}</p>
+      <p>{{ wasUrlLookup ? t('contentSearch.urlNotFound') : t('contentSearch.noResults') }}</p>
     </div>
 
     <div v-else-if="hasResults" class="results">
@@ -153,7 +156,7 @@ import { ref, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { toast } from '@/utils/toast';
 import { fetchAllCategories } from '@/services/categories';
-import { searchYouTube, addToPendingApprovals } from '@/services/youtubeService';
+import { searchYouTube, addToPendingApprovals, parseYouTubeUrl } from '@/services/youtubeService';
 import apiClient from '@/services/api/client';
 import { useAuthStore } from '@/stores/auth';
 import ChannelCard from '@/components/search/ChannelCard.vue';
@@ -172,10 +175,18 @@ const searchQuery = ref('');
 const contentType = ref<'all' | 'channels' | 'playlists' | 'videos'>('all');
 const sortFilter = ref('DATE');
 
+// URL detection hint — short-circuit before calling parser for non-URL input
+const detectedUrl = computed(() => {
+  const q = searchQuery.value.trim();
+  if (!q || (!q.startsWith('http') && !q.startsWith('youtu') && !q.startsWith('www.'))) return null;
+  return parseYouTubeUrl(q);
+});
+
 const isLoading = ref(false);
 const isLoadingMore = ref(false);
 const error = ref<string | null>(null);
 const hasSearched = ref(false);
+const wasUrlLookup = ref(false);
 const channels = ref<AdminSearchChannelResult[]>([]);
 const playlists = ref<AdminSearchPlaylistResult[]>([]);
 const videos = ref<AdminSearchVideoResult[]>([]);
@@ -311,6 +322,7 @@ async function handleSearch() {
   isLoading.value = true;
   error.value = null;
   hasSearched.value = true;
+  wasUrlLookup.value = !!detectedUrl.value;
   currentPage.value = 0;
   nextPageToken.value = null;
 
@@ -568,6 +580,13 @@ async function loadMoreResults() {
   background: var(--color-accent);
   box-shadow: 0 4px 12px rgba(22, 131, 90, 0.25);
   transform: translateY(-1px);
+}
+
+.url-hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--color-brand);
+  font-weight: 500;
 }
 
 .filters {
