@@ -154,6 +154,7 @@ class PlaybackFeatureFlagsTest {
         featureFlags.setMpdPrefetchEnabled(!BuildConfig.ENABLE_MPD_PREFETCH)
         featureFlags.setDegradationManagerEnabled(!BuildConfig.ENABLE_DEGRADATION_MANAGER)
         featureFlags.setIosFetchEnabled(!BuildConfig.ENABLE_NPE_IOS_FETCH)
+        featureFlags.setGenerousCropBudgetEnabled(true)
 
         // Clear all
         featureFlags.clearAllOverrides()
@@ -178,6 +179,11 @@ class PlaybackFeatureFlagsTest {
             "iOS fetch should revert",
             BuildConfig.ENABLE_NPE_IOS_FETCH,
             featureFlags.isIosFetchEnabled
+        )
+        // generous_crop_budget default is device-dependent (false in unit test env)
+        assertFalse(
+            "Generous crop budget should revert to device default",
+            featureFlags.isGenerousCropBudgetEnabled
         )
     }
 
@@ -213,7 +219,39 @@ class PlaybackFeatureFlagsTest {
         assertTrue("Should contain mpd_prefetch", diagnostics.containsKey("mpd_prefetch"))
         assertTrue("Should contain degradation_manager", diagnostics.containsKey("degradation_manager"))
         assertTrue("Should contain ios_fetch", diagnostics.containsKey("ios_fetch"))
-        assertEquals("Should have 4 flags", 4, diagnostics.size)
+        assertTrue("Should contain generous_crop_budget", diagnostics.containsKey("generous_crop_budget"))
+        assertEquals("Should have 5 flags", 5, diagnostics.size)
+    }
+
+    // --- Generous Crop Budget Flag Tests ---
+    // Note: default is device-dependent (isSamsungS25Ultra), not a BuildConfig constant.
+    // In unit tests, Build.MODEL is empty/generic so default is false.
+
+    @Test
+    fun `generous crop budget uses device-based default when no override set`() {
+        // In unit test environment, Build.MODEL is not SM-S938* so default is false
+        assertFalse("Should default to false on non-S25-Ultra", featureFlags.isGenerousCropBudgetEnabled)
+    }
+
+    @Test
+    fun `generous crop budget override to true takes precedence`() {
+        featureFlags.setGenerousCropBudgetEnabled(true)
+        assertTrue("Should be enabled with override", featureFlags.isGenerousCropBudgetEnabled)
+    }
+
+    @Test
+    fun `generous crop budget override to false takes precedence`() {
+        featureFlags.setGenerousCropBudgetEnabled(false)
+        assertFalse("Should be disabled with override", featureFlags.isGenerousCropBudgetEnabled)
+    }
+
+    @Test
+    fun `generous crop budget clear override reverts to device default`() {
+        featureFlags.setGenerousCropBudgetEnabled(true)
+        assertTrue("Should be enabled with override", featureFlags.isGenerousCropBudgetEnabled)
+
+        featureFlags.clearOverride("generous_crop_budget")
+        assertFalse("Should revert to device default (false in test env)", featureFlags.isGenerousCropBudgetEnabled)
     }
 
     @Test

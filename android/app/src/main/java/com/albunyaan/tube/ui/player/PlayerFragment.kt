@@ -33,13 +33,19 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.HttpDataSource
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import com.albunyaan.tube.data.extractor.QualityConstraintMode
+import com.albunyaan.tube.player.AspectPolicy
 import com.albunyaan.tube.player.QualityTrackSelector
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import kotlin.math.abs
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -117,13 +123,29 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private var pendingResumePlayWhenReady: Boolean? = null
     private lateinit var gestureDetector: GestureDetector
     private var isFullscreen = false
-    /** Current resize mode in fullscreen. Default depends on screen aspect ratio. */
+    /** Current resize mode in fullscreen. Computed per-video by AspectPolicy. */
     private var fullscreenResizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-    /** Device-specific default fullscreen resize mode (FIT on tall screens, ZOOM on 16:9-ish screens). */
-    private var defaultFullscreenResizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+    /** Whether user manually toggled resize mode (double-tap center). Resets per stream. */
+    private var userToggledResizeMode = false
+    /** Cached video dimensions from onVideoSizeChanged for AspectPolicy computation. */
+    private var lastVideoWidth = 0
+    private var lastVideoHeight = 0
+    private var lastPixelRatio = 1f
+    /** Crop budget for AspectPolicy — resolved from PlaybackFeatureFlags for feature-flaggable control. */
+    private val cropBudget: Float by lazy {
+        if (featureFlags.isGenerousCropBudgetEnabled)
+            AspectPolicy.GENEROUS_CROP_BUDGET
+        else
+            AspectPolicy.DEFAULT_CROP_BUDGET
+    }
     /** When true, user explicitly exited fullscreen via button while in landscape.
      *  Prevents auto-re-entering fullscreen on landscape orientation change until cleared. */
     private var userDismissedFullscreen = false
+    /** When true, fullscreen exit was requested but deferred until rotation to portrait completes.
+     *  This prevents running exit restoration mid-landscape where layout measurements are wrong. */
+    private var pendingFullscreenExit = false
+    /** Safety timeout Runnable for deferred exit — stored for explicit cancellation in onDestroyView. */
+    private var pendingExitSafetyRunnable: Runnable? = null
     /** Tracks whether we programmatically locked orientation (to avoid unlocking locks set by other code) */
     private var weLockedOrientation = false
     /** The target orientation we requested when locking (LANDSCAPE or PORTRAIT) */
@@ -160,8 +182,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private var castContext: com.google.android.gms.cast.framework.CastContext? = null
     private var exoNextButton: View? = null
     private var exoPrevButton: View? = null
-    /** Saved root background before fullscreen (restored on exit to avoid EMUI dark mode color mismatch) */
-    private var savedRootBackground: android.graphics.drawable.Drawable? = null
+    /** Saved shell root background before fullscreen (restored on exit for light mode compat) */
+    private var savedShellBackground: android.graphics.drawable.Drawable? = null
     /**
      * A/V sync: when non-null, audio is muted until onRenderedFirstFrame() fires
      * so the user doesn't hear audio before the first video frame is visible.
@@ -173,6 +195,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private var mutedForStreamKey: Pair<String, Boolean>? = null
     private val firstFrameHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var firstFrameTimeoutRunnable: Runnable? = null
+    /** Video render watchdog: detects audio-playing-but-no-video-frame within 5s and routes
+     *  through PlaybackRecoveryManager's recovery ladder (not a parallel path). */
+    private var videoFrameRendered = false
+    private var videoRenderWatchdogJob: Job? = null
     /** Tracks whether current media source is adaptive (HLS/DASH) vs progressive */
     private var preparedIsAdaptive: Boolean = false
     /** Tracks the type of adaptive source prepared (SYNTHETIC_DASH needs special handling) */
@@ -322,12 +348,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         requireActivity().addMenuProvider(menuProvider, viewLifecycleOwner, Lifecycle.State.RESUMED)
         val binding = FragmentPlayerBinding.bind(view).also { binding = it }
 
-        // Set default fullscreen resize mode based on screen aspect ratio.
-        // 16:9 screens (ratio ≤ 1.79): ZOOM fills screen without visible cropping.
-        // Taller screens (18:9, 19.5:9, 20:9, etc.): FIT preserves ratio with black bars;
-        // double-tap center to toggle to ZOOM.
-        defaultFullscreenResizeMode = determineDefaultFullscreenResizeMode()
-        fullscreenResizeMode = defaultFullscreenResizeMode
+        // FIT is the safe default until AspectPolicy computes from actual video dimensions.
+        fullscreenResizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
 
         // Initialize Cast context
         try {
@@ -557,7 +579,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             userDismissedFullscreen = false
         }
 
-        if (orientationChanged) {
+        if (pendingFullscreenExit && !isLandscape) {
+            // Deferred fullscreen exit: toggleFullscreen() deferred exit restoration because
+            // it was still in landscape. Now portrait has arrived — run exit UI after
+            // orientation unlock is processed (below), then return.
+        } else if (orientationChanged) {
             // Don't auto-enter fullscreen if user explicitly exited via button while in landscape.
             // This prevents the "exit → orientation unlock → re-enter" loop.
             if (isLandscape && userDismissedFullscreen) {
@@ -597,10 +623,26 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 }
             }
         }
+
+        // Execute deferred fullscreen exit AFTER orientation unlock is processed
+        if (pendingFullscreenExit && !isLandscape) {
+            pendingFullscreenExit = false
+            pendingExitSafetyRunnable?.let { binding?.root?.removeCallbacks(it) }
+            pendingExitSafetyRunnable = null
+            if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onConfigurationChanged: executing deferred fullscreen exit (portrait arrived)")
+            updateFullscreenUi()
+        }
     }
 
     override fun onDestroyView() {
-        savedRootBackground = null
+        savedShellBackground = null
+        pendingFullscreenExit = false
+        pendingExitSafetyRunnable?.let { binding?.root?.removeCallbacks(it) }
+        pendingExitSafetyRunnable = null
+
+        // Cancel video render watchdog to prevent stale recovery triggers
+        videoRenderWatchdogJob?.cancel()
+        videoRenderWatchdogJob = null
 
         // Cancel any pending first-frame timeout and restore volume to prevent leaks.
         // Must restore volume BEFORE clearing the flag — if the player instance survives
@@ -739,21 +781,48 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             this.trackSelector = it
         }
 
-        val player = ExoPlayer.Builder(requireContext())
+        val renderersFactory = DefaultRenderersFactory(requireContext())
+            .setEnableDecoderFallback(true)
+
+        val player = ExoPlayer.Builder(requireContext(), renderersFactory)
             .setLoadControl(loadControl)
             .setTrackSelector(trackSelector)
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
-            // Enable seek back/forward optimizations
-            .setSeekBackIncrementMs(10000) // 10s back
-            .setSeekForwardIncrementMs(10000) // 10s forward
+            .setSeekBackIncrementMs(10000)
+            .setSeekForwardIncrementMs(10000)
+            .experimentalSetDynamicSchedulingEnabled(true)
             .build().also { this.player = it }
 
-        // Optimize playback parameters for smoother experience
-        player.playWhenReady = false // Don't auto-play until ready
+        player.playWhenReady = false
 
         binding.playerView.player = player
         player.addListener(viewModel.playerListener)
+
+        player.addAnalyticsListener(object : AnalyticsListener {
+            override fun onVideoDecoderInitialized(
+                eventTime: AnalyticsListener.EventTime,
+                decoderName: String,
+                initializedTimestampMs: Long,
+                initializationDurationMs: Long
+            ) {
+                val streamId = viewModel.state.value.currentItem?.streamId ?: return
+                val isSoftwareFallback = decoderName.startsWith("c2.android.") ||
+                    decoderName.startsWith("OMX.google.")
+                viewModel.metrics.onDecoderSelected(streamId, decoderName, isSoftwareFallback)
+                viewModel.metrics.onDecoderInitTime(streamId, initializationDurationMs)
+                viewModel.metrics.onSurfaceType(streamId, "surface_view")
+            }
+
+            override fun onDroppedVideoFrames(
+                eventTime: AnalyticsListener.EventTime,
+                droppedFrames: Int,
+                elapsedMs: Long
+            ) {
+                val streamId = viewModel.state.value.currentItem?.streamId ?: return
+                viewModel.metrics.onDroppedFrames(streamId, droppedFrames)
+            }
+        })
 
         // Initialize MediaSession if service is already bound (e.g., after player rebuild during recovery)
         playbackService?.initializeSession(player)
@@ -921,6 +990,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 // Delegate to recovery manager for freeze detection
                 recoveryManager?.onPlaybackStateChanged(player, playbackState)
 
+                // Cancel watchdog on terminal states
+                if (playbackState == Player.STATE_IDLE || playbackState == Player.STATE_ENDED) {
+                    videoRenderWatchdogJob?.cancel()
+                }
+
                 // When a new video loads, reset the auto-hide flag
                 if (playbackState == Player.STATE_IDLE) {
                     val currentStreamId = viewModel.state.value.currentItem?.streamId
@@ -952,6 +1026,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             }
 
             override fun onRenderedFirstFrame() {
+                videoFrameRendered = true
+                videoRenderWatchdogJob?.cancel()
+
                 // A/V sync: first video frame is now visible — unmute audio so
                 // the user hears audio exactly when they see the first frame.
                 // Only unmute if this callback belongs to the stream we muted for,
@@ -975,18 +1052,41 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     "pixelWidthHeightRatio=${videoSize.pixelWidthHeightRatio}, " +
                     "playerViewResizeMode=${binding?.playerView?.resizeMode}")
 
-                // Force resize mode to stay at FIT (or user's fullscreen preference) after video size changes
-                // This prevents any internal ExoPlayer behavior from changing the aspect ratio handling
+                if (videoSize.width > 0 && videoSize.height > 0) {
+                    lastVideoWidth = videoSize.width
+                    lastVideoHeight = videoSize.height
+                    lastPixelRatio = videoSize.pixelWidthHeightRatio
+
+                    val videoAspect = (videoSize.width.toFloat() * videoSize.pixelWidthHeightRatio) / videoSize.height.toFloat()
+                    val dm = resources.displayMetrics
+                    val screenAspect = maxOf(dm.widthPixels, dm.heightPixels).toFloat() / minOf(dm.widthPixels, dm.heightPixels).toFloat()
+                    viewModel.state.value.currentItem?.streamId?.let { streamId ->
+                        viewModel.metrics.onAspectMismatch(streamId, abs(screenAspect - videoAspect))
+                    }
+
+                    if (isFullscreen && !userToggledResizeMode) {
+                        val pv = binding?.playerView ?: return
+                        val screenW = pv.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
+                        val screenH = pv.height.takeIf { it > 0 } ?: resources.displayMetrics.heightPixels
+                        fullscreenResizeMode = AspectPolicy.computeResizeMode(
+                            screenW, screenH, videoSize.width, videoSize.height,
+                            videoSize.pixelWidthHeightRatio, cropBudget
+                        )
+                        pv.resizeMode = fullscreenResizeMode
+                    }
+                }
+
                 val targetResizeMode = if (isFullscreen) fullscreenResizeMode else AspectRatioFrameLayout.RESIZE_MODE_FIT
                 binding?.playerView?.let { pv ->
                     if (pv.resizeMode != targetResizeMode) {
-                        if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Forcing resize mode from ${pv.resizeMode} to $targetResizeMode")
                         pv.resizeMode = targetResizeMode
                     }
                 }
             }
 
             override fun onPlayerError(error: PlaybackException) {
+                videoRenderWatchdogJob?.cancel()
+
                 val httpResponseCode = findHttpResponseCode(error.cause)
                 android.util.Log.e(
                     "PlayerFragment",
@@ -1012,7 +1112,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                             if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Retrying playback in ${delayMs}ms (attempt $retryCount)")
                             // Use lifecycle-aware coroutine to prevent crashes if fragment is destroyed
                             lifecycleOwner.lifecycleScope.launch {
-                                kotlinx.coroutines.delay(delayMs)
+                                delay(delayMs)
                                 player.prepare()
                                 player.playWhenReady = true
                             }
@@ -1901,7 +2001,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     }
 
                     lifecycleOwner.lifecycleScope.launch {
-                        kotlinx.coroutines.delay(backoffMs)
+                        delay(backoffMs)
                         if (currentStreamRefreshCount < maxStreamRefreshes) {
                             onStreamRefresh()
                             requestStreamRefreshAndResume("rate limited, retrying after ${backoffMs}ms")
@@ -1946,7 +2046,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     android.util.Log.w("PlayerFragment", "Unknown 403/HTTP error, attempting refresh after ${backoffMs}ms")
 
                     lifecycleOwner.lifecycleScope.launch {
-                        kotlinx.coroutines.delay(backoffMs)
+                        delay(backoffMs)
                         if (currentStreamRefreshCount < maxStreamRefreshes) {
                             onStreamRefresh()
                             // Phase 4: Use HTTP_403 reason for budget tracking
@@ -2386,10 +2486,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Clearing adaptive fallback flag (new stream)")
                 adaptiveFailedForCurrentStream = null
             }
-            // Reset fullscreen resize mode to the device default for each new stream.
-            if (fullscreenResizeMode != defaultFullscreenResizeMode) {
-                fullscreenResizeMode = defaultFullscreenResizeMode
-                // Apply immediately if currently in fullscreen
+            // Reset resize mode for new stream — AspectPolicy recomputes in onVideoSizeChanged().
+            userToggledResizeMode = false
+            if (fullscreenResizeMode != AspectRatioFrameLayout.RESIZE_MODE_FIT) {
+                fullscreenResizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                 if (isFullscreen) {
                     binding?.playerView?.resizeMode = fullscreenResizeMode
                 }
@@ -2549,6 +2649,19 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 }
                 firstFrameTimeoutRunnable = timeoutRunnable
                 firstFrameHandler.postDelayed(timeoutRunnable, 3000)
+
+                videoFrameRendered = false
+                videoRenderWatchdogJob?.cancel()
+                videoRenderWatchdogJob = viewLifecycleOwner.lifecycleScope.launch {
+                    delay(5000)
+                    if (!videoFrameRendered && player?.isPlaying == true && !viewModel.state.value.audioOnly) {
+                        android.util.Log.w("PlayerFragment", "Video render watchdog: audio playing but no video frame after 5s")
+                        viewModel.state.value.currentItem?.streamId?.let { streamId ->
+                            viewModel.metrics.onVideoRenderStall(streamId)
+                        }
+                        player?.let { recoveryManager?.onVideoRenderStall(it) }
+                    }
+                }
             }
 
             currentPlayer.playWhenReady = shouldPlay
@@ -2933,12 +3046,32 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             }
         }
 
-        // Update UI immediately (don't wait for orientation change callback)
-        updateFullscreenUi()
-
-        // Show one-time hint on first fullscreen entry
         if (isFullscreen) {
+            // Entering fullscreen — apply immediately (landscape will arrive and re-apply)
+            updateFullscreenUi()
             showFullscreenZoomHintOnce()
+        } else if (!isCurrentlyLandscape) {
+            // Already in portrait — apply exit immediately (no rotation coming)
+            updateFullscreenUi()
+        } else {
+            // Exiting fullscreen while in landscape — rotation to portrait is pending.
+            // Do NOT run exit restoration now: layout measurements are for landscape,
+            // backgrounds would be saved/restored against wrong dimensions.
+            // Defer to onConfigurationChanged() when portrait arrives.
+            pendingFullscreenExit = true
+            if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "toggleFullscreen: deferring exit UI to onConfigurationChanged (rotation pending)")
+            // Safety: if onConfigurationChanged never fires (sensor issue, config suppressed),
+            // run exit UI after the orientation unlock fallback settles.
+            pendingExitSafetyRunnable?.let { binding?.root?.removeCallbacks(it) }
+            val safetyRunnable = Runnable {
+                if (pendingFullscreenExit && isAdded && this.binding != null) {
+                    pendingFullscreenExit = false
+                    if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "toggleFullscreen: safety timeout — running deferred exit")
+                    updateFullscreenUi()
+                }
+            }
+            pendingExitSafetyRunnable = safetyRunnable
+            binding?.root?.postDelayed(safetyRunnable, ORIENTATION_UNLOCK_FALLBACK_MS + 500)
         }
     }
 
@@ -2999,6 +3132,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         val binding = this.binding ?: return false
 
+        userToggledResizeMode = true
         fullscreenResizeMode = if (fullscreenResizeMode == AspectRatioFrameLayout.RESIZE_MODE_ZOOM) {
             AspectRatioFrameLayout.RESIZE_MODE_FIT
         } else {
@@ -3015,37 +3149,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         }
         Toast.makeText(requireContext(), modeName, Toast.LENGTH_SHORT).show()
         return true
-    }
-
-    private fun determineDefaultFullscreenResizeMode(): Int {
-        val screenRatio: Float = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            try {
-                val windowMetrics = requireActivity().windowManager.currentWindowMetrics
-                val bounds = windowMetrics.bounds
-                maxOf(bounds.width(), bounds.height()).toFloat() /
-                    minOf(bounds.width(), bounds.height()).toFloat()
-            } catch (e: Exception) {
-                // Fallback to displayMetrics if windowManager fails on some OEMs
-                val dm = resources.displayMetrics
-                maxOf(dm.widthPixels, dm.heightPixels).toFloat() /
-                    minOf(dm.widthPixels, dm.heightPixels).toFloat()
-            }
-        } else {
-            val dm = resources.displayMetrics
-            maxOf(dm.widthPixels, dm.heightPixels).toFloat() /
-                minOf(dm.widthPixels, dm.heightPixels).toFloat()
-        }
-        if (BuildConfig.DEBUG) {
-            android.util.Log.d(
-                "PlayerFragment",
-                "Screen ratio: $screenRatio (threshold: 1.79, API: ${Build.VERSION.SDK_INT})"
-            )
-        }
-        return if (screenRatio <= 1.79f) {
-            AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-        } else {
-            AspectRatioFrameLayout.RESIZE_MODE_FIT
-        }
     }
 
     @Suppress("DEPRECATION")
@@ -3072,6 +3175,12 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // Without this, the MainShellFragment's CoordinatorLayout (fitsSystemWindows=true)
             // adds status bar padding, creating a visible gap at the top in fullscreen.
             findShellRootView()?.let { shellRoot ->
+                // Only save on first entry — prevents double-save when updateFullscreenUi()
+                // fires twice (toggleFullscreen + onConfigurationChanged) which would
+                // overwrite the original light background with the already-applied black.
+                if (savedShellBackground == null) {
+                    savedShellBackground = shellRoot.background
+                }
                 shellRoot.fitsSystemWindows = false
                 shellRoot.setPadding(0, 0, 0, 0)
                 shellRoot.setBackgroundColor(android.graphics.Color.BLACK)
@@ -3125,9 +3234,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 window.decorView.postDelayed(legacyRetryRunnable, 200)
             }
 
-            // Save original background and set to black so no surface color peeks through
-            savedRootBackground = binding.root.background
-            binding.root.setBackgroundColor(android.graphics.Color.BLACK)
+            // Do NOT change the fragment root background during fullscreen.
+            // The AppBarLayout (always black) expands to MATCH_PARENT and covers it entirely,
+            // and the scrollview is GONE. Changing root to black caused persistent state leakage
+            // on exit (root staying black after restore) that mimicked a dark-mode switch.
 
             // Hide scrollable content
             binding.playerScrollView.visibility = View.GONE
@@ -3174,7 +3284,14 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 binding.playerView.layoutParams = playerParams
             }
 
-            // Use saved resize mode (FIT by default, toggled to ZOOM by double-tap center)
+            // Compute resize mode via AspectPolicy using known video dimensions
+            if (!userToggledResizeMode && lastVideoWidth > 0 && lastVideoHeight > 0) {
+                val screenW = resources.displayMetrics.let { maxOf(it.widthPixels, it.heightPixels) }
+                val screenH = resources.displayMetrics.let { minOf(it.widthPixels, it.heightPixels) }
+                fullscreenResizeMode = AspectPolicy.computeResizeMode(
+                    screenW, screenH, lastVideoWidth, lastVideoHeight, lastPixelRatio, cropBudget
+                )
+            }
             if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "updateFullscreenUi: applying resizeMode=$fullscreenResizeMode (FIT=${AspectRatioFrameLayout.RESIZE_MODE_FIT}, ZOOM=${AspectRatioFrameLayout.RESIZE_MODE_ZOOM})")
             binding.playerView.resizeMode = fullscreenResizeMode
 
@@ -3190,12 +3307,16 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 }
             } else {
                 // On pre-API 30, restore system UI visibility flags.
-                // Derive icon mode from the saved background instead of MaterialColors
-                // which is unreliable on EMUI (applies dark mode outside the theme system).
-                val isDarkSurface = when (val bg = savedRootBackground) {
+                // Derive icon mode from the current root background (not saved state).
+                val isDarkSurface = when (val bg = binding.root.background) {
                     is android.graphics.drawable.ColorDrawable ->
                         androidx.core.graphics.ColorUtils.calculateLuminance(bg.color) < 0.5
-                    else -> true // Assume dark for non-color backgrounds (safe default)
+                    else -> {
+                        // Check night mode config as fallback
+                        (resources.configuration.uiMode and
+                            android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                            android.content.res.Configuration.UI_MODE_NIGHT_YES
+                    }
                 }
 
                 @Suppress("DEPRECATION")
@@ -3226,22 +3347,17 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // Restore fitsSystemWindows on the parent shell fragment's root view
             restoreShellRootView()
 
-            // Restore original background saved before fullscreen.
-            // EMUI applies dark mode at the framework level — programmatically resolving
-            // colorSurface returns the base (light) theme value, causing a light-mode flash.
-            // Restoring the saved Drawable preserves the EMUI-overridden dark background.
-            binding.root.background = savedRootBackground
-
             // Show scrollable content
             binding.playerScrollView.visibility = View.VISIBLE
 
-            // Restore AppBar to normal size
+            // Restore AppBar to normal size and force expand to ensure it measures correctly
             binding.appBarLayout.layoutParams?.let { params ->
                 if (params is androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams) {
                     params.height = ViewGroup.LayoutParams.WRAP_CONTENT
                 }
                 binding.appBarLayout.layoutParams = params
             }
+            binding.appBarLayout.setExpanded(true, false)
 
             // Restore CollapsingToolbarLayout to normal size
             binding.collapsingToolbar.layoutParams?.let { params ->
@@ -3375,9 +3491,12 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private fun restoreShellRootView() {
         findShellRootView()?.let { shellRoot ->
             shellRoot.fitsSystemWindows = true
-            // Clear the explicit black background set during fullscreen.
-            // The shell root originally has no explicit background (relies on theme window bg).
-            shellRoot.background = null
+            // Restore the saved background instead of setting null.
+            // Setting null works for dark mode (window dark bg shows through) but breaks
+            // light mode on Samsung One UI where the CoordinatorLayout needs its explicit
+            // background to render correctly.
+            shellRoot.background = savedShellBackground
+            savedShellBackground = null
             shellRoot.requestApplyInsets()
         }
     }

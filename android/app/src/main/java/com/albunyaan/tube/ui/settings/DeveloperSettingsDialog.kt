@@ -130,6 +130,20 @@ class DeveloperSettingsDialog : DialogFragment() {
             featureFlags.setIosFetchEnabled(if (enabled == BuildConfig.ENABLE_NPE_IOS_FETCH) null else enabled)
         }
 
+        // Build default for generous crop is device-dependent (S25 Ultra = true, others = false).
+        // Use diagnostics.buildDefault to get the true device-detected default, not the effective value.
+        val cropBudgetDeviceDefault = diagnostics["generous_crop_budget"]?.buildDefault ?: false
+        addFeatureToggle(
+            contentView,
+            getString(R.string.dev_settings_generous_crop_title),
+            getString(R.string.dev_settings_generous_crop_desc),
+            featureFlags.isGenerousCropBudgetEnabled,
+            cropBudgetDeviceDefault,
+            diagnostics["generous_crop_budget"]?.runtimeOverride
+        ) { enabled ->
+            featureFlags.setGenerousCropBudgetEnabled(if (enabled == cropBudgetDeviceDefault) null else enabled)
+        }
+
         // Add clear cache button (useful when toggling IOS_FETCH to force new extractions)
         val clearCacheButton = TextView(context).apply {
             text = getString(R.string.dev_settings_clear_cache)
