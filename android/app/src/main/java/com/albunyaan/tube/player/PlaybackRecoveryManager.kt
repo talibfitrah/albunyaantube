@@ -2,7 +2,6 @@ package com.albunyaan.tube.player
 
 import android.util.Log
 import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
 import com.albunyaan.tube.BuildConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -134,7 +133,7 @@ class PlaybackRecoveryManager(
     /**
      * Call when playback state changes.
      */
-    fun onPlaybackStateChanged(player: ExoPlayer, playbackState: Int) {
+    fun onPlaybackStateChanged(player: Player, playbackState: Int) {
         when (playbackState) {
             Player.STATE_IDLE -> {
                 cancelAllJobs()
@@ -165,7 +164,7 @@ class PlaybackRecoveryManager(
     /**
      * Call when playWhenReady changes.
      */
-    fun onPlayWhenReadyChanged(player: ExoPlayer, playWhenReady: Boolean) {
+    fun onPlayWhenReadyChanged(player: Player, playWhenReady: Boolean) {
         if (player.playbackState == Player.STATE_READY) {
             if (playWhenReady) {
                 startStuckReadyDetection(player)
@@ -187,9 +186,28 @@ class PlaybackRecoveryManager(
     }
 
     /**
+     * Signal that audio is playing but no video frame has been rendered within the grace period.
+     * Treated as a freeze condition and enters the same recovery ladder.
+     *
+     * This is a one-shot signal per stream: the caller (PlayerFragment) is responsible for
+     * cancelling the watchdog via onRenderedFirstFrame, and the signal routes through the
+     * same budget/backoff system as buffering stalls and stuck-ready detection.
+     *
+     * @param player The Player instance for recovery actions
+     */
+    fun onVideoRenderStall(player: Player) {
+        if (isRecovering) {
+            if (BuildConfig.DEBUG) Log.d(TAG, "Video render stall ignored - already recovering")
+            return
+        }
+        Log.w(TAG, "Video render stall detected - audio playing, no video frames rendered")
+        initiateRecovery(player, "video render stall (no frames)")
+    }
+
+    /**
      * Manual retry requested by user.
      */
-    fun requestManualRetry(player: ExoPlayer) {
+    fun requestManualRetry(player: Player) {
         Log.i(TAG, "Manual retry requested")
         resetRecoveryState()
         executeRecoveryStep(player, RecoveryStep.RE_PREPARE)
@@ -198,7 +216,7 @@ class PlaybackRecoveryManager(
     /**
      * Force refresh - user explicitly requested stream refresh.
      */
-    fun requestForceRefresh(player: ExoPlayer) {
+    fun requestForceRefresh(player: Player) {
         Log.i(TAG, "Force refresh requested")
         val position = player.currentPosition.coerceAtLeast(0L)
         callbacks.onRequestStreamRefresh(position)
@@ -233,7 +251,7 @@ class PlaybackRecoveryManager(
     // Uses buffer duration (bufferedPosition - currentPosition) for more stable metric
     private var lastBufferDuration: Long = -1L
 
-    private fun startBufferingStallDetection(player: ExoPlayer) {
+    private fun startBufferingStallDetection(player: Player) {
         if (bufferingStartTime == -1L) {
             bufferingStartTime = clock()
             // Use buffer duration ahead (more stable than absolute bufferedPosition)
@@ -260,7 +278,7 @@ class PlaybackRecoveryManager(
     /**
      * Monitor VOD stream buffering - simple one-shot check after threshold.
      */
-    private suspend fun monitorVodBuffering(player: ExoPlayer, threshold: Long) {
+    private suspend fun monitorVodBuffering(player: Player, threshold: Long) {
         delay(threshold)
 
         // Re-check state after delay - player might have transitioned out of buffering
@@ -295,7 +313,7 @@ class PlaybackRecoveryManager(
      * If buffer shows zero growth for DEAD_STREAM_ZERO_GROWTH_CHECKS consecutive intervals,
      * triggers recovery early (15s) instead of waiting the full threshold (45s).
      */
-    private suspend fun monitorLiveBuffering(player: ExoPlayer, threshold: Long) {
+    private suspend fun monitorLiveBuffering(player: Player, threshold: Long) {
         var stallCheckCount = 0
         var consecutiveHealthyChecks = 0
         var consecutiveZeroGrowthChecks = 0
@@ -392,7 +410,7 @@ class PlaybackRecoveryManager(
         bufferingStallJob = null
     }
 
-    private fun startStuckReadyDetection(player: ExoPlayer) {
+    private fun startStuckReadyDetection(player: Player) {
         lastKnownPosition = player.currentPosition
         positionStuckSince = -1L
 
@@ -457,7 +475,7 @@ class PlaybackRecoveryManager(
 
     private var pendingRecoveryJob: Job? = null
 
-    private fun initiateRecovery(player: ExoPlayer, reason: String) {
+    private fun initiateRecovery(player: Player, reason: String) {
         // Check if we've already exhausted attempts (without incrementing)
         val currentAttempt = recoveryAttempt.get()
         if (currentAttempt >= MAX_RECOVERY_ATTEMPTS) {
@@ -516,7 +534,7 @@ class PlaybackRecoveryManager(
         }
     }
 
-    private fun executeRecoveryStep(player: ExoPlayer, step: RecoveryStep) {
+    private fun executeRecoveryStep(player: Player, step: RecoveryStep) {
         val attempt = recoveryAttempt.get()
         Log.i(TAG, "Executing recovery step: $step (attempt $attempt)")
         callbacks.onRecoveryStarted(step, attempt)

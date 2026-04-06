@@ -1,7 +1,6 @@
 package com.albunyaan.tube.player
 
 import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -24,7 +23,7 @@ class PlaybackRecoveryManagerTest {
     private val testDispatcher = StandardTestDispatcher()
     private val testScope = TestScope(testDispatcher)
     private lateinit var mockCallbacks: PlaybackRecoveryManager.RecoveryCallbacks
-    private lateinit var mockPlayer: ExoPlayer
+    private lateinit var mockPlayer: Player
     private lateinit var recoveryManager: PlaybackRecoveryManager
 
     // Injected clock for deterministic timing tests
@@ -400,6 +399,58 @@ class PlaybackRecoveryManagerTest {
         recoveryManager.requestManualRetry(mockPlayer)
 
         // Should have 2 recovery started calls (one per stream)
+        verify(mockCallbacks, times(2)).onRecoveryStarted(any(), any())
+    }
+
+    // --- Video render stall signal tests ---
+
+    @Test
+    fun `video render stall triggers recovery ladder`() = testScope.runTest {
+        recoveryManager.onNewStream("video1", false)
+
+        recoveryManager.onVideoRenderStall(mockPlayer)
+
+        verify(mockCallbacks).onRecoveryStarted(
+            eq(PlaybackRecoveryManager.RecoveryStep.RE_PREPARE),
+            eq(1)
+        )
+        verify(mockPlayer).prepare()
+    }
+
+    @Test
+    fun `video render stall ignored during active recovery`() = testScope.runTest {
+        recoveryManager.onNewStream("video1", false)
+
+        // Trigger a buffering stall first (enter recovery state)
+        whenever(mockPlayer.playbackState).thenReturn(Player.STATE_BUFFERING)
+        whenever(mockPlayer.isPlaying).thenReturn(false)
+        recoveryManager.onPlaybackStateChanged(mockPlayer, Player.STATE_BUFFERING)
+        advanceTimeAndClock(16_000) // Past buffering stall threshold
+
+        // Now try video render stall — should be ignored (already recovering)
+        recoveryManager.onVideoRenderStall(mockPlayer)
+
+        // Only one recovery started call (from the buffering stall, not the render stall)
+        verify(mockCallbacks, times(1)).onRecoveryStarted(any(), any())
+    }
+
+    @Test
+    fun `video render stall after new stream resets and triggers again`() = testScope.runTest {
+        recoveryManager.onNewStream("video1", false)
+        recoveryManager.onVideoRenderStall(mockPlayer)
+
+        // First trigger produces recovery
+        verify(mockCallbacks, times(1)).onRecoveryStarted(any(), any())
+
+        // Subsequent call is blocked (isRecovering = true)
+        recoveryManager.onVideoRenderStall(mockPlayer)
+        verify(mockCallbacks, times(1)).onRecoveryStarted(any(), any()) // still 1
+
+        // Switch to new stream resets state
+        recoveryManager.onNewStream("video2", false)
+        recoveryManager.onVideoRenderStall(mockPlayer)
+
+        // Now triggers again (fresh state)
         verify(mockCallbacks, times(2)).onRecoveryStarted(any(), any())
     }
 }

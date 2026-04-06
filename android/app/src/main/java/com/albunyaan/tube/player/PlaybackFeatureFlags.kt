@@ -55,13 +55,15 @@ class PlaybackFeatureFlags @Inject constructor(
         const val KEY_MPD_PREFETCH = "mpd_prefetch"
         const val KEY_DEGRADATION_MANAGER = "degradation_manager"
         const val KEY_IOS_FETCH = "ios_fetch"
+        const val KEY_GENEROUS_CROP_BUDGET = "generous_crop_budget"
 
         /** Set of all valid override keys for validation */
         private val VALID_KEYS = setOf(
             KEY_SYNTH_ADAPTIVE,
             KEY_MPD_PREFETCH,
             KEY_DEGRADATION_MANAGER,
-            KEY_IOS_FETCH
+            KEY_IOS_FETCH,
+            KEY_GENEROUS_CROP_BUDGET
         )
 
         /**
@@ -122,6 +124,7 @@ class PlaybackFeatureFlags @Inject constructor(
             .remove(KEY_MPD_PREFETCH)
             .remove(KEY_DEGRADATION_MANAGER)
             .remove(KEY_IOS_FETCH)
+            .remove(KEY_GENEROUS_CROP_BUDGET)
             .apply()
     }
 
@@ -170,6 +173,19 @@ class PlaybackFeatureFlags @Inject constructor(
         get() = resolveFlag(KEY_IOS_FETCH, BuildConfig.ENABLE_NPE_IOS_FETCH)
 
     /**
+     * Whether generous crop budget (20%) is used for fullscreen aspect ratio.
+     *
+     * When enabled, AspectPolicy uses [AspectPolicy.GENEROUS_CROP_BUDGET] (20%) instead
+     * of [AspectPolicy.DEFAULT_CROP_BUDGET] (5%), allowing more zoom-to-fill for standard
+     * 16:9 content on ultra-wide screens.
+     *
+     * Build-time default: `true` on Samsung S25 Ultra (SM-S938*), `false` on all other devices.
+     * Runtime override via developer options or remote config for fleet-wide control.
+     */
+    val isGenerousCropBudgetEnabled: Boolean
+        get() = resolveFlag(KEY_GENEROUS_CROP_BUDGET, isSamsungS25Ultra())
+
+    /**
      * Set a runtime override for synthetic adaptive DASH.
      * @param enabled true to enable, false to disable, null to use build-time default
      */
@@ -206,6 +222,15 @@ class PlaybackFeatureFlags @Inject constructor(
     }
 
     /**
+     * Set a runtime override for generous crop budget.
+     * @param enabled true to enable, false to disable, null to use device-based default
+     */
+    fun setGenerousCropBudgetEnabled(enabled: Boolean?) {
+        setOverride(KEY_GENEROUS_CROP_BUDGET, enabled)
+        Log.i(TAG, "GENEROUS_CROP_BUDGET override set to: $enabled (effective: $isGenerousCropBudgetEnabled)")
+    }
+
+    /**
      * Clear a specific flag's runtime override, reverting to build-time default.
      * @throws IllegalArgumentException if key is not a valid feature flag key
      */
@@ -225,6 +250,7 @@ class PlaybackFeatureFlags @Inject constructor(
             .remove(KEY_MPD_PREFETCH)
             .remove(KEY_DEGRADATION_MANAGER)
             .remove(KEY_IOS_FETCH)
+            .remove(KEY_GENEROUS_CROP_BUDGET)
             .apply()
         Log.i(TAG, "All overrides cleared - reverting to build-time defaults")
     }
@@ -247,7 +273,8 @@ class PlaybackFeatureFlags @Inject constructor(
             KEY_SYNTH_ADAPTIVE to getFlagState(KEY_SYNTH_ADAPTIVE, BuildConfig.ENABLE_SYNTH_ADAPTIVE),
             KEY_MPD_PREFETCH to getFlagState(KEY_MPD_PREFETCH, BuildConfig.ENABLE_MPD_PREFETCH),
             KEY_DEGRADATION_MANAGER to getFlagState(KEY_DEGRADATION_MANAGER, BuildConfig.ENABLE_DEGRADATION_MANAGER),
-            KEY_IOS_FETCH to getFlagState(KEY_IOS_FETCH, BuildConfig.ENABLE_NPE_IOS_FETCH)
+            KEY_IOS_FETCH to getFlagState(KEY_IOS_FETCH, BuildConfig.ENABLE_NPE_IOS_FETCH),
+            KEY_GENEROUS_CROP_BUDGET to getFlagState(KEY_GENEROUS_CROP_BUDGET, isSamsungS25Ultra())
         )
     }
 
@@ -277,6 +304,13 @@ class PlaybackFeatureFlags @Inject constructor(
     )
 
     // --- Private helpers ---
+
+    /**
+     * Detect Samsung Galaxy S25 Ultra by model number prefix.
+     * SM-S938 covers all regional variants (SM-S938B, SM-S938U, SM-S938N, etc.).
+     */
+    private fun isSamsungS25Ultra(): Boolean =
+        android.os.Build.MODEL.contains("SM-S938", ignoreCase = true)
 
     private fun resolveFlag(key: String, buildDefault: Boolean): Boolean {
         val override = prefs.getInt(key, VALUE_USE_DEFAULT)

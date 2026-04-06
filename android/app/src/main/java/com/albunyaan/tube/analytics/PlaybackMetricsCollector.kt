@@ -2,6 +2,7 @@ package com.albunyaan.tube.analytics
 
 import android.os.SystemClock
 import android.util.Log
+import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.player.MediaSourceResult
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -71,7 +72,22 @@ class PlaybackMetricsCollector @Inject constructor() {
         val error403Classifications: MutableList<String> = java.util.concurrent.CopyOnWriteArrayList(),
         val totalPlaybackDurationMs: AtomicLong = AtomicLong(0L),
         @Volatile var lastPlaybackResumeMs: Long = 0L,
-        @Volatile var isPlaying: Boolean = false
+        @Volatile var isPlaying: Boolean = false,
+        // --- Extended telemetry (Track 5: instrument before tuning) ---
+        /** Decoder name used for video (e.g., "c2.exynos.h264.decoder") */
+        @Volatile var decoderName: String = "",
+        /** Whether software decoder fallback was triggered (DefaultRenderersFactory) */
+        @Volatile var decoderFallbackUsed: Boolean = false,
+        /** Total dropped video frames during playback */
+        val droppedFrameCount: AtomicInteger = AtomicInteger(0),
+        /** Whether the video render stall watchdog fired for this session */
+        @Volatile var videoRenderStallFired: Boolean = false,
+        /** Aspect ratio mismatch: |screenRatio - videoRatio| for analysis */
+        @Volatile var aspectMismatch: Float = 0f,
+        /** Decoder initialization duration in ms (-1 if not measured) */
+        @Volatile var decoderInitTimeMs: Long = -1,
+        /** Surface type used: "surface_view" or "texture_view" */
+        @Volatile var surfaceType: String = ""
     ) {
         val ttffMs: Long
             get() = if (firstFrameTimestampMs > 0 && tapTimestampMs > 0) {
@@ -99,6 +115,13 @@ class PlaybackMetricsCollector @Inject constructor() {
                 |Start Success: ${startSuccess.get()}
                 |TTFF: $ttff
                 |Source Type: ${sourceType ?: "UNKNOWN"}
+                |Decoder: ${decoderName.ifEmpty { "UNKNOWN" }}
+                |Decoder Fallback: $decoderFallbackUsed
+                |Dropped Frames: ${droppedFrameCount.get()}
+                |Video Stall Watchdog: $videoRenderStallFired
+                |Aspect Mismatch: %.3f
+                |Decoder Init: ${if (decoderInitTimeMs >= 0) "${decoderInitTimeMs}ms" else "N/A"}
+                |Surface Type: ${surfaceType.ifEmpty { "UNKNOWN" }}
                 |Rebuffer Count: ${rebufferCount.get()}
                 |Rebuffer/min: %.2f
                 |MediaSource Rebuilds: ${mediaSourceRebuildCount.get()}
@@ -107,7 +130,7 @@ class PlaybackMetricsCollector @Inject constructor() {
                 |403 Classifications: ${error403Classifications.joinToString(", ")}
                 |Total Playback: ${totalPlaybackDurationMs.get() / 1000}s
                 |================================
-            """.trimMargin().format(rebufferPerMin, error403Rate)
+            """.trimMargin().format(aspectMismatch, rebufferPerMin, error403Rate)
         }
     }
 
@@ -263,6 +286,44 @@ class PlaybackMetricsCollector @Inject constructor() {
         // Only log failure - don't reset startSuccess if it was already set to true
         // (mid-playback failures are tracked separately from startup failures)
         Log.e(TAG, "playback_failed videoId=$videoId reason=$reason startSuccess=${session.startSuccess.get()}")
+    }
+
+    // --- Extended telemetry recording methods ---
+
+    fun onDecoderSelected(videoId: String, decoderName: String, isFallback: Boolean) {
+        val session = activeSessions[videoId] ?: return
+        session.decoderName = decoderName
+        session.decoderFallbackUsed = isFallback
+        if (BuildConfig.DEBUG) Log.d(TAG, "decoder_selected videoId=$videoId decoder=$decoderName fallback=$isFallback")
+    }
+
+    fun onDecoderInitTime(videoId: String, initTimeMs: Long) {
+        val session = activeSessions[videoId] ?: return
+        session.decoderInitTimeMs = initTimeMs
+        if (BuildConfig.DEBUG) Log.d(TAG, "decoder_init_time videoId=$videoId initTime=${initTimeMs}ms")
+    }
+
+    fun onDroppedFrames(videoId: String, count: Int) {
+        val session = activeSessions[videoId] ?: return
+        session.droppedFrameCount.addAndGet(count)
+        if (BuildConfig.DEBUG) Log.d(TAG, "dropped_frames videoId=$videoId count=$count total=${session.droppedFrameCount.get()}")
+    }
+
+    fun onVideoRenderStall(videoId: String) {
+        val session = activeSessions[videoId] ?: return
+        session.videoRenderStallFired = true
+        Log.w(TAG, "video_render_stall videoId=$videoId")
+    }
+
+    fun onSurfaceType(videoId: String, type: String) {
+        val session = activeSessions[videoId] ?: return
+        session.surfaceType = type
+    }
+
+    fun onAspectMismatch(videoId: String, mismatch: Float) {
+        val session = activeSessions[videoId] ?: return
+        session.aspectMismatch = mismatch
+        if (BuildConfig.DEBUG) Log.d(TAG, "aspect_mismatch videoId=$videoId mismatch=%.3f".format(mismatch))
     }
 
     /**
