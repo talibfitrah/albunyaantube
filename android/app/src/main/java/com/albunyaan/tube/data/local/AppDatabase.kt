@@ -6,21 +6,26 @@ import androidx.room.RoomDatabase
 /**
  * Room database for local app data.
  *
- * Currently stores:
- * - Favorite videos (local like replacement)
- *
- * Future additions could include:
- * - Watch history
- * - Downloaded video metadata
- * - Offline playlists
+ * v1: favorite videos
+ * v2: subscribed channels, saved playlists, channel video cache, feed refresh state
  */
 @Database(
-    entities = [FavoriteVideo::class],
-    version = 1,
+    entities = [
+        FavoriteVideo::class,
+        SubscribedChannel::class,
+        SavedPlaylist::class,
+        ChannelVideoCache::class,
+        ChannelFeedRefreshState::class,
+    ],
+    version = 2,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun favoriteVideoDao(): FavoriteVideoDao
+    abstract fun subscribedChannelDao(): SubscribedChannelDao
+    abstract fun savedPlaylistDao(): SavedPlaylistDao
+    abstract fun channelVideoCacheDao(): ChannelVideoCacheDao
+    abstract fun channelFeedRefreshStateDao(): ChannelFeedRefreshStateDao
 
     companion object {
         const val DATABASE_NAME = "albunyaan_tube_db"
