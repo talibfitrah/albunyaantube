@@ -30,15 +30,24 @@
         </thead>
         <tbody>
           <template v-for="cat in displayCats" :key="cat.id">
-            <!-- Category row (drag disabled — use position input to reorder) -->
+            <!-- Category row -->
             <tr
               class="category-row"
               :class="{
                 'expanded': expandedCategoryId === cat.id,
-                'subcategory-row': cat.isSubcategory
+                'subcategory-row': cat.isSubcategory,
+                'drag-over': !cat.isSubcategory && catDragOverId === cat.id
               }"
+              :draggable="!cat.isSubcategory"
+              @dragstart="!cat.isSubcategory && handleCatDragStart($event, cat.id)"
+              @dragover.prevent="!cat.isSubcategory && handleCatDragOver($event, cat.id)"
+              @dragleave="handleCatDragLeave"
+              @drop="!cat.isSubcategory && handleCatDrop($event, cat.id)"
+              @dragend="handleCatDragEnd"
             >
-              <td class="col-drag"></td>
+              <td class="col-drag">
+                <span v-if="!cat.isSubcategory" class="drag-handle" :title="t('contentSorting.dragToReorder')">&#x22EE;&#x22EE;</span>
+              </td>
               <td class="col-name" @click="toggleCategory(cat.id)">
                 <span class="expand-icon">{{ expandedCategoryId === cat.id ? '&#9660;' : '&#9654;' }}</span>
                 <span v-if="cat.icon" class="category-icon">{{ cat.icon }}</span>
@@ -318,6 +327,10 @@ const activeFilterLabel = computed(() => {
   return f?.label ?? contentTypeFilter.value;
 });
 
+// Category drag state
+const catDragOverId = ref<string | null>(null);
+let catDragStartId: string | null = null;
+
 // Content drag state
 const contentDragOverIndex = ref<number | null>(null);
 let contentDragStartIndex: number | null = null;
@@ -453,6 +466,52 @@ async function handleCatPositionChange(categoryId: string, event: Event) {
   } finally {
     lastCatSubmit = null;
   }
+}
+
+// ==================== Category drag-and-drop ====================
+
+function handleCatDragStart(e: DragEvent, categoryId: string) {
+  catDragStartId = categoryId;
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', categoryId);
+  }
+}
+
+function handleCatDragOver(e: DragEvent, categoryId: string) {
+  e.preventDefault();
+  catDragOverId.value = categoryId;
+}
+
+function handleCatDragLeave() {
+  catDragOverId.value = null;
+}
+
+async function handleCatDrop(e: DragEvent, dropCategoryId: string) {
+  e.preventDefault();
+  catDragOverId.value = null;
+
+  if (!catDragStartId || catDragStartId === dropCategoryId) return;
+
+  const mainCats = displayCats.value.filter(c => !c.isSubcategory);
+  const targetCat = mainCats.find(c => c.id === dropCategoryId);
+  if (!targetCat) return;
+
+  const draggedId = catDragStartId;
+  catDragStartId = null;
+
+  try {
+    categories.value = await reorderCategory(draggedId, targetCat.displayOrder ?? 0);
+    toast.success(t('contentSorting.categoryReordered'));
+  } catch (e: any) {
+    toast.error(e.message || 'Failed to reorder category');
+    await loadCategories();
+  }
+}
+
+function handleCatDragEnd() {
+  catDragOverId.value = null;
+  catDragStartId = null;
 }
 
 // ==================== Content drag-and-drop ====================
@@ -663,7 +722,7 @@ onMounted(() => {
 }
 
 .subtitle {
-  color: var(--text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   margin-top: 0.25rem;
 }
 
@@ -680,7 +739,7 @@ onMounted(() => {
 .content-table td {
   padding: 0.75rem 0.5rem;
   text-align: start;
-  border-bottom: 1px solid var(--border-color, #e5e7eb);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .sort-table thead th,
@@ -688,7 +747,7 @@ onMounted(() => {
   font-weight: 600;
   font-size: 0.75rem;
   text-transform: uppercase;
-  color: var(--text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 .col-drag {
@@ -725,7 +784,7 @@ onMounted(() => {
 
 .drag-handle {
   cursor: grab;
-  color: var(--text-secondary, #9ca3af);
+  color: var(--color-text-secondary);
   font-size: 1rem;
   user-select: none;
 }
@@ -740,24 +799,24 @@ onMounted(() => {
 }
 
 .category-row:hover {
-  background-color: var(--hover-bg, #f9fafb);
+  background-color: var(--color-surface-alt);
 }
 
 .category-row.expanded {
-  background-color: var(--active-bg, #f3f4f6);
+  background-color: var(--color-surface-alt);
 }
 
 .category-row.drag-over,
 tr.drag-over {
-  background-color: var(--drag-over-bg, #dbeafe);
-  border-top: 2px solid var(--primary-color, #3b82f6);
+  background-color: var(--color-brand-soft);
+  border-top: 2px solid var(--color-brand);
 }
 
 .expand-icon {
   display: inline-block;
   width: 1rem;
   font-size: 0.625rem;
-  color: var(--text-secondary, #9ca3af);
+  color: var(--color-text-secondary);
 }
 
 .category-icon {
@@ -780,14 +839,16 @@ tr.drag-over {
 .position-input {
   width: 60px;
   padding: 0.25rem 0.5rem;
-  border: 1px solid var(--border-color, #d1d5db);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   text-align: center;
   font-size: 0.875rem;
+  background: var(--color-surface);
+  color: var(--color-text-primary);
 }
 
 .position-input:focus {
-  outline: 2px solid var(--primary-color, #3b82f6);
+  outline: 2px solid var(--color-brand);
   outline-offset: -1px;
 }
 
@@ -796,12 +857,12 @@ tr.drag-over {
   width: 60px;
   text-align: center;
   font-size: 0.875rem;
-  color: var(--text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 .content-cell {
   padding: 0 0 0.5rem 2.5rem;
-  background-color: var(--content-bg, #fafafa);
+  background-color: var(--color-surface-alt);
 }
 
 .content-toolbar {
@@ -820,23 +881,23 @@ tr.drag-over {
 
 .filter-btn {
   padding: 0.25rem 0.75rem;
-  border: 1px solid var(--border-color, #d1d5db);
+  border: 1px solid var(--color-border);
   border-radius: 16px;
-  background: var(--btn-bg, #fff);
+  background: var(--color-surface);
   cursor: pointer;
   font-size: 0.75rem;
-  color: var(--text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   transition: all 0.15s;
 }
 
 .filter-btn:hover {
-  background: var(--hover-bg, #f9fafb);
+  background: var(--color-surface-alt);
 }
 
 .filter-btn.active {
-  background: var(--primary-color, #3b82f6);
-  color: white;
-  border-color: var(--primary-color, #3b82f6);
+  background: var(--color-brand);
+  color: var(--color-text-inverse);
+  border-color: var(--color-brand);
 }
 
 .filter-count {
@@ -855,7 +916,7 @@ tr.drag-over {
 .thumbnail-placeholder {
   width: 48px;
   height: 36px;
-  background-color: var(--placeholder-bg, #e5e7eb);
+  background-color: var(--color-border);
   border-radius: 4px;
 }
 
@@ -869,43 +930,44 @@ tr.drag-over {
 }
 
 .type-channel {
-  background-color: #dbeafe;
-  color: #1d4ed8;
+  background-color: var(--color-brand-soft);
+  color: var(--color-brand);
 }
 
 .type-playlist {
-  background-color: #dcfce7;
-  color: #166534;
+  background-color: var(--color-success-soft);
+  color: var(--color-success);
 }
 
 .type-video {
-  background-color: #fef3c7;
-  color: #92400e;
+  background-color: var(--color-warning-soft);
+  color: var(--color-warning);
 }
 
 .btn {
   display: inline-flex;
   align-items: center;
   padding: 0.5rem 1rem;
-  border: 1px solid var(--border-color, #d1d5db);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
-  background: var(--btn-bg, #fff);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
   cursor: pointer;
   font-size: 0.875rem;
 }
 
 .btn:hover {
-  background: var(--hover-bg, #f9fafb);
+  background: var(--color-surface-alt);
 }
 
 .btn-primary {
-  background: var(--primary-color, #3b82f6);
-  color: white;
-  border-color: var(--primary-color, #3b82f6);
+  background: var(--color-brand);
+  color: var(--color-text-inverse);
+  border-color: var(--color-brand);
 }
 
 .btn-primary:hover {
-  background: var(--primary-hover, #2563eb);
+  background: var(--color-accent);
 }
 
 .btn-primary:disabled {
@@ -930,27 +992,27 @@ tr.drag-over {
 }
 
 .btn-remove {
-  color: var(--text-secondary, #9ca3af);
+  color: var(--color-text-secondary);
 }
 
 .btn-remove:hover {
-  color: var(--error-color, #dc2626);
-  background: #fef2f2;
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
 }
 
 .loading-state,
-.error-state,
 .empty-state,
 .content-loading,
-.content-error,
 .content-empty {
   padding: 2rem;
-  text-align: center;
-  color: var(--text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
-.error-state {
-  color: var(--error-color, #dc2626);
+.error-state,
+.content-error {
+  padding: 2rem;
+  text-align: center;
+  color: var(--color-danger);
 }
 
 /* ==================== Modal ==================== */
@@ -970,7 +1032,7 @@ tr.drag-over {
 }
 
 .modal-container {
-  background: var(--color-surface, #fff);
+  background: var(--color-surface);
   border-radius: 8px;
   width: 100%;
   max-width: 640px;
@@ -986,7 +1048,7 @@ tr.drag-over {
   align-items: center;
   justify-content: space-between;
   padding: 1.25rem 1.5rem;
-  border-bottom: 1px solid var(--border-color, #e5e7eb);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .modal-header h2 {
@@ -999,19 +1061,19 @@ tr.drag-over {
   background: none;
   border: none;
   font-size: 1.5rem;
-  color: var(--text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   cursor: pointer;
   padding: 0.25rem;
   line-height: 1;
 }
 
 .btn-close:hover {
-  color: var(--color-text, #111);
+  color: var(--color-text-primary);
 }
 
 .modal-filters {
   padding: 0.75rem 1.5rem;
-  border-bottom: 1px solid var(--border-color, #e5e7eb);
+  border-bottom: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -1020,14 +1082,15 @@ tr.drag-over {
 .search-input {
   width: 100%;
   padding: 0.5rem 0.75rem;
-  border: 1px solid var(--border-color, #d1d5db);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   font-size: 0.875rem;
-  background: var(--color-background, #fff);
+  background: var(--color-bg);
+  color: var(--color-text-primary);
 }
 
 .search-input:focus {
-  outline: 2px solid var(--primary-color, #3b82f6);
+  outline: 2px solid var(--color-brand);
   outline-offset: -1px;
 }
 
@@ -1045,10 +1108,10 @@ tr.drag-over {
 
 .truncation-warning {
   padding: 0.5rem 1.5rem;
-  background: var(--warning-bg, #fef3c7);
-  color: var(--warning-text, #92400e);
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
   font-size: 0.8125rem;
-  border-bottom: 1px solid var(--warning-border, #fcd34d);
+  border-bottom: 1px solid var(--color-warning);
 }
 
 .add-content-list {
@@ -1063,15 +1126,15 @@ tr.drag-over {
   padding: 0.625rem 1.5rem;
   cursor: pointer;
   transition: background 0.1s;
-  border-bottom: 1px solid var(--border-color, #f3f4f6);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .add-content-item:hover {
-  background: var(--hover-bg, #f9fafb);
+  background: var(--color-surface-alt);
 }
 
 .add-content-item.selected {
-  background: #eff6ff;
+  background: var(--color-brand-soft);
 }
 
 .add-content-item input[type="checkbox"] {
@@ -1101,12 +1164,12 @@ tr.drag-over {
   align-items: center;
   justify-content: space-between;
   padding: 0.75rem 1.5rem;
-  border-top: 1px solid var(--border-color, #e5e7eb);
+  border-top: 1px solid var(--color-border);
 }
 
 .selection-count {
   font-size: 0.8125rem;
-  color: var(--text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 .footer-actions {

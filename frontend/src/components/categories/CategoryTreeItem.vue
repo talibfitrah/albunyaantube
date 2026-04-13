@@ -12,7 +12,8 @@
       <div v-else class="expand-spacer"></div>
 
       <div class="category-content">
-        <span v-if="category.icon" class="category-icon">{{ category.icon }}</span>
+        <span v-if="category.icon && !isIconDataUrl(category.icon)" class="category-icon">{{ category.icon }}</span>
+        <img v-else-if="category.icon && isIconDataUrl(category.icon)" :src="category.icon" alt="" class="category-icon-img" />
         <span class="category-name">{{ category.label }}</span>
         <span v-if="hasChildren" class="subcategory-count">
           ({{ category.subcategories.length }})
@@ -64,6 +65,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { isIconDataUrl } from '@/utils/formatters';
 
 interface Category {
   id: string;
@@ -172,6 +174,14 @@ function toggleExpanded() {
 
 .category-icon {
   font-size: 1.25rem;
+}
+
+.category-icon-img {
+  width: 1.5rem;
+  height: 1.5rem;
+  object-fit: contain;
+  border-radius: 0.25rem;
+  flex-shrink: 0;
 }
 
 .category-name {

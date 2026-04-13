@@ -57,7 +57,7 @@
         </RouterLink>
       </nav>
 
-      <!-- Locale Switcher in Sidebar (Mobile/Tablet) -->
+      <!-- Locale Switcher + Theme Toggle in Sidebar (Mobile/Tablet) -->
       <div class="sidebar-footer">
         <label class="locale-switcher-mobile">
           <span class="locale-label">{{ t('preferences.localeLabel') }}</span>
@@ -75,6 +75,21 @@
             </option>
           </select>
         </label>
+        <div class="theme-switcher-mobile">
+          <span class="locale-label">{{ t('preferences.themeLabel') }}</span>
+          <div class="theme-options">
+            <button
+              v-for="opt in themeOptions"
+              :key="opt.value"
+              type="button"
+              class="theme-option-btn"
+              :class="{ active: theme === opt.value }"
+              @click="preferencesStore.setTheme(opt.value)"
+            >
+              {{ opt.icon }} {{ opt.label }}
+            </button>
+          </div>
+        </div>
       </div>
     </aside>
 
@@ -101,6 +116,16 @@
               </option>
             </select>
           </label>
+          <button
+            type="button"
+            class="theme-toggle"
+            :title="t('preferences.themeLabel')"
+            @click="cycleTheme"
+          >
+            <span v-if="theme === 'dark'">🌙</span>
+            <span v-else-if="theme === 'light'">☀️</span>
+            <span v-else>💻</span>
+          </button>
           <button class="logout" type="button" @click="handleLogout">
             {{ t('auth.logout') }}
           </button>
@@ -122,14 +147,14 @@ import { storeToRefs } from 'pinia';
 import NotificationsPanel from '@/components/NotificationsPanel.vue';
 import { useAuthStore } from '@/stores/auth';
 import { navRoutes, type NavRoute } from '@/constants/navigation';
-import { usePreferencesStore, type LocaleCode } from '@/stores/preferences';
+import { usePreferencesStore, type LocaleCode, type ThemeMode } from '@/stores/preferences';
 
 const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
 const preferencesStore = usePreferencesStore();
-const { locale } = storeToRefs(preferencesStore);
+const { locale, theme } = storeToRefs(preferencesStore);
 const mainRef = ref<HTMLElement | null>(null);
 const isSidebarOpen = ref(false);
 const windowWidth = ref(window.innerWidth);
@@ -156,6 +181,22 @@ const localeOptions = computed(() =>
     label: t(`preferences.locales.${code}`)
   }))
 );
+
+const themeIcons: Record<ThemeMode, string> = { light: '☀️', dark: '🌙', system: '💻' };
+const themeOptions = computed(() =>
+  preferencesStore.availableThemes.map((value) => ({
+    value,
+    icon: themeIcons[value],
+    label: t(`preferences.themes.${value}`)
+  }))
+);
+
+const themeOrder: ThemeMode[] = ['system', 'light', 'dark'];
+function cycleTheme() {
+  const current = themeOrder.indexOf(theme.value);
+  const next = themeOrder[(current + 1) % themeOrder.length];
+  preferencesStore.setTheme(next);
+}
 
 const currentSectionLabel = computed(() => {
   const active = filteredNavRoutes.value.find((item) => isActive(item.route));
@@ -490,6 +531,38 @@ onUnmounted(() => {
   color: var(--color-text-inverse);
 }
 
+.theme-switcher-mobile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.theme-options {
+  display: flex;
+  gap: 0.375rem;
+}
+
+.theme-option-btn {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--color-text-inverse-muted);
+  border-radius: 0.375rem;
+  padding: 0.5rem 0.25rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theme-option-btn.active {
+  background: var(--color-brand);
+  border-color: var(--color-brand);
+  color: var(--color-text-inverse);
+  font-weight: 600;
+}
+
 /* Content Area */
 .content {
   display: flex;
@@ -551,6 +624,22 @@ onUnmounted(() => {
 
 .locale-select:hover {
   border-color: var(--color-brand);
+}
+
+.theme-toggle {
+  background: transparent;
+  border: 1.5px solid var(--color-border);
+  border-radius: 0.5rem;
+  padding: 0.375rem 0.625rem;
+  font-size: 1.125rem;
+  cursor: pointer;
+  line-height: 1;
+  transition: all 0.2s ease;
+}
+
+.theme-toggle:hover {
+  border-color: var(--color-brand);
+  background: var(--color-brand-soft);
 }
 
 .logout {

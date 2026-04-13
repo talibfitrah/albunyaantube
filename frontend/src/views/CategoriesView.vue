@@ -106,12 +106,28 @@
 
             <div class="form-group">
               <label for="category-icon">{{ t('categories.dialog.icon') }}</label>
-              <input
-                id="category-icon"
-                v-model="dialogData.icon"
-                type="text"
-                :placeholder="t('categories.dialog.iconPlaceholder')"
-              />
+              <div class="icon-input-group">
+                <input
+                  id="category-icon"
+                  v-model="dialogData.icon"
+                  type="text"
+                  :placeholder="t('categories.dialog.iconPlaceholder')"
+                  class="icon-text-input"
+                />
+                <label class="icon-upload-label" :title="t('categories.dialog.iconUploadButton')">
+                  <input
+                    type="file"
+                    accept=".png,.svg,image/png,image/svg+xml"
+                    class="icon-file-input"
+                    @change="handleIconFileChange"
+                  />
+                  {{ t('categories.dialog.iconUploadButton') }}
+                </label>
+              </div>
+              <div v-if="dialogData.icon && isIconDataUrl(dialogData.icon)" class="icon-preview">
+                <img :src="dialogData.icon" alt="icon preview" class="icon-preview-img" />
+                <button type="button" class="icon-clear-btn" @click="dialogData.icon = ''">×</button>
+              </div>
             </div>
 
             <div class="form-group">
@@ -150,6 +166,18 @@ import { getAllCategories, createCategory, updateCategory, deleteCategory } from
 import CategoryTreeItem from '@/components/categories/CategoryTreeItem.vue';
 import ErrorRetry from '@/components/common/ErrorRetry.vue';
 import { useToast } from '@/composables/useToast';
+import { isIconDataUrl } from '@/utils/formatters';
+
+function findCategoryById(cats: any[], id: string): any {
+  for (const cat of cats) {
+    if (cat.id === id) return cat;
+    if (cat.subcategories) {
+      const found = findCategoryById(cat.subcategories, id);
+      if (found) return found;
+    }
+  }
+  return null;
+}
 
 const { t } = useI18n();
 const { success, error: showError } = useToast();
@@ -266,7 +294,13 @@ async function handleSubmit() {
 }
 
 async function handleDelete(categoryId: string) {
-  if (!confirm(t('categories.confirmDelete'))) {
+  const target = findCategoryById(categories.value, categoryId);
+  const hasSubcategories = target?.subcategories?.length > 0;
+  const confirmMessage = hasSubcategories
+    ? t('categories.confirmDelete')
+    : t('categories.confirmDeleteSimple');
+
+  if (!confirm(confirmMessage)) {
     return;
   }
 
@@ -280,19 +314,22 @@ async function handleDelete(categoryId: string) {
   }
 }
 
-function getParentName(parentId: string): string {
-  function findCategory(cats: any[], id: string): any {
-    for (const cat of cats) {
-      if (cat.id === id) return cat;
-      if (cat.subcategories) {
-        const found = findCategory(cat.subcategories, id);
-        if (found) return found;
-      }
-    }
-    return null;
-  }
+function handleIconFileChange(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
 
-  const parent = findCategory(categories.value, parentId);
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    dialogData.value.icon = e.target?.result as string;
+  };
+  reader.readAsDataURL(file);
+  // Reset input so same file can be re-selected
+  input.value = '';
+}
+
+function getParentName(parentId: string): string {
+  const parent = findCategoryById(categories.value, parentId);
   return parent ? parent.label : '';
 }
 
@@ -495,6 +532,72 @@ form {
 .form-group input {
   -webkit-tap-highlight-color: transparent;
   min-height: 48px;
+}
+
+.icon-input-group {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.icon-text-input {
+  flex: 1;
+}
+
+.icon-upload-label {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 1rem;
+  background: var(--color-surface-alt);
+  border: 1.5px solid var(--color-border);
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  min-height: 48px;
+}
+
+.icon-upload-label:hover {
+  border-color: var(--color-brand);
+  background: var(--color-brand-soft);
+  color: var(--color-brand);
+}
+
+.icon-file-input {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  min-height: 0;
+}
+
+.icon-preview {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.375rem;
+}
+
+.icon-preview-img {
+  width: 2rem;
+  height: 2rem;
+  object-fit: contain;
+  border-radius: 0.25rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-alt);
+}
+
+.icon-clear-btn {
+  background: transparent;
+  border: none;
+  font-size: 1.25rem;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  padding: 0 0.25rem;
+  line-height: 1;
 }
 
 @media (hover: hover) {

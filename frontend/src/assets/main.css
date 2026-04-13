@@ -41,43 +41,42 @@
   --color-surface-variant: var(--color-surface-alt);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-bg: #041712;
-    --color-surface: #0b231c;
-    --color-surface-alt: #102c24;
-    --color-surface-inverse: #1a4337;
-    --color-text-primary: #eef6f2;
-    --color-text-secondary: #9ec9b4;
-    --color-text-inverse: #04130d;
-    --color-text-inverse-muted: rgba(4, 19, 13, 0.74);
-    --color-brand: #35c491;
-    --color-brand-soft: rgba(53, 196, 145, 0.18);
-    --color-accent: #7cdcb3;
-    --color-border: #1b4539;
-    --color-success: #34d399;
-    --color-success-soft: rgba(52, 211, 153, 0.2);
-    --color-warning: #fbbf24;
-    --color-warning-soft: rgba(251, 191, 36, 0.16);
-    --color-danger: #f87171;
-    --color-danger-soft: rgba(248, 113, 113, 0.24);
-    --color-danger-strong: #c24141;
-    --color-disabled: #47695d;
-    --color-icon-active: #7ee2b4;
-    --color-icon-inactive: #5d8f7c;
-    --shadow-elevated: 0 18px 50px -24px rgba(4, 12, 9, 0.7);
-    --shadow-focus: 0 0 0 3px rgba(53, 196, 145, 0.35);
-    --color-overlay: rgba(4, 20, 13, 0.6);
-    --gradient-auth-a: rgba(53, 196, 145, 0.22);
-    --gradient-auth-b: rgba(124, 220, 179, 0.26);
+/* Dark mode — set via JS (resolves system preference + manual override) */
+:root[data-theme="dark"] {
+  --color-bg: #041712;
+  --color-surface: #0b231c;
+  --color-surface-alt: #102c24;
+  --color-surface-inverse: #1a4337;
+  --color-text-primary: #eef6f2;
+  --color-text-secondary: #9ec9b4;
+  --color-text-inverse: #e8f5ee;
+  --color-text-inverse-muted: rgba(232, 245, 238, 0.72);
+  --color-brand: #35c491;
+  --color-brand-soft: rgba(53, 196, 145, 0.18);
+  --color-accent: #7cdcb3;
+  --color-border: #1b4539;
+  --color-success: #34d399;
+  --color-success-soft: rgba(52, 211, 153, 0.2);
+  --color-warning: #fbbf24;
+  --color-warning-soft: rgba(251, 191, 36, 0.16);
+  --color-danger: #f87171;
+  --color-danger-soft: rgba(248, 113, 113, 0.24);
+  --color-danger-strong: #c24141;
+  --color-disabled: #47695d;
+  --color-icon-active: #7ee2b4;
+  --color-icon-inactive: #5d8f7c;
+  --shadow-elevated: 0 18px 50px -24px rgba(4, 12, 9, 0.7);
+  --shadow-focus: 0 0 0 3px rgba(53, 196, 145, 0.35);
+  --color-overlay: rgba(4, 20, 13, 0.6);
+  --gradient-auth-a: rgba(53, 196, 145, 0.22);
+  --gradient-auth-b: rgba(124, 220, 179, 0.26);
 
-    /* Aliases used by components */
-    --color-primary: var(--color-brand);
-    --color-primary-hover: #2aad7d;
-    --color-text: var(--color-text-primary);
-    --color-background: var(--color-bg);
-    --color-surface-variant: var(--color-surface-alt);
-  }
+  /* Aliases used by components */
+  --color-primary: var(--color-brand);
+  --color-primary-hover: #2aad7d;
+  --color-text: var(--color-text-primary);
+  --color-background: var(--color-bg);
+  --color-surface-variant: var(--color-surface-alt);
 }
 
 body {

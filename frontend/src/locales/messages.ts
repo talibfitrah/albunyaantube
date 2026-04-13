@@ -147,6 +147,7 @@ export const messages = {
       deleteError: 'Failed to delete category.',
       deleteSuccess: 'Category deleted successfully.',
       confirmDelete: 'Are you sure you want to delete this category? All subcategories will also be deleted.',
+      confirmDeleteSimple: 'Are you sure you want to delete this category?',
       createSuccess: 'Category created successfully.',
       updateSuccess: 'Category updated successfully.',
       dialog: {
@@ -158,6 +159,7 @@ export const messages = {
         parent: 'Parent Category',
         icon: 'Icon (optional)',
         iconPlaceholder: 'Enter emoji or icon...',
+        iconUploadButton: 'Upload PNG/SVG',
         displayOrder: 'Display Order',
         displayOrderAuto: 'Auto',
         cancel: 'Cancel',
@@ -1156,6 +1158,12 @@ export const messages = {
         en: 'English',
         ar: 'العربية',
         nl: 'Nederlands'
+      },
+      themeLabel: 'Theme',
+      themes: {
+        light: 'Light',
+        dark: 'Dark',
+        system: 'System'
       }
     },
     videoValidation: {
@@ -1414,7 +1422,7 @@ export const messages = {
       closeMenu: 'أغلق القائمة'
     },
     dashboard: {
-      heading: 'سلام عليكم، مرحباً بعودتك',
+      heading: 'السلام عليكم ورحمة الله وبركاته، مرحباً بعودتك',
       subtitle: 'راجع أحدث نشاط الإشراف وصحة السجل.',
       lastUpdated: 'آخر تحديث {timestamp}',
       cards: {
@@ -1513,6 +1521,7 @@ export const messages = {
       deleteError: 'فشل حذف الفئة.',
       deleteSuccess: 'تم حذف الفئة بنجاح.',
       confirmDelete: 'هل أنت متأكد من حذف هذه الفئة؟ سيتم أيضًا حذف جميع الفئات الفرعية.',
+      confirmDeleteSimple: 'هل أنت متأكد من حذف هذه الفئة؟',
       createSuccess: 'تم إنشاء الفئة بنجاح.',
       updateSuccess: 'تم تحديث الفئة بنجاح.',
       dialog: {
@@ -1524,6 +1533,7 @@ export const messages = {
         parent: 'الفئة الرئيسية',
         icon: 'أيقونة (اختياري)',
         iconPlaceholder: 'أدخل رمز تعبيري أو أيقونة...',
+        iconUploadButton: 'رفع PNG/SVG',
         displayOrder: 'ترتيب العرض',
         displayOrderAuto: 'تلقائي',
         cancel: 'إلغاء',
@@ -2249,6 +2259,12 @@ export const messages = {
         en: 'الإنجليزية',
         ar: 'العربية',
         nl: 'الهولندية'
+      },
+      themeLabel: 'المظهر',
+      themes: {
+        light: 'فاتح',
+        dark: 'داكن',
+        system: 'تلقائي'
       }
     },
     videoValidation: {
@@ -2660,6 +2676,7 @@ export const messages = {
       deleteError: 'Categorie kan niet worden verwijderd.',
       deleteSuccess: 'Categorie succesvol verwijderd.',
       confirmDelete: 'Weet je zeker dat je deze categorie wilt verwijderen? Alle subcategorieën worden ook verwijderd.',
+      confirmDeleteSimple: 'Weet je zeker dat je deze categorie wilt verwijderen?',
       createSuccess: 'Categorie succesvol aangemaakt.',
       updateSuccess: 'Categorie succesvol bijgewerkt.',
       dialog: {
@@ -2671,6 +2688,7 @@ export const messages = {
         parent: 'Bovenliggende categorie',
         icon: 'Icoon (optioneel)',
         iconPlaceholder: 'Voer emoji of icoon in...',
+        iconUploadButton: 'PNG/SVG uploaden',
         displayOrder: 'Weergavevolgorde',
         displayOrderAuto: 'Automatisch',
         cancel: 'Annuleren',
@@ -3396,6 +3414,12 @@ export const messages = {
         en: 'Engels',
         ar: 'Arabisch',
         nl: 'Nederlands'
+      },
+      themeLabel: 'Thema',
+      themes: {
+        light: 'Licht',
+        dark: 'Donker',
+        system: 'Systeem'
       }
     },
     videoValidation: {
