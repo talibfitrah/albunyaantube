@@ -277,7 +277,14 @@ export const messages = {
       addContentTruncated: 'Showing {count} items. Some content may not be listed due to volume.',
       noFilterResults: 'No {type} content in this category',
       cancel: 'Cancel',
-      close: 'Close'
+      close: 'Close',
+      selectedCount: '{count} selected',
+      clearSelection: 'Clear',
+      deleteSelected: 'Delete Selected',
+      deleting: 'Deleting...',
+      deleteSelectedConfirm: 'Remove {count} item(s) from this category?',
+      deleteSelectedSuccess: '{count} item(s) removed from category',
+      deleteSelectedPartialError: '{errors} item(s) failed to remove'
     },
     contentLibrary: {
       heading: 'Content Library',
@@ -1651,7 +1658,14 @@ export const messages = {
       addContentTruncated: 'عرض {count} عنصر. قد لا يتم عرض بعض المحتوى بسبب الحجم.',
       noFilterResults: 'لا يوجد محتوى من نوع {type} في هذه الفئة',
       cancel: 'إلغاء',
-      close: 'إغلاق'
+      close: 'إغلاق',
+      selectedCount: '{count} محدد',
+      clearSelection: 'مسح',
+      deleteSelected: 'حذف المحدد',
+      deleting: 'جارٍ الحذف...',
+      deleteSelectedConfirm: 'إزالة {count} عنصر(عناصر) من هذه الفئة؟',
+      deleteSelectedSuccess: 'تمت إزالة {count} عنصر(عناصر) من الفئة',
+      deleteSelectedPartialError: 'فشل في إزالة {errors} عنصر(عناصر)'
     },
     contentLibrary: {
       heading: 'مكتبة المحتوى',
@@ -2806,7 +2820,14 @@ export const messages = {
       addContentTruncated: '{count} items weergegeven. Sommige inhoud wordt mogelijk niet weergegeven vanwege volume.',
       noFilterResults: 'Geen {type} inhoud in deze categorie',
       cancel: 'Annuleren',
-      close: 'Sluiten'
+      close: 'Sluiten',
+      selectedCount: '{count} geselecteerd',
+      clearSelection: 'Wissen',
+      deleteSelected: 'Geselecteerde verwijderen',
+      deleting: 'Verwijderen...',
+      deleteSelectedConfirm: '{count} item(s) uit deze categorie verwijderen?',
+      deleteSelectedSuccess: '{count} item(s) verwijderd uit categorie',
+      deleteSelectedPartialError: '{errors} item(s) konden niet worden verwijderd'
     },
     contentLibrary: {
       heading: 'Inhoudsbibliotheek',
