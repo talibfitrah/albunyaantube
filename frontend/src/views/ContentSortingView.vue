@@ -103,9 +103,28 @@
                 <div v-else-if="filteredContentItems.length === 0" class="content-empty">
                   <p>{{ contentTypeFilter === 'all' ? t('contentSorting.noContent') : t('contentSorting.noFilterResults', { type: activeFilterLabel }) }}</p>
                 </div>
-                <table v-else class="content-table">
+                <template v-else>
+                  <!-- Bulk action bar -->
+                  <div v-if="selectedContentKeys.size > 0" class="bulk-action-bar">
+                    <span class="bulk-count">{{ t('contentSorting.selectedCount', { count: selectedContentKeys.size }) }}</span>
+                    <div class="bulk-actions">
+                      <button class="btn btn-sm" @click="clearSelection">{{ t('contentSorting.clearSelection') }}</button>
+                      <button class="btn btn-sm btn-danger" :disabled="bulkDeleting" @click="handleDeleteSelected">
+                        {{ bulkDeleting ? t('contentSorting.deleting') : t('contentSorting.deleteSelected') }}
+                      </button>
+                    </div>
+                  </div>
+                  <table class="content-table">
                   <thead>
                     <tr>
+                      <th class="col-check">
+                        <input
+                          type="checkbox"
+                          :checked="allFilteredSelected"
+                          :indeterminate="someFilteredSelected && !allFilteredSelected"
+                          @change="toggleSelectAll"
+                        />
+                      </th>
                       <th class="col-drag"></th>
                       <th class="col-thumb"></th>
                       <th class="col-content-name">{{ t('contentSorting.contentTitle') }}</th>
@@ -118,7 +137,10 @@
                     <tr
                       v-for="(item, cIndex) in filteredContentItems"
                       :key="`${item.contentType}-${item.contentId}`"
-                      :class="{ 'drag-over': contentDragOverIndex === cIndex }"
+                      :class="{
+                        'drag-over': contentDragOverIndex === cIndex,
+                        'row-selected': selectedContentKeys.has(contentKey(item))
+                      }"
                       :draggable="contentTypeFilter === 'all'"
                       @dragstart="contentTypeFilter === 'all' && handleContentDragStart($event, cIndex)"
                       @dragover.prevent="contentTypeFilter === 'all' && handleContentDragOver($event, cIndex)"
@@ -126,6 +148,13 @@
                       @drop="contentTypeFilter === 'all' && handleContentDrop($event, cIndex)"
                       @dragend="handleContentDragEnd"
                     >
+                      <td class="col-check">
+                        <input
+                          type="checkbox"
+                          :checked="selectedContentKeys.has(contentKey(item))"
+                          @change="toggleContentSelection(item)"
+                        />
+                      </td>
                       <td class="col-drag">
                         <span v-if="contentTypeFilter === 'all'" class="drag-handle" :title="t('contentSorting.dragToReorder')">&#x22EE;&#x22EE;</span>
                       </td>
@@ -167,6 +196,7 @@
                     </tr>
                   </tbody>
                 </table>
+                </template>
               </td>
             </tr>
           </template>
@@ -224,12 +254,12 @@
                   v-for="item in addModalFiltered"
                   :key="`${item.type}-${item.id}`"
                   class="add-content-item"
-                  :class="{ selected: addModalSelected.has(`${item.type}:${item.id}`) }"
+                  :class="{ selected: addModalSelected.has(contentKey(item)) }"
                   @click="toggleAddSelection(item)"
                 >
                   <input
                     type="checkbox"
-                    :checked="addModalSelected.has(`${item.type}:${item.id}`)"
+                    :checked="addModalSelected.has(contentKey(item))"
                     @click.stop
                     @change="toggleAddSelection(item)"
                   />
@@ -291,8 +321,24 @@ import {
 } from '@/services/sortOrder';
 import { toast } from '@/utils/toast';
 import { useFocusTrap } from '@/composables/useFocusTrap';
+import type { Ref } from 'vue';
 
 const { t } = useI18n();
+
+function contentKey(item: { contentType?: string; type?: string; contentId?: string; id?: string }): string {
+  return `${item.contentType ?? item.type}:${item.contentId ?? item.id}`;
+}
+
+function parseContentKey(key: string): { contentType: string; contentId: string } {
+  const i = key.indexOf(':');
+  return { contentType: key.substring(0, i), contentId: key.substring(i + 1) };
+}
+
+function toggleInSet(setRef: Ref<Set<string>>, key: string) {
+  const next = new Set(setRef.value);
+  next.has(key) ? next.delete(key) : next.add(key);
+  setRef.value = next;
+}
 
 // ==================== Type filters ====================
 
@@ -419,6 +465,7 @@ async function toggleCategory(categoryId: string) {
     expandedCategoryId.value = null;
     contentItems.value = [];
     contentTypeFilter.value = 'all';
+    selectedContentKeys.value = new Set();
     return;
   }
 
@@ -427,6 +474,7 @@ async function toggleCategory(categoryId: string) {
   contentError.value = null;
   contentItems.value = [];
   contentTypeFilter.value = 'all';
+  selectedContentKeys.value = new Set();
 
   const token = ++contentLoadToken;
   try {
@@ -598,6 +646,78 @@ async function handleContentPositionChange(item: ContentSortItem, event: Event) 
   }
 }
 
+// ==================== Content selection ====================
+
+const selectedContentKeys = ref<Set<string>>(new Set());
+const bulkDeleting = ref(false);
+
+const allFilteredSelected = computed(() => {
+  if (filteredContentItems.value.length === 0) return false;
+  return filteredContentItems.value.every(i => selectedContentKeys.value.has(contentKey(i)));
+});
+
+const someFilteredSelected = computed(() =>
+  selectedContentKeys.value.size > 0 && !allFilteredSelected.value
+);
+
+function toggleContentSelection(item: ContentSortItem) {
+  toggleInSet(selectedContentKeys, contentKey(item));
+}
+
+function toggleSelectAll() {
+  const shouldDeselect = allFilteredSelected.value;
+  const next = new Set(selectedContentKeys.value);
+  for (const item of filteredContentItems.value) {
+    const key = contentKey(item);
+    if (shouldDeselect) next.delete(key);
+    else next.add(key);
+  }
+  selectedContentKeys.value = next;
+}
+
+function clearSelection() {
+  selectedContentKeys.value = new Set();
+}
+
+async function handleDeleteSelected() {
+  if (!expandedCategoryId.value || selectedContentKeys.value.size === 0) return;
+
+  const count = selectedContentKeys.value.size;
+  if (!confirm(t('contentSorting.deleteSelectedConfirm', { count }))) return;
+
+  bulkDeleting.value = true;
+  const categoryId = expandedCategoryId.value;
+  const keys = Array.from(selectedContentKeys.value);
+
+  const results = await Promise.allSettled(
+    keys.map(key => {
+      const { contentType, contentId } = parseContentKey(key);
+      return removeContentFromCategorySort(categoryId, contentType, contentId);
+    })
+  );
+
+  const errors = results.filter(r => r.status === 'rejected').length;
+  const lastSuccess = [...results].reverse().find(r => r.status === 'fulfilled') as
+    | PromiseFulfilledResult<ContentSortItem[]>
+    | undefined;
+
+  if (lastSuccess) {
+    contentItems.value = lastSuccess.value;
+  }
+
+  const cat = categories.value.find(c => c.id === categoryId);
+  if (cat) cat.contentCount = contentItems.value.length;
+
+  selectedContentKeys.value = new Set();
+  bulkDeleting.value = false;
+
+  if (errors > 0) {
+    toast.error(t('contentSorting.deleteSelectedPartialError', { errors }));
+  } else {
+    toast.success(t('contentSorting.deleteSelectedSuccess', { count }));
+  }
+}
+
 // ==================== Remove content ====================
 
 async function handleRemoveContent(item: ContentSortItem) {
@@ -637,13 +757,8 @@ async function openAddContentModal(categoryId: string) {
     const result = await getApprovedContent();
     if (token !== addModalLoadToken) return;
     addModalTruncated.value = result.truncated;
-    // Filter out items already in this category
-    const existingKeys = new Set(
-      contentItems.value.map(i => `${i.contentType}:${i.contentId}`)
-    );
-    addModalAvailable.value = result.items.filter(
-      i => !existingKeys.has(`${i.type}:${i.id}`)
-    );
+    const existingKeys = new Set(contentItems.value.map(contentKey));
+    addModalAvailable.value = result.items.filter(i => !existingKeys.has(contentKey(i)));
   } catch (e: any) {
     if (token !== addModalLoadToken) return;
     addModalAvailable.value = [];
@@ -664,14 +779,7 @@ function closeAddContentModal() {
 }
 
 function toggleAddSelection(item: ApprovedContentItem) {
-  const key = `${item.type}:${item.id}`;
-  const newSet = new Set(addModalSelected.value);
-  if (newSet.has(key)) {
-    newSet.delete(key);
-  } else {
-    newSet.add(key);
-  }
-  addModalSelected.value = newSet;
+  toggleInSet(addModalSelected, contentKey(item));
 }
 
 async function confirmAddContent() {
@@ -679,16 +787,10 @@ async function confirmAddContent() {
   addModalSubmitting.value = true;
 
   const categoryId = addModalCategoryId;
-  const items = Array.from(addModalSelected.value).map(key => {
-    const colonIdx = key.indexOf(':');
-    const contentType = key.substring(0, colonIdx);
-    const contentId = key.substring(colonIdx + 1);
-    return { contentId, contentType };
-  });
+  const items = Array.from(addModalSelected.value).map(parseContentKey);
 
   try {
     contentItems.value = await addContentToCategorySort(categoryId, items);
-    // Update category content count
     const cat = categories.value.find(c => c.id === categoryId);
     if (cat) cat.contentCount = contentItems.value.length;
     toast.success(t('contentSorting.addContentSuccess', { count: items.length }));
@@ -998,6 +1100,58 @@ tr.drag-over {
 .btn-remove:hover {
   color: var(--color-danger);
   background: var(--color-danger-soft);
+}
+
+.btn-danger {
+  background: var(--color-danger);
+  color: #fff;
+  border-color: var(--color-danger);
+}
+
+.btn-danger:hover {
+  opacity: 0.9;
+}
+
+.btn-danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.col-check {
+  width: 36px;
+  text-align: center;
+}
+
+.col-check input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+}
+
+.row-selected {
+  background-color: var(--color-brand-soft);
+}
+
+.bulk-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  background: var(--color-brand-soft);
+  border: 1px solid var(--color-brand);
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+}
+
+.bulk-count {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.bulk-actions {
+  display: flex;
+  gap: 0.5rem;
 }
 
 .loading-state,
