@@ -26,7 +26,11 @@ import org.schabi.newpipe.extractor.stream.StreamInfoItem
  */
 @Singleton
 class NewPipeChannelFeedFetcher @Inject constructor(
-    @Suppress("unused") private val client: NewPipeExtractorClient,
+    // Held only to force Hilt to construct NewPipeExtractorClient first — its
+    // init {} block calls NewPipe.init(). Do not remove even though the field
+    // is never read: without it, a cold Me-tab open could hit NewPipeExtractor
+    // before init.
+    private val newPipeInit: NewPipeExtractorClient,
 ) : ChannelFeedFetcher {
 
     override suspend fun fetchLatest(channelUrl: String): List<ChannelFeedFetcher.ChannelFeedItem> =

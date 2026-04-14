@@ -11,7 +11,6 @@ import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.ConcatAdapter
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.me.ChipItem
 import com.albunyaan.tube.data.me.MeFeedState
@@ -75,11 +74,10 @@ class MeFragment : Fragment(R.layout.fragment_me) {
             }
         }
 
-        b.meRecycler.addOnScrollListener(object : RecyclerView.OnScrollListener() {
-            override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
-                if (dy > 0 && !rv.canScrollVertically(1)) viewModel.refreshFeed(force = false)
-            }
-        })
+        // No scroll-bottom listener: the Me feed has no real page-2 — all items
+        // come from a cache refill that's already TTL-gated. The post-submitList
+        // canScrollVertically check in render() handles tablet/TV where a full
+        // page fits on screen without firing the scroll listener.
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {

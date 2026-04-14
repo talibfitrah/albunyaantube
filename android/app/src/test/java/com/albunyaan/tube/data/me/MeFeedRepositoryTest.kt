@@ -137,6 +137,46 @@ class MeFeedRepositoryTest {
     }
 
     @Test
+    fun `refresh never holds more than MAX_CONCURRENT permits at once`() = runTest {
+        val gateHeld = java.util.concurrent.atomic.AtomicInteger(0)
+        val maxSeen = java.util.concurrent.atomic.AtomicInteger(0)
+        val channelCount = 12
+
+        repeat(channelCount) { i ->
+            subscribe("UC$i")
+            fetcher.responses["https://yt/UC$i"] = listOf(item("v$i", clockMillis - 1_000L))
+        }
+
+        // Wrap the fetcher so each call records concurrent holders then yields.
+        val gatingFetcher = object : ChannelFeedFetcher {
+            override suspend fun fetchLatest(channelUrl: String): List<ChannelFeedFetcher.ChannelFeedItem> {
+                val inFlight = gateHeld.incrementAndGet()
+                maxSeen.updateAndGet { prev -> maxOf(prev, inFlight) }
+                try {
+                    kotlinx.coroutines.delay(1L)
+                    return fetcher.responses[channelUrl] ?: emptyList()
+                } finally {
+                    gateHeld.decrementAndGet()
+                }
+            }
+        }
+        val bounded = MeFeedRepository(
+            subscriptions = subs,
+            cache = db.channelVideoCacheDao(),
+            refreshStateDao = db.channelFeedRefreshStateDao(),
+            fetcher = gatingFetcher,
+            ioDispatcher = Dispatchers.Unconfined,
+        ).also { it.currentTimeMillisProvider = { clockMillis } }
+
+        bounded.refresh(force = false)
+
+        assertTrue(
+            "concurrency cap breached: max=$maxSeen vs ${MeFeedRepository.MAX_CONCURRENT}",
+            maxSeen.get() <= MeFeedRepository.MAX_CONCURRENT,
+        )
+    }
+
+    @Test
     fun `per-channel cache is capped to MAX_ITEMS_PER_CHANNEL`() = runTest {
         subscribe("UC1")
         val overflow = (1..(MeFeedRepository.MAX_ITEMS_PER_CHANNEL + 10)).map {
