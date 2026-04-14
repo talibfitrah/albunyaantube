@@ -8,9 +8,11 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.RecyclerView
@@ -111,32 +113,40 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
             }
         }
 
-        // VM events -> UI
+        // VM events -> UI. Wrapped in repeatOnLifecycle(STARTED) so transient
+        // one-shot events (SkipCurrent / LoadError toasts) are only delivered
+        // while the fragment is visible, never while stopped.
         viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.events.collect { evt ->
-                when (evt) {
-                    is ShortsPlayerViewModel.LoadEvent.SkipCurrent -> {
-                        val b = binding ?: return@collect
-                        val cur = b.shortsPager.currentItem
-                        val size = viewModel.items.value.size
-                        if (cur < size - 1) {
-                            b.shortsPager.currentItem = cur + 1
-                        } else {
-                            showToast(R.string.shorts_error_unavailable)
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.events.collect { evt ->
+                    when (evt) {
+                        is ShortsPlayerViewModel.LoadEvent.SkipCurrent -> {
+                            val b = binding ?: return@collect
+                            val cur = b.shortsPager.currentItem
+                            val size = viewModel.items.value.size
+                            if (cur < size - 1) {
+                                b.shortsPager.currentItem = cur + 1
+                            } else {
+                                showToast(R.string.shorts_error_unavailable)
+                            }
                         }
-                    }
-                    is ShortsPlayerViewModel.LoadEvent.LoadError -> {
-                        showToast(R.string.shorts_error_feed_empty)
+                        is ShortsPlayerViewModel.LoadEvent.LoadError -> {
+                            showToast(R.string.shorts_error_feed_empty)
+                        }
                     }
                 }
             }
         }
 
         // Player stream failures -> VM (which will emit a SkipCurrent).
+        // Also gated on STARTED — we don't want to react to stale failures
+        // while the fragment is off-screen.
         viewLifecycleOwner.lifecycleScope.launch {
-            localBinder.failureEvents.collect { failingId ->
-                val idx = viewModel.items.value.indexOfFirst { it.id == failingId }
-                if (idx >= 0) viewModel.onPlaybackError(idx)
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                localBinder.failureEvents.collect { failingId ->
+                    val idx = viewModel.items.value.indexOfFirst { it.id == failingId }
+                    if (idx >= 0) viewModel.onPlaybackError(idx)
+                }
             }
         }
     }
