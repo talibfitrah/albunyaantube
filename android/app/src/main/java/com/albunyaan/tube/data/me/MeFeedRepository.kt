@@ -24,6 +24,8 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.TimeoutCancellationException
 
 /**
  * Orchestrates per-channel feed fetches for subscribed channels.
@@ -57,6 +59,12 @@ class MeFeedRepository @Inject constructor(
         const val STAGGER_MS: Long = 250L
         const val MAX_CHANNELS_PER_REFRESH: Int = 50
         const val MAX_ITEMS_PER_CHANNEL: Int = 30
+
+        // Stage-5 round-2 [P2]: cap per-channel fetch so the refresh Mutex
+        // cannot be held indefinitely by a hung NewPipe call on a slow
+        // network. 15 s is generous for a well-behaved YouTube page + both
+        // tab fetches and still keeps the worst-case Me-open within 15 s.
+        const val PER_CHANNEL_TIMEOUT_MS: Long = 15_000L
     }
 
     private val semaphore = Semaphore(MAX_CONCURRENT)
@@ -73,7 +81,17 @@ class MeFeedRepository @Inject constructor(
                 if (subs.isEmpty()) {
                     flowOf(emptyList())
                 } else {
-                    val channelIds = subs.map { it.channelId }
+                    // Stage-5 round-2 [P1]: bound the IN-list size. Room
+                    // expands `IN (:channelIds)` to one positional parameter
+                    // per id, and SQLite's default SQLITE_MAX_VARIABLE_NUMBER
+                    // is 999 on older Android. We also only refresh this many
+                    // channels per call, so matching the cap here keeps the
+                    // feed in sync with what refresh() can actually populate.
+                    val channelIds = subs.asSequence()
+                        .sortedByDescending { it.subscribedAt }
+                        .take(MAX_CHANNELS_PER_REFRESH)
+                        .map { it.channelId }
+                        .toList()
                     val cutoff = currentTimeMillis() - FEED_WINDOW_MS
                     cache.observeRecentForChannels(channelIds, cutoff)
                 }
@@ -111,11 +129,26 @@ class MeFeedRepository @Inject constructor(
         if (fresh && !force) return
 
         val items: List<ChannelVideoCache> = try {
-            fetcher.fetchLatest(channel.channelUrl)
-                .filter { it.uploadedAt != null && it.videoId.isNotEmpty() }
-                .sortedByDescending { it.uploadedAt }
-                .take(MAX_ITEMS_PER_CHANNEL)
-                .map { it.toCacheRow(channel, now) }
+            withTimeout(PER_CHANNEL_TIMEOUT_MS) {
+                fetcher.fetchLatest(channel.channelUrl)
+                    .filter { it.uploadedAt != null && it.videoId.isNotEmpty() }
+                    .sortedByDescending { it.uploadedAt }
+                    .take(MAX_ITEMS_PER_CHANNEL)
+                    .map { it.toCacheRow(channel, now) }
+            }
+        } catch (toc: TimeoutCancellationException) {
+            // Per-channel timeout is a soft failure — record it but keep the
+            // existing cache and let the next refresh try again. Do NOT let
+            // it propagate as CancellationException to the parent scope.
+            refreshStateDao.upsert(
+                ChannelFeedRefreshState(
+                    channelId = channel.channelId,
+                    lastSuccessfulFetchAt = previous?.lastSuccessfulFetchAt ?: 0L,
+                    lastAttemptAt = now,
+                    lastErrorMessage = "timeout after ${PER_CHANNEL_TIMEOUT_MS}ms",
+                )
+            )
+            return
         } catch (ce: CancellationException) {
             // F6: never swallow cancellation — it must propagate to the
             // enclosing coroutineScope so the semaphore permit is released
@@ -137,7 +170,16 @@ class MeFeedRepository @Inject constructor(
         // (rate limit, shorts-only channel on a week with no posts, server
         // glitch). Treat it as "no new data" — don't wipe the prior cached
         // window. We still advance lastAttemptAt so the TTL clock runs.
-        if (items.isEmpty() && previous != null && previous.lastSuccessfulFetchAt > 0L) {
+        //
+        // Stage-5 round-2 refinement [P1]: cap this protection to the feed
+        // window. If the last successful fetch is older than FEED_WINDOW_MS,
+        // the cached rows are outside what observeFeed can emit anyway — no
+        // user-visible data to preserve — so allow the wipe. Otherwise a
+        // channel that legitimately emptied (deleted all videos / went
+        // dormant) would keep stale cache rows forever.
+        if (items.isEmpty() && previous != null && previous.lastSuccessfulFetchAt > 0L &&
+            (now - previous.lastSuccessfulFetchAt) < FEED_WINDOW_MS
+        ) {
             refreshStateDao.upsert(
                 previous.copy(
                     lastAttemptAt = now,
