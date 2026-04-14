@@ -83,11 +83,13 @@
         android:layout_height="24dp"
         android:layout_gravity="bottom"
         android:layout_marginBottom="@dimen/bottom_nav_height"
-        app:bar_height="2dp"
-        app:scrubber_enabled_size="12dp"
+        app:bar_height="3dp"
+        app:bar_gravity="bottom"
+        app:scrubber_enabled_size="0dp"
+        app:scrubber_disabled_size="0dp"
         app:scrubber_dragged_size="16dp"
-        app:played_color="#FFFFFFFF"
-        app:scrubber_color="#FFFFFFFF"
+        app:played_color="@color/primary_green"
+        app:scrubber_color="@color/primary_green"
         app:unplayed_color="#4DFFFFFF"
         app:buffered_color="#80FFFFFF"/>
 
