@@ -177,3 +177,7 @@ synthetic_dash_data.json
 
 # Gradle build cache
 .gradle-home/
+
+# Local security reports — not for the repo
+.gstack/
+

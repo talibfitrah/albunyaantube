@@ -125,6 +125,11 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
 
     private fun togglePlaylistSaved() {
         val header = latestPlaylistHeader ?: return
+        // F11: reject malformed ids that would break the later NewPipe lookup.
+        if (!PLAYLIST_ID_REGEX.matches(header.id)) {
+            android.util.Log.w("PlaylistDetailFragment", "Refusing save: malformed playlistId='${header.id}'")
+            return
+        }
         viewLifecycleOwner.lifecycleScope.launch {
             withContext(Dispatchers.IO) {
                 if (isPlaylistSavedNow) {
@@ -585,6 +590,7 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
 
     companion object {
         private const val TAG = "PlaylistDetailFragment"
+        private val PLAYLIST_ID_REGEX = Regex("^[A-Za-z0-9_-]{3,128}$")
         const val ARG_PLAYLIST_ID = "playlistId"
         const val ARG_PLAYLIST_TITLE = "playlistTitle"
         const val ARG_PLAYLIST_CATEGORY = "playlistCategory"

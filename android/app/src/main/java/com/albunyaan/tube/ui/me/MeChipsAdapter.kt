@@ -30,9 +30,21 @@ class MeChipsAdapter(
     var selectedId: String?
         get() = inner.selectedId
         set(value) {
-            if (inner.selectedId == value) return
+            val previous = inner.selectedId
+            if (previous == value) return
             inner.selectedId = value
-            inner.notifyDataSetChanged()
+            // F7: only notify the two chips whose selection state actually
+            // changed. `notifyDataSetChanged()` caused Coil to re-fetch every
+            // avatar on any selection change — wasteful + visible flicker.
+            val currentList = inner.currentList
+            if (previous != null) {
+                val oldIndex = currentList.indexOfFirst { it.id == previous }
+                if (oldIndex >= 0) inner.notifyItemChanged(oldIndex, SELECTION_PAYLOAD)
+            }
+            if (value != null) {
+                val newIndex = currentList.indexOfFirst { it.id == value }
+                if (newIndex >= 0) inner.notifyItemChanged(newIndex, SELECTION_PAYLOAD)
+            }
         }
 
     fun submit(items: List<ChipItem>) {
@@ -75,6 +87,14 @@ class MeChipsAdapter(
         override fun onBindViewHolder(holder: ChipVH, position: Int) {
             holder.bind(getItem(position), isSelected = getItem(position).id == selectedId)
         }
+
+        override fun onBindViewHolder(holder: ChipVH, position: Int, payloads: MutableList<Any>) {
+            if (payloads.contains(SELECTION_PAYLOAD)) {
+                holder.bindSelection(isSelected = getItem(position).id == selectedId)
+            } else {
+                super.onBindViewHolder(holder, position, payloads)
+            }
+        }
     }
 
     class ChipVH(
@@ -93,14 +113,21 @@ class MeChipsAdapter(
             } else {
                 binding.chipAvatar.setImageResource(R.drawable.thumbnail_placeholder)
             }
-            binding.chipRoot.isChecked = isSelected
             binding.chipRoot.isCheckable = true
+            binding.chipRoot.isChecked = isSelected
             binding.chipRoot.setOnClickListener { onClick(item) }
+        }
+
+        /** Payload-path rebind: flip selection without re-loading the avatar. */
+        fun bindSelection(isSelected: Boolean) {
+            binding.chipRoot.isCheckable = true
+            binding.chipRoot.isChecked = isSelected
         }
     }
 
     companion object {
         const val ROW_VIEW_TYPE = 101
+        private val SELECTION_PAYLOAD = Any()
 
         private val DIFF = object : DiffUtil.ItemCallback<ChipItem>() {
             override fun areItemsTheSame(old: ChipItem, new: ChipItem): Boolean =

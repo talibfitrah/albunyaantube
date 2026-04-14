@@ -48,7 +48,13 @@ class NewPipeChannelFeedFetcher @Inject constructor(
             if (shortsTab != null) {
                 items += loadTab(shortsTab, forceIsShort = true)
             }
-            items
+            // Drop any items whose URL could not be parsed into an 11-char
+            // YouTube video ID — an empty videoId collides on the Room primary
+            // key (first insert wins, second REPLACEs it, cross-channel
+            // contamination) and downstream the player fails to extract on an
+            // empty ID. Filter at source so no empty-id row ever leaves the
+            // fetcher. [F5 from review.]
+            items.filter { it.videoId.isNotEmpty() }
         }
 
     private fun loadTab(
@@ -85,11 +91,30 @@ class NewPipeChannelFeedFetcher @Inject constructor(
         )
     }
 
-    private fun extractVideoId(url: String): String =
-        VIDEO_ID_REGEX.find(url)?.groupValues?.get(1).orEmpty()
+    /**
+     * YouTube URL → 11-char video ID. Accepts watch URLs, youtu.be short URLs,
+     * shorts URLs, embed URLs, the old `watch/<id>` path form, and any URL
+     * where the 11-char id appears at the path tail. Returns empty string if
+     * no id matches — caller [fetchLatest] drops those rows.
+     */
+    private fun extractVideoId(url: String): String {
+        if (url.isEmpty()) return ""
+        return VIDEO_ID_REGEX.find(url)?.groupValues?.getOrNull(1).orEmpty()
+    }
 
     companion object {
-        private val VIDEO_ID_REGEX =
-            Regex("""(?:v=|youtu\.be/|shorts/|embed/)([A-Za-z0-9_-]{11})""")
+        /**
+         * Matches the 11-char YouTube video id in any of these shapes:
+         *   https://www.youtube.com/watch?v=<id>
+         *   https://www.youtube.com/watch?list=PL...&v=<id>    (v= after other params)
+         *   https://youtu.be/<id>
+         *   https://www.youtube.com/shorts/<id>
+         *   https://www.youtube.com/embed/<id>
+         *   https://www.youtube.com/watch/<id>                 (older path form)
+         *   https://music.youtube.com/watch?v=<id>
+         *   //www.youtube.com/watch?v=<id>                     (protocol-relative)
+         */
+        internal val VIDEO_ID_REGEX =
+            Regex("""(?:[?&]v=|youtu\.be/|/shorts/|/embed/|/watch/)([A-Za-z0-9_-]{11})""")
     }
 }

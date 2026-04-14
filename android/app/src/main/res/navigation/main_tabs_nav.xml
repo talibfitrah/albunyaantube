@@ -148,10 +148,14 @@
             app:destination="@id/aboutFragment"/>
         <action
             android:id="@+id/action_settingsFragment_to_downloadsFragment"
-            app:destination="@id/downloadsFragment"/>
+            app:destination="@id/downloadsFragment"
+            app:launchSingleTop="true"
+            app:popUpTo="@id/settingsFragment" />
         <action
             android:id="@+id/action_settingsFragment_to_favoritesFragment"
-            app:destination="@id/favoritesFragment"/>
+            app:destination="@id/favoritesFragment"
+            app:launchSingleTop="true"
+            app:popUpTo="@id/settingsFragment" />
     </fragment>
 
     <fragment

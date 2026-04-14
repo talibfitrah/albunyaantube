@@ -213,6 +213,14 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
 
     private fun toggleSubscription() {
         val header = latestHeader ?: return
+        // F11: guard against a malformed channel id slipping through. YouTube
+        // channel ids are opaque alphanumeric + `_-`. Refuse to build a URL
+        // if the extractor handed us something with a slash / query / space
+        // that would break the later ChannelInfo.getInfo(url) lookup.
+        if (!CHANNEL_ID_REGEX.matches(header.id)) {
+            Log.w(TAG, "Refusing subscribe: malformed channelId='${header.id}'")
+            return
+        }
         viewLifecycleOwner.lifecycleScope.launch {
             withContext(Dispatchers.IO) {
                 if (isSubscribedNow) {
@@ -307,6 +315,7 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
 
     companion object {
         private const val TAG = "ChannelDetailFragment"
+        private val CHANNEL_ID_REGEX = Regex("^[A-Za-z0-9_-]{3,64}$")
         const val ARG_CHANNEL_ID = "channelId"
         const val ARG_CHANNEL_NAME = "channelName"
         const val ARG_EXCLUDED = "excluded"

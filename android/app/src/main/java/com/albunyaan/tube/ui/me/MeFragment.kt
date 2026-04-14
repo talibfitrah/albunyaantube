@@ -32,6 +32,11 @@ class MeFragment : Fragment(R.layout.fragment_me) {
     private lateinit var videosAdapter: MeVideosAdapter
     private lateinit var concatAdapter: ConcatAdapter
 
+    // F10: only auto-load once per viewCreated lifecycle so tablet/TV grids
+    // that fit content without scrolling don't re-enter the refresh loop on
+    // every subsequent state emission.
+    private var hasAutoLoadedOnce: Boolean = false
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         val b = FragmentMeBinding.bind(view).also { binding = it }
@@ -111,9 +116,11 @@ class MeFragment : Fragment(R.layout.fragment_me) {
 
                 b.meRecycler.post {
                     if (view == null) return@post
-                    if (!b.meRecycler.canScrollVertically(1) &&
+                    if (!hasAutoLoadedOnce &&
+                        !b.meRecycler.canScrollVertically(1) &&
                         (state.videos.isNotEmpty() || state.shorts.isNotEmpty())
                     ) {
+                        hasAutoLoadedOnce = true
                         viewModel.refreshFeed(force = false)
                     }
                 }
@@ -144,6 +151,10 @@ class MeFragment : Fragment(R.layout.fragment_me) {
     }
 
     private fun playVideo(video: MeFeedVideo) {
+        // F9: guard against an empty videoId making it this far. The fetcher
+        // already filters at source (F5) but belt-and-braces — an empty id
+        // passed to PlayerFragment would blow up in NewPipe extraction.
+        if (video.videoId.isBlank()) return
         val args = Bundle().apply { putString("videoId", video.videoId) }
         if (findNavController().currentDestination?.id == R.id.meFragment) {
             findNavController().navigate(R.id.playerFragment, args)
@@ -151,6 +162,7 @@ class MeFragment : Fragment(R.layout.fragment_me) {
     }
 
     override fun onDestroyView() {
+        hasAutoLoadedOnce = false
         binding?.meRecycler?.adapter = null
         binding = null
         super.onDestroyView()

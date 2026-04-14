@@ -30,7 +30,13 @@ class SubscriptionRepositoryTest {
             ApplicationProvider.getApplicationContext(),
             AppDatabase::class.java
         ).allowMainThreadQueries().build()
-        repo = SubscriptionRepository(db.subscribedChannelDao(), db.savedPlaylistDao())
+        repo = SubscriptionRepository(
+            db = db,
+            channels = db.subscribedChannelDao(),
+            playlists = db.savedPlaylistDao(),
+            cache = db.channelVideoCacheDao(),
+            refreshState = db.channelFeedRefreshStateDao(),
+        )
     }
 
     @After

@@ -46,7 +46,13 @@ class MeViewModelTest {
             ApplicationProvider.getApplicationContext(),
             AppDatabase::class.java
         ).allowMainThreadQueries().build()
-        subs = SubscriptionRepository(db.subscribedChannelDao(), db.savedPlaylistDao())
+        subs = SubscriptionRepository(
+            db = db,
+            channels = db.subscribedChannelDao(),
+            playlists = db.savedPlaylistDao(),
+            cache = db.channelVideoCacheDao(),
+            refreshState = db.channelFeedRefreshStateDao(),
+        )
         feed = MeFeedRepository(
             subscriptions = subs,
             cache = db.channelVideoCacheDao(),
