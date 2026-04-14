@@ -49,8 +49,21 @@ data class AudioTrack(
     val bitrate: Int?,
     val codec: String?,
     /** Metadata for synthetic DASH generation (null if not eligible) */
-    val syntheticDashMetadata: SyntheticDashMetadata? = null
+    val syntheticDashMetadata: SyntheticDashMetadata? = null,
+    /** BCP-47 locale tag from NewPipe (e.g. "en", "ar", "en-US"). Null when YouTube exposes only one stream. */
+    val language: String? = null,
+    /** Human-readable label NewPipe derives from the track (e.g. "English (original)", "Arabic"). */
+    val trackName: String? = null,
+    /** ORIGINAL / DUBBED / DESCRIPTIVE / DUBBED_AUTO — null when NewPipe doesn't classify. */
+    val trackType: AudioTrackKind? = null
 )
+
+/**
+ * Classification of an audio track, mirroring NewPipeExtractor's
+ * `AudioTrackType` enum. Kept decoupled so project code doesn't import
+ * extractor types directly.
+ */
+enum class AudioTrackKind { ORIGINAL, DUBBED, DESCRIPTIVE, DUBBED_AUTO, UNKNOWN }
 
 data class SubtitleTrack(
     val url: String,
