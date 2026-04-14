@@ -179,6 +179,12 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
             val bnd = binding ?: return@post
             if (!isAdded) return@post
             if (bnd.shortsPager.currentItem != position) return@post
+            // Re-verify the item at this position still has the same id.
+            // If the list mutated while the post was queued (e.g. retroactive
+            // header decoration replaced the item), the captured videoId
+            // could be stale even though currentItem still equals position.
+            val currentItem = viewModel.items.value.getOrNull(position) ?: return@post
+            if (currentItem.id != videoId) return@post
             val retry = findViewHolderAt(position) ?: return@post
             val activeBinder = binder ?: return@post
             activeBinder.bind(retry.playerView, videoId)
@@ -195,7 +201,10 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
 
     private fun shareShort(idx: Int) {
         val item = viewModel.items.value.getOrNull(idx) ?: return
-        ShareCompat.IntentBuilder(requireContext())
+        // Use null-safe context — fragment may be detached if the share tap
+        // races with destruction (e.g. system back during pending toast).
+        val ctx = context ?: return
+        ShareCompat.IntentBuilder(ctx)
             .setType("text/plain")
             .setText(item.canonicalShareUrl)
             .setChooserTitle(R.string.shorts_share_cd)
