@@ -35,15 +35,17 @@ object DatabaseModule {
             AppDatabase::class.java,
             AppDatabase.DATABASE_NAME
         )
+            // Register real migrations so release builds can upgrade an
+            // existing install without data loss. A missing migration here
+            // causes an IllegalStateException on first launch after upgrade.
+            .addMigrations(AppDatabase.MIGRATION_1_2)
 
-        // SAFETY: Only allow destructive migration in debug builds.
-        // Release builds will crash on schema mismatch, forcing proper migration implementation.
-        // This prevents silent data loss in production.
+        // SAFETY: Only allow destructive migration in debug builds as a
+        // developer convenience when schemas are in flux. Release builds
+        // MUST rely on the registered migrations above — never destructive.
         if (BuildConfig.DEBUG) {
             builder.fallbackToDestructiveMigration(dropAllTables = true)
         }
-        // TODO: Before first production release, implement proper Room migrations
-        // to handle schema changes without losing user favorites data.
 
         return builder.build()
     }
