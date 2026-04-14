@@ -119,6 +119,10 @@ class PlayerBinder private constructor(
         fun setPlayWhenReady(value: Boolean)
         fun getPlayWhenReady(): Boolean
         fun release()
+        /** Current playback position in ms (0 if unknown). Default 0 for test fakes. */
+        fun getCurrentPosition(): Long = 0L
+        /** Seek to the given position. Default no-op for test fakes that don't care. */
+        fun seekTo(positionMs: Long) {}
     }
 
     /** Attach strategy — binds or unbinds the shared player from a PlayerView. */
@@ -135,6 +139,8 @@ class PlayerBinder private constructor(
         override fun setPlayWhenReady(value: Boolean) { player.playWhenReady = value }
         override fun getPlayWhenReady(): Boolean = player.playWhenReady
         override fun release() = player.release()
+        override fun getCurrentPosition(): Long = player.currentPosition
+        override fun seekTo(positionMs: Long) { player.seekTo(positionMs) }
     }
 
     private var boundView: PlayerView? = null
@@ -171,6 +177,18 @@ class PlayerBinder private constructor(
     )
     /** Emits the failing videoId when stream resolution throws or returns null. */
     val failureEvents: SharedFlow<String> = _failureEvents.asSharedFlow()
+
+    private val _resolvedEvents = MutableSharedFlow<Pair<String, ResolvedStreams>>(
+        extraBufferCapacity = 4,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    /**
+     * Emits `(videoId, resolvedStreams)` whenever stream resolution succeeds.
+     * Used by the shorts fragment to decide whether to show the audio-language
+     * rail button for the currently-playing short. Does not replay — callers
+     * should also query [resolvedStreamsFor] at attach time.
+     */
+    val resolvedEvents: SharedFlow<Pair<String, ResolvedStreams>> = _resolvedEvents.asSharedFlow()
 
     /**
      * Detach the player from any previously bound PlayerView, attach it to
@@ -243,6 +261,7 @@ class PlayerBinder private constructor(
         }
 
         synchronized(resolvedCache) { resolvedCache[videoId] = resolved }
+        _resolvedEvents.tryEmit(videoId to resolved)
 
         // Prefer the adaptive factory — same path the main PlayerFragment uses.
         // When available it returns a DASH/HLS source with ABR; ExoPlayer's
@@ -316,6 +335,47 @@ class PlayerBinder private constructor(
         }
 
         return null
+    }
+
+    /**
+     * Swap the audio track for the currently-bound video without tearing the
+     * player down. Rebuilds the MediaSource with [chosen] as the sole audio
+     * stream — the adaptive factory (or progressive fallback) merges it with
+     * the current video path. Preserves playback position and play/pause
+     * state so the short resumes exactly where the user was.
+     *
+     * Safe no-op if there is no cached resolved-streams entry for [videoId]
+     * (e.g. called before the first successful resolve).
+     */
+    fun switchAudioTrack(videoId: String, chosen: AudioTrack) {
+        val resolved = resolvedStreamsFor(videoId) ?: return
+        val filtered = resolved.copy(audioTracks = listOf(chosen))
+        val position = playerOps.getCurrentPosition()
+        val wasPlaying = playerOps.getPlayWhenReady()
+
+        val adaptive = mediaSourceFactory?.let {
+            runCatching {
+                it.createMediaSourceWithType(
+                    resolved = filtered,
+                    audioOnly = false,
+                    selectedQuality = null,
+                    userQualityCapHeight = null,
+                    forceProgressive = false,
+                    videoId = videoId
+                )
+            }.getOrNull()
+        }
+        val source = adaptive?.source ?: buildProgressiveSource(filtered) ?: return
+
+        // Refresh cache so a subsequent download picker reflects the active
+        // audio choice alongside the existing video tracks.
+        synchronized(resolvedCache) { resolvedCache[videoId] = filtered }
+
+        playerOps.setMediaSource(source)
+        playerOps.setRepeatModeOne()
+        playerOps.prepare()
+        playerOps.seekTo(position)
+        playerOps.setPlayWhenReady(wasPlaying)
     }
 
     /** Flip between play and pause on a tap. */
