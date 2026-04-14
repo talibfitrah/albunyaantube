@@ -72,14 +72,10 @@ class ChannelShortsTabFragment : Fragment(R.layout.fragment_channel_shorts_tab) 
 
             // Navigate to video player for shorts
             findNavController().navigate(
-                R.id.action_global_playerFragment,
+                R.id.action_global_shortsPlayerFragment,
                 Bundle().apply {
-                    putString("videoId", short.id)
-                    putString("title", short.title)
-                    putString("channelName", channelName)
-                    putString("thumbnailUrl", short.thumbnailUrl ?: "")
-                    putInt("durationSeconds", short.durationSeconds ?: 0)
-                    putLong("viewCount", short.viewCount ?: -1L)
+                    putString("initialShortId", short.id)
+                    putString("channelId", channelId)
                 }
             )
         }

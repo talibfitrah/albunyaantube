@@ -182,6 +182,23 @@
             app:uri="albunyaantube://video/{videoId}" />
     </fragment>
 
+    <fragment
+        android:id="@+id/shortsPlayerFragment"
+        android:name="com.albunyaan.tube.ui.shorts.ShortsPlayerFragment"
+        android:label="Shorts">
+        <argument
+            android:name="initialShortId"
+            app:argType="string"
+            app:nullable="true"
+            android:defaultValue="@null"/>
+        <argument
+            android:name="channelId"
+            app:argType="string"
+            app:nullable="true"
+            android:defaultValue="@null"/>
+        <deepLink app:uri="albunyaantube://shorts/{initialShortId}"/>
+    </fragment>
+
     <!-- Global actions for navigation from anywhere -->
     <action
         android:id="@+id/action_global_channelDetailFragment"
@@ -194,4 +211,8 @@
     <action
         android:id="@+id/action_global_playerFragment"
         app:destination="@id/playerFragment" />
+
+    <action
+        android:id="@+id/action_global_shortsPlayerFragment"
+        app:destination="@id/shortsPlayerFragment"/>
 </navigation>
