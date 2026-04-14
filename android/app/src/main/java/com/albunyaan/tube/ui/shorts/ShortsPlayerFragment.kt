@@ -294,6 +294,7 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
     private fun bindPageWhenReady(position: Int, videoId: String) {
         val b = binding ?: return
         val b2 = binder ?: return
+        pushCachedAudioLanguagesForVideo(videoId)
         val holder = findViewHolderAt(position)
         if (holder != null) {
             b2.bind(holder.playerView, videoId)
@@ -363,6 +364,18 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
      * visible short. Feeds the selected quality into [DownloadRepository] via
      * the same [DownloadRequest] schema as the main player.
      */
+    /**
+     * Synchronously populate the audio-language flow from [PlayerBinder]'s
+     * resolution cache. Belt-and-suspenders for the SharedFlow replay — if
+     * the stream was already resolved (prefetch), pushing the options now
+     * guarantees the adapter sees the correct count immediately.
+     */
+    private fun pushCachedAudioLanguagesForVideo(videoId: String) {
+        val cached = binder?.resolvedStreamsFor(videoId) ?: return
+        val options = cached.availableAudioLanguages()
+        audioLanguageFlowFor(videoId).value = options
+    }
+
     /**
      * Show the audio-language picker for the short at [idx]. No-op if the
      * video has fewer than two languages (the rail button is already hidden
