@@ -345,11 +345,21 @@ class PlaybackService : MediaSessionService() {
                 if (BuildConfig.DEBUG) Log.d(TAG, "Session already initialized with same player")
                 return
             }
-            // Different player - release old session first
-            if (BuildConfig.DEBUG) Log.d(TAG, "Releasing old session for new player")
+            // Different player — stop old player (single-audio invariant), then release old session.
+            // The old fragment still owns the old player's lifecycle and will release() it on
+            // its own teardown; we stop() here so the old audio does not continue playing
+            // alongside the new player (Issue ANDROID-MULTI-01).
+            if (BuildConfig.DEBUG) Log.d(TAG, "Stopping old player and releasing old session for new player")
+            val oldPlayer = mediaSession?.player
             removePlayerListener()
             mediaSession?.release()
             mediaSession = null
+            try {
+                oldPlayer?.stop()
+                oldPlayer?.clearMediaItems()
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to stop old player during session replacement", e)
+            }
         }
 
         if (BuildConfig.DEBUG) Log.d(TAG, "Initializing MediaSession with player (playWhenReady=${player.playWhenReady}, state=${player.playbackState})")

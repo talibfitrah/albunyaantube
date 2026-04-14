@@ -3254,6 +3254,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             binding.collapsingToolbar.layoutParams?.let { params ->
                 if (params is com.google.android.material.appbar.AppBarLayout.LayoutParams) {
                     params.height = ViewGroup.LayoutParams.MATCH_PARENT
+                    // Disable scroll-to-collapse in fullscreen so a swipe-up gesture cannot
+                    // collapse the player to toolbar height — that would leave the audio
+                    // playing over a black screen (Issue ANDROID-MULTI-01).
+                    params.scrollFlags = 0
                 }
                 binding.collapsingToolbar.layoutParams = params
             }
@@ -3363,6 +3367,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             binding.collapsingToolbar.layoutParams?.let { params ->
                 if (params is com.google.android.material.appbar.AppBarLayout.LayoutParams) {
                     params.height = ViewGroup.LayoutParams.WRAP_CONTENT
+                    // Restore YouTube-style mini-player collapse behavior in portrait.
+                    params.scrollFlags =
+                        com.google.android.material.appbar.AppBarLayout.LayoutParams.SCROLL_FLAG_SCROLL or
+                            com.google.android.material.appbar.AppBarLayout.LayoutParams.SCROLL_FLAG_EXIT_UNTIL_COLLAPSED or
+                            com.google.android.material.appbar.AppBarLayout.LayoutParams.SCROLL_FLAG_SNAP
                 }
                 binding.collapsingToolbar.layoutParams = params
             }
