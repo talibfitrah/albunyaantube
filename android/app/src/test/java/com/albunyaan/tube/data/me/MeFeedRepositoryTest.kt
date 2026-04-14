@@ -316,7 +316,73 @@ class MeFeedRepositoryTest {
     }
 
     @Test
-    fun `F3 concurrent refresh calls are serialised`() = runTest {
+    fun `F3 concurrent refresh calls do not overlap and both runs complete`() = runTest {
+        // CodeRabbit Round-3 follow-up: a Semaphore-bound-only assertion does
+        // not prove the refreshMutex actually serialises refresh() calls — the
+        // Semaphore alone would satisfy it. Tighten the test to prove two
+        // things: (a) every fetch from one refresh call completes strictly
+        // before any fetch from the other begins (true mutex non-overlap),
+        // and (b) both refresh(force=true) runs fully execute all channels
+        // (total fetches = 2 * N, proving the second call was not starved).
+        val n = 3
+        repeat(n) { i ->
+            subs.subscribe(SubscribedChannel("UC$i", "https://yt/UC$i", "ch-$i", null, 1_000L + i))
+        }
+
+        // Each fetch tags itself with a monotonically-increasing sequence id
+        // captured at entry and exit. Caller identity per refresh() isn't
+        // directly observable, so we reason from the sequence: once refresh
+        // call #1 releases its channels' N fetches as a contiguous block,
+        // call #2's N fetches form the next contiguous block. Interleaving
+        // would be evidence the mutex didn't hold.
+        val sequenced = java.util.Collections.synchronizedList(mutableListOf<Pair<Long, Long>>())
+        val counter = java.util.concurrent.atomic.AtomicLong(0)
+        val recorder = object : ChannelFeedFetcher {
+            override suspend fun fetchLatest(channelUrl: String): List<ChannelFeedFetcher.ChannelFeedItem> {
+                val start = counter.getAndIncrement()
+                kotlinx.coroutines.delay(1L)
+                val end = counter.getAndIncrement()
+                sequenced += start to end
+                return emptyList()
+            }
+        }
+        val bounded = MeFeedRepository(
+            subscriptions = subs,
+            cache = db.channelVideoCacheDao(),
+            refreshStateDao = db.channelFeedRefreshStateDao(),
+            fetcher = recorder,
+            ioDispatcher = Dispatchers.Unconfined,
+        ).also { it.currentTimeMillisProvider = { clockMillis } }
+
+        coroutineScope {
+            awaitAll(
+                async { bounded.refresh(force = true) },
+                async { bounded.refresh(force = true) },
+            )
+        }
+
+        // (b) both runs fully executed.
+        assertEquals("both refresh calls must run all channels", 2 * n, sequenced.size)
+
+        // (a) mutex non-overlap — sort fetches by start time and partition
+        //     into two halves of size n. Within each half the fetches may
+        //     interleave (that's the Semaphore(4) budget), but the maximum
+        //     end-time of the first half must precede the minimum start-time
+        //     of the second half. If the mutex didn't hold, the second run
+        //     would interleave with the first and this invariant would fail.
+        val sorted = sequenced.sortedBy { it.first }
+        val firstHalf = sorted.take(n)
+        val secondHalf = sorted.drop(n)
+        val maxEndFirst = firstHalf.maxOf { it.second }
+        val minStartSecond = secondHalf.minOf { it.first }
+        assertTrue(
+            "refresh runs overlap: first-half max-end=$maxEndFirst, second-half min-start=$minStartSecond",
+            maxEndFirst < minStartSecond,
+        )
+    }
+
+    @Test
+    fun `F3 concurrent refresh respects MAX_CONCURRENT within a single run`() = runTest {
         subscribe("UC1")
         subscribe("UC2")
         val active = java.util.concurrent.atomic.AtomicInteger(0)
@@ -341,16 +407,10 @@ class MeFeedRepositoryTest {
             ioDispatcher = Dispatchers.Unconfined,
         ).also { it.currentTimeMillisProvider = { clockMillis } }
 
-        // Two concurrent refresh() calls. Mutex guarantees they run
-        // sequentially, so total parallelism can never exceed MAX_CONCURRENT.
-        coroutineScope {
-            awaitAll(
-                async { bounded.refresh(force = true) },
-                async { bounded.refresh(force = true) },
-            )
-        }
+        bounded.refresh(force = true)
+
         assertTrue(
-            "concurrent refresh must not exceed MAX_CONCURRENT permits (saw max=$maxSeen)",
+            "in-flight fetcher count must not exceed MAX_CONCURRENT (saw max=$maxSeen)",
             maxSeen.get() <= MeFeedRepository.MAX_CONCURRENT,
         )
     }
