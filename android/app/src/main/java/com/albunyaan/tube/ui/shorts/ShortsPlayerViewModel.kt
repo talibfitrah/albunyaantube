@@ -178,9 +178,19 @@ class ShortsPlayerViewModel @AssistedInject constructor(
     private suspend fun ensureChannelHeader(): ChannelHeader? {
         val id = channelId ?: return null
         cachedChannelHeader?.let { return it }
-        return runCatching { channelDetailRepo.getChannelHeader(id) }
-            .onSuccess { cachedChannelHeader = it }
-            .getOrNull()
+        val header = runCatching { channelDetailRepo.getChannelHeader(id) }.getOrNull()
+            ?: return null
+        cachedChannelHeader = header
+        // Retroactively decorate items that were loaded before the header
+        // resolved (e.g. header failed on page 1 and succeeded on page 2).
+        // Without this, page-1 items would keep blank channelName forever.
+        val current = _items.value
+        if (current.any { it.channelName.isBlank() }) {
+            _items.value = current.map { item ->
+                if (item.channelName.isBlank()) item.withChannelHeader(header) else item
+            }
+        }
+        return header
     }
 
     override fun onCleared() {

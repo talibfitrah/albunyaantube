@@ -283,6 +283,58 @@ class ShortsPlayerViewModelTest {
     }
 
     @Test
+    fun channelMode_headerSucceedsOnSecondPage_retroactivelyDecoratesPageOne() = runTest(dispatcher) {
+        // Header fetch fails on page 1 (transient error) then succeeds on
+        // page 2. Before the fix, page-1 items kept blank channel metadata
+        // forever. Now they must be retroactively decorated once the header
+        // arrives.
+        val firstPage = ShortsPage(
+            items = listOf(sample("v1"), sample("v2")),
+            nextCursor = "cursor-2"
+        )
+        val secondPage = ShortsPage(
+            items = listOf(sample("v3"), sample("v4")),
+            nextCursor = null
+        )
+        whenever(feed.loadChannelShortsPage(eq("UC1"), eq(null), any())).thenReturn(firstPage)
+        whenever(feed.loadChannelShortsPage(eq("UC1"), eq("cursor-2"), any())).thenReturn(secondPage)
+        // First call throws, second returns a valid header.
+        var headerCall = 0
+        whenever(channelDetailRepo.getChannelHeader(eq("UC1"), any())).thenAnswer {
+            headerCall++
+            if (headerCall == 1) throw RuntimeException("transient")
+            else header()
+        }
+
+        val vm = ShortsPlayerViewModel(
+            context = context,
+            feed = feed,
+            favorites = favorites,
+            follows = follows,
+            channelDetailRepo = channelDetailRepo,
+            initialShortId = null,
+            channelId = "UC1"
+        )
+        advanceUntilIdle()
+
+        // After page 1: header failed, items undecorated.
+        assertEquals("", vm.items.value[0].channelName)
+
+        // Trigger page 2 load — PREFETCH_THRESHOLD = 3, size=2, index 0 qualifies.
+        vm.onPageChanged(0)
+        advanceUntilIdle()
+
+        val items = vm.items.value
+        assertEquals(4, items.size)
+        // Critical: ALL items (including original page-1 v1 & v2) now carry the header.
+        items.forEach { item ->
+            assertEquals("UC1", item.channelId)
+            assertEquals("Channel One", item.channelName)
+            assertEquals("avatar.jpg", item.channelAvatarUrl)
+        }
+    }
+
+    @Test
     fun nullChannelId_doesNotQueryChannelHeader() = runTest(dispatcher) {
         whenever(feed.loadFeedPage(eq(null), any())).thenReturn(
             ShortsPage(listOf(sample("v1")), null)
