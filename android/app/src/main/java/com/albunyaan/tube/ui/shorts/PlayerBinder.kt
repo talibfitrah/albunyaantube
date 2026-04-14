@@ -248,6 +248,27 @@ class PlayerBinder private constructor(
     fun resolvedStreamsFor(videoId: String): ResolvedStreams? =
         synchronized(resolvedCache) { resolvedCache[videoId] }
 
+    /**
+     * Once the user picks an audio language for a video, remember it here so
+     * any subsequent re-resolve (URL expiry, rebuffer recovery, prefetch
+     * refresh, etc.) keeps playing that language — otherwise the factory's
+     * "max bitrate audio" rule can flip the user's ORIGINAL pick to a dubbed
+     * track of equal bitrate on every reprepare.
+     */
+    private val stickyAudioLanguageByVideoId = mutableMapOf<String, String>()
+
+    /** Record the user's preferred audio language for [videoId]. */
+    fun rememberAudioLanguage(videoId: String, language: String?) {
+        synchronized(stickyAudioLanguageByVideoId) {
+            if (language.isNullOrBlank()) stickyAudioLanguageByVideoId.remove(videoId)
+            else stickyAudioLanguageByVideoId[videoId] = language
+        }
+    }
+
+    /** Return remembered audio language for [videoId], or null if user hasn't picked. */
+    fun rememberedAudioLanguage(videoId: String): String? =
+        synchronized(stickyAudioLanguageByVideoId) { stickyAudioLanguageByVideoId[videoId] }
+
     private suspend fun prepareAndPlay(videoId: String, myGen: Int) {
         val resolved: ResolvedStreams? = runCatching {
             playerRepository.resolveStreams(videoId, forceRefresh = false)
@@ -264,6 +285,16 @@ class PlayerBinder private constructor(
         synchronized(resolvedCache) { resolvedCache[videoId] = resolved }
         _resolvedEvents.tryEmit(videoId to resolved)
 
+        // If the user has already chosen a language for this video earlier in
+        // this session, pin the resolved streams to that language BEFORE
+        // building the MediaSource — so a rebuffer / URL refresh / prefetch
+        // warm-up won't silently flip back to the factory's default pick.
+        val stickyLang = rememberedAudioLanguage(videoId)
+        val effectiveResolved = if (!stickyLang.isNullOrBlank()) {
+            val stickyTracks = resolved.audioTracks.filter { it.language == stickyLang }
+            if (stickyTracks.isNotEmpty()) resolved.copy(audioTracks = stickyTracks) else resolved
+        } else resolved
+
         // Prefer the adaptive factory — same path the main PlayerFragment uses.
         // When available it returns a DASH/HLS source with ABR; ExoPlayer's
         // default track selector auto-picks highest quality that fits the
@@ -272,7 +303,7 @@ class PlayerBinder private constructor(
         val adaptive = mediaSourceFactory?.let {
             runCatching {
                 it.createMediaSourceWithType(
-                    resolved = resolved,
+                    resolved = effectiveResolved,
                     audioOnly = false,
                     selectedQuality = null,       // auto-select highest
                     userQualityCapHeight = null,  // no cap
@@ -281,7 +312,7 @@ class PlayerBinder private constructor(
                 )
             }.getOrNull()
         }
-        val source = adaptive?.source ?: buildProgressiveSource(resolved)
+        val source = adaptive?.source ?: buildProgressiveSource(effectiveResolved)
         if (source == null) {
             _failureEvents.tryEmit(videoId)
             return
@@ -350,6 +381,9 @@ class PlayerBinder private constructor(
      */
     fun switchAudioTrack(videoId: String, chosen: AudioTrack) {
         val resolved = resolvedStreamsFor(videoId) ?: return
+        // Pin the user's language choice so subsequent re-resolves keep the
+        // same audio instead of letting the factory re-pick by bitrate.
+        rememberAudioLanguage(videoId, chosen.language)
         val filtered = resolved.copy(audioTracks = listOf(chosen))
         val position = playerOps.getCurrentPosition()
         val wasPlaying = playerOps.getPlayWhenReady()
