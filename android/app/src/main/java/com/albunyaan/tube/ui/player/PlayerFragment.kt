@@ -2965,10 +2965,20 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             currentItem.title
         }
 
-        // Use app deep link - directs users to install/open our app
-        val videoDeepLink = "albunyaantube://video/${currentItem.streamId}"
+        // ANDROID-MULTI-01 Issue 4: prefer the canonical https watch URL for link
+        // unfurlers (WhatsApp / Telegram / Slack / Skype) — they cannot preview a
+        // custom scheme like albunyaantube://. The backend's WatchPageController
+        // serves an OpenGraph-tagged HTML page at /watch/{id} and auto-deep-links
+        // mobile visitors into the app. If no SHARE_BASE_URL is configured (dev
+        // builds or not-yet-deployed backend), we fall back to the raw deep link.
+        val shareBaseUrl = BuildConfig.SHARE_BASE_URL.trimEnd('/')
+        val videoDeepLink = if (shareBaseUrl.isNotEmpty()) {
+            "$shareBaseUrl/watch/${currentItem.streamId}"
+        } else {
+            "albunyaantube://video/${currentItem.streamId}"
+        }
 
-        // Simple, clean share message - title, deep link, and app promo
+        // Simple, clean share message - title, link, and app promo
         // Skip description as it often contains HTML tags (<br>, etc.)
         val shareMessage = buildString {
             append(title)
