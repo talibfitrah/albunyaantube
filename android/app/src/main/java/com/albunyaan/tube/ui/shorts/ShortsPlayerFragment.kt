@@ -131,6 +131,7 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
         binder = localBinder
 
         val pagerAdapter = ShortsPagerAdapter(
+            lifecycleOwner = viewLifecycleOwner,
             callbacks = ShortsPagerAdapter.Callbacks(
                 onLike = { idx -> viewModel.toggleLike(idx) },
                 onShare = { idx -> shareShort(idx) },

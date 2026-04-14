@@ -264,18 +264,6 @@ class PlayerBinder private constructor(
         synchronized(resolvedCache) { resolvedCache[videoId] = resolved }
         _resolvedEvents.tryEmit(videoId to resolved)
 
-        // Diagnostic: log the audio-track shape so we can tell whether NewPipe
-        // actually exposes multiple languages for the shorts people are
-        // testing with. Remove once the audio-language picker is validated
-        // on-device across enough real videos.
-        android.util.Log.d(
-            "ShortsAudioTracks",
-            "videoId=$videoId audioTracks=${resolved.audioTracks.size} " +
-                "languages=${resolved.audioTracks.map { it.language }} " +
-                "trackTypes=${resolved.audioTracks.map { it.trackType }} " +
-                "trackNames=${resolved.audioTracks.map { it.trackName }}"
-        )
-
         // Prefer the adaptive factory — same path the main PlayerFragment uses.
         // When available it returns a DASH/HLS source with ABR; ExoPlayer's
         // default track selector auto-picks highest quality that fits the

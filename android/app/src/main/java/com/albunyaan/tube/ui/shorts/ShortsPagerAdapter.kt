@@ -24,6 +24,15 @@ import kotlinx.coroutines.launch
  * recycled or detached.
  */
 class ShortsPagerAdapter(
+    /**
+     * Owner whose lifecycle scopes every per-page flow collection. Must be
+     * the hosting fragment's viewLifecycleOwner — using
+     * `itemView.findViewTreeLifecycleOwner()` here returns null because
+     * RecyclerView items aren't attached to window at bind time, which
+     * silently disabled every flow-driven UI update (likes, audio-language
+     * button visibility, etc.).
+     */
+    private val lifecycleOwner: androidx.lifecycle.LifecycleOwner,
     private val callbacks: Callbacks
 ) : ListAdapter<ShortsItem, ShortsPageViewHolder>(DIFF) {
 
@@ -74,7 +83,6 @@ class ShortsPagerAdapter(
         // even before the first flow emission arrives.
         holder.bindItem(item, isLiked = false, hasMultipleAudioTracks = false)
 
-        val lifecycleOwner = holder.itemView.findViewTreeLifecycleOwner() ?: return
         val job = lifecycleOwner.lifecycleScope.launch {
             lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 // Collect liked + audio-language-count flows in parallel and
