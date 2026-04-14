@@ -26,6 +26,11 @@
     <dimen name="bottom_nav_height">72dp</dimen>
     <dimen name="bottom_nav_active_indicator">12dp</dimen>
 
+    <!-- Shorts action rail bottom offset: clears bottom nav (72dp) AND the
+         channel+title overlay (~104dp) so the share icon never overlaps the
+         video title. -->
+    <dimen name="shorts_action_rail_bottom_margin">176dp</dimen>
+
     <!-- Filter Chips -->
     <dimen name="filter_chip_height">40dp</dimen>
     <dimen name="filter_chip_radius">20dp</dimen>
