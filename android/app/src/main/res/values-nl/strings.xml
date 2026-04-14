@@ -169,7 +169,7 @@
     <string name="update_downloading">Update downloaden…</string>
     <string name="update_download_failed">Update-download mislukt.</string>
     <string name="update_permission_title">Installatie vanuit deze app toestaan</string>
-    <string name="update_permission_message">Om de nieuwe versie te installeren, verleen toestemming om onbekende apps te installeren voor FitrahTube in het volgende scherm en tik vervolgens opnieuw op Controleren op updates.</string>
+    <string name="update_permission_message">Om de nieuwe versie te installeren, verleen toestemming om onbekende apps te installeren voor %1$s in het volgende scherm en tik vervolgens opnieuw op Controleren op updates.</string>
     <string name="update_grant_permission">Instellingen openen</string>
     <string name="offline_mode_limited">Sommige functies zijn offline niet beschikbaar.</string>
 

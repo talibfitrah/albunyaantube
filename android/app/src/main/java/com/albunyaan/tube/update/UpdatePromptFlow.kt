@@ -86,9 +86,13 @@ class UpdatePromptFlow @Inject constructor(
         info: UpdateInfo
     ) {
         if (!installer.isInstallPermissionGranted(activity)) {
+            // App name is formatted in at runtime (CodeRabbit #6/#7) so the message
+            // resource stays a single localizable template per locale and the actual
+            // brand string can be updated independently via R.string.app_name.
+            val appName = activity.getString(R.string.app_name)
             MaterialAlertDialogBuilder(activity)
                 .setTitle(R.string.update_permission_title)
-                .setMessage(R.string.update_permission_message)
+                .setMessage(activity.getString(R.string.update_permission_message, appName))
                 .setPositiveButton(R.string.update_grant_permission) { _, _ ->
                     installer.openInstallPermissionSettings(activity)
                 }
@@ -133,7 +137,12 @@ class UpdatePromptFlow @Inject constructor(
                         activity.runOnUiThread { progress.progress = pct }
                     }
                     withContext(Dispatchers.Main) {
-                        if (!activity.isFinishing) installer.launchInstaller(activity, file)
+                        // CodeRabbit #9: match the isFinishing + isDestroyed guard used
+                        // elsewhere in this file so we don't hand a finished activity to
+                        // the installer intent launcher after a configuration change.
+                        if (!activity.isFinishing && !activity.isDestroyed) {
+                            installer.launchInstaller(activity, file)
+                        }
                     }
                 } finally {
                     downloadMutex.unlock()

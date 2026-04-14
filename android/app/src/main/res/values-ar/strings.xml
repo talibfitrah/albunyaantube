@@ -159,7 +159,7 @@
     <string name="update_downloading">جاري تنزيل التحديث…</string>
     <string name="update_download_failed">فشل تنزيل التحديث.</string>
     <string name="update_permission_title">السماح بالتثبيت من هذا التطبيق</string>
-    <string name="update_permission_message">لتثبيت الإصدار الجديد، امنح الإذن بتثبيت التطبيقات غير المعروفة لـ FitrahTube في الشاشة التالية، ثم اضغط على التحقق من التحديثات مرة أخرى.</string>
+    <string name="update_permission_message">لتثبيت الإصدار الجديد، امنح الإذن بتثبيت التطبيقات غير المعروفة لـ %1$s في الشاشة التالية، ثم اضغط على التحقق من التحديثات مرة أخرى.</string>
     <string name="update_grant_permission">فتح الإعدادات</string>
     <string name="offline_mode_limited">بعض الميزات غير متاحة دون اتصال.</string>
 

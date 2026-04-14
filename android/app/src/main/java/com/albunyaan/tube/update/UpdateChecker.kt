@@ -70,6 +70,16 @@ class UpdateChecker @Inject constructor(
                 val release = adapter.fromJson(body) ?: return@use null
                 val remoteVersion = release.tag_name.removePrefix("v").removePrefix("V")
                 val currentVersion = BuildConfig.VERSION_NAME
+                // CodeRabbit #8: if the current build is a stable release (no prerelease
+                // suffix) and GitHub marks the candidate as prerelease, don't auto-prompt
+                // — users on stable channels shouldn't be nagged to switch to beta/rc
+                // unless they opt in. Users on a prerelease build (current has `-beta`,
+                // `-rc`, etc.) still receive prerelease updates so beta→rc upgrades work.
+                val currentIsPrerelease = currentVersion.contains('-')
+                if (release.prerelease && !currentIsPrerelease) {
+                    Log.d(TAG, "Skipping prerelease $remoteVersion for stable channel $currentVersion")
+                    return@use null
+                }
                 if (!isNewerVersion(remoteVersion, currentVersion)) {
                     Log.d(TAG, "No update (remote=$remoteVersion, current=$currentVersion)")
                     return@use null

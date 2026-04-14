@@ -217,16 +217,28 @@
                 app:cardCornerRadius="@dimen/corner_radius_medium"
                 app:cardElevation="0dp">
 
-                <!-- Support Center -->
-                <include layout="@layout/settings_item_support"/>
-
-                <View
+                <!-- ANDROID-MULTI-01 Issue 3 + CodeRabbit #5: MaterialCardView extends
+                     FrameLayout, so multiple direct children stack on top of each other.
+                     Wrap in a vertical LinearLayout so support, divider, and update-check
+                     lay out top-to-bottom, matching every other card in this file. -->
+                <LinearLayout
                     android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:background="?attr/colorOutlineVariant" />
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
 
-                <!-- ANDROID-MULTI-01 Issue 3: Check for updates -->
-                <include layout="@layout/settings_item_update_check"/>
+                    <!-- Support Center -->
+                    <include layout="@layout/settings_item_support"/>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="@dimen/divider_thickness"
+                        android:background="@color/background_gray"
+                        android:layout_marginStart="@dimen/spacing_lg"/>
+
+                    <!-- ANDROID-MULTI-01 Issue 3: Check for updates -->
+                    <include layout="@layout/settings_item_update_check"/>
+
+                </LinearLayout>
 
             </com.google.android.material.card.MaterialCardView>
 
