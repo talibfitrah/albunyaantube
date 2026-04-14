@@ -150,4 +150,31 @@ class ShortsFeedRepositoryTest {
             freshRepo.containsChannelPageTokenForTest("token-overflow")
         )
     }
+
+    @org.junit.Test
+    fun canonicalShareUrl_rejectsInvalidId() {
+        // Backend-supplied ids flow into share text. An id containing a
+        // newline or control char would corrupt the share payload. The
+        // regex guard returns a safe fallback instead of concatenating blindly.
+        val malformed = ShortsItem(
+            id = "evil\nstring",
+            title = "t",
+            channelId = "",
+            channelName = "",
+            channelAvatarUrl = null,
+            thumbnailUrl = null,
+            durationSeconds = 30
+        )
+        assertEquals("https://www.youtube.com", malformed.canonicalShareUrl)
+
+        val withSpace = malformed.copy(id = "abc def1234")
+        assertEquals("https://www.youtube.com", withSpace.canonicalShareUrl)
+
+        val tooShort = malformed.copy(id = "abc")
+        assertEquals("https://www.youtube.com", tooShort.canonicalShareUrl)
+
+        // Valid 11-char YouTube id passes through.
+        val valid = malformed.copy(id = "dQw4w9WgXcQ")
+        assertEquals("https://www.youtube.com/shorts/dQw4w9WgXcQ", valid.canonicalShareUrl)
+    }
 }
