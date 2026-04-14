@@ -21,7 +21,19 @@ class MeShortsAdapter(
     private val inner = InnerAdapter(onClick)
 
     fun submit(items: List<MeFeedVideo>) {
-        inner.submitList(items)
+        // F-CR9 (CodeRabbit verification round): same bug pattern as F-CR1 on
+        // MeChipsAdapter — sectionAdapter.getItemCount() flips 0<->1 based on
+        // inner.itemCount, but the parent RecyclerView caches the count
+        // unless we notify. Without this, the shorts strip never appears
+        // when items first arrive and never disappears when emptied.
+        val wasEmpty = inner.itemCount == 0
+        inner.submitList(items) {
+            val isEmpty = inner.itemCount == 0
+            when {
+                wasEmpty && !isEmpty -> sectionAdapter.notifyItemInserted(0)
+                !wasEmpty && isEmpty -> sectionAdapter.notifyItemRemoved(0)
+            }
+        }
     }
 
     val sectionAdapter: RecyclerView.Adapter<*> = object : RecyclerView.Adapter<SectionVH>() {
@@ -35,12 +47,19 @@ class MeShortsAdapter(
             binding.shortsRecycler.layoutManager = LinearLayoutManager(
                 parent.context, LinearLayoutManager.HORIZONTAL, false
             )
-            binding.shortsRecycler.adapter = inner
             return SectionVH(binding)
         }
 
         override fun onBindViewHolder(holder: SectionVH, position: Int) {
-            // no-op
+            // F-CR (CodeRabbit verification): attach the inner adapter on
+            // bind, not on create. ViewHolder recycling can hand a fresh
+            // RecyclerView (different instance) the same `inner` reference,
+            // and onCreateViewHolder may not run again. Bind-time assign
+            // keeps the attachment fresh per recycle. Idempotency check
+            // prevents tearing the data observers on every bind.
+            if (holder.binding.shortsRecycler.adapter !== inner) {
+                holder.binding.shortsRecycler.adapter = inner
+            }
         }
     }
 
@@ -74,7 +93,10 @@ class MeShortsAdapter(
                     error(R.drawable.thumbnail_placeholder)
                 }
             } else {
-                binding.shortThumbnail.setImageResource(R.drawable.thumbnail_placeholder)
+                // F-CR10 (CodeRabbit): cancel any pending Coil request on
+                // recycled view by going through Coil's load() instead of
+                // setImageResource(). See MeVideosAdapter for full context.
+                binding.shortThumbnail.load(R.drawable.thumbnail_placeholder)
             }
             binding.root.setOnClickListener { onClick(item) }
         }

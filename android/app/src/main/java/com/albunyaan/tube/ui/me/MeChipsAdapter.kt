@@ -72,12 +72,15 @@ class MeChipsAdapter(
             binding.chipsRecycler.layoutManager = LinearLayoutManager(
                 parent.context, LinearLayoutManager.HORIZONTAL, false
             )
-            binding.chipsRecycler.adapter = inner
             return RowVH(binding)
         }
 
         override fun onBindViewHolder(holder: RowVH, position: Int) {
-            // no-op — inner adapter holds the data
+            // F-CR (CodeRabbit verification): attach inner on bind, not on
+            // create — see MeShortsAdapter for the same fix.
+            if (holder.binding.chipsRecycler.adapter !== inner) {
+                holder.binding.chipsRecycler.adapter = inner
+            }
         }
     }
 
@@ -122,7 +125,12 @@ class MeChipsAdapter(
                     transformations(CircleCropTransformation())
                 }
             } else {
-                binding.chipAvatar.setImageResource(R.drawable.thumbnail_placeholder)
+                // F-CR10 (CodeRabbit): cancel any in-flight load via Coil's
+                // load() instead of setImageResource() to avoid a stale
+                // request overwriting the placeholder on a recycled chip.
+                binding.chipAvatar.load(R.drawable.thumbnail_placeholder) {
+                    transformations(CircleCropTransformation())
+                }
             }
             binding.chipRoot.isCheckable = true
             binding.chipRoot.isChecked = isSelected

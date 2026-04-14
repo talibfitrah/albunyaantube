@@ -172,6 +172,7 @@
     <string name="channel_unsubscribe">Subscribed</string>
     <string name="playlist_save">Save</string>
     <string name="playlist_unsave">Saved</string>
+    <string name="cd_save_playlist_button">Save this playlist to your library</string>
 
     <!-- Settings library -->
     <string name="settings_library_header">Library</string>

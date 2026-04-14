@@ -75,7 +75,6 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Playback Section -->
             <!-- Library Section -->
             <TextView
                 android:layout_width="match_parent"

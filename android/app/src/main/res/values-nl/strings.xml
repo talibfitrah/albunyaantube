@@ -152,6 +152,7 @@
     <string name="channel_unsubscribe">Geabonneerd</string>
     <string name="playlist_save">Opslaan</string>
     <string name="playlist_unsave">Opgeslagen</string>
+    <string name="cd_save_playlist_button">Sla deze afspeellijst op in je bibliotheek</string>
 
     <!-- Settings library -->
     <string name="settings_library_header">Bibliotheek</string>

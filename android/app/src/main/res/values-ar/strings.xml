@@ -143,6 +143,7 @@
     <string name="channel_unsubscribe">مشترك</string>
     <string name="playlist_save">حفظ</string>
     <string name="playlist_unsave">محفوظة</string>
+    <string name="cd_save_playlist_button">احفظ قائمة التشغيل هذه في مكتبتك</string>
 
     <!-- Settings library -->
     <string name="settings_library_header">المكتبة</string>

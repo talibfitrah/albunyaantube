@@ -87,7 +87,12 @@ class MeVideosAdapter(
                     error(R.drawable.thumbnail_placeholder)
                 }
             } else {
-                binding.videoThumbnail.setImageResource(R.drawable.thumbnail_placeholder)
+                // F-CR10 (CodeRabbit): use Coil's load() even for the
+                // placeholder so any in-flight request from a prior bind on
+                // this recycled view is cancelled. setImageResource() alone
+                // doesn't dispose the request, so a slow network thumbnail
+                // could overwrite the placeholder mid-frame.
+                binding.videoThumbnail.load(R.drawable.thumbnail_placeholder)
             }
             binding.root.setOnClickListener { onClick(item) }
         }

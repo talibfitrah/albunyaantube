@@ -282,6 +282,7 @@
                             android:layout_height="@dimen/touch_target_button"
                             android:layout_marginTop="@dimen/spacing_sm"
                             android:text="@string/playlist_save"
+                            android:contentDescription="@string/cd_save_playlist_button"
                             android:textAlignment="viewStart"
                             android:maxLines="1"
                             android:ellipsize="end"

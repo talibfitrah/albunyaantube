@@ -285,6 +285,7 @@
                             android:layout_weight="1"
                             android:layout_marginStart="@dimen/spacing_md"
                             android:text="@string/playlist_save"
+                            android:contentDescription="@string/cd_save_playlist_button"
                             android:textAlignment="viewStart"
                             android:focusable="true"
                             android:maxLines="1"
