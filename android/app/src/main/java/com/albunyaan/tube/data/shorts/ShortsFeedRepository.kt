@@ -65,6 +65,17 @@ class ShortsFeedRepository @Inject constructor(
      * Fetches the next page of shorts for a specific channel. Channel metadata
      * is left blank — the ViewModel decorates items with the channel header
      * it already has in hand (avoids a redundant fetch per page).
+     *
+     * Cursor semantics: a non-null [cursor] is a token previously handed out
+     * by this repository for the same channel. Tokens are stored in a
+     * bounded LRU (32 entries) and consumed on first lookup. If a cursor was
+     * evicted (rare — only after >32 distinct channel-pagination sessions
+     * without consuming) or comes from a different process lifetime, lookup
+     * yields null and we transparently restart from page 1. The caller will
+     * see duplicate item ids; DiffUtil collapses them, so the UX impact is a
+     * minor "jump" rather than data corruption. This fallback is intentional
+     * to keep the UX recoverable; callers that need strict pagination can
+     * detect a missing cursor via [channelPageTokenCountForTest] before the call.
      */
     suspend fun loadChannelShortsPage(
         channelId: String,
@@ -72,7 +83,14 @@ class ShortsFeedRepository @Inject constructor(
         pageSize: Int = DEFAULT_PAGE_SIZE
     ): ShortsPage {
         val page: Page? = cursor?.let {
-            synchronized(channelPageTokens) { channelPageTokens.remove(it) }
+            val resolved = synchronized(channelPageTokens) { channelPageTokens.remove(it) }
+            if (resolved == null) {
+                android.util.Log.w(
+                    "ShortsFeedRepository",
+                    "Channel cursor evicted/unknown ($it) — restarting from page 1"
+                )
+            }
+            resolved
         }
         val channelPage = channelDetailRepository.getShorts(channelId, page)
         val items = channelPage.items.take(pageSize).map { s: ChannelShort ->
