@@ -277,6 +277,21 @@
                             app:icon="@drawable/ic_download"
                             app:iconGravity="textStart" />
 
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/savePlaylistButton"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="@dimen/touch_target_button"
+                            android:layout_weight="1"
+                            android:layout_marginStart="@dimen/spacing_md"
+                            android:text="@string/playlist_save"
+                            android:textAlignment="viewStart"
+                            android:focusable="true"
+                            android:maxLines="1"
+                            android:ellipsize="end"
+                            app:icon="@drawable/ic_favorite_border"
+                            app:iconGravity="textStart" />
+
                     </LinearLayout>
 
                     <!-- Download Policy Text -->

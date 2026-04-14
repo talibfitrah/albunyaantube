@@ -14,6 +14,8 @@ import coil.load
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.channel.ChannelHeader
 import com.albunyaan.tube.data.channel.ChannelTab
+import com.albunyaan.tube.data.local.SubscribedChannel
+import com.albunyaan.tube.data.subscriptions.SubscriptionRepository
 import com.albunyaan.tube.databinding.FragmentChannelDetailBinding
 import com.albunyaan.tube.ui.detail.tabs.ChannelAboutTabFragment
 import com.albunyaan.tube.ui.detail.tabs.ChannelLiveTabFragment
@@ -26,7 +28,13 @@ import com.google.android.material.tabs.TabLayoutMediator
 import dagger.hilt.android.AndroidEntryPoint
 import com.albunyaan.tube.locale.LocaleManager
 import dagger.hilt.android.lifecycle.withCreationCallback
+import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.NumberFormat
 
 /**
@@ -39,7 +47,12 @@ import java.text.NumberFormat
 @AndroidEntryPoint
 class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
 
+    @Inject
+    lateinit var subscriptions: SubscriptionRepository
+
     private var binding: FragmentChannelDetailBinding? = null
+    private var latestHeader: ChannelHeader? = null
+    private var isSubscribedNow: Boolean = false
 
     private val channelId: String by lazy { arguments?.getString(ARG_CHANNEL_ID).orEmpty() }
     private val channelName: String? by lazy { arguments?.getString(ARG_CHANNEL_NAME) }
@@ -64,6 +77,7 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
         setupToolbar()
         setupTabs()
         observeHeaderState()
+        observeSubscriptionState()
 
         // Restore selected tab
         savedInstanceState?.getInt(STATE_SELECTED_TAB)?.let { position ->
@@ -183,7 +197,42 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
         }
     }
 
+    private fun observeSubscriptionState() {
+        subscriptions.isChannelSubscribed(channelId)
+            .distinctUntilChanged()
+            .onEach { subscribed ->
+                isSubscribedNow = subscribed
+                binding?.subscribeButton?.apply {
+                    setText(if (subscribed) R.string.channel_unsubscribe else R.string.channel_subscribe)
+                    isSelected = subscribed
+                    setOnClickListener { toggleSubscription() }
+                }
+            }
+            .launchIn(viewLifecycleOwner.lifecycleScope)
+    }
+
+    private fun toggleSubscription() {
+        val header = latestHeader ?: return
+        viewLifecycleOwner.lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                if (isSubscribedNow) {
+                    subscriptions.unsubscribe(header.id)
+                } else {
+                    subscriptions.subscribe(
+                        SubscribedChannel(
+                            channelId = header.id,
+                            channelUrl = "https://www.youtube.com/channel/${header.id}",
+                            name = header.title,
+                            avatarUrl = header.avatarUrl,
+                        )
+                    )
+                }
+            }
+        }
+    }
+
     private fun bindHeader(header: ChannelHeader) {
+        latestHeader = header
         binding?.apply {
             // Update toolbar title
             toolbar.title = header.title

@@ -168,6 +168,17 @@
                         tools:text="Quran reciter from Kuwait"
                         tools:visibility="visible" />
 
+                    <!-- Subscribe toggle (ANDROID-PERSONAL-01) -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/subscribeButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/spacing_sm"
+                        android:text="@string/channel_subscribe"
+                        android:textAlignment="viewStart"
+                        app:layout_constraintStart_toStartOf="@id/channelNameContainer"
+                        app:layout_constraintTop_toBottomOf="@id/channelSummaryText" />
+
                 </androidx.constraintlayout.widget.ConstraintLayout>
 
             </LinearLayout>

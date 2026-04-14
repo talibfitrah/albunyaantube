@@ -31,7 +31,12 @@ import com.albunyaan.tube.ui.detail.adapters.PlaylistVideosAdapter
 import com.google.android.material.chip.Chip
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.lifecycle.withCreationCallback
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
@@ -48,6 +53,12 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
 
     @Inject
     lateinit var prefetchService: StreamPrefetchService
+
+    @Inject
+    lateinit var subscriptions: com.albunyaan.tube.data.subscriptions.SubscriptionRepository
+
+    private var latestPlaylistHeader: com.albunyaan.tube.data.playlist.PlaylistHeader? = null
+    private var isPlaylistSavedNow: Boolean = false
 
     // Navigation arguments
     private val playlistId: String by lazy { arguments?.getString(ARG_PLAYLIST_ID).orEmpty() }
@@ -94,6 +105,43 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
         setupActionButtons()
         observeViewModel()
         observeDownloads()
+        observeSavedState()
+    }
+
+    private fun observeSavedState() {
+        subscriptions.isPlaylistSaved(playlistId)
+            .distinctUntilChanged()
+            .onEach { saved ->
+                isPlaylistSavedNow = saved
+                binding?.savePlaylistButton?.apply {
+                    setText(if (saved) R.string.playlist_unsave else R.string.playlist_save)
+                    setIconResource(if (saved) R.drawable.ic_favorite else R.drawable.ic_favorite_border)
+                    isSelected = saved
+                    setOnClickListener { togglePlaylistSaved() }
+                }
+            }
+            .launchIn(viewLifecycleOwner.lifecycleScope)
+    }
+
+    private fun togglePlaylistSaved() {
+        val header = latestPlaylistHeader ?: return
+        viewLifecycleOwner.lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                if (isPlaylistSavedNow) {
+                    subscriptions.unsavePlaylist(header.id)
+                } else {
+                    subscriptions.savePlaylist(
+                        com.albunyaan.tube.data.local.SavedPlaylist(
+                            playlistId = header.id,
+                            playlistUrl = "https://www.youtube.com/playlist?list=${header.id}",
+                            name = header.title,
+                            thumbnailUrl = header.thumbnailUrl,
+                            uploaderName = header.channelName,
+                        )
+                    )
+                }
+            }
+        }
     }
 
     private fun setupToolbar() {
@@ -310,6 +358,7 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
     }
 
     private fun bindHeader(header: PlaylistHeader) {
+        latestPlaylistHeader = header
         binding?.apply {
             // Keep the collapsed toolbar populated on all devices.
             toolbar.title = header.title
