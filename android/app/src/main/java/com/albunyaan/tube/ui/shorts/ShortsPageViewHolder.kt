@@ -23,11 +23,15 @@ class ShortsPageViewHolder(
     /** The PlayerView for this page; bound by [PlayerBinder.bind]. */
     val playerView: PlayerView get() = binding.shortPlayerView
 
+    /** The scrubber timeline for this page; driven by the fragment. */
+    val timeBar: androidx.media3.ui.DefaultTimeBar get() = binding.shortTimeBar
+
     fun bind(
         item: ShortsItem,
         isLiked: Boolean,
         onLike: () -> Unit,
         onShare: () -> Unit,
+        onDownload: () -> Unit,
         onChannelTap: () -> Unit,
         onTapVideo: () -> Unit
     ) {
@@ -73,6 +77,7 @@ class ShortsPageViewHolder(
 
         binding.shortLikeBtn.setOnClickListener { onLike() }
         binding.shortShareBtn.setOnClickListener { onShare() }
+        binding.shortDownloadBtn.setOnClickListener { onDownload() }
         binding.shortChannelAvatar.setOnClickListener { onChannelTap() }
         binding.shortChannelHandle.setOnClickListener { onChannelTap() }
         binding.shortTapTarget.setOnClickListener { onTapVideo() }

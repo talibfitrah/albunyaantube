@@ -197,6 +197,25 @@ class PlayerBinder private constructor(
         }
     }
 
+    /**
+     * Caches the last successfully resolved streams per videoId so the download
+     * button can show the quality picker immediately without re-resolving. The
+     * map is bounded: we only keep the most recent [MAX_RESOLVED_CACHE] entries,
+     * which in practice is "the currently playing short plus a prefetch buffer".
+     */
+    private val resolvedCache: LinkedHashMap<String, ResolvedStreams> =
+        object : LinkedHashMap<String, ResolvedStreams>(8, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ResolvedStreams>?): Boolean =
+                size > MAX_RESOLVED_CACHE
+        }
+
+    /**
+     * Return the last successfully resolved streams for [videoId], or null if
+     * no successful resolution has happened yet for this session.
+     */
+    fun resolvedStreamsFor(videoId: String): ResolvedStreams? =
+        synchronized(resolvedCache) { resolvedCache[videoId] }
+
     private suspend fun prepareAndPlay(videoId: String, myGen: Int) {
         val resolved: ResolvedStreams? = runCatching {
             playerRepository.resolveStreams(videoId, forceRefresh = false)
@@ -209,6 +228,8 @@ class PlayerBinder private constructor(
             _failureEvents.tryEmit(videoId)
             return
         }
+
+        synchronized(resolvedCache) { resolvedCache[videoId] = resolved }
 
         val source = buildProgressiveSource(resolved)
         if (source == null) {
@@ -322,5 +343,10 @@ class PlayerBinder private constructor(
         scopeCancelled = true
         detach()
         playerOps.release()
+    }
+
+    companion object {
+        /** Max number of resolved-stream entries kept for the download picker. */
+        private const val MAX_RESOLVED_CACHE = 8
     }
 }

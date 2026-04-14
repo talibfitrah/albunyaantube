@@ -64,7 +64,32 @@
             android:src="@drawable/ic_shorts_share"
             android:scaleType="center"
             app:tint="#FFFFFFFF"/>
+
+        <ImageButton
+            android:id="@+id/shortDownloadBtn"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_marginTop="@dimen/spacing_md"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/shorts_download_cd"
+            android:src="@drawable/ic_shorts_download"
+            android:scaleType="center"
+            app:tint="#FFFFFFFF"/>
     </LinearLayout>
+
+    <androidx.media3.ui.DefaultTimeBar
+        android:id="@+id/shortTimeBar"
+        android:layout_width="match_parent"
+        android:layout_height="24dp"
+        android:layout_gravity="bottom"
+        android:layout_marginBottom="@dimen/bottom_nav_height"
+        app:bar_height="2dp"
+        app:scrubber_enabled_size="12dp"
+        app:scrubber_dragged_size="16dp"
+        app:played_color="#FFFFFFFF"
+        app:scrubber_color="#FFFFFFFF"
+        app:unplayed_color="#4DFFFFFF"
+        app:buffered_color="#80FFFFFF"/>
 
     <LinearLayout
         android:id="@+id/shortBottomOverlay"
