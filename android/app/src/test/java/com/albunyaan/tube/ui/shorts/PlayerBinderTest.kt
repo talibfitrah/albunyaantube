@@ -221,6 +221,36 @@ class PlayerBinderTest {
     }
 
     @Test
+    fun cancelScope_cancelsPendingResolveAndLeavesPlayerUntouched() = runTest(dispatcher) {
+        // Mirrors release_cancelsPendingResolveAndSkipsPlayerApply, but uses
+        // cancelScope() so the VM-owned player is NOT released — the binder
+        // only aborts its in-flight bind coroutine. Proves a late resolve
+        // after fragment teardown cannot mutate the surviving player.
+        val ops = RecordingPlayerOps()
+        val attach = RecordingAttach()
+        val repo = TestPlayerRepository()
+        val binder = newBinder(repo, ops, attach)
+
+        val view: PlayerView = org.mockito.kotlin.mock()
+        binder.bind(view, "Z")
+        binder.cancelScope()
+
+        // Complete AFTER cancelScope — the cancelled scope must swallow the result.
+        repo.complete("Z", resolved("Z"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertFalse(
+            "No setMediaSource after cancelScope",
+            ops.calls.contains("setMediaSource")
+        )
+        assertFalse("No prepare after cancelScope", ops.calls.contains("prepare"))
+        assertFalse(
+            "cancelScope must NOT release the player",
+            ops.calls.contains("release")
+        )
+    }
+
+    @Test
     fun resolveReturningNull_doesNotTouchPlayerMediaSource() = runTest(dispatcher) {
         val ops = RecordingPlayerOps()
         val attach = RecordingAttach()

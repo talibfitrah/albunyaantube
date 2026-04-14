@@ -234,7 +234,11 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
         binding?.shortsPager?.adapter = null
         adapter = null
         // Player is owned by the ViewModel; only detach the PlayerView here.
+        // cancelScope() aborts any in-flight bind resolution so a late-arriving
+        // stream doesn't mutate the still-alive (VM-owned) player after the
+        // fragment view is gone. Do NOT call release() — VM owns the player.
         binder?.detach()
+        binder?.cancelScope()
         binder = null
         binding = null
         hasBoundInitialPage = false

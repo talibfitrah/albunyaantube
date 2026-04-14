@@ -268,7 +268,29 @@ class PlayerBinder private constructor(
         boundView = null
     }
 
-    /** Release the underlying player. Call from ViewModel.onCleared(). */
+    /**
+     * Cancel the internal coroutine scope without releasing the player.
+     *
+     * Use this from the fragment lifecycle (e.g. `onDestroyView`) when the
+     * player itself is owned by another component (the ViewModel) that will
+     * outlive the fragment. Cancelling the scope aborts any in-flight
+     * [bind] resolution and prevents late-arriving resolutions from mutating
+     * the player after the fragment view is gone.
+     *
+     * Distinct from [release] — this does NOT touch [playerOps.release].
+     */
+    fun cancelScope() {
+        scope.cancel()
+        bindJob = null
+    }
+
+    /**
+     * Release the underlying player AND cancel the internal scope.
+     *
+     * Only safe to call from contexts that own the player (currently unused,
+     * since the player is owned by [ShortsPlayerViewModel]). Kept as an
+     * escape hatch for future refactors where the binder owns the player.
+     */
     fun release() {
         scope.cancel()
         bindJob = null
