@@ -251,6 +251,27 @@ class PlayerBinderTest {
     }
 
     @Test
+    fun bind_afterCancelScope_throwsIllegalStateException() = runTest(dispatcher) {
+        // CodeRabbit guard: silent reuse of a torn-down binder previously
+        // resulted in an inert no-op (scope.cancel makes future launch{} do
+        // nothing). The check() now surfaces the misuse loudly.
+        val ops = RecordingPlayerOps()
+        val attach = RecordingAttach()
+        val repo = TestPlayerRepository()
+        val binder = newBinder(repo, ops, attach)
+
+        binder.cancelScope()
+
+        val view: PlayerView = org.mockito.kotlin.mock()
+        try {
+            binder.bind(view, "Q")
+            org.junit.Assert.fail("Expected IllegalStateException after cancelScope")
+        } catch (_: IllegalStateException) {
+            // expected
+        }
+    }
+
+    @Test
     fun resolveReturningNull_doesNotTouchPlayerMediaSource() = runTest(dispatcher) {
         val ops = RecordingPlayerOps()
         val attach = RecordingAttach()

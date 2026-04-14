@@ -145,6 +145,13 @@ class PlayerBinder private constructor(
     /** The in-flight bind job — cancelled on the next [bind] or [release]. */
     private var bindJob: Job? = null
 
+    /**
+     * Set true after [cancelScope] / [release]. Once true, [bind] is a no-op
+     * because [scope] is permanently dead — preventing silent failures where
+     * a fragment caller mistakenly re-uses a torn-down binder.
+     */
+    private var scopeCancelled: Boolean = false
+
     private val _failureEvents = MutableSharedFlow<String>(
         extraBufferCapacity = 4,
         onBufferOverflow = BufferOverflow.DROP_OLDEST
@@ -164,6 +171,9 @@ class PlayerBinder private constructor(
      * never throws) so the fragment can skip past the bad short.
      */
     fun bind(target: PlayerView, videoId: String) {
+        check(!scopeCancelled) {
+            "PlayerBinder.bind called after cancelScope/release; binder must not be reused"
+        }
         val myGen = generation.incrementAndGet()
 
         // Cancel any in-flight resolve for the prior bind. The coroutine body
@@ -282,6 +292,7 @@ class PlayerBinder private constructor(
     fun cancelScope() {
         scope.cancel()
         bindJob = null
+        scopeCancelled = true
     }
 
     /**
@@ -294,6 +305,7 @@ class PlayerBinder private constructor(
     fun release() {
         scope.cancel()
         bindJob = null
+        scopeCancelled = true
         detach()
         playerOps.release()
     }
