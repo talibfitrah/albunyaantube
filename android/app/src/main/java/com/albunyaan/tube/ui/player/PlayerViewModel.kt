@@ -496,6 +496,27 @@ class PlayerViewModel @Inject constructor(
     fun selectQuality(track: VideoTrack) = setUserQualityCap(track)
 
     /**
+     * User picked a different audio language from the rail's audio-language
+     * dialog. Updates [PlaybackSelection.audio] and emits an
+     * [PlayerUiEvent.AudioTrackSwapReady] event so the fragment can rebuild
+     * the MediaSource seamlessly (preserves position + playWhenReady, same
+     * pattern as [LiveStreamRefreshReady]).
+     *
+     * No-op when:
+     * - no stream is currently Ready (shouldn't happen — button is hidden)
+     * - the picked track equals the currently-active one
+     */
+    fun selectAudioTrack(track: AudioTrack) {
+        val ready = _state.value.streamState as? StreamState.Ready ?: return
+        if (track == ready.selection.audio) return
+        val newSelection = ready.selection.copy(audio = track)
+        updateState { it.copy(streamState = StreamState.Ready(ready.streamId, newSelection)) }
+        viewModelScope.launch(dispatcher) {
+            _uiEvents.emit(PlayerUiEvent.AudioTrackSwapReady(ready.streamId, newSelection))
+        }
+    }
+
+    /**
      * Find the best video track that respects the given height cap.
      * Prefers muxed streams over video-only for reliability.
      */
@@ -1755,6 +1776,17 @@ sealed class PlayerUiEvent {
      * @param newSelection The new PlaybackSelection with fresh URLs
      */
     data class LiveStreamRefreshReady(
+        val streamId: String,
+        val newSelection: PlaybackSelection
+    ) : PlayerUiEvent()
+
+    /**
+     * Emitted when the user picks a different audio language. Fragment should
+     * do a seamless MediaSource swap (preserving position + play state) with
+     * the resolved streams filtered to just [newSelection.audio] so the
+     * factory uses that track.
+     */
+    data class AudioTrackSwapReady(
         val streamId: String,
         val newSelection: PlaybackSelection
     ) : PlayerUiEvent()

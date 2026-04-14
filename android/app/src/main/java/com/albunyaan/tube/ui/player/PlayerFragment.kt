@@ -59,6 +59,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import com.albunyaan.tube.data.extractor.PlaybackSelection
 import com.albunyaan.tube.data.extractor.QualitySelectionOrigin
 import com.albunyaan.tube.data.extractor.ResolvedStreams
+import com.albunyaan.tube.data.extractor.availableAudioLanguages
 import com.albunyaan.tube.data.extractor.SubtitleTrack
 import com.albunyaan.tube.data.extractor.VideoTrack
 import com.albunyaan.tube.download.DownloadEntry
@@ -452,6 +453,29 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         // Download button - shows quality picker, downloads are always allowed (no EULA gating)
         binding.downloadButton.setOnClickListener {
             showDownloadQualityPicker()
+        }
+
+        // Audio-language picker: button is hidden until the currently-playing
+        // video exposes ≥2 audio-language tracks (NewPipe-surfaced dub locales).
+        binding.audioLanguageButton.setOnClickListener {
+            showAudioLanguagePicker()
+        }
+
+        // Audio-language dialog result — apply the user's pick via the ViewModel,
+        // which emits AudioTrackSwapReady that the main event handler catches
+        // and rebuilds the MediaSource around.
+        childFragmentManager.setFragmentResultListener(
+            com.albunyaan.tube.ui.shorts.AudioLanguageDialog.REQUEST_KEY,
+            viewLifecycleOwner
+        ) { _, result ->
+            val code = result.getString(
+                com.albunyaan.tube.ui.shorts.AudioLanguageDialog.RESULT_SELECTED_LANGUAGE
+            ) ?: return@setFragmentResultListener
+            val streamState = viewModel.state.value.streamState
+            if (streamState !is StreamState.Ready) return@setFragmentResultListener
+            val options = streamState.selection.resolved.availableAudioLanguages()
+            val chosen = options.firstOrNull { it.language == code } ?: return@setFragmentResultListener
+            viewModel.selectAudioTrack(chosen.representative)
         }
 
         // Register Fragment Result listener for download quality selection (survives process death)
@@ -1227,6 +1251,12 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             } ?: getString(R.string.player_no_current_item)
             binding.completeButton.isEnabled = state.streamState is StreamState.Ready
             updateDownloadControls(binding, state)
+            // Show audio-language button only when the current video exposes
+            // multiple language tracks (NewPipe-surfaced dub locales). For
+            // single-track videos we hide the control entirely.
+            binding.audioLanguageButton.isVisible = (state.streamState as? StreamState.Ready)
+                ?.selection?.resolved?.availableAudioLanguages()?.size
+                ?.let { it >= 2 } == true
             upNextAdapter.submitList(state.upNext)
             binding.upNextList.isVisible = state.upNext.isNotEmpty()
             binding.upNextEmpty.isVisible = state.upNext.isEmpty()
@@ -1264,6 +1294,19 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     }
                     is PlayerUiEvent.LiveStreamRefreshReady -> {
                         handleLiveStreamRefresh(event)
+                    }
+                    is PlayerUiEvent.AudioTrackSwapReady -> {
+                        // Reuse the live-refresh seamless swap path with a
+                        // filtered ResolvedStreams so the factory uses only
+                        // the chosen audio track. Same guarantees re: position
+                        // preservation, MediaSession sync, error handling.
+                        val filteredResolved = event.newSelection.resolved.copy(
+                            audioTracks = listOf(event.newSelection.audio)
+                        )
+                        val filteredSelection = event.newSelection.copy(resolved = filteredResolved)
+                        handleLiveStreamRefresh(
+                            PlayerUiEvent.LiveStreamRefreshReady(event.streamId, filteredSelection)
+                        )
                     }
                 }
             }
@@ -1464,6 +1507,28 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
      * Uses Fragment Result API for process-death safety. The listener is registered
      * in onViewCreated() so it survives configuration changes and process death.
      */
+    /**
+     * Show the audio-language picker. No-op if the current stream has fewer
+     * than two selectable languages — the rail button is already hidden in
+     * that case, but we guard against rare races where state changed between
+     * the tap and the menu open.
+     */
+    private fun showAudioLanguagePicker() {
+        val streamState = viewModel.state.value.streamState
+        if (streamState !is StreamState.Ready) return
+        val options = streamState.selection.resolved.availableAudioLanguages()
+        if (options.size < 2) return
+        val triples = options.map { opt ->
+            val label = if (opt.isOriginal) {
+                getString(R.string.shorts_audio_track_original_prefix, opt.displayName)
+            } else opt.displayName
+            Triple(opt.language, label, opt.isOriginal)
+        }
+        com.albunyaan.tube.ui.shorts.AudioLanguageDialog
+            .newInstance(triples, streamState.selection.audio.language)
+            .show(childFragmentManager, com.albunyaan.tube.ui.shorts.AudioLanguageDialog.TAG)
+    }
+
     private fun showDownloadQualityPicker() {
         val streamState = viewModel.state.value.streamState
 

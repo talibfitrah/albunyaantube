@@ -510,6 +510,38 @@
 
                     </LinearLayout>
 
+                    <!-- Audio Language Button (hidden until multi-track) -->
+                    <LinearLayout
+                        android:id="@+id/audioLanguageButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:background="?attr/selectableItemBackground"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:padding="@dimen/spacing_sm"
+                        android:visibility="gone"
+                        android:contentDescription="@string/shorts_audio_track_cd">
+
+                        <ImageView
+                            android:layout_width="@dimen/icon_small"
+                            android:layout_height="@dimen/icon_small"
+                            android:src="@drawable/ic_shorts_audio_track"
+                            app:tint="@color/primary_green" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/spacing_xs"
+                            android:text="@string/player_action_audio_language"
+                            android:textAlignment="center"
+                            android:textColor="@color/primary_green"
+                            android:textSize="@dimen/text_caption" />
+
+                    </LinearLayout>
+
                     <!-- Audio Only Button -->
                     <LinearLayout
                         android:id="@+id/audioButton"
