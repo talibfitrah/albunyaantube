@@ -181,7 +181,16 @@ object DataModule {
         @Named("retrofitContentService") retrofitService: ContentService,
         @Named("fakeContentService") fakeService: ContentService
     ): ContentService {
-        return FallbackContentService(retrofitService, fakeService)
+        // In release builds we must NEVER silently fall back to fake/mock data — that was
+        // surfacing stale placeholder content to users when the device was offline
+        // (Issue ANDROID-MULTI-01 #2). The real network failure must propagate so the UI
+        // can show an offline state. In debug builds we keep the fallback so contributors
+        // can work against a detached backend.
+        return if (BuildConfig.DEBUG) {
+            FallbackContentService(retrofitService, fakeService)
+        } else {
+            retrofitService
+        }
     }
 
     @Provides
