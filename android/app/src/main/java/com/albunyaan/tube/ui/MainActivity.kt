@@ -328,6 +328,23 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    @javax.inject.Inject
+    lateinit var updatePromptFlow: com.albunyaan.tube.update.UpdatePromptFlow
+
+    private var updateCheckRunForThisProcess = false
+
+    override fun onStart() {
+        super.onStart()
+        // ANDROID-MULTI-01 Issue 3: silent app-start update check, run at most once per
+        // process so a user who multitasks between apps is not spammed. The check itself
+        // is already throttled by the GitHub API's caching headers; we bias toward
+        // never-interrupting on the no-update path by passing manual=false.
+        if (!updateCheckRunForThisProcess) {
+            updateCheckRunForThisProcess = true
+            updatePromptFlow.runCheck(this, this, manual = false)
+        }
+    }
+
     override fun onDestroy() {
         // Clean up any pending navigation listener to prevent leaks
         pendingNavigationListener?.let { navController.removeOnDestinationChangedListener(it) }

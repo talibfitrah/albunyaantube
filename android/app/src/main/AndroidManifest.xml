@@ -14,6 +14,10 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- ANDROID-MULTI-01 Issue 3: required to hand off downloaded APKs to the package
+         installer. On Android 8+ the user must separately grant "install unknown apps"
+         via Settings; the app flow walks them through this on first use. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:name=".AlBunyaanApplication"

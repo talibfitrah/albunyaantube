@@ -220,6 +220,14 @@
                 <!-- Support Center -->
                 <include layout="@layout/settings_item_support"/>
 
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:background="?attr/colorOutlineVariant" />
+
+                <!-- ANDROID-MULTI-01 Issue 3: Check for updates -->
+                <include layout="@layout/settings_item_update_check"/>
+
             </com.google.android.material.card.MaterialCardView>
 
         </LinearLayout>

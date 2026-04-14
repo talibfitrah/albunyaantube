@@ -179,6 +179,19 @@
     <string name="error_unknown">An unexpected error occurred.</string>
     <string name="offline_mode">You\'re offline. Showing cached content.</string>
     <string name="connectivity_offline_banner">You\'re offline. Check your connection.</string>
+    <!-- ANDROID-MULTI-01 Issue 3: update checker / installer strings -->
+    <string name="settings_check_for_updates">Check for updates</string>
+    <string name="update_available_title">Update available</string>
+    <string name="update_available_message">%1$s is available.\n\n%2$s</string>
+    <string name="update_no_release_notes">No release notes provided.</string>
+    <string name="update_download_and_install">Download &amp; install</string>
+    <string name="update_check_up_to_date">You\'re on the latest version.</string>
+    <string name="update_check_failed">Could not check for updates.</string>
+    <string name="update_downloading">Downloading update…</string>
+    <string name="update_download_failed">Update download failed.</string>
+    <string name="update_permission_title">Allow install from this app</string>
+    <string name="update_permission_message">To install the new version, grant permission to install unknown apps for FitrahTube in the next screen, then tap Check for updates again.</string>
+    <string name="update_grant_permission">Open settings</string>
     <string name="offline_mode_limited">Some features are unavailable offline.</string>
 
     <!-- Home Screen Sections -->

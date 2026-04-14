@@ -148,6 +148,19 @@
     <string name="error_unknown">حدث خطأ غير متوقع.</string>
     <string name="offline_mode">أنت غير متصل. يتم عرض المحتوى المحفوظ.</string>
     <string name="connectivity_offline_banner">أنت غير متصل بالإنترنت. تحقق من اتصالك.</string>
+    <!-- ANDROID-MULTI-01 Issue 3 -->
+    <string name="settings_check_for_updates">التحقق من التحديثات</string>
+    <string name="update_available_title">يتوفر تحديث</string>
+    <string name="update_available_message">الإصدار %1$s متاح.\n\n%2$s</string>
+    <string name="update_no_release_notes">لا توجد ملاحظات إصدار.</string>
+    <string name="update_download_and_install">تنزيل وتثبيت</string>
+    <string name="update_check_up_to_date">أنت تستخدم أحدث إصدار.</string>
+    <string name="update_check_failed">تعذر التحقق من التحديثات.</string>
+    <string name="update_downloading">جاري تنزيل التحديث…</string>
+    <string name="update_download_failed">فشل تنزيل التحديث.</string>
+    <string name="update_permission_title">السماح بالتثبيت من هذا التطبيق</string>
+    <string name="update_permission_message">لتثبيت الإصدار الجديد، امنح الإذن بتثبيت التطبيقات غير المعروفة لـ FitrahTube في الشاشة التالية، ثم اضغط على التحقق من التحديثات مرة أخرى.</string>
+    <string name="update_grant_permission">فتح الإعدادات</string>
     <string name="offline_mode_limited">بعض الميزات غير متاحة دون اتصال.</string>
 
     <!-- Home Screen Sections -->

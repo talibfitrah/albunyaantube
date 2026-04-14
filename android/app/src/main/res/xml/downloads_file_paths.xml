@@ -3,4 +3,9 @@
     <files-path
         name="downloads"
         path="downloads/" />
+    <!-- ANDROID-MULTI-01 Issue 3: expose cacheDir/updates so the system package
+         installer can read the downloaded APK via FileProvider. -->
+    <cache-path
+        name="updates"
+        path="updates/" />
 </paths>
