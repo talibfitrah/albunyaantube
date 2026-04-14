@@ -371,6 +371,31 @@ class ShortsPlayerViewModelTest {
     }
 
     @Test
+    fun loadCancellation_doesNotEmitLoadError() = runTest(dispatcher) {
+        // runCatching used to swallow CancellationException, firing a spurious
+        // "Job was cancelled" LoadError toast on legitimate scope cancellation
+        // (fragment destroyed mid-load). The fix rethrows CancellationException
+        // so only real failures surface to the UI.
+        whenever(feed.loadFeedPage(eq(null), any())).thenAnswer {
+            throw kotlinx.coroutines.CancellationException("scope cancelled")
+        }
+
+        val vm = ShortsPlayerViewModel(
+            context = context,
+            feed = feed,
+            favorites = favorites,
+            follows = follows,
+            channelDetailRepo = channelDetailRepo,
+            initialShortId = null,
+            channelId = null
+        )
+        val events = collectEvents(vm)
+        advanceUntilIdle()
+
+        assertEquals("Cancellation must not surface as a LoadError", 0, events.size)
+    }
+
+    @Test
     fun loadFailure_emitsLoadError() = runTest(dispatcher) {
         whenever(feed.loadFeedPage(eq(null), any())).thenThrow(RuntimeException("boom"))
 

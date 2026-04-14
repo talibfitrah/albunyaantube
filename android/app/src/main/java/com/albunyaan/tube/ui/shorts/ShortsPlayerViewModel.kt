@@ -14,6 +14,7 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -125,33 +126,42 @@ class ShortsPlayerViewModel @AssistedInject constructor(
         if (loading || exhausted) return
         loading = true
         viewModelScope.launch {
-            runCatching {
-                val header = ensureChannelHeader()
-                val page = if (channelId != null) {
-                    feed.loadChannelShortsPage(channelId, nextCursor)
-                } else {
-                    feed.loadFeedPage(nextCursor)
+            try {
+                runCatching {
+                    val header = ensureChannelHeader()
+                    val page = if (channelId != null) {
+                        feed.loadChannelShortsPage(channelId, nextCursor)
+                    } else {
+                        feed.loadFeedPage(nextCursor)
+                    }
+                    val decorated = if (header != null) {
+                        page.items.map { it.withChannelHeader(header) }
+                    } else {
+                        page.items
+                    }
+                    val combined = _items.value + decorated
+                    val ordered = if (!initialShortApplied && initialShortId != null) {
+                        val head = combined.firstOrNull { it.id == initialShortId }
+                        initialShortApplied = true
+                        if (head != null) listOf(head) + combined.filter { it.id != initialShortId } else combined
+                    } else {
+                        combined
+                    }
+                    _items.value = ordered
+                    nextCursor = page.nextCursor
+                    exhausted = page.nextCursor == null
+                }.onFailure {
+                    // runCatching catches CancellationException too — rethrow so
+                    // user-initiated cancellation (fragment destroyed, VM cleared)
+                    // doesn't surface a misleading "Job was cancelled" toast.
+                    if (it is CancellationException) throw it
+                    _events.tryEmit(LoadEvent.LoadError(it.message ?: "load failed"))
                 }
-                val decorated = if (header != null) {
-                    page.items.map { it.withChannelHeader(header) }
-                } else {
-                    page.items
-                }
-                val combined = _items.value + decorated
-                val ordered = if (!initialShortApplied && initialShortId != null) {
-                    val head = combined.firstOrNull { it.id == initialShortId }
-                    initialShortApplied = true
-                    if (head != null) listOf(head) + combined.filter { it.id != initialShortId } else combined
-                } else {
-                    combined
-                }
-                _items.value = ordered
-                nextCursor = page.nextCursor
-                exhausted = page.nextCursor == null
-            }.onFailure {
-                _events.tryEmit(LoadEvent.LoadError(it.message ?: "load failed"))
+            } finally {
+                // Reset the flag even on cancellation so a future VM reuse
+                // (unlikely but possible) can still load.
+                loading = false
             }
-            loading = false
         }
     }
 
