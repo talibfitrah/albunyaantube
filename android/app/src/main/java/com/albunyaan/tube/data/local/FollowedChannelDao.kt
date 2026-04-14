@@ -60,4 +60,7 @@ interface FollowedChannelDao {
         if (followed) removeFollow(channel.channelId) else addFollow(channel)
         return !followed
     }
+
+    @Query("DELETE FROM followed_channels")
+    suspend fun clearAll()
 }

@@ -36,6 +36,9 @@ interface FollowedChannelsRepository {
         title: String,
         avatarUrl: String?
     ): Boolean
+
+    /** Delete every followed channel (test/reset only). */
+    suspend fun clearAll()
 }
 
 /**
@@ -58,4 +61,6 @@ class FollowedChannelsRepositoryImpl @Inject constructor(
         title: String,
         avatarUrl: String?
     ): Boolean = dao.toggleFollow(FollowedChannel(channelId, title, avatarUrl))
+
+    override suspend fun clearAll() = dao.clearAll()
 }
