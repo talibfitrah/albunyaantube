@@ -14,10 +14,17 @@ import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.VideoTrack
 import com.albunyaan.tube.player.PlayerRepository
 import com.albunyaan.tube.util.HttpConstants
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Encapsulates rebinding a shared [Player] instance to the currently visible
@@ -37,13 +44,106 @@ import kotlinx.coroutines.flow.asSharedFlow
  *
  * Resolution failures are exposed via [failureEvents] so the fragment can call
  * `vm.onPlaybackError(index)` without the binder holding a reference to the VM.
+ *
+ * ### Rapid-swipe race protection
+ *
+ * [bind] is safe to call repeatedly in quick succession: each call cancels the
+ * previous in-flight resolve + apply job and bumps a monotonically-increasing
+ * [generation] counter. Stale resolutions that finish after a newer bind check
+ * their captured generation against the current value and drop the result
+ * before touching the player, so a slow resolve of video A can never play its
+ * source on top of a subsequent bind to video B.
  */
-class PlayerBinder(
-    private val player: ExoPlayer,
-    private val playerRepository: PlayerRepository
+class PlayerBinder private constructor(
+    private val player: ExoPlayer?,
+    private val playerRepository: PlayerRepository,
+    /**
+     * Thin seam over the player mutations we perform from the resolve
+     * coroutine. Production binds directly to the real ExoPlayer; tests
+     * substitute a fake so we can assert apply-ordering without constructing
+     * a real Media3 instance (ExoPlayer's static init pulls in Android
+     * framework state that's awkward in JVM unit tests).
+     */
+    private val playerOps: PlayerOps,
+    /**
+     * Attach strategy: production assigns the shared [ExoPlayer] to the
+     * supplied [PlayerView]. Tests inject a no-op so PlayerView's Android
+     * superclass chain doesn't need to be loaded.
+     */
+    private val attach: PlayerViewAttach
 ) {
 
+    /** Production constructor — wires the real ExoPlayer-backed ops. */
+    constructor(player: ExoPlayer, playerRepository: PlayerRepository) : this(
+        player = player,
+        playerRepository = playerRepository,
+        playerOps = ExoPlayerOps(player),
+        attach = PlayerViewAttach { view, attached ->
+            if (attached) view.player = player else view.player = null
+        }
+    )
+
+    /** Test-only constructor — fully decoupled from ExoPlayer / PlayerView. */
+    internal constructor(
+        playerRepository: PlayerRepository,
+        ops: PlayerOps,
+        attach: PlayerViewAttach
+    ) : this(null, playerRepository, ops, attach)
+
+    /**
+     * Minimal surface of player mutations needed for testing the rapid-swipe
+     * race. Keeps PlayerBinder free of direct ExoPlayer calls in the apply
+     * path so tests can verify ordering with a plain fake. Also exposes
+     * [getPlayWhenReady] so togglePlayPause can flip state without reaching
+     * through to the real player.
+     */
+    internal interface PlayerOps {
+        fun stop()
+        fun clearMediaItems()
+        fun setMediaSource(source: MediaSource)
+        fun setRepeatModeOne()
+        fun prepare()
+        fun setPlayWhenReady(value: Boolean)
+        fun getPlayWhenReady(): Boolean
+        fun release()
+    }
+
+    /** Attach strategy — binds or unbinds the shared player from a PlayerView. */
+    internal fun interface PlayerViewAttach {
+        fun attach(view: PlayerView, attached: Boolean)
+    }
+
+    private class ExoPlayerOps(private val player: ExoPlayer) : PlayerOps {
+        override fun stop() = player.stop()
+        override fun clearMediaItems() = player.clearMediaItems()
+        override fun setMediaSource(source: MediaSource) = player.setMediaSource(source)
+        override fun setRepeatModeOne() { player.repeatMode = Player.REPEAT_MODE_ONE }
+        override fun prepare() = player.prepare()
+        override fun setPlayWhenReady(value: Boolean) { player.playWhenReady = value }
+        override fun getPlayWhenReady(): Boolean = player.playWhenReady
+        override fun release() = player.release()
+    }
+
     private var boundView: PlayerView? = null
+
+    /**
+     * Monotonically-increasing token identifying the "current" bind request.
+     * Every [bind] call increments this; any coroutine that was started by a
+     * previous bind compares its captured generation against [generation] and
+     * aborts if stale. Guarded by [AtomicInteger] so reads/writes across
+     * Dispatchers are safe.
+     */
+    private val generation = AtomicInteger(0)
+
+    /**
+     * Internal scope for bind coroutines. A [SupervisorJob] so one failing
+     * bind doesn't cancel the scope, and [Dispatchers.Main.immediate] so the
+     * [Player] mutations (which require the main thread) stay on-thread.
+     */
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    /** The in-flight bind job — cancelled on the next [bind] or [release]. */
+    private var bindJob: Job? = null
 
     private val _failureEvents = MutableSharedFlow<String>(
         extraBufferCapacity = 4,
@@ -53,32 +153,47 @@ class PlayerBinder(
     val failureEvents: SharedFlow<String> = _failureEvents.asSharedFlow()
 
     /**
-     * Detach the player from any previously bound PlayerView and attach it to
+     * Detach the player from any previously bound PlayerView, attach it to
      * [target], then resolve and begin playback for [videoId].
      *
-     * Suspends until the stream is resolved; the caller should launch this in
-     * a coroutine scoped to the fragment's lifecycle. On failure, emits to
-     * [failureEvents] (suppressed — does not throw) and returns.
+     * Non-suspending: self-serializes via an internal scope. Each call
+     * cancels the prior in-flight bind and bumps a generation token, so late
+     * resolutions from previous binds cannot mutate the player.
+     *
+     * On stream-resolution failure, emits to [failureEvents] (suppressed —
+     * never throws) so the fragment can skip past the bad short.
      */
-    suspend fun bind(target: PlayerView, videoId: String) {
-        // 1. Detach previous attachment first to guarantee single-audio-stream.
+    fun bind(target: PlayerView, videoId: String) {
+        val myGen = generation.incrementAndGet()
+
+        // Cancel any in-flight resolve for the prior bind. The coroutine body
+        // also checks myGen against generation as a second line of defence in
+        // case the resolution network call completes between cancel() and the
+        // player mutation (cancellation is cooperative).
+        bindJob?.cancel()
+
+        // Synchronously attach the PlayerView and stop current playback so the
+        // previous short's audio/video doesn't bleed through while we resolve.
         if (boundView !== target) {
-            boundView?.player = null
-            target.player = player
+            boundView?.let { attach.attach(it, attached = false) }
+            attach.attach(target, attached = true)
             boundView = target
         }
-        // 2. Reset existing playback so the prior short's audio doesn't bleed
-        //    through while we resolve the new one.
-        player.stop()
-        player.clearMediaItems()
+        playerOps.stop()
+        playerOps.clearMediaItems()
 
-        prepareAndPlay(videoId)
+        bindJob = scope.launch {
+            prepareAndPlay(videoId, myGen)
+        }
     }
 
-    private suspend fun prepareAndPlay(videoId: String) {
+    private suspend fun prepareAndPlay(videoId: String, myGen: Int) {
         val resolved: ResolvedStreams? = runCatching {
             playerRepository.resolveStreams(videoId, forceRefresh = false)
         }.getOrNull()
+
+        // Discard if a newer bind has superseded this one.
+        if (myGen != generation.get()) return
 
         if (resolved == null) {
             _failureEvents.tryEmit(videoId)
@@ -91,10 +206,14 @@ class PlayerBinder(
             return
         }
 
-        player.setMediaSource(source)
-        player.repeatMode = Player.REPEAT_MODE_ONE
-        player.prepare()
-        player.playWhenReady = true
+        // Final staleness gate — in case buildProgressiveSource or any prior
+        // suspension point yielded and a newer bind arrived in the meantime.
+        if (myGen != generation.get()) return
+
+        playerOps.setMediaSource(source)
+        playerOps.setRepeatModeOne()
+        playerOps.prepare()
+        playerOps.setPlayWhenReady(true)
     }
 
     private fun buildProgressiveSource(resolved: ResolvedStreams): MediaSource? {
@@ -140,18 +259,20 @@ class PlayerBinder(
 
     /** Flip between play and pause on a tap. */
     fun togglePlayPause() {
-        player.playWhenReady = !player.playWhenReady
+        playerOps.setPlayWhenReady(!playerOps.getPlayWhenReady())
     }
 
     /** Detach the player from any bound PlayerView. Safe to call multiple times. */
     fun detach() {
-        boundView?.player = null
+        boundView?.let { attach.attach(it, attached = false) }
         boundView = null
     }
 
     /** Release the underlying player. Call from ViewModel.onCleared(). */
     fun release() {
+        scope.cancel()
+        bindJob = null
         detach()
-        player.release()
+        playerOps.release()
     }
 }

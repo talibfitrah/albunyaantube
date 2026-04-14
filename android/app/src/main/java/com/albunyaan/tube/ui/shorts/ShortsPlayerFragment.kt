@@ -145,23 +145,24 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
      * Binds the ExoPlayer to the PlayerView of the ViewHolder at [position].
      * Retries via `post` if the ViewHolder is not yet attached (common on the
      * very first page after `submitList`, before layout has completed).
+     *
+     * [PlayerBinder.bind] is non-suspending and self-serializing, so we call
+     * it directly — no `lifecycleScope.launch` wrapper is needed. The binder
+     * cancels its own prior in-flight resolve on each new bind.
      */
     private fun bindPageWhenReady(position: Int, videoId: String) {
         val b = binding ?: return
         val b2 = binder ?: return
         val holder = findViewHolderAt(position)
         if (holder != null) {
-            viewLifecycleOwner.lifecycleScope.launch {
-                b2.bind(holder.playerView, videoId)
-            }
+            b2.bind(holder.playerView, videoId)
             return
         }
         // Not yet attached — retry after the pending layout pass.
         b.shortsPager.post {
             val retry = findViewHolderAt(position) ?: return@post
-            viewLifecycleOwner.lifecycleScope.launch {
-                b2.bind(retry.playerView, videoId)
-            }
+            val activeBinder = binder ?: return@post
+            activeBinder.bind(retry.playerView, videoId)
         }
     }
 
