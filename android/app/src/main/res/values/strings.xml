@@ -156,6 +156,27 @@
     <string name="nav_channels">Channels</string>
     <string name="nav_playlists">Playlists</string>
     <string name="nav_videos">Videos</string>
+    <string name="nav_me">Me</string>
+
+    <!-- Me tab -->
+    <string name="me_empty_title">Subscribe to see your feed</string>
+    <string name="me_empty_subtitle">Channels and playlists you save will appear here with their latest videos and shorts.</string>
+    <string name="me_empty_cta">Browse channels</string>
+    <string name="me_section_shorts">Shorts</string>
+    <string name="me_section_videos">Latest videos</string>
+    <string name="me_refresh_error">Couldn\'t refresh your feed. Pull down to try again.</string>
+    <string name="me_filter_clear">All subscriptions</string>
+
+    <!-- Subscribe / Save -->
+    <string name="channel_subscribe">Subscribe</string>
+    <string name="channel_unsubscribe">Subscribed</string>
+    <string name="playlist_save">Save</string>
+    <string name="playlist_unsave">Saved</string>
+
+    <!-- Settings library -->
+    <string name="settings_library_header">Library</string>
+    <string name="settings_downloads_library">Downloads library</string>
+    <string name="settings_favorites_title">Favorites</string>
 
     <!-- Empty/Error/Loading States -->
     <string name="loading">Loading…</string>

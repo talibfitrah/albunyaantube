@@ -232,6 +232,20 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
             val themeItem = view.findViewById<View>(R.id.themeItem)
             val downloadQualityItem = view.findViewById<View>(R.id.downloadQualityItem)
             val supportItem = view.findViewById<View>(R.id.supportItem)
+            val downloadsLibraryItem = view.findViewById<View>(R.id.downloadsLibraryItem)
+            val favoritesItem = view.findViewById<View>(R.id.favoritesItem)
+
+            downloadsLibraryItem?.setOnClickListener {
+                if (findNavController().currentDestination?.id == R.id.settingsFragment) {
+                    findNavController().navigate(R.id.action_settingsFragment_to_downloadsFragment)
+                }
+            }
+
+            favoritesItem?.setOnClickListener {
+                if (findNavController().currentDestination?.id == R.id.settingsFragment) {
+                    findNavController().navigate(R.id.action_settingsFragment_to_favoritesFragment)
+                }
+            }
 
             // Get switches
             val audioOnlySwitch = view.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.audioOnlySwitch)

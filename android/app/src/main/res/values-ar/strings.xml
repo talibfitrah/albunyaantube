@@ -127,6 +127,27 @@
     <string name="nav_channels">القنوات</string>
     <string name="nav_playlists">قوائم التشغيل</string>
     <string name="nav_videos">الفيديوهات</string>
+    <string name="nav_me">أنت</string>
+
+    <!-- Me tab -->
+    <string name="me_empty_title">اشترك لمشاهدة خلاصتك</string>
+    <string name="me_empty_subtitle">ستظهر هنا القنوات وقوائم التشغيل التي تحفظها، مع أحدث الفيديوهات والشورتس.</string>
+    <string name="me_empty_cta">تصفح القنوات</string>
+    <string name="me_section_shorts">شورتس</string>
+    <string name="me_section_videos">أحدث الفيديوهات</string>
+    <string name="me_refresh_error">تعذر تحديث خلاصتك. اسحب للأسفل للمحاولة مجدداً.</string>
+    <string name="me_filter_clear">كل الاشتراكات</string>
+
+    <!-- Subscribe / Save -->
+    <string name="channel_subscribe">اشتراك</string>
+    <string name="channel_unsubscribe">مشترك</string>
+    <string name="playlist_save">حفظ</string>
+    <string name="playlist_unsave">محفوظة</string>
+
+    <!-- Settings library -->
+    <string name="settings_library_header">المكتبة</string>
+    <string name="settings_downloads_library">مكتبة التنزيلات</string>
+    <string name="settings_favorites_title">المفضلة</string>
 
     <!-- Empty/Error States -->
     <string name="clear_filters">مسح الفلاتر</string>
