@@ -546,4 +546,5 @@
     <string name="shorts_subscribed">Subscribed</string>
     <string name="shorts_error_unavailable">Couldn\'t play this short. Skipping…</string>
     <string name="shorts_error_feed_empty">No shorts available</string>
+    <string name="back">Back</string>
 </resources>

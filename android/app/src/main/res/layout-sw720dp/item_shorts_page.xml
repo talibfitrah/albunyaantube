@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black"
+    android:layoutDirection="locale">
+
+    <androidx.media3.ui.PlayerView
+        android:id="@+id/shortPlayerView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:resize_mode="zoom"
+        app:use_controller="false"
+        app:surface_type="texture_view"/>
+
+    <View
+        android:id="@+id/shortTapTarget"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"/>
+
+    <LinearLayout
+        android:id="@+id/shortActionRail"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end|bottom"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:paddingEnd="@dimen/spacing_sm"
+        android:paddingBottom="@dimen/spacing_md"
+        android:layout_marginBottom="96dp">
+
+        <ImageButton
+            android:id="@+id/shortLikeBtn"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/shorts_like_cd"
+            android:src="@drawable/ic_shorts_like"
+            app:tint="#FFFFFFFF"/>
+
+        <TextView
+            android:id="@+id/shortLikeCount"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#FFFFFFFF"
+            android:textSize="12sp"
+            android:textAlignment="center"
+            android:layout_marginBottom="@dimen/spacing_md"
+            tools:text="3.1K"/>
+
+        <ImageButton
+            android:id="@+id/shortShareBtn"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/shorts_share_cd"
+            android:src="@drawable/ic_shorts_share"
+            app:tint="#FFFFFFFF"/>
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/shortBottomOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:orientation="vertical"
+        android:padding="@dimen/spacing_md"
+        android:background="@drawable/scrim_bottom_gradient">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <com.google.android.material.imageview.ShapeableImageView
+                android:id="@+id/shortChannelAvatar"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                app:shapeAppearanceOverlay="@style/CircleImageView"
+                android:scaleType="centerCrop"
+                android:contentDescription="@null"/>
+
+            <TextView
+                android:id="@+id/shortChannelHandle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="@dimen/spacing_sm"
+                android:textAlignment="viewStart"
+                android:textColor="#FFFFFFFF"
+                android:textStyle="bold"
+                tools:text="@SHNEAKO"/>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/shortSubscribeBtn"
+                style="@style/Widget.Material3.Button"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/shorts_subscribe"/>
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/shortTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_sm"
+            android:maxLines="2"
+            android:ellipsize="end"
+            android:textAlignment="viewStart"
+            android:textColor="#FFFFFFFF"
+            tools:text="He Offered SNEAKO $3k To Do This"/>
+    </LinearLayout>
+</FrameLayout>

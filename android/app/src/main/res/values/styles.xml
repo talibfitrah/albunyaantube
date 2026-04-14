@@ -112,6 +112,11 @@
         <item name="cornerSize">50%</item>
     </style>
 
+    <style name="CircleImageView">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">50%</item>
+    </style>
+
     <!-- Top Rounded Shape Appearance (for thumbnails inside cards) -->
     <style name="ShapeAppearance.Albunyaan.TopRounded" parent="ShapeAppearance.MaterialComponents.SmallComponent">
         <item name="cornerFamily">rounded</item>

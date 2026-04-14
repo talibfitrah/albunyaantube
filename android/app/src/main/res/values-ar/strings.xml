@@ -558,5 +558,6 @@
     <string name="shorts_subscribed">مشترك</string>
     <string name="shorts_error_unavailable">تعذّر تشغيل هذا الشورت. يتم التخطي…</string>
     <string name="shorts_error_feed_empty">لا توجد مقاطع قصيرة متاحة</string>
+    <string name="back">رجوع</string>
 
 </resources>
