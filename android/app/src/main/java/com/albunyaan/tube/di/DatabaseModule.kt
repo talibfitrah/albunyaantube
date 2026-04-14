@@ -8,6 +8,9 @@ import com.albunyaan.tube.data.local.AppDatabase
 import com.albunyaan.tube.data.local.FavoriteVideoDao
 import com.albunyaan.tube.data.local.FavoritesRepository
 import com.albunyaan.tube.data.local.FavoritesRepositoryImpl
+import com.albunyaan.tube.data.local.FollowedChannelDao
+import com.albunyaan.tube.data.local.FollowedChannelsRepository
+import com.albunyaan.tube.data.local.FollowedChannelsRepositoryImpl
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -57,5 +60,19 @@ object DatabaseModule {
         favoriteVideoDao: FavoriteVideoDao
     ): FavoritesRepository {
         return FavoritesRepositoryImpl(favoriteVideoDao)
+    }
+
+    @Provides
+    @Singleton
+    fun provideFollowedChannelDao(database: AppDatabase): FollowedChannelDao {
+        return database.followedChannelDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideFollowedChannelsRepository(
+        followedChannelDao: FollowedChannelDao
+    ): FollowedChannelsRepository {
+        return FollowedChannelsRepositoryImpl(followedChannelDao)
     }
 }
