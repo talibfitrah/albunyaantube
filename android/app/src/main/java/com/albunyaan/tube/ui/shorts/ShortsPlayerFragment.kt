@@ -141,8 +141,16 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
         }
 
         // Listen for the DownloadQualityDialog's selection result and
-        // enqueue the download against the pending position.
-        setFragmentResultListener(DownloadQualityDialog.REQUEST_KEY) { _, result ->
+        // enqueue the download against the pending position. Registration
+        // MUST be on childFragmentManager because that is where the dialog
+        // is shown — the dialog posts via its parentFragmentManager which
+        // equals this fragment's childFragmentManager. (Fragment's
+        // setFragmentResultListener extension uses parentFragmentManager and
+        // would silently miss the result.)
+        childFragmentManager.setFragmentResultListener(
+            DownloadQualityDialog.REQUEST_KEY,
+            viewLifecycleOwner
+        ) { _, result ->
             val pos = pendingDownloadPosition
             pendingDownloadPosition = -1
             if (pos < 0) return@setFragmentResultListener
