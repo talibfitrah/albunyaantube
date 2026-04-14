@@ -31,18 +31,17 @@ class ShortsPagerAdapter(
     /**
      * Indices passed to the callbacks are the adapter position of the bound
      * item at click time; the fragment translates these into [ShortsItem]s via
-     * [ShortsPlayerViewModel.items]. [onLikedFlow] / [onFollowedFlow] must
-     * emit continuously as the underlying repositories change — typically
-     * backed by Room `Flow<Boolean>` queries.
+     * [ShortsPlayerViewModel.items]. [onLikedFlow] must emit continuously as
+     * the favorites repository changes — typically backed by a Room
+     * `Flow<Boolean>` query. Subscribe is intentionally absent — that UX
+     * lives on the channel detail screen.
      */
     data class Callbacks(
         val onLike: (Int) -> Unit,
         val onShare: (Int) -> Unit,
-        val onSubscribe: (Int) -> Unit,
         val onChannelTap: (Int) -> Unit,
         val onTapVideo: (Int) -> Unit,
-        val onLikedFlow: (videoId: String) -> Flow<Boolean>,
-        val onFollowedFlow: (channelId: String) -> Flow<Boolean>
+        val onLikedFlow: (videoId: String) -> Flow<Boolean>
     )
 
     // Tracks the active Flow-collection job per ViewHolder so it can be cancelled
@@ -65,27 +64,18 @@ class ShortsPagerAdapter(
 
         // Bind once synchronously with default state so the page is visible
         // even before the first flow emission arrives.
-        holder.bindItem(item, isLiked = false, isFollowed = false)
+        holder.bindItem(item, isLiked = false)
 
         val lifecycleOwner = holder.itemView.findViewTreeLifecycleOwner() ?: return
         val job = lifecycleOwner.lifecycleScope.launch {
             lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                val likedFlow = callbacks.onLikedFlow(item.id)
-                // Empty channelId means feed-mode without hydrated header; treat
-                // as "not followed" without touching the follow repo.
-                val followedFlow = if (item.channelId.isNotBlank()) {
-                    callbacks.onFollowedFlow(item.channelId)
-                } else {
-                    kotlinx.coroutines.flow.flowOf(false)
-                }
-                combine(likedFlow, followedFlow) { liked, followed -> liked to followed }
-                    .collect { (liked, followed) ->
-                        val currentPos = holder.bindingAdapterPosition
-                        if (currentPos == androidx.recyclerview.widget.RecyclerView.NO_POSITION) {
-                            return@collect
-                        }
-                        holder.bindItem(item, liked, followed)
+                callbacks.onLikedFlow(item.id).collect { liked ->
+                    val currentPos = holder.bindingAdapterPosition
+                    if (currentPos == androidx.recyclerview.widget.RecyclerView.NO_POSITION) {
+                        return@collect
                     }
+                    holder.bindItem(item, liked)
+                }
             }
         }
         collectJobs[holder] = job
@@ -98,13 +88,11 @@ class ShortsPagerAdapter(
 
     private fun ShortsPageViewHolder.bindItem(
         item: ShortsItem,
-        isLiked: Boolean,
-        isFollowed: Boolean
+        isLiked: Boolean
     ) {
         bind(
             item = item,
             isLiked = isLiked,
-            isFollowed = isFollowed,
             onLike = {
                 val pos = bindingAdapterPosition
                 if (pos != androidx.recyclerview.widget.RecyclerView.NO_POSITION) callbacks.onLike(pos)
@@ -112,10 +100,6 @@ class ShortsPagerAdapter(
             onShare = {
                 val pos = bindingAdapterPosition
                 if (pos != androidx.recyclerview.widget.RecyclerView.NO_POSITION) callbacks.onShare(pos)
-            },
-            onSubscribe = {
-                val pos = bindingAdapterPosition
-                if (pos != androidx.recyclerview.widget.RecyclerView.NO_POSITION) callbacks.onSubscribe(pos)
             },
             onChannelTap = {
                 val pos = bindingAdapterPosition

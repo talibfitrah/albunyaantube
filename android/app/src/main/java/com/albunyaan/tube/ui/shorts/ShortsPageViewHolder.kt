@@ -26,22 +26,20 @@ class ShortsPageViewHolder(
     fun bind(
         item: ShortsItem,
         isLiked: Boolean,
-        isFollowed: Boolean,
         onLike: () -> Unit,
         onShare: () -> Unit,
-        onSubscribe: () -> Unit,
         onChannelTap: () -> Unit,
         onTapVideo: () -> Unit
     ) {
         binding.shortTitle.text = item.title
 
-        // Hide the entire channel+subscribe row when we have no channel info
-        // (feed mode often lacks channelName until the item is hydrated). Title
-        // and the video itself stay visible.
+        // Hide the channel row when we have no channel info (feed mode often
+        // lacks channelName until the item is hydrated). Title and the video
+        // itself stay visible. Subscribe UX lives on the channel detail
+        // screen — the shorts overlay is read-only channel attribution.
         val hasChannelInfo = item.channelName.isNotBlank()
         binding.shortChannelAvatar.visibility = if (hasChannelInfo) View.VISIBLE else View.GONE
         binding.shortChannelHandle.visibility = if (hasChannelInfo) View.VISIBLE else View.GONE
-        binding.shortSubscribeBtn.visibility = if (hasChannelInfo) View.VISIBLE else View.GONE
 
         if (hasChannelInfo) {
             // Prefix with "@" to match common shorts UI. The string is pulled
@@ -56,10 +54,6 @@ class ShortsPageViewHolder(
         binding.shortLikeBtn.setImageResource(
             if (isLiked) R.drawable.ic_shorts_like_filled else R.drawable.ic_shorts_like
         )
-        binding.shortSubscribeBtn.setText(
-            if (isFollowed) R.string.shorts_subscribed else R.string.shorts_subscribe
-        )
-        binding.shortSubscribeBtn.isSelected = isFollowed
 
         // Load avatar via Coil with circle crop and a safe placeholder.
         val placeholder = R.drawable.home_channel_avatar_bg
@@ -79,7 +73,6 @@ class ShortsPageViewHolder(
 
         binding.shortLikeBtn.setOnClickListener { onLike() }
         binding.shortShareBtn.setOnClickListener { onShare() }
-        binding.shortSubscribeBtn.setOnClickListener { onSubscribe() }
         binding.shortChannelAvatar.setOnClickListener { onChannelTap() }
         binding.shortChannelHandle.setOnClickListener { onChannelTap() }
         binding.shortTapTarget.setOnClickListener { onTapVideo() }

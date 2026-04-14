@@ -74,11 +74,9 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
             callbacks = ShortsPagerAdapter.Callbacks(
                 onLike = { idx -> viewModel.toggleLike(idx) },
                 onShare = { idx -> shareShort(idx) },
-                onSubscribe = { idx -> viewModel.toggleFollow(idx) },
                 onChannelTap = { idx -> openChannel(idx) },
                 onTapVideo = { _ -> localBinder.togglePlayPause() },
                 onLikedFlow = { id -> viewModel.isLikedFlow(id) },
-                onFollowedFlow = { id -> viewModel.isFollowedFlow(id) }
             )
         )
         adapter = pagerAdapter
