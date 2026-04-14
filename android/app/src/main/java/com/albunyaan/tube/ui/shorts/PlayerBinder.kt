@@ -10,6 +10,7 @@ import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.PlayerView
 import com.albunyaan.tube.data.extractor.AudioTrack
+import com.albunyaan.tube.data.extractor.AudioTrackKind
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.VideoTrack
 import com.albunyaan.tube.player.PlayerRepository
@@ -285,11 +286,19 @@ class PlayerBinder private constructor(
         synchronized(resolvedCache) { resolvedCache[videoId] = resolved }
         _resolvedEvents.tryEmit(videoId to resolved)
 
-        // If the user has already chosen a language for this video earlier in
-        // this session, pin the resolved streams to that language BEFORE
-        // building the MediaSource — so a rebuffer / URL refresh / prefetch
-        // warm-up won't silently flip back to the factory's default pick.
-        val stickyLang = rememberedAudioLanguage(videoId)
+        // Pin a default language on first resolve so subsequent re-resolves
+        // (URL expiry, rebuffer recovery, prefetch warm-up) keep the same
+        // audio. Without this the factory picks "max bitrate audio" each
+        // time, which can flip between dub languages of equal bitrate
+        // mid-stall — user-visible bug. Default = ORIGINAL track when
+        // NewPipe marks one, else the first language.
+        val stickyLang = rememberedAudioLanguage(videoId) ?: run {
+            val default = resolved.audioTracks.firstOrNull { it.trackType == AudioTrackKind.ORIGINAL }
+                ?.language
+                ?: resolved.audioTracks.firstOrNull { !it.language.isNullOrBlank() }?.language
+            if (!default.isNullOrBlank()) rememberAudioLanguage(videoId, default)
+            default
+        }
         val effectiveResolved = if (!stickyLang.isNullOrBlank()) {
             val stickyTracks = resolved.audioTracks.filter { it.language == stickyLang }
             if (stickyTracks.isNotEmpty()) resolved.copy(audioTracks = stickyTracks) else resolved
