@@ -170,6 +170,15 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
         }
         // Not yet attached — retry after the pending layout pass.
         b.shortsPager.post {
+            // Guard against stale post() retries: if the user swiped between
+            // the initial bindPageWhenReady() call and this post running, the
+            // pager's currentItem no longer matches [position]. Binding the
+            // stale page would put the wrong videoId on the now-visible page's
+            // PlayerView. The new page's OnPageChangeCallback will bind
+            // correctly; we just need to abandon this stale retry.
+            val bnd = binding ?: return@post
+            if (!isAdded) return@post
+            if (bnd.shortsPager.currentItem != position) return@post
             val retry = findViewHolderAt(position) ?: return@post
             val activeBinder = binder ?: return@post
             activeBinder.bind(retry.playerView, videoId)
