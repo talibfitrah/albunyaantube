@@ -117,4 +117,37 @@ class ShortsFeedRepositoryTest {
 
         assertEquals(0, result.items[0].durationSeconds)
     }
+
+    /**
+     * Regression: [ShortsFeedRepository.channelPageTokens] was an unbounded
+     * [java.util.concurrent.ConcurrentHashMap], slowly leaking one [Page]
+     * per unconsumed cursor in long sessions. It's now an access-ordered
+     * LRU capped at [ShortsFeedRepository.MAX_TOKENS]. This test exercises
+     * the bound directly.
+     */
+    @Test
+    fun channelPageTokens_evictEldestPastMaxCapacity() {
+        val freshRepo = ShortsFeedRepository(contentService, channelDetailRepository)
+        val firstToken = "token-0"
+        freshRepo.putChannelPageTokenForTest(firstToken, Page(null, null, null, null))
+
+        // Fill the cache to exactly the bound.
+        for (i in 1 until ShortsFeedRepository.MAX_TOKENS) {
+            freshRepo.putChannelPageTokenForTest("token-$i", Page(null, null, null, null))
+        }
+        assertEquals(ShortsFeedRepository.MAX_TOKENS, freshRepo.channelPageTokenCountForTest())
+        org.junit.Assert.assertTrue(freshRepo.containsChannelPageTokenForTest(firstToken))
+
+        // One more push (total = 33) should evict the oldest entry.
+        freshRepo.putChannelPageTokenForTest("token-overflow", Page(null, null, null, null))
+        assertEquals(ShortsFeedRepository.MAX_TOKENS, freshRepo.channelPageTokenCountForTest())
+        org.junit.Assert.assertFalse(
+            "eldest token must be evicted when size exceeds MAX_TOKENS",
+            freshRepo.containsChannelPageTokenForTest(firstToken)
+        )
+        org.junit.Assert.assertTrue(
+            "newest token must still be present",
+            freshRepo.containsChannelPageTokenForTest("token-overflow")
+        )
+    }
 }

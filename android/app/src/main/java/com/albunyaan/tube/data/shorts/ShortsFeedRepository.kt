@@ -8,8 +8,8 @@ import com.albunyaan.tube.data.filters.VideoLength
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.source.ContentService
+import java.util.Collections
 import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
@@ -25,8 +25,24 @@ class ShortsFeedRepository @Inject constructor(
      * [String] for parity with the global feed, but [ChannelDetailRepository]
      * speaks in [Page] objects — so we stash them here keyed by a synthetic
      * token that we hand back as [ShortsPage.nextCursor].
+     *
+     * Bounded to the [MAX_TOKENS] most-recently-accessed entries via an
+     * access-ordered [LinkedHashMap] so long sessions that issue tokens
+     * faster than they consume them (e.g. rapid channel switching) can't
+     * grow the map indefinitely and leak one [Page] object per stale cursor.
+     *
+     * The map isn't thread-safe on its own once accessOrder = true mutates
+     * ordering on every read, so all access is gated by a
+     * [Collections.synchronizedMap] wrapper and an explicit `synchronized`
+     * block on the wrapper whenever we do read-modify-write.
      */
-    private val channelPageTokens = ConcurrentHashMap<String, Page>()
+    private val channelPageTokens: MutableMap<String, Page> = Collections.synchronizedMap(
+        object : LinkedHashMap<String, Page>(16, 0.75f, /* accessOrder = */ true) {
+            override fun removeEldestEntry(eldest: Map.Entry<String, Page>): Boolean {
+                return size > MAX_TOKENS
+            }
+        }
+    )
 
     suspend fun loadFeedPage(cursor: String?, pageSize: Int = DEFAULT_PAGE_SIZE): ShortsPage {
         val filters = FilterState(videoLength = VideoLength.UNDER_FOUR_MIN)
@@ -55,7 +71,9 @@ class ShortsFeedRepository @Inject constructor(
         cursor: String?,
         pageSize: Int = DEFAULT_PAGE_SIZE
     ): ShortsPage {
-        val page: Page? = cursor?.let { channelPageTokens.remove(it) }
+        val page: Page? = cursor?.let {
+            synchronized(channelPageTokens) { channelPageTokens.remove(it) }
+        }
         val channelPage = channelDetailRepository.getShorts(channelId, page)
         val items = channelPage.items.take(pageSize).map { s: ChannelShort ->
             ShortsItem(
@@ -70,13 +88,39 @@ class ShortsFeedRepository @Inject constructor(
         }
         val nextCursor = channelPage.nextPage?.let { nextPage ->
             val token = UUID.randomUUID().toString()
-            channelPageTokens[token] = nextPage
+            synchronized(channelPageTokens) { channelPageTokens[token] = nextPage }
             token
         }
         return ShortsPage(items, nextCursor)
     }
 
+    // --- Test-only introspection / drivers for LRU coverage ---
+
+    /** Test-only: number of currently-held channel page tokens. */
+    internal fun channelPageTokenCountForTest(): Int =
+        synchronized(channelPageTokens) { channelPageTokens.size }
+
+    /** Test-only: whether the given token is still cached. */
+    internal fun containsChannelPageTokenForTest(token: String): Boolean =
+        synchronized(channelPageTokens) { channelPageTokens.containsKey(token) }
+
+    /**
+     * Test-only: directly insert a token/page mapping to drive LRU eviction
+     * assertions without spinning up the channel-detail repository.
+     */
+    internal fun putChannelPageTokenForTest(token: String, page: Page) {
+        synchronized(channelPageTokens) { channelPageTokens[token] = page }
+    }
+
     companion object {
         const val DEFAULT_PAGE_SIZE = 10
+
+        /**
+         * Upper bound on cached channel-page tokens. A user would have to
+         * switch through 32 channels without ever consuming a "next page"
+         * cursor to trigger eviction, which safely exceeds normal usage while
+         * keeping retained memory bounded.
+         */
+        internal const val MAX_TOKENS = 32
     }
 }
