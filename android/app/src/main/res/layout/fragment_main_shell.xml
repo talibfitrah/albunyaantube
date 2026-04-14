@@ -14,6 +14,27 @@
         app:navGraph="@navigation/main_tabs_nav"
         app:defaultNavHost="false" />
 
+    <!-- Non-blocking offline banner — shown when NetworkMonitor reports no connectivity.
+         Visibility toggled from MainShellFragment. -->
+    <TextView
+        android:id="@+id/offlineBanner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:background="?attr/colorErrorContainer"
+        android:elevation="@dimen/elevation_lg"
+        android:gravity="center"
+        android:paddingStart="@dimen/spacing_md"
+        android:paddingEnd="@dimen/spacing_md"
+        android:paddingTop="@dimen/spacing_sm"
+        android:paddingBottom="@dimen/spacing_sm"
+        android:text="@string/connectivity_offline_banner"
+        android:textColor="?attr/colorOnErrorContainer"
+        android:textSize="14sp"
+        android:visibility="gone"
+        tools:visibility="visible"
+        xmlns:tools="http://schemas.android.com/tools" />
+
     <com.google.android.material.bottomnavigation.BottomNavigationView
         android:id="@+id/mainBottomNav"
         android:layout_width="match_parent"

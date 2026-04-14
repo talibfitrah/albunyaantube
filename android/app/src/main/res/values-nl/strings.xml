@@ -157,6 +157,7 @@
     <string name="error_parse_title">Gegevensfout</string>
     <string name="error_unknown">Er is een onverwachte fout opgetreden.</string>
     <string name="offline_mode">U bent offline. Opgeslagen inhoud wordt getoond.</string>
+    <string name="connectivity_offline_banner">U bent offline. Controleer uw verbinding.</string>
     <string name="offline_mode_limited">Sommige functies zijn offline niet beschikbaar.</string>
 
     <!-- Home Screen Sections -->

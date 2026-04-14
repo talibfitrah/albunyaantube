@@ -178,6 +178,7 @@
     <string name="error_parse_title">Data Error</string>
     <string name="error_unknown">An unexpected error occurred.</string>
     <string name="offline_mode">You\'re offline. Showing cached content.</string>
+    <string name="connectivity_offline_banner">You\'re offline. Check your connection.</string>
     <string name="offline_mode_limited">Some features are unavailable offline.</string>
 
     <!-- Home Screen Sections -->

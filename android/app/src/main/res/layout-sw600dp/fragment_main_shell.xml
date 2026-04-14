@@ -37,4 +37,26 @@
         app:navGraph="@navigation/main_tabs_nav"
         app:defaultNavHost="false" />
 
+    <!-- Non-blocking offline banner — shown when NetworkMonitor reports no connectivity.
+         Offset by NavigationRail width so it does not overlap the rail. -->
+    <TextView
+        android:id="@+id/offlineBanner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:layout_marginStart="@dimen/navigation_rail_width"
+        android:background="?attr/colorErrorContainer"
+        android:elevation="@dimen/elevation_lg"
+        android:gravity="center"
+        android:paddingStart="@dimen/spacing_md"
+        android:paddingEnd="@dimen/spacing_md"
+        android:paddingTop="@dimen/spacing_sm"
+        android:paddingBottom="@dimen/spacing_sm"
+        android:text="@string/connectivity_offline_banner"
+        android:textColor="?attr/colorOnErrorContainer"
+        android:textSize="14sp"
+        android:visibility="gone"
+        tools:visibility="visible"
+        xmlns:tools="http://schemas.android.com/tools" />
+
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

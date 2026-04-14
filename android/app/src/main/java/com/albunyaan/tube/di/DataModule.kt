@@ -258,6 +258,14 @@ object DataModule {
     }
 
     @Provides
+    @Singleton
+    fun provideNetworkMonitor(
+        @ApplicationContext context: Context
+    ): com.albunyaan.tube.util.NetworkMonitor {
+        return com.albunyaan.tube.util.NetworkMonitor(context)
+    }
+
+    @Provides
     fun provideImagesEnabled(): Boolean {
         return BuildConfig.ENABLE_THUMBNAIL_IMAGES
     }

@@ -147,6 +147,7 @@
     <string name="error_parse_title">خطأ في البيانات</string>
     <string name="error_unknown">حدث خطأ غير متوقع.</string>
     <string name="offline_mode">أنت غير متصل. يتم عرض المحتوى المحفوظ.</string>
+    <string name="connectivity_offline_banner">أنت غير متصل بالإنترنت. تحقق من اتصالك.</string>
     <string name="offline_mode_limited">بعض الميزات غير متاحة دون اتصال.</string>
 
     <!-- Home Screen Sections -->

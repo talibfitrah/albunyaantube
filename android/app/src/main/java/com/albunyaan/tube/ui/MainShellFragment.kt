@@ -2,18 +2,31 @@ package com.albunyaan.tube.ui
 
 import android.os.Bundle
 import android.view.View
+import android.widget.TextView
 import androidx.core.view.ViewCompat
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.setupWithNavController
 import com.albunyaan.tube.R
+import com.albunyaan.tube.util.NetworkMonitor
 import com.google.android.material.navigation.NavigationBarView
 import androidx.coordinatorlayout.widget.CoordinatorLayout
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class MainShellFragment : Fragment(R.layout.fragment_main_shell) {
+
+    @Inject
+    lateinit var networkMonitor: NetworkMonitor
 
     private var navigationView: NavigationBarView? = null
     private var navHostFragment: View? = null
+    private var offlineBanner: TextView? = null
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -21,6 +34,17 @@ class MainShellFragment : Fragment(R.layout.fragment_main_shell) {
         // Find navigation view by ID (works for both BottomNavigationView and NavigationRailView)
         navigationView = view.findViewById(R.id.mainBottomNav)
         navHostFragment = view.findViewById(R.id.main_shell_nav_host)
+        offlineBanner = view.findViewById(R.id.offlineBanner)
+
+        // Observe connectivity and toggle the offline banner. Non-blocking — the banner
+        // overlays the top edge so the user can still interact with any content below.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                networkMonitor.isOnline.collect { online ->
+                    offlineBanner?.visibility = if (online) View.GONE else View.VISIBLE
+                }
+            }
+        }
 
         // Prevent Material3's internal WindowInsets listener from adding bottom padding.
         // The parent CoordinatorLayout's fitsSystemWindows="true" already positions the nav
@@ -90,6 +114,7 @@ class MainShellFragment : Fragment(R.layout.fragment_main_shell) {
     override fun onDestroyView() {
         navigationView = null
         navHostFragment = null
+        offlineBanner = null
         super.onDestroyView()
     }
 
