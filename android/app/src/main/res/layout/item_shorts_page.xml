@@ -29,7 +29,7 @@
         android:gravity="center_horizontal"
         android:paddingEnd="@dimen/spacing_sm"
         android:paddingBottom="@dimen/spacing_md"
-        android:layout_marginBottom="96dp">
+        android:layout_marginBottom="@dimen/bottom_nav_height">
 
         <ImageButton
             android:id="@+id/shortLikeBtn"
@@ -67,6 +67,7 @@
         android:layout_gravity="bottom"
         android:orientation="vertical"
         android:padding="@dimen/spacing_md"
+        android:layout_marginBottom="@dimen/bottom_nav_height"
         android:background="@drawable/scrim_bottom_gradient">
 
         <LinearLayout
