@@ -55,6 +55,15 @@ class MeViewModel @Inject constructor(
             refreshing.value = true
             try {
                 feed.refresh(force = force)
+            } catch (ce: kotlinx.coroutines.CancellationException) {
+                throw ce
+            } catch (t: Throwable) {
+                // MeFeedRepository.refresh isolates per-channel failures
+                // already, so reaching here means an unrecoverable error
+                // (Room write failure, OOM, programmer error). Don't crash
+                // the viewmodel — log and let the UI fall back to the
+                // existing cache. CodeRabbit defensive-hygiene fix.
+                android.util.Log.e("MeViewModel", "refreshFeed failed", t)
             } finally {
                 refreshing.value = false
             }

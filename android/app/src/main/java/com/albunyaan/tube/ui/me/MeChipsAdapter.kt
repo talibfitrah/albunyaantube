@@ -48,7 +48,18 @@ class MeChipsAdapter(
         }
 
     fun submit(items: List<ChipItem>) {
-        inner.submitList(items)
+        // F-CR1 (CodeRabbit): rowAdapter returns 0-or-1 items based on the
+        // inner adapter's size, but RecyclerView caches the count until it
+        // gets notified. Without this bridge, the chips row never appears
+        // on first populate and never disappears when emptied.
+        val wasEmpty = inner.itemCount == 0
+        inner.submitList(items) {
+            val isEmpty = inner.itemCount == 0
+            when {
+                wasEmpty && !isEmpty -> rowAdapter.notifyItemInserted(0)
+                !wasEmpty && isEmpty -> rowAdapter.notifyItemRemoved(0)
+            }
+        }
     }
 
     val rowAdapter: RecyclerView.Adapter<*> = object : RecyclerView.Adapter<RowVH>() {

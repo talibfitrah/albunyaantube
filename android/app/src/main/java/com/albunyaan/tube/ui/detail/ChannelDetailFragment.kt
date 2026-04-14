@@ -221,20 +221,35 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
             Log.w(TAG, "Refusing subscribe: malformed channelId='${header.id}'")
             return
         }
+        // F-CR7 (CodeRabbit): capture the toggle direction at click time
+        // so a fast double-tap doesn't observe a stale isSubscribedNow that
+        // an in-flight emission has not flipped yet, and disable the button
+        // for the duration of the IO call so a second tap can't queue a
+        // second mutation. Wrap the IO in try/catch so a transient Room
+        // failure surfaces in logs instead of silently leaving the UI in a
+        // wrong state.
+        val shouldUnsubscribe = isSubscribedNow
+        binding?.subscribeButton?.isEnabled = false
         viewLifecycleOwner.lifecycleScope.launch {
-            withContext(Dispatchers.IO) {
-                if (isSubscribedNow) {
-                    subscriptions.unsubscribe(header.id)
-                } else {
-                    subscriptions.subscribe(
-                        SubscribedChannel(
-                            channelId = header.id,
-                            channelUrl = "https://www.youtube.com/channel/${header.id}",
-                            name = header.title,
-                            avatarUrl = header.avatarUrl,
+            try {
+                withContext(Dispatchers.IO) {
+                    if (shouldUnsubscribe) {
+                        subscriptions.unsubscribe(header.id)
+                    } else {
+                        subscriptions.subscribe(
+                            SubscribedChannel(
+                                channelId = header.id,
+                                channelUrl = "https://www.youtube.com/channel/${header.id}",
+                                name = header.title,
+                                avatarUrl = header.avatarUrl,
+                            )
                         )
-                    )
+                    }
                 }
+            } catch (t: Throwable) {
+                Log.e(TAG, "Failed to toggle subscription for ${header.id}", t)
+            } finally {
+                binding?.subscribeButton?.isEnabled = true
             }
         }
     }

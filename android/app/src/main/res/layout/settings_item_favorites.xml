@@ -27,6 +27,7 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginStart="@dimen/spacing_md"
+        android:layout_marginEnd="@dimen/spacing_sm"
         android:text="@string/settings_favorites_title"
         android:textSize="@dimen/text_subtitle"
         android:textColor="?attr/colorOnSurface"

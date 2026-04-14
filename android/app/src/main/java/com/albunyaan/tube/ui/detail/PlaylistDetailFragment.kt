@@ -130,21 +130,33 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
             android.util.Log.w("PlaylistDetailFragment", "Refusing save: malformed playlistId='${header.id}'")
             return
         }
+        // F-CR7 (CodeRabbit): capture the toggle direction at click time so
+        // a fast double-tap can't read a stale isPlaylistSavedNow, disable
+        // the button while the IO is in flight, and catch failures so the
+        // UI doesn't sit in a half-flipped state on a transient Room error.
+        val shouldUnsave = isPlaylistSavedNow
+        binding?.savePlaylistButton?.isEnabled = false
         viewLifecycleOwner.lifecycleScope.launch {
-            withContext(Dispatchers.IO) {
-                if (isPlaylistSavedNow) {
-                    subscriptions.unsavePlaylist(header.id)
-                } else {
-                    subscriptions.savePlaylist(
-                        com.albunyaan.tube.data.local.SavedPlaylist(
-                            playlistId = header.id,
-                            playlistUrl = "https://www.youtube.com/playlist?list=${header.id}",
-                            name = header.title,
-                            thumbnailUrl = header.thumbnailUrl,
-                            uploaderName = header.channelName,
+            try {
+                withContext(Dispatchers.IO) {
+                    if (shouldUnsave) {
+                        subscriptions.unsavePlaylist(header.id)
+                    } else {
+                        subscriptions.savePlaylist(
+                            com.albunyaan.tube.data.local.SavedPlaylist(
+                                playlistId = header.id,
+                                playlistUrl = "https://www.youtube.com/playlist?list=${header.id}",
+                                name = header.title,
+                                thumbnailUrl = header.thumbnailUrl,
+                                uploaderName = header.channelName,
+                            )
                         )
-                    )
+                    }
                 }
+            } catch (t: Throwable) {
+                android.util.Log.e("PlaylistDetailFragment", "Failed to toggle save for ${header.id}", t)
+            } finally {
+                binding?.savePlaylistButton?.isEnabled = true
             }
         }
     }

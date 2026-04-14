@@ -131,9 +131,9 @@
 
     <!-- Me tab -->
     <string name="me_empty_title">اشترك لمشاهدة خلاصتك</string>
-    <string name="me_empty_subtitle">ستظهر هنا القنوات وقوائم التشغيل التي تحفظها، مع أحدث الفيديوهات والشورتس.</string>
+    <string name="me_empty_subtitle">ستظهر هنا القنوات وقوائم التشغيل التي تحفظها، مع أحدث الفيديوهات والمقاطع القصيرة.</string>
     <string name="me_empty_cta">تصفح القنوات</string>
-    <string name="me_section_shorts">شورتس</string>
+    <string name="me_section_shorts">المقاطع القصيرة</string>
     <string name="me_section_videos">أحدث الفيديوهات</string>
     <string name="me_refresh_error">تعذر تحديث خلاصتك. اسحب للأسفل للمحاولة مجدداً.</string>
     <string name="me_filter_clear">كل الاشتراكات</string>

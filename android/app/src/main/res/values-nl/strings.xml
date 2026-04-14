@@ -136,7 +136,7 @@
     <string name="nav_channels">Kanalen</string>
     <string name="nav_playlists">Afspeellijsten</string>
     <string name="nav_videos">Video\'s</string>
-    <string name="nav_me">Jij</string>
+    <string name="nav_me">Ik</string>
 
     <!-- Me tab -->
     <string name="me_empty_title">Abonneer je om je feed te zien</string>

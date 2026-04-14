@@ -10,6 +10,9 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -183,6 +186,50 @@ class MeFeedRepositoryTest {
             "concurrency cap breached: max=$maxSeen vs ${MeFeedRepository.MAX_CONCURRENT}",
             maxSeen.get() <= MeFeedRepository.MAX_CONCURRENT,
         )
+    }
+
+    @Test
+    fun `CR2 stagger spreads launch times across index multiples`() = runTest {
+        // Subscribe enough channels to observe distinct launch times.
+        val n = 5
+        repeat(n) { i ->
+            subs.subscribe(SubscribedChannel("UC$i", "https://yt/UC$i", "ch-$i", null, 1_000L + i))
+        }
+        // Record the time-from-start at which each fetch first runs.
+        val started = mutableListOf<Long>()
+        val recorder = object : ChannelFeedFetcher {
+            override suspend fun fetchLatest(channelUrl: String): List<ChannelFeedFetcher.ChannelFeedItem> {
+                synchronized(started) { started += currentTime }
+                return emptyList()
+            }
+        }
+        val staggered = MeFeedRepository(
+            subscriptions = subs,
+            cache = db.channelVideoCacheDao(),
+            refreshStateDao = db.channelFeedRefreshStateDao(),
+            fetcher = recorder,
+            ioDispatcher = StandardTestDispatcher(testScheduler),
+        ).also { it.currentTimeMillisProvider = { clockMillis } }
+
+        staggered.refresh(force = true)
+        advanceUntilIdle()
+
+        // After the fix, each successive launch is delayed by index * STAGGER_MS.
+        // Sort to be deterministic across scheduler ordering.
+        val sorted = started.sorted()
+        assertEquals(n, sorted.size)
+        // First fetch starts at t=0 in virtual time; subsequent fetches are at
+        // approximately STAGGER_MS, 2*STAGGER_MS, 3*STAGGER_MS, 4*STAGGER_MS.
+        // Allow some slack for semaphore + Room writes.
+        val s = MeFeedRepository.STAGGER_MS
+        for (i in 1 until n) {
+            val gapFromStart = sorted[i] - sorted[0]
+            val expected = i * s
+            assertTrue(
+                "fetch #$i expected ≈${expected}ms after start, was ${gapFromStart}ms",
+                gapFromStart >= expected - s / 2,
+            )
+        }
     }
 
     @Test

@@ -22,7 +22,7 @@
             android:layout_width="match_parent"
             android:layout_height="220dp"
             android:background="?attr/colorSurfaceVariant"
-            android:contentDescription="@null"
+            android:importantForAccessibility="no"
             android:scaleType="centerCrop"
             tools:src="@drawable/thumbnail_placeholder" />
 

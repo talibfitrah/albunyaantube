@@ -115,7 +115,13 @@ class MeFeedRepository @Inject constructor(
             coroutineScope {
                 channels.mapIndexed { index, channel ->
                     async {
-                        if (index > 0) delay(STAGGER_MS)
+                        // F-CR2 (CodeRabbit): true per-index stagger.
+                        // Previously delay(STAGGER_MS) made every non-zero index
+                        // wake up at the same 250 ms mark and then race for
+                        // semaphore permits in a burst. Index-scaled delay
+                        // spreads launch times across 0, 250, 500, 750, …
+                        // so YouTube sees an actually paced request stream.
+                        if (index > 0) delay(index.toLong() * STAGGER_MS)
                         semaphore.withPermit { refreshOne(channel, now, force) }
                     }
                 }.awaitAll()
