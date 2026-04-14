@@ -11,9 +11,13 @@ import com.albunyaan.tube.data.shorts.ShortsItem
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
@@ -23,12 +27,14 @@ import kotlinx.coroutines.launch
  * Holds the list of [ShortsItem]s, exposes the current page index, and delegates
  * like/follow actions to the [FavoritesRepository] / [FollowedChannelsRepository].
  *
- * When launched from a channel (channelId != null) the feed items come back from
- * [ShortsFeedRepository] without channel metadata (see ShortsFeedRepository — the
- * ContentItem.Video model has no channel fields), so we enrich the items once with
- * data from [ChannelDetailRepository.getChannelHeader]. If channelId is null the
- * items keep their empty channel fields and the UI should gracefully hide the
- * channel row.
+ * When launched from a channel (channelId != null) items come from the
+ * channel-scoped feed ([ShortsFeedRepository.loadChannelShortsPage]) and are
+ * decorated once with [ChannelDetailRepository.getChannelHeader]. Otherwise the
+ * global UNDER_FOUR_MIN feed is used and channel fields stay empty.
+ *
+ * Transient playback / load failures are emitted via [events] as one-shot
+ * [LoadEvent]s (a [SharedFlow]). This avoids the "can't emit same value twice"
+ * and "fragment must clear the state" foot-guns of StateFlow<String?>.
  */
 class ShortsPlayerViewModel @AssistedInject constructor(
     private val feed: ShortsFeedRepository,
@@ -45,8 +51,11 @@ class ShortsPlayerViewModel @AssistedInject constructor(
     private val _currentIndex = MutableStateFlow(0)
     val currentIndex: StateFlow<Int> = _currentIndex.asStateFlow()
 
-    private val _loadError = MutableStateFlow<String?>(null)
-    val loadError: StateFlow<String?> = _loadError.asStateFlow()
+    private val _events = MutableSharedFlow<LoadEvent>(
+        extraBufferCapacity = 4,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val events: SharedFlow<LoadEvent> = _events.asSharedFlow()
 
     private var nextCursor: String? = null
     private var loading = false
@@ -90,12 +99,13 @@ class ShortsPlayerViewModel @AssistedInject constructor(
     fun isFollowedFlow(channelId: String): Flow<Boolean> = follows.isFollowed(channelId)
 
     /**
-     * Signals a playback error for the given page. The fragment observes [loadError]
-     * and advances the pager by one when it sees a `skip:<id>` payload.
+     * Signals a playback error for the given page. The fragment collects
+     * [events] and advances the pager by one when it observes a
+     * [LoadEvent.SkipCurrent] carrying the offending short id.
      */
     fun onPlaybackError(index: Int) {
         val id = _items.value.getOrNull(index)?.id ?: return
-        _loadError.value = "skip:$id"
+        _events.tryEmit(LoadEvent.SkipCurrent(id))
     }
 
     private fun loadNextPage() {
@@ -104,7 +114,11 @@ class ShortsPlayerViewModel @AssistedInject constructor(
         viewModelScope.launch {
             runCatching {
                 val header = ensureChannelHeader()
-                val page = feed.loadFeedPage(nextCursor)
+                val page = if (channelId != null) {
+                    feed.loadChannelShortsPage(channelId, nextCursor)
+                } else {
+                    feed.loadFeedPage(nextCursor)
+                }
                 val decorated = if (header != null) {
                     page.items.map { it.withChannelHeader(header) }
                 } else {
@@ -119,7 +133,7 @@ class ShortsPlayerViewModel @AssistedInject constructor(
                 nextCursor = page.nextCursor
                 exhausted = page.nextCursor == null
             }.onFailure {
-                _loadError.value = "load:${it.message}"
+                _events.tryEmit(LoadEvent.LoadError(it.message ?: "load failed"))
             }
             loading = false
         }
@@ -140,6 +154,11 @@ class ShortsPlayerViewModel @AssistedInject constructor(
             channelName = header.title,
             channelAvatarUrl = header.avatarUrl
         )
+    }
+
+    sealed interface LoadEvent {
+        data class SkipCurrent(val shortId: String) : LoadEvent
+        data class LoadError(val message: String) : LoadEvent
     }
 
     @AssistedFactory
