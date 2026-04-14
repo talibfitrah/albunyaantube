@@ -421,12 +421,52 @@ class NewPipeExtractorClient(
                     } else null
                 }
 
+                // Defensive reads: NewPipe 0.26.0 exposes audioLocale / audioTrackName /
+                // audioTrackType on AudioStream, but older YouTube pages or extractor
+                // versions may not populate them. Wrap each in try/catch so a missing
+                // field silently falls back to null instead of failing the whole
+                // resolution.
+                val language: String? = try {
+                    stream.audioLocale?.toLanguageTag()
+                } catch (t: Throwable) {
+                    if (BuildConfig.DEBUG) {
+                        android.util.Log.d("NewPipeExtractor", "audioLocale unavailable: ${t.message}")
+                    }
+                    null
+                }
+                val trackName: String? = try {
+                    stream.audioTrackName
+                } catch (t: Throwable) {
+                    if (BuildConfig.DEBUG) {
+                        android.util.Log.d("NewPipeExtractor", "audioTrackName unavailable: ${t.message}")
+                    }
+                    null
+                }
+                val trackKind: AudioTrackKind? = try {
+                    when (stream.audioTrackType?.name) {
+                        "ORIGINAL" -> AudioTrackKind.ORIGINAL
+                        "DUBBED" -> AudioTrackKind.DUBBED
+                        "DESCRIPTIVE" -> AudioTrackKind.DESCRIPTIVE
+                        "DUBBED_AUTO" -> AudioTrackKind.DUBBED_AUTO
+                        null -> null
+                        else -> AudioTrackKind.UNKNOWN
+                    }
+                } catch (t: Throwable) {
+                    if (BuildConfig.DEBUG) {
+                        android.util.Log.d("NewPipeExtractor", "audioTrackType unavailable: ${t.message}")
+                    }
+                    null
+                }
+
                 AudioTrack(
                     url = stream.content,
                     mimeType = stream.format?.mimeType,
                     bitrate = stream.averageBitrate.takeIf { it > 0 },
                     codec = stream.codec,
-                    syntheticDashMetadata = syntheticDashMeta
+                    syntheticDashMetadata = syntheticDashMeta,
+                    language = language,
+                    trackName = trackName,
+                    trackType = trackKind
                 )
             }
 
