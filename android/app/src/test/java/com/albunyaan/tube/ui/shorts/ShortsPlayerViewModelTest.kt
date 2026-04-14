@@ -1,5 +1,6 @@
 package com.albunyaan.tube.ui.shorts
 
+import android.content.Context
 import com.albunyaan.tube.data.channel.ChannelDetailRepository
 import com.albunyaan.tube.data.channel.ChannelHeader
 import com.albunyaan.tube.data.local.FavoritesRepository
@@ -46,6 +47,7 @@ import org.mockito.kotlin.whenever
 class ShortsPlayerViewModelTest {
 
     private val dispatcher = StandardTestDispatcher()
+    private val context: Context = mock()
     private val feed: ShortsFeedRepository = mock()
     private val favorites: FavoritesRepository = mock()
     private val follows: FollowedChannelsRepository = mock()
@@ -125,6 +127,7 @@ class ShortsPlayerViewModelTest {
         whenever(follows.isFollowed(any())).thenReturn(flowOf(false))
 
         val vm = ShortsPlayerViewModel(
+            context = context,
             feed = feed,
             favorites = favorites,
             follows = follows,
@@ -146,6 +149,7 @@ class ShortsPlayerViewModelTest {
         )
 
         val vm = ShortsPlayerViewModel(
+            context = context,
             feed = feed,
             favorites = favorites,
             follows = follows,
@@ -177,6 +181,7 @@ class ShortsPlayerViewModelTest {
         )
 
         val vm = ShortsPlayerViewModel(
+            context = context,
             feed = feed,
             favorites = favorites,
             follows = follows,
@@ -206,6 +211,7 @@ class ShortsPlayerViewModelTest {
         whenever(feed.loadFeedPage(eq("cursor-2"), any())).thenReturn(secondPage)
 
         val vm = ShortsPlayerViewModel(
+            context = context,
             feed = feed,
             favorites = favorites,
             follows = follows,
@@ -232,6 +238,7 @@ class ShortsPlayerViewModelTest {
         whenever(channelDetailRepo.getChannelHeader(eq("UC1"), any())).thenReturn(header())
 
         val vm = ShortsPlayerViewModel(
+            context = context,
             feed = feed,
             favorites = favorites,
             follows = follows,
@@ -254,6 +261,7 @@ class ShortsPlayerViewModelTest {
         whenever(channelDetailRepo.getChannelHeader(eq("UC1"), any())).thenReturn(header())
 
         val vm = ShortsPlayerViewModel(
+            context = context,
             feed = feed,
             favorites = favorites,
             follows = follows,
@@ -281,6 +289,7 @@ class ShortsPlayerViewModelTest {
         )
 
         val vm = ShortsPlayerViewModel(
+            context = context,
             feed = feed,
             favorites = favorites,
             follows = follows,
@@ -301,6 +310,7 @@ class ShortsPlayerViewModelTest {
         )
 
         val vm = ShortsPlayerViewModel(
+            context = context,
             feed = feed,
             favorites = favorites,
             follows = follows,
@@ -321,10 +331,51 @@ class ShortsPlayerViewModelTest {
     }
 
     @Test
+    fun initialShortId_reorderAppliedOnlyOnFirstPage() = runTest(dispatcher) {
+        // Page 1: v1, v2, v3 (v3 is requested as the initial short).
+        // Page 2: v4, v5. The second load must NOT re-run the reorder —
+        // i.e. page-1 items must keep their positions after v3 was pulled to index 0.
+        val firstPage = ShortsPage(
+            items = listOf(sample("v1"), sample("v2"), sample("v3")),
+            nextCursor = "cursor-2"
+        )
+        val secondPage = ShortsPage(
+            items = listOf(sample("v4"), sample("v5")),
+            nextCursor = null
+        )
+        whenever(feed.loadFeedPage(eq(null), any())).thenReturn(firstPage)
+        whenever(feed.loadFeedPage(eq("cursor-2"), any())).thenReturn(secondPage)
+
+        val vm = ShortsPlayerViewModel(
+            context = context,
+            feed = feed,
+            favorites = favorites,
+            follows = follows,
+            channelDetailRepo = channelDetailRepo,
+            initialShortId = "v3",
+            channelId = null
+        )
+        advanceUntilIdle()
+
+        // After page 1: v3 pulled to index 0, then v1, v2 keep relative order.
+        val afterFirst = vm.items.value.map { it.id }
+        assertEquals(listOf("v3", "v1", "v2"), afterFirst)
+
+        // Trigger page 2 (PREFETCH_THRESHOLD = 3; size=3, index 0 satisfies >= size-3).
+        vm.onPageChanged(0)
+        advanceUntilIdle()
+
+        val afterSecond = vm.items.value.map { it.id }
+        // Critical: page-1 items (v3, v1, v2) must keep their exact positions.
+        assertEquals(listOf("v3", "v1", "v2", "v4", "v5"), afterSecond)
+    }
+
+    @Test
     fun loadFailure_emitsLoadError() = runTest(dispatcher) {
         whenever(feed.loadFeedPage(eq(null), any())).thenThrow(RuntimeException("boom"))
 
         val vm = ShortsPlayerViewModel(
+            context = context,
             feed = feed,
             favorites = favorites,
             follows = follows,

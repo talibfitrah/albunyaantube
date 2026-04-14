@@ -12,7 +12,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.CreationExtras
-import androidx.media3.exoplayer.ExoPlayer
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
@@ -26,14 +25,15 @@ import javax.inject.Inject
 /**
  * Hosts the vertical, swipeable custom shorts player.
  *
- * Owns the [ExoPlayer] instance (constructed lazily in [onViewCreated] and
- * released in [onDestroyView]) and delegates stream resolution + attachment
- * to a local [PlayerBinder]. The ViewModel is built through an Assisted
- * factory with the nav args `initialShortId` and `channelId`.
+ * The ExoPlayer instance is owned by [ShortsPlayerViewModel] so it survives
+ * configuration changes; the fragment just attaches/detaches the player from
+ * PlayerViews via a local [PlayerBinder]. The ViewModel is built through an
+ * Assisted factory with the nav args `initialShortId` and `channelId`.
  *
- * Edge-to-edge: mirrors [com.albunyaan.tube.ui.player.PlayerFragment]'s
- * fullscreen pattern — hides system bars on resume and restores them on pause.
- * See CLAUDE.md (Edge-to-Edge, Android 15+) for the project contract.
+ * Edge-to-edge: hides system bars on resume and restores them in
+ * [onDestroyView] / [onStop] (not onPause) to avoid flicker on transient
+ * pauses (permission dialogs, bottom sheets). See CLAUDE.md
+ * (Edge-to-Edge, Android 15+) for the project contract.
  */
 @AndroidEntryPoint
 class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
@@ -58,14 +58,14 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
     private var adapter: ShortsPagerAdapter? = null
     private var pageChangeCallback: ViewPager2.OnPageChangeCallback? = null
     private var hasBoundInitialPage = false
+    private var didEnterImmersive = false
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         val bnd = FragmentShortsPlayerBinding.bind(view)
         binding = bnd
 
-        val exoPlayer = ExoPlayer.Builder(requireContext()).build()
-        val localBinder = PlayerBinder(exoPlayer, playerRepository)
+        val localBinder = PlayerBinder(viewModel.player, playerRepository)
         binder = localBinder
 
         val pagerAdapter = ShortsPagerAdapter(
@@ -205,29 +205,40 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
         val view = view ?: return
         WindowCompat.getInsetsController(window, view)
             .hide(WindowInsetsCompat.Type.systemBars())
+        didEnterImmersive = true
     }
 
-    override fun onPause() {
-        super.onPause()
-        val window = requireActivity().window
-        WindowCompat.setDecorFitsSystemWindows(window, true)
-        val view = view
-        if (view != null) {
-            WindowCompat.getInsetsController(window, view)
-                .show(WindowInsetsCompat.Type.systemBars())
-        }
+    override fun onStop() {
+        super.onStop()
+        // Covers "Activity finish skips straight to destroy" — restore here too.
+        restoreSystemBarsIfImmersive()
     }
 
     override fun onDestroyView() {
+        // Restore system bars here (not in onPause) to prevent flicker on transient
+        // pauses (e.g. permission dialog, bottom sheet) while the shorts UI is still alive.
+        restoreSystemBarsIfImmersive()
         pageChangeCallback?.let { binding?.shortsPager?.unregisterOnPageChangeCallback(it) }
         pageChangeCallback = null
         binding?.shortsPager?.adapter = null
         adapter = null
-        binder?.release()
+        // Player is owned by the ViewModel; only detach the PlayerView here.
+        binder?.detach()
         binder = null
         binding = null
         hasBoundInitialPage = false
         super.onDestroyView()
+    }
+
+    private fun restoreSystemBarsIfImmersive() {
+        if (!didEnterImmersive) return
+        val activity = activity ?: return
+        val window = activity.window
+        WindowCompat.setDecorFitsSystemWindows(window, true)
+        val anchor = activity.findViewById<View>(android.R.id.content) ?: return
+        WindowCompat.getInsetsController(window, anchor)
+            .show(WindowInsetsCompat.Type.systemBars())
+        didEnterImmersive = false
     }
 
     companion object {

@@ -1,7 +1,9 @@
 package com.albunyaan.tube.ui.shorts
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.exoplayer.ExoPlayer
 import com.albunyaan.tube.data.channel.ChannelDetailRepository
 import com.albunyaan.tube.data.channel.ChannelHeader
 import com.albunyaan.tube.data.local.FavoritesRepository
@@ -11,6 +13,7 @@ import com.albunyaan.tube.data.shorts.ShortsItem
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -37,6 +40,7 @@ import kotlinx.coroutines.launch
  * and "fragment must clear the state" foot-guns of StateFlow<String?>.
  */
 class ShortsPlayerViewModel @AssistedInject constructor(
+    @ApplicationContext context: Context,
     private val feed: ShortsFeedRepository,
     private val favorites: FavoritesRepository,
     private val follows: FollowedChannelsRepository,
@@ -44,6 +48,15 @@ class ShortsPlayerViewModel @AssistedInject constructor(
     @Assisted("initialShortId") private val initialShortId: String?,
     @Assisted("channelId") private val channelId: String?
 ) : ViewModel() {
+
+    /**
+     * ExoPlayer owned by the ViewModel so it survives configuration changes
+     * (e.g. rotation) and is released exactly once in [onCleared]. The fragment
+     * attaches/detaches this player from PlayerViews via PlayerBinder.
+     */
+    val player: ExoPlayer by lazy { ExoPlayer.Builder(context).build() }
+
+    private var initialShortApplied = false
 
     private val _items = MutableStateFlow<List<ShortsItem>>(emptyList())
     val items: StateFlow<List<ShortsItem>> = _items.asStateFlow()
@@ -125,10 +138,13 @@ class ShortsPlayerViewModel @AssistedInject constructor(
                     page.items
                 }
                 val combined = _items.value + decorated
-                val ordered = initialShortId?.let { id ->
-                    val head = combined.firstOrNull { it.id == id }
-                    if (head != null) listOf(head) + combined.filter { it.id != id } else combined
-                } ?: combined
+                val ordered = if (!initialShortApplied && initialShortId != null) {
+                    val head = combined.firstOrNull { it.id == initialShortId }
+                    initialShortApplied = true
+                    if (head != null) listOf(head) + combined.filter { it.id != initialShortId } else combined
+                } else {
+                    combined
+                }
                 _items.value = ordered
                 nextCursor = page.nextCursor
                 exhausted = page.nextCursor == null
@@ -145,6 +161,11 @@ class ShortsPlayerViewModel @AssistedInject constructor(
         return runCatching { channelDetailRepo.getChannelHeader(id) }
             .onSuccess { cachedChannelHeader = it }
             .getOrNull()
+    }
+
+    override fun onCleared() {
+        player.release()
+        super.onCleared()
     }
 
     private fun ShortsItem.withChannelHeader(header: ChannelHeader): ShortsItem {
