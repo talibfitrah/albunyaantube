@@ -546,5 +546,9 @@
     <string name="shorts_subscribed">Subscribed</string>
     <string name="shorts_error_unavailable">Couldn\'t play this short. Skipping…</string>
     <string name="shorts_error_feed_empty">No shorts available</string>
+    <!-- Channel handle shown as "@name" on the shorts page. Kept in resources so
+         RTL locales can inject a bidi control (LRM, \u200E) to keep the "@" on the
+         visual left of an LTR handle inside an RTL paragraph. -->
+    <string name="shorts_channel_handle">\@%1$s</string>
     <string name="back">Back</string>
 </resources>

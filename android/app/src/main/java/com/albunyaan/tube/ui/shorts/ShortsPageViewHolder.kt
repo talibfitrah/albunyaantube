@@ -44,9 +44,13 @@ class ShortsPageViewHolder(
         binding.shortSubscribeBtn.visibility = if (hasChannelInfo) View.VISIBLE else View.GONE
 
         if (hasChannelInfo) {
-            // Prefix with "@" to match common shorts UI; localised prefixing not
-            // required since "@" is universal for social handles.
-            binding.shortChannelHandle.text = "@" + item.channelName
+            // Prefix with "@" to match common shorts UI. The string is pulled
+            // from resources so RTL locales can inject a bidi control (LRM) to
+            // keep the "@" on the visual left of an LTR handle inside an RTL
+            // paragraph — see values-ar/strings.xml.
+            val ctx = binding.shortChannelHandle.context
+            binding.shortChannelHandle.text =
+                ctx.getString(R.string.shorts_channel_handle, item.channelName)
         }
 
         binding.shortLikeBtn.setImageResource(
