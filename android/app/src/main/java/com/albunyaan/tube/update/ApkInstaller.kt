@@ -34,10 +34,19 @@ class ApkInstaller @Inject constructor(
     /**
      * Streams the APK to `cacheDir/updates/<file>`. Returns the File on success or throws.
      * Progress reporting can be wired via the optional [onProgress] callback (0..1).
+     *
+     * When [expectedSizeBytes] is provided (from the GitHub release asset metadata), the
+     * downloaded file's size is verified against it after the stream closes. A CDN that
+     * returns `200 OK` with a truncated body (reverse proxy dropped the connection, CF
+     * bug, etc.) would otherwise hand a corrupt APK to the system installer. Defense in
+     * depth — the OS will eventually reject mismatched signatures, but catching the
+     * truncation earlier gives the user a clear error instead of an opaque installer
+     * failure. Flagged by code-reviewer (I1) and codex (Medium).
      */
     suspend fun download(
         context: Context,
         apkUrl: String,
+        expectedSizeBytes: Long? = null,
         onProgress: ((Float) -> Unit)? = null
     ): File = withContext(Dispatchers.IO) {
         val updatesDir = File(context.cacheDir, "updates").apply { mkdirs() }
@@ -66,6 +75,14 @@ class ApkInstaller @Inject constructor(
                         read = input.read(buffer)
                     }
                 }
+            }
+        }
+        if (expectedSizeBytes != null && expectedSizeBytes > 0) {
+            val actual = target.length()
+            if (actual != expectedSizeBytes) {
+                // Leave the partial file in place for forensic inspection; caller decides
+                // what to do on failure (retry, surface error to user).
+                error("APK size mismatch: expected=$expectedSizeBytes actual=$actual")
             }
         }
         target

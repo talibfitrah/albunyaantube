@@ -124,7 +124,11 @@ class UpdatePromptFlow @Inject constructor(
                     return@launch
                 }
                 try {
-                    val file = installer.download(activity, info.apkUrl) { fraction ->
+                    val file = installer.download(
+                        activity,
+                        info.apkUrl,
+                        expectedSizeBytes = info.apkSizeBytes
+                    ) { fraction ->
                         val pct = (fraction * 100f).toInt().coerceIn(0, 100)
                         activity.runOnUiThread { progress.progress = pct }
                     }
