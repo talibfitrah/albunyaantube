@@ -178,8 +178,13 @@ class ShortsPlayerViewModel @AssistedInject constructor(
     private suspend fun ensureChannelHeader(): ChannelHeader? {
         val id = channelId ?: return null
         cachedChannelHeader?.let { return it }
-        val header = runCatching { channelDetailRepo.getChannelHeader(id) }.getOrNull()
-            ?: return null
+        val header = try {
+            channelDetailRepo.getChannelHeader(id)
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            throw ce
+        } catch (_: Exception) {
+            return null
+        }
         cachedChannelHeader = header
         // Retroactively decorate items that were loaded before the header
         // resolved (e.g. header failed on page 1 and succeeded on page 2).
