@@ -108,6 +108,13 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
         audioLanguagesByVideoId.getOrPut(videoId) { MutableStateFlow(emptyList()) }
     /** Time bar driver: periodically mirrors player.currentPosition into the active page's DefaultTimeBar. */
     private val timeBarHandler = Handler(Looper.getMainLooper())
+    private val stallRecoveryRunnable = Runnable {
+        // Only trigger if the player is still buffering (state may have changed
+        // between scheduling and firing).
+        if (viewModel.player.playbackState == androidx.media3.common.Player.STATE_BUFFERING) {
+            binder?.forceRefreshCurrent()
+        }
+    }
     private var timeBarTicker: Runnable? = null
     /** True while the user is actively dragging the scrubber; suppresses the ticker overwrite. */
     private var isScrubbing = false
@@ -128,6 +135,21 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
             playbackFeatureFlags
         )
         val localBinder = PlayerBinder(viewModel.player, playerRepository, mediaSourceFactory)
+
+        // Stall watchdog: if BUFFERING persists past STALL_RECOVERY_MS, force
+        // a fresh stream resolve. Common cause is expired progressive URLs
+        // returning 403 mid-segment. Mirrors the recovery intent of the main
+        // player's PlaybackRecoveryManager without hauling in its full machinery.
+        viewModel.player.addListener(object : androidx.media3.common.Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == androidx.media3.common.Player.STATE_BUFFERING) {
+                    timeBarHandler.removeCallbacks(stallRecoveryRunnable)
+                    timeBarHandler.postDelayed(stallRecoveryRunnable, STALL_RECOVERY_MS)
+                } else {
+                    timeBarHandler.removeCallbacks(stallRecoveryRunnable)
+                }
+            }
+        })
         binder = localBinder
 
         val pagerAdapter = ShortsPagerAdapter(
@@ -556,5 +578,7 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
         private const val ARG_INITIAL_SHORT_ID = "initialShortId"
         private const val ARG_CHANNEL_ID = "channelId"
         private const val TIME_BAR_UPDATE_MS = 250L
+        /** Force a fresh URL resolve after this long stuck in BUFFERING. */
+        private const val STALL_RECOVERY_MS = 6_000L
     }
 }

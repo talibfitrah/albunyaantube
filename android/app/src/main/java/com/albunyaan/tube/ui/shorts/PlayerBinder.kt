@@ -270,9 +270,26 @@ class PlayerBinder private constructor(
     fun rememberedAudioLanguage(videoId: String): String? =
         synchronized(stickyAudioLanguageByVideoId) { stickyAudioLanguageByVideoId[videoId] }
 
+    /** Set by [forceRefreshCurrent] to make the next resolve bypass the cache. */
+    @Volatile private var nextResolveForceRefresh: Boolean = false
+
+    /**
+     * Re-resolve the currently bound video with `forceRefresh=true` and
+     * re-prepare the player. Used by the fragment's stall-watchdog when a
+     * BUFFERING state has lasted longer than the threshold — typical cause
+     * is an expired progressive URL.
+     */
+    fun forceRefreshCurrent() {
+        val view = boundView ?: return
+        val cached = synchronized(resolvedCache) { resolvedCache.entries.lastOrNull()?.key } ?: return
+        nextResolveForceRefresh = true
+        bind(view, cached)
+    }
+
     private suspend fun prepareAndPlay(videoId: String, myGen: Int) {
+        val force = nextResolveForceRefresh.also { nextResolveForceRefresh = false }
         val resolved: ResolvedStreams? = runCatching {
-            playerRepository.resolveStreams(videoId, forceRefresh = false)
+            playerRepository.resolveStreams(videoId, forceRefresh = force)
         }.getOrNull()
 
         // Discard if a newer bind has superseded this one.

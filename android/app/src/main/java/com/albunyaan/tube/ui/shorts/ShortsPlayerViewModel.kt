@@ -47,6 +47,7 @@ class ShortsPlayerViewModel @AssistedInject constructor(
     private val favorites: FavoritesRepository,
     private val follows: FollowedChannelsRepository,
     private val channelDetailRepo: ChannelDetailRepository,
+    private val bufferPolicy: com.albunyaan.tube.player.AdaptiveBufferPolicy,
     @Assisted("initialShortId") private val initialShortId: String?,
     @Assisted("channelId") private val channelId: String?
 ) : ViewModel() {
@@ -55,8 +56,22 @@ class ShortsPlayerViewModel @AssistedInject constructor(
      * ExoPlayer owned by the ViewModel so it survives configuration changes
      * (e.g. rotation) and is released exactly once in [onCleared]. The fragment
      * attaches/detaches this player from PlayerViews via PlayerBinder.
+     *
+     * Mirrors the main PlayerFragment's setup so shorts get the same buffering
+     * behaviour: AdaptiveBufferPolicy sizes buffers by device memory class
+     * (smaller on low-end, larger on high-end) — substantially reducing
+     * stalls on weak networks. Decoder fallback + audio-becoming-noisy +
+     * NETWORK wake-mode mirror PlayerFragment.kt setupPlayer().
      */
-    val player: ExoPlayer by lazy { ExoPlayer.Builder(context).build() }
+    val player: ExoPlayer by lazy {
+        val renderersFactory = androidx.media3.exoplayer.DefaultRenderersFactory(context)
+            .setEnableDecoderFallback(true)
+        ExoPlayer.Builder(context, renderersFactory)
+            .setLoadControl(bufferPolicy.buildLoadControl())
+            .setHandleAudioBecomingNoisy(true)
+            .setWakeMode(androidx.media3.common.C.WAKE_MODE_NETWORK)
+            .build()
+    }
 
     private var initialShortApplied = false
 
