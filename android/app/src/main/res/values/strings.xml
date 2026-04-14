@@ -538,4 +538,12 @@
         <item quantity="one">You are %d step away from being a developer</item>
         <item quantity="other">You are %d steps away from being a developer</item>
     </plurals>
+
+    <!-- Shorts player -->
+    <string name="shorts_like_cd">Like</string>
+    <string name="shorts_share_cd">Share</string>
+    <string name="shorts_subscribe">Subscribe</string>
+    <string name="shorts_subscribed">Subscribed</string>
+    <string name="shorts_error_unavailable">Couldn\'t play this short. Skipping…</string>
+    <string name="shorts_error_feed_empty">No shorts available</string>
 </resources>

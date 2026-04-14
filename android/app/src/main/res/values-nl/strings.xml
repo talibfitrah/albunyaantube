@@ -522,4 +522,12 @@
     <!-- Player fullscreen hint -->
     <string name="player_fullscreen_zoom_hint">Dubbeltik om te wisselen tussen passend/vullen</string>
 
+    <!-- Shorts player -->
+    <string name="shorts_like_cd">Vind ik leuk</string>
+    <string name="shorts_share_cd">Delen</string>
+    <string name="shorts_subscribe">Abonneren</string>
+    <string name="shorts_subscribed">Geabonneerd</string>
+    <string name="shorts_error_unavailable">Kan deze short niet afspelen. Overslaan…</string>
+    <string name="shorts_error_feed_empty">Geen shorts beschikbaar</string>
+
 </resources>
