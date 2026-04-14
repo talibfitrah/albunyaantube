@@ -177,14 +177,11 @@ class ShortsPlayerFragmentTest {
             )
         ).perform(androidx.test.espresso.action.ViewActions.click())
 
-        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().waitForIdleSync()
-
-        val liked = kotlinx.coroutines.runBlocking {
-            favoritesRepository.isFavoriteOnce(testVideoId)
-        }
+        // waitForIdleSync only flushes the main looper — the like toggle
+        // dispatches Room writes onto IO. Poll the repository instead.
         org.junit.Assert.assertTrue(
             "Expected video $testVideoId to be favorited after clicking like",
-            liked
+            awaitCondition { favoritesRepository.isFavoriteOnce(testVideoId) }
         )
     }
 
@@ -198,15 +195,30 @@ class ShortsPlayerFragmentTest {
             )
         ).perform(androidx.test.espresso.action.ViewActions.click())
 
-        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().waitForIdleSync()
-
-        val followed = kotlinx.coroutines.runBlocking {
-            followedChannelsRepository.isFollowedOnce(testChannelId)
-        }
         org.junit.Assert.assertTrue(
             "Expected channel $testChannelId to be followed after clicking subscribe",
-            followed
+            awaitCondition { followedChannelsRepository.isFollowedOnce(testChannelId) }
         )
+    }
+
+    /**
+     * Poll [condition] until it returns true or the timeout elapses. Replaces
+     * the unreliable `waitForIdleSync()` call for assertions that depend on
+     * coroutine + Room writes that don't run on the main looper.
+     */
+    private fun awaitCondition(
+        timeoutMs: Long = 3_000L,
+        pollIntervalMs: Long = 50L,
+        condition: suspend () -> Boolean
+    ): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        return kotlinx.coroutines.runBlocking {
+            while (System.currentTimeMillis() < deadline) {
+                if (condition()) return@runBlocking true
+                kotlinx.coroutines.delay(pollIntervalMs)
+            }
+            condition()  // last-chance check after the deadline
+        }
     }
 
     /**
