@@ -151,7 +151,10 @@ class UpdateChecker @Inject constructor(
             val core = if (dash < 0) withoutBuild else withoutBuild.substring(0, dash)
             val pre = if (dash < 0) null else withoutBuild.substring(dash + 1).takeIf { it.isNotEmpty() }
             val coreNums = core.split(".").map { it.toIntOrNull() ?: 0 }
-            val preIds = pre?.split('.')?.filter { it.isNotEmpty() }
+            // A prerelease string that parses to no non-empty identifiers (e.g. "1.0.0-..")
+            // is treated as absent so downstream precedence logic doesn't see a phantom
+            // empty list vs null (CodeRabbit #4). Preserves the documented invariant.
+            val preIds = pre?.split('.')?.filter { it.isNotEmpty() }?.ifEmpty { null }
             return coreNums to preIds
         }
 

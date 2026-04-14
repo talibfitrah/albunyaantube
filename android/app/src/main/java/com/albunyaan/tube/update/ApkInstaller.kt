@@ -64,13 +64,19 @@ class ApkInstaller @Inject constructor(
             body.byteStream().use { input ->
                 target.outputStream().use { output ->
                     val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                    var read = input.read(buffer)
                     var sum = 0L
-                    while (read > 0) {
-                        output.write(buffer, 0, read)
-                        sum += read
-                        if (total > 0 && onProgress != null) {
-                            onProgress(sum.toFloat() / total)
+                    // Use !=-1 for EOF per InputStream contract (CodeRabbit #2): read()
+                    // may legally return 0 on a slow/chunked stream when no bytes are
+                    // available yet without being end-of-stream; the `> 0` form would
+                    // terminate early and truncate the APK silently.
+                    var read = input.read(buffer)
+                    while (read != -1) {
+                        if (read > 0) {
+                            output.write(buffer, 0, read)
+                            sum += read
+                            if (total > 0 && onProgress != null) {
+                                onProgress(sum.toFloat() / total)
+                            }
                         }
                         read = input.read(buffer)
                     }
@@ -128,10 +134,18 @@ class ApkInstaller @Inject constructor(
             activity.startActivity(intent)
         } catch (t: Throwable) {
             Log.w(TAG, "Could not open ACTION_MANAGE_UNKNOWN_APP_SOURCES; falling back", t)
-            activity.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                data = Uri.parse("package:${activity.packageName}")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            })
+            // CodeRabbit #1: wrap the fallback too — on heavily-customized OEM skins
+            // (some Huawei/Xiaomi variants) the app-details screen can also be missing
+            // or blocked. Log the secondary failure distinctly so support can tell
+            // apart "first intent failed" from "every settings intent failed".
+            try {
+                activity.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.parse("package:${activity.packageName}")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+            } catch (fallbackError: Throwable) {
+                Log.e(TAG, "Could not open app details settings either", fallbackError)
+            }
         }
     }
 

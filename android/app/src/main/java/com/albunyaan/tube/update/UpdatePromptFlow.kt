@@ -109,43 +109,39 @@ class UpdatePromptFlow @Inject constructor(
         lifecycleOwner: LifecycleOwner,
         info: UpdateInfo
     ) {
-        val progress = ProgressDialog(activity).apply {
-            setMessage(activity.getString(R.string.update_downloading))
-            setCancelable(false)
-            setIndeterminate(false)
-            max = 100
-            setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
-            show()
-        }
         lifecycleOwner.lifecycleScope.launch {
+            // Acquire the mutex BEFORE showing any UI (CodeRabbit #3). The previous
+            // ordering (show dialog → tryLock → dismiss on failure) caused a jarring
+            // flash of the progress dialog when a second tap hit while the first
+            // download was still running.
+            if (!downloadMutex.tryLock()) {
+                toast(activity, R.string.update_downloading)
+                return@launch
+            }
+            val progress = ProgressDialog(activity).apply {
+                setMessage(activity.getString(R.string.update_downloading))
+                setCancelable(false)
+                setIndeterminate(false)
+                max = 100
+                setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
+                show()
+            }
             try {
-                // Serialize the entire download+install handoff. tryLock() — if another
-                // download is already in progress (e.g. auto-check fired seconds ago),
-                // show a toast and drop this one rather than queuing, so rapid repeated
-                // taps don't pile up stale downloads.
-                if (!downloadMutex.tryLock()) {
-                    toast(activity, R.string.update_downloading)
-                    return@launch
+                val file = installer.download(
+                    activity,
+                    info.apkUrl,
+                    expectedSizeBytes = info.apkSizeBytes
+                ) { fraction ->
+                    val pct = (fraction * 100f).toInt().coerceIn(0, 100)
+                    activity.runOnUiThread { progress.progress = pct }
                 }
-                try {
-                    val file = installer.download(
-                        activity,
-                        info.apkUrl,
-                        expectedSizeBytes = info.apkSizeBytes
-                    ) { fraction ->
-                        val pct = (fraction * 100f).toInt().coerceIn(0, 100)
-                        activity.runOnUiThread { progress.progress = pct }
+                withContext(Dispatchers.Main) {
+                    // CodeRabbit #9: match the isFinishing + isDestroyed guard used
+                    // elsewhere in this file so we don't hand a finished activity to
+                    // the installer intent launcher after a configuration change.
+                    if (!activity.isFinishing && !activity.isDestroyed) {
+                        installer.launchInstaller(activity, file)
                     }
-                    withContext(Dispatchers.Main) {
-                        // CodeRabbit #9: match the isFinishing + isDestroyed guard used
-                        // elsewhere in this file so we don't hand a finished activity to
-                        // the installer intent launcher after a configuration change.
-                        if (!activity.isFinishing && !activity.isDestroyed) {
-                            installer.launchInstaller(activity, file)
-                        }
-                    }
-                } finally {
-                    downloadMutex.unlock()
                 }
             } catch (ce: CancellationException) {
                 throw ce
@@ -153,6 +149,7 @@ class UpdatePromptFlow @Inject constructor(
                 Log.e(TAG, "Update download/install failed", t)
                 toast(activity, R.string.update_download_failed)
             } finally {
+                downloadMutex.unlock()
                 runCatching { progress.dismiss() }
             }
         }
