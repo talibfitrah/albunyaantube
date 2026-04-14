@@ -24,12 +24,18 @@ import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
 import com.albunyaan.tube.R
+import com.albunyaan.tube.data.extractor.AudioLanguageOption
+import com.albunyaan.tube.data.extractor.availableAudioLanguages
 import com.albunyaan.tube.databinding.FragmentShortsPlayerBinding
 import com.albunyaan.tube.download.DownloadRepository
 import com.albunyaan.tube.download.DownloadRequest
 import com.albunyaan.tube.player.PlayerRepository
 import com.albunyaan.tube.ui.player.DownloadQualityDialog
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -81,6 +87,25 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
     private var previousOrientation: Int = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     /** Position for which the download picker is waiting on a dialog result. */
     private var pendingDownloadPosition: Int = -1
+    /** Video id for which the audio-language picker is awaiting a dialog result. */
+    private var pendingAudioLanguageVideoId: String? = null
+    /**
+     * Per-video StateFlow of the audio-language option list. The adapter
+     * observes the `.size` of each video's list to drive the rail button's
+     * visibility; the fragment reads the full list to populate the dialog.
+     *
+     * Populated reactively from [PlayerBinder.resolvedEvents] — never blocks
+     * the UI thread: the groupBy+map happens on Main.immediate inside a
+     * StateFlow write, which is cheap for the tiny audio-track lists YouTube
+     * exposes (typically 1–5 entries).
+     */
+    private val audioLanguagesByVideoId =
+        mutableMapOf<String, MutableStateFlow<List<AudioLanguageOption>>>()
+    /** Last-selected language code per video id, drives the dialog's "checked" state. */
+    private val activeLanguageByVideoId = mutableMapOf<String, String>()
+
+    private fun audioLanguageFlowFor(videoId: String): MutableStateFlow<List<AudioLanguageOption>> =
+        audioLanguagesByVideoId.getOrPut(videoId) { MutableStateFlow(emptyList()) }
     /** Time bar driver: periodically mirrors player.currentPosition into the active page's DefaultTimeBar. */
     private val timeBarHandler = Handler(Looper.getMainLooper())
     private var timeBarTicker: Runnable? = null
@@ -119,7 +144,11 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
                     val holder = findViewHolderAt(idx)
                     holder?.flashPlayPauseIndicator(isPlaying = localBinder.isPlaying())
                 },
+                onAudioTrackTap = { idx -> openAudioLanguagePicker(idx) },
                 onLikedFlow = { id -> viewModel.isLikedFlow(id) },
+                onAudioLanguageCountFlow = { id ->
+                    audioLanguageFlowFor(id).map { it.size }
+                },
             )
         )
         adapter = pagerAdapter
@@ -220,6 +249,37 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
                 }
             }
         }
+
+        // Stream resolution → audio-language option list for the page. Pushes
+        // into a per-videoId StateFlow that the adapter collects to flip the
+        // rail button's visibility. Gated on STARTED so stale resolutions
+        // arriving after backgrounding don't wake anything.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                localBinder.resolvedEvents.collect { (videoId, resolved) ->
+                    val options = resolved.availableAudioLanguages()
+                    audioLanguageFlowFor(videoId).value = options
+                }
+            }
+        }
+
+        // Audio-language dialog result — swap the active audio track without
+        // tearing the player down. Registered on childFragmentManager for the
+        // same reason as the download dialog above.
+        childFragmentManager.setFragmentResultListener(
+            AudioLanguageDialog.REQUEST_KEY,
+            viewLifecycleOwner
+        ) { _, result ->
+            val videoId = pendingAudioLanguageVideoId
+            pendingAudioLanguageVideoId = null
+            val code = result.getString(AudioLanguageDialog.RESULT_SELECTED_LANGUAGE)
+                ?: return@setFragmentResultListener
+            if (videoId == null) return@setFragmentResultListener
+            val options = audioLanguageFlowFor(videoId).value
+            val chosen = options.firstOrNull { it.language == code } ?: return@setFragmentResultListener
+            activeLanguageByVideoId[videoId] = code
+            binder?.switchAudioTrack(videoId, chosen.representative)
+        }
     }
 
     /**
@@ -303,6 +363,26 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
      * visible short. Feeds the selected quality into [DownloadRepository] via
      * the same [DownloadRequest] schema as the main player.
      */
+    /**
+     * Show the audio-language picker for the short at [idx]. No-op if the
+     * video has fewer than two languages (the rail button is already hidden
+     * in that case but this guards against race conditions).
+     */
+    private fun openAudioLanguagePicker(idx: Int) {
+        val item = viewModel.items.value.getOrNull(idx) ?: return
+        val options = audioLanguageFlowFor(item.id).value
+        if (options.size < 2) return
+        pendingAudioLanguageVideoId = item.id
+        val triples = options.map { opt ->
+            val label = if (opt.isOriginal) {
+                getString(R.string.shorts_audio_track_original_prefix, opt.displayName)
+            } else opt.displayName
+            Triple(opt.language, label, opt.isOriginal)
+        }
+        AudioLanguageDialog.newInstance(triples, activeLanguageByVideoId[item.id])
+            .show(childFragmentManager, AudioLanguageDialog.TAG)
+    }
+
     private fun downloadShort(idx: Int) {
         val item = viewModel.items.value.getOrNull(idx) ?: return
         val resolved = binder?.resolvedStreamsFor(item.id)

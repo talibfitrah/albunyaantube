@@ -12,7 +12,6 @@ import com.albunyaan.tube.data.shorts.ShortsItem
 import com.albunyaan.tube.databinding.ItemShortsPageBinding
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 /**
@@ -42,7 +41,15 @@ class ShortsPagerAdapter(
         val onDownload: (Int) -> Unit,
         val onChannelTap: (Int) -> Unit,
         val onTapVideo: (Int) -> Unit,
-        val onLikedFlow: (videoId: String) -> Flow<Boolean>
+        val onAudioTrackTap: (Int) -> Unit,
+        val onLikedFlow: (videoId: String) -> Flow<Boolean>,
+        /**
+         * Emits the number of selectable audio-language options for the
+         * given video id. The adapter flips the rail button visible when
+         * the count is ≥ 2. MUST NOT block: expected to be backed by a
+         * MutableStateFlow the fragment populates on PlayerBinder.resolvedEvents.
+         */
+        val onAudioLanguageCountFlow: (videoId: String) -> Flow<Int>
     )
 
     // Tracks the active Flow-collection job per ViewHolder so it can be cancelled
@@ -65,17 +72,33 @@ class ShortsPagerAdapter(
 
         // Bind once synchronously with default state so the page is visible
         // even before the first flow emission arrives.
-        holder.bindItem(item, isLiked = false)
+        holder.bindItem(item, isLiked = false, hasMultipleAudioTracks = false)
 
         val lifecycleOwner = holder.itemView.findViewTreeLifecycleOwner() ?: return
         val job = lifecycleOwner.lifecycleScope.launch {
             lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                callbacks.onLikedFlow(item.id).collect { liked ->
-                    val currentPos = holder.bindingAdapterPosition
-                    if (currentPos == androidx.recyclerview.widget.RecyclerView.NO_POSITION) {
-                        return@collect
+                // Collect liked + audio-language-count flows in parallel and
+                // rebind the affected UI pieces incrementally — we don't want
+                // a tiny language-count change to re-run avatar loads.
+                launch {
+                    callbacks.onLikedFlow(item.id).collect { liked ->
+                        val currentPos = holder.bindingAdapterPosition
+                        if (currentPos == androidx.recyclerview.widget.RecyclerView.NO_POSITION) {
+                            return@collect
+                        }
+                        // Re-bind keeping the current audio-track button state — the
+                        // counter flow below drives its visibility independently.
+                        holder.bindItem(item, liked, hasMultipleAudioTracks = false)
                     }
-                    holder.bindItem(item, liked)
+                }
+                launch {
+                    callbacks.onAudioLanguageCountFlow(item.id).collect { count ->
+                        val currentPos = holder.bindingAdapterPosition
+                        if (currentPos == androidx.recyclerview.widget.RecyclerView.NO_POSITION) {
+                            return@collect
+                        }
+                        holder.setAudioTrackButtonVisible(count >= 2)
+                    }
                 }
             }
         }
@@ -89,11 +112,13 @@ class ShortsPagerAdapter(
 
     private fun ShortsPageViewHolder.bindItem(
         item: ShortsItem,
-        isLiked: Boolean
+        isLiked: Boolean,
+        hasMultipleAudioTracks: Boolean
     ) {
         bind(
             item = item,
             isLiked = isLiked,
+            hasMultipleAudioTracks = hasMultipleAudioTracks,
             onLike = {
                 val pos = bindingAdapterPosition
                 if (pos != androidx.recyclerview.widget.RecyclerView.NO_POSITION) callbacks.onLike(pos)
@@ -113,6 +138,10 @@ class ShortsPagerAdapter(
             onTapVideo = {
                 val pos = bindingAdapterPosition
                 if (pos != androidx.recyclerview.widget.RecyclerView.NO_POSITION) callbacks.onTapVideo(pos)
+            },
+            onAudioTrackTap = {
+                val pos = bindingAdapterPosition
+                if (pos != androidx.recyclerview.widget.RecyclerView.NO_POSITION) callbacks.onAudioTrackTap(pos)
             }
         )
     }

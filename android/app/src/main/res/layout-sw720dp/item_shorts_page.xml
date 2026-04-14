@@ -66,6 +66,18 @@
             app:tint="#FFFFFFFF"/>
 
         <ImageButton
+            android:id="@+id/shortAudioTrackBtn"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_marginTop="@dimen/spacing_md"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/shorts_audio_track_cd"
+            android:src="@drawable/ic_shorts_audio_track"
+            android:scaleType="center"
+            android:visibility="gone"
+            app:tint="#FFFFFFFF"/>
+
+        <ImageButton
             android:id="@+id/shortDownloadBtn"
             android:layout_width="56dp"
             android:layout_height="56dp"

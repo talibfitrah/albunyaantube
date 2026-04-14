@@ -560,6 +560,9 @@
     <string name="shorts_error_feed_empty">لا توجد مقاطع قصيرة متاحة</string>
     <string name="shorts_download_cd">تنزيل</string>
     <string name="shorts_download_preparing">جاري التحضير، انقر مرة أخرى بعد لحظة</string>
+    <string name="shorts_audio_track_cd">اللغة الصوتية</string>
+    <string name="shorts_audio_track_title">اللغة الصوتية</string>
+    <string name="shorts_audio_track_original_prefix">الأصلية: %1$s</string>
     <!-- LRM (\u200E) before the "@" keeps the handle on the visual left of an RTL paragraph. -->
     <string name="shorts_channel_handle">\u200E\@%1$s</string>
     <string name="back">رجوع</string>

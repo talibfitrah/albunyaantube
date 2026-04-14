@@ -29,11 +29,13 @@ class ShortsPageViewHolder(
     fun bind(
         item: ShortsItem,
         isLiked: Boolean,
+        hasMultipleAudioTracks: Boolean,
         onLike: () -> Unit,
         onShare: () -> Unit,
         onDownload: () -> Unit,
         onChannelTap: () -> Unit,
-        onTapVideo: () -> Unit
+        onTapVideo: () -> Unit,
+        onAudioTrackTap: () -> Unit
     ) {
         binding.shortTitle.text = item.title
 
@@ -81,6 +83,22 @@ class ShortsPageViewHolder(
         binding.shortChannelAvatar.setOnClickListener { onChannelTap() }
         binding.shortChannelHandle.setOnClickListener { onChannelTap() }
         binding.shortTapTarget.setOnClickListener { onTapVideo() }
+
+        // Audio-language rail button: only shown when the current short
+        // exposes ≥2 audio languages. Defaults to gone in XML; the adapter
+        // flips it visible reactively as streams resolve.
+        binding.shortAudioTrackBtn.visibility =
+            if (hasMultipleAudioTracks) View.VISIBLE else View.GONE
+        binding.shortAudioTrackBtn.setOnClickListener { onAudioTrackTap() }
+    }
+
+    /**
+     * Update only the audio-language button visibility without rebinding the
+     * whole page. Called when stream resolution completes after the initial
+     * bind, so the button can appear mid-playback without flicker.
+     */
+    fun setAudioTrackButtonVisible(visible: Boolean) {
+        binding.shortAudioTrackBtn.visibility = if (visible) View.VISIBLE else View.GONE
     }
 
     /**

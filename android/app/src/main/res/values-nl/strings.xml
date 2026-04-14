@@ -531,6 +531,9 @@
     <string name="shorts_error_feed_empty">Geen shorts beschikbaar</string>
     <string name="shorts_download_cd">Downloaden</string>
     <string name="shorts_download_preparing">Bezig met voorbereiden, tik straks opnieuw</string>
+    <string name="shorts_audio_track_cd">Audio-taal</string>
+    <string name="shorts_audio_track_title">Audio-taal</string>
+    <string name="shorts_audio_track_original_prefix">Origineel: %1$s</string>
     <string name="shorts_channel_handle">\@%1$s</string>
     <string name="back">Terug</string>
 
