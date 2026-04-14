@@ -63,7 +63,10 @@ public class SecurityConfig {
                         // ANDROID-MULTI-01 Issue 4: public OpenGraph "watch" landing pages
                         // served by WatchPageController; must be anonymously reachable so
                         // link unfurlers (WhatsApp/Telegram/Slack/Skype) can crawl og:image.
+                        // Permit both GET and HEAD — Slack, Facebook and others probe HEAD
+                        // first to sniff Content-Type before committing to a full fetch.
                         .requestMatchers(HttpMethod.GET, "/watch/**").permitAll()
+                        .requestMatchers(HttpMethod.HEAD, "/watch/**").permitAll()
 
                         // Actuator endpoints - ADMIN only for production security
                         .requestMatchers("/actuator/**").hasRole("ADMIN")

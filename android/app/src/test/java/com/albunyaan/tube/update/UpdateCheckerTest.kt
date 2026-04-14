@@ -111,4 +111,31 @@ class UpdateCheckerTest {
         UpdateChecker.isNewerVersion("1.x.0", "1.0.0")
         UpdateChecker.isNewerVersion("1.0.0", "1.x.0")
     }
+
+    // Regression tests for codex-flagged H1: build metadata (+build.N) must be
+    // ignored for precedence per semver 2.0.0 §10. The pre-fix splitVersion only
+    // stripped on '-', so `1.0.0+build.1` folded the `+build.1` into the core and
+    // the comparator wrongly saw it as a newer version.
+    @Test
+    fun `build metadata is ignored for precedence on core versions`() {
+        assertFalse(UpdateChecker.isNewerVersion("1.0.0+build.1", "1.0.0"))
+        assertFalse(UpdateChecker.isNewerVersion("1.0.0", "1.0.0+build.1"))
+        assertFalse(UpdateChecker.isNewerVersion("1.0.0+build.1", "1.0.0+build.2"))
+    }
+
+    @Test
+    fun `build metadata is ignored for precedence on prereleases`() {
+        assertFalse(UpdateChecker.isNewerVersion("1.0.0-beta.1+sha.abc", "1.0.0-beta.1"))
+        assertFalse(UpdateChecker.isNewerVersion("1.0.0-beta.1", "1.0.0-beta.1+sha.abc"))
+        // Different build metadata, same prerelease — still equal for precedence.
+        assertFalse(UpdateChecker.isNewerVersion("1.0.0-beta.1+a", "1.0.0-beta.1+b"))
+    }
+
+    @Test
+    fun `build metadata does not mask genuine newer versions`() {
+        // A real upgrade must still be detected even if either side has build metadata.
+        assertTrue(UpdateChecker.isNewerVersion("1.0.1+build.1", "1.0.0"))
+        assertTrue(UpdateChecker.isNewerVersion("1.0.1", "1.0.0+build.99"))
+        assertTrue(UpdateChecker.isNewerVersion("1.0.0-rc.1+sha.x", "1.0.0-beta.9+sha.y"))
+    }
 }

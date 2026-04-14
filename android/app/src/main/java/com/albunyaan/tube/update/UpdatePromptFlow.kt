@@ -11,6 +11,8 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -31,6 +33,15 @@ class UpdatePromptFlow @Inject constructor(
     private val checker: UpdateChecker,
     private val installer: ApkInstaller
 ) {
+
+    /**
+     * Serializes download+install flow so the auto-check on MainActivity.onStart and
+     * the manual "Check for updates" button can never race on the shared APK cache
+     * file (cacheDir/updates/fitrahtube-update.apk). Without this, two concurrent
+     * coroutines would overwrite the same file while the first download's URI might
+     * still be in flight to the package installer (TOCTOU → corrupt APK handoff).
+     */
+    private val downloadMutex = Mutex()
 
     /**
      * Runs a full update check. When [manual] is true, shows "no update available" feedback
@@ -104,12 +115,24 @@ class UpdatePromptFlow @Inject constructor(
         }
         lifecycleOwner.lifecycleScope.launch {
             try {
-                val file = installer.download(activity, info.apkUrl) { fraction ->
-                    val pct = (fraction * 100f).toInt().coerceIn(0, 100)
-                    activity.runOnUiThread { progress.progress = pct }
+                // Serialize the entire download+install handoff. tryLock() — if another
+                // download is already in progress (e.g. auto-check fired seconds ago),
+                // show a toast and drop this one rather than queuing, so rapid repeated
+                // taps don't pile up stale downloads.
+                if (!downloadMutex.tryLock()) {
+                    toast(activity, R.string.update_downloading)
+                    return@launch
                 }
-                withContext(Dispatchers.Main) {
-                    if (!activity.isFinishing) installer.launchInstaller(activity, file)
+                try {
+                    val file = installer.download(activity, info.apkUrl) { fraction ->
+                        val pct = (fraction * 100f).toInt().coerceIn(0, 100)
+                        activity.runOnUiThread { progress.progress = pct }
+                    }
+                    withContext(Dispatchers.Main) {
+                        if (!activity.isFinishing) installer.launchInstaller(activity, file)
+                    }
+                } finally {
+                    downloadMutex.unlock()
                 }
             } catch (ce: CancellationException) {
                 throw ce

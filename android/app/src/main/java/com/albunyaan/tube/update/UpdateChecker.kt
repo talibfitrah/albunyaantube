@@ -130,11 +130,16 @@ class UpdateChecker @Inject constructor(
          * Splits a version string into its numeric core and optional pre-release identifiers.
          * Keeps identifiers as strings — ordering logic in [comparePrereleaseIdentifiers]
          * decides per-identifier whether to treat them as numeric or alphanumeric.
+         *
+         * Per semver 2.0.0 §10, build metadata (anything after a literal `+`) MUST be ignored
+         * for precedence. We strip it from both the core and the prerelease sections before
+         * parsing, so `1.0.0+build.1` == `1.0.0` and `1.0.0-beta.1+sha.abc` == `1.0.0-beta.1`.
          */
         private fun splitVersion(v: String): Pair<List<Int>, List<String>?> {
-            val dash = v.indexOf('-')
-            val core = if (dash < 0) v else v.substring(0, dash)
-            val pre = if (dash < 0) null else v.substring(dash + 1).takeIf { it.isNotEmpty() }
+            val withoutBuild = v.substringBefore('+')
+            val dash = withoutBuild.indexOf('-')
+            val core = if (dash < 0) withoutBuild else withoutBuild.substring(0, dash)
+            val pre = if (dash < 0) null else withoutBuild.substring(dash + 1).takeIf { it.isNotEmpty() }
             val coreNums = core.split(".").map { it.toIntOrNull() ?: 0 }
             val preIds = pre?.split('.')?.filter { it.isNotEmpty() }
             return coreNums to preIds
