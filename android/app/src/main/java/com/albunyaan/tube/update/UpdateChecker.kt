@@ -98,28 +98,69 @@ class UpdateChecker @Inject constructor(
             "https://api.github.com/repos/talibfitrah/albunyaantube/releases/latest"
 
         /**
-         * True iff [remote] is strictly greater than [current] in semver order. Understands
-         * pre-release suffixes of the form `-beta.N`, `-alpha.N`, `-rc.N`, `-beta-N`.
-         * A non-pre-release is considered greater than any pre-release of the same core.
+         * True iff [remote] is strictly greater than [current] in semver-2.0.0-ish order.
+         *
+         * Rules (abridged from https://semver.org):
+         *  - Core versions (MAJOR.MINOR.PATCH) compare numerically, left to right.
+         *  - A version WITH a pre-release identifier has LOWER precedence than the same
+         *    core version WITHOUT one (so `1.0.0` > `1.0.0-rc.1`).
+         *  - Pre-release identifiers compare identifier-by-identifier:
+         *      * Numeric-only identifiers compare numerically.
+         *      * Alphanumeric identifiers compare lexically (ASCII sort).
+         *      * A numeric identifier always has lower precedence than an alphanumeric one.
+         *      * A larger number of identifiers wins when all preceding ones are equal.
+         *
+         * The comparator deliberately tolerates malformed inputs (missing segments parse
+         * as 0, empty prerelease treated as absent) — we never want a version check to
+         * hard-fail and block rollouts.
          */
         internal fun isNewerVersion(remote: String, current: String): Boolean {
             val (rCore, rPre) = splitVersion(remote)
             val (cCore, cPre) = splitVersion(current)
             val coreCompare = compareNumericParts(rCore, cCore)
             if (coreCompare != 0) return coreCompare > 0
-            if (rPre == null && cPre != null) return true
-            if (rPre != null && cPre == null) return false
+            // Same core. Presence of a prerelease makes the version LOWER.
             if (rPre == null && cPre == null) return false
-            return compareNumericParts(rPre!!, cPre!!) > 0
+            if (rPre == null) return true          // remote is release, current is prerelease
+            if (cPre == null) return false         // remote is prerelease, current is release
+            return comparePrereleaseIdentifiers(rPre, cPre) > 0
         }
 
-        private fun splitVersion(v: String): Pair<List<Int>, List<Int>?> {
+        /**
+         * Splits a version string into its numeric core and optional pre-release identifiers.
+         * Keeps identifiers as strings — ordering logic in [comparePrereleaseIdentifiers]
+         * decides per-identifier whether to treat them as numeric or alphanumeric.
+         */
+        private fun splitVersion(v: String): Pair<List<Int>, List<String>?> {
             val dash = v.indexOf('-')
             val core = if (dash < 0) v else v.substring(0, dash)
-            val pre = if (dash < 0) null else v.substring(dash + 1)
+            val pre = if (dash < 0) null else v.substring(dash + 1).takeIf { it.isNotEmpty() }
             val coreNums = core.split(".").map { it.toIntOrNull() ?: 0 }
-            val preNums = pre?.split('.', '-')?.mapNotNull { it.toIntOrNull() }
-            return coreNums to preNums
+            val preIds = pre?.split('.')?.filter { it.isNotEmpty() }
+            return coreNums to preIds
+        }
+
+        /**
+         * Compares two pre-release identifier lists per semver 2.0.0 section 11.
+         * Returns positive if `a > b`, negative if `a < b`, zero if equal.
+         */
+        private fun comparePrereleaseIdentifiers(a: List<String>, b: List<String>): Int {
+            val shared = minOf(a.size, b.size)
+            for (i in 0 until shared) {
+                val ai = a[i]
+                val bi = b[i]
+                val aNum = ai.toIntOrNull()
+                val bNum = bi.toIntOrNull()
+                val cmp = when {
+                    aNum != null && bNum != null -> aNum.compareTo(bNum)
+                    aNum != null -> -1 // numeric identifier has LOWER precedence than alphanumeric
+                    bNum != null -> 1
+                    else -> ai.compareTo(bi) // both alphanumeric: ASCII lex order
+                }
+                if (cmp != 0) return cmp
+            }
+            // All shared identifiers equal: the longer list wins.
+            return a.size.compareTo(b.size)
         }
 
         private fun compareNumericParts(a: List<Int>, b: List<Int>): Int {

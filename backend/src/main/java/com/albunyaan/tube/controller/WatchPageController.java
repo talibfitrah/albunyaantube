@@ -14,6 +14,8 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import jakarta.servlet.http.HttpServletRequest;
 
+import java.util.regex.Pattern;
+
 /**
  * ANDROID-MULTI-01 Issue 4: Public "watch" landing pages that link unfurlers
  * (WhatsApp, Telegram, Slack, Skype) can crawl to render rich previews with
@@ -35,6 +37,13 @@ public class WatchPageController {
 
     private static final int DESCRIPTION_MAX_CHARS = 300;
 
+    /**
+     * Allowed shape for the {@code videoId} path variable. Firestore document IDs and
+     * YouTube IDs both fit inside this charset; anything outside it is guaranteed to be
+     * a malformed or attacker-crafted value and is rejected before any rendering occurs.
+     */
+    private static final Pattern VIDEO_ID_PATTERN = Pattern.compile("^[A-Za-z0-9_-]{1,64}$");
+
     private final PublicContentService contentService;
 
     public WatchPageController(PublicContentService contentService) {
@@ -47,6 +56,15 @@ public class WatchPageController {
             @PathVariable String videoId,
             HttpServletRequest request
     ) {
+        // Reject malformed IDs outright. Defense-in-depth: even though the response
+        // escapes the value, keeping obvious attack payloads out of the rendering path
+        // eliminates a whole class of bugs (XSS via </script> injection, log spoofing,
+        // etc.) before any handler runs.
+        if (videoId == null || !VIDEO_ID_PATTERN.matcher(videoId).matches()) {
+            return ResponseEntity.badRequest()
+                    .contentType(MediaType.TEXT_HTML)
+                    .body(buildFallbackHtml("", ""));
+        }
         String canonicalUrl = ServletUriComponentsBuilder.fromCurrentRequestUri()
                 .build()
                 .toUriString();
@@ -125,14 +143,24 @@ public class WatchPageController {
         if (!description.isEmpty()) {
             html.append("<p class=\"desc\">").append(description).append("</p>\n");
         }
-        html.append("<a class=\"cta\" href=\"").append(escapeAttr(deepLink)).append("\">Open in FitrahTube</a>\n");
+        html.append("<a id=\"openAppLink\" class=\"cta\" data-href=\"")
+                .append(escapeAttr(deepLink))
+                .append("\" href=\"")
+                .append(escapeAttr(deepLink))
+                .append("\">Open in FitrahTube</a>\n");
         html.append("</div>\n</div>\n");
-        // On mobile browsers, try to hop into the app immediately. Desktops stay on this page.
+        // Mobile hop: read the deep link from the anchor's data attribute at runtime —
+        // never interpolate the value directly into the script body (that is how a
+        // crafted </script> payload would break out of the JS string literal). HTML
+        // attributes are the safe context; escapeAttr already guards them.
         html.append("<script>(function(){\n");
         html.append("var ua=navigator.userAgent||'';\n");
         html.append("var isMobile=/Android|iPhone|iPad|iPod/i.test(ua);\n");
-        html.append("if(isMobile){setTimeout(function(){window.location.href=");
-        html.append("'").append(deepLink).append("';},50);}\n");
+        html.append("if(!isMobile)return;\n");
+        html.append("var el=document.getElementById('openAppLink');\n");
+        html.append("if(!el)return;\n");
+        html.append("var href=el.getAttribute('data-href');\n");
+        html.append("if(href)setTimeout(function(){window.location.href=href;},50);\n");
         html.append("})();</script>\n");
         html.append("</body></html>");
         return html.toString();
