@@ -1254,9 +1254,15 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // Show audio-language button only when the current video exposes
             // multiple language tracks (NewPipe-surfaced dub locales). For
             // single-track videos we hide the control entirely.
-            binding.audioLanguageButton.isVisible = (state.streamState as? StreamState.Ready)
-                ?.selection?.resolved?.availableAudioLanguages()?.size
-                ?.let { it >= 2 } == true
+            val ready = state.streamState as? StreamState.Ready
+            val langCount = ready?.selection?.resolved?.availableAudioLanguages()?.size ?: 0
+            binding.audioLanguageButton.isVisible = langCount >= 2
+            if (BuildConfig.DEBUG) {
+                android.util.Log.d(
+                    "PlayerAudioLangBtn",
+                    "streamId=${ready?.streamId} langCount=$langCount visible=${binding.audioLanguageButton.isVisible}"
+                )
+            }
             upNextAdapter.submitList(state.upNext)
             binding.upNextList.isVisible = state.upNext.isNotEmpty()
             binding.upNextEmpty.isVisible = state.upNext.isEmpty()
