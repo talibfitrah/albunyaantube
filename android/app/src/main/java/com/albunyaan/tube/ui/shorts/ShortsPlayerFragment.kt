@@ -53,6 +53,10 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
 
     @Inject lateinit var playerRepository: PlayerRepository
     @Inject lateinit var downloadRepository: DownloadRepository
+    @Inject lateinit var hlsPoisonRegistry: com.albunyaan.tube.player.HlsPoisonRegistry
+    @Inject lateinit var multiRepFactory: com.albunyaan.tube.player.MultiRepSyntheticDashMediaSourceFactory
+    @Inject lateinit var coldStartQualityChooser: com.albunyaan.tube.player.ColdStartQualityChooser
+    @Inject lateinit var playbackFeatureFlags: com.albunyaan.tube.player.PlaybackFeatureFlags
 
     private val viewModel: ShortsPlayerViewModel by viewModels {
         object : ViewModelProvider.Factory {
@@ -88,7 +92,17 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
         val bnd = FragmentShortsPlayerBinding.bind(view)
         binding = bnd
 
-        val localBinder = PlayerBinder(viewModel.player, playerRepository)
+        // Build the same adaptive MediaSource factory the main PlayerFragment
+        // uses — shorts get DASH/HLS with ABR + auto highest-quality selection
+        // instead of a single progressive stream.
+        val mediaSourceFactory = com.albunyaan.tube.player.MultiQualityMediaSourceFactory(
+            requireContext(),
+            hlsPoisonRegistry,
+            multiRepFactory,
+            coldStartQualityChooser,
+            playbackFeatureFlags
+        )
+        val localBinder = PlayerBinder(viewModel.player, playerRepository, mediaSourceFactory)
         binder = localBinder
 
         val pagerAdapter = ShortsPagerAdapter(

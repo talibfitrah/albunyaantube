@@ -58,6 +58,14 @@ class PlayerBinder private constructor(
     private val player: ExoPlayer?,
     private val playerRepository: PlayerRepository,
     /**
+     * Factory that turns [ResolvedStreams] into an adaptive DASH/HLS
+     * [MediaSource]. Shorts play highest-quality by default with ABR when
+     * the factory picks an adaptive path; progressive is used only as a
+     * fallback when the factory returns a non-success result.
+     * Null in the test-only constructor path.
+     */
+    private val mediaSourceFactory: com.albunyaan.tube.player.MultiQualityMediaSourceFactory?,
+    /**
      * Thin seam over the player mutations we perform from the resolve
      * coroutine. Production binds directly to the real ExoPlayer; tests
      * substitute a fake so we can assert apply-ordering without constructing
@@ -74,9 +82,14 @@ class PlayerBinder private constructor(
 ) {
 
     /** Production constructor — wires the real ExoPlayer-backed ops. */
-    constructor(player: ExoPlayer, playerRepository: PlayerRepository) : this(
+    constructor(
+        player: ExoPlayer,
+        playerRepository: PlayerRepository,
+        mediaSourceFactory: com.albunyaan.tube.player.MultiQualityMediaSourceFactory
+    ) : this(
         player = player,
         playerRepository = playerRepository,
+        mediaSourceFactory = mediaSourceFactory,
         playerOps = ExoPlayerOps(player),
         attach = PlayerViewAttach { view, attached ->
             if (attached) view.player = player else view.player = null
@@ -88,7 +101,7 @@ class PlayerBinder private constructor(
         playerRepository: PlayerRepository,
         ops: PlayerOps,
         attach: PlayerViewAttach
-    ) : this(null, playerRepository, ops, attach)
+    ) : this(null, playerRepository, null, ops, attach)
 
     /**
      * Minimal surface of player mutations needed for testing the rapid-swipe
@@ -231,7 +244,24 @@ class PlayerBinder private constructor(
 
         synchronized(resolvedCache) { resolvedCache[videoId] = resolved }
 
-        val source = buildProgressiveSource(resolved)
+        // Prefer the adaptive factory — same path the main PlayerFragment uses.
+        // When available it returns a DASH/HLS source with ABR; ExoPlayer's
+        // default track selector auto-picks highest quality that fits the
+        // bandwidth. Progressive is kept as a safety net for resolve paths
+        // where the factory can't build an adaptive source.
+        val adaptive = mediaSourceFactory?.let {
+            runCatching {
+                it.createMediaSourceWithType(
+                    resolved = resolved,
+                    audioOnly = false,
+                    selectedQuality = null,       // auto-select highest
+                    userQualityCapHeight = null,  // no cap
+                    forceProgressive = false,     // prefer adaptive
+                    videoId = videoId
+                )
+            }.getOrNull()
+        }
+        val source = adaptive?.source ?: buildProgressiveSource(resolved)
         if (source == null) {
             _failureEvents.tryEmit(videoId)
             return
