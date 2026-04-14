@@ -77,4 +77,43 @@ class ShortsPageViewHolder(
         binding.shortChannelHandle.setOnClickListener { onChannelTap() }
         binding.shortTapTarget.setOnClickListener { onTapVideo() }
     }
+
+    /**
+     * Flash the centered play/pause overlay. When [isPlaying] is true the
+     * indicator shows the pause glyph for [AUTO_HIDE_MS] and fades out —
+     * giving quick visual feedback that a tap resumed playback. When false
+     * the play glyph stays visible persistently (paused state should be
+     * obvious).
+     */
+    fun flashPlayPauseIndicator(isPlaying: Boolean) {
+        val view = binding.shortPlayPauseIndicator
+        view.animate().cancel()
+        view.setImageResource(
+            if (isPlaying) R.drawable.ic_shorts_pause_indicator
+            else R.drawable.ic_shorts_play_indicator
+        )
+        view.alpha = 1f
+        view.visibility = View.VISIBLE
+        if (isPlaying) {
+            view.animate()
+                .alpha(0f)
+                .setStartDelay(AUTO_HIDE_MS)
+                .setDuration(FADE_MS)
+                .withEndAction { view.visibility = View.GONE }
+                .start()
+        }
+    }
+
+    /** Hide the overlay immediately — useful on page recycle. */
+    fun clearPlayPauseIndicator() {
+        val view = binding.shortPlayPauseIndicator
+        view.animate().cancel()
+        view.alpha = 0f
+        view.visibility = View.GONE
+    }
+
+    companion object {
+        private const val AUTO_HIDE_MS = 600L
+        private const val FADE_MS = 250L
+    }
 }

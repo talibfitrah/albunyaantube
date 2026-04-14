@@ -61,6 +61,8 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
     private var pageChangeCallback: ViewPager2.OnPageChangeCallback? = null
     private var hasBoundInitialPage = false
     private var didEnterImmersive = false
+    /** True if playback was running when the fragment was last stopped — drives auto-resume on onStart. */
+    private var wasPlayingBeforeStop = false
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -75,7 +77,14 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
                 onLike = { idx -> viewModel.toggleLike(idx) },
                 onShare = { idx -> shareShort(idx) },
                 onChannelTap = { idx -> openChannel(idx) },
-                onTapVideo = { _ -> localBinder.togglePlayPause() },
+                onTapVideo = { idx ->
+                    localBinder.togglePlayPause()
+                    // Flash the centered indicator on the currently-bound
+                    // page. The adapter position is the most reliable source
+                    // since the tap originated on that holder's tap target.
+                    val holder = findViewHolderAt(idx)
+                    holder?.flashPlayPauseIndicator(isPlaying = localBinder.isPlaying())
+                },
                 onLikedFlow = { id -> viewModel.isLikedFlow(id) },
             )
         )
@@ -237,8 +246,26 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
 
     override fun onStop() {
         super.onStop()
+        // Don't bleed audio/video when the fragment is no longer in the
+        // foreground. Record whether playback was running so we can restore
+        // it seamlessly when the user returns; if the video was already
+        // paused, stay paused.
+        val currentlyBinder = binder
+        wasPlayingBeforeStop = currentlyBinder?.isPlaying() == true
+        currentlyBinder?.pause()
+
         // Covers "Activity finish skips straight to destroy" — restore here too.
         restoreSystemBarsIfImmersive()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // Auto-resume if the user left the screen mid-playback so the short
+        // keeps playing right where they left off.
+        if (wasPlayingBeforeStop) {
+            binder?.resume()
+            wasPlayingBeforeStop = false
+        }
     }
 
     override fun onDestroyView() {

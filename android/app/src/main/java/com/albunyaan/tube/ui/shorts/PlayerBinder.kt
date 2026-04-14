@@ -272,6 +272,20 @@ class PlayerBinder private constructor(
         playerOps.setPlayWhenReady(!playerOps.getPlayWhenReady())
     }
 
+    /** True if playback is currently running. */
+    fun isPlaying(): Boolean = playerOps.getPlayWhenReady()
+
+    /**
+     * Pause playback without releasing the player. Used for lifecycle
+     * transitions (fragment backgrounded) so audio/video stop bleeding through
+     * when the user isn't looking. Distinct from [togglePlayPause] which the
+     * user triggers via the tap target.
+     */
+    fun pause() { playerOps.setPlayWhenReady(false) }
+
+    /** Resume playback. Pair with [pause] on lifecycle return. */
+    fun resume() { playerOps.setPlayWhenReady(true) }
+
     /** Detach the player from any bound PlayerView. Safe to call multiple times. */
     fun detach() {
         boundView?.let { attach.attach(it, attached = false) }
