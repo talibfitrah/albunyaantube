@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 
 /**
  * ViewModel for the custom shorts player.
@@ -72,9 +73,16 @@ class ShortsPlayerViewModel @AssistedInject constructor(
     val events: SharedFlow<LoadEvent> = _events.asSharedFlow()
 
     private var nextCursor: String? = null
-    private var loading = false
     private var exhausted = false
     private var cachedChannelHeader: ChannelHeader? = null
+
+    /**
+     * Serializes [loadNextPage] to prevent a concurrent double-fetch when two
+     * [onPageChanged] calls race past the pre-launch check. tryLock() returns
+     * false immediately if a load is already in flight, so the second call
+     * is dropped (next prefetch trigger will try again on the new cursor).
+     */
+    private val loadMutex = Mutex()
 
     init {
         loadNextPage()
@@ -82,7 +90,7 @@ class ShortsPlayerViewModel @AssistedInject constructor(
 
     fun onPageChanged(index: Int) {
         _currentIndex.value = index
-        if (!exhausted && !loading && index >= _items.value.size - PREFETCH_THRESHOLD) {
+        if (!exhausted && index >= _items.value.size - PREFETCH_THRESHOLD) {
             loadNextPage()
         }
     }
@@ -123,10 +131,14 @@ class ShortsPlayerViewModel @AssistedInject constructor(
     }
 
     private fun loadNextPage() {
-        if (loading || exhausted) return
-        loading = true
+        if (exhausted) return
         viewModelScope.launch {
+            // tryLock serializes concurrent callers — the second caller
+            // observes a locked mutex and bails out immediately. This replaces
+            // the prior `loading` boolean which had a check/set race.
+            if (!loadMutex.tryLock()) return@launch
             try {
+                if (exhausted) return@launch
                 runCatching {
                     val header = ensureChannelHeader()
                     val page = if (channelId != null) {
@@ -158,9 +170,7 @@ class ShortsPlayerViewModel @AssistedInject constructor(
                     _events.tryEmit(LoadEvent.LoadError(it.message ?: "load failed"))
                 }
             } finally {
-                // Reset the flag even on cancellation so a future VM reuse
-                // (unlikely but possible) can still load.
-                loading = false
+                loadMutex.unlock()
             }
         }
     }

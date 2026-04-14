@@ -371,6 +371,46 @@ class ShortsPlayerViewModelTest {
     }
 
     @Test
+    fun concurrentLoadNextPage_onlyFiresOnce() = runTest(dispatcher) {
+        // Two rapid onPageChanged() calls must not both pass the check and
+        // double-fetch the same cursor. The Mutex.tryLock() gate guarantees
+        // that the second caller drops out while the first holds the lock.
+        //
+        // We force an in-flight load to last across multiple dispatcher
+        // ticks by stubbing loadFeedPage to delay (virtual-time aware under
+        // runTest). Two onPageChanged calls fired between `runCurrent()` and
+        // `advanceUntilIdle()` both enqueue concurrently; only one must
+        // actually trigger a fetch of cursor-2.
+        val firstPage = ShortsPage(
+            items = (1..5).map { sample("v$it") },
+            nextCursor = "cursor-2"
+        )
+        val secondPage = ShortsPage(items = listOf(sample("v6")), nextCursor = null)
+        whenever(feed.loadFeedPage(eq(null), any())).thenReturn(firstPage)
+        whenever(feed.loadFeedPage(eq("cursor-2"), any())).thenReturn(secondPage)
+
+        val vm = ShortsPlayerViewModel(
+            context = context,
+            feed = feed,
+            favorites = favorites,
+            follows = follows,
+            channelDetailRepo = channelDetailRepo,
+            initialShortId = null,
+            channelId = null
+        )
+        advanceUntilIdle()
+        // Now page 1 is loaded. Fire two concurrent onPageChanged calls.
+        // Both launches enqueue back-to-back before any can complete.
+        vm.onPageChanged(4)
+        vm.onPageChanged(4)
+        advanceUntilIdle()
+
+        // The Mutex ensures only one fetch of cursor-2, never two.
+        verify(feed, times(1)).loadFeedPage(eq(null), any())
+        verify(feed, times(1)).loadFeedPage(eq("cursor-2"), any())
+    }
+
+    @Test
     fun loadCancellation_doesNotEmitLoadError() = runTest(dispatcher) {
         // runCatching used to swallow CancellationException, firing a spurious
         // "Job was cancelled" LoadError toast on legitimate scope cancellation
