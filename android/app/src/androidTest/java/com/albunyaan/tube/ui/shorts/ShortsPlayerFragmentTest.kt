@@ -95,9 +95,11 @@ class ShortsPlayerFragmentTest {
             )
         )
 
-        // Clear any lingering Room state from prior tests.
+        // Clear any lingering Room state from prior tests. Failures should
+        // surface (no swallowing) so dirty state can't mask test bugs.
         kotlinx.coroutines.runBlocking {
-            runCatching { favoritesRepository.clearAll() }
+            favoritesRepository.clearAll()
+            followedChannelsRepository.clearAll()
         }
     }
 
@@ -107,7 +109,8 @@ class ShortsPlayerFragmentTest {
         scenario = null
         channelDetailFake.reset()
         kotlinx.coroutines.runBlocking {
-            runCatching { favoritesRepository.clearAll() }
+            favoritesRepository.clearAll()
+            followedChannelsRepository.clearAll()
         }
     }
 
