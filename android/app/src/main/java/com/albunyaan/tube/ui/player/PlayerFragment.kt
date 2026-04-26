@@ -132,6 +132,13 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private var lastVideoWidth = 0
     private var lastVideoHeight = 0
     private var lastPixelRatio = 1f
+    /**
+     * True when the displayed video is portrait (height > width after applying
+     * any encoded rotation). Computed in onVideoSizeChanged so callers don't
+     * have to think about VideoSize.unappliedRotationDegrees — many 9:16
+     * sources are encoded landscape with a 90° rotation tag.
+     */
+    private var lastVideoIsPortrait = false
     /** Crop budget for AspectPolicy — resolved from PlaybackFeatureFlags for feature-flaggable control. */
     private val cropBudget: Float by lazy {
         if (featureFlags.isGenerousCropBudgetEnabled)
@@ -603,14 +610,22 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             userDismissedFullscreen = false
         }
 
+        val isPortraitVideo = lastVideoIsPortrait
+
         if (pendingFullscreenExit && !isLandscape) {
             // Deferred fullscreen exit: toggleFullscreen() deferred exit restoration because
             // it was still in landscape. Now portrait has arrived — run exit UI after
             // orientation unlock is processed (below), then return.
         } else if (orientationChanged) {
-            // Don't auto-enter fullscreen if user explicitly exited via button while in landscape.
-            // This prevents the "exit → orientation unlock → re-enter" loop.
-            if (isLandscape && userDismissedFullscreen) {
+            // Portrait videos fullscreen in portrait, so auto-toggling on orientation
+            // would either yank the user out of fullscreen on entry (landscape→portrait
+            // rotation we requested ourselves) or auto-enter landscape fullscreen for a
+            // 9:16 source. Skip the auto-toggle and let the explicit button drive it.
+            if (isPortraitVideo) {
+                if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onConfigurationChanged: portrait video, skipping auto-toggle")
+            } else if (isLandscape && userDismissedFullscreen) {
+                // Don't auto-enter fullscreen if user explicitly exited via button while in landscape.
+                // This prevents the "exit → orientation unlock → re-enter" loop.
                 if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onConfigurationChanged: skipping auto-fullscreen (user dismissed)")
             } else {
                 isFullscreen = isLandscape
@@ -632,18 +647,19 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                                (targetOrientationIsLandscape == false && !isLandscape)
             if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onConfigurationChanged: weLockedOrientation=true, target=${if (targetOrientationIsLandscape == true) "LANDSCAPE" else "PORTRAIT"}, reachedTarget=$reachedTarget")
             if (reachedTarget) {
-                // Only schedule unlock when exiting fullscreen (target=PORTRAIT)
-                // When entering fullscreen (target=LANDSCAPE), keep the lock active
-                if (targetOrientationIsLandscape == false) {
-                    // Cancel fallback timeout since config change fired successfully
-                    // Reschedule with shorter delay to allow orientation to stabilize
-                    scheduleOrientationUnlock(ORIENTATION_UNLOCK_DELAY_MS)
-                } else {
-                    // Entering fullscreen - reached landscape, clear flags but keep locked
-                    if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onConfigurationChanged: reached fullscreen landscape, keeping lock active")
+                // Decide enter-vs-exit by isFullscreen, not by target orientation —
+                // portrait fullscreen for 9:16 videos has target=PORTRAIT but is an
+                // ENTRY, and must keep the lock active just like landscape entry.
+                if (isFullscreen) {
+                    // Reached fullscreen target — clear flags but keep orientation locked
+                    if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onConfigurationChanged: reached fullscreen target, keeping lock active")
                     weLockedOrientation = false
                     targetOrientationIsLandscape = null
-                    // Note: requestedOrientation remains SENSOR_LANDSCAPE
+                } else {
+                    // Exiting fullscreen — schedule unlock so device can rotate freely again.
+                    // Cancel fallback timeout since config change fired successfully;
+                    // reschedule with shorter delay to allow orientation to stabilize.
+                    scheduleOrientationUnlock(ORIENTATION_UNLOCK_DELAY_MS)
                 }
             }
         }
@@ -1077,11 +1093,25 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     "playerViewResizeMode=${binding?.playerView?.resizeMode}")
 
                 if (videoSize.width > 0 && videoSize.height > 0) {
-                    lastVideoWidth = videoSize.width
-                    lastVideoHeight = videoSize.height
-                    lastPixelRatio = videoSize.pixelWidthHeightRatio
+                    val rotated = videoSize.unappliedRotationDegrees == 90 || videoSize.unappliedRotationDegrees == 270
+                    // Cache post-rotation (displayed) dimensions so AspectPolicy and the
+                    // portrait-fullscreen detector both see what the user will actually
+                    // see on screen — many 9:16 sources are encoded landscape with a 90°
+                    // rotation tag and would otherwise be mis-computed as landscape.
+                    // Pixel aspect ratio inverts with the swap: PAR is defined relative
+                    // to the encoded width/height, so swapping demands 1/PAR. Square
+                    // pixels (PAR=1) are unaffected; anamorphic sources need this.
+                    lastVideoWidth = if (rotated) videoSize.height else videoSize.width
+                    lastVideoHeight = if (rotated) videoSize.width else videoSize.height
+                    val rawPar = videoSize.pixelWidthHeightRatio
+                    val safePar = if (rawPar.isFinite() && rawPar > 0f) rawPar else 1f
+                    lastPixelRatio = if (rotated) 1f / safePar else safePar
+                    lastVideoIsPortrait = lastVideoHeight > lastVideoWidth
 
-                    val videoAspect = (videoSize.width.toFloat() * videoSize.pixelWidthHeightRatio) / videoSize.height.toFloat()
+                    // Telemetry uses the cached (rotation-aware) values so the
+                    // mismatch metric reflects what the user actually sees on
+                    // screen, not the encoded frame.
+                    val videoAspect = (lastVideoWidth.toFloat() * lastPixelRatio) / lastVideoHeight.toFloat()
                     val dm = resources.displayMetrics
                     val screenAspect = maxOf(dm.widthPixels, dm.heightPixels).toFloat() / minOf(dm.widthPixels, dm.heightPixels).toFloat()
                     viewModel.state.value.currentItem?.streamId?.let { streamId ->
@@ -1092,9 +1122,12 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         val pv = binding?.playerView ?: return
                         val screenW = pv.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
                         val screenH = pv.height.takeIf { it > 0 } ?: resources.displayMetrics.heightPixels
+                        // Use the cached (rotation-aware) PAR alongside the cached
+                        // displayed dims — passing the raw videoSize.pixelWidthHeightRatio
+                        // here would mismatch when the cached dims were swapped above.
                         fullscreenResizeMode = AspectPolicy.computeResizeMode(
-                            screenW, screenH, videoSize.width, videoSize.height,
-                            videoSize.pixelWidthHeightRatio, cropBudget
+                            screenW, screenH, lastVideoWidth, lastVideoHeight,
+                            lastPixelRatio, cropBudget
                         )
                         pv.resizeMode = fullscreenResizeMode
                     }
@@ -2565,6 +2598,15 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     binding?.playerView?.resizeMode = fullscreenResizeMode
                 }
             }
+            // Drop the cached video dimensions/orientation. onVideoSizeChanged for
+            // the next stream will repopulate. Without this, a quick fullscreen tap
+            // between stream prepare and the first onVideoSizeChanged callback would
+            // read the previous video's orientation — e.g. a portrait short followed
+            // by a landscape video would briefly route the next tap to portrait.
+            lastVideoWidth = 0
+            lastVideoHeight = 0
+            lastPixelRatio = 1f
+            lastVideoIsPortrait = false
         }
 
         val hasPendingResume = pendingResumeStreamId == streamState.streamId && pendingResumePositionMs != null
@@ -3083,13 +3125,29 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         if (isFullscreen) {
             // Entering fullscreen via button — clear dismiss flag so auto-fullscreen works
             userDismissedFullscreen = false
-            // Request landscape orientation - will trigger onConfigurationChanged
-            // Mark that WE locked orientation - but DON'T schedule unlock for fullscreen entry.
-            // We keep it locked to SENSOR_LANDSCAPE until user exits fullscreen.
+            // Source-aware orientation: portrait-shot videos (e.g. 9:16 vertical
+            // recordings that aren't routed to the Shorts player) should fullscreen
+            // in portrait; standard 16:9 stays landscape.
+            val isPortraitVideo = lastVideoIsPortrait
+            // Request orientation - will trigger onConfigurationChanged when rotation needed.
+            // Keep the device locked to the chosen orientation until the user exits fullscreen.
             weLockedOrientation = true
-            targetOrientationIsLandscape = true
-            if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "toggleFullscreen: lock set, target=LANDSCAPE, current=${if (isCurrentlyLandscape) "LANDSCAPE" else "PORTRAIT"} (no unlock scheduled)")
-            requireActivity().requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            targetOrientationIsLandscape = !isPortraitVideo
+            val targetIsLandscape = !isPortraitVideo
+            if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "toggleFullscreen: lock set, target=${if (isPortraitVideo) "PORTRAIT" else "LANDSCAPE"}, current=${if (isCurrentlyLandscape) "LANDSCAPE" else "PORTRAIT"} (no unlock scheduled)")
+            requireActivity().requestedOrientation = if (isPortraitVideo)
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+            else
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            // If the current orientation already matches the target (no rotation
+            // needed, e.g. portrait video on a portrait phone), onConfigurationChanged
+            // will never fire to clear the lock-pending flags. Clear them now so a
+            // later non-orientation config change (font scale, locale, theme) can't
+            // accidentally take the reached-target branch with stale state.
+            if (targetIsLandscape == isCurrentlyLandscape) {
+                weLockedOrientation = false
+                targetOrientationIsLandscape = null
+            }
             // NO scheduleOrientationUnlock() - lock stays until user exits fullscreen
         } else {
             // Exiting fullscreen via button — if currently landscape, mark that user
@@ -3355,10 +3413,17 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 binding.playerView.layoutParams = playerParams
             }
 
-            // Compute resize mode via AspectPolicy using known video dimensions
+            // Compute resize mode via AspectPolicy using known video dimensions.
+            // Use the screen's actual portrait/landscape orientation rather than
+            // assuming landscape — for a 9:16 video on a tall portrait panel
+            // (e.g. S25 Ultra ~19.5:9) feeding swapped dims tricks the policy
+            // into FIT and leaves top/bottom letterbox instead of filling.
             if (!userToggledResizeMode && lastVideoWidth > 0 && lastVideoHeight > 0) {
-                val screenW = resources.displayMetrics.let { maxOf(it.widthPixels, it.heightPixels) }
-                val screenH = resources.displayMetrics.let { minOf(it.widthPixels, it.heightPixels) }
+                val dm = resources.displayMetrics
+                val screenIsPortrait = resources.configuration.orientation ==
+                    android.content.res.Configuration.ORIENTATION_PORTRAIT
+                val screenW = if (screenIsPortrait) minOf(dm.widthPixels, dm.heightPixels) else maxOf(dm.widthPixels, dm.heightPixels)
+                val screenH = if (screenIsPortrait) maxOf(dm.widthPixels, dm.heightPixels) else minOf(dm.widthPixels, dm.heightPixels)
                 fullscreenResizeMode = AspectPolicy.computeResizeMode(
                     screenW, screenH, lastVideoWidth, lastVideoHeight, lastPixelRatio, cropBudget
                 )
