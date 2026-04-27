@@ -792,16 +792,17 @@ class MeFeedRepository @Inject constructor(
                 }
             }
             refreshStateDao.upsert(
-                ChannelFeedRefreshState(
+                (previous ?: ChannelFeedRefreshState(
                     channelId = channel.channelId,
-                    lastSuccessfulFetchAt = previous?.lastSuccessfulFetchAt ?: 0L,
+                    lastSuccessfulFetchAt = 0L,
                     lastAttemptAt = now,
                     lastErrorMessage = msg,
-                    etag = previous?.etag,
-                    lastModified = previous?.lastModified,
+                )).copy(
+                    lastAttemptAt = now,
+                    lastErrorMessage = msg,
                     consecutiveErrorCount = errCount,
-                    consecutiveEmptyCount = previous?.consecutiveEmptyCount ?: 0,
                     backoffUntilMs = newBackoffUntilMs,
+                    // Preserve etag, lastModified, deepPageUrl, deepPageCookiesJson via copy()
                 )
             )
             telemetry.emit(
@@ -830,8 +831,12 @@ class MeFeedRepository @Inject constructor(
                 val nextEtag = result.etag ?: previous?.etag
                 val nextLastModified = result.lastModified ?: previous?.lastModified
                 refreshStateDao.upsert(
-                    ChannelFeedRefreshState(
+                    (previous ?: ChannelFeedRefreshState(
                         channelId = channel.channelId,
+                        lastSuccessfulFetchAt = now,
+                        lastAttemptAt = now,
+                        lastErrorMessage = null,
+                    )).copy(
                         lastSuccessfulFetchAt = now,
                         lastAttemptAt = now,
                         lastErrorMessage = null,
@@ -840,6 +845,7 @@ class MeFeedRepository @Inject constructor(
                         consecutiveErrorCount = 0,
                         consecutiveEmptyCount = 0,
                         backoffUntilMs = null,
+                        // deepPageUrl + deepPageCookiesJson preserved via copy()
                     )
                 )
                 telemetry.emit(
@@ -909,14 +915,23 @@ class MeFeedRepository @Inject constructor(
                 }
 
                 if (items.isEmpty()) {
-                    // Real-empty path (outside protection): wipe cache, but
-                    // still treat as a successful fetch — the channel is
+                    // Real-empty path (outside protection): the channel is
                     // legitimately empty (dormant / unsubscribed-from-uploads /
                     // first-fetch-with-no-uploads). T9: error → 0, empty++.
-                    cache.replaceForChannel(channel.channelId, emptyList())
+                    //
+                    // Round 8 [field-bug]: do NOT call replaceForChannel —
+                    // that would wipe any deep-paged history. ATOM emptiness
+                    // is about the most-recent 15 uploads only; older deep-
+                    // paged rows remain valid. Skipping the wipe means a
+                    // dormant channel keeps showing the user's prior scroll
+                    // history until they unsubscribe.
                     refreshStateDao.upsert(
-                        ChannelFeedRefreshState(
+                        (previous ?: ChannelFeedRefreshState(
                             channelId = channel.channelId,
+                            lastSuccessfulFetchAt = now,
+                            lastAttemptAt = now,
+                            lastErrorMessage = null,
+                        )).copy(
                             lastSuccessfulFetchAt = now,
                             lastAttemptAt = now,
                             lastErrorMessage = null,
@@ -925,6 +940,7 @@ class MeFeedRepository @Inject constructor(
                             consecutiveErrorCount = 0,
                             consecutiveEmptyCount = (previous?.consecutiveEmptyCount ?: 0) + 1,
                             backoffUntilMs = null,
+                            // deepPageUrl + deepPageCookiesJson preserved via copy()
                         )
                     )
                     telemetry.emit(
@@ -939,10 +955,20 @@ class MeFeedRepository @Inject constructor(
                     return
                 }
 
-                cache.replaceForChannel(channel.channelId, items)
+                // Round 8 [field-bug]: changed from replaceForChannel to
+                // upsertAll so ATOM does NOT wipe deep-paged history.
+                // ATOM returns the 15 most-recent uploads; if those overlap
+                // with deep-paged rows by videoId, REPLACE updates them with
+                // ATOM's fresher metadata (title/thumbnail/views). Older
+                // deep-paged rows survive untouched.
+                cache.upsertAll(items)
                 refreshStateDao.upsert(
-                    ChannelFeedRefreshState(
+                    (previous ?: ChannelFeedRefreshState(
                         channelId = channel.channelId,
+                        lastSuccessfulFetchAt = now,
+                        lastAttemptAt = now,
+                        lastErrorMessage = null,
+                    )).copy(
                         lastSuccessfulFetchAt = now,
                         lastAttemptAt = now,
                         lastErrorMessage = null,
@@ -951,6 +977,7 @@ class MeFeedRepository @Inject constructor(
                         consecutiveErrorCount = 0,
                         consecutiveEmptyCount = 0,
                         backoffUntilMs = null,
+                        // deepPageUrl + deepPageCookiesJson preserved via copy()
                     )
                 )
                 telemetry.emit(

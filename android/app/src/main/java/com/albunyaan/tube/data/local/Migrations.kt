@@ -165,3 +165,29 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
         }
     }
 }
+
+/**
+ * v5 → v6: unstick channels falsely marked end-of-channel.
+ *
+ * ANDROID-PERSONAL-03 round 8 [field-bug]: the ATOM refresh path was
+ * wiping deepPageUrl on every successful refresh by constructing a fresh
+ * [ChannelFeedRefreshState] without preserving the deep-page columns.
+ * Channels that had already deep-paged once would lose their continuation
+ * token, then on the next deep-page round the empty token returned an
+ * empty page → falsely marked [DEEP_PAGE_EOF_SENTINEL]. The cache fix
+ * (use upsertAll + copy() in refreshOne) prevents future occurrences,
+ * but existing rows are still stuck. Clear the sentinel so they can
+ * re-attempt.
+ */
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        val tableExists = db.query(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='channel_feed_refresh_state'"
+        ).use { it.moveToFirst() }
+        if (tableExists) {
+            db.execSQL(
+                "UPDATE channel_feed_refresh_state SET deepPageUrl = NULL, deepPageCookiesJson = NULL WHERE deepPageUrl = 'https://yt-eof'"
+            )
+        }
+    }
+}
