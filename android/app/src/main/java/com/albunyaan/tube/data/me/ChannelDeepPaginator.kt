@@ -253,6 +253,25 @@ private fun StreamInfoItem.toFeedItem(): ChannelFeedFetcher.ChannelFeedItem? {
     val uploadedAt: Long? = uploadDate?.offsetDateTime()?.toInstant()?.toEpochMilli()
     val durationSeconds: Long? = if (duration > 0) duration else null
     val views: Long? = if (viewCount >= 0) viewCount else null
+    // ANDROID-PERSONAL-03 round 8 [field-bug]: YouTube's `UU<channelId>`
+    // uploads-playlist API does NOT expose `isShortFormContent` for items
+    // — NewPipe returns `false` for every item parsed from a playlist
+    // page. ATOM RSS does include the flag, so the most-recent 15 items
+    // (the ATOM cache) are correctly classified, but deep-paged history
+    // would land in the cache as `isShort=false` regardless of whether
+    // the upload was actually a Short. Result: shorts only appeared in
+    // the latest weeks (ATOM-covered) and disappeared from older weeks.
+    //
+    // Heuristic fallback: anything <= 60 seconds is treated as a Short.
+    // YouTube's official Short cap was 60s for years; the recent 3-min
+    // extension means we'll occasionally misclassify a genuine 1-3 min
+    // long-form video as a Short, but that's far less surprising than
+    // losing all Shorts from older weeks. ATOM remains authoritative
+    // when both ATOM and deep-page reach the same videoId — the cache
+    // upsert preserves whichever came last (typically ATOM, since it
+    // refreshes hourly).
+    val isShort = isShortFormContent ||
+        (durationSeconds != null && durationSeconds in 1L..60L)
     return ChannelFeedFetcher.ChannelFeedItem(
         videoId = videoId,
         title = name.orEmpty(),
@@ -260,6 +279,6 @@ private fun StreamInfoItem.toFeedItem(): ChannelFeedFetcher.ChannelFeedItem? {
         durationSeconds = durationSeconds,
         viewCount = views,
         uploadedAt = uploadedAt,
-        isShort = isShortFormContent,
+        isShort = isShort,
     )
 }

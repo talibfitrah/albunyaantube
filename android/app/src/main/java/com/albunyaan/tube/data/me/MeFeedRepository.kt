@@ -424,50 +424,60 @@ class MeFeedRepository @Inject constructor(
             .take(MAX_CHANNELS_PER_REFRESH)
             .map { it.channelId }
             .toList()
-        val cachedInWindow = cache
-            .observeRangeForChannels(channelIds, bucket.startMs, bucket.endMs)
-            .first()
-        val channelsWithItems: Set<String> = cachedInWindow.asSequence()
-            .map { it.channelId }
-            .toSet()
-
-        // Candidates: subscribed AND no items in window AND haven't hit
-        // EndOfChannel yet. EndOfChannel is signalled by clearing
-        // deepPageUrl after we've previously deep-paged at least once
-        // (deepPageUrl was non-null on a prior tick). We approximate this
-        // by: skip if (refresh-state has a row with deepPageUrl == null
-        // AND consecutiveErrorCount == 0 AND lastSuccessfulFetchAt > 0).
-        // The "have we deep-paged before?" question is encoded by the row
-        // existing at all with cleared deepPageUrl. To distinguish "never
-        // deep-paged" from "exhausted", we don't try — a channel that has
-        // never been deep-paged starts with deepPageUrl==null too, so
-        // we'd skip it. Trade-off: deep-paging always begins at the
-        // initial page (null token), so the first call for a fresh
-        // channel pulls page 1 of the Videos tab; if that page is in the
-        // bucket, great; if not, we'll re-attempt the next week. The
-        // cost is one extra NewPipe call per never-deep-paged channel.
-        // Acceptable — it's still gated by the rate limiter.
+        // ANDROID-PERSONAL-03 round 8 [field-bug]: the prior candidate
+        // logic checked "channels with no items in [bucket.startMs,
+        // bucket.endMs)" — i.e. channels missing from the requested week
+        // alone. That broke high-volume channels (e.g. Dr. Othman, ~15
+        // uploads/day) once history-rich channels (e.g. Sheikh Kishk,
+        // 10 months cached) populated weeks 2/3/4: Dr. Othman was no
+        // longer the reason `findNextNonEmptyWeekIndex` returned null,
+        // so `fillWeekIfNeeded` never fired and his cache stopped
+        // growing. The user saw his content disappear from week 2 onward
+        // even though the channel has thousands more videos to fetch.
         //
-        // Refinement: persist a sentinel value (e.g. "EOF") in deepPageUrl
-        // when EndOfChannel is hit, so subsequent ticks can skip cleanly.
-        // We use literal [DEEP_PAGE_EOF_SENTINEL] so any non-empty,
-        // non-sentinel value is a real continuation URL.
+        // New rule: a channel is a candidate iff its OLDEST cached row
+        // is still NEWER than the requested bucket's start — meaning
+        // its deep-paging hasn't reached this week yet. EOF channels
+        // are always skipped. Channels with zero rows are candidates
+        // (they need their first deep-page).
+        val oldestPerChannel: Map<String, Long?> = run {
+            val rows = cache
+                .observeRangeForChannels(channelIds, Long.MIN_VALUE, Long.MAX_VALUE)
+                .first()
+            channelIds.associateWith { id ->
+                rows.asSequence()
+                    .filter { it.channelId == id && it.uploadedAt != null }
+                    .map { it.uploadedAt!! }
+                    .minOrNull()
+            }
+        }
         val refreshStates: Map<String, ChannelFeedRefreshState> = channelIds
             .associateWith { id -> refreshStateDao.get(id) ?: return@associateWith null }
             .filterValues { it != null }
             .mapValues { it.value!! }
         val candidateChannels = all
-            .filter { it.channelId in channelIds && it.channelId !in channelsWithItems }
+            .filter { it.channelId in channelIds }
             .filter { ch ->
                 val st = refreshStates[ch.channelId]
                 // Skip channels we've previously paged to exhaustion.
                 st?.deepPageUrl != DEEP_PAGE_EOF_SENTINEL
             }
+            .filter { ch ->
+                // Channels with no cached rows yet OR whose oldest cached
+                // row is newer than the requested bucket need more pages.
+                val oldest = oldestPerChannel[ch.channelId]
+                oldest == null || oldest > bucket.startMs
+            }
+        // Diagnostic counters preserved for parity with the previous log
+        // line shape. `hasItemsInWindow` is now the count of channels
+        // whose OLDEST cached row reaches into or past the bucket — i.e.
+        // channels we DON'T need to deep-page for this week.
+        val channelsAtOrBeyondWeek = oldestPerChannel.values.count { it != null && it <= bucket.startMs }
         if (BuildConfig.DEBUG) {
             val eofCount = refreshStates.values.count { it.deepPageUrl == DEEP_PAGE_EOF_SENTINEL }
             Log.d(
                 TAG,
-                "fillWeekIfNeeded(week=$weekIndex): subs=${all.size} hasItemsInWindow=${channelsWithItems.size} candidates=${candidateChannels.size} eofChannels=$eofCount"
+                "fillWeekIfNeeded(week=$weekIndex): subs=${all.size} reachingThisWeek=$channelsAtOrBeyondWeek candidates=${candidateChannels.size} eofChannels=$eofCount"
             )
             candidateChannels.forEach { ch ->
                 val st = refreshStates[ch.channelId]

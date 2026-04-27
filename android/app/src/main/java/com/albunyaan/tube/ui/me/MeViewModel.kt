@@ -231,6 +231,22 @@ class MeViewModel @Inject constructor(
                     fromIndex = startIndex,
                     filterChannelId = activeFilter,
                 )
+                // ANDROID-PERSONAL-03 round 8 [field-bug]: opportunistic
+                // background fill. With the new candidate logic (channels
+                // whose oldest cached row is newer than the requested
+                // bucket) it's possible for `hit` to be non-null (some
+                // history-rich channel populates week N) while OTHER
+                // channels' deep-paging hasn't reached week N yet. The
+                // user would see the rich channel's videos but miss the
+                // shallower channels' content for that week. Fire a
+                // non-blocking fill round so those lagging channels
+                // catch up; Room's invalidation will re-emit the week
+                // and the UI will update without another scroll.
+                if (hit != null) {
+                    viewModelScope.launch {
+                        feed.fillWeekIfNeeded(startIndex)
+                    }
+                }
                 if (hit == null) {
                     if (BuildConfig.DEBUG) Log.d(TAG, "loadNextWeek: cache empty for week>=$startIndex, looping fillWeekIfNeeded")
                     // Cache empty across [startIndex, MAX_WEEKS_BACK]. Fire
