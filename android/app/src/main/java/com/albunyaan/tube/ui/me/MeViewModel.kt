@@ -25,9 +25,11 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -136,6 +138,28 @@ class MeViewModel @Inject constructor(
             filter.drop(1).collect {
                 resetLoadedWeeksAndRestart()
             }
+        }
+
+        // ANDROID-PERSONAL-03 round 6 [field-bug]: react to subscription
+        // changes so the ViewModel doesn't stay stuck in `reachedEnd=true`
+        // forever after a fresh-install user opens the Me tab BEFORE
+        // adding any subscription. The first [loadNextWeek] at init runs
+        // with zero subs, [findNextNonEmptyWeekIndex] returns null, and
+        // we set `reachedEnd=true`. When the user later adds subs and
+        // the worker populates the cache, no callback would re-trigger
+        // a load — the user sees an empty Me screen even though the
+        // cache is full. Watching the subscription COUNT (cheap, distinct)
+        // lets us reset state when the set transitions empty→populated
+        // OR when channels are added/removed at any time.
+        viewModelScope.launch {
+            subscriptions.observeSubscribedChannels()
+                .map { it.size }
+                .distinctUntilChanged()
+                .drop(1) // skip the initial emission — init's first
+                         // loadNextWeek() already covers the startup case
+                .collect { _ ->
+                    resetLoadedWeeksAndRestart()
+                }
         }
     }
 
