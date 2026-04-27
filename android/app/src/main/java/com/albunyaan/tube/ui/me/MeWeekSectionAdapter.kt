@@ -1,6 +1,8 @@
 package com.albunyaan.tube.ui.me
 
 import android.text.format.DateUtils
+import java.text.NumberFormat
+import java.util.Locale
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.ConcatAdapter
@@ -262,11 +264,26 @@ class MeWeekSectionAdapter(
         }
 
         /**
-         * Channel name + relative upload date. Mirrors the legacy
-         * MeVideosPagingAdapter — duration / view count are not surfaced
-         * because the ATOM source doesn't expose them.
+         * Channel name + view count (when available) + relative upload date.
+         *
+         * View count is OPTIONAL because two upstream sources populate the
+         * cache:
+         *   - ATOM RSS (15 most-recent per channel) — does NOT expose
+         *     viewCount; rows from this path leave the field null.
+         *   - NewPipe deep-paging (Videos tab) — DOES expose viewCount;
+         *     rows from this path carry the count.
+         * Showing "— views" when the source didn't return a count would
+         * be misleading, so we conditionally include the views chip only
+         * when a real number is present. ATOM-only items render the
+         * original "Channel • date" pair unchanged.
          */
         private fun buildMeta(item: MeFeedVideo): CharSequence {
+            val ctx = binding.root.context
+            val locale: Locale = ctx.resources.configuration.locales[0] ?: Locale.getDefault()
+            val views: String? = item.viewCount
+                ?.takeIf { it >= 0L }
+                ?.let { NumberFormat.getNumberInstance(locale).format(it) }
+                ?.let { ctx.getString(R.string.video_views_format, it) }
             val relative = if (item.uploadedAt > 0L) {
                 DateUtils.getRelativeTimeSpanString(
                     item.uploadedAt,
@@ -277,6 +294,7 @@ class MeWeekSectionAdapter(
             } else ""
             return buildString {
                 append(item.channelName)
+                if (!views.isNullOrEmpty()) append(" • ").append(views)
                 if (relative.isNotEmpty()) append(" • ").append(relative)
             }
         }
