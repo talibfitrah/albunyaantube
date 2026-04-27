@@ -73,10 +73,13 @@ class AtomFeedParserTest {
         val xml = readResource("/atom/malformed.xml")
         // Must not throw — fetcher relies on the parser to be defensive.
         val items = parser.parse(xml.byteInputStream())
-        // The fixture has one well-formed entry before the truncation;
-        // we accept anything from 0..N (we just must not crash and must
-        // not return more entries than the input).
-        assertTrue("size must be non-negative", items.size >= 0)
+        // Parser's defensive Throwable catch returns whatever was parsed
+        // before the malformation. The fixture has exactly one well-formed
+        // entry (firstGood01) followed by a truncated entry. Pinning the
+        // count and id locks behavior — a regression that loses the leading
+        // entry would silently pass under a `>= 0` assertion.
+        assertEquals(1, items.size)
+        assertEquals("firstGood01", items.first().videoId)
     }
 
     private fun readResource(path: String): String =

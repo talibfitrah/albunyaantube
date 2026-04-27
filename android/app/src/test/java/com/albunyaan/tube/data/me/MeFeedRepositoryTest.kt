@@ -482,6 +482,127 @@ class MeFeedRepositoryTest {
         assertEquals(MeFeedRepository.MAX_ITEMS_PER_CHANNEL, stored.size)
     }
 
+    @Test
+    fun notModified_path_advances_lastSuccessfulFetchAt_and_persists_etag_without_touching_cache() = runTest {
+        // T2 review (Important / I-1): exercise the NotModified branch in
+        // refreshOne. Pre-populate refresh state with a known prior ETag +
+        // Last-Modified plus accumulated counters and a backoff window, plus
+        // pre-existing cache rows. The fake fetcher always returns 304 with
+        // a fresh ETag/Last-Modified pair. After refresh:
+        //  - cache rows must be untouched (304 = don't replaceForChannel),
+        //  - lastSuccessfulFetchAt must advance to clockMillis,
+        //  - lastErrorMessage must be nulled,
+        //  - new etag + lastModified from the response must be persisted,
+        //  - consecutive{Error,Empty}Count must reset to 0,
+        //  - backoffUntilMs must be preserved (T9 owns it).
+        subscribe("UC1")
+        val priorEtag = "W/\"old-etag\""
+        val priorLastModified = "Mon, 31 Mar 2025 00:00:00 GMT"
+        val newEtag = "W/\"new-etag\""
+        val newLastModified = "Tue, 01 Apr 2025 00:00:00 GMT"
+        val preservedBackoff = 12345L
+        val oldSuccess = clockMillis - 60L * 60L * 1_000L // 1 hour ago
+
+        // Seed prior refresh state with conditional-GET headers + counters.
+        db.channelFeedRefreshStateDao().upsert(
+            com.albunyaan.tube.data.local.ChannelFeedRefreshState(
+                channelId = "UC1",
+                lastSuccessfulFetchAt = oldSuccess,
+                lastAttemptAt = oldSuccess,
+                lastErrorMessage = null,
+                etag = priorEtag,
+                lastModified = priorLastModified,
+                consecutiveErrorCount = 3,
+                consecutiveEmptyCount = 2,
+                backoffUntilMs = preservedBackoff,
+            )
+        )
+
+        // Seed pre-existing cache rows that the NotModified branch must NOT
+        // touch.
+        db.channelVideoCacheDao().upsertAll(
+            listOf(
+                com.albunyaan.tube.data.local.ChannelVideoCache(
+                    videoId = "vCached1",
+                    channelId = "UC1",
+                    channelName = "name-UC1",
+                    title = "Cached 1",
+                    thumbnailUrl = null,
+                    durationSeconds = null,
+                    viewCount = null,
+                    uploadedAt = clockMillis - 1_000L,
+                    isShort = false,
+                    fetchedAt = oldSuccess,
+                ),
+                com.albunyaan.tube.data.local.ChannelVideoCache(
+                    videoId = "vCached2",
+                    channelId = "UC1",
+                    channelName = "name-UC1",
+                    title = "Cached 2",
+                    thumbnailUrl = null,
+                    durationSeconds = null,
+                    viewCount = null,
+                    uploadedAt = clockMillis - 2_000L,
+                    isShort = false,
+                    fetchedAt = oldSuccess,
+                ),
+            )
+        )
+
+        // Fake fetcher that records the priorEtag/priorLastModified it was
+        // handed and always returns NotModified.
+        var seenPriorEtag: String? = "<unset>"
+        var seenPriorLastModified: String? = "<unset>"
+        val notModifiedFetcher = object : ChannelFeedFetcher {
+            override suspend fun fetchLatest(
+                channelUrl: String,
+                priorEtag: String?,
+                priorLastModified: String?,
+            ): ChannelFeedFetcher.FetchResult {
+                seenPriorEtag = priorEtag
+                seenPriorLastModified = priorLastModified
+                return ChannelFeedFetcher.FetchResult.NotModified(
+                    etag = newEtag,
+                    lastModified = newLastModified,
+                )
+            }
+        }
+        val repo304 = MeFeedRepository(
+            subscriptions = subs,
+            cache = db.channelVideoCacheDao(),
+            refreshStateDao = db.channelFeedRefreshStateDao(),
+            fetcher = notModifiedFetcher,
+            ioDispatcher = Dispatchers.Unconfined,
+        ).also { it.currentTimeMillisProvider = { clockMillis } }
+
+        // Force=true so freshness gate doesn't skip the fetch.
+        repo304.refresh(force = true)
+
+        // Conditional-GET headers were forwarded into the fetcher.
+        assertEquals(priorEtag, seenPriorEtag)
+        assertEquals(priorLastModified, seenPriorLastModified)
+
+        // Cache rows untouched.
+        val cacheRows = db.channelVideoCacheDao().getForChannel("UC1")
+        assertEquals(
+            "NotModified must not replace cache rows",
+            listOf("vCached1", "vCached2"),
+            cacheRows.map { it.videoId }.sorted(),
+        )
+
+        // Refresh state updated correctly.
+        val state = db.channelFeedRefreshStateDao().get("UC1")
+        assertNotNull(state)
+        assertEquals(clockMillis, state!!.lastSuccessfulFetchAt)
+        assertEquals(clockMillis, state.lastAttemptAt)
+        assertNull(state.lastErrorMessage)
+        assertEquals(newEtag, state.etag)
+        assertEquals(newLastModified, state.lastModified)
+        assertEquals(0, state.consecutiveErrorCount)
+        assertEquals(0, state.consecutiveEmptyCount)
+        assertEquals(preservedBackoff, state.backoffUntilMs)
+    }
+
     private fun item(id: String, uploadedAt: Long?, isShort: Boolean = false) =
         ChannelFeedFetcher.ChannelFeedItem(
             videoId = id,

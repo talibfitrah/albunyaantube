@@ -1,5 +1,6 @@
 package com.albunyaan.tube.data.me
 
+import androidx.annotation.VisibleForTesting
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -24,13 +25,14 @@ import javax.inject.Singleton
  * against future direct callers — same pattern as [NewPipeChannelFeedFetcher].
  */
 @Singleton
-class AtomChannelFeedFetcher(
+class AtomChannelFeedFetcher @VisibleForTesting internal constructor(
     private val client: OkHttpClient,
     private val parser: AtomFeedParser,
     /**
-     * Tests inject a MockWebServer URL here. Production binding leaves it
-     * null so the real youtube.com endpoint is used. Not exposed to Hilt —
-     * the @Inject constructor below omits it.
+     * Test seam: callers can supply a `baseUrlOverride` (e.g. a MockWebServer
+     * URL). Production binding goes through the [Inject] secondary constructor
+     * and leaves this null so the real youtube.com endpoint is used. Not
+     * exposed to Hilt — the @Inject constructor below omits it.
      */
     private val baseUrlOverride: String?,
 ) : ChannelFeedFetcher {
