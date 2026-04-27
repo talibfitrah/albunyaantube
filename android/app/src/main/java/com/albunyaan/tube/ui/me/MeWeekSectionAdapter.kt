@@ -297,8 +297,22 @@ class MeWeekSectionAdapter(
                     DateUtils.FORMAT_ABBREV_RELATIVE,
                 ).toString()
             } else ""
+            // ANDROID-PERSONAL-03 round 8 [field-bug]: long channel names
+            // (e.g. "Dr. Othman Alkamees - الشيخ الدكتور عثمان الخميس",
+            // ~50 chars) consumed all of the meta line's width on a
+            // single phone, ellipsizing the much-more-useful views and
+            // relative-date trailers off the right edge. Truncate the
+            // channel name so the views + date are always visible.
+            // CHANNEL_NAME_META_MAX_CHARS is generous enough that
+            // typical channel names ("Mufti Menk", "Alafasy") survive
+            // intact; only verbose Arabic-bilingual names get clipped.
+            val channelName = if (item.channelName.length > CHANNEL_NAME_META_MAX_CHARS) {
+                item.channelName.substring(0, CHANNEL_NAME_META_MAX_CHARS - 1).trimEnd() + "…"
+            } else {
+                item.channelName
+            }
             return buildString {
-                append(item.channelName)
+                append(channelName)
                 if (!views.isNullOrEmpty()) append(" • ").append(views)
                 if (relative.isNotEmpty()) append(" • ").append(relative)
             }
@@ -321,6 +335,15 @@ class MeWeekSectionAdapter(
         const val WEEK_HEADER_VIEW_TYPE = 501
         const val WEEK_SHORTS_VIEW_TYPE = 502
         const val WEEK_VIDEO_VIEW_TYPE = 503
+
+        /**
+         * Cap on channel-name length in [VideoVH.buildMeta]. Past this we
+         * suffix an ellipsis so views + date stay visible. 24 chars fits
+         * "Mufti Menk", "MercifulServant", "Alafasy", and similar names
+         * intact and clips only the long bilingual Arabic/English names
+         * that were eating the whole meta line on a phone.
+         */
+        private const val CHANNEL_NAME_META_MAX_CHARS = 24
 
         private val SHORT_DIFF = object : DiffUtil.ItemCallback<MeFeedVideo>() {
             override fun areItemsTheSame(old: MeFeedVideo, new: MeFeedVideo) =
