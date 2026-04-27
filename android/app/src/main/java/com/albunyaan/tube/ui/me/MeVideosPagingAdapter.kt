@@ -41,8 +41,7 @@ class MeVideosPagingAdapter(
     private val pagingAdapter = InnerPagingAdapter(onClick)
     private val headerAdapter = HeaderAdapter()
 
-    val sectionAdapter: RecyclerView.Adapter<out RecyclerView.ViewHolder> =
-        ConcatAdapter(headerAdapter, pagingAdapter)
+    val sectionAdapter: ConcatAdapter = ConcatAdapter(headerAdapter, pagingAdapter)
 
     init {
         // Toggle the header based on the paging state. We check Refresh /
