@@ -153,6 +153,8 @@
     <string name="playlist_save">Opslaan</string>
     <string name="playlist_unsave">Opgeslagen</string>
     <string name="cd_save_playlist_button">Sla deze afspeellijst op in je bibliotheek</string>
+    <!-- TODO(ANDROID-PERSONAL-02): Translation pending from user. -->
+    <string name="me_subscription_cap_reached">You\'re following 30 channels (the limit). Unsubscribe one to follow this channel.</string>
 
     <!-- Settings library -->
     <string name="settings_library_header">Bibliotheek</string>

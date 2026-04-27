@@ -15,6 +15,12 @@ interface SubscribedChannelDao {
     @Query("SELECT * FROM subscribed_channels ORDER BY subscribedAt DESC")
     suspend fun getAll(): List<SubscribedChannel>
 
+    @Query("SELECT * FROM subscribed_channels WHERE channelId = :id")
+    suspend fun getById(id: String): SubscribedChannel?
+
+    @Query("SELECT COUNT(*) FROM subscribed_channels")
+    suspend fun count(): Int
+
     @Query("SELECT EXISTS(SELECT 1 FROM subscribed_channels WHERE channelId = :id)")
     fun observeIsSubscribed(id: String): Flow<Boolean>
 

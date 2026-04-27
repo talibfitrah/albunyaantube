@@ -15,6 +15,8 @@ import com.albunyaan.tube.R
 import com.albunyaan.tube.data.channel.ChannelHeader
 import com.albunyaan.tube.data.channel.ChannelTab
 import com.albunyaan.tube.data.local.SubscribedChannel
+import com.albunyaan.tube.data.subscriptions.SubscribeResult
+import com.albunyaan.tube.data.subscriptions.SubscriptionLimitGuard
 import com.albunyaan.tube.data.subscriptions.SubscriptionRepository
 import com.albunyaan.tube.databinding.FragmentChannelDetailBinding
 import com.albunyaan.tube.ui.detail.tabs.ChannelAboutTabFragment
@@ -24,6 +26,7 @@ import com.albunyaan.tube.ui.detail.tabs.ChannelShortsTabFragment
 import com.albunyaan.tube.ui.detail.tabs.ChannelVideosTabFragment
 import com.google.android.material.appbar.AppBarLayout
 import com.google.android.material.color.MaterialColors
+import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.tabs.TabLayoutMediator
 import dagger.hilt.android.AndroidEntryPoint
 import com.albunyaan.tube.locale.LocaleManager
@@ -49,6 +52,9 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
 
     @Inject
     lateinit var subscriptions: SubscriptionRepository
+
+    @Inject
+    lateinit var limitGuard: SubscriptionLimitGuard
 
     private var binding: FragmentChannelDetailBinding? = null
     private var latestHeader: ChannelHeader? = null
@@ -232,11 +238,15 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
         binding?.subscribeButton?.isEnabled = false
         viewLifecycleOwner.lifecycleScope.launch {
             try {
-                withContext(Dispatchers.IO) {
+                val result = withContext(Dispatchers.IO) {
                     if (shouldUnsubscribe) {
                         subscriptions.unsubscribe(header.id)
+                        SubscribeResult.Success
                     } else {
-                        subscriptions.subscribe(
+                        // Route subscribe through the guard so the 30-channel
+                        // cap (§4.2) is enforced on every entry. Playlists do
+                        // NOT go through the guard — they are unlimited.
+                        limitGuard.trySubscribe(
                             SubscribedChannel(
                                 channelId = header.id,
                                 channelUrl = "https://www.youtube.com/channel/${header.id}",
@@ -244,6 +254,15 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
                                 avatarUrl = header.avatarUrl,
                             )
                         )
+                    }
+                }
+                if (result is SubscribeResult.LimitReached) {
+                    binding?.root?.let { rootView ->
+                        Snackbar.make(
+                            rootView,
+                            R.string.me_subscription_cap_reached,
+                            Snackbar.LENGTH_LONG,
+                        ).show()
                     }
                 }
             } catch (t: Throwable) {
