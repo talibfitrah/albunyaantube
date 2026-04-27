@@ -5,6 +5,19 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 val MIGRATION_1_2 = object : Migration(1, 2) {
     override fun migrate(db: SupportSQLiteDatabase) {
+        // ANDROID-PERSONAL-03 round 8 [field-bug]: legacy databases from a
+        // pre-MIGRATION_1_2 build had a `followed_channels` table (the prior
+        // name for what is now `subscribed_channels`). Android Auto-Backup
+        // can restore such a DB onto a fresh install of a much newer code
+        // path, leaving Room with both the legacy table AND its expected
+        // new schema. Room's post-migration validator then sees an
+        // unexpected `followed_channels` and crashes the app with
+        // `Migration didn't properly handle: subscribed_channels`. Dropping
+        // the legacy table here is destructive (legacy followed_channels
+        // rows are lost), but the legacy code path has been gone long
+        // enough that any user hitting this was already on stale data —
+        // and the alternative is a hard crash on every cold start.
+        db.execSQL("DROP TABLE IF EXISTS followed_channels")
         db.execSQL(
             """CREATE TABLE IF NOT EXISTS subscribed_channels (
                 channelId TEXT NOT NULL PRIMARY KEY,
@@ -68,6 +81,50 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
  */
 val MIGRATION_2_3 = object : Migration(2, 3) {
     override fun migrate(db: SupportSQLiteDatabase) {
+        // ANDROID-PERSONAL-03 round 8 [field-bug]: same legacy-DB recovery
+        // as in MIGRATION_1_2. A user whose DB is stuck at user_version=2
+        // (typically because Android Auto-Backup restored a DB created by
+        // a build from before MIGRATION_1_2 was written) lands here with a
+        // legacy `followed_channels` table and missing v2-era tables. Drop
+        // the legacy table and self-heal the v2 schema before continuing
+        // to the v3 work below.
+        db.execSQL("DROP TABLE IF EXISTS followed_channels")
+        db.execSQL(
+            """CREATE TABLE IF NOT EXISTS subscribed_channels (
+                channelId TEXT NOT NULL PRIMARY KEY,
+                channelUrl TEXT NOT NULL,
+                name TEXT NOT NULL,
+                avatarUrl TEXT,
+                subscribedAt INTEGER NOT NULL)"""
+        )
+        db.execSQL(
+            """CREATE TABLE IF NOT EXISTS saved_playlists (
+                playlistId TEXT NOT NULL PRIMARY KEY,
+                playlistUrl TEXT NOT NULL,
+                name TEXT NOT NULL,
+                thumbnailUrl TEXT,
+                uploaderName TEXT,
+                savedAt INTEGER NOT NULL)"""
+        )
+        db.execSQL(
+            """CREATE TABLE IF NOT EXISTS channel_video_cache (
+                videoId TEXT NOT NULL PRIMARY KEY,
+                channelId TEXT NOT NULL,
+                channelName TEXT NOT NULL,
+                title TEXT NOT NULL,
+                thumbnailUrl TEXT,
+                durationSeconds INTEGER,
+                viewCount INTEGER,
+                uploadedAt INTEGER,
+                isShort INTEGER NOT NULL,
+                fetchedAt INTEGER NOT NULL)"""
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS index_channel_video_cache_channelId ON channel_video_cache(channelId)"
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS index_channel_video_cache_uploadedAt ON channel_video_cache(uploadedAt)"
+        )
         val tableExists = db.query(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='channel_feed_refresh_state'"
         ).use { it.moveToFirst() }
