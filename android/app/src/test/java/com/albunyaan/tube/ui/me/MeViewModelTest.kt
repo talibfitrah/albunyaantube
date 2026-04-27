@@ -10,6 +10,7 @@ import com.albunyaan.tube.data.me.ChannelFeedFetcher
 import com.albunyaan.tube.data.me.ChipItem
 import com.albunyaan.tube.data.me.MeFeedRepository
 import com.albunyaan.tube.data.me.MeFeedState
+import com.albunyaan.tube.data.me.MeRefreshTelemetry
 import com.albunyaan.tube.data.subscriptions.SubscriptionRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -65,6 +66,7 @@ class MeViewModelTest {
             refreshStateDao = db.channelFeedRefreshStateDao(),
             fetcher = NoopFetcher,
             ioDispatcher = Dispatchers.Unconfined,
+            telemetry = MeRefreshTelemetry(),
         )
         favs = NoopFavoritesRepository()
     }
@@ -121,6 +123,7 @@ class MeViewModelTest {
                 }
             },
             ioDispatcher = Dispatchers.Unconfined,
+            telemetry = MeRefreshTelemetry(),
         )
         subs.subscribe(SubscribedChannel("UC1", "u1", "A", null, 1_000L))
         subs.subscribe(SubscribedChannel("UC2", "u2", "B", null, 2_000L))

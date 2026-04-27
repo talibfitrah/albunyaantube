@@ -561,6 +561,15 @@
     <string name="dev_settings_clear_cache">Clear Stream Cache</string>
     <string name="dev_settings_cache_cleared">Cleared %d cached entries</string>
     <string name="dev_settings_cache_clear_failed">Failed to clear cache: %1$s</string>
+    <!-- T12: Me-feed cooldown + telemetry developer affordances. ar/nl translations TODO. -->
+    <string name="dev_settings_trip_cooldown">Trip Cooldown (1h)</string>
+    <string name="dev_settings_cooldown_tripped">Cooldown tripped — until %1$d</string>
+    <string name="dev_settings_reset_cooldown">Reset Cooldown</string>
+    <string name="dev_settings_cooldown_reset">Cooldown state cleared</string>
+    <string name="dev_settings_show_telemetry">Show Telemetry Log</string>
+    <string name="dev_settings_telemetry_title">Me-feed Telemetry Log</string>
+    <string name="dev_settings_telemetry_empty">(no events yet)</string>
+    <string name="dev_settings_close">Close</string>
     <plurals name="dev_settings_steps_away">
         <item quantity="one">You are %d step away from being a developer</item>
         <item quantity="other">You are %d steps away from being a developer</item>

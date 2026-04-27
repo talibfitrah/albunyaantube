@@ -3,6 +3,7 @@ package com.albunyaan.tube.data.extractor
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
+import com.albunyaan.tube.data.me.MeRefreshTelemetry
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
@@ -96,7 +97,7 @@ class RateLimitedDownloaderTest {
         dataStore = PreferenceDataStoreFactory.create(
             produceFile = { File(tmp.root, "rld.preferences_pb") }
         )
-        cooldown = CooldownState(dataStore) { clock.get() }
+        cooldown = CooldownState(dataStore, { clock.get() }, MeRefreshTelemetry())
         delegate = FakeDownloader()
         limiter = mock()
         wheneverBlocking { limiter.acquire(any(), any()) }.doReturn(true)

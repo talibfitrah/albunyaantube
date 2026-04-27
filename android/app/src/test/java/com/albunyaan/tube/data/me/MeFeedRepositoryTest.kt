@@ -55,6 +55,7 @@ class MeFeedRepositoryTest {
             refreshStateDao = db.channelFeedRefreshStateDao(),
             fetcher = fetcher,
             ioDispatcher = Dispatchers.Unconfined,
+            telemetry = MeRefreshTelemetry(),
         ).also { it.currentTimeMillisProvider = { clockMillis } }
     }
 
@@ -186,6 +187,7 @@ class MeFeedRepositoryTest {
             refreshStateDao = db.channelFeedRefreshStateDao(),
             fetcher = gatingFetcher,
             ioDispatcher = Dispatchers.Unconfined,
+            telemetry = MeRefreshTelemetry(),
         ).also { it.currentTimeMillisProvider = { clockMillis } }
 
         bounded.refresh(force = false)
@@ -221,6 +223,7 @@ class MeFeedRepositoryTest {
             refreshStateDao = db.channelFeedRefreshStateDao(),
             fetcher = recorder,
             ioDispatcher = StandardTestDispatcher(testScheduler),
+            telemetry = MeRefreshTelemetry(),
         ).also { it.currentTimeMillisProvider = { clockMillis } }
 
         staggered.refresh(force = true)
@@ -368,6 +371,7 @@ class MeFeedRepositoryTest {
             refreshStateDao = db.channelFeedRefreshStateDao(),
             fetcher = recorder,
             ioDispatcher = Dispatchers.Unconfined,
+            telemetry = MeRefreshTelemetry(),
         ).also { it.currentTimeMillisProvider = { clockMillis } }
 
         coroutineScope {
@@ -425,6 +429,7 @@ class MeFeedRepositoryTest {
             refreshStateDao = db.channelFeedRefreshStateDao(),
             fetcher = gating,
             ioDispatcher = Dispatchers.Unconfined,
+            telemetry = MeRefreshTelemetry(),
         ).also { it.currentTimeMillisProvider = { clockMillis } }
 
         bounded.refresh(force = true)
@@ -453,6 +458,7 @@ class MeFeedRepositoryTest {
             refreshStateDao = db.channelFeedRefreshStateDao(),
             fetcher = cancelled,
             ioDispatcher = Dispatchers.Unconfined,
+            telemetry = MeRefreshTelemetry(),
         ).also { it.currentTimeMillisProvider = { clockMillis } }
 
         var observed: Throwable? = null
@@ -575,6 +581,7 @@ class MeFeedRepositoryTest {
             refreshStateDao = db.channelFeedRefreshStateDao(),
             fetcher = notModifiedFetcher,
             ioDispatcher = Dispatchers.Unconfined,
+            telemetry = MeRefreshTelemetry(),
         ).also { it.currentTimeMillisProvider = { clockMillis } }
 
         // Force=true so freshness gate doesn't skip the fetch.

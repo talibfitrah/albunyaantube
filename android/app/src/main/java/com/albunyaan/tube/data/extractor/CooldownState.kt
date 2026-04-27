@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
+import com.albunyaan.tube.data.me.MeRefreshTelemetry
 import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
@@ -35,16 +36,23 @@ import kotlinx.coroutines.runBlocking
  * Persistence: DataStore Preferences. Survives app restarts — a fresh
  * [CooldownState] instance pointing at the same [DataStore] sees the
  * previously persisted trip state.
+ *
+ * T12 (spec §10 P10): emits [MeRefreshTelemetry.Event.CooldownTripped]
+ * after each [trip] commit, and [MeRefreshTelemetry.Event.CooldownCleared]
+ * after [markCleanFetch] when (and only when) the 7-day reset branch ran.
+ * Operator visibility into rate-limit storms.
  */
 @Singleton
 class CooldownState @VisibleForTesting internal constructor(
     private val dataStore: DataStore<Preferences>,
     private val now: () -> Long,
+    private val telemetry: MeRefreshTelemetry,
 ) {
     @Inject
     constructor(
         @Named("cooldownDataStore") dataStore: DataStore<Preferences>,
-    ) : this(dataStore, { System.currentTimeMillis() })
+        telemetry: MeRefreshTelemetry,
+    ) : this(dataStore, { System.currentTimeMillis() }, telemetry)
 
     private object Keys {
         val UNTIL_MS = longPreferencesKey("cooldown_until_ms")
@@ -89,20 +97,35 @@ class CooldownState @VisibleForTesting internal constructor(
      * Also stamps `CLEAN_STREAK_START_MS` so a subsequent
      * [markCleanFetch] can determine whether 7 clean days have elapsed.
      */
-    @Suppress("UNUSED_PARAMETER")
     suspend fun trip(reason: Throwable, currentMs: Long = now()) {
+        var newTripCount: Int = 0
+        var newUntilMs: Long = 0L
         dataStore.edit { prefs ->
             val lastTrip = prefs[Keys.LAST_TRIP_MS] ?: 0L
             val withinWindow = currentMs - lastTrip < tripWindowMs
             val tripCount = if (withinWindow) (prefs[Keys.TRIP_COUNT] ?: 0) + 1 else 1
             val durationIdx = (tripCount - 1).coerceAtMost(durations.size - 1)
-            prefs[Keys.UNTIL_MS] = currentMs + durations[durationIdx]
+            val untilMs = currentMs + durations[durationIdx]
+            prefs[Keys.UNTIL_MS] = untilMs
             prefs[Keys.TRIP_COUNT] = tripCount
             prefs[Keys.LAST_TRIP_MS] = currentMs
             // Anchor the clean-streak window at the trip; markCleanFetch
             // measures elapsed time from here.
             prefs[Keys.CLEAN_STREAK_START_MS] = currentMs
+            newTripCount = tripCount
+            newUntilMs = untilMs
         }
+        // T12: emit AFTER the DataStore commit so a subsequent snapshot
+        // observer who reads `untilMs()` sees the same value the event
+        // reports.
+        telemetry.emit(
+            MeRefreshTelemetry.Event.CooldownTripped(
+                timestampMs = currentMs,
+                reason = reason.message ?: reason::class.java.simpleName,
+                tripCount24h = newTripCount,
+                untilMs = newUntilMs,
+            )
+        )
     }
 
     /**
@@ -114,12 +137,40 @@ class CooldownState @VisibleForTesting internal constructor(
      * No-op if no trip has been recorded yet.
      */
     suspend fun markCleanFetch(currentMs: Long = now()) {
+        var didReset = false
         dataStore.edit { prefs ->
             val streakStart = prefs[Keys.CLEAN_STREAK_START_MS] ?: return@edit
             if (currentMs - streakStart >= cleanResetWindowMs) {
                 prefs[Keys.TRIP_COUNT] = 0
                 prefs[Keys.CLEAN_STREAK_START_MS] = currentMs
+                didReset = true
             }
+        }
+        // T12: only emit on the actual reset branch. The no-op path is
+        // expected on every healthy fetch and would flood the ring buffer
+        // with non-events.
+        if (didReset) {
+            telemetry.emit(
+                MeRefreshTelemetry.Event.CooldownCleared(timestampMs = currentMs)
+            )
+        }
+    }
+
+    /**
+     * T12 / dev-settings: wipe every cooldown key so the next [trip] starts
+     * at the 1-hour first-trip rung. Used by the dev-settings "Reset
+     * cooldown" affordance and never called from production code paths.
+     *
+     * No telemetry event — the dialog itself toasts confirmation, and
+     * conflating "operator wiped state" with the natural 7-day clean-streak
+     * reset would be misleading.
+     */
+    suspend fun clearAll() {
+        dataStore.edit { prefs ->
+            prefs.remove(Keys.UNTIL_MS)
+            prefs.remove(Keys.TRIP_COUNT)
+            prefs.remove(Keys.LAST_TRIP_MS)
+            prefs.remove(Keys.CLEAN_STREAK_START_MS)
         }
     }
 }

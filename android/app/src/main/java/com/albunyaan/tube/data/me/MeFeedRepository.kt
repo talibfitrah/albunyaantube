@@ -54,6 +54,12 @@ class MeFeedRepository @Inject constructor(
     private val refreshStateDao: ChannelFeedRefreshStateDao,
     private val fetcher: ChannelFeedFetcher,
     @Named("io") private val ioDispatcher: CoroutineDispatcher,
+    // T12 (spec §10 P10): per-channel outcome events. Emit-only — the
+    // repository does not read events back. Tests can pass a fresh
+    // `MeRefreshTelemetry()` (`@Inject constructor()` makes it trivially
+    // default-constructible) — its events flow drops on overflow so a
+    // test that doesn't subscribe cannot stall.
+    private val telemetry: MeRefreshTelemetry,
 ) {
 
     companion object {
@@ -227,10 +233,24 @@ class MeFeedRepository @Inject constructor(
 
     private suspend fun refreshOne(channel: SubscribedChannel, now: Long, force: Boolean) {
         val previous = refreshStateDao.get(channel.channelId)
+        // T12: latency clock starts here so freshness/backoff short-circuits
+        // also report a (tiny) latency. monotonic.
+        val startNs = System.nanoTime()
 
         // [1] TTL freshness gate. force=true bypasses it (pull-to-refresh).
         val fresh = previous != null && (now - previous.lastSuccessfulFetchAt) < CACHE_TTL_MS
-        if (fresh && !force) return
+        if (fresh && !force) {
+            telemetry.emit(
+                MeRefreshTelemetry.Event.MeChannelFetched(
+                    timestampMs = now,
+                    channelId = channel.channelId,
+                    itemsCount = 0,
+                    latencyMs = (System.nanoTime() - startNs) / 1_000_000L,
+                    outcome = MeRefreshTelemetry.ChannelOutcome.FRESHNESS_SKIPPED,
+                )
+            )
+            return
+        }
 
         // [2] Per-channel backoff gate. force=true bypasses it (pull-to-refresh).
         // backoff is its own state — when active we don't fetch, don't update
@@ -238,7 +258,18 @@ class MeFeedRepository @Inject constructor(
         val backoffActive = previous?.backoffUntilMs != null &&
             now < previous.backoffUntilMs &&
             !force
-        if (backoffActive) return
+        if (backoffActive) {
+            telemetry.emit(
+                MeRefreshTelemetry.Event.MeChannelFetched(
+                    timestampMs = now,
+                    channelId = channel.channelId,
+                    itemsCount = 0,
+                    latencyMs = (System.nanoTime() - startNs) / 1_000_000L,
+                    outcome = MeRefreshTelemetry.ChannelOutcome.BACKOFF_SKIPPED,
+                )
+            )
+            return
+        }
 
         // [3] Conditional GET — pass cached ETag + Last-Modified.
         val result: ChannelFeedFetcher.FetchResult = try {
@@ -268,6 +299,15 @@ class MeFeedRepository @Inject constructor(
                     lastErrorMessage = "timeout after ${PER_CHANNEL_TIMEOUT_MS}ms",
                 )
             )
+            telemetry.emit(
+                MeRefreshTelemetry.Event.MeChannelFetched(
+                    timestampMs = now,
+                    channelId = channel.channelId,
+                    itemsCount = 0,
+                    latencyMs = (System.nanoTime() - startNs) / 1_000_000L,
+                    outcome = MeRefreshTelemetry.ChannelOutcome.TIMEOUT,
+                )
+            )
             return
         } catch (ce: CancellationException) {
             // F6: never swallow cancellation — it must propagate to the
@@ -280,16 +320,22 @@ class MeFeedRepository @Inject constructor(
             // backoffUntilMs along the appropriate ladder.
             val errCount = (previous?.consecutiveErrorCount ?: 0) + 1
             val msg = t.message ?: t::class.java.simpleName
+            val matchedLadder: Boolean
             val newBackoffUntilMs: Long? = when {
                 HTTP_429_REGEX.containsMatchIn(msg) -> {
+                    matchedLadder = true
                     val step = (errCount - 1).coerceAtMost(ATOM_429_BACKOFFS.lastIndex)
                     now + ATOM_429_BACKOFFS[step]
                 }
                 HTTP_5XX_REGEX.containsMatchIn(msg) -> {
+                    matchedLadder = true
                     val step = (errCount - 1).coerceAtMost(ATOM_5XX_BACKOFFS.lastIndex)
                     now + ATOM_5XX_BACKOFFS[step]
                 }
-                else -> previous?.backoffUntilMs // unknown error — preserve prior
+                else -> {
+                    matchedLadder = false
+                    previous?.backoffUntilMs // unknown error — preserve prior
+                }
             }
             refreshStateDao.upsert(
                 ChannelFeedRefreshState(
@@ -302,6 +348,19 @@ class MeFeedRepository @Inject constructor(
                     consecutiveErrorCount = errCount,
                     consecutiveEmptyCount = previous?.consecutiveEmptyCount ?: 0,
                     backoffUntilMs = newBackoffUntilMs,
+                )
+            )
+            telemetry.emit(
+                MeRefreshTelemetry.Event.MeChannelFetched(
+                    timestampMs = now,
+                    channelId = channel.channelId,
+                    itemsCount = 0,
+                    latencyMs = (System.nanoTime() - startNs) / 1_000_000L,
+                    outcome = if (matchedLadder) {
+                        MeRefreshTelemetry.ChannelOutcome.ERROR_BACKOFF
+                    } else {
+                        MeRefreshTelemetry.ChannelOutcome.ERROR_NEUTRAL
+                    },
                 )
             )
             return
@@ -327,6 +386,15 @@ class MeFeedRepository @Inject constructor(
                         consecutiveErrorCount = 0,
                         consecutiveEmptyCount = 0,
                         backoffUntilMs = null,
+                    )
+                )
+                telemetry.emit(
+                    MeRefreshTelemetry.Event.MeChannelFetched(
+                        timestampMs = now,
+                        channelId = channel.channelId,
+                        itemsCount = 0,
+                        latencyMs = (System.nanoTime() - startNs) / 1_000_000L,
+                        outcome = MeRefreshTelemetry.ChannelOutcome.NOT_MODIFIED,
                     )
                 )
                 return
@@ -374,6 +442,15 @@ class MeFeedRepository @Inject constructor(
                             consecutiveEmptyCount = previous.consecutiveEmptyCount + 1,
                         )
                     )
+                    telemetry.emit(
+                        MeRefreshTelemetry.Event.MeChannelFetched(
+                            timestampMs = now,
+                            channelId = channel.channelId,
+                            itemsCount = 0,
+                            latencyMs = (System.nanoTime() - startNs) / 1_000_000L,
+                            outcome = MeRefreshTelemetry.ChannelOutcome.EMPTY_PROTECTED,
+                        )
+                    )
                     return
                 }
 
@@ -396,6 +473,15 @@ class MeFeedRepository @Inject constructor(
                             backoffUntilMs = null,
                         )
                     )
+                    telemetry.emit(
+                        MeRefreshTelemetry.Event.MeChannelFetched(
+                            timestampMs = now,
+                            channelId = channel.channelId,
+                            itemsCount = 0,
+                            latencyMs = (System.nanoTime() - startNs) / 1_000_000L,
+                            outcome = MeRefreshTelemetry.ChannelOutcome.EMPTY_REAL,
+                        )
+                    )
                     return
                 }
 
@@ -411,6 +497,15 @@ class MeFeedRepository @Inject constructor(
                         consecutiveErrorCount = 0,
                         consecutiveEmptyCount = 0,
                         backoffUntilMs = null,
+                    )
+                )
+                telemetry.emit(
+                    MeRefreshTelemetry.Event.MeChannelFetched(
+                        timestampMs = now,
+                        channelId = channel.channelId,
+                        itemsCount = items.size,
+                        latencyMs = (System.nanoTime() - startNs) / 1_000_000L,
+                        outcome = MeRefreshTelemetry.ChannelOutcome.NEW_ITEMS,
                     )
                 )
             }

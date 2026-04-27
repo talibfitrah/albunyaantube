@@ -4,6 +4,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.intPreferencesKey
+import com.albunyaan.tube.data.me.MeRefreshTelemetry
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -53,7 +54,7 @@ class CooldownStateTest {
 
     @Test
     fun first_trip_is_one_hour() = runTest {
-        val cd = CooldownState(dataStore) { clock.get() }
+        val cd = CooldownState(dataStore, { clock.get() }, MeRefreshTelemetry())
         cd.trip(IOException("429"))
         assertTrue(cd.isTripped(clock.get()))
         clock.addAndGet(59 * 60_000L)
@@ -64,7 +65,7 @@ class CooldownStateTest {
 
     @Test
     fun second_trip_within_24h_escalates_to_4h() = runTest {
-        val cd = CooldownState(dataStore) { clock.get() }
+        val cd = CooldownState(dataStore, { clock.get() }, MeRefreshTelemetry())
         cd.trip(IOException("429"))
         clock.addAndGet(2 * 60 * 60_000L) // 2h later
         cd.trip(IOException("429"))
@@ -78,7 +79,7 @@ class CooldownStateTest {
         // has elapsed since the last trip. We isolate this from the 24h trip-window
         // reset by reading the persisted TRIP_COUNT directly — chaining a follow-up
         // trip() would conflate the two reset pathways.
-        val cd = CooldownState(dataStore) { clock.get() }
+        val cd = CooldownState(dataStore, { clock.get() }, MeRefreshTelemetry())
         cd.trip(IOException("429"))
         // After trip: TRIP_COUNT == 1, CLEAN_STREAK_START_MS == clock.
         val tripCountAfterTrip = dataStore.data.first()[intPreferencesKey("cooldown_trip_count_24h")]
@@ -93,10 +94,12 @@ class CooldownStateTest {
 
     @Test
     fun state_persists_across_restart() = runTest {
-        val cd1 = CooldownState(dataStore) { clock.get() }
+        val cd1 = CooldownState(dataStore, { clock.get() }, MeRefreshTelemetry())
         cd1.trip(IOException("429"))
-        // Simulate app restart by creating a new instance pointing at the same DataStore
-        val cd2 = CooldownState(dataStore) { clock.get() }
+        // Simulate app restart by creating a new instance pointing at the same DataStore.
+        // Fresh telemetry instance — events are in-memory only and the persisted
+        // DataStore is what's under test.
+        val cd2 = CooldownState(dataStore, { clock.get() }, MeRefreshTelemetry())
         assertTrue(cd2.isTripped(clock.get()))
     }
 }
