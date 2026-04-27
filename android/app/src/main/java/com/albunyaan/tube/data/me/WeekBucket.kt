@@ -28,8 +28,26 @@ data class WeekBucket(
         /** 7 days in milliseconds. */
         const val WEEK_MS: Long = 7L * 24L * 60L * 60L * 1_000L
 
-        /** Maximum index supported by the UI (1 year of history). */
-        const val MAX_WEEKS_BACK: Int = 52
+        /**
+         * Hard sanity cap on weekIndex pagination. Set high enough that
+         * the actual stop signal is NewPipe's
+         * [com.albunyaan.tube.data.me.ChannelDeepPaginator.DeepPageResult.EndOfChannel]
+         * (persisted as `deepPageUrl = DEEP_PAGE_EOF_SENTINEL` in the
+         * refresh state), not this cap.
+         *
+         * ANDROID-PERSONAL-03 round 8 [field-bug]: the previous value of
+         * 52 (= 1 year) caused users to "hit bottom" after scrolling a
+         * single year of a long-running channel. A daily-driver scholar
+         * channel with 14+ years of uploads has thousands of videos, but
+         * loadNextWeek would set reachedEnd=true at week 52 and refuse
+         * to load more.
+         *
+         * 5000 weeks ≈ 96 years — safely beyond any real YouTube channel
+         * (the platform launched in 2005, max ~21 years old). At 5000
+         * weeks the UI bookkeeping is bounded by the cache size (rows
+         * paged in by NewPipe), not this number.
+         */
+        const val MAX_WEEKS_BACK: Int = 5_000
 
         /**
          * Build a bucket for `weekIndex` relative to `now`. The window is
