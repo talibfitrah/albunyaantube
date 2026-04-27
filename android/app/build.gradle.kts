@@ -146,15 +146,12 @@ android {
         arg("room.schemaLocation", "$projectDir/schemas")
     }
 
-    // Make Room's exported schemas reachable to MigrationTestHelper:
-    //   - Instrumented tests look in the `androidTest` asset bundle.
-    //   - JVM/Robolectric unit tests (with `unitTests.isIncludeAndroidResources
-    //     = true`) read from the merged main assets, so we add the schemas
-    //     dir to `main.assets.srcDirs` as well. The cost is ~5 KB of asset
-    //     JSON inside the APK — tiny and not user-visible.
+    // Schemas live in the debug source set only — Robolectric MigrationTestHelper
+    // (testDebugUnitTest) reads them via the merged debug assets, and they don't
+    // ship in release APKs.
     sourceSets {
         getByName("androidTest").assets.srcDirs("$projectDir/schemas")
-        getByName("main").assets.srcDirs("$projectDir/schemas")
+        getByName("debug").assets.srcDirs("$projectDir/schemas")
     }
 
     java {

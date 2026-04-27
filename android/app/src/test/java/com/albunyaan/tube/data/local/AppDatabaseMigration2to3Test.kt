@@ -10,6 +10,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * Verifies the v2 -> v3 schema migration that adds ATOM-refresh columns to
@@ -24,6 +25,7 @@ import org.robolectric.RobolectricTestRunner
  * defaults so the rest of the Me Tab refresh stack can rely on these fields.
  */
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [31])
 class AppDatabaseMigration2to3Test {
 
     private val DB_NAME = "migration-test.db"
