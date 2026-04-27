@@ -20,6 +20,7 @@ import com.albunyaan.tube.databinding.ItemMeShortBinding
 import com.albunyaan.tube.databinding.ItemMeShortsSectionBinding
 import com.albunyaan.tube.databinding.ItemMeVideoBinding
 import com.albunyaan.tube.databinding.ViewMeWeekHeaderBinding
+import com.albunyaan.tube.util.ImageLoading.loadYouTubeThumbnail
 
 /**
  * ANDROID-PERSONAL-03 / T6: a single rendered week's content.
@@ -192,15 +193,17 @@ class MeWeekSectionAdapter(
     ) : RecyclerView.ViewHolder(binding.root) {
         fun bind(item: MeFeedVideo) {
             binding.shortTitle.text = item.title
-            val url = item.thumbnailUrl
-            if (!url.isNullOrBlank()) {
-                binding.shortThumbnail.load(url) {
-                    placeholder(R.drawable.thumbnail_placeholder)
-                    error(R.drawable.thumbnail_placeholder)
-                }
-            } else {
-                binding.shortThumbnail.load(R.drawable.thumbnail_placeholder)
-            }
+            // ANDROID-PERSONAL-03 round 8 [field-bug]: cached URL is
+            // hqdefault.jpg (480x360) which looks pixelated on high-DPI
+            // displays. Pass primaryUrl=null so the helper builds the full
+            // YouTube fallback chain (maxresdefault → sddefault → hqdefault →
+            // mqdefault → default), starting from the highest quality.
+            binding.shortThumbnail.loadYouTubeThumbnail(
+                primaryUrl = null,
+                videoId = item.videoId,
+                isShort = true,
+                placeholder = R.drawable.thumbnail_placeholder,
+            )
             binding.root.setOnClickListener { onClick(item) }
         }
     }
@@ -237,15 +240,17 @@ class MeWeekSectionAdapter(
             binding.videoTitle.text = item.title
             binding.videoMeta.text = buildMeta(item)
 
-            val url = item.thumbnailUrl
-            if (!url.isNullOrBlank()) {
-                binding.videoThumbnail.load(url) {
-                    placeholder(R.drawable.thumbnail_placeholder)
-                    error(R.drawable.thumbnail_placeholder)
-                }
-            } else {
-                binding.videoThumbnail.load(R.drawable.thumbnail_placeholder)
-            }
+            // ANDROID-PERSONAL-03 round 8 [field-bug]: cached URL is
+            // hqdefault.jpg (480x360) which looks pixelated on high-DPI
+            // displays. Pass primaryUrl=null so the helper builds the full
+            // YouTube fallback chain (maxresdefault → sddefault → hqdefault →
+            // mqdefault → default), starting from the highest quality.
+            binding.videoThumbnail.loadYouTubeThumbnail(
+                primaryUrl = null,
+                videoId = item.videoId,
+                isShort = false,
+                placeholder = R.drawable.thumbnail_placeholder,
+            )
 
             val avatarUrl = getChannelAvatar(item.channelId)
             if (!avatarUrl.isNullOrBlank()) {

@@ -1,5 +1,7 @@
 package com.albunyaan.tube.data.me
 
+import android.util.Log
+import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.data.local.ChannelFeedRefreshState
 import com.albunyaan.tube.data.local.ChannelFeedRefreshStateDao
 import com.albunyaan.tube.data.local.ChannelVideoCache
@@ -85,6 +87,7 @@ class MeFeedRepository @Inject constructor(
     }
 
     companion object {
+        private const val TAG = "MeFeedRepository"
         const val CACHE_TTL_MS: Long = 30L * 60L * 1_000L
         const val FEED_WINDOW_MS: Long = 14L * 24L * 60L * 60L * 1_000L
         const val MAX_CONCURRENT: Int = 4
@@ -347,12 +350,18 @@ class MeFeedRepository @Inject constructor(
     }
 
     suspend fun fillWeekIfNeeded(weekIndex: Int): Unit = withContext(ioDispatcher) {
-        val paginator = deepPaginator ?: return@withContext
+        val paginator = deepPaginator ?: run {
+            if (BuildConfig.DEBUG) Log.d(TAG, "fillWeekIfNeeded(week=$weekIndex): paginator is null, skipping")
+            return@withContext
+        }
         val now = currentTimeMillis()
         val bucket = WeekBucket.forIndex(weekIndex, now)
 
         val all = subscriptions.getSubscribedChannels()
-        if (all.isEmpty()) return@withContext
+        if (all.isEmpty()) {
+            if (BuildConfig.DEBUG) Log.d(TAG, "fillWeekIfNeeded(week=$weekIndex): no subscriptions")
+            return@withContext
+        }
 
         val channelIds = all.asSequence()
             .sortedByDescending { it.subscribedAt }
@@ -398,6 +407,20 @@ class MeFeedRepository @Inject constructor(
                 // Skip channels we've previously paged to exhaustion.
                 st?.deepPageUrl != DEEP_PAGE_EOF_SENTINEL
             }
+        if (BuildConfig.DEBUG) {
+            val eofCount = refreshStates.values.count { it.deepPageUrl == DEEP_PAGE_EOF_SENTINEL }
+            Log.d(
+                TAG,
+                "fillWeekIfNeeded(week=$weekIndex): subs=${all.size} hasItemsInWindow=${channelsWithItems.size} candidates=${candidateChannels.size} eofChannels=$eofCount"
+            )
+            candidateChannels.forEach { ch ->
+                val st = refreshStates[ch.channelId]
+                Log.d(
+                    TAG,
+                    "  → candidate ${ch.name} (${ch.channelId}): hasToken=${st?.deepPageUrl != null && st.deepPageUrl != DEEP_PAGE_EOF_SENTINEL}"
+                )
+            }
+        }
         if (candidateChannels.isEmpty()) return@withContext
 
         coroutineScope {
@@ -426,6 +449,12 @@ class MeFeedRepository @Inject constructor(
                 ChannelDeepPaginator.SerializedPage(url = url, cookies = cookies)
             }
 
+        if (BuildConfig.DEBUG) {
+            Log.d(
+                TAG,
+                "runDeepPageFor(${channel.name}): tokenUrl=${token?.url?.take(80)}"
+            )
+        }
         val result = try {
             // Round 5 fix: deep-paging uses DEEP_PAGE_TIMEOUT_MS (60s),
             // NOT the ATOM-sized PER_CHANNEL_TIMEOUT_MS (15s). The
@@ -438,19 +467,29 @@ class MeFeedRepository @Inject constructor(
             if (!currentCoroutineContext().isActive) throw ce
             // Timeout / inner cancellation: leave previous state intact, do
             // not increment any counters. Match the semantics of refreshOne.
+            if (BuildConfig.DEBUG) Log.w(TAG, "runDeepPageFor(${channel.name}): timeout/cancelled")
             return
         } catch (t: Throwable) {
             // Defensive — fetchNextPage already maps throwables to
             // DeepPageResult.Error, but a misbehaving paginator could still
             // raise. Don't propagate.
+            if (BuildConfig.DEBUG) Log.w(TAG, "runDeepPageFor(${channel.name}): threw ${t.message}")
             return
         }
 
         when (result) {
             is ChannelDeepPaginator.DeepPageResult.Page -> {
+                val itemsTotal = result.items.size
                 val cacheRows = result.items
                     .filter { it.uploadedAt != null && it.videoId.isNotEmpty() }
                     .map { it.toCacheRow(channel, now) }
+                if (BuildConfig.DEBUG) {
+                    val droppedNoDate = result.items.count { it.uploadedAt == null }
+                    Log.d(
+                        TAG,
+                        "runDeepPageFor(${channel.name}): Page items=$itemsTotal cached=${cacheRows.size} droppedNoUploadedAt=$droppedNoDate hasNext=${result.nextPage != null}"
+                    )
+                }
                 if (cacheRows.isNotEmpty()) {
                     // Use upsertAll, NOT replaceForChannel — replaceForChannel
                     // would wipe ATOM's most-recent rows. We're appending
@@ -478,6 +517,9 @@ class MeFeedRepository @Inject constructor(
                 )
             }
             ChannelDeepPaginator.DeepPageResult.EndOfChannel -> {
+                if (BuildConfig.DEBUG) {
+                    Log.d(TAG, "runDeepPageFor(${channel.name}): EndOfChannel — marking exhausted")
+                }
                 refreshStateDao.upsert(
                     (previous ?: ChannelFeedRefreshState(
                         channelId = channel.channelId,
@@ -492,6 +534,9 @@ class MeFeedRepository @Inject constructor(
                 )
             }
             is ChannelDeepPaginator.DeepPageResult.Error -> {
+                if (BuildConfig.DEBUG) {
+                    Log.w(TAG, "runDeepPageFor(${channel.name}): Error reason='${result.reason}'")
+                }
                 // Don't escalate — deep-paging failures are non-fatal. The
                 // ATOM refresher manages the 429/5xx ladder. Just record
                 // the attempt timestamp so callers see "we tried".

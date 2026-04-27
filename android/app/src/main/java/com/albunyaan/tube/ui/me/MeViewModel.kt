@@ -2,9 +2,11 @@
 
 package com.albunyaan.tube.ui.me
 
+import android.util.Log
 import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.data.local.ChannelVideoCache
 import com.albunyaan.tube.data.local.FavoriteVideo
 import com.albunyaan.tube.data.local.FavoritesRepository
@@ -193,16 +195,24 @@ class MeViewModel @Inject constructor(
      * pings get coalesced into a single load.
      */
     fun loadNextWeek() {
-        if (reachedEndState.value) return
-        if (loadJob?.isActive == true) return
+        if (reachedEndState.value) {
+            if (BuildConfig.DEBUG) Log.d(TAG, "loadNextWeek: skipped — reachedEnd=true")
+            return
+        }
+        if (loadJob?.isActive == true) {
+            if (BuildConfig.DEBUG) Log.d(TAG, "loadNextWeek: skipped — already loading")
+            return
+        }
         loadJob = viewModelScope.launch {
             isLoadingMoreWeeksState.value = true
             try {
                 val startIndex = (loadedWeekIndices.value.lastOrNull() ?: -1) + 1
                 if (startIndex > WeekBucket.MAX_WEEKS_BACK) {
+                    if (BuildConfig.DEBUG) Log.d(TAG, "loadNextWeek: startIndex=$startIndex > MAX (${WeekBucket.MAX_WEEKS_BACK}) → reachedEnd")
                     reachedEndState.value = true
                     return@launch
                 }
+                if (BuildConfig.DEBUG) Log.d(TAG, "loadNextWeek: startIndex=$startIndex filter=${filter.value}")
                 // Snapshot the active filter once so a flip mid-load won't
                 // see a half-applied filter; the filter-change collector
                 // cancels this job anyway, so the snapshot is just defence.
@@ -222,6 +232,7 @@ class MeViewModel @Inject constructor(
                     filterChannelId = activeFilter,
                 )
                 if (hit == null) {
+                    if (BuildConfig.DEBUG) Log.d(TAG, "loadNextWeek: cache empty for week>=$startIndex, firing fillWeekIfNeeded")
                     // Cache empty across [startIndex, MAX_WEEKS_BACK]. Fire one
                     // round of deep-paging — `fillWeekIfNeeded` candidates
                     // every channel that has no item in week=startIndex (and
@@ -232,13 +243,16 @@ class MeViewModel @Inject constructor(
                         fromIndex = startIndex,
                         filterChannelId = activeFilter,
                     )
+                    if (BuildConfig.DEBUG) Log.d(TAG, "loadNextWeek: after deep-page, hit=$hit")
                 }
                 if (hit == null) {
+                    if (BuildConfig.DEBUG) Log.d(TAG, "loadNextWeek: no content found even after deep-page → reachedEnd=true")
                     // No content in any week >= startIndex even after deep-paging.
                     // All eligible channels exhausted (or returned nothing useful).
                     reachedEndState.value = true
                     return@launch
                 }
+                if (BuildConfig.DEBUG) Log.d(TAG, "loadNextWeek: appending week $hit (startIndex was $startIndex)")
                 val content = feed.observeWeek(hit, activeFilter).first()
                 if (content != null) {
                     // Bug 2 fix: append the index, NOT the snapshot. The
@@ -330,4 +344,8 @@ class MeViewModel @Inject constructor(
         uploadedAt = uploadedAt ?: 0L,
         isShort = isShort,
     )
+
+    companion object {
+        private const val TAG = "MeViewModel"
+    }
 }
