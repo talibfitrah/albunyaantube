@@ -10,6 +10,11 @@ import androidx.room.RoomDatabase
  * v2: subscribed channels, saved playlists, channel video cache, feed refresh state
  * v3: ATOM refresh per-channel ETag + backoff columns (additive)
  * v4: NewPipe deep-paging columns (deepPageUrl, deepPageCookiesJson) (additive)
+ * v5: data wipe of stale deep-page tokens captured before SerializedPage
+ *     persisted NewPipe Page.body — see [MIGRATION_4_5]
+ * v6: data wipe of DEEP_PAGE_EOF_SENTINEL rows falsely marked exhausted by
+ *     the now-fixed ATOM refresh path that wiped deep-page state — see
+ *     [MIGRATION_5_6]. No schema changes in v5 or v6.
  */
 @Database(
     entities = [

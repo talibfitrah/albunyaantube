@@ -212,8 +212,18 @@ class ChannelDeepPaginator @VisibleForTesting internal constructor(
 
         override suspend fun fetch(channelUrl: String, page: Page?): PageProvider.Raw {
             val service = ServiceList.YouTube
+            // ANDROID-PERSONAL-03 round 8 review [P1]: a stored channel
+            // URL that doesn't match `/channel/UC<...>` (e.g. legacy
+            // `/c/handle` or `/@handle` rows from older subscriptions)
+            // would previously silently no-op into Raw(empty, null),
+            // which fetchNextPage maps to DeepPageResult.EndOfChannel —
+            // permanently marking the channel exhausted. Throw instead
+            // so fetchNextPage's catch-all maps to DeepPageResult.Error
+            // and runDeepPageFor leaves the deepPageUrl unchanged
+            // (channel stays a candidate for the next round, where a
+            // future migration could canonicalise the URL).
             val playlistUrl = uploadsPlaylistUrl(channelUrl)
-                ?: return PageProvider.Raw(items = emptyList(), nextPage = null)
+                ?: throw IllegalStateException("Unsupported channel URL: $channelUrl")
             return if (page == null) {
                 val info = PlaylistInfo.getInfo(service, playlistUrl)
                 PageProvider.Raw(

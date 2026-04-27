@@ -96,7 +96,15 @@ class MeFeedRepository @Inject constructor(
      * Page → misclassified as EndOfChannel.
      */
     private val deepPageStateJsonAdapter: JsonAdapter<DeepPageState> by lazy {
-        val m = moshi ?: Moshi.Builder().build()
+        // ANDROID-PERSONAL-03 round 8 review fix: tests don't inject Moshi,
+        // so the fallback path also needs KotlinJsonAdapterFactory to
+        // deserialize the Kotlin data class via reflection. Without it,
+        // Moshi's default Java reflection silently produces a DeepPageState
+        // with all-null fields, and round-tripped continuation cookies/
+        // body get dropped.
+        val m = moshi ?: Moshi.Builder()
+            .addLast(com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory())
+            .build()
         m.adapter(DeepPageState::class.java).serializeNulls()
     }
 
@@ -399,10 +407,11 @@ class MeFeedRepository @Inject constructor(
                 .map { it.channelId }
                 .toList()
         }
-        // Cheapest path: a single full-range observe + size. The DAO already
-        // has the IN-list query indexed; counting in Kotlin keeps us off the
-        // SQLite optimiser path that the bigger query already uses.
-        cache.observeRangeForChannels(channelIds, Long.MIN_VALUE, Long.MAX_VALUE).first().size
+        // ANDROID-PERSONAL-03 round 8 review [P1]: SQL COUNT(*) instead of
+        // materialising every row through Room's converter just to call
+        // `.size`. Fires up to 60× per loadNextWeek call, so the constant
+        // factor matters on power-user caches (~3000 rows).
+        cache.countForChannels(channelIds)
     }
 
     suspend fun fillWeekIfNeeded(weekIndex: Int): Unit = withContext(ioDispatcher) {
@@ -424,39 +433,45 @@ class MeFeedRepository @Inject constructor(
             .take(MAX_CHANNELS_PER_REFRESH)
             .map { it.channelId }
             .toList()
+        val cachedInWindow = cache
+            .observeRangeForChannels(channelIds, bucket.startMs, bucket.endMs)
+            .first()
+        val channelsWithItems: Set<String> = cachedInWindow.asSequence()
+            .map { it.channelId }
+            .toSet()
         // ANDROID-PERSONAL-03 round 8 [field-bug]: the prior candidate
-        // logic checked "channels with no items in [bucket.startMs,
-        // bucket.endMs)" — i.e. channels missing from the requested week
-        // alone. That broke high-volume channels (e.g. Dr. Othman, ~15
-        // uploads/day) once history-rich channels (e.g. Sheikh Kishk,
-        // 10 months cached) populated weeks 2/3/4: Dr. Othman was no
-        // longer the reason `findNextNonEmptyWeekIndex` returned null,
-        // so `fillWeekIfNeeded` never fired and his cache stopped
-        // growing. The user saw his content disappear from week 2 onward
-        // even though the channel has thousands more videos to fetch.
+        // logic stopped at "no items in this week's bucket". That broke
+        // high-volume channels (e.g. Dr. Othman, ~15 uploads/day) once
+        // history-rich channels (e.g. Sheikh Kishk, 10 months cached)
+        // populated weeks 2/3/4: Sheikh Kishk's content carried the
+        // visible week, so `findNextNonEmptyWeekIndex` returned non-null
+        // and `fillWeekIfNeeded` never fired — Dr. Othman's cache stopped
+        // growing.
         //
-        // New rule: a channel is a candidate iff its OLDEST cached row
-        // is still NEWER than the requested bucket's start — meaning
-        // its deep-paging hasn't reached this week yet. EOF channels
-        // are always skipped. Channels with zero rows are candidates
-        // (they need their first deep-page).
+        // Refined rule (union of both conditions):
+        //   1. channel has NO item in the current bucket, AND
+        //   2. its oldest cached row is newer than the bucket's start
+        //      (deep-paging hasn't reached this week yet) OR it has no
+        //      cached rows at all (needs first page).
+        // EOF channels are always skipped. Channels that already have an
+        // item in the bucket are NOT candidates — that ATOM/cache hit
+        // already covers the visible week.
+        //
+        // ANDROID-PERSONAL-03 round 8 review [P1]: SQL `MIN(uploadedAt)
+        // GROUP BY channelId` via [ChannelVideoCacheDao.oldestPerChannel]
+        // instead of loading every cache row to compute one min per
+        // channel. Channels with zero rows are absent from the result
+        // map.
         val oldestPerChannel: Map<String, Long?> = run {
-            val rows = cache
-                .observeRangeForChannels(channelIds, Long.MIN_VALUE, Long.MAX_VALUE)
-                .first()
-            channelIds.associateWith { id ->
-                rows.asSequence()
-                    .filter { it.channelId == id && it.uploadedAt != null }
-                    .map { it.uploadedAt!! }
-                    .minOrNull()
-            }
+            val byId = cache.oldestPerChannel(channelIds).associateBy { it.channelId }
+            channelIds.associateWith { id -> byId[id]?.oldestMs }
         }
         val refreshStates: Map<String, ChannelFeedRefreshState> = channelIds
             .associateWith { id -> refreshStateDao.get(id) ?: return@associateWith null }
             .filterValues { it != null }
             .mapValues { it.value!! }
         val candidateChannels = all
-            .filter { it.channelId in channelIds }
+            .filter { it.channelId in channelIds && it.channelId !in channelsWithItems }
             .filter { ch ->
                 val st = refreshStates[ch.channelId]
                 // Skip channels we've previously paged to exhaustion.
@@ -468,16 +483,11 @@ class MeFeedRepository @Inject constructor(
                 val oldest = oldestPerChannel[ch.channelId]
                 oldest == null || oldest > bucket.startMs
             }
-        // Diagnostic counters preserved for parity with the previous log
-        // line shape. `hasItemsInWindow` is now the count of channels
-        // whose OLDEST cached row reaches into or past the bucket — i.e.
-        // channels we DON'T need to deep-page for this week.
-        val channelsAtOrBeyondWeek = oldestPerChannel.values.count { it != null && it <= bucket.startMs }
         if (BuildConfig.DEBUG) {
             val eofCount = refreshStates.values.count { it.deepPageUrl == DEEP_PAGE_EOF_SENTINEL }
             Log.d(
                 TAG,
-                "fillWeekIfNeeded(week=$weekIndex): subs=${all.size} reachingThisWeek=$channelsAtOrBeyondWeek candidates=${candidateChannels.size} eofChannels=$eofCount"
+                "fillWeekIfNeeded(week=$weekIndex): subs=${all.size} hasItemsInWindow=${channelsWithItems.size} candidates=${candidateChannels.size} eofChannels=$eofCount"
             )
             candidateChannels.forEach { ch ->
                 val st = refreshStates[ch.channelId]

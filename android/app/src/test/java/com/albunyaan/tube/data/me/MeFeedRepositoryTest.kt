@@ -249,7 +249,7 @@ class MeFeedRepositoryTest {
     }
 
     @Test
-    fun `Stage5r2 empty fetch DOES wipe cache when previous success is older than FEED_WINDOW`() = runTest {
+    fun `empty ATOM fetch preserves cache so deep-paged history survives`() = runTest {
         subscribe("UC1")
         fetcher.responses["https://yt/UC1"] = listOf(
             item("v1", clockMillis - 1_000L),
@@ -258,16 +258,26 @@ class MeFeedRepositoryTest {
         repo.refresh(force = false)
         assertEquals(2, db.channelVideoCacheDao().getForChannel("UC1").size)
 
-        // Advance past the feed window — now the cached rows are outside
-        // what observeFeed can show anyway. An empty response should clear
-        // them so the cache reflects reality (dormant/emptied channel).
+        // Advance past the feed window — under the legacy 14-day Me feed
+        // these rows would have been outside the visible range anyway, so
+        // the prior behaviour was to wipe them on an empty fetch.
+        //
+        // ANDROID-PERSONAL-03 round 8 [field-bug]: the Me-tab is now a
+        // weekly feed with NO upper bound on age — the user can scroll
+        // back to a channel's first upload. The cache row for v1/v2 is
+        // visible content even when ATOM later returns empty (e.g.
+        // dormant channel, transient YouTube glitch). Wiping deep-paged
+        // history because ATOM was empty broke the user's scroll
+        // position. The branch that previously called replaceForChannel
+        // was removed; cache rows survive empty ATOM fetches.
         clockMillis += MeFeedRepository.FEED_WINDOW_MS + 1_000L
         fetcher.responses["https://yt/UC1"] = emptyList()
         repo.refresh(force = false)
 
-        assertTrue(
-            "dormant channel (last success > FEED_WINDOW ago) must clear cache on empty fetch",
-            db.channelVideoCacheDao().getForChannel("UC1").isEmpty(),
+        assertEquals(
+            "empty ATOM fetch must NOT wipe deep-paged-or-historical rows",
+            2,
+            db.channelVideoCacheDao().getForChannel("UC1").size,
         )
     }
 
@@ -1151,11 +1161,20 @@ class MeFeedRepositoryTest {
         repo.refresh(force = true)
 
         // Seed a prior token on the refresh-state row.
+        //
+        // ANDROID-PERSONAL-03 round 8 [field-bug]: deepPageCookiesJson is
+        // now a [com.albunyaan.tube.data.me.MeFeedRepository.DeepPageState]
+        // blob (id, ids, cookies, bodyB64) — not a bare cookie map. The
+        // previous bare-map format dropped NewPipe Page.body where YouTube's
+        // continuation token actually lives, so playlist deep-paging
+        // round-tripped with an empty token and falsely terminated. The
+        // earlier MIGRATION_4_5 wipes pre-fix rows; tests must now seed the
+        // new shape.
         val prior = db.channelFeedRefreshStateDao().get("UC1")!!
         db.channelFeedRefreshStateDao().upsert(
             prior.copy(
                 deepPageUrl = "https://yt/continuation/X",
-                deepPageCookiesJson = """{"CONSENT":"YES+9"}""",
+                deepPageCookiesJson = """{"id":null,"ids":null,"cookies":{"CONSENT":"YES+9"},"bodyB64":null}""",
             )
         )
 

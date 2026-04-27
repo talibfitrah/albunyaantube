@@ -92,4 +92,38 @@ interface ChannelVideoCacheDao {
            WHERE channelId NOT IN (SELECT channelId FROM subscribed_channels)"""
     )
     suspend fun pruneUnsubscribed()
+
+    /**
+     * Total cached row count for the given channels. Used by the Me-tab
+     * deep-page loop's progress check — the SQL aggregate avoids
+     * materialising the full row list just to call `.size`.
+     *
+     * ANDROID-PERSONAL-03 round 8 review [P1].
+     */
+    @Query("SELECT COUNT(*) FROM channel_video_cache WHERE channelId IN (:channelIds)")
+    suspend fun countForChannels(channelIds: List<String>): Int
+
+    /**
+     * Oldest `uploadedAt` per channel (smallest non-null value), for the
+     * candidate filter in [com.albunyaan.tube.data.me.MeFeedRepository.fillWeekIfNeeded].
+     * Channels with zero rows are absent from the result. Returns
+     * `(channelId, oldestMs)` pairs.
+     *
+     * ANDROID-PERSONAL-03 round 8 review [P1]: avoids loading the full
+     * cache table to compute one MIN per channel.
+     */
+    @Query(
+        """SELECT channelId, MIN(uploadedAt) AS oldestMs FROM channel_video_cache
+           WHERE channelId IN (:channelIds) AND uploadedAt IS NOT NULL
+           GROUP BY channelId"""
+    )
+    suspend fun oldestPerChannel(channelIds: List<String>): List<ChannelOldest>
 }
+
+/**
+ * Projection row for [ChannelVideoCacheDao.oldestPerChannel].
+ */
+data class ChannelOldest(
+    val channelId: String,
+    val oldestMs: Long,
+)

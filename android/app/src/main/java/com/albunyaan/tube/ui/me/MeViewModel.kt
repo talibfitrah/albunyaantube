@@ -123,6 +123,17 @@ class MeViewModel @Inject constructor(
     // scroll listener can fire many times in rapid succession.
     private var loadJob: Job? = null
 
+    // Single in-flight opportunistic fill job. The opportunistic
+    // background fillWeekIfNeeded fired when `hit != null` is fire-and-
+    // forget, so a fast scroll could spawn many concurrent
+    // fillWeekIfNeeded calls — and concurrent runDeepPageFor for the
+    // same channel race on the refreshStateDao.upsert (TOCTOU on the
+    // continuation token, leading to a clobbered token and YouTube
+    // returning the same page twice). Guard with a single in-flight
+    // job: if one fill is already running, skip; the next loadNextWeek
+    // call will re-trigger.
+    private var opportunisticFillJob: Job? = null
+
     init {
         // Kick off the first week load on construction so the user sees
         // content as soon as the screen renders.
@@ -242,8 +253,14 @@ class MeViewModel @Inject constructor(
                 // non-blocking fill round so those lagging channels
                 // catch up; Room's invalidation will re-emit the week
                 // and the UI will update without another scroll.
-                if (hit != null) {
-                    viewModelScope.launch {
+                //
+                // Round 8 review (P0): guard with `opportunisticFillJob`
+                // — concurrent fillWeekIfNeeded calls for the same
+                // channel race on refreshStateDao.upsert and clobber the
+                // saved continuation token. If a fill is already in
+                // flight, skip; the next loadNextWeek will re-trigger.
+                if (hit != null && opportunisticFillJob?.isActive != true) {
+                    opportunisticFillJob = viewModelScope.launch {
                         feed.fillWeekIfNeeded(startIndex)
                     }
                 }
