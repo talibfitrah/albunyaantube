@@ -1,10 +1,14 @@
 package com.albunyaan.tube.data.me
 
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
 import com.albunyaan.tube.data.local.ChannelFeedRefreshState
 import com.albunyaan.tube.data.local.ChannelFeedRefreshStateDao
 import com.albunyaan.tube.data.local.ChannelVideoCache
 import com.albunyaan.tube.data.local.ChannelVideoCacheDao
 import com.albunyaan.tube.data.local.SubscribedChannel
+import com.albunyaan.tube.data.subscriptions.SubscriptionLimitGuard
 import com.albunyaan.tube.data.subscriptions.SubscriptionRepository
 import javax.inject.Inject
 import javax.inject.Named
@@ -119,6 +123,49 @@ class MeFeedRepository @Inject constructor(
                 }
             }
             .distinctUntilChanged()
+
+    /**
+     * T11: paginated stream of cached videos for the Me-tab grid.
+     *
+     * Mirrors [observeFeed] for channel scoping (newest-subscribed first,
+     * capped at [SubscriptionLimitGuard.CAP] per the 30-channel product
+     * cap) but returns a [PagingData] flow so very long subscription lists
+     * are loaded one page at a time. The Pager creates a fresh
+     * [androidx.paging.PagingSource] every invalidation; the upstream
+     * `flatMapLatest` re-creates the pager when the subscription set
+     * changes so unsubscribed channels are removed cleanly.
+     *
+     *  - PAGE_SIZE = 20 (one screenful on a phone, two on a tablet)
+     *  - initialLoadSize = 40 (avoid a "snap" at the top after first frame)
+     *  - prefetchDistance = 10 (start loading the next page before the user
+     *    hits the bottom)
+     *  - placeholders disabled — UX prefers a spinner over greyed-out tiles
+     */
+    fun pagedFeed(filterChannelId: String?): Flow<PagingData<ChannelVideoCache>> =
+        subscriptions.observeSubscribedChannels()
+            .flatMapLatest { subs ->
+                if (subs.isEmpty()) {
+                    flowOf(PagingData.empty())
+                } else {
+                    val channelIds = subs.asSequence()
+                        .sortedByDescending { it.subscribedAt }
+                        .take(SubscriptionLimitGuard.CAP)
+                        .map { it.channelId }
+                        .toList()
+                    val cutoff = currentTimeMillis() - FEED_WINDOW_MS
+                    Pager(
+                        config = PagingConfig(
+                            pageSize = 20,
+                            initialLoadSize = 40,
+                            prefetchDistance = 10,
+                            enablePlaceholders = false,
+                        ),
+                        pagingSourceFactory = {
+                            cache.pagingForChannels(channelIds, cutoff, filterChannelId)
+                        },
+                    ).flow
+                }
+            }
 
     /**
      * Refresh a slice of subscribed channels.

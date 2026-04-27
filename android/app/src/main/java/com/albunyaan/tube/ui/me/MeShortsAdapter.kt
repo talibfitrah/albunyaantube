@@ -95,7 +95,7 @@ class MeShortsAdapter(
             } else {
                 // F-CR10 (CodeRabbit): cancel any pending Coil request on
                 // recycled view by going through Coil's load() instead of
-                // setImageResource(). See MeVideosAdapter for full context.
+                // setImageResource(). See MeVideosPagingAdapter for full context.
                 binding.shortThumbnail.load(R.drawable.thumbnail_placeholder)
             }
             binding.root.setOnClickListener { onClick(item) }

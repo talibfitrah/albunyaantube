@@ -1,5 +1,6 @@
 package com.albunyaan.tube.data.local
 
+import androidx.paging.PagingSource
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
@@ -47,6 +48,35 @@ interface ChannelVideoCacheDao {
            ORDER BY uploadedAt DESC"""
     )
     suspend fun getForChannel(channelId: String): List<ChannelVideoCache>
+
+    /**
+     * T11: paginated source for the Me-feed videos grid. Mirrors
+     * [observeRecentForChannels] but returns a [PagingSource] so the UI
+     * loads in PAGE_SIZE batches instead of pulling the whole 14-day
+     * window into memory up front.
+     *
+     * - `channelIds`: subscribed-channel scope (capped at
+     *   [com.albunyaan.tube.data.subscriptions.SubscriptionLimitGuard.CAP] in
+     *   the repository).
+     * - `cutoffMs`: minimum uploadedAt — the rolling 14-day window.
+     * - `filterChannelId`: optional chip-driven filter; null = all subscribed.
+     *
+     * The `uploadedAt IS NOT NULL` guard mirrors [observeRecentForChannels]
+     * because the entity column is nullable and untimed rows must never
+     * surface in a date-ordered feed.
+     */
+    @Query(
+        """SELECT * FROM channel_video_cache
+           WHERE channelId IN (:channelIds)
+             AND uploadedAt IS NOT NULL AND uploadedAt >= :cutoffMs
+             AND (:filterChannelId IS NULL OR channelId = :filterChannelId)
+           ORDER BY uploadedAt DESC"""
+    )
+    fun pagingForChannels(
+        channelIds: List<String>,
+        cutoffMs: Long,
+        filterChannelId: String?,
+    ): PagingSource<Int, ChannelVideoCache>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(rows: List<ChannelVideoCache>)

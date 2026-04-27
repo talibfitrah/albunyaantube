@@ -3,9 +3,10 @@ package com.albunyaan.tube.ui.me
 import android.text.format.DateUtils
 import android.view.LayoutInflater
 import android.view.ViewGroup
+import androidx.paging.LoadState
+import androidx.paging.PagingDataAdapter
 import androidx.recyclerview.widget.ConcatAdapter
 import androidx.recyclerview.widget.DiffUtil
-import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import coil.load
 import com.albunyaan.tube.R
@@ -14,21 +15,54 @@ import com.albunyaan.tube.databinding.ItemMeVideoBinding
 import com.albunyaan.tube.databinding.ItemMeVideosHeaderBinding
 
 /**
- * Vertical list of long-form videos across subscribed channels. Renders
- * a fixed "Latest videos" header followed by the items.
+ * T11: paged replacement for the legacy [MeVideosAdapter].
+ *
+ * Behaviour preserved:
+ *  - Fixed "Latest videos" header above the rows, hidden on empty.
+ *  - VIDEO_VIEW_TYPE = 301 so [MeFragment.spanSizeLookup] keeps mapping
+ *    long-form rows to a span of 1 on tablet/TV grids.
+ *  - VideoVH.bind() body — channel + relative-date metadata, Coil
+ *    thumbnail load with placeholder fallback, click forward — copied
+ *    verbatim from the legacy adapter so the UI does not regress.
+ *
+ * Behaviour changed:
+ *  - Rows arrive via [submitData] from a Paging 3 [androidx.paging.PagingData]
+ *    flow rather than `submitList(List<MeFeedVideo>)`. The header is
+ *    toggled by an [addLoadStateListener] on the inner adapter rather than
+ *    by the caller telling it whether the list is empty.
+ *
+ * Expose [sectionAdapter] (a [ConcatAdapter] of the header + paging
+ * adapter) so [MeFragment]'s outer [ConcatAdapter] composition is
+ * unchanged.
  */
-class MeVideosAdapter(
+class MeVideosPagingAdapter(
     private val onClick: (MeFeedVideo) -> Unit,
 ) {
-    private val listAdapter = InnerAdapter(onClick)
+    private val pagingAdapter = InnerPagingAdapter(onClick)
     private val headerAdapter = HeaderAdapter()
 
     val sectionAdapter: RecyclerView.Adapter<out RecyclerView.ViewHolder> =
-        ConcatAdapter(headerAdapter, listAdapter)
+        ConcatAdapter(headerAdapter, pagingAdapter)
 
-    fun submit(items: List<MeFeedVideo>) {
-        headerAdapter.show = items.isNotEmpty()
-        listAdapter.submitList(items)
+    init {
+        // Toggle the header based on the paging state. We check Refresh /
+        // Append for `NotLoading.endOfPaginationReached == true` to decide
+        // when the load is settled, then hide the header iff itemCount is
+        // 0. This mirrors the prior `submit(items)` call's
+        // `headerAdapter.show = items.isNotEmpty()` flip without leaking
+        // PagingData internals to the fragment.
+        pagingAdapter.addLoadStateListener { states ->
+            val refresh = states.refresh
+            // Stay shown until the first non-loading frame so the header
+            // doesn't flicker during the initial load.
+            if (refresh is LoadState.NotLoading || refresh is LoadState.Error) {
+                headerAdapter.show = pagingAdapter.itemCount > 0
+            }
+        }
+    }
+
+    suspend fun submitData(pagingData: androidx.paging.PagingData<MeFeedVideo>) {
+        pagingAdapter.submitData(pagingData)
     }
 
     private class HeaderAdapter : RecyclerView.Adapter<HeaderVH>() {
@@ -54,9 +88,9 @@ class MeVideosAdapter(
 
     class HeaderVH(val binding: ItemMeVideosHeaderBinding) : RecyclerView.ViewHolder(binding.root)
 
-    private class InnerAdapter(
+    private class InnerPagingAdapter(
         private val onClick: (MeFeedVideo) -> Unit,
-    ) : ListAdapter<MeFeedVideo, VideoVH>(DIFF) {
+    ) : PagingDataAdapter<MeFeedVideo, VideoVH>(DIFF) {
 
         override fun getItemViewType(position: Int): Int = VIDEO_VIEW_TYPE
 
@@ -68,7 +102,12 @@ class MeVideosAdapter(
         }
 
         override fun onBindViewHolder(holder: VideoVH, position: Int) {
-            holder.bind(getItem(position))
+            // PagingDataAdapter#getItem may return null when a placeholder
+            // is being shown. We disable placeholders in PagingConfig so
+            // this should never happen in practice, but the adapter API
+            // is null-tolerant — guard for safety.
+            val item = getItem(position) ?: return
+            holder.bind(item)
         }
     }
 

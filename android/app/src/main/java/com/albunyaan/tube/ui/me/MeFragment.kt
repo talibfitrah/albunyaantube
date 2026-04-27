@@ -24,6 +24,7 @@ import com.albunyaan.tube.util.DeviceConfig
 import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
@@ -43,7 +44,7 @@ class MeFragment : Fragment(R.layout.fragment_me) {
     private lateinit var chipsAdapter: MeChipsAdapter
     private lateinit var favoritesAdapter: MeFavoritesAdapter
     private lateinit var shortsAdapter: MeShortsAdapter
-    private lateinit var videosAdapter: MeVideosAdapter
+    private lateinit var videosAdapter: MeVideosPagingAdapter
     private lateinit var concatAdapter: ConcatAdapter
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -59,7 +60,9 @@ class MeFragment : Fragment(R.layout.fragment_me) {
             onSeeAll = ::navigateToFavoritesScreen,
         )
         shortsAdapter = MeShortsAdapter(onClick = ::playVideo)
-        videosAdapter = MeVideosAdapter(onClick = ::playVideo)
+        // T11: PagingDataAdapter — fed by MeViewModel.pagedVideos in the
+        // collector below, no longer driven by render(state.Content).
+        videosAdapter = MeVideosPagingAdapter(onClick = ::playVideo)
 
         concatAdapter = ConcatAdapter(
             chipsAdapter.rowAdapter,
@@ -77,7 +80,7 @@ class MeFragment : Fragment(R.layout.fragment_me) {
                 spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
                     override fun getSpanSize(position: Int): Int {
                         val viewType = concatAdapter.getItemViewType(position)
-                        return if (viewType == MeVideosAdapter.VIDEO_VIEW_TYPE) 1 else spanCount
+                        return if (viewType == MeVideosPagingAdapter.VIDEO_VIEW_TYPE) 1 else spanCount
                     }
                 }
             }
@@ -115,6 +118,19 @@ class MeFragment : Fragment(R.layout.fragment_me) {
                 viewModel.state.collect { render(it) }
             }
         }
+
+        // T11: paged videos collector. Independent of `state` so it can
+        // continue to deliver pages while render() handles chips / favorites
+        // / shorts / empty UI. collectLatest keeps only the freshest
+        // PagingData on the wire — when filter changes, the previous
+        // pager's flow is cancelled cleanly.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.pagedVideos.collectLatest { pagingData ->
+                    videosAdapter.submitData(pagingData)
+                }
+            }
+        }
     }
 
     override fun onResume() {
@@ -149,7 +165,10 @@ class MeFragment : Fragment(R.layout.fragment_me) {
                 chipsAdapter.submit(state.chips)
                 favoritesAdapter.submit(state.favorites)
                 shortsAdapter.submit(state.shorts)
-                videosAdapter.submit(state.videos)
+                // T11: videosAdapter is now driven by MeViewModel.pagedVideos
+                // via the dedicated collector in onViewCreated. Don't push
+                // state.videos in here — the paging adapter owns its own
+                // flow and a manual list push would race with submitData().
                 // T9: removed auto-load post-submitList check — there is no
                 // page-2 anymore. The cache is what it is; the worker
                 // mutates it on its own cadence (hourly periodic + onResume
