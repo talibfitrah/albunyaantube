@@ -271,6 +271,28 @@ class MeFragment : Fragment(R.layout.fragment_me) {
                 concatAdapter.addAdapter(adapter.sectionAdapter)
             }
         }
+
+        // ANDROID-PERSONAL-03 round 8 [field-bug, filter-too-thin]: when the
+        // user filters by a channel whose recent activity is one-shape-only
+        // (e.g. Mufti Menk's last 12 days are all shorts; his videos start at
+        // week 5), the first rendered week shows just a shorts row + a videos
+        // header with no body. The result fits the viewport, the scroll
+        // listener never fires, and the user thinks "no videos". Same gotcha
+        // CLAUDE.md flags for Pagination on Large Screens — scroll-listener
+        // alone is insufficient when content fits on screen.
+        // Post a layout-time check: if the recycler can't scroll DOWN,
+        // auto-fire [loadNextWeek] until content overflows or [reachedEnd]
+        // flips. The ViewModel's loadJob debounce keeps this from looping
+        // uselessly during a single in-flight load.
+        binding?.meRecycler?.post {
+            val rv = binding?.meRecycler ?: return@post
+            if (!rv.canScrollVertically(1) &&
+                !viewModel.reachedEnd.value &&
+                !viewModel.isLoadingMoreWeeks.value
+            ) {
+                viewModel.loadNextWeek()
+            }
+        }
     }
 
     private fun onChipClicked(chip: ChipItem) {
@@ -291,12 +313,28 @@ class MeFragment : Fragment(R.layout.fragment_me) {
         }
     }
 
-    private fun playVideo(video: MeFeedVideo) {
+        private fun playVideo(video: MeFeedVideo) {
         // F9: guard against an empty videoId making it this far. The fetcher
         // already filters at source (F5) but belt-and-braces — an empty id
         // passed to PlayerFragment would blow up in NewPipe extraction.
         if (video.videoId.isBlank()) return
-        val args = Bundle().apply { putString("videoId", video.videoId) }
+        // ANDROID-PERSONAL-03 round 8 [field-bug]: pass the same metadata
+        // bundle that HomeFragment passes so PlayerFragment can render the
+        // title, channel, thumbnail, etc. immediately while NewPipe
+        // extraction runs in the background. Without these args the player
+        // shows placeholder text until extraction completes (or forever
+        // if extraction fails). MeFeedVideo doesn't carry a description
+        // (ATOM doesn't expose it; NewPipe deep-paging returns it but we
+        // don't currently capture it) so we pass empty string.
+        val args = Bundle().apply {
+            putString("videoId", video.videoId)
+            putString("title", video.title)
+            putString("channelName", video.channelName)
+            putString("thumbnailUrl", video.thumbnailUrl ?: "")
+            putString("description", "")
+            putLong("durationSeconds", video.durationSeconds ?: 0L)
+            putLong("viewCount", video.viewCount ?: -1L)
+        }
         if (findNavController().currentDestination?.id == R.id.meFragment) {
             findNavController().navigate(R.id.playerFragment, args)
         }
@@ -305,7 +343,19 @@ class MeFragment : Fragment(R.layout.fragment_me) {
     /** T10: tile click → open the player with the favorite's videoId. */
     private fun playFavorite(item: FavoriteVideo) {
         if (item.videoId.isBlank()) return
-        val args = Bundle().apply { putString("videoId", item.videoId) }
+        // Round 8: same metadata bundle so the player has something to show
+        // immediately. FavoriteVideo carries title, channelName,
+        // thumbnailUrl, durationSeconds — pass all available; description
+        // and viewCount are not stored on FavoriteVideo so we pass empty/-1.
+        val args = Bundle().apply {
+            putString("videoId", item.videoId)
+            putString("title", item.title)
+            putString("channelName", item.channelName)
+            putString("thumbnailUrl", item.thumbnailUrl ?: "")
+            putString("description", "")
+            putLong("durationSeconds", item.durationSeconds.toLong())
+            putLong("viewCount", -1L)
+        }
         if (findNavController().currentDestination?.id == R.id.meFragment) {
             findNavController().navigate(R.id.playerFragment, args)
         }
