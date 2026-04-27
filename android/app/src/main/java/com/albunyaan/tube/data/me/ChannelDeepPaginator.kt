@@ -11,10 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.Page
 import org.schabi.newpipe.extractor.ServiceList
-import org.schabi.newpipe.extractor.channel.ChannelInfo
-import org.schabi.newpipe.extractor.channel.tabs.ChannelTabInfo
-import org.schabi.newpipe.extractor.channel.tabs.ChannelTabs
-import org.schabi.newpipe.extractor.linkhandler.ListLinkHandler
+import org.schabi.newpipe.extractor.playlist.PlaylistInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 
 /**
@@ -145,33 +142,50 @@ class ChannelDeepPaginator @VisibleForTesting internal constructor(
         suspend fun fetch(channelUrl: String, page: Page?): Raw
     }
 
-    /** NewPipe-backed implementation. Synchronous; called from Dispatchers.IO. */
+    /**
+     * NewPipe-backed implementation. Synchronous; called from Dispatchers.IO.
+     *
+     * ANDROID-PERSONAL-03 round 8 [field-bug]: previously used
+     * [ChannelInfo.getInfo] + [ChannelTabInfo.getInfo] (the Videos tab path).
+     * NewPipe v0.26.0's [org.schabi.newpipe.extractor.services.youtube
+     * .extractors.YoutubeChannelTabExtractor.collectItemsFrom] throws NPE
+     * (`Attempt to invoke interface method 'int java.util.List.size()' on a
+     * null object reference`) for some channels — a known YouTube response
+     * shape NewPipe doesn't yet handle.
+     *
+     * Workaround: every YouTube channel has an auto-generated "uploads"
+     * playlist. The playlist ID is derived by replacing the `UC` prefix of
+     * the channel ID with `UU`. The uploads playlist exposes ALL uploads
+     * paginated and uses [org.schabi.newpipe.extractor.services.youtube
+     * .extractors.YoutubePlaylistExtractor], a different code path not
+     * affected by the channel-tab NPE.
+     *
+     * Side effect: the uploads playlist intermixes Shorts and long-form,
+     * but our downstream filter on `isShortFormContent` already handles
+     * that — no behaviour change for the cache.
+     */
     internal object RealPageProvider : PageProvider {
+        private val UCID_REGEX = Regex("/channel/(UC[A-Za-z0-9_-]+)")
+
+        private fun uploadsPlaylistUrl(channelUrl: String): String? {
+            val ucid = UCID_REGEX.find(channelUrl)?.groupValues?.getOrNull(1) ?: return null
+            // Convert UCxxx... → UUxxx... (uploads playlist convention).
+            val uploadsId = "UU" + ucid.removePrefix("UC")
+            return "https://www.youtube.com/playlist?list=$uploadsId"
+        }
+
         override suspend fun fetch(channelUrl: String, page: Page?): PageProvider.Raw {
             val service = ServiceList.YouTube
+            val playlistUrl = uploadsPlaylistUrl(channelUrl)
+                ?: return PageProvider.Raw(items = emptyList(), nextPage = null)
             return if (page == null) {
-                val info = ChannelInfo.getInfo(service, channelUrl)
-                val tabs: List<ListLinkHandler> = info.tabs ?: emptyList()
-                val videosTab = tabs.firstOrNull { handler ->
-                    handler.contentFilters?.any { it == ChannelTabs.VIDEOS } == true
-                } ?: return PageProvider.Raw(items = emptyList(), nextPage = null)
-                val tabInfo = ChannelTabInfo.getInfo(service, videosTab)
+                val info = PlaylistInfo.getInfo(service, playlistUrl)
                 PageProvider.Raw(
-                    items = (tabInfo.relatedItems ?: emptyList()).filterIsInstance<StreamInfoItem>(),
-                    nextPage = tabInfo.nextPage,
+                    items = (info.relatedItems ?: emptyList()).filterIsInstance<StreamInfoItem>(),
+                    nextPage = info.nextPage,
                 )
             } else {
-                // Subsequent page: resolve the channel and Videos tab again so
-                // we have a [ListLinkHandler] for ChannelTabInfo.getMoreItems.
-                // The channel resolution is cheap relative to the actual page
-                // fetch and ATOM is the primary feed, so the extra lookup is
-                // acceptable.
-                val info = ChannelInfo.getInfo(service, channelUrl)
-                val tabs: List<ListLinkHandler> = info.tabs ?: emptyList()
-                val videosTab = tabs.firstOrNull { handler ->
-                    handler.contentFilters?.any { it == ChannelTabs.VIDEOS } == true
-                } ?: return PageProvider.Raw(items = emptyList(), nextPage = null)
-                val more = ChannelTabInfo.getMoreItems(service, videosTab, page)
+                val more = PlaylistInfo.getMoreItems(service, playlistUrl, page)
                 PageProvider.Raw(
                     items = (more.items ?: emptyList()).filterIsInstance<StreamInfoItem>(),
                     nextPage = more.nextPage,
