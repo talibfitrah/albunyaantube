@@ -59,11 +59,10 @@ class ChannelVideoCacheDaoPagingTest {
 
     private suspend fun loadFirstPage(
         channelIds: List<String>,
-        cutoffMs: Long,
         filterChannelId: String?,
         loadSize: Int = 20,
     ): PagingSource.LoadResult.Page<Int, ChannelVideoCache> {
-        val source = cache.pagingForChannels(channelIds, cutoffMs, filterChannelId)
+        val source = cache.pagingForChannels(channelIds, filterChannelId)
         val result = source.load(
             PagingSource.LoadParams.Refresh(
                 key = null,
@@ -86,7 +85,6 @@ class ChannelVideoCacheDaoPagingTest {
 
         val page = loadFirstPage(
             channelIds = listOf("UCa"),
-            cutoffMs = 0L,
             filterChannelId = null,
             loadSize = 20,
         )
@@ -112,7 +110,6 @@ class ChannelVideoCacheDaoPagingTest {
         // Subscribed to both channels but filter pin to UCa only.
         val page = loadFirstPage(
             channelIds = listOf("UCa", "UCb"),
-            cutoffMs = 0L,
             filterChannelId = "UCa",
             loadSize = 20,
         )
@@ -124,10 +121,18 @@ class ChannelVideoCacheDaoPagingTest {
         )
     }
 
+    /**
+     * ANDROID-PERSONAL-02 round 4: the upload-date cutoff was removed so
+     * users see their full subscription history (matches YouTube's
+     * subscription feed). What remains: ordering must be newest-first
+     * across the whole window.
+     */
     @Test
-    fun `paging respects cutoff`() = runTest {
-        // 10 rows below cutoff (uploadedAt < 5_000) and 10 rows above
-        // (uploadedAt >= 5_000). Only the upper half should be returned.
+    fun `paging orders newest-first across full history`() = runTest {
+        // Seed two age groups: "old" with uploadedAt 1_000..1_009, "new"
+        // with uploadedAt 5_000..5_009. With no cutoff both groups are
+        // visible; the ORDER BY uploadedAt DESC must rank "new9" first
+        // and "old0" last.
         val rows = buildList {
             (0 until 10).forEach { i ->
                 add(row("old$i", "UCa", uploadedAt = 1_000L + i.toLong()))
@@ -140,18 +145,13 @@ class ChannelVideoCacheDaoPagingTest {
 
         val page = loadFirstPage(
             channelIds = listOf("UCa"),
-            cutoffMs = 5_000L,
             filterChannelId = null,
             loadSize = 20,
         )
 
-        assertEquals(10, page.data.size)
-        assertTrue(
-            "every row should be at or above cutoff",
-            page.data.all { (it.uploadedAt ?: 0L) >= 5_000L },
-        )
-        // Newest first.
+        assertEquals(20, page.data.size)
         assertEquals("new9", page.data.first().videoId)
+        assertEquals("old0", page.data.last().videoId)
     }
 
     @Test
@@ -165,7 +165,6 @@ class ChannelVideoCacheDaoPagingTest {
 
         val page = loadFirstPage(
             channelIds = listOf("UCa"),
-            cutoffMs = 0L,
             filterChannelId = null,
             loadSize = 20,
         )
@@ -192,7 +191,6 @@ class ChannelVideoCacheDaoPagingTest {
 
         val page = loadFirstPage(
             channelIds = listOf("UCa"),
-            cutoffMs = 0L,
             filterChannelId = null,
             loadSize = 20,
         )

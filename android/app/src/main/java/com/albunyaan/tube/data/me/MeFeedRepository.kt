@@ -160,7 +160,12 @@ class MeFeedRepository @Inject constructor(
                         .take(SubscriptionLimitGuard.CAP)
                         .map { it.channelId }
                         .toList()
-                    val cutoff = currentTimeMillis() - FEED_WINDOW_MS
+                    // ANDROID-PERSONAL-02 round 4: removed FEED_WINDOW_MS
+                    // cutoff. Paging loads in PAGE_SIZE batches and the
+                    // cache is bounded per-channel by ATOM (~15 newest), so
+                    // there's no memory cost to showing the full window.
+                    // Matches user expectation (YouTube subscription feed
+                    // never hides old uploads).
                     Pager(
                         config = PagingConfig(
                             pageSize = 20,
@@ -169,7 +174,7 @@ class MeFeedRepository @Inject constructor(
                             enablePlaceholders = false,
                         ),
                         pagingSourceFactory = {
-                            cache.pagingForChannels(channelIds, cutoff, filterChannelId)
+                            cache.pagingForChannels(channelIds, filterChannelId)
                         },
                     ).flow
                 }

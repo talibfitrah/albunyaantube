@@ -27,18 +27,33 @@
     android:paddingHorizontal="@dimen/spacing_md"
     android:paddingVertical="@dimen/spacing_sm">
 
-    <ImageView
-        android:id="@+id/videoThumbnail"
+    <!--
+      ANDROID-PERSONAL-02 round 4 (UX feedback): wrap the thumbnail in a
+      MaterialCardView with cardCornerRadius=5dp so the corners are gently
+      rounded. Using a CardView wrapper instead of Coil RoundedCorners
+      transformation keeps the placeholder rounded too (no flash on bind).
+    -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/videoThumbnailCard"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:background="?attr/colorSurfaceVariant"
-        android:importantForAccessibility="no"
-        android:scaleType="centerCrop"
+        app:cardBackgroundColor="?attr/colorSurfaceVariant"
+        app:cardCornerRadius="5dp"
+        app:cardElevation="0dp"
         app:layout_constraintDimensionRatio="16:9"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
-        tools:src="@drawable/thumbnail_placeholder" />
+        app:strokeWidth="0dp">
+
+        <ImageView
+            android:id="@+id/videoThumbnail"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:importantForAccessibility="no"
+            android:scaleType="centerCrop"
+            tools:src="@drawable/thumbnail_placeholder" />
+    </com.google.android.material.card.MaterialCardView>
 
     <!--
       80dp-wide guideline carves the left avatar column out of the row.
@@ -86,7 +101,7 @@
         android:textColor="?attr/colorOnSurface"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toEndOf="@id/avatarColumnGuide"
-        app:layout_constraintTop_toBottomOf="@id/videoThumbnail"
+        app:layout_constraintTop_toBottomOf="@id/videoThumbnailCard"
         tools:text="Video title goes here over two lines of text when long" />
 
     <TextView

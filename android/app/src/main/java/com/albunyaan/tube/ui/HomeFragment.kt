@@ -278,6 +278,10 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
         popup.menuInflater.inflate(R.menu.home_menu, popup.menu)
         popup.setOnMenuItemClickListener { item ->
             when (item.itemId) {
+                R.id.action_downloads -> {
+                    findNavController().navigate(R.id.downloadsFragment)
+                    true
+                }
                 R.id.action_settings -> {
                     findNavController().navigate(R.id.settingsFragment)
                     true

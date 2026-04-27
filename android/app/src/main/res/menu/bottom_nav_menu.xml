@@ -9,6 +9,10 @@
         android:icon="@drawable/ic_channels"
         android:title="@string/nav_channels"/>
     <item
+        android:id="@+id/meFragment"
+        android:icon="@drawable/ic_nav_me"
+        android:title="@string/nav_me"/>
+    <item
         android:id="@+id/playlistsFragment"
         android:icon="@drawable/ic_stat_playlist"
         android:title="@string/nav_playlists"/>
@@ -16,8 +20,4 @@
         android:id="@+id/videosFragment"
         android:icon="@drawable/ic_stat_movie"
         android:title="@string/nav_videos"/>
-    <item
-        android:id="@+id/meFragment"
-        android:icon="@drawable/ic_nav_me"
-        android:title="@string/nav_me"/>
 </menu>

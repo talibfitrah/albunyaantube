@@ -69,18 +69,23 @@ interface ChannelVideoCacheDao {
      * a dedicated horizontal row above the long-form grid (see
      * [com.albunyaan.tube.ui.me.MeShortsAdapter]), so without this clause
      * every Short would be displayed twice.
+     *
+     * ANDROID-PERSONAL-02 round 4: no upload-date cutoff. Paging loads in
+     * PAGE_SIZE batches; the cache is bounded by what ATOM returns
+     * per-channel (~15 newest items × CAP=30 channels), so showing the full
+     * cache newest-first is safe and matches user expectation (YouTube
+     * subscription feed never hides old uploads).
      */
     @Query(
         """SELECT * FROM channel_video_cache
            WHERE channelId IN (:channelIds)
              AND isShort = 0
-             AND uploadedAt IS NOT NULL AND uploadedAt >= :cutoffMs
+             AND uploadedAt IS NOT NULL
              AND (:filterChannelId IS NULL OR channelId = :filterChannelId)
            ORDER BY uploadedAt DESC"""
     )
     fun pagingForChannels(
         channelIds: List<String>,
-        cutoffMs: Long,
         filterChannelId: String?,
     ): PagingSource<Int, ChannelVideoCache>
 

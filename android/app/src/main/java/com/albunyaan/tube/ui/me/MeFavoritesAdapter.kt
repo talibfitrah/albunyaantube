@@ -70,6 +70,13 @@ class MeFavoritesAdapter(
             binding.favoritesRecycler.layoutManager = LinearLayoutManager(
                 parent.context, LinearLayoutManager.HORIZONTAL, false
             )
+            // ANDROID-PERSONAL-02 round 4: avoid one-way scroll regression on
+            // RTL Samsung devices. Without these flags, the inner RV's
+            // wrap_content height re-measures on every diff/bind, propagates
+            // a requestLayout up to the parent vertical RV, and the parent
+            // intercepts subsequent touch events so the user can scroll one
+            // direction but not the other.
+            binding.favoritesRecycler.setHasFixedSize(true)
             return RowVH(binding)
         }
 
