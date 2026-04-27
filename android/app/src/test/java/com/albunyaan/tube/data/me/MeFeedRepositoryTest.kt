@@ -3,6 +3,7 @@ package com.albunyaan.tube.data.me
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.albunyaan.tube.data.local.AppDatabase
+import com.albunyaan.tube.data.local.ChannelVideoCache
 import com.albunyaan.tube.data.local.SubscribedChannel
 import com.albunyaan.tube.data.subscriptions.SubscriptionRepository
 import kotlinx.coroutines.Dispatchers
@@ -960,6 +961,95 @@ class MeFeedRepositoryTest {
         val after = repo.observeWeek(weekIndex = 0).first()
         assertEquals("UC2's row must be gone after unsubscribe", listOf("v1"),
             after!!.videos.map { it.videoId })
+    }
+
+    // ANDROID-PERSONAL-03 / Bug 1: filterChannelId scoping.
+
+    @Test
+    fun `Bug 1 observeWeek with filterChannelId returns only that channel's content`() = runTest {
+        subscribe("UC1")
+        subscribe("UC2")
+        val recent = clockMillis - 2L * 24L * 60L * 60L * 1_000L
+        fetcher.responses["https://yt/UC1"] = listOf(item("v1", uploadedAt = recent))
+        fetcher.responses["https://yt/UC2"] = listOf(item("v2", uploadedAt = recent))
+        repo.refresh(force = true)
+
+        val unfiltered = repo.observeWeek(weekIndex = 0).first()
+        assertEquals(setOf("v1", "v2"), unfiltered!!.videos.map { it.videoId }.toSet())
+
+        val onlyUC1 = repo.observeWeek(weekIndex = 0, filterChannelId = "UC1").first()
+        assertEquals(listOf("v1"), onlyUC1!!.videos.map { it.videoId })
+
+        val onlyUC2 = repo.observeWeek(weekIndex = 0, filterChannelId = "UC2").first()
+        assertEquals(listOf("v2"), onlyUC2!!.videos.map { it.videoId })
+    }
+
+    @Test
+    fun `Bug 1 observeWeek with non-subscribed filterChannelId emits null`() = runTest {
+        subscribe("UC1")
+        val recent = clockMillis - 2L * 24L * 60L * 60L * 1_000L
+        fetcher.responses["https://yt/UC1"] = listOf(item("v1", uploadedAt = recent))
+        repo.refresh(force = true)
+
+        val emitted = repo.observeWeek(weekIndex = 0, filterChannelId = "UC_GHOST").first()
+        assertNull("filter targeting unsubscribed channel must emit null", emitted)
+    }
+
+    @Test
+    fun `Bug 1 findNextNonEmptyWeekIndex with filterChannelId scopes scan`() = runTest {
+        // Use a positive clock so the cache rows have non-negative
+        // uploadedAt values. Some Room+SQLite paths through Robolectric
+        // get squirrely with very negative integer columns.
+        val baseClock = 100L * 365L * 24L * 60L * 60L * 1_000L // ~year 2069 in epoch ms
+        clockMillis = baseClock
+        repo.currentTimeMillisProvider = { clockMillis }
+
+        subscribe("UC1")
+        subscribe("UC2")
+        // UC1 only has content in week 5 (~36 days ago).
+        // UC2 only has content in week 0 (~2 days ago).
+        val twoDaysAgo = clockMillis - 2L * 24L * 60L * 60L * 1_000L
+        val thirtySixDaysAgo = clockMillis - 36L * 24L * 60L * 60L * 1_000L
+        // Use upsertAll directly so the test bypasses the staggered
+        // refresh() pipeline — runTest's virtual scheduler can swallow
+        // the inter-channel delay(index*STAGGER_MS) calls and leave the
+        // cache empty by the time findNextNonEmptyWeekIndex queries it.
+        db.channelVideoCacheDao().upsertAll(
+            listOf(
+                ChannelVideoCache(
+                    videoId = "v1_old",
+                    channelId = "UC1",
+                    channelName = "name-UC1",
+                    title = "title-v1_old",
+                    thumbnailUrl = null,
+                    durationSeconds = null,
+                    viewCount = null,
+                    uploadedAt = thirtySixDaysAgo,
+                    isShort = false,
+                    fetchedAt = clockMillis,
+                ),
+                ChannelVideoCache(
+                    videoId = "v2",
+                    channelId = "UC2",
+                    channelName = "name-UC2",
+                    title = "title-v2",
+                    thumbnailUrl = null,
+                    durationSeconds = null,
+                    viewCount = null,
+                    uploadedAt = twoDaysAgo,
+                    isShort = false,
+                    fetchedAt = clockMillis,
+                ),
+            )
+        )
+
+        // Unfiltered: earliest non-empty week is 0 (UC2's recent item).
+        assertEquals(0, repo.findNextNonEmptyWeekIndex(fromIndex = 0))
+        // Filtered to UC1: must skip past week 0 since UC1 has no content
+        // there, jumping straight to week 5.
+        assertEquals(5, repo.findNextNonEmptyWeekIndex(fromIndex = 0, filterChannelId = "UC1"))
+        // Filtered to UC2: still week 0.
+        assertEquals(0, repo.findNextNonEmptyWeekIndex(fromIndex = 0, filterChannelId = "UC2"))
     }
 
     @Test

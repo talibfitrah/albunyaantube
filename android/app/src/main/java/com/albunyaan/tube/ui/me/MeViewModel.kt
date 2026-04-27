@@ -25,7 +25,10 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -55,13 +58,50 @@ class MeViewModel @Inject constructor(
         initialValue = MeFeedState.Loading,
     )
 
-    // ANDROID-PERSONAL-03 / T5: per-week state. Each [WeekContent] in the
-    // list represents one rendered, non-empty week. [loadNextWeek] appends
-    // additional weeks as the user scrolls; empty weeks are skipped entirely
-    // (no placeholder). Bounded at [WeekBucket.MAX_WEEKS_BACK] (1 year of
-    // history) so an infinite-scroll loop can't run forever.
-    private val weeksState = MutableStateFlow<List<WeekContent>>(emptyList())
-    val weeks: StateFlow<List<WeekContent>> = weeksState.asStateFlow()
+    // ANDROID-PERSONAL-03 / Bug 2: track only the WEEK INDICES the user has
+    // loaded so far. Each indexed week observes its content live via
+    // [MeFeedRepository.observeWeek]; the [weeks] StateFlow below derives
+    // from those per-week flows so a cache mutation (worker upsert, ATOM
+    // refresh, deep-page fill) immediately re-emits the affected week's
+    // content without the user having to background and re-enter the
+    // fragment.
+    private val loadedWeekIndices = MutableStateFlow<List<Int>>(emptyList())
+
+    /**
+     * Per-week content for the rendered list. Live-derived from
+     * [loadedWeekIndices] cross [filter]: every loaded weekIndex has its
+     * own [MeFeedRepository.observeWeek] flow, and [filterChannelId] is
+     * threaded through so a chip selection re-scopes ALL rendered weeks.
+     *
+     * Bug 2 fix: this used to be a `MutableStateFlow<List<WeekContent>>`
+     * populated by appending in [loadNextWeek]. That meant a newly-cached
+     * row never reached an already-rendered week — the user had to leave
+     * the fragment and come back to see it. With the flatMapLatest +
+     * combine derivation, every loaded week re-evaluates whenever its
+     * underlying cache changes.
+     *
+     * Empty weeks are filtered out via [filterNotNull]. If filter changes
+     * and the previously-loaded indices have no content for the filtered
+     * channel, the rendered list shrinks accordingly. The init-side
+     * collector ([init]) handles re-seeding `loadedWeekIndices` so the
+     * user sees the FIRST non-empty week of the filtered channel.
+     */
+    val weeks: StateFlow<List<WeekContent>> =
+        combine(loadedWeekIndices, filter) { indices, filterId -> indices to filterId }
+            .flatMapLatest { (indices, filterId) ->
+                if (indices.isEmpty()) {
+                    flowOf(emptyList())
+                } else {
+                    combine(indices.map { idx -> feed.observeWeek(idx, filterId) }) { contents ->
+                        contents.filterNotNull().toList()
+                    }
+                }
+            }
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5_000L),
+                initialValue = emptyList(),
+            )
 
     // Loading flag for the load-more sentinel. Used by [MeFragment] to
     // show / hide a footer spinner and to debounce re-entrant
@@ -82,6 +122,35 @@ class MeViewModel @Inject constructor(
     init {
         // Kick off the first week load on construction so the user sees
         // content as soon as the screen renders.
+        loadNextWeek()
+
+        // Bug 1 fix: when the user changes the channel-chip filter, reset
+        // the loaded-indices list and re-trigger a fresh load. Without
+        // this, the existing indices (computed for the unfiltered set)
+        // may all be empty for the filtered channel, and the user can't
+        // page forward because [loadNextWeek] uses
+        // `loadedWeekIndices.lastOrNull()` to compute the next start
+        // index. We .drop(1) to skip the initial null emission so the
+        // VM construction doesn't double-trigger [loadNextWeek].
+        viewModelScope.launch {
+            filter.drop(1).collect {
+                resetLoadedWeeksAndRestart()
+            }
+        }
+    }
+
+    /**
+     * Bug 1 fix helper: cancel any in-flight load, clear loaded indices,
+     * and start a fresh load. Called when [filter] changes so the user
+     * sees the FIRST non-empty week of the (newly) filtered channel from
+     * scratch.
+     */
+    private fun resetLoadedWeeksAndRestart() {
+        loadJob?.cancel()
+        loadJob = null
+        loadedWeekIndices.value = emptyList()
+        reachedEndState.value = false
+        isLoadingMoreWeeksState.value = false
         loadNextWeek()
     }
 
@@ -105,11 +174,15 @@ class MeViewModel @Inject constructor(
         loadJob = viewModelScope.launch {
             isLoadingMoreWeeksState.value = true
             try {
-                val startIndex = (weeksState.value.lastOrNull()?.weekIndex ?: -1) + 1
+                val startIndex = (loadedWeekIndices.value.lastOrNull() ?: -1) + 1
                 if (startIndex > WeekBucket.MAX_WEEKS_BACK) {
                     reachedEndState.value = true
                     return@launch
                 }
+                // Snapshot the active filter once so a flip mid-load won't
+                // see a half-applied filter; the filter-change collector
+                // cancels this job anyway, so the snapshot is just defence.
+                val activeFilter = filter.value
                 // ANDROID-PERSONAL-03 round 5: jump-to-next-non-empty-week.
                 // The previous loop incremented i one week at a time, firing a
                 // deep-page round at every empty week — so a channel whose
@@ -120,7 +193,10 @@ class MeViewModel @Inject constructor(
                 // returns ~30 items per channel, which usually populate
                 // multiple far-apart weeks at once — and we jump directly to
                 // the earliest one rather than walking through gaps.
-                var hit = feed.findNextNonEmptyWeekIndex(startIndex)
+                var hit = feed.findNextNonEmptyWeekIndex(
+                    fromIndex = startIndex,
+                    filterChannelId = activeFilter,
+                )
                 if (hit == null) {
                     // Cache empty across [startIndex, MAX_WEEKS_BACK]. Fire one
                     // round of deep-paging — `fillWeekIfNeeded` candidates
@@ -128,7 +204,10 @@ class MeViewModel @Inject constructor(
                     // hasn't hit EOF), so a single call typically pulls back
                     // ~30 items per active channel from arbitrary older weeks.
                     feed.fillWeekIfNeeded(startIndex)
-                    hit = feed.findNextNonEmptyWeekIndex(startIndex)
+                    hit = feed.findNextNonEmptyWeekIndex(
+                        fromIndex = startIndex,
+                        filterChannelId = activeFilter,
+                    )
                 }
                 if (hit == null) {
                     // No content in any week >= startIndex even after deep-paging.
@@ -136,9 +215,14 @@ class MeViewModel @Inject constructor(
                     reachedEndState.value = true
                     return@launch
                 }
-                val content = feed.observeWeek(hit).first()
+                val content = feed.observeWeek(hit, activeFilter).first()
                 if (content != null) {
-                    weeksState.value = weeksState.value + content
+                    // Bug 2 fix: append the index, NOT the snapshot. The
+                    // weeks StateFlow re-emits live as the underlying
+                    // observeWeek flow re-emits, so cache mutations
+                    // arriving after this load reach the UI without
+                    // requiring another loadNextWeek call.
+                    loadedWeekIndices.value = loadedWeekIndices.value + hit
                 } else {
                     // Race: cache changed between findNextNonEmptyWeekIndex and
                     // observeWeek (e.g., user unsubscribed mid-flow). Retry
@@ -155,7 +239,7 @@ class MeViewModel @Inject constructor(
     internal fun resetWeeksForTest() {
         loadJob?.cancel()
         loadJob = null
-        weeksState.value = emptyList()
+        loadedWeekIndices.value = emptyList()
         reachedEndState.value = false
         isLoadingMoreWeeksState.value = false
     }

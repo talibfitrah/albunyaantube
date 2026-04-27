@@ -207,17 +207,36 @@ class MeFeedRepository @Inject constructor(
      * across week boundaries is automatically re-bucketed (the underlying
      * `now` is read each time the flow downstream collects).
      */
-    fun observeWeek(weekIndex: Int): Flow<WeekContent?> =
+    fun observeWeek(
+        weekIndex: Int,
+        filterChannelId: String? = null,
+    ): Flow<WeekContent?> =
         subscriptions.observeSubscribedChannels()
             .flatMapLatest<List<SubscribedChannel>, WeekContent?> { subs ->
                 if (subs.isEmpty()) {
                     flowOf<WeekContent?>(null)
                 } else {
-                    val channelIds = subs.asSequence()
-                        .sortedByDescending { it.subscribedAt }
-                        .take(MAX_CHANNELS_PER_REFRESH)
-                        .map { it.channelId }
-                        .toList()
+                    // ANDROID-PERSONAL-03 / Bug 1: when [filterChannelId] is
+                    // non-null, restrict the cache query to that single
+                    // channel. The DAO's `IN (:channelIds)` query handles a
+                    // single-element list trivially. We still validate that
+                    // the requested channel is in the user's subscription
+                    // set — silently dropping a stale filter prevents a
+                    // ghost-channel chip (unsubscribed mid-flow) from
+                    // surfacing items that shouldn't be visible.
+                    val channelIds = if (filterChannelId != null) {
+                        if (subs.any { it.channelId == filterChannelId }) {
+                            listOf(filterChannelId)
+                        } else {
+                            return@flatMapLatest flowOf<WeekContent?>(null)
+                        }
+                    } else {
+                        subs.asSequence()
+                            .sortedByDescending { it.subscribedAt }
+                            .take(MAX_CHANNELS_PER_REFRESH)
+                            .map { it.channelId }
+                            .toList()
+                    }
                     val bucket = WeekBucket.forIndex(weekIndex, currentTimeMillis())
                     flow<WeekContent?> {
                         cache.observeRangeForChannels(channelIds, bucket.startMs, bucket.endMs)
@@ -288,16 +307,28 @@ class MeFeedRepository @Inject constructor(
     suspend fun findNextNonEmptyWeekIndex(
         fromIndex: Int,
         maxIndex: Int = WeekBucket.MAX_WEEKS_BACK,
+        filterChannelId: String? = null,
     ): Int? = withContext(ioDispatcher) {
         if (fromIndex > maxIndex) return@withContext null
         val now = currentTimeMillis()
         val all = subscriptions.getSubscribedChannels()
         if (all.isEmpty()) return@withContext null
-        val channelIds = all.asSequence()
-            .sortedByDescending { it.subscribedAt }
-            .take(MAX_CHANNELS_PER_REFRESH)
-            .map { it.channelId }
-            .toList()
+        // ANDROID-PERSONAL-03 / Bug 1: when filtering, scope the scan to the
+        // single channel. If the filter target is no longer subscribed
+        // (race), return null so the caller treats it as "no content".
+        val channelIds = if (filterChannelId != null) {
+            if (all.any { it.channelId == filterChannelId }) {
+                listOf(filterChannelId)
+            } else {
+                return@withContext null
+            }
+        } else {
+            all.asSequence()
+                .sortedByDescending { it.subscribedAt }
+                .take(MAX_CHANNELS_PER_REFRESH)
+                .map { it.channelId }
+                .toList()
+        }
         // Pull the full window: from start-of-maxIndex+1 to start-of-fromIndex.
         // Items uploaded inside that range are exactly the ones whose week
         // bucket falls in [fromIndex, maxIndex].

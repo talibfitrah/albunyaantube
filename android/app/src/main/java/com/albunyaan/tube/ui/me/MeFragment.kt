@@ -234,8 +234,28 @@ class MeFragment : Fragment(R.layout.fragment_me) {
      * against [viewModel.weeks]. New weeks are appended; existing weeks
      * are submit()'d in case their underlying cache changed (e.g. a deep
      * page just landed).
+     *
+     * Bug 1/Bug 2: with the live-derived weeks flow, the incoming list
+     * can also SHRINK (filter switch leaves some weeks empty for the
+     * scoped channel; an unsubscribe drops a channel's content out of a
+     * week entirely). Any cached week adapter whose weekIndex is not in
+     * the incoming list must be removed from the outer ConcatAdapter and
+     * its entry dropped from [weekAdapters], otherwise stale rows linger
+     * on screen.
      */
     private fun renderWeeks(weeks: List<WeekContent>) {
+        val incomingIndices = weeks.asSequence().map { it.weekIndex }.toSet()
+        // Step 1: tear down adapters that are no longer in the incoming
+        // list. Iterate over a snapshot of the current keys so we can
+        // mutate the map inside the loop.
+        weekAdapters.keys.toList().forEach { idx ->
+            if (idx !in incomingIndices) {
+                weekAdapters.remove(idx)?.let { adapter ->
+                    concatAdapter.removeAdapter(adapter.sectionAdapter)
+                }
+            }
+        }
+        // Step 2: add new adapters / submit fresh content to existing ones.
         for (week in weeks) {
             val existing = weekAdapters[week.weekIndex]
             if (existing != null) {
