@@ -161,12 +161,20 @@ class MeFeedRepositoryTest {
 
         // Wrap the fetcher so each call records concurrent holders then yields.
         val gatingFetcher = object : ChannelFeedFetcher {
-            override suspend fun fetchLatest(channelUrl: String): List<ChannelFeedFetcher.ChannelFeedItem> {
+            override suspend fun fetchLatest(
+                channelUrl: String,
+                priorEtag: String?,
+                priorLastModified: String?,
+            ): ChannelFeedFetcher.FetchResult {
                 val inFlight = gateHeld.incrementAndGet()
                 maxSeen.updateAndGet { prev -> maxOf(prev, inFlight) }
                 try {
                     kotlinx.coroutines.delay(1L)
-                    return fetcher.responses[channelUrl] ?: emptyList()
+                    return ChannelFeedFetcher.FetchResult.Items(
+                        items = fetcher.responses[channelUrl] ?: emptyList(),
+                        etag = null,
+                        lastModified = null,
+                    )
                 } finally {
                     gateHeld.decrementAndGet()
                 }
@@ -198,9 +206,13 @@ class MeFeedRepositoryTest {
         // Record the time-from-start at which each fetch first runs.
         val started = mutableListOf<Long>()
         val recorder = object : ChannelFeedFetcher {
-            override suspend fun fetchLatest(channelUrl: String): List<ChannelFeedFetcher.ChannelFeedItem> {
+            override suspend fun fetchLatest(
+                channelUrl: String,
+                priorEtag: String?,
+                priorLastModified: String?,
+            ): ChannelFeedFetcher.FetchResult {
                 synchronized(started) { started += currentTime }
-                return emptyList()
+                return ChannelFeedFetcher.FetchResult.Items(emptyList(), null, null)
             }
         }
         val staggered = MeFeedRepository(
@@ -338,12 +350,16 @@ class MeFeedRepositoryTest {
         val sequenced = java.util.Collections.synchronizedList(mutableListOf<Pair<Long, Long>>())
         val counter = java.util.concurrent.atomic.AtomicLong(0)
         val recorder = object : ChannelFeedFetcher {
-            override suspend fun fetchLatest(channelUrl: String): List<ChannelFeedFetcher.ChannelFeedItem> {
+            override suspend fun fetchLatest(
+                channelUrl: String,
+                priorEtag: String?,
+                priorLastModified: String?,
+            ): ChannelFeedFetcher.FetchResult {
                 val start = counter.getAndIncrement()
                 kotlinx.coroutines.delay(1L)
                 val end = counter.getAndIncrement()
                 sequenced += start to end
-                return emptyList()
+                return ChannelFeedFetcher.FetchResult.Items(emptyList(), null, null)
             }
         }
         val bounded = MeFeedRepository(
@@ -388,12 +404,16 @@ class MeFeedRepositoryTest {
         val active = java.util.concurrent.atomic.AtomicInteger(0)
         val maxSeen = java.util.concurrent.atomic.AtomicInteger(0)
         val gating = object : ChannelFeedFetcher {
-            override suspend fun fetchLatest(channelUrl: String): List<ChannelFeedFetcher.ChannelFeedItem> {
+            override suspend fun fetchLatest(
+                channelUrl: String,
+                priorEtag: String?,
+                priorLastModified: String?,
+            ): ChannelFeedFetcher.FetchResult {
                 val cur = active.incrementAndGet()
                 maxSeen.updateAndGet { prev -> maxOf(prev, cur) }
                 return try {
                     kotlinx.coroutines.delay(1L)
-                    emptyList()
+                    ChannelFeedFetcher.FetchResult.Items(emptyList(), null, null)
                 } finally {
                     active.decrementAndGet()
                 }
@@ -419,7 +439,11 @@ class MeFeedRepositoryTest {
     fun `F6 CancellationException is not swallowed by the catch-all`() = runTest {
         subscribe("UC1")
         val cancelled = object : ChannelFeedFetcher {
-            override suspend fun fetchLatest(channelUrl: String): List<ChannelFeedFetcher.ChannelFeedItem> {
+            override suspend fun fetchLatest(
+                channelUrl: String,
+                priorEtag: String?,
+                priorLastModified: String?,
+            ): ChannelFeedFetcher.FetchResult {
                 throw kotlinx.coroutines.CancellationException("parent cancelled")
             }
         }
@@ -477,10 +501,18 @@ class MeFeedRepositoryTest {
         val totalCalls: Int get() = callCounts.values.sum()
         fun callsFor(url: String): Int = callCounts[url] ?: 0
 
-        override suspend fun fetchLatest(channelUrl: String): List<ChannelFeedFetcher.ChannelFeedItem> {
+        override suspend fun fetchLatest(
+            channelUrl: String,
+            priorEtag: String?,
+            priorLastModified: String?,
+        ): ChannelFeedFetcher.FetchResult {
             callCounts[channelUrl] = (callCounts[channelUrl] ?: 0) + 1
             errors[channelUrl]?.let { throw it }
-            return responses[channelUrl] ?: emptyList()
+            return ChannelFeedFetcher.FetchResult.Items(
+                items = responses[channelUrl] ?: emptyList(),
+                etag = null,
+                lastModified = null,
+            )
         }
     }
 }

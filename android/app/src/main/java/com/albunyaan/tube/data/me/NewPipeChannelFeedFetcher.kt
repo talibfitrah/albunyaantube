@@ -33,29 +33,41 @@ class NewPipeChannelFeedFetcher @Inject constructor(
     private val newPipeInit: NewPipeExtractorClient,
 ) : ChannelFeedFetcher {
 
-    override suspend fun fetchLatest(channelUrl: String): List<ChannelFeedFetcher.ChannelFeedItem> =
-        withContext(Dispatchers.IO) {
-            val info = ChannelInfo.getInfo(ServiceList.YouTube, channelUrl)
-            val tabs: List<ListLinkHandler> = info.tabs ?: emptyList()
+    override suspend fun fetchLatest(
+        channelUrl: String,
+        priorEtag: String?,
+        priorLastModified: String?,
+    ): ChannelFeedFetcher.FetchResult = withContext(Dispatchers.IO) {
+        // NewPipe scrapes HTML — there is no ETag / Last-Modified to honour,
+        // so the conditional-GET inputs are accepted for interface parity
+        // and ignored. This fetcher remains in the codebase as the rollback
+        // path per spec §10; the default binding is AtomChannelFeedFetcher.
+        val info = ChannelInfo.getInfo(ServiceList.YouTube, channelUrl)
+        val tabs: List<ListLinkHandler> = info.tabs ?: emptyList()
 
-            val videosTab = tabs.firstOrNull { it.hasFilter(ChannelTabs.VIDEOS) }
-            val shortsTab = tabs.firstOrNull { it.hasFilter(ChannelTabs.SHORTS) }
+        val videosTab = tabs.firstOrNull { it.hasFilter(ChannelTabs.VIDEOS) }
+        val shortsTab = tabs.firstOrNull { it.hasFilter(ChannelTabs.SHORTS) }
 
-            val items = ArrayList<ChannelFeedFetcher.ChannelFeedItem>()
-            if (videosTab != null) {
-                items += loadTab(videosTab, forceIsShort = false)
-            }
-            if (shortsTab != null) {
-                items += loadTab(shortsTab, forceIsShort = true)
-            }
-            // Drop any items whose URL could not be parsed into an 11-char
-            // YouTube video ID — an empty videoId collides on the Room primary
-            // key (first insert wins, second REPLACEs it, cross-channel
-            // contamination) and downstream the player fails to extract on an
-            // empty ID. Filter at source so no empty-id row ever leaves the
-            // fetcher. [F5 from review.]
-            items.filter { it.videoId.isNotEmpty() }
+        val items = ArrayList<ChannelFeedFetcher.ChannelFeedItem>()
+        if (videosTab != null) {
+            items += loadTab(videosTab, forceIsShort = false)
         }
+        if (shortsTab != null) {
+            items += loadTab(shortsTab, forceIsShort = true)
+        }
+        // Drop any items whose URL could not be parsed into an 11-char
+        // YouTube video ID — an empty videoId collides on the Room primary
+        // key (first insert wins, second REPLACEs it, cross-channel
+        // contamination) and downstream the player fails to extract on an
+        // empty ID. Filter at source so no empty-id row ever leaves the
+        // fetcher. [F5 from review.]
+        val filtered = items.filter { it.videoId.isNotEmpty() }
+        ChannelFeedFetcher.FetchResult.Items(
+            items = filtered,
+            etag = null,
+            lastModified = null,
+        )
+    }
 
     private fun loadTab(
         tab: ListLinkHandler,

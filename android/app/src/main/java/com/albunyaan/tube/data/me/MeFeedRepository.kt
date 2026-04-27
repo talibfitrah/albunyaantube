@@ -134,22 +134,34 @@ class MeFeedRepository @Inject constructor(
         val fresh = previous != null && (now - previous.lastSuccessfulFetchAt) < CACHE_TTL_MS
         if (fresh && !force) return
 
-        val items: List<ChannelVideoCache> = try {
+        // ANDROID-PERSONAL-02 / T2: pass the cached ETag + Last-Modified into
+        // the fetcher so most ticks return HTTP 304. The fetcher returns a
+        // sealed FetchResult; we branch on it below.
+        val result: ChannelFeedFetcher.FetchResult = try {
             withTimeout(PER_CHANNEL_TIMEOUT_MS) {
-                fetcher.fetchLatest(channel.channelUrl)
-                    .filter { it.uploadedAt != null && it.videoId.isNotEmpty() }
-                    .sortedByDescending { it.uploadedAt }
-                    .take(MAX_ITEMS_PER_CHANNEL)
-                    .map { it.toCacheRow(channel, now) }
+                fetcher.fetchLatest(
+                    channelUrl = channel.channelUrl,
+                    priorEtag = previous?.etag,
+                    priorLastModified = previous?.lastModified,
+                )
             }
         } catch (toc: TimeoutCancellationException) {
             // Per-channel timeout is a soft failure — record it but keep the
             // existing cache and let the next refresh try again. Do NOT let
             // it propagate as CancellationException to the parent scope.
+            //
+            // T2 → T9 breadcrumb: preserve the v3 fields (etag, lastModified,
+            // counters, backoffUntilMs) from the prior state so T9's full
+            // backoff logic has the correct starting point. T9 will manage
+            // counter increments and backoff escalation; T2 only ensures
+            // we never zero them out in failure paths.
             refreshStateDao.upsert(
-                ChannelFeedRefreshState(
+                previous?.copy(
+                    lastAttemptAt = now,
+                    lastErrorMessage = "timeout after ${PER_CHANNEL_TIMEOUT_MS}ms",
+                ) ?: ChannelFeedRefreshState(
                     channelId = channel.channelId,
-                    lastSuccessfulFetchAt = previous?.lastSuccessfulFetchAt ?: 0L,
+                    lastSuccessfulFetchAt = 0L,
                     lastAttemptAt = now,
                     lastErrorMessage = "timeout after ${PER_CHANNEL_TIMEOUT_MS}ms",
                 )
@@ -162,9 +174,12 @@ class MeFeedRepository @Inject constructor(
             throw ce
         } catch (t: Throwable) {
             refreshStateDao.upsert(
-                ChannelFeedRefreshState(
+                previous?.copy(
+                    lastAttemptAt = now,
+                    lastErrorMessage = t.message ?: t::class.java.simpleName,
+                ) ?: ChannelFeedRefreshState(
                     channelId = channel.channelId,
-                    lastSuccessfulFetchAt = previous?.lastSuccessfulFetchAt ?: 0L,
+                    lastSuccessfulFetchAt = 0L,
                     lastAttemptAt = now,
                     lastErrorMessage = t.message ?: t::class.java.simpleName,
                 )
@@ -172,38 +187,83 @@ class MeFeedRepository @Inject constructor(
             return
         }
 
-        // F1: an empty result is almost always a transient extractor quirk
-        // (rate limit, shorts-only channel on a week with no posts, server
-        // glitch). Treat it as "no new data" — don't wipe the prior cached
-        // window. We still advance lastAttemptAt so the TTL clock runs.
-        //
-        // Stage-5 round-2 refinement [P1]: cap this protection to the feed
-        // window. If the last successful fetch is older than FEED_WINDOW_MS,
-        // the cached rows are outside what observeFeed can emit anyway — no
-        // user-visible data to preserve — so allow the wipe. Otherwise a
-        // channel that legitimately emptied (deleted all videos / went
-        // dormant) would keep stale cache rows forever.
-        if (items.isEmpty() && previous != null && previous.lastSuccessfulFetchAt > 0L &&
-            (now - previous.lastSuccessfulFetchAt) < FEED_WINDOW_MS
-        ) {
-            refreshStateDao.upsert(
-                previous.copy(
-                    lastAttemptAt = now,
-                    lastErrorMessage = null,
+        when (result) {
+            is ChannelFeedFetcher.FetchResult.NotModified -> {
+                // Server confirmed nothing changed. Don't touch the cache.
+                // Bump lastSuccessfulFetchAt so the TTL clock runs, reset
+                // the v3 counters (304 = success), preserve the prior ETag
+                // when the 304 came back without one, and preserve
+                // backoffUntilMs (T9 owns it).
+                val nextEtag = result.etag ?: previous?.etag
+                val nextLastModified = result.lastModified ?: previous?.lastModified
+                refreshStateDao.upsert(
+                    ChannelFeedRefreshState(
+                        channelId = channel.channelId,
+                        lastSuccessfulFetchAt = now,
+                        lastAttemptAt = now,
+                        lastErrorMessage = null,
+                        etag = nextEtag,
+                        lastModified = nextLastModified,
+                        consecutiveErrorCount = 0,
+                        consecutiveEmptyCount = 0,
+                        backoffUntilMs = previous?.backoffUntilMs,
+                    )
                 )
-            )
-            return
-        }
+                return
+            }
 
-        cache.replaceForChannel(channel.channelId, items)
-        refreshStateDao.upsert(
-            ChannelFeedRefreshState(
-                channelId = channel.channelId,
-                lastSuccessfulFetchAt = now,
-                lastAttemptAt = now,
-                lastErrorMessage = null,
-            )
-        )
+            is ChannelFeedFetcher.FetchResult.Items -> {
+                val items: List<ChannelVideoCache> = result.items
+                    .filter { it.uploadedAt != null && it.videoId.isNotEmpty() }
+                    .sortedByDescending { it.uploadedAt }
+                    .take(MAX_ITEMS_PER_CHANNEL)
+                    .map { it.toCacheRow(channel, now) }
+
+                // F1: an empty result is almost always a transient extractor
+                // quirk (rate limit, shorts-only channel on a week with no
+                // posts, server glitch). Treat it as "no new data" — don't
+                // wipe the prior cached window. We still advance
+                // lastAttemptAt so the TTL clock runs.
+                //
+                // Stage-5 round-2 refinement [P1]: cap this protection to
+                // the feed window. If the last successful fetch is older
+                // than FEED_WINDOW_MS, the cached rows are outside what
+                // observeFeed can emit anyway — no user-visible data to
+                // preserve — so allow the wipe. Otherwise a channel that
+                // legitimately emptied (deleted all videos / went dormant)
+                // would keep stale cache rows forever.
+                if (items.isEmpty() && previous != null && previous.lastSuccessfulFetchAt > 0L &&
+                    (now - previous.lastSuccessfulFetchAt) < FEED_WINDOW_MS
+                ) {
+                    refreshStateDao.upsert(
+                        previous.copy(
+                            lastAttemptAt = now,
+                            lastErrorMessage = null,
+                            // Persist any new validators the server returned
+                            // even on an empty body — they let us 304 next.
+                            etag = result.etag ?: previous.etag,
+                            lastModified = result.lastModified ?: previous.lastModified,
+                        )
+                    )
+                    return
+                }
+
+                cache.replaceForChannel(channel.channelId, items)
+                refreshStateDao.upsert(
+                    ChannelFeedRefreshState(
+                        channelId = channel.channelId,
+                        lastSuccessfulFetchAt = now,
+                        lastAttemptAt = now,
+                        lastErrorMessage = null,
+                        etag = result.etag,
+                        lastModified = result.lastModified,
+                        consecutiveErrorCount = 0,
+                        consecutiveEmptyCount = 0,
+                        backoffUntilMs = previous?.backoffUntilMs,
+                    )
+                )
+            }
+        }
     }
 
     private fun ChannelFeedFetcher.ChannelFeedItem.toCacheRow(

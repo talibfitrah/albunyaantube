@@ -267,6 +267,11 @@ dependencies {
     testImplementation("androidx.work:work-testing:2.10.0")
     testImplementation("androidx.test:core:1.6.1")
     testImplementation("org.robolectric:robolectric:4.14.1")
+    // ATOM fetcher unit tests use MockWebServer to drive 200/304/429/5xx
+    // responses without touching YouTube. The androidTest classpath already
+    // pulls this in; adding it to testImplementation makes it available to
+    // the JVM/Robolectric source set as well. (ANDROID-PERSONAL-02 / T2)
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     androidTestImplementation("androidx.test:core:1.6.1")
     androidTestImplementation("androidx.test:core-ktx:1.6.1")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

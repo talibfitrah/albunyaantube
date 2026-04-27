@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
+ <link rel="self" href="http://www.youtube.com/feeds/videos.xml?channel_id=UCemptyChannel0123456789"/>
+ <id>yt:channel:emptyChannel0123456789</id>
+ <yt:channelId>emptyChannel0123456789</yt:channelId>
+ <title>Empty Channel With No Uploads</title>
+ <link rel="alternate" href="https://www.youtube.com/channel/UCemptyChannel0123456789"/>
+ <author>
+  <name>Empty Channel With No Uploads</name>
+  <uri>https://www.youtube.com/channel/UCemptyChannel0123456789</uri>
+ </author>
+ <published>2024-01-01T00:00:00+00:00</published>
+</feed>

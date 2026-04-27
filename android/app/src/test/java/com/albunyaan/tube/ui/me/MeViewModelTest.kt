@@ -98,10 +98,17 @@ class MeViewModelTest {
             cache = db.channelVideoCacheDao(),
             refreshStateDao = db.channelFeedRefreshStateDao(),
             fetcher = object : ChannelFeedFetcher {
-                override suspend fun fetchLatest(channelUrl: String) = when (channelUrl) {
-                    "u1" -> listOf(item("v1", recent))
-                    "u2" -> listOf(item("v2", recent))
-                    else -> emptyList()
+                override suspend fun fetchLatest(
+                    channelUrl: String,
+                    priorEtag: String?,
+                    priorLastModified: String?,
+                ): ChannelFeedFetcher.FetchResult {
+                    val items = when (channelUrl) {
+                        "u1" -> listOf(item("v1", recent))
+                        "u2" -> listOf(item("v2", recent))
+                        else -> emptyList()
+                    }
+                    return ChannelFeedFetcher.FetchResult.Items(items, null, null)
                 }
             },
             ioDispatcher = Dispatchers.Unconfined,
@@ -135,6 +142,11 @@ class MeViewModelTest {
     )
 
     private object NoopFetcher : ChannelFeedFetcher {
-        override suspend fun fetchLatest(channelUrl: String) = emptyList<ChannelFeedFetcher.ChannelFeedItem>()
+        override suspend fun fetchLatest(
+            channelUrl: String,
+            priorEtag: String?,
+            priorLastModified: String?,
+        ): ChannelFeedFetcher.FetchResult =
+            ChannelFeedFetcher.FetchResult.Items(emptyList(), null, null)
     }
 }
