@@ -33,9 +33,26 @@ interface ChannelFeedRefreshStateDao {
      * brand-new subscriptions that have never been fetched — those won't
      * appear in the [maxLastSuccessfulFetchAt] reading at all so the burst
      * was previously skipped while they sat empty for up to 60 minutes.
+     *
+     * NOTE: round 2 [Bug D] superseded the count comparison with a
+     * per-channelId set difference (see [getKnownChannelIds]) to fix the
+     * orphan-row case. This count remains for any future caller that
+     * just wants a cheap size check.
      */
     @Query("SELECT COUNT(*) FROM channel_feed_refresh_state")
     suspend fun knownChannelCount(): Int
+
+    /**
+     * ANDROID-PERSONAL-02 round 2 [Bug D]: returns the channelIds of every
+     * row in the refresh-state table. Used by
+     * `RefreshScheduler.enqueueForegroundBurstIfStale` to compute a
+     * per-channel set difference against the subscribed channels — the
+     * raw [knownChannelCount] comparison missed the orphan-row case
+     * (subs={A,B}, refresh-state={A,orphan}: counts both 2, but B has
+     * never been fetched).
+     */
+    @Query("SELECT channelId FROM channel_feed_refresh_state")
+    suspend fun getKnownChannelIds(): List<String>
 
     /**
      * ANDROID-PERSONAL-02 / T9: batch round-robin lookup. Returns

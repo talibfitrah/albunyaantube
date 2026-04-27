@@ -78,23 +78,32 @@ class RefreshScheduler @Inject constructor(
      * The default of 30 minutes matches
      * [com.albunyaan.tube.data.me.MeFeedRepository.CACHE_TTL_MS] so the
      * stale-MAX branch is exactly what the TTL gate would have allowed
-     * anyway. Branch (b) closes ANDROID-PERSONAL-02 [Bug 4]: without it,
-     * a fresh subscribe paired with a recently-fetched older channel
-     * would defer the new channel's first fetch until the next periodic
-     * tick (up to 60 minutes).
+     * anyway. Branch (b) closes ANDROID-PERSONAL-02 [Bug 4] / round 2 [Bug D]:
+     * without it, a fresh subscribe paired with a recently-fetched older
+     * channel would defer the new channel's first fetch until the next
+     * periodic tick (up to 60 minutes).
      */
     suspend fun enqueueForegroundBurstIfStale(staleThresholdMs: Long = DEFAULT_STALE_THRESHOLD_MS) {
         val newest = refreshStateDao.maxLastSuccessfulFetchAt() ?: 0L
         val maxStale = System.currentTimeMillis() - newest >= staleThresholdMs
-        // ANDROID-PERSONAL-02 [Bug 4]: detect un-fetched subscriptions.
-        // Cheaper than enumerating subscribed channels and joining against
-        // the refresh-state set — we just compare counts. If any
-        // subscribed channel is missing a row, count(known_states) is
-        // strictly less than count(subscribed).
+        // ANDROID-PERSONAL-02 round 2 [Bug D]: detect un-fetched subscriptions
+        // via per-channelId set difference. The previous count-only comparison
+        // (`knownCount < subscribedCount`) missed the orphan-row case: if
+        // refresh-state has a stale row for an unsubscribed channel that
+        // pruning hasn't yet reaped (`{A_subscribed, A_orphan}`) and subs
+        // is `{A_subscribed, B_new}`, both counts equal 2 but B_new has
+        // never been fetched. Set difference catches this.
+        //
+        // Cost: two suspend round-trips (vs one for the count). Both are
+        // cheap Room reads; getKnownChannelIds returns a single column
+        // and getSubscribedChannels is already cached in the
+        // SubscriptionRepository. The orphan-row case is rare but
+        // correctness-critical, so we eat the tiny extra cost.
         val hasNewChannel = !maxStale && run {
-            val knownCount = refreshStateDao.knownChannelCount()
-            val subscribedCount = subscriptionRepository.getSubscribedChannels().size
-            knownCount < subscribedCount
+            val subscribedIds = subscriptionRepository.getSubscribedChannels()
+                .mapTo(mutableSetOf()) { it.channelId }
+            val knownIds = refreshStateDao.getKnownChannelIds().toSet()
+            (subscribedIds - knownIds).isNotEmpty()
         }
         if (!maxStale && !hasNewChannel) return
         val request = OneTimeWorkRequestBuilder<RefreshSubscriptionsWorker>()

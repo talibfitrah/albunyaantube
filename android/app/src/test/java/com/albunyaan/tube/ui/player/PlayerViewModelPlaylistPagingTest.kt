@@ -4,6 +4,7 @@ import com.albunyaan.tube.analytics.ExtractorMetricsReporter
 import com.albunyaan.tube.analytics.PlaybackMetricsCollector
 import com.albunyaan.tube.data.channel.Page
 import com.albunyaan.tube.data.extractor.AudioTrack
+import com.albunyaan.tube.data.extractor.Priority
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.VideoTrack
 import com.albunyaan.tube.data.local.FavoriteVideo
@@ -584,7 +585,16 @@ class PlayerViewModelPlaylistPagingTest {
         var resolvedStreamsAfterFailure: ResolvedStreams? = null
         private var failCount = 0
 
-        override suspend fun resolveStreams(videoId: String, forceRefresh: Boolean): ResolvedStreams? {
+        // Records the priority handed to the most recent resolveStreams call
+        // so tests can assert callers actually plumb the lane through (round 2 [Bug A]).
+        var lastObservedPriority: Priority? = null
+
+        override suspend fun resolveStreams(
+            videoId: String,
+            forceRefresh: Boolean,
+            priority: Priority,
+        ): ResolvedStreams? {
+            lastObservedPriority = priority
             if (alwaysFail) {
                 return null
             }

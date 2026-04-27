@@ -46,6 +46,20 @@ import java.io.IOException
  * [CooldownState.trip] APIs — this is acceptable because the caller is
  * already on `Dispatchers.IO` (NewPipe extraction is wrapped in
  * `withContext(Dispatchers.IO) { ... }` at every call site).
+ *
+ * ## Residual TOCTOU (ANDROID-PERSONAL-02 round 2 [Bug C])
+ *
+ * A tiny window remains between the post-acquire cooldown re-check
+ * (around line 87) and [delegate.execute] (around line 96). If a concurrent
+ * caller observes a 429 and trips the cooldown in this window, this
+ * caller still issues exactly one request that races past the trip and
+ * hits YouTube while the cooldown is technically active. We accept this
+ * because closing the window fully would require holding the cooldown's
+ * mutex across the entire HTTP call, which would serialize all NewPipe
+ * traffic and defeat the rate-limiter's parallelism. Practical impact:
+ * at most one request per cooldown trip slips through the moment cooldown
+ * trips — bounded behaviour, well below the failure threshold the
+ * cooldown is designed to dampen.
  */
 @Singleton
 class RateLimitedDownloader @Inject constructor(

@@ -191,4 +191,49 @@ class RefreshSchedulerTest {
         val infos = oneshotInfos()
         assertEquals("cold-start with subscribed channels must fire a burst", 1, infos.size)
     }
+
+    @Test
+    fun `Bug D burst fires when orphan row matches subscribed count`() = runTest {
+        // ANDROID-PERSONAL-02 round 2 [Bug D]: the previous count-based check
+        // (`knownChannelCount() < subscribedCount`) wrongly skipped the burst
+        // when an unpruned orphan row inflates the count to match the
+        // subscribed count even though a subscribed channel has no row.
+        //
+        // Set-up: subscribed = {UC_subscribed, UC_new}; refresh-state =
+        // {UC_subscribed, UC_orphan} where UC_orphan is a leftover row for
+        // a channel the user already unsubscribed (transactional unsubscribe
+        // would normally have deleted it; we simulate the case where pruning
+        // missed it). counts: known=2, subscribed=2 → old logic: skip.
+        // Per-channelId set diff: subs - known = {UC_new}, non-empty → fire.
+        val now = System.currentTimeMillis()
+        subs.subscribe(SubscribedChannel("UC_subscribed", "https://yt/UC_subscribed", "subscribed", null, now - 5_000L))
+        subs.subscribe(SubscribedChannel("UC_new", "https://yt/UC_new", "new", null, now - 5_000L))
+        // Recent row for the still-subscribed channel — keeps MAX fresh.
+        db.channelFeedRefreshStateDao().upsert(
+            ChannelFeedRefreshState(
+                channelId = "UC_subscribed",
+                lastSuccessfulFetchAt = now - 60_000L,
+                lastAttemptAt = now - 60_000L,
+                lastErrorMessage = null,
+            )
+        )
+        // Orphan row from a previously-unsubscribed channel that pruning missed.
+        db.channelFeedRefreshStateDao().upsert(
+            ChannelFeedRefreshState(
+                channelId = "UC_orphan",
+                lastSuccessfulFetchAt = now - 60_000L,
+                lastAttemptAt = now - 60_000L,
+                lastErrorMessage = null,
+            )
+        )
+
+        scheduler.enqueueForegroundBurstIfStale(staleThresholdMs = 30L * 60L * 1_000L)
+
+        val infos = oneshotInfos()
+        assertEquals(
+            "set-difference must catch UC_new even when the orphan row inflates known-count to match subscribed-count",
+            1,
+            infos.size,
+        )
+    }
 }

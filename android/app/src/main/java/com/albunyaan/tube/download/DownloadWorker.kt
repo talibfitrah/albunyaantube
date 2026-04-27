@@ -7,6 +7,7 @@ import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import com.albunyaan.tube.data.extractor.Priority
 import com.albunyaan.tube.data.extractor.VideoTrack
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_AUDIO_ONLY
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_COMPLETED_AT
@@ -283,7 +284,14 @@ class DownloadWorker @AssistedInject constructor(
         audioOnly: Boolean,
         targetHeight: Int?
     ): ResolvedStream? {
-        val resolved = repository.resolveStreams(videoId) ?: return null
+        // ANDROID-PERSONAL-02 round 2 [Bug A]: download work is not real-time playback,
+        // so it must NOT ride the player bypass. Declare USER_FOREGROUND so the resolve
+        // goes through the rate-limit + cooldown gates (spec D1). Without this the
+        // download worker would silently pull videos during an active cooldown.
+        val resolved = repository.resolveStreams(
+            videoId,
+            priority = Priority.USER_FOREGROUND,
+        ) ?: return null
 
         // For audio-only, prefer AAC/M4A but fall back to any audio if not available
         val mp4CompatibleAudio = resolved.audioTracks.filter { isAudioMp4Compatible(it) }

@@ -12,6 +12,7 @@ import dagger.hilt.android.testing.HiltAndroidRule
 import dagger.hilt.android.testing.HiltAndroidTest
 import org.junit.Assert.fail
 import org.junit.Before
+import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -61,8 +62,28 @@ import org.junit.runner.RunWith
  * worker's only injectable dependencies are `@Singleton` and resolvable
  * from the EntryPoint without test-specific bindings.
  */
+/**
+ * ANDROID-PERSONAL-02 round 2 [Bug E]: ignored in CI because reliable
+ * automated Doze validation is not feasible on emulators. The bare
+ * [OneTimeWorkRequestBuilder] used here lacks the production-side
+ * `CONNECTED` constraint, so WorkManager can run the worker directly
+ * without going through JobScheduler — meaning even with
+ * `dumpsys deviceidle force-idle` the test can pass without actually
+ * proving Doze behaviour. OEM-specific behaviours
+ * (Samsung/Xiaomi/Huawei) further require physical device QA per
+ * spec §10. The class is preserved as documentation of the intended
+ * Doze-validation shape.
+ */
 @HiltAndroidTest
 @RunWith(AndroidJUnit4::class)
+@Ignore(
+    "Automated Doze validation is unreliable on emulators — see spec §10. " +
+        "Run manually on a physical device with: " +
+        "./gradlew :app:connectedDebugAndroidTest --tests " +
+        "com.albunyaan.tube.data.me.work.MeRefreshDozeInstrumentedTest " +
+        "after `adb shell dumpsys deviceidle force-idle`. " +
+        "OEM-specific behaviour (Samsung/Xiaomi/Huawei) requires per-device QA."
+)
 class MeRefreshDozeInstrumentedTest {
 
     @get:Rule(order = 0)
