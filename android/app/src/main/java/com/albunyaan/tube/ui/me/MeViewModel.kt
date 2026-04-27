@@ -232,21 +232,53 @@ class MeViewModel @Inject constructor(
                     filterChannelId = activeFilter,
                 )
                 if (hit == null) {
-                    if (BuildConfig.DEBUG) Log.d(TAG, "loadNextWeek: cache empty for week>=$startIndex, firing fillWeekIfNeeded")
-                    // Cache empty across [startIndex, MAX_WEEKS_BACK]. Fire one
-                    // round of deep-paging — `fillWeekIfNeeded` candidates
-                    // every channel that has no item in week=startIndex (and
-                    // hasn't hit EOF), so a single call typically pulls back
-                    // ~30 items per active channel from arbitrary older weeks.
-                    feed.fillWeekIfNeeded(startIndex)
-                    hit = feed.findNextNonEmptyWeekIndex(
-                        fromIndex = startIndex,
-                        filterChannelId = activeFilter,
-                    )
-                    if (BuildConfig.DEBUG) Log.d(TAG, "loadNextWeek: after deep-page, hit=$hit")
+                    if (BuildConfig.DEBUG) Log.d(TAG, "loadNextWeek: cache empty for week>=$startIndex, looping fillWeekIfNeeded")
+                    // Cache empty across [startIndex, MAX_WEEKS_BACK]. Fire
+                    // deep-paging until either:
+                    //  - content surfaces in week >= startIndex, OR
+                    //  - a deep-page round produces zero new rows (all
+                    //    candidate channels EndOfChannel-or-error).
+                    //
+                    // ANDROID-PERSONAL-03 round 8 [field-bug]: a single
+                    // round of fillWeekIfNeeded fetches ONE NewPipe page
+                    // (~100 items) per candidate channel. For a high-volume
+                    // channel (e.g. Dr. Othman Alkamees, ~15 uploads/day),
+                    // 100 items is ~7 days — all in week 0. When the user
+                    // is past week 0 and filters to that channel, none of
+                    // those 100 land in the requested window, so the prior
+                    // single-shot logic immediately set reachedEnd=true
+                    // even though `hasNext=true` was reported.
+                    //
+                    // The loop keeps advancing the saved continuation token
+                    // until older content shows up. MAX_DEEP_PAGE_ITERATIONS
+                    // is a safety bound: 30 pages × 100 items = 3000 items
+                    // per channel per loadNextWeek call, generous for any
+                    // realistic channel. The progress check (rows-changed)
+                    // exits early when channels stop yielding new items —
+                    // typically because they hit EndOfChannel and got
+                    // sentinel-marked, removing them from candidates next
+                    // round.
+                    var iterations = 0
+                    while (hit == null && iterations < MAX_DEEP_PAGE_ITERATIONS) {
+                        val rowsBefore = feed.countCachedRowsForFilter(activeFilter)
+                        feed.fillWeekIfNeeded(startIndex)
+                        val rowsAfter = feed.countCachedRowsForFilter(activeFilter)
+                        if (BuildConfig.DEBUG) Log.d(TAG, "loadNextWeek: iteration ${iterations + 1} added ${rowsAfter - rowsBefore} rows (filter=$activeFilter)")
+                        if (rowsAfter == rowsBefore) {
+                            // No new rows → all relevant channels are
+                            // exhausted or erroring. Don't loop forever.
+                            break
+                        }
+                        hit = feed.findNextNonEmptyWeekIndex(
+                            fromIndex = startIndex,
+                            filterChannelId = activeFilter,
+                        )
+                        iterations++
+                    }
+                    if (BuildConfig.DEBUG) Log.d(TAG, "loadNextWeek: after $iterations deep-page iteration(s), hit=$hit")
                 }
                 if (hit == null) {
-                    if (BuildConfig.DEBUG) Log.d(TAG, "loadNextWeek: no content found even after deep-page → reachedEnd=true")
+                    if (BuildConfig.DEBUG) Log.d(TAG, "loadNextWeek: no content found even after deep-page loop → reachedEnd=true")
                     // No content in any week >= startIndex even after deep-paging.
                     // All eligible channels exhausted (or returned nothing useful).
                     reachedEndState.value = true
@@ -347,5 +379,18 @@ class MeViewModel @Inject constructor(
 
     companion object {
         private const val TAG = "MeViewModel"
+
+        /**
+         * Hard upper bound on how many deep-page rounds [loadNextWeek] will
+         * fire while searching for content older than `startIndex` weeks.
+         *
+         * 30 rounds × ~100 items per page ≈ 3000 items per channel per
+         * scroll. The progress check (rows-added) usually exits much
+         * earlier — this bound only protects against a pathological case
+         * where NewPipe keeps returning items but they're all newer than
+         * the requested window (e.g. a channel that just uploaded 3000
+         * Shorts in 24 hours and the user is scrolled to week 8).
+         */
+        private const val MAX_DEEP_PAGE_ITERATIONS: Int = 30
     }
 }

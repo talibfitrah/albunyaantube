@@ -378,6 +378,33 @@ class MeFeedRepository @Inject constructor(
         weekIndex
     }
 
+    /**
+     * Total cached row count, optionally scoped to a single channel filter.
+     *
+     * Used by [com.albunyaan.tube.ui.me.MeViewModel.loadNextWeek] as a
+     * progress signal when looping deep-page rounds: if the count doesn't
+     * change between rounds, no new rows landed (every candidate channel
+     * is at EndOfChannel or errored), so the loop exits instead of
+     * spinning forever.
+     */
+    suspend fun countCachedRowsForFilter(filterChannelId: String?): Int = withContext(ioDispatcher) {
+        val all = subscriptions.getSubscribedChannels()
+        if (all.isEmpty()) return@withContext 0
+        val channelIds = if (filterChannelId != null) {
+            if (all.any { it.channelId == filterChannelId }) listOf(filterChannelId) else return@withContext 0
+        } else {
+            all.asSequence()
+                .sortedByDescending { it.subscribedAt }
+                .take(MAX_CHANNELS_PER_REFRESH)
+                .map { it.channelId }
+                .toList()
+        }
+        // Cheapest path: a single full-range observe + size. The DAO already
+        // has the IN-list query indexed; counting in Kotlin keeps us off the
+        // SQLite optimiser path that the bigger query already uses.
+        cache.observeRangeForChannels(channelIds, Long.MIN_VALUE, Long.MAX_VALUE).first().size
+    }
+
     suspend fun fillWeekIfNeeded(weekIndex: Int): Unit = withContext(ioDispatcher) {
         val paginator = deepPaginator ?: run {
             if (BuildConfig.DEBUG) Log.d(TAG, "fillWeekIfNeeded(week=$weekIndex): paginator is null, skipping")
