@@ -12,6 +12,7 @@ import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.ConcatAdapter
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import androidx.work.WorkManager
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.local.FavoriteVideo
@@ -19,6 +20,7 @@ import com.albunyaan.tube.data.local.FavoritesRepository
 import com.albunyaan.tube.data.me.ChipItem
 import com.albunyaan.tube.data.me.MeFeedState
 import com.albunyaan.tube.data.me.MeFeedVideo
+import com.albunyaan.tube.data.me.WeekContent
 import com.albunyaan.tube.data.me.work.RefreshScheduler
 import com.albunyaan.tube.databinding.FragmentMeBinding
 import com.albunyaan.tube.ui.detail.ChannelDetailFragment
@@ -44,9 +46,13 @@ class MeFragment : Fragment(R.layout.fragment_me) {
 
     private lateinit var chipsAdapter: MeChipsAdapter
     private lateinit var favoritesAdapter: MeFavoritesAdapter
-    private lateinit var shortsAdapter: MeShortsAdapter
-    private lateinit var videosAdapter: MeVideosPagingAdapter
     private lateinit var concatAdapter: ConcatAdapter
+
+    // ANDROID-PERSONAL-03 / T6: per-week sub-adapter cache keyed by
+    // weekIndex. Looking up here lets us call submit() on existing weeks
+    // when their underlying cache changes (instead of recreating). Order
+    // mirrors viewModel.weeks; weeks are only ever appended.
+    private val weekAdapters = mutableMapOf<Int, MeWeekSectionAdapter>()
 
     // ANDROID-PERSONAL-02 round 4 (UX feedback): the video card now shows
     // each subscribed channel's avatar. The chip list already carries
@@ -69,26 +75,21 @@ class MeFragment : Fragment(R.layout.fragment_me) {
             onLongPress = ::confirmRemoveFavorite,
             onSeeAll = ::navigateToFavoritesScreen,
         )
-        shortsAdapter = MeShortsAdapter(onClick = ::playVideo)
-        // T11: PagingDataAdapter — fed by MeViewModel.pagedVideos in the
-        // collector below, no longer driven by render(state.Content).
-        // ANDROID-PERSONAL-02 round 4: pass the avatar lookup +
-        // channel-tap handler so the YouTube-style card can render each
-        // row's circular channel avatar and route avatar taps to channel
-        // detail. channelMap is refreshed in render() each time a Content
-        // state arrives.
-        videosAdapter = MeVideosPagingAdapter(
-            onClick = ::playVideo,
-            getChannelAvatar = { channelId -> channelMap[channelId]?.imageUrl },
-            onChannelClick = ::navigateToChannel,
-        )
 
+        // ANDROID-PERSONAL-03 / T6: dynamic ConcatAdapter. Initially holds
+        // chips + favorites; per-week sub-adapters are appended as the
+        // viewModel.weeks flow emits. Isolation is disabled so the
+        // spanSizeLookup can compare raw inner view types — every
+        // adapter participating in this ConcatAdapter must use a unique
+        // view type constant (chips=101, favorites=401-403,
+        // weeks=501-503; see each adapter's companion object).
         concatAdapter = ConcatAdapter(
+            ConcatAdapter.Config.Builder()
+                .setIsolateViewTypes(false)
+                .build(),
             chipsAdapter.rowAdapter,
-            // T10: favorites row sits between chips and shorts per spec.
+            // T10: favorites row sits between chips and per-week content.
             favoritesAdapter.sectionAdapter,
-            shortsAdapter.sectionAdapter,
-            videosAdapter.sectionAdapter,
         )
 
         val isTablet = DeviceConfig.isTablet(requireContext()) || DeviceConfig.isTV(requireContext())
@@ -98,8 +99,14 @@ class MeFragment : Fragment(R.layout.fragment_me) {
             GridLayoutManager(requireContext(), spanCount).apply {
                 spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
                     override fun getSpanSize(position: Int): Int {
+                        // ConcatAdapter is configured with isolation OFF
+                        // so getItemViewType returns the raw inner view
+                        // type. Only video tiles span 1 column; chips,
+                        // favorites, week headers, and shorts rows span
+                        // full width.
                         val viewType = concatAdapter.getItemViewType(position)
-                        return if (viewType == MeVideosPagingAdapter.VIDEO_VIEW_TYPE) 1 else spanCount
+                        return if (viewType == MeWeekSectionAdapter.WEEK_VIDEO_VIEW_TYPE) 1
+                        else spanCount
                     }
                 }
             }
@@ -138,11 +145,35 @@ class MeFragment : Fragment(R.layout.fragment_me) {
             }
         }
 
-        // ANDROID-PERSONAL-03 / T4: the paged-videos collector is removed
-        // because the grid is now driven by per-week sub-adapters owned by
-        // the dynamic ConcatAdapter. T6 will rewire this to subscribe to
-        // viewModel.weeks instead. Until then, render() continues to push
-        // a flat list to the legacy adapter for compatibility.
+        // ANDROID-PERSONAL-03 / T6: weeks collector. Builds / updates the
+        // per-week sub-adapters appended to the outer ConcatAdapter.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.weeks.collect { renderWeeks(it) }
+            }
+        }
+
+        // ANDROID-PERSONAL-03 / T6: load-more sentinel. When the user
+        // scrolls within PREFETCH_DISTANCE of the bottom, ask the
+        // ViewModel for the next non-empty week. The ViewModel's
+        // [isLoadingMoreWeeks] / [reachedEnd] flags coalesce this so we
+        // don't fire mid-load or after we've already exhausted history.
+        b.meRecycler.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
+                if (dy <= 0) return
+                val layoutManager = rv.layoutManager ?: return
+                val total = layoutManager.itemCount
+                val lastVisible = when (layoutManager) {
+                    is GridLayoutManager -> layoutManager.findLastVisibleItemPosition()
+                    is LinearLayoutManager -> layoutManager.findLastVisibleItemPosition()
+                    else -> RecyclerView.NO_POSITION
+                }
+                if (lastVisible == RecyclerView.NO_POSITION) return
+                if (total - lastVisible <= PREFETCH_DISTANCE) {
+                    viewModel.loadNextWeek()
+                }
+            }
+        })
     }
 
     override fun onResume() {
@@ -174,12 +205,11 @@ class MeFragment : Fragment(R.layout.fragment_me) {
                 b.meRecycler.visibility = View.VISIBLE
 
                 // ANDROID-PERSONAL-02 round 4: refresh the avatar lookup
-                // from the chip list before submitting chips. The videos
-                // paging adapter calls getChannelAvatar(channelId) at
-                // bind time, so the map needs to be current by the time
-                // any video row binds. Same render() runs on the main
-                // thread that does the bind, so a plain Map (no
-                // concurrent reads) is fine.
+                // from the chip list before submitting chips. The per-week
+                // adapter calls getChannelAvatar(channelId) at bind time,
+                // so the map needs to be current by the time any video row
+                // binds. Same render() runs on the main thread that does
+                // the bind, so a plain Map (no concurrent reads) is fine.
                 channelMap = state.chips
                     .filterIsInstance<ChipItem.Channel>()
                     .associateBy { it.id }
@@ -187,18 +217,38 @@ class MeFragment : Fragment(R.layout.fragment_me) {
                 chipsAdapter.selectedId = state.filterChannelId
                 chipsAdapter.submit(state.chips)
                 favoritesAdapter.submit(state.favorites)
-                shortsAdapter.submit(state.shorts)
-                // T11: videosAdapter is now driven by MeViewModel.pagedVideos
-                // via the dedicated collector in onViewCreated. Don't push
-                // state.videos in here — the paging adapter owns its own
-                // flow and a manual list push would race with submitData().
-                // T9: removed auto-load post-submitList check — there is no
-                // page-2 anymore. The cache is what it is; the worker
-                // mutates it on its own cadence (hourly periodic + onResume
-                // burst when stale).
+                // ANDROID-PERSONAL-03 / T6: shorts + videos are now driven
+                // by per-week sub-adapters fed by the [renderWeeks]
+                // collector. state.shorts / state.videos are unused in the
+                // new architecture but kept on MeFeedState.Content for
+                // legacy parity.
             }
             is MeFeedState.Error -> {
                 Snackbar.make(b.root, state.message, Snackbar.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    /**
+     * ANDROID-PERSONAL-03 / T6: synchronise the per-week sub-adapters
+     * against [viewModel.weeks]. New weeks are appended; existing weeks
+     * are submit()'d in case their underlying cache changed (e.g. a deep
+     * page just landed).
+     */
+    private fun renderWeeks(weeks: List<WeekContent>) {
+        for (week in weeks) {
+            val existing = weekAdapters[week.weekIndex]
+            if (existing != null) {
+                existing.submit(week)
+            } else {
+                val adapter = MeWeekSectionAdapter(
+                    initial = week,
+                    onClick = ::playVideo,
+                    getChannelAvatar = { channelId -> channelMap[channelId]?.imageUrl },
+                    onChannelClick = ::navigateToChannel,
+                )
+                weekAdapters[week.weekIndex] = adapter
+                concatAdapter.addAdapter(adapter.sectionAdapter)
             }
         }
     }
@@ -296,7 +346,18 @@ class MeFragment : Fragment(R.layout.fragment_me) {
 
     override fun onDestroyView() {
         binding?.meRecycler?.adapter = null
+        weekAdapters.clear()
         binding = null
         super.onDestroyView()
+    }
+
+    companion object {
+        /**
+         * ANDROID-PERSONAL-03 / T6: number of items from the bottom that
+         * triggers [MeViewModel.loadNextWeek]. Roughly one screenful of
+         * tiles on a phone (~10 items at 1 column). Tablet/TV grids see
+         * the same 10 because layout-manager itemCount is per-cell.
+         */
+        private const val PREFETCH_DISTANCE = 10
     }
 }
