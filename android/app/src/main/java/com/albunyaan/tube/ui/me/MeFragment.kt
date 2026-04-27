@@ -11,18 +11,23 @@ import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.ConcatAdapter
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.work.WorkManager
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.me.ChipItem
 import com.albunyaan.tube.data.me.MeFeedState
 import com.albunyaan.tube.data.me.MeFeedVideo
+import com.albunyaan.tube.data.me.work.RefreshScheduler
 import com.albunyaan.tube.databinding.FragmentMeBinding
 import com.albunyaan.tube.util.DeviceConfig
 import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
 class MeFragment : Fragment(R.layout.fragment_me) {
+
+    @Inject lateinit var refreshScheduler: RefreshScheduler
 
     private val viewModel: MeViewModel by viewModels()
     private var binding: FragmentMeBinding? = null
@@ -31,11 +36,6 @@ class MeFragment : Fragment(R.layout.fragment_me) {
     private lateinit var shortsAdapter: MeShortsAdapter
     private lateinit var videosAdapter: MeVideosAdapter
     private lateinit var concatAdapter: ConcatAdapter
-
-    // F10: only auto-load once per viewCreated lifecycle so tablet/TV grids
-    // that fit content without scrolling don't re-enter the refresh loop on
-    // every subsequent state emission.
-    private var hasAutoLoadedOnce: Boolean = false
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -71,7 +71,10 @@ class MeFragment : Fragment(R.layout.fragment_me) {
         b.meRecycler.adapter = concatAdapter
         b.meRecycler.itemAnimator?.changeDuration = 0L
 
-        b.meSwipeRefresh.setOnRefreshListener { viewModel.refreshFeed(force = true) }
+        // T9: pull-to-refresh enqueues a force=true one-shot via the
+        // RefreshScheduler. The SwipeRefreshLayout spinner is dismissed by
+        // the WorkInfo observation below — not by the listener.
+        b.meSwipeRefresh.setOnRefreshListener { refreshScheduler.enqueuePullToRefresh() }
 
         b.meEmpty.meEmptyCta.setOnClickListener {
             if (findNavController().currentDestination?.id == R.id.meFragment) {
@@ -79,10 +82,17 @@ class MeFragment : Fragment(R.layout.fragment_me) {
             }
         }
 
-        // No scroll-bottom listener: the Me feed has no real page-2 — all items
-        // come from a cache refill that's already TTL-gated. The post-submitList
-        // canScrollVertically check in render() handles tablet/TV where a full
-        // page fits on screen without firing the scroll listener.
+        // T9: SwipeRefreshLayout spinner driven by the unique-one-shot
+        // worker's WorkInfo. While any of the worker's WorkInfo states is
+        // not finished (ENQUEUED / RUNNING / BLOCKED), the spinner stays;
+        // once SUCCEEDED / FAILED / CANCELLED we dismiss it. observe() is
+        // bound to viewLifecycleOwner so it auto-detaches on view destroy.
+        WorkManager.getInstance(requireContext())
+            .getWorkInfosForUniqueWorkLiveData(RefreshScheduler.UNIQUE_ONESHOT_NAME)
+            .observe(viewLifecycleOwner) { infos ->
+                val running = infos?.any { !it.state.isFinished } == true
+                binding?.meSwipeRefresh?.isRefreshing = running
+            }
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -91,42 +101,44 @@ class MeFragment : Fragment(R.layout.fragment_me) {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // T9: foreground burst. Only fires a one-shot when the newest
+        // cached fetch is older than RefreshScheduler.DEFAULT_STALE_THRESHOLD_MS,
+        // so tab-switching doesn't hammer YouTube.
+        viewLifecycleOwner.lifecycleScope.launch {
+            refreshScheduler.enqueueForegroundBurstIfStale()
+        }
+    }
+
     private fun render(state: MeFeedState) {
         val b = binding ?: return
         when (state) {
             is MeFeedState.Loading -> {
-                b.meSwipeRefresh.isRefreshing = true
+                // T9: SwipeRefreshLayout spinner is owned by the WorkInfo
+                // observer; don't toggle it from render() or it'll fight the
+                // observer.
                 b.meEmpty.root.visibility = View.GONE
                 b.meRecycler.visibility = View.VISIBLE
             }
             is MeFeedState.Empty -> {
-                b.meSwipeRefresh.isRefreshing = false
                 b.meEmpty.root.visibility = View.VISIBLE
                 b.meRecycler.visibility = View.GONE
             }
             is MeFeedState.Content -> {
                 b.meEmpty.root.visibility = View.GONE
                 b.meRecycler.visibility = View.VISIBLE
-                b.meSwipeRefresh.isRefreshing = state.refreshing
 
                 chipsAdapter.selectedId = state.filterChannelId
                 chipsAdapter.submit(state.chips)
                 shortsAdapter.submit(state.shorts)
                 videosAdapter.submit(state.videos)
-
-                b.meRecycler.post {
-                    if (view == null) return@post
-                    if (!hasAutoLoadedOnce &&
-                        !b.meRecycler.canScrollVertically(1) &&
-                        (state.videos.isNotEmpty() || state.shorts.isNotEmpty())
-                    ) {
-                        hasAutoLoadedOnce = true
-                        viewModel.refreshFeed(force = false)
-                    }
-                }
+                // T9: removed auto-load post-submitList check — there is no
+                // page-2 anymore. The cache is what it is; the worker
+                // mutates it on its own cadence (hourly periodic + onResume
+                // burst when stale).
             }
             is MeFeedState.Error -> {
-                b.meSwipeRefresh.isRefreshing = false
                 Snackbar.make(b.root, state.message, Snackbar.LENGTH_LONG).show()
             }
         }
@@ -162,7 +174,6 @@ class MeFragment : Fragment(R.layout.fragment_me) {
     }
 
     override fun onDestroyView() {
-        hasAutoLoadedOnce = false
         binding?.meRecycler?.adapter = null
         binding = null
         super.onDestroyView()

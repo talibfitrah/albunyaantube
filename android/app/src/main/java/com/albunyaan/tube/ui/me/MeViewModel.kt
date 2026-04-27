@@ -17,7 +17,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
 
 @HiltViewModel
 class MeViewModel @Inject constructor(
@@ -26,48 +25,30 @@ class MeViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val filter = MutableStateFlow<String?>(null)
-    private val refreshing = MutableStateFlow(false)
 
     val state: StateFlow<MeFeedState> = combine(
         subscriptions.observeSubscribedChannels(),
         subscriptions.observeSavedPlaylists(),
         feed.observeFeed(),
         filter,
-        refreshing,
-    ) { channels, playlists, cached, filterId, isRefreshing ->
-        buildState(channels, playlists, cached, filterId, isRefreshing)
+    ) { channels, playlists, cached, filterId ->
+        buildState(channels, playlists, cached, filterId)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000L),
         initialValue = MeFeedState.Loading,
     )
 
-    init {
-        refreshFeed(force = false)
-    }
+    // ANDROID-PERSONAL-02 / T9: the prior `init { refreshFeed(force = false) }`
+    // was removed in favour of WorkManager-driven refresh:
+    //  - hourly periodic worker (armed at app cold start),
+    //  - foreground burst on MeFragment.onResume (when stale),
+    //  - pull-to-refresh enqueues a force=true one-shot.
+    // The view-model is now cache-only — observeFeed emits whatever is in
+    // the Room cache window, the worker mutates it on its own cadence.
 
     fun setFilter(channelId: String?) {
         filter.value = channelId
-    }
-
-    fun refreshFeed(force: Boolean) {
-        viewModelScope.launch {
-            refreshing.value = true
-            try {
-                feed.refresh(force = force)
-            } catch (ce: kotlinx.coroutines.CancellationException) {
-                throw ce
-            } catch (t: Throwable) {
-                // MeFeedRepository.refresh isolates per-channel failures
-                // already, so reaching here means an unrecoverable error
-                // (Room write failure, OOM, programmer error). Don't crash
-                // the viewmodel — log and let the UI fall back to the
-                // existing cache. CodeRabbit defensive-hygiene fix.
-                android.util.Log.e("MeViewModel", "refreshFeed failed", t)
-            } finally {
-                refreshing.value = false
-            }
-        }
     }
 
     private fun buildState(
@@ -75,7 +56,6 @@ class MeViewModel @Inject constructor(
         playlists: List<SavedPlaylist>,
         cached: List<ChannelVideoCache>,
         filterId: String?,
-        isRefreshing: Boolean,
     ): MeFeedState {
         if (channels.isEmpty() && playlists.isEmpty()) return MeFeedState.Empty
 
@@ -96,7 +76,11 @@ class MeViewModel @Inject constructor(
             chips = chips,
             shorts = shorts,
             videos = videos,
-            refreshing = isRefreshing,
+            // T9: SwipeRefreshLayout spinner is now driven directly by the
+            // WorkInfo observation in MeFragment. The state-flow's
+            // `refreshing` flag is kept (false) for adapter-binding stability
+            // until T10/T11 land their own UI surfaces.
+            refreshing = false,
             filterChannelId = filterId,
         )
     }

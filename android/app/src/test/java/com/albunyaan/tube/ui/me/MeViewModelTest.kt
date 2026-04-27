@@ -91,8 +91,10 @@ class MeViewModelTest {
     fun `setFilter scopes videos to selected channel`() = runBlocking {
         val now = System.currentTimeMillis()
         val recent = now - (2L * 24L * 60L * 60L * 1_000L)
-        // Use a fetcher that returns content so the init-triggered refresh populates cache
-        // instead of wiping it — matches real-world behaviour.
+        // T9: the view-model is now cache-only — no init-triggered refresh.
+        // The test pre-populates the cache via an explicit feed.refresh()
+        // call before constructing the VM, matching the real-world
+        // worker-driven flow.
         val feedWithItems = MeFeedRepository(
             subscriptions = subs,
             cache = db.channelVideoCacheDao(),
@@ -115,6 +117,9 @@ class MeViewModelTest {
         )
         subs.subscribe(SubscribedChannel("UC1", "u1", "A", null, 1_000L))
         subs.subscribe(SubscribedChannel("UC2", "u2", "B", null, 2_000L))
+
+        // T9: pre-populate cache (replaces the prior init-triggered refresh).
+        feedWithItems.refresh(force = true)
 
         val vm = MeViewModel(subs, feedWithItems)
 

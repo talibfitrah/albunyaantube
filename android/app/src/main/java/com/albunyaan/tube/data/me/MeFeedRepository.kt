@@ -65,6 +65,28 @@ class MeFeedRepository @Inject constructor(
         // network. 15 s is generous for a well-behaved YouTube page + both
         // tab fetches and still keeps the worst-case Me-open within 15 s.
         const val PER_CHANNEL_TIMEOUT_MS: Long = 15_000L
+
+        // T9: per-channel exponential backoff (ATOM refresh, spec §5/§6).
+        // 429 ladder: 1h → 4h → 24h. Each consecutive 429 advances one
+        // step. Index = (consecutiveErrorCount - 1).coerceAtMost(2).
+        internal val ATOM_429_BACKOFFS: List<Long> = listOf(
+            60L * 60L * 1_000L,         // 1h
+            4L * 60L * 60L * 1_000L,    // 4h
+            24L * 60L * 60L * 1_000L,   // 24h
+        )
+
+        // T9: 5xx ladder is gentler — server errors are usually transient.
+        // 5min → 30min → 2h.
+        internal val ATOM_5XX_BACKOFFS: List<Long> = listOf(
+            5L * 60L * 1_000L,          // 5 min
+            30L * 60L * 1_000L,         // 30 min
+            2L * 60L * 60L * 1_000L,    // 2h
+        )
+
+        // T9: error-message regex used to recognise 5xx responses thrown
+        // by AtomChannelFeedFetcher as `IOException("HTTP ${code}")`.
+        internal val HTTP_5XX_REGEX: Regex = Regex("""HTTP 5\d{2}""")
+        internal val HTTP_429_REGEX: Regex = Regex("""HTTP 429\b|\b429\b""")
     }
 
     private val semaphore = Semaphore(MAX_CONCURRENT)
@@ -98,17 +120,44 @@ class MeFeedRepository @Inject constructor(
             }
             .distinctUntilChanged()
 
-    suspend fun refresh(force: Boolean = false): Unit = withContext(ioDispatcher) {
+    /**
+     * Refresh a slice of subscribed channels.
+     *
+     * - [force]: when true, bypasses TTL freshness gate AND per-channel
+     *   backoff. Pull-to-refresh sets this; periodic worker leaves it false.
+     * - [perTickBudget]: cap on the number of channels processed per call.
+     *   The periodic worker uses a small budget (e.g. 5) to spread the
+     *   30-channel pool across hourly ticks; the foreground burst /
+     *   pull-to-refresh uses a larger budget (e.g. 30) to surface results
+     *   quickly. Defaults to [MAX_CHANNELS_PER_REFRESH] for backward
+     *   compatibility with existing tests.
+     *
+     * T9: channels are sorted by **oldest successful fetch first** (round
+     * robin) so the worker gives every channel an equal share of the
+     * refresh budget instead of starving the tail of the subscription
+     * list.
+     */
+    suspend fun refresh(
+        force: Boolean = false,
+        perTickBudget: Int = MAX_CHANNELS_PER_REFRESH,
+    ): Unit = withContext(ioDispatcher) {
         // Serialise overlapping refresh() calls so the per-index STAGGER_MS
         // delay is a true inter-fetch spacing, not collapsed by concurrent
         // callers each starting from index=0 (F3).
         refreshMutex.withLock {
             val now = currentTimeMillis()
-            val channels = subscriptions.getSubscribedChannels()
-                .asSequence()
-                .sortedByDescending { it.subscribedAt }
-                .take(MAX_CHANNELS_PER_REFRESH)
-                .toList()
+            val all = subscriptions.getSubscribedChannels()
+            if (all.isEmpty()) return@withLock
+
+            // T9: oldest-fetch-first round-robin slice. A single batch query
+            // pulls all `(channelId, lastSuccessfulFetchAt)` rows; channels
+            // not in the refresh-state table rank lowest (treated as 0L) so
+            // freshly subscribed channels are picked up on the next tick.
+            val ages: Map<String, Long> = refreshStateDao.getAllLastSuccessfulFetchAt()
+                .associate { it.channelId to it.lastSuccessfulFetchAt }
+            val channels = all
+                .sortedBy { ages[it.channelId] ?: 0L }
+                .take(perTickBudget)
 
             if (channels.isEmpty()) return@withLock
 
@@ -131,12 +180,20 @@ class MeFeedRepository @Inject constructor(
 
     private suspend fun refreshOne(channel: SubscribedChannel, now: Long, force: Boolean) {
         val previous = refreshStateDao.get(channel.channelId)
+
+        // [1] TTL freshness gate. force=true bypasses it (pull-to-refresh).
         val fresh = previous != null && (now - previous.lastSuccessfulFetchAt) < CACHE_TTL_MS
         if (fresh && !force) return
 
-        // ANDROID-PERSONAL-02 / T2: pass the cached ETag + Last-Modified into
-        // the fetcher so most ticks return HTTP 304. The fetcher returns a
-        // sealed FetchResult; we branch on it below.
+        // [2] Per-channel backoff gate. force=true bypasses it (pull-to-refresh).
+        // backoff is its own state — when active we don't fetch, don't update
+        // any field, just return. The next non-backed-off tick resumes normally.
+        val backoffActive = previous?.backoffUntilMs != null &&
+            now < previous.backoffUntilMs &&
+            !force
+        if (backoffActive) return
+
+        // [3] Conditional GET — pass cached ETag + Last-Modified.
         val result: ChannelFeedFetcher.FetchResult = try {
             withTimeout(PER_CHANNEL_TIMEOUT_MS) {
                 fetcher.fetchLatest(
@@ -146,15 +203,13 @@ class MeFeedRepository @Inject constructor(
                 )
             }
         } catch (toc: TimeoutCancellationException) {
-            // Per-channel timeout is a soft failure — record it but keep the
-            // existing cache and let the next refresh try again. Do NOT let
-            // it propagate as CancellationException to the parent scope.
-            //
-            // T2 → T9 breadcrumb: preserve the v3 fields (etag, lastModified,
-            // counters, backoffUntilMs) from the prior state so T9's full
-            // backoff logic has the correct starting point. T9 will manage
-            // counter increments and backoff escalation; T2 only ensures
-            // we never zero them out in failure paths.
+            // Per-channel timeout is a soft, network-flake failure — record
+            // lastErrorMessage + lastAttemptAt and keep the existing cache.
+            // T9: timeouts do NOT increment consecutiveErrorCount. They are
+            // ambient network jitter, not a server-side rejection signal —
+            // escalating backoff on every transient timeout would push every
+            // user onto a 24h cooldown after a couple of bad mobile packets.
+            // Counters/etag/lastModified/backoffUntilMs are preserved from prior.
             refreshStateDao.upsert(
                 previous?.copy(
                     lastAttemptAt = now,
@@ -173,15 +228,33 @@ class MeFeedRepository @Inject constructor(
             // and the parent job observes the cancel.
             throw ce
         } catch (t: Throwable) {
+            // T9: hard error path. Increment consecutiveErrorCount and
+            // (when the message looks like 429 or 5xx) compute a new
+            // backoffUntilMs along the appropriate ladder.
+            val errCount = (previous?.consecutiveErrorCount ?: 0) + 1
+            val msg = t.message ?: t::class.java.simpleName
+            val newBackoffUntilMs: Long? = when {
+                HTTP_429_REGEX.containsMatchIn(msg) -> {
+                    val step = (errCount - 1).coerceAtMost(ATOM_429_BACKOFFS.lastIndex)
+                    now + ATOM_429_BACKOFFS[step]
+                }
+                HTTP_5XX_REGEX.containsMatchIn(msg) -> {
+                    val step = (errCount - 1).coerceAtMost(ATOM_5XX_BACKOFFS.lastIndex)
+                    now + ATOM_5XX_BACKOFFS[step]
+                }
+                else -> previous?.backoffUntilMs // unknown error — preserve prior
+            }
             refreshStateDao.upsert(
-                previous?.copy(
-                    lastAttemptAt = now,
-                    lastErrorMessage = t.message ?: t::class.java.simpleName,
-                ) ?: ChannelFeedRefreshState(
+                ChannelFeedRefreshState(
                     channelId = channel.channelId,
-                    lastSuccessfulFetchAt = 0L,
+                    lastSuccessfulFetchAt = previous?.lastSuccessfulFetchAt ?: 0L,
                     lastAttemptAt = now,
-                    lastErrorMessage = t.message ?: t::class.java.simpleName,
+                    lastErrorMessage = msg,
+                    etag = previous?.etag,
+                    lastModified = previous?.lastModified,
+                    consecutiveErrorCount = errCount,
+                    consecutiveEmptyCount = previous?.consecutiveEmptyCount ?: 0,
+                    backoffUntilMs = newBackoffUntilMs,
                 )
             )
             return
@@ -190,10 +263,10 @@ class MeFeedRepository @Inject constructor(
         when (result) {
             is ChannelFeedFetcher.FetchResult.NotModified -> {
                 // Server confirmed nothing changed. Don't touch the cache.
-                // Bump lastSuccessfulFetchAt so the TTL clock runs, reset
-                // the v3 counters (304 = success), preserve the prior ETag
-                // when the 304 came back without one, and preserve
-                // backoffUntilMs (T9 owns it).
+                // T9: success path — bump TTL clock, reset both counters,
+                // clear backoffUntilMs. Preserve prior ETag/Last-Modified
+                // when the 304 came back without one (servers often omit
+                // validators on 304).
                 val nextEtag = result.etag ?: previous?.etag
                 val nextLastModified = result.lastModified ?: previous?.lastModified
                 refreshStateDao.upsert(
@@ -206,7 +279,7 @@ class MeFeedRepository @Inject constructor(
                         lastModified = nextLastModified,
                         consecutiveErrorCount = 0,
                         consecutiveEmptyCount = 0,
-                        backoffUntilMs = previous?.backoffUntilMs,
+                        backoffUntilMs = null,
                     )
                 )
                 return
@@ -232,6 +305,13 @@ class MeFeedRepository @Inject constructor(
                 // preserve — so allow the wipe. Otherwise a channel that
                 // legitimately emptied (deleted all videos / went dormant)
                 // would keep stale cache rows forever.
+                //
+                // T9 counter rules:
+                //  - protected-empty: errorCount → 0, emptyCount += 1,
+                //    keep backoff/etag/lastModified
+                //  - real-empty (outside protection): both counters reset
+                //    differently — error → 0, empty += 1 still
+                //  - non-empty: both counters reset to 0, backoff cleared
                 if (items.isEmpty() && previous != null && previous.lastSuccessfulFetchAt > 0L &&
                     (now - previous.lastSuccessfulFetchAt) < FEED_WINDOW_MS
                 ) {
@@ -243,6 +323,30 @@ class MeFeedRepository @Inject constructor(
                             // even on an empty body — they let us 304 next.
                             etag = result.etag ?: previous.etag,
                             lastModified = result.lastModified ?: previous.lastModified,
+                            consecutiveErrorCount = 0,
+                            consecutiveEmptyCount = previous.consecutiveEmptyCount + 1,
+                        )
+                    )
+                    return
+                }
+
+                if (items.isEmpty()) {
+                    // Real-empty path (outside protection): wipe cache, but
+                    // still treat as a successful fetch — the channel is
+                    // legitimately empty (dormant / unsubscribed-from-uploads /
+                    // first-fetch-with-no-uploads). T9: error → 0, empty++.
+                    cache.replaceForChannel(channel.channelId, emptyList())
+                    refreshStateDao.upsert(
+                        ChannelFeedRefreshState(
+                            channelId = channel.channelId,
+                            lastSuccessfulFetchAt = now,
+                            lastAttemptAt = now,
+                            lastErrorMessage = null,
+                            etag = result.etag,
+                            lastModified = result.lastModified,
+                            consecutiveErrorCount = 0,
+                            consecutiveEmptyCount = (previous?.consecutiveEmptyCount ?: 0) + 1,
+                            backoffUntilMs = null,
                         )
                     )
                     return
@@ -259,7 +363,7 @@ class MeFeedRepository @Inject constructor(
                         lastModified = result.lastModified,
                         consecutiveErrorCount = 0,
                         consecutiveEmptyCount = 0,
-                        backoffUntilMs = previous?.backoffUntilMs,
+                        backoffUntilMs = null,
                     )
                 )
             }

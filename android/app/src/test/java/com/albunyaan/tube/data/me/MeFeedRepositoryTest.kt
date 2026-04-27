@@ -494,13 +494,15 @@ class MeFeedRepositoryTest {
         //  - lastErrorMessage must be nulled,
         //  - new etag + lastModified from the response must be persisted,
         //  - consecutive{Error,Empty}Count must reset to 0,
-        //  - backoffUntilMs must be preserved (T9 owns it).
+        //  - backoffUntilMs must be cleared (T9 §6: any success → clear backoff).
         subscribe("UC1")
         val priorEtag = "W/\"old-etag\""
         val priorLastModified = "Mon, 31 Mar 2025 00:00:00 GMT"
         val newEtag = "W/\"new-etag\""
         val newLastModified = "Tue, 01 Apr 2025 00:00:00 GMT"
-        val preservedBackoff = 12345L
+        // Seed a non-zero backoff to prove that 304 (success) clears it.
+        // Make it stale so the backoff gate doesn't skip the fetch.
+        val staleBackoff = clockMillis - 1L
         val oldSuccess = clockMillis - 60L * 60L * 1_000L // 1 hour ago
 
         // Seed prior refresh state with conditional-GET headers + counters.
@@ -514,7 +516,7 @@ class MeFeedRepositoryTest {
                 lastModified = priorLastModified,
                 consecutiveErrorCount = 3,
                 consecutiveEmptyCount = 2,
-                backoffUntilMs = preservedBackoff,
+                backoffUntilMs = staleBackoff,
             )
         )
 
@@ -600,7 +602,193 @@ class MeFeedRepositoryTest {
         assertEquals(newLastModified, state.lastModified)
         assertEquals(0, state.consecutiveErrorCount)
         assertEquals(0, state.consecutiveEmptyCount)
-        assertEquals(preservedBackoff, state.backoffUntilMs)
+        // T9 §6: any success path (including 304) clears backoffUntilMs.
+        assertNull(state.backoffUntilMs)
+    }
+
+    // T9 backoff tests (ANDROID-PERSONAL-02 / spec §5 + §6).
+
+    @Test
+    fun `T9 429 on first failure sets backoffUntilMs to now plus 1h`() = runTest {
+        subscribe("UC1")
+        fetcher.errors["https://yt/UC1"] = java.io.IOException("HTTP 429")
+
+        repo.refresh(force = false)
+
+        val state = db.channelFeedRefreshStateDao().get("UC1")
+        assertNotNull(state)
+        assertEquals(1, state!!.consecutiveErrorCount)
+        assertEquals("HTTP 429", state.lastErrorMessage)
+        // ATOM_429_BACKOFFS[0] = 1 hour
+        val expected = clockMillis + 60L * 60L * 1_000L
+        assertEquals(expected, state.backoffUntilMs)
+    }
+
+    @Test
+    fun `T9 backoff window skips fetcher entirely on subsequent refresh`() = runTest {
+        subscribe("UC1")
+        fetcher.errors["https://yt/UC1"] = java.io.IOException("HTTP 429")
+
+        // First refresh: records the 429 + sets backoffUntilMs = now + 1h.
+        repo.refresh(force = false)
+        assertEquals(1, fetcher.callsFor("https://yt/UC1"))
+
+        // Advance past TTL (so freshness gate doesn't skip) but stay
+        // within the backoff window.
+        clockMillis += MeFeedRepository.CACHE_TTL_MS + 1_000L
+        // Clear the canned error so a fetcher call would otherwise succeed —
+        // any further call would mean the backoff gate failed.
+        fetcher.errors.remove("https://yt/UC1")
+        fetcher.responses["https://yt/UC1"] = listOf(item("v1", clockMillis - 1_000L))
+
+        repo.refresh(force = false)
+
+        // Backoff still in effect (we advanced ~30 min, ladder is 1h) —
+        // fetcher must NOT have been called a second time.
+        assertEquals(
+            "backoff window must skip the fetcher",
+            1, fetcher.callsFor("https://yt/UC1"),
+        )
+    }
+
+    @Test
+    fun `T9 force=true bypasses active backoff`() = runTest {
+        subscribe("UC1")
+        fetcher.errors["https://yt/UC1"] = java.io.IOException("HTTP 429")
+        repo.refresh(force = false) // arms backoff
+        assertEquals(1, fetcher.callsFor("https://yt/UC1"))
+
+        // Inside the backoff window. Without force, fetcher would not be
+        // called. With force=true (pull-to-refresh), it must be called.
+        clockMillis += 5L * 60L * 1_000L // +5 min, well inside 1h backoff
+        fetcher.errors.remove("https://yt/UC1")
+        fetcher.responses["https://yt/UC1"] = listOf(item("v1", clockMillis - 1_000L))
+
+        repo.refresh(force = true)
+
+        assertEquals(
+            "force=true must bypass the backoff gate",
+            2, fetcher.callsFor("https://yt/UC1"),
+        )
+    }
+
+    @Test
+    fun `T9 repeated 429s escalate backoff to 4h then 24h`() = runTest {
+        subscribe("UC1")
+        fetcher.errors["https://yt/UC1"] = java.io.IOException("HTTP 429")
+
+        // First 429 → 1h.
+        repo.refresh(force = false)
+        var state = db.channelFeedRefreshStateDao().get("UC1")!!
+        assertEquals(clockMillis + 60L * 60L * 1_000L, state.backoffUntilMs)
+        assertEquals(1, state.consecutiveErrorCount)
+
+        // Advance past the 1h backoff. Second 429 → 4h.
+        clockMillis += 60L * 60L * 1_000L + 1_000L
+        repo.refresh(force = false)
+        state = db.channelFeedRefreshStateDao().get("UC1")!!
+        assertEquals(clockMillis + 4L * 60L * 60L * 1_000L, state.backoffUntilMs)
+        assertEquals(2, state.consecutiveErrorCount)
+
+        // Advance past 4h. Third 429 → 24h.
+        clockMillis += 4L * 60L * 60L * 1_000L + 1_000L
+        repo.refresh(force = false)
+        state = db.channelFeedRefreshStateDao().get("UC1")!!
+        assertEquals(clockMillis + 24L * 60L * 60L * 1_000L, state.backoffUntilMs)
+        assertEquals(3, state.consecutiveErrorCount)
+
+        // Fourth 429 stays clamped at the top of the ladder (24h).
+        clockMillis += 24L * 60L * 60L * 1_000L + 1_000L
+        repo.refresh(force = false)
+        state = db.channelFeedRefreshStateDao().get("UC1")!!
+        assertEquals(clockMillis + 24L * 60L * 60L * 1_000L, state.backoffUntilMs)
+        assertEquals(4, state.consecutiveErrorCount)
+    }
+
+    @Test
+    fun `T9 successful fetch clears backoffUntilMs`() = runTest {
+        subscribe("UC1")
+        fetcher.errors["https://yt/UC1"] = java.io.IOException("HTTP 429")
+        repo.refresh(force = false)
+        assertNotNull(db.channelFeedRefreshStateDao().get("UC1")!!.backoffUntilMs)
+
+        // Advance past backoff, swap fetcher to a real success.
+        clockMillis += 60L * 60L * 1_000L + 1_000L
+        fetcher.errors.remove("https://yt/UC1")
+        fetcher.responses["https://yt/UC1"] = listOf(item("v1", clockMillis - 1_000L))
+
+        repo.refresh(force = false)
+
+        val state = db.channelFeedRefreshStateDao().get("UC1")
+        assertNotNull(state)
+        assertNull("success path must clear backoff", state!!.backoffUntilMs)
+        assertEquals(0, state.consecutiveErrorCount)
+        assertEquals(0, state.consecutiveEmptyCount)
+    }
+
+    @Test
+    fun `T9 5xx errors use 5min ladder`() = runTest {
+        subscribe("UC1")
+        fetcher.errors["https://yt/UC1"] = java.io.IOException("HTTP 503")
+
+        repo.refresh(force = false)
+
+        val state = db.channelFeedRefreshStateDao().get("UC1")
+        assertNotNull(state)
+        // ATOM_5XX_BACKOFFS[0] = 5 min
+        val expected = clockMillis + 5L * 60L * 1_000L
+        assertEquals(expected, state!!.backoffUntilMs)
+        assertEquals(1, state.consecutiveErrorCount)
+    }
+
+    // Note (T9 / CR2 flake): a unit test for "timeout does NOT increment
+    // consecutiveErrorCount" was scoped out for two reasons:
+    //  1. Triggering the outer withTimeout(PER_CHANNEL_TIMEOUT_MS) requires
+    //     advancing virtual time by ~15 s, which leaks into the CR2 stagger
+    //     test (other tests in the same Robolectric sandbox observe a
+    //     polluted scheduler and the stagger assertion fails).
+    //  2. Constructing TimeoutCancellationException directly is blocked by
+    //     its `internal` constructor.
+    // The behaviour is covered by inspection: the catch (toc:
+    // TimeoutCancellationException) branch in refreshOne explicitly
+    // preserves the prior counters / backoff / etag / lastModified —
+    // see `// T9: timeouts do NOT increment consecutiveErrorCount` comment
+    // in MeFeedRepository.refreshOne. The instrumented test in T12 will
+    // exercise this against the real OkHttp client + a slow MockWebServer.
+
+    @Test
+    fun `T9 round-robin picks oldest-fetch-first`() = runTest {
+        // Seed two channels: UC_OLD has old success, UC_NEW has very recent.
+        // perTickBudget=1 forces only one to refresh — it must be UC_OLD.
+        subs.subscribe(SubscribedChannel("UC_OLD", "https://yt/UC_OLD", "old", null, 5_000L))
+        subs.subscribe(SubscribedChannel("UC_NEW", "https://yt/UC_NEW", "new", null, 1_000L))
+        // Note: subscribedAt prefers UC_OLD as recent (5_000 > 1_000) under
+        // the prior sort — but round-robin should pick UC_OLD only because
+        // its lastSuccessfulFetchAt is the oldest. Force the ages directly.
+        db.channelFeedRefreshStateDao().upsert(
+            com.albunyaan.tube.data.local.ChannelFeedRefreshState(
+                channelId = "UC_OLD",
+                lastSuccessfulFetchAt = clockMillis - 10L * 24L * 60L * 60L * 1_000L,
+                lastAttemptAt = clockMillis - 10L * 24L * 60L * 60L * 1_000L,
+                lastErrorMessage = null,
+            )
+        )
+        db.channelFeedRefreshStateDao().upsert(
+            com.albunyaan.tube.data.local.ChannelFeedRefreshState(
+                channelId = "UC_NEW",
+                lastSuccessfulFetchAt = clockMillis - 10_000L, // 10s ago
+                lastAttemptAt = clockMillis - 10_000L,
+                lastErrorMessage = null,
+            )
+        )
+        fetcher.responses["https://yt/UC_OLD"] = listOf(item("vo", clockMillis - 1_000L))
+        fetcher.responses["https://yt/UC_NEW"] = listOf(item("vn", clockMillis - 1_000L))
+
+        repo.refresh(force = true, perTickBudget = 1)
+
+        // UC_OLD must have been picked; UC_NEW must not.
+        assertEquals(1, fetcher.callsFor("https://yt/UC_OLD"))
+        assertEquals(0, fetcher.callsFor("https://yt/UC_NEW"))
     }
 
     private fun item(id: String, uploadedAt: Long?, isShort: Boolean = false) =
