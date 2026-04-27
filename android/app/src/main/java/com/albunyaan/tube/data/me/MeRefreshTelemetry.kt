@@ -23,6 +23,11 @@ import kotlinx.coroutines.flow.asSharedFlow
  * benefit. The [SharedFlow] uses [BufferOverflow.DROP_OLDEST] so a slow
  * subscriber can never stall an emit caller — telemetry is fire-and-forget.
  *
+ * Atomicity: the ring update and the SharedFlow emit are independent
+ * side-effects of [emit]. Observers should NOT rely on temporal coherence
+ * between [snapshot] and an [events] collector — a snapshot reader can see
+ * an event before the SharedFlow delivers it, and vice versa.
+ *
  * The buffer lives in-process only — restarts wipe it. That's intentional;
  * production telemetry will be added separately if needed.
  */
@@ -90,8 +95,6 @@ class MeRefreshTelemetry @Inject constructor() {
      *  - [TIMEOUT] — withTimeout fired; counters preserved.
      *  - [FRESHNESS_SKIPPED] — TTL gate short-circuited (no fetcher call).
      *  - [BACKOFF_SKIPPED] — backoff gate short-circuited (no fetcher call).
-     *  - [FORCE_BYPASSED] — should not be observed at completion (reserved
-     *    for future use; included for completeness of the enum).
      */
     enum class ChannelOutcome {
         NEW_ITEMS,
@@ -103,7 +106,6 @@ class MeRefreshTelemetry @Inject constructor() {
         TIMEOUT,
         FRESHNESS_SKIPPED,
         BACKOFF_SKIPPED,
-        FORCE_BYPASSED,
     }
 
     private val ring: ArrayDeque<Event> = ArrayDeque(MAX_EVENTS)
