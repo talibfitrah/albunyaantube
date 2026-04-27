@@ -253,11 +253,12 @@ dependencies {
     // Note: room-ktx merged into room-runtime in 2.7.0
     val roomVersion = "2.7.0"
     implementation("androidx.room:room-runtime:$roomVersion")
-    // T11: room-paging brings the PagingSource<Int, T> return type for the
-    // Me-feed videos grid. paging-runtime-ktx is already on the classpath
-    // (line 212). Version must match roomVersion to avoid Room artifact
-    // version mismatches at compile time.
-    implementation("androidx.room:room-paging:$roomVersion")
+    // ANDROID-PERSONAL-03 / T7: room-paging removed. The Me-feed grid no
+    // longer uses Room's PagingSource<Int, T> return type — it observes
+    // per-week ranges via Flow<List<ChannelVideoCache>> and renders one
+    // sub-adapter per week. paging-runtime-ktx is still on the classpath
+    // (line 212) for the unrelated content-paging path
+    // (data.paging.CursorPagingSource).
     ksp("androidx.room:room-compiler:$roomVersion")
     testImplementation("androidx.room:room-testing:$roomVersion")
 

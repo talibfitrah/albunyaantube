@@ -14,6 +14,7 @@ import com.albunyaan.tube.data.model.api.models.DownloadStartedEvent
 import com.albunyaan.tube.data.model.api.models.DownloadTokenDto
 import com.albunyaan.tube.data.model.api.models.DownloadTokenRequest
 import com.albunyaan.tube.data.model.api.models.PageInfo
+import com.squareup.moshi.Moshi
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.components.SingletonComponent
@@ -46,6 +47,16 @@ object TestNetworkModule {
         return OkHttpClient.Builder()
             .build()
     }
+
+    /**
+     * ANDROID-PERSONAL-03 / T7: tests that exercise [MeFeedRepository]
+     * (e.g. via Hilt-injected fragments) need a Moshi to satisfy the
+     * deep-paginator cookie adapter. A default-built Moshi is enough —
+     * the cookie map adapter doesn't need Kotlin reflection.
+     */
+    @Provides
+    @Singleton
+    fun provideMoshi(): Moshi = Moshi.Builder().build()
 
     @Provides
     @Singleton
