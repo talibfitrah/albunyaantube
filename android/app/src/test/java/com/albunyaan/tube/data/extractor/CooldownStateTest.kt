@@ -3,6 +3,8 @@ package com.albunyaan.tube.data.extractor
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.intPreferencesKey
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
@@ -12,6 +14,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import java.io.File
@@ -71,14 +74,21 @@ class CooldownStateTest {
 
     @Test
     fun seven_clean_days_resets_trip_count() = runTest {
+        // markCleanFetch resets TRIP_COUNT to 0 after the clean-streak window (7d)
+        // has elapsed since the last trip. We isolate this from the 24h trip-window
+        // reset by reading the persisted TRIP_COUNT directly — chaining a follow-up
+        // trip() would conflate the two reset pathways.
         val cd = CooldownState(dataStore) { clock.get() }
         cd.trip(IOException("429"))
-        clock.addAndGet(8L * 24L * 60L * 60_000L)  // 8 days later
+        // After trip: TRIP_COUNT == 1, CLEAN_STREAK_START_MS == clock.
+        val tripCountAfterTrip = dataStore.data.first()[intPreferencesKey("cooldown_trip_count_24h")]
+        assertEquals(1, tripCountAfterTrip)
+
+        clock.addAndGet(8L * 24L * 60L * 60_000L)  // 8 days later — past 7-day reset window
         cd.markCleanFetch(clock.get())
-        cd.trip(IOException("429"))
-        // First-trip duration = 1h again
-        clock.addAndGet(2 * 60 * 60_000L)
-        assertFalse(cd.isTripped(clock.get()))
+
+        val tripCountAfterReset = dataStore.data.first()[intPreferencesKey("cooldown_trip_count_24h")]
+        assertEquals(0, tripCountAfterReset)
     }
 
     @Test
