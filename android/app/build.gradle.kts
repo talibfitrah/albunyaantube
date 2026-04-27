@@ -146,6 +146,17 @@ android {
         arg("room.schemaLocation", "$projectDir/schemas")
     }
 
+    // Make Room's exported schemas reachable to MigrationTestHelper:
+    //   - Instrumented tests look in the `androidTest` asset bundle.
+    //   - JVM/Robolectric unit tests (with `unitTests.isIncludeAndroidResources
+    //     = true`) read from the merged main assets, so we add the schemas
+    //     dir to `main.assets.srcDirs` as well. The cost is ~5 KB of asset
+    //     JSON inside the APK — tiny and not user-visible.
+    sourceSets {
+        getByName("androidTest").assets.srcDirs("$projectDir/schemas")
+        getByName("main").assets.srcDirs("$projectDir/schemas")
+    }
+
     java {
         toolchain {
             languageVersion.set(JavaLanguageVersion.of(17))
@@ -174,6 +185,11 @@ android {
         // Return default values for unmocked Android framework calls (e.g., Log.d returns 0)
         // Required for unit tests that use classes containing android.util.Log calls
         unitTests.isReturnDefaultValues = true
+
+        // Surface Android resources/assets to JVM unit tests. Required so
+        // Robolectric's MigrationTestHelper can read exported Room schemas
+        // from the assets folder (see AppDatabaseMigration2to3Test).
+        unitTests.isIncludeAndroidResources = true
 
         unitTests.all {
             // Enforce 300s (5-minute) global test timeout per AGENTS.md policy

@@ -8,6 +8,7 @@ import androidx.room.RoomDatabase
  *
  * v1: favorite videos
  * v2: subscribed channels, saved playlists, channel video cache, feed refresh state
+ * v3: ATOM refresh per-channel ETag + backoff columns (additive)
  */
 @Database(
     entities = [
@@ -17,7 +18,7 @@ import androidx.room.RoomDatabase
         ChannelVideoCache::class,
         ChannelFeedRefreshState::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {

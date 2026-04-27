@@ -50,3 +50,20 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
         )
     }
 }
+
+/**
+ * v2 -> v3: ATOM-refresh columns on `channel_feed_refresh_state`.
+ *
+ * Additive only — every new column is nullable or has a `DEFAULT 0`, so
+ * existing rows continue to work and the migration is trivially reversible.
+ * See [ChannelFeedRefreshState] for column-level documentation.
+ */
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE channel_feed_refresh_state ADD COLUMN etag TEXT")
+        db.execSQL("ALTER TABLE channel_feed_refresh_state ADD COLUMN lastModified TEXT")
+        db.execSQL("ALTER TABLE channel_feed_refresh_state ADD COLUMN consecutiveErrorCount INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE channel_feed_refresh_state ADD COLUMN consecutiveEmptyCount INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE channel_feed_refresh_state ADD COLUMN backoffUntilMs INTEGER")
+    }
+}
