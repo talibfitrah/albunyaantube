@@ -146,6 +146,131 @@ class MeViewModelTest {
         assertEquals("v1", filtered.videos.first().videoId)
     }
 
+    // ANDROID-PERSONAL-03 / T5: weeks state.
+
+    @Test
+    fun `T5 init triggers first week load`() = runBlocking {
+        val now = System.currentTimeMillis()
+        val recent = now - (2L * 24L * 60L * 60L * 1_000L)
+        val feedWithItems = repoWithFetcher(::singleItem to "u1", recent)
+        subs.subscribe(SubscribedChannel("UC1", "u1", "A", null, 1_000L))
+        feedWithItems.refresh(force = true)
+
+        val vm = MeViewModel(subs, feedWithItems, favs)
+
+        val first = withTimeout(3_000L) {
+            vm.weeks.first { it.isNotEmpty() }
+        }
+        assertEquals(1, first.size)
+        assertEquals(0, first[0].weekIndex)
+        assertEquals(listOf("v1"), first[0].videos.map { it.videoId })
+    }
+
+    @Test
+    fun `T5 loadNextWeek skips empty weeks and appends next non-empty`() = runBlocking {
+        val now = System.currentTimeMillis()
+        // Week 0 (now-7d to now): empty.
+        // Week 1: empty.
+        // Week 2: one item at ~17 days ago.
+        val sixteenDaysAgo = now - 16L * 24L * 60L * 60L * 1_000L
+        val feedWithItems = repoWithFetcher(::singleItem to "u1", sixteenDaysAgo)
+        subs.subscribe(SubscribedChannel("UC1", "u1", "A", null, 1_000L))
+        feedWithItems.refresh(force = true)
+
+        val vm = MeViewModel(subs, feedWithItems, favs)
+
+        // First load: should jump to week 2 (skipping empty 0 and 1).
+        val first = withTimeout(3_000L) {
+            vm.weeks.first { it.isNotEmpty() }
+        }
+        assertEquals(1, first.size)
+        assertEquals(2, first[0].weekIndex)
+        assertEquals(listOf("v1"), first[0].videos.map { it.videoId })
+    }
+
+    @Test
+    fun `T5 loadNextWeek appends weeks one at a time`() = runBlocking {
+        val now = System.currentTimeMillis()
+        val twoDaysAgo = now - 2L * 24L * 60L * 60L * 1_000L
+        val nineDaysAgo = now - 9L * 24L * 60L * 60L * 1_000L
+        // One channel; two items in different weeks.
+        val feedWithItems = MeFeedRepository(
+            subscriptions = subs,
+            cache = db.channelVideoCacheDao(),
+            refreshStateDao = db.channelFeedRefreshStateDao(),
+            fetcher = object : ChannelFeedFetcher {
+                override suspend fun fetchLatest(
+                    channelUrl: String,
+                    priorEtag: String?,
+                    priorLastModified: String?,
+                ): ChannelFeedFetcher.FetchResult {
+                    val items = if (channelUrl == "u1") listOf(
+                        item("v0", twoDaysAgo),
+                        item("v1", nineDaysAgo),
+                    ) else emptyList()
+                    return ChannelFeedFetcher.FetchResult.Items(items, null, null)
+                }
+            },
+            ioDispatcher = Dispatchers.Unconfined,
+            telemetry = MeRefreshTelemetry(),
+        )
+        subs.subscribe(SubscribedChannel("UC1", "u1", "A", null, 1_000L))
+        feedWithItems.refresh(force = true)
+
+        val vm = MeViewModel(subs, feedWithItems, favs)
+
+        val firstLoad = withTimeout(3_000L) { vm.weeks.first { it.isNotEmpty() } }
+        assertEquals(1, firstLoad.size)
+        assertEquals(0, firstLoad[0].weekIndex)
+        assertEquals(listOf("v0"), firstLoad[0].videos.map { it.videoId })
+
+        // Wait for the init's loadNextWeek() to settle, then trigger the
+        // second load explicitly.
+        withTimeout(3_000L) { vm.isLoadingMoreWeeks.first { !it } }
+        vm.loadNextWeek()
+
+        val secondLoad = withTimeout(3_000L) { vm.weeks.first { it.size == 2 } }
+        assertEquals(0, secondLoad[0].weekIndex)
+        assertEquals(1, secondLoad[1].weekIndex)
+        assertEquals(listOf("v1"), secondLoad[1].videos.map { it.videoId })
+    }
+
+    /** Helper: build a real MeFeedRepository whose fetcher returns one
+     *  item for a single channel URL. */
+    private fun repoWithFetcher(
+        urlAndItemFn: Pair<(Long) -> ChannelFeedFetcher.ChannelFeedItem, String>,
+        uploadedAt: Long,
+    ): MeFeedRepository {
+        val (factory, url) = urlAndItemFn
+        return MeFeedRepository(
+            subscriptions = subs,
+            cache = db.channelVideoCacheDao(),
+            refreshStateDao = db.channelFeedRefreshStateDao(),
+            fetcher = object : ChannelFeedFetcher {
+                override suspend fun fetchLatest(
+                    channelUrl: String,
+                    priorEtag: String?,
+                    priorLastModified: String?,
+                ): ChannelFeedFetcher.FetchResult {
+                    val items = if (channelUrl == url) listOf(factory(uploadedAt)) else emptyList()
+                    return ChannelFeedFetcher.FetchResult.Items(items, null, null)
+                }
+            },
+            ioDispatcher = Dispatchers.Unconfined,
+            telemetry = MeRefreshTelemetry(),
+        )
+    }
+
+    private fun singleItem(uploadedAt: Long) = ChannelFeedFetcher.ChannelFeedItem(
+        videoId = "v1",
+        title = "title",
+        thumbnailUrl = null,
+        durationSeconds = null,
+        viewCount = null,
+        uploadedAt = uploadedAt,
+        isShort = false,
+    )
+
     private fun item(id: String, uploadedAt: Long) = ChannelFeedFetcher.ChannelFeedItem(
         videoId = id,
         title = "title-$id",
