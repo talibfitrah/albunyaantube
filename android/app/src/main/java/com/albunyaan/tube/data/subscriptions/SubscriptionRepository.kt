@@ -30,6 +30,13 @@ class SubscriptionRepository @Inject constructor(
 
     fun isPlaylistSaved(id: String): Flow<Boolean> = playlists.observeIsSaved(id)
 
+    /**
+     * Direct DAO upsert. **Bypasses the 30-channel cap** enforced by
+     * [SubscriptionLimitGuard.trySubscribe]. New callers MUST go through the
+     * guard; this method is kept public only so existing test fixtures continue
+     * to compile. If you find yourself wanting to call this from production
+     * code, you almost certainly want the guard instead.
+     */
     suspend fun subscribe(channel: SubscribedChannel) = channels.upsert(channel)
 
     /**

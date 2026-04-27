@@ -9,6 +9,15 @@ import javax.inject.Singleton
 
 sealed class SubscribeResult {
     object Success : SubscribeResult()
+
+    /**
+     * Subscription was refused because the channel cap has been reached.
+     *
+     * @property current The subscribed-channel count *at the moment of refusal*. When the
+     *   guard rejects, [current] always equals [cap] — it is "what you have," not
+     *   "what you would have had after the attempt."
+     * @property cap The configured cap (currently 30; see [SubscriptionLimitGuard.CAP]).
+     */
     data class LimitReached(val current: Int, val cap: Int) : SubscribeResult()
 }
 
