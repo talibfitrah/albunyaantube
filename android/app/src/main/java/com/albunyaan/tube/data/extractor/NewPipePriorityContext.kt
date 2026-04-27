@@ -11,6 +11,8 @@ package com.albunyaan.tube.data.extractor
  *   (the Me tab itself uses ATOM, so it does not consume the bucket).
  *   Same bucket as USER_FOREGROUND but distinct so callers can be tagged
  *   in telemetry.
+ *
+ * Declaration order is not significant — no compareTo/ordinal usage.
  */
 enum class Priority {
     PLAYER,
@@ -26,23 +28,48 @@ enum class Priority {
  * place to thread call-site context, so we stash the priority in a
  * `ThreadLocal` set by the caller via [with]. The block-scoped helper
  * guarantees the prior value is restored on the calling thread, even when
- * the block throws.
+ * the block throws. LIFO-stack semantics: nested [with] calls are
+ * well-defined.
  *
  * Usage:
  * ```
  * NewPipePriorityContext.with(Priority.USER_FOREGROUND) {
- *     val info = StreamInfo.getInfo(url) // Downloader reads current.get()
+ *     val info = StreamInfo.getInfo(url) // Downloader reads currentOrDefault()
  * }
  * ```
  *
  * Coroutine note: NewPipe extraction is wrapped in `withContext(Dispatchers.IO)`,
  * so the priority must be set inside that block — `ThreadLocal` is per-thread,
- * not per-coroutine. (`asContextElement()` is a future enhancement if call
- * sites grow.)
+ * not per-coroutine. A future migration to
+ * [kotlinx.coroutines.ThreadContextElement] / `ThreadLocal.asContextElement()`
+ * would let the priority ride with the coroutine; deferred to whenever T7
+ * adds the [RateLimitedDownloader] consumer.
  */
 object NewPipePriorityContext {
-    val current: ThreadLocal<Priority?> = ThreadLocal<Priority?>()
+    /**
+     * Underlying thread-local holding the current priority. Internal +
+     * [PublishedApi] so the inline [with] helper can reference it from any
+     * call site, while preventing arbitrary `current.set(...)` from outside
+     * (which would defeat the LIFO-stack invariant [with] enforces).
+     *
+     * Read via [currentOrDefault] from consumers.
+     */
+    @PublishedApi
+    internal val current: ThreadLocal<Priority?> = ThreadLocal<Priority?>()
 
+    /**
+     * Returns the current priority on this thread, or [Priority.USER_FOREGROUND]
+     * if no priority is set. The fallback is deliberately the *non-bypassing*
+     * choice: an unset priority must NEVER silently skip the rate-limit /
+     * cooldown gates.
+     */
+    fun currentOrDefault(): Priority = current.get() ?: Priority.USER_FOREGROUND
+
+    /**
+     * Run [block] with [priority] as the current thread's priority, restoring
+     * the prior value on exit (even if [block] throws). LIFO-stack semantics:
+     * nested [with] calls are well-defined.
+     */
     inline fun <T> with(priority: Priority, block: () -> T): T {
         val prior = current.get()
         current.set(priority)

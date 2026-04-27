@@ -61,6 +61,11 @@ class GlobalNewPipeRateLimiter @VisibleForTesting internal constructor(
      *
      * A [timeoutMs] of `0L` is "non-blocking" — return immediately based
      * on whether a token is available right now.
+     *
+     * Wait granularity: the per-iteration delay is floored at [MIN_WAIT_MS]
+     * (50 ms) to avoid sub-tick busy-spinning. This means a tight [timeoutMs]
+     * under 50 ms may take up to ~50 ms to return `false`; tight deadlines
+     * are best-effort, not exact.
      */
     suspend fun acquire(
         priority: Priority,
