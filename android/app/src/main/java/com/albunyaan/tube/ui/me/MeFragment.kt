@@ -326,13 +326,22 @@ class MeFragment : Fragment(R.layout.fragment_me) {
         // if extraction fails). MeFeedVideo doesn't carry a description
         // (ATOM doesn't expose it; NewPipe deep-paging returns it but we
         // don't currently capture it) so we pass empty string.
+        // Round 8 fixes:
+        //   - PlayerFragment.kt:374 reads `getInt("durationSeconds")`. We
+        //     were calling `putLong` — Bundle silently returns 0 on a
+        //     type mismatch. Use `putInt` and convert.
+        //   - "description" was passed as "" — non-null, so the player's
+        //     `description ?: getString(R.string.player_no_description)`
+        //     showed an empty block. Don't pass at all → player gets null
+        //     → falls back to placeholder until NewPipe extraction lands.
+        //   - "thumbnailUrl" similarly: don't pass empty strings, let null
+        //     drive the placeholder.
         val args = Bundle().apply {
             putString("videoId", video.videoId)
             putString("title", video.title)
             putString("channelName", video.channelName)
-            putString("thumbnailUrl", video.thumbnailUrl ?: "")
-            putString("description", "")
-            putLong("durationSeconds", video.durationSeconds ?: 0L)
+            video.thumbnailUrl?.takeIf { it.isNotBlank() }?.let { putString("thumbnailUrl", it) }
+            putInt("durationSeconds", (video.durationSeconds ?: 0L).toInt())
             putLong("viewCount", video.viewCount ?: -1L)
         }
         if (findNavController().currentDestination?.id == R.id.meFragment) {
@@ -343,17 +352,15 @@ class MeFragment : Fragment(R.layout.fragment_me) {
     /** T10: tile click → open the player with the favorite's videoId. */
     private fun playFavorite(item: FavoriteVideo) {
         if (item.videoId.isBlank()) return
-        // Round 8: same metadata bundle so the player has something to show
-        // immediately. FavoriteVideo carries title, channelName,
-        // thumbnailUrl, durationSeconds — pass all available; description
-        // and viewCount are not stored on FavoriteVideo so we pass empty/-1.
+        // Same fixes as playVideo: durationSeconds as Int, omit empty
+        // thumbnailUrl/description so the player falls back to placeholders
+        // and lets NewPipe extraction fill the real values.
         val args = Bundle().apply {
             putString("videoId", item.videoId)
             putString("title", item.title)
             putString("channelName", item.channelName)
-            putString("thumbnailUrl", item.thumbnailUrl ?: "")
-            putString("description", "")
-            putLong("durationSeconds", item.durationSeconds.toLong())
+            item.thumbnailUrl?.takeIf { it.isNotBlank() }?.let { putString("thumbnailUrl", it) }
+            putInt("durationSeconds", item.durationSeconds)
             putLong("viewCount", -1L)
         }
         if (findNavController().currentDestination?.id == R.id.meFragment) {
