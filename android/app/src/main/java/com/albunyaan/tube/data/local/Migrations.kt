@@ -57,14 +57,41 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
  * Additive only — every new column is nullable or has a `DEFAULT 0`, so
  * existing rows continue to work and the migration is trivially reversible.
  * See [ChannelFeedRefreshState] for column-level documentation.
+ *
+ * ANDROID-PERSONAL-03 round 5 [field-bug]: an older revision of
+ * [MIGRATION_1_2] shipped without creating `channel_feed_refresh_state`
+ * (the table was added later, but devices that migrated through the old
+ * 1→2 path don't have it). On those devices the v2 schema is missing this
+ * table entirely, and a naive `ALTER TABLE ... ADD COLUMN` crashes with
+ * `no such table`. We self-heal: if the table is missing, create it with
+ * the full v3 column list; otherwise apply the additive ALTERs as before.
  */
 val MIGRATION_2_3 = object : Migration(2, 3) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        db.execSQL("ALTER TABLE channel_feed_refresh_state ADD COLUMN etag TEXT")
-        db.execSQL("ALTER TABLE channel_feed_refresh_state ADD COLUMN lastModified TEXT")
-        db.execSQL("ALTER TABLE channel_feed_refresh_state ADD COLUMN consecutiveErrorCount INTEGER NOT NULL DEFAULT 0")
-        db.execSQL("ALTER TABLE channel_feed_refresh_state ADD COLUMN consecutiveEmptyCount INTEGER NOT NULL DEFAULT 0")
-        db.execSQL("ALTER TABLE channel_feed_refresh_state ADD COLUMN backoffUntilMs INTEGER")
+        val tableExists = db.query(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='channel_feed_refresh_state'"
+        ).use { it.moveToFirst() }
+        if (!tableExists) {
+            db.execSQL(
+                """CREATE TABLE channel_feed_refresh_state (
+                    channelId TEXT NOT NULL PRIMARY KEY,
+                    lastSuccessfulFetchAt INTEGER NOT NULL,
+                    lastAttemptAt INTEGER NOT NULL,
+                    lastErrorMessage TEXT,
+                    etag TEXT,
+                    lastModified TEXT,
+                    consecutiveErrorCount INTEGER NOT NULL DEFAULT 0,
+                    consecutiveEmptyCount INTEGER NOT NULL DEFAULT 0,
+                    backoffUntilMs INTEGER
+                )"""
+            )
+        } else {
+            db.execSQL("ALTER TABLE channel_feed_refresh_state ADD COLUMN etag TEXT")
+            db.execSQL("ALTER TABLE channel_feed_refresh_state ADD COLUMN lastModified TEXT")
+            db.execSQL("ALTER TABLE channel_feed_refresh_state ADD COLUMN consecutiveErrorCount INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE channel_feed_refresh_state ADD COLUMN consecutiveEmptyCount INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE channel_feed_refresh_state ADD COLUMN backoffUntilMs INTEGER")
+        }
     }
 }
 
@@ -79,7 +106,31 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
  */
 val MIGRATION_3_4 = object : Migration(3, 4) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        db.execSQL("ALTER TABLE channel_feed_refresh_state ADD COLUMN deepPageUrl TEXT")
-        db.execSQL("ALTER TABLE channel_feed_refresh_state ADD COLUMN deepPageCookiesJson TEXT")
+        // Defensive (mirrors MIGRATION_2_3 self-heal): if the table is
+        // somehow still missing on a v3 install, recreate it with the full
+        // v4 schema so the ALTERs below would be no-ops.
+        val tableExists = db.query(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='channel_feed_refresh_state'"
+        ).use { it.moveToFirst() }
+        if (!tableExists) {
+            db.execSQL(
+                """CREATE TABLE channel_feed_refresh_state (
+                    channelId TEXT NOT NULL PRIMARY KEY,
+                    lastSuccessfulFetchAt INTEGER NOT NULL,
+                    lastAttemptAt INTEGER NOT NULL,
+                    lastErrorMessage TEXT,
+                    etag TEXT,
+                    lastModified TEXT,
+                    consecutiveErrorCount INTEGER NOT NULL DEFAULT 0,
+                    consecutiveEmptyCount INTEGER NOT NULL DEFAULT 0,
+                    backoffUntilMs INTEGER,
+                    deepPageUrl TEXT,
+                    deepPageCookiesJson TEXT
+                )"""
+            )
+        } else {
+            db.execSQL("ALTER TABLE channel_feed_refresh_state ADD COLUMN deepPageUrl TEXT")
+            db.execSQL("ALTER TABLE channel_feed_refresh_state ADD COLUMN deepPageCookiesJson TEXT")
+        }
     }
 }
