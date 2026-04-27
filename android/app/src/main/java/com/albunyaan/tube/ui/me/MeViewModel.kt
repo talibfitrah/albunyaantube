@@ -101,29 +101,50 @@ class MeViewModel @Inject constructor(
      */
     fun loadNextWeek() {
         if (reachedEndState.value) return
-        // Don't restart if a load is already running.
         if (loadJob?.isActive == true) return
         loadJob = viewModelScope.launch {
             isLoadingMoreWeeksState.value = true
             try {
                 val startIndex = (weeksState.value.lastOrNull()?.weekIndex ?: -1) + 1
-                var i = startIndex
-                while (i <= WeekBucket.MAX_WEEKS_BACK) {
-                    // First try a cache-only read.
-                    var content = feed.observeWeek(i).first()
-                    if (content == null) {
-                        // Cache miss — try to fill via NewPipe deep paging.
-                        feed.fillWeekIfNeeded(i)
-                        content = feed.observeWeek(i).first()
-                    }
-                    if (content != null) {
-                        weeksState.value = weeksState.value + content
-                        return@launch
-                    }
-                    i += 1
+                if (startIndex > WeekBucket.MAX_WEEKS_BACK) {
+                    reachedEndState.value = true
+                    return@launch
                 }
-                // Walked past the cap without finding a non-empty week.
-                reachedEndState.value = true
+                // ANDROID-PERSONAL-03 round 5: jump-to-next-non-empty-week.
+                // The previous loop incremented i one week at a time, firing a
+                // deep-page round at every empty week — so a channel whose
+                // newest post is 26 weeks old took 25 sequential rounds to
+                // surface. Now we ask the repository where the next non-empty
+                // week is in the cache, fire ONE deep-page round if the cache
+                // is empty in that range, then re-ask. The deep-paginator
+                // returns ~30 items per channel, which usually populate
+                // multiple far-apart weeks at once — and we jump directly to
+                // the earliest one rather than walking through gaps.
+                var hit = feed.findNextNonEmptyWeekIndex(startIndex)
+                if (hit == null) {
+                    // Cache empty across [startIndex, MAX_WEEKS_BACK]. Fire one
+                    // round of deep-paging — `fillWeekIfNeeded` candidates
+                    // every channel that has no item in week=startIndex (and
+                    // hasn't hit EOF), so a single call typically pulls back
+                    // ~30 items per active channel from arbitrary older weeks.
+                    feed.fillWeekIfNeeded(startIndex)
+                    hit = feed.findNextNonEmptyWeekIndex(startIndex)
+                }
+                if (hit == null) {
+                    // No content in any week >= startIndex even after deep-paging.
+                    // All eligible channels exhausted (or returned nothing useful).
+                    reachedEndState.value = true
+                    return@launch
+                }
+                val content = feed.observeWeek(hit).first()
+                if (content != null) {
+                    weeksState.value = weeksState.value + content
+                } else {
+                    // Race: cache changed between findNextNonEmptyWeekIndex and
+                    // observeWeek (e.g., user unsubscribed mid-flow). Retry
+                    // once on next user scroll rather than infinite-looping.
+                    reachedEndState.value = false
+                }
             } finally {
                 isLoadingMoreWeeksState.value = false
             }

@@ -98,6 +98,25 @@ class MeFeedRepository @Inject constructor(
         // tab fetches and still keeps the worst-case Me-open within 15 s.
         const val PER_CHANNEL_TIMEOUT_MS: Long = 15_000L
 
+        /**
+         * ANDROID-PERSONAL-03 round 5 [field-bug]: NewPipe channel deep-paging
+         * goes through [com.albunyaan.tube.data.extractor.RateLimitedDownloader]
+         * with `Priority.USER_FOREGROUND` (not PLAYER, so it IS gated).
+         * The token bucket is 20 tokens / 30 s refill, so worst case the 11th
+         * concurrent caller waits ~15 s for a token before the HTTP call
+         * even fires. Plus actual extraction time (~3-5 s). [PER_CHANNEL_TIMEOUT_MS]
+         * = 15 s expires the entire window — including the rate-limiter wait —
+         * before NewPipe gets a chance, so users see "loading… retry" loops on
+         * channel scrapes that always succeeded pre-T7.
+         *
+         * 60 s gives the rate limiter room to drain + the HTTP call room to
+         * complete. Auto-retry behaviour unchanged: a real network timeout
+         * still returns [ChannelDeepPaginator.DeepPageResult.Error], the
+         * channel is NOT marked exhausted, and the next [fillWeekIfNeeded]
+         * iteration retries.
+         */
+        const val DEEP_PAGE_TIMEOUT_MS: Long = 60_000L
+
         // T9: per-channel exponential backoff (ATOM refresh, spec §5/§6).
         // 429 ladder: 1h → 4h → 24h. Each consecutive 429 advances one
         // step. Index = (consecutiveErrorCount - 1).coerceAtMost(2).
@@ -251,6 +270,51 @@ class MeFeedRepository @Inject constructor(
      *
      * No-op if [deepPaginator] was not injected (test fixtures).
      */
+    /**
+     * ANDROID-PERSONAL-03 round 5: scan the cache and return the smallest
+     * weekIndex >= [fromIndex] (and <= [maxIndex]) that has at least one
+     * cached item across the user's subscribed channels.
+     *
+     * Why: a channel that last posted ~6 months ago has its content in
+     * (e.g.) week 26. The naive `loadNextWeek` walked weeks 0, 1, 2…
+     * one-by-one, firing a deep-page round at each empty week, so
+     * surfacing that channel's content took 25+ sequential rounds. With
+     * this helper, after [fillWeekIfNeeded] populates the cache, the
+     * ViewModel can jump directly to the earliest week that now has
+     * content — skipping all the empty intermediate weeks.
+     *
+     * Returns null if no cached item maps to a week in `[fromIndex, maxIndex]`.
+     */
+    suspend fun findNextNonEmptyWeekIndex(
+        fromIndex: Int,
+        maxIndex: Int = WeekBucket.MAX_WEEKS_BACK,
+    ): Int? = withContext(ioDispatcher) {
+        if (fromIndex > maxIndex) return@withContext null
+        val now = currentTimeMillis()
+        val all = subscriptions.getSubscribedChannels()
+        if (all.isEmpty()) return@withContext null
+        val channelIds = all.asSequence()
+            .sortedByDescending { it.subscribedAt }
+            .take(MAX_CHANNELS_PER_REFRESH)
+            .map { it.channelId }
+            .toList()
+        // Pull the full window: from start-of-maxIndex+1 to start-of-fromIndex.
+        // Items uploaded inside that range are exactly the ones whose week
+        // bucket falls in [fromIndex, maxIndex].
+        val windowEnd = WeekBucket.forIndex(fromIndex, now).endMs   // most recent
+        val windowStart = WeekBucket.forIndex(maxIndex, now).startMs // oldest
+        val rows = cache
+            .observeRangeForChannels(channelIds, windowStart, windowEnd)
+            .first()
+        if (rows.isEmpty()) return@withContext null
+        // The most recent uploadedAt determines the EARLIEST non-empty bucket.
+        val newest = rows.maxOfOrNull { it.uploadedAt ?: 0L } ?: return@withContext null
+        if (newest <= 0L) return@withContext null
+        val ageMs = (now - newest).coerceAtLeast(0L)
+        val weekIndex = (ageMs / WeekBucket.WEEK_MS).toInt().coerceIn(fromIndex, maxIndex)
+        weekIndex
+    }
+
     suspend fun fillWeekIfNeeded(weekIndex: Int): Unit = withContext(ioDispatcher) {
         val paginator = deepPaginator ?: return@withContext
         val now = currentTimeMillis()
@@ -332,7 +396,11 @@ class MeFeedRepository @Inject constructor(
             }
 
         val result = try {
-            withTimeout(PER_CHANNEL_TIMEOUT_MS) {
+            // Round 5 fix: deep-paging uses DEEP_PAGE_TIMEOUT_MS (60s),
+            // NOT the ATOM-sized PER_CHANNEL_TIMEOUT_MS (15s). The
+            // RateLimitedDownloader sits in the middle of NewPipe's HTTP
+            // call and can hold the call for >15 s waiting for a token.
+            withTimeout(DEEP_PAGE_TIMEOUT_MS) {
                 paginator.fetchNextPage(channel.channelUrl, token)
             }
         } catch (ce: CancellationException) {
