@@ -12,6 +12,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -242,5 +243,63 @@ class RateLimitedDownloaderTest {
         assertEquals(0, delegate.callCount)
         // No cooldown trip recorded (rate-limit timeout is not a 429 / captcha).
         assertNull(runBlocking { cooldown.untilMs() })
+    }
+
+    /**
+     * ANDROID-PERSONAL-02 [Bug 2]: TOCTOU race between the initial cooldown
+     * check and the rate-limiter acquire return.
+     *
+     * Sequence under test:
+     *  1. Caller sees `isTrippedSync()=false` at the top of `execute()`.
+     *  2. Caller suspends in `rateLimiter.acquire(priority)`.
+     *  3. WHILE suspended, another path calls `cooldownState.trip(...)`
+     *     (here simulated by tripping the same `cooldown` instance from
+     *     inside the mock's `acquire` answer).
+     *  4. `acquire` returns `true`.
+     *  5. *Without* the fix, `delegate.execute(...)` would now be called
+     *     and a request would hit YouTube during an active cooldown.
+     *  6. *With* the fix, the second `isTrippedSync()` check after acquire
+     *     observes the trip and throws an [IOException] — no delegate call.
+     *
+     * Implementation note: we stub `limiter.acquire(...)` with a side-effect
+     * that trips the cooldown before returning `true`. This deterministically
+     * places the trip in the window between the two checks without needing
+     * a real second thread.
+     */
+    @Test
+    fun cooldown_tripped_during_rate_limiter_acquire_short_circuits_delegate() = runTest {
+        // The mock's acquire trips the cooldown then returns true,
+        // simulating a concurrent caller that observed a 429 during the
+        // first caller's acquire wait.
+        wheneverBlocking { limiter.acquire(any(), any()) }.thenAnswer {
+            runBlocking { cooldown.trip(IOException("concurrent 429")) }
+            true
+        }
+        delegate.nextResponse = ok()
+        val sut = RateLimitedDownloader(delegate, limiter, cooldown)
+
+        // The execute call must throw because the cooldown was tripped while
+        // we were suspended in acquire.
+        val thrown = NewPipePriorityContext.with(Priority.USER_FOREGROUND) {
+            assertThrows(IOException::class.java) {
+                sut.execute(newRequest())
+            }
+        }
+        // The error message must clearly indicate the TOCTOU branch fired,
+        // not the initial-check branch — so a regression that drops the
+        // second isTrippedSync check would surface a different message.
+        assertTrue(
+            "expected post-acquire cooldown error, got: ${thrown.message}",
+            thrown.message?.contains("while awaiting rate limiter token") == true,
+        )
+        // Critical: the delegate must NOT have been called even though
+        // acquire returned true — the second isTrippedSync gate stopped us.
+        assertEquals(
+            "delegate must not be reached when cooldown trips during acquire",
+            0,
+            delegate.callCount,
+        )
+        // The cooldown is recorded (the simulated concurrent 429 took effect).
+        assertNotNull(runBlocking { cooldown.untilMs() })
     }
 }

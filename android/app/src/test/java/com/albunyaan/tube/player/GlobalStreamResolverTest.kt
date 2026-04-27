@@ -1,5 +1,6 @@
 package com.albunyaan.tube.player
 
+import com.albunyaan.tube.data.extractor.Priority
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
@@ -10,6 +11,7 @@ import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Unit tests for GlobalStreamResolver.
@@ -393,6 +395,76 @@ class GlobalStreamResolverTest {
         gate.complete(Unit)
     }
 
+    // --- Priority Propagation Tests (ANDROID-PERSONAL-02 [Bug 1]) ---
+
+    /**
+     * Verifies that the [Priority.PLAYER] passed by [DefaultPlayerRepository]
+     * actually reaches the [StreamResolutionProvider] — not the prior
+     * hardcoded value. This is the live-playback bypass path: PLAYER
+     * skips the rate-limit + cooldown gates per spec D1.
+     */
+    @Test
+    fun `PLAYER priority is forwarded to the provider`() = runTest {
+        fakeProvider.setResult("video1", createMockStreams("video1"))
+
+        resolver.resolveStreams(
+            videoId = "video1",
+            caller = "player",
+            priority = Priority.PLAYER,
+        )
+
+        assertEquals(
+            "Provider must observe Priority.PLAYER when caller declared PLAYER",
+            Priority.PLAYER,
+            fakeProvider.getObservedPriority("video1"),
+        )
+    }
+
+    /**
+     * Verifies that the [Priority.USER_FOREGROUND] passed by
+     * [com.albunyaan.tube.player.StreamPrefetchService] (and the default
+     * for any forgotten caller) reaches the provider — closing the bug
+     * where prefetch silently rode the PLAYER bypass.
+     */
+    @Test
+    fun `USER_FOREGROUND priority is forwarded to the provider`() = runTest {
+        fakeProvider.setResult("video2", createMockStreams("video2"))
+
+        resolver.resolveStreams(
+            videoId = "video2",
+            caller = "prefetch",
+            priority = Priority.USER_FOREGROUND,
+        )
+
+        assertEquals(
+            "Provider must observe Priority.USER_FOREGROUND when caller declared USER_FOREGROUND",
+            Priority.USER_FOREGROUND,
+            fakeProvider.getObservedPriority("video2"),
+        )
+    }
+
+    /**
+     * Default priority is fail-closed — a caller who forgets to pass
+     * `priority = ...` goes through the gates rather than silently
+     * bypassing them. Documents the API contract.
+     */
+    @Test
+    fun `default priority is USER_FOREGROUND`() = runTest {
+        fakeProvider.setResult("video3", createMockStreams("video3"))
+
+        // Note: NO `priority = ...` argument supplied.
+        resolver.resolveStreams(
+            videoId = "video3",
+            caller = "forgot-to-set",
+        )
+
+        assertEquals(
+            "Default priority must be USER_FOREGROUND (fail-closed)",
+            Priority.USER_FOREGROUND,
+            fakeProvider.getObservedPriority("video3"),
+        )
+    }
+
     // --- Test Helpers ---
 
     private fun createMockStreams(id: String): ResolvedStreams {
@@ -407,13 +479,19 @@ class GlobalStreamResolverTest {
 
     /**
      * Fake resolution provider for testing.
-     * Allows controlling when extractions complete using gates.
+     * Allows controlling when extractions complete using gates and
+     * captures the [Priority] handed to the provider on each call so
+     * tests can assert priority propagation (ANDROID-PERSONAL-02 [Bug 1]).
      */
     private class FakeResolutionProvider : StreamResolutionProvider {
         private val gates = mutableMapOf<String, CompletableDeferred<Unit>>()
         private val results = mutableMapOf<String, ResolvedStreams?>()
         private val callCounts = mutableMapOf<String, AtomicInteger>()
         private val extractionStarted = mutableMapOf<String, CompletableDeferred<Unit>>()
+        // Last priority observed by the provider for each videoId.
+        // AtomicReference is overkill for the in-test single-thread case
+        // but cheap and correct under StandardTestDispatcher.
+        private val observedPriorities = mutableMapOf<String, AtomicReference<Priority?>>()
 
         fun setGate(videoId: String, gate: CompletableDeferred<Unit>) {
             gates[videoId] = gate
@@ -435,8 +513,17 @@ class GlobalStreamResolverTest {
             return callCounts[videoId]?.get() ?: 0
         }
 
-        override suspend fun resolveStreams(videoId: String, forceRefresh: Boolean): ResolvedStreams? {
+        fun getObservedPriority(videoId: String): Priority? {
+            return observedPriorities[videoId]?.get()
+        }
+
+        override suspend fun resolveStreams(
+            videoId: String,
+            forceRefresh: Boolean,
+            priority: Priority,
+        ): ResolvedStreams? {
             callCounts.getOrPut(videoId) { AtomicInteger(0) }.incrementAndGet()
+            observedPriorities.getOrPut(videoId) { AtomicReference<Priority?>(null) }.set(priority)
             extractionStarted[videoId]?.complete(Unit)
             gates[videoId]?.await()
             return results[videoId]

@@ -18,11 +18,13 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
@@ -280,39 +282,62 @@ class MeFeedRepository @Inject constructor(
                     priorLastModified = previous?.lastModified,
                 )
             }
-        } catch (toc: TimeoutCancellationException) {
-            // Per-channel timeout is a soft, network-flake failure — record
-            // lastErrorMessage + lastAttemptAt and keep the existing cache.
-            // T9: timeouts do NOT increment consecutiveErrorCount. They are
-            // ambient network jitter, not a server-side rejection signal —
-            // escalating backoff on every transient timeout would push every
-            // user onto a 24h cooldown after a couple of bad mobile packets.
-            // Counters/etag/lastModified/backoffUntilMs are preserved from prior.
-            refreshStateDao.upsert(
-                previous?.copy(
-                    lastAttemptAt = now,
-                    lastErrorMessage = "timeout after ${PER_CHANNEL_TIMEOUT_MS}ms",
-                ) ?: ChannelFeedRefreshState(
-                    channelId = channel.channelId,
-                    lastSuccessfulFetchAt = 0L,
-                    lastAttemptAt = now,
-                    lastErrorMessage = "timeout after ${PER_CHANNEL_TIMEOUT_MS}ms",
-                )
-            )
-            telemetry.emit(
-                MeRefreshTelemetry.Event.MeChannelFetched(
-                    timestampMs = now,
-                    channelId = channel.channelId,
-                    itemsCount = 0,
-                    latencyMs = (System.nanoTime() - startNs) / 1_000_000L,
-                    outcome = MeRefreshTelemetry.ChannelOutcome.TIMEOUT,
-                )
-            )
-            return
         } catch (ce: CancellationException) {
-            // F6: never swallow cancellation — it must propagate to the
-            // enclosing coroutineScope so the semaphore permit is released
-            // and the parent job observes the cancel.
+            // ANDROID-PERSONAL-02 [Bug 3]: distinguish OUTER cancellation
+            // (worker timeout / scope cancellation) from the INNER
+            // [withTimeout(PER_CHANNEL_TIMEOUT_MS)] firing.
+            //
+            // Why this matters: the prior code caught
+            // [TimeoutCancellationException] *before* [CancellationException],
+            // which meant any TCE — even one synthesised by an outer
+            // [withTimeout] in [RefreshSubscriptionsWorker.doWork] — was
+            // absorbed into the soft "per-channel timeout" branch. The
+            // worker would then continue iterating channels for as long as
+            // its outer timeout permitted, defeating the cancellation
+            // contract.
+            //
+            // Now: if the surrounding scope is no longer active (parent was
+            // cancelled), re-throw immediately so structured concurrency
+            // observes the cancel and the semaphore permit is released
+            // (F6). Only when we're STILL active is the CE the inner
+            // withTimeout firing — that's the genuine per-channel network
+            // jitter case the soft-timeout branch was designed for.
+            if (!currentCoroutineContext().isActive) throw ce
+            if (ce is TimeoutCancellationException) {
+                // Per-channel timeout is a soft, network-flake failure —
+                // record lastErrorMessage + lastAttemptAt and keep the
+                // existing cache. T9: timeouts do NOT increment
+                // consecutiveErrorCount. They are ambient network jitter,
+                // not a server-side rejection signal — escalating backoff
+                // on every transient timeout would push every user onto a
+                // 24h cooldown after a couple of bad mobile packets.
+                // Counters/etag/lastModified/backoffUntilMs are preserved.
+                refreshStateDao.upsert(
+                    previous?.copy(
+                        lastAttemptAt = now,
+                        lastErrorMessage = "timeout after ${PER_CHANNEL_TIMEOUT_MS}ms",
+                    ) ?: ChannelFeedRefreshState(
+                        channelId = channel.channelId,
+                        lastSuccessfulFetchAt = 0L,
+                        lastAttemptAt = now,
+                        lastErrorMessage = "timeout after ${PER_CHANNEL_TIMEOUT_MS}ms",
+                    )
+                )
+                telemetry.emit(
+                    MeRefreshTelemetry.Event.MeChannelFetched(
+                        timestampMs = now,
+                        channelId = channel.channelId,
+                        itemsCount = 0,
+                        latencyMs = (System.nanoTime() - startNs) / 1_000_000L,
+                        outcome = MeRefreshTelemetry.ChannelOutcome.TIMEOUT,
+                    )
+                )
+                return
+            }
+            // Defensive: a non-TCE CancellationException with the scope
+            // still active is unexpected (e.g. a bare `throw ce` from a
+            // misbehaving fetcher). F6 says never swallow cancellation —
+            // re-throw and let the parent decide.
             throw ce
         } catch (t: Throwable) {
             // T9: hard error path. Increment consecutiveErrorCount and

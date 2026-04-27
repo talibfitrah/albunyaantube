@@ -24,7 +24,11 @@ import java.io.IOException
  *    bridge with internal [runBlocking]); if tripped, throw [IOException]
  *    without consulting the rate limiter or delegate. Otherwise acquire from
  *    the bucket via [GlobalNewPipeRateLimiter.acquire] and only delegate to
- *    [OkHttpDownloader] on success.
+ *    [OkHttpDownloader] on success. After the acquire returns we **re-check**
+ *    the cooldown state — between the initial check and the acquire, another
+ *    caller may have observed a 429 and tripped the cooldown; without this
+ *    second read we would race past a fresh trip and hit YouTube during an
+ *    active cooldown (ANDROID-PERSONAL-02 [Bug 2]).
  *
  * Trip triggers (non-Player only):
  *  - [ReCaptchaException] from the delegate → [CooldownState.trip] then
@@ -66,6 +70,25 @@ class RateLimitedDownloader @Inject constructor(
             val acquired = runBlocking { rateLimiter.acquire(priority) }
             if (!acquired) {
                 throw IOException("NewPipe rate limiter timeout")
+            }
+            // ANDROID-PERSONAL-02 [Bug 2]: TOCTOU re-check after acquiring
+            // a token. Caller A may have read isTrippedSync()=false at the
+            // top, then suspended in `rateLimiter.acquire(priority)`. While
+            // suspended, Caller B observed an HTTP 429 and called
+            // `cooldownState.trip(...)`. When Caller A's acquire returns,
+            // its request would otherwise hit YouTube during an active
+            // cooldown — exactly what spec D1 / spec §4.6 forbid.
+            //
+            // The same `cooldownState` instance is consulted, so this
+            // re-check sees Caller B's trip immediately. We use
+            // `isTrippedSync()` (not the suspending variant) to keep the
+            // synchronous Downloader.execute contract — runBlocking is
+            // already in use throughout this class for the same reason.
+            if (cooldownState.isTrippedSync()) {
+                throw IOException(
+                    "NewPipe cooldown tripped while awaiting rate limiter token; " +
+                        "active until ${runBlocking { cooldownState.untilMs() }}"
+                )
             }
         }
 

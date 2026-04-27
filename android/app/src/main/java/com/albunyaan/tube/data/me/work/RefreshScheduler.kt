@@ -11,6 +11,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import com.albunyaan.tube.data.local.ChannelFeedRefreshStateDao
+import com.albunyaan.tube.data.subscriptions.SubscriptionRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -36,6 +37,11 @@ import java.util.concurrent.TimeUnit
 class RefreshScheduler @Inject constructor(
     @ApplicationContext private val ctx: Context,
     private val refreshStateDao: ChannelFeedRefreshStateDao,
+    // ANDROID-PERSONAL-02 [Bug 4]: needed to detect brand-new subscriptions
+    // that have no refresh-state row yet. The MAX(lastSuccessfulFetchAt)
+    // query alone cannot see those channels — they must be fetched
+    // immediately on the next app foreground, not after a periodic tick.
+    private val subscriptionRepository: SubscriptionRepository,
 ) {
     /**
      * Idempotently arm the hourly periodic worker. Safe to call from
@@ -63,14 +69,34 @@ class RefreshScheduler @Inject constructor(
     }
 
     /**
-     * Foreground burst: only fire a one-shot when the newest successful
-     * fetch across all channels is older than [staleThresholdMs]. The
-     * default of 30 minutes matches [com.albunyaan.tube.data.me.MeFeedRepository.CACHE_TTL_MS]
-     * so the burst is exactly what the TTL gate would have allowed anyway.
+     * Foreground burst: fire a one-shot when EITHER
+     *   (a) the newest successful fetch across all channels is older than
+     *       [staleThresholdMs], or
+     *   (b) some subscribed channel has no refresh-state row at all
+     *       (brand-new subscription that the MAX query above cannot see).
+     *
+     * The default of 30 minutes matches
+     * [com.albunyaan.tube.data.me.MeFeedRepository.CACHE_TTL_MS] so the
+     * stale-MAX branch is exactly what the TTL gate would have allowed
+     * anyway. Branch (b) closes ANDROID-PERSONAL-02 [Bug 4]: without it,
+     * a fresh subscribe paired with a recently-fetched older channel
+     * would defer the new channel's first fetch until the next periodic
+     * tick (up to 60 minutes).
      */
     suspend fun enqueueForegroundBurstIfStale(staleThresholdMs: Long = DEFAULT_STALE_THRESHOLD_MS) {
         val newest = refreshStateDao.maxLastSuccessfulFetchAt() ?: 0L
-        if (System.currentTimeMillis() - newest < staleThresholdMs) return
+        val maxStale = System.currentTimeMillis() - newest >= staleThresholdMs
+        // ANDROID-PERSONAL-02 [Bug 4]: detect un-fetched subscriptions.
+        // Cheaper than enumerating subscribed channels and joining against
+        // the refresh-state set — we just compare counts. If any
+        // subscribed channel is missing a row, count(known_states) is
+        // strictly less than count(subscribed).
+        val hasNewChannel = !maxStale && run {
+            val knownCount = refreshStateDao.knownChannelCount()
+            val subscribedCount = subscriptionRepository.getSubscribedChannels().size
+            knownCount < subscribedCount
+        }
+        if (!maxStale && !hasNewChannel) return
         val request = OneTimeWorkRequestBuilder<RefreshSubscriptionsWorker>()
             .setConstraints(
                 Constraints.Builder()

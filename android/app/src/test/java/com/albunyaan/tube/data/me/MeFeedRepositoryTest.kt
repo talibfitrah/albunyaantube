@@ -763,6 +763,90 @@ class MeFeedRepositoryTest {
     // in MeFeedRepository.refreshOne. The instrumented test in T12 will
     // exercise this against the real OkHttp client + a slow MockWebServer.
 
+    /**
+     * ANDROID-PERSONAL-02 [Bug 3]: an OUTER cancellation (e.g. the
+     * worker's [withTimeout(WORKER_TIMEOUT_MS)] firing while a fetcher is
+     * still suspended in its inner per-channel withTimeout) must propagate
+     * — it must NOT be absorbed into the soft "per-channel timeout"
+     * branch.
+     *
+     * Without the fix, [TimeoutCancellationException] caught before the
+     * generic [CancellationException] would route ANY TCE through the
+     * timeout branch, including the outer cancellation that descends into
+     * the inner withTimeout block as a TCE on the same scope.
+     *
+     * Construction: install a fetcher that suspends indefinitely. Wrap
+     * [refresh] in a small outer [withTimeout]. The outer timeout fires
+     * → parent scope cancels → the cancellation reaches the fetcher's
+     * `delay` and surfaces as a CE inside refreshOne's catch. With the
+     * fix, `currentCoroutineContext().isActive` is false → re-throw → the
+     * outer withTimeout sees the propagation. The refresh-state row is
+     * either absent (cancelled before write) or, at minimum, NOT marked
+     * with the soft "timeout after ..." error message.
+     */
+    @Test
+    fun `Bug 3 outer cancellation propagates and does not mark per-channel timeout`() = runTest {
+        subscribe("UC1")
+        val hangingFetcher = object : ChannelFeedFetcher {
+            override suspend fun fetchLatest(
+                channelUrl: String,
+                priorEtag: String?,
+                priorLastModified: String?,
+            ): ChannelFeedFetcher.FetchResult {
+                // Sleep far longer than the outer withTimeout below.
+                kotlinx.coroutines.delay(60L * 60L * 1_000L)
+                return ChannelFeedFetcher.FetchResult.Items(emptyList(), null, null)
+            }
+        }
+        val repoH = MeFeedRepository(
+            subscriptions = subs,
+            cache = db.channelVideoCacheDao(),
+            refreshStateDao = db.channelFeedRefreshStateDao(),
+            fetcher = hangingFetcher,
+            ioDispatcher = StandardTestDispatcher(testScheduler),
+            telemetry = MeRefreshTelemetry(),
+        ).also { it.currentTimeMillisProvider = { clockMillis } }
+
+        var caught: Throwable? = null
+        try {
+            kotlinx.coroutines.withTimeout(50L) {
+                repoH.refresh(force = true)
+            }
+        } catch (t: Throwable) {
+            caught = t
+        }
+        // (a) The outer cancellation propagated — the test observed it,
+        // not a swallowed soft-timeout.
+        assertTrue(
+            "outer cancellation must surface to caller (got ${caught?.javaClass?.simpleName})",
+            caught is kotlinx.coroutines.CancellationException,
+        )
+        // (b) The refresh-state row was NOT marked with the soft
+        // "timeout after ..." message that the per-channel timeout branch
+        // writes. Either no row exists yet (cancelled before write) or
+        // the existing row's lastErrorMessage is null/non-timeout.
+        val state = db.channelFeedRefreshStateDao().get("UC1")
+        if (state != null) {
+            val msg = state.lastErrorMessage
+            assertTrue(
+                "outer cancellation must not be recorded as a per-channel timeout (msg=$msg)",
+                msg == null || !msg.contains("timeout after"),
+            )
+        }
+    }
+
+    // Note: a positive-case unit test for "inner per-channel timeout
+    // routes through the soft-timeout branch and preserves prior
+    // counters / etag / lastModified / backoffUntilMs" was scoped out
+    // for the same reason as the original T9 / CR2 flake note above:
+    // advancing virtual time by ~15 s pollutes the CR2 stagger test
+    // sharing the Robolectric sandbox. The behaviour is guaranteed by
+    // inspection — the `if (ce is TimeoutCancellationException)` branch
+    // in refreshOne uses `previous?.copy(...)` so prior counters /
+    // etag / lastModified / backoffUntilMs are preserved by structural
+    // copy. The instrumented test in T12 against the real OkHttp client
+    // + slow MockWebServer exercises this end-to-end.
+
     @Test
     fun `T9 round-robin picks oldest-fetch-first`() = runTest {
         // Seed two channels: UC_OLD has old success, UC_NEW has very recent.

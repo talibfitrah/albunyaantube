@@ -1,6 +1,7 @@
 package com.albunyaan.tube.player
 
 import android.util.Log
+import com.albunyaan.tube.data.extractor.Priority
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -124,11 +125,15 @@ class DefaultStreamPrefetchService @Inject constructor(
         // Phase 1A: Use global resolver - player can join this same job
         serviceScope.launch {
             try {
+                // ANDROID-PERSONAL-02 [Bug 1]: prefetch is NOT real-time playback
+                // — it must respect the rate-limit + cooldown gates so a tripped
+                // cooldown actually halts background work (spec D1).
                 val resolved = globalResolver.resolveStreams(
                     videoId = videoId,
                     forceRefresh = false,
                     timeoutMs = PREFETCH_TIMEOUT_MS,
-                    caller = "prefetch"
+                    caller = "prefetch",
+                    priority = Priority.USER_FOREGROUND,
                 )
                 if (resolved != null) {
                     // Evict oldest results if cache is full (FIFO order)
@@ -186,11 +191,16 @@ class DefaultStreamPrefetchService @Inject constructor(
             Log.d(TAG, "Awaiting in-flight prefetch via GlobalResolver for $videoId")
             val result = withTimeoutOrNull(AWAIT_TIMEOUT_MS) {
                 // Join the in-flight job via global resolver
+                // ANDROID-PERSONAL-02 [Bug 1]: prefetch await path must declare
+                // its own priority. If we're starting (not joining) a resolve
+                // here, USER_FOREGROUND is the safe choice — the player path
+                // calls into PlayerRepository directly, not this method.
                 globalResolver.resolveStreams(
                     videoId = videoId,
                     forceRefresh = false,
                     timeoutMs = AWAIT_TIMEOUT_MS,
-                    caller = "prefetch_await"
+                    caller = "prefetch_await",
+                    priority = Priority.USER_FOREGROUND,
                 )
             }
             // Result may have been stored in prefetchResults by the job, consume it

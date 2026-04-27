@@ -22,9 +22,19 @@ import javax.inject.Singleton
 /**
  * Functional interface for stream resolution.
  * Used by GlobalStreamResolver to enable testing with fakes.
+ *
+ * The [priority] parameter declares which rate-limit / cooldown lane the
+ * caller belongs to (spec §4.5 + D1). The provider is responsible for
+ * setting [NewPipePriorityContext] before invoking NewPipe so the
+ * downstream [com.albunyaan.tube.data.extractor.RateLimitedDownloader]
+ * sees the correct lane.
  */
 fun interface StreamResolutionProvider {
-    suspend fun resolveStreams(videoId: String, forceRefresh: Boolean): ResolvedStreams?
+    suspend fun resolveStreams(
+        videoId: String,
+        forceRefresh: Boolean,
+        priority: Priority,
+    ): ResolvedStreams?
 }
 
 /**
@@ -71,11 +81,16 @@ class GlobalStreamResolver private constructor(
      */
     @Inject
     constructor(extractorClient: NewPipeExtractorClient) : this(
-        // Mark every player-path NewPipe call with [Priority.PLAYER] so
-        // [com.albunyaan.tube.data.extractor.RateLimitedDownloader] bypasses
-        // the rate-limit + cooldown gates (spec D1 — playback must never
-        // block on a refresh-thread bucket and must survive a tripped
-        // cooldown so cached / mid-stream playback can recover).
+        // ANDROID-PERSONAL-02 [Bug 1]: respect the caller-supplied priority
+        // instead of hardcoding [Priority.PLAYER]. Only the real-time
+        // playback path (DefaultPlayerRepository) declares PLAYER and earns
+        // the bypass — prefetch / await-prefetch declare USER_FOREGROUND so
+        // they go through the rate-limit + cooldown gates (spec D1).
+        //
+        // The first-caller's priority sets the in-flight job's effective
+        // priority via this provider lambda; subsequent callers join the
+        // existing Deferred (de-duplication is by-design — see KDoc on
+        // [resolveStreams]).
         //
         // Why the explicit [withContext(Dispatchers.IO)] BEFORE [with]:
         // [NewPipePriorityContext] uses a plain ThreadLocal, so it only
@@ -89,10 +104,11 @@ class GlobalStreamResolver private constructor(
         // would set the ThreadLocal on the wrong thread, the inner IO hop
         // would land on a fresh worker that has no ThreadLocal, and
         // [NewPipePriorityContext.currentOrDefault] would silently fall
-        // back to USER_FOREGROUND — defeating the spec D1 player bypass.
-        StreamResolutionProvider { videoId, forceRefresh ->
+        // back to USER_FOREGROUND — defeating the spec D1 player bypass
+        // for the player path.
+        StreamResolutionProvider { videoId, forceRefresh, priority ->
             withContext(Dispatchers.IO) {
-                NewPipePriorityContext.with(Priority.PLAYER) {
+                NewPipePriorityContext.with(priority) {
                     extractorClient.resolveStreams(videoId, forceRefresh)
                 }
             }
@@ -138,13 +154,27 @@ class GlobalStreamResolver private constructor(
      * @param forceRefresh If true, cancels any in-flight job and forces fresh extraction
      * @param timeoutMs Maximum time to wait for resolution (default 20s)
      * @param caller A tag identifying who is calling (for logging: "prefetch", "player", etc.)
+     * @param priority The rate-limit / cooldown lane this caller belongs to
+     *   (spec §4.5 + D1). Defaults to [Priority.USER_FOREGROUND] which is the
+     *   non-bypassing fail-closed choice — a forgotten caller goes through the
+     *   gates rather than silently bypassing them. Only the live playback
+     *   path supplies [Priority.PLAYER].
+     *
+     *   Note on the join semantics: when a new resolve is started this
+     *   priority is what NewPipe sees on the IO thread. If a *second*
+     *   caller joins an already-in-flight job (de-duplication), the second
+     *   caller inherits the first caller's priority for that job — the
+     *   first caller wins. That's by-design: starting a duplicate
+     *   extraction just to apply a different priority would defeat the
+     *   single-flight contract that this class exists to enforce.
      * @return ResolvedStreams if successful, null on timeout/error
      */
     suspend fun resolveStreams(
         videoId: String,
         forceRefresh: Boolean = false,
         timeoutMs: Long = DEFAULT_TIMEOUT_MS,
-        caller: String = "unknown"
+        caller: String = "unknown",
+        priority: Priority = Priority.USER_FOREGROUND,
     ): ResolvedStreams? {
         // Fast path: check if there's already an in-flight job we can join (only if not forceRefresh)
         // Note: We skip the isActive check since the job state can change immediately after.
@@ -195,10 +225,10 @@ class GlobalStreamResolver private constructor(
             }
 
             // Create new job
-            Log.d(TAG, "[$caller] new resolve for $videoId (forceRefresh=$forceRefresh)")
+            Log.d(TAG, "[$caller] new resolve for $videoId (forceRefresh=$forceRefresh, priority=$priority)")
             val newJob: Deferred<ResolvedStreams?> = resolverScope.async {
                 try {
-                    resolutionProvider.resolveStreams(videoId, forceRefresh)
+                    resolutionProvider.resolveStreams(videoId, forceRefresh, priority)
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
                     Log.e(TAG, "resolveStreams failed for $videoId: ${e.message}")

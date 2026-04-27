@@ -27,6 +27,17 @@ interface ChannelFeedRefreshStateDao {
     suspend fun maxLastSuccessfulFetchAt(): Long?
 
     /**
+     * ANDROID-PERSONAL-02 [Bug 4]: count of channelIds that have a
+     * refresh-state row. Combined with the subscribed-channel count this
+     * lets `RefreshScheduler.enqueueForegroundBurstIfStale` detect
+     * brand-new subscriptions that have never been fetched — those won't
+     * appear in the [maxLastSuccessfulFetchAt] reading at all so the burst
+     * was previously skipped while they sat empty for up to 60 minutes.
+     */
+    @Query("SELECT COUNT(*) FROM channel_feed_refresh_state")
+    suspend fun knownChannelCount(): Int
+
+    /**
      * ANDROID-PERSONAL-02 / T9: batch round-robin lookup. Returns
      * `(channelId, lastSuccessfulFetchAt)` for every row in the table —
      * the caller does the join with the subscribed-channels list and
