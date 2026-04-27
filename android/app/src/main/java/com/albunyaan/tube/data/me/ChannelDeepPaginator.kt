@@ -93,25 +93,61 @@ class ChannelDeepPaginator @VisibleForTesting internal constructor(
 
     /**
      * Serializable form of NewPipe's [Page]. Persistable across process
-     * restarts. NewPipe's own [Page] is `Serializable` but its `body` field
-     * is opaque bytes — we drop it because YouTube's pagination doesn't use
-     * it and it would bloat the Room column. `id` and `ids` are likewise
-     * not used by YouTube's continuation tokens.
+     * restarts.
+     *
+     * ANDROID-PERSONAL-03 round 8 [field-bug]: an earlier version dropped
+     * NewPipe's `body` field on the assumption YouTube's pagination didn't
+     * use it. That was wrong — for the uploads-playlist path the actual
+     * continuation token is a JSON POST payload in `body`, and dropping it
+     * meant every saved Page on second use sent an empty token, returning
+     * an empty page that was misinterpreted as `EndOfChannel`. We now
+     * persist all five [Page] fields (`url`, `id`, `ids`, `cookies`, `body`)
+     * so a SerializedPage can be reconstructed losslessly.
      */
     data class SerializedPage(
         val url: String,
+        val id: String?,
+        val ids: List<String>?,
         val cookies: Map<String, String>?,
+        val body: ByteArray?,
     ) {
-        internal fun toPage(): Page = if (cookies.isNullOrEmpty()) {
-            Page(url)
-        } else {
-            Page(url, cookies)
+        internal fun toPage(): Page = Page(
+            url,
+            id,
+            ids,
+            cookies?.takeIf { it.isNotEmpty() },
+            body,
+        )
+
+        // ByteArray equality must be content-based for data class equals/hashCode.
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (other !is SerializedPage) return false
+            if (url != other.url) return false
+            if (id != other.id) return false
+            if (ids != other.ids) return false
+            if (cookies != other.cookies) return false
+            if (body == null) return other.body == null
+            if (other.body == null) return false
+            return body.contentEquals(other.body)
+        }
+
+        override fun hashCode(): Int {
+            var result = url.hashCode()
+            result = 31 * result + (id?.hashCode() ?: 0)
+            result = 31 * result + (ids?.hashCode() ?: 0)
+            result = 31 * result + (cookies?.hashCode() ?: 0)
+            result = 31 * result + (body?.contentHashCode() ?: 0)
+            return result
         }
 
         companion object {
             internal fun fromPage(page: Page): SerializedPage = SerializedPage(
                 url = page.url ?: "",
+                id = page.id?.takeIf { it.isNotEmpty() },
+                ids = page.ids?.takeIf { it.isNotEmpty() },
                 cookies = page.cookies?.takeIf { it.isNotEmpty() },
+                body = page.body,
             )
         }
     }

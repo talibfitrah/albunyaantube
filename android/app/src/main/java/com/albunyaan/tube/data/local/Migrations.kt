@@ -134,3 +134,34 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
         }
     }
 }
+
+/**
+ * v4 → v5: clear stale deep-paging tokens.
+ *
+ * ANDROID-PERSONAL-03 round 8 [field-bug]: existing `deepPageUrl` /
+ * `deepPageCookiesJson` values were captured by either:
+ *  - the old [com.albunyaan.tube.data.me.ChannelDeepPaginator] channel-tab
+ *    code path (now bypassed because of a NewPipe NPE — see commit
+ *    ae9539c), so the continuation tokens belong to a different extractor
+ *    and are unusable in the new uploads-playlist path; AND/OR
+ *  - the old [com.albunyaan.tube.data.me.ChannelDeepPaginator.SerializedPage]
+ *    that dropped NewPipe's `body` byte[]. YouTube's playlist continuation
+ *    token lives in `body`, so even tokens captured by the new code path
+ *    are missing it before this migration's date.
+ *
+ * Clearing both columns forces the next deep-page call to start from page 1
+ * of the uploads playlist and re-capture the full SerializedPage (body
+ * included). No schema change — only a data wipe of the two columns.
+ */
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        val tableExists = db.query(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='channel_feed_refresh_state'"
+        ).use { it.moveToFirst() }
+        if (tableExists) {
+            db.execSQL(
+                "UPDATE channel_feed_refresh_state SET deepPageUrl = NULL, deepPageCookiesJson = NULL"
+            )
+        }
+    }
+}

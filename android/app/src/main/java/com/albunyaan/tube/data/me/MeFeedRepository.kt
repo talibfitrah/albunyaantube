@@ -86,6 +86,35 @@ class MeFeedRepository @Inject constructor(
         )
     }
 
+    /**
+     * ANDROID-PERSONAL-03 round 8 [field-bug]: serialise the full
+     * [ChannelDeepPaginator.SerializedPage] payload (cookies, body, id, ids)
+     * into the existing `deepPageCookiesJson` column. The previous adapter
+     * only persisted cookies, dropping the `body` byte[] where YouTube's
+     * playlist continuation token actually lives — every saved page would
+     * round-trip with an empty token and NewPipe would return an empty
+     * Page → misclassified as EndOfChannel.
+     */
+    private val deepPageStateJsonAdapter: JsonAdapter<DeepPageState> by lazy {
+        val m = moshi ?: Moshi.Builder().build()
+        m.adapter(DeepPageState::class.java).serializeNulls()
+    }
+
+    /**
+     * Serialised slice of [ChannelDeepPaginator.SerializedPage] excluding
+     * `url` (which is persisted separately in `deepPageUrl`). `body` is
+     * stored Base64-encoded so it survives JSON. All fields are nullable so
+     * the JSON object can omit them. Adapter is reflection-based via the
+     * [com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory] installed
+     * by [com.albunyaan.tube.di.NetworkModule].
+     */
+    internal data class DeepPageState(
+        val id: String?,
+        val ids: List<String>?,
+        val cookies: Map<String, String>?,
+        val bodyB64: String?,
+    )
+
     companion object {
         private const val TAG = "MeFeedRepository"
         const val CACHE_TTL_MS: Long = 30L * 60L * 1_000L
@@ -444,9 +473,17 @@ class MeFeedRepository @Inject constructor(
         val token: ChannelDeepPaginator.SerializedPage? = previous?.deepPageUrl
             ?.takeIf { it.isNotEmpty() && it != DEEP_PAGE_EOF_SENTINEL }
             ?.let { url ->
-                val cookies: Map<String, String>? = previous.deepPageCookiesJson
-                    ?.let { runCatching { cookiesJsonAdapter.fromJson(it) }.getOrNull() }
-                ChannelDeepPaginator.SerializedPage(url = url, cookies = cookies)
+                val state = previous.deepPageCookiesJson
+                    ?.let { runCatching { deepPageStateJsonAdapter.fromJson(it) }.getOrNull() }
+                ChannelDeepPaginator.SerializedPage(
+                    url = url,
+                    id = state?.id,
+                    ids = state?.ids,
+                    cookies = state?.cookies,
+                    body = state?.bodyB64?.let {
+                        runCatching { android.util.Base64.decode(it, android.util.Base64.NO_WRAP) }.getOrNull()
+                    },
+                )
             }
 
         if (BuildConfig.DEBUG) {
@@ -499,9 +536,22 @@ class MeFeedRepository @Inject constructor(
                     cache.upsertAll(cacheRows)
                 }
                 val nextUrl = result.nextPage?.url ?: DEEP_PAGE_EOF_SENTINEL
-                val nextCookiesJson = result.nextPage?.cookies
-                    ?.takeIf { it.isNotEmpty() }
-                    ?.let { cookiesJsonAdapter.toJson(it) }
+                val nextStateJson = result.nextPage?.let { np ->
+                    val state = DeepPageState(
+                        id = np.id?.takeIf { it.isNotEmpty() },
+                        ids = np.ids?.takeIf { it.isNotEmpty() },
+                        cookies = np.cookies?.takeIf { it.isNotEmpty() },
+                        bodyB64 = np.body?.let {
+                            android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP)
+                        },
+                    )
+                    // If everything is null/empty, persist null instead of "{}".
+                    if (state.id == null && state.ids == null && state.cookies == null && state.bodyB64 == null) {
+                        null
+                    } else {
+                        deepPageStateJsonAdapter.toJson(state)
+                    }
+                }
                 refreshStateDao.upsert(
                     (previous ?: ChannelFeedRefreshState(
                         channelId = channel.channelId,
@@ -512,7 +562,7 @@ class MeFeedRepository @Inject constructor(
                         lastAttemptAt = now,
                         lastErrorMessage = null,
                         deepPageUrl = nextUrl,
-                        deepPageCookiesJson = nextCookiesJson,
+                        deepPageCookiesJson = nextStateJson,
                     )
                 )
             }

@@ -131,7 +131,10 @@ class ChannelDeepPaginatorTest {
     fun `serialized page round-trips via toPage and back`() {
         val original = ChannelDeepPaginator.SerializedPage(
             url = "https://www.youtube.com/continuation/abc",
+            id = null,
+            ids = null,
             cookies = mapOf("CONSENT" to "YES+1"),
+            body = "{\"continuation\":\"opaque-token\"}".toByteArray(),
         )
         val newPipePage = original.toPage()
         val roundTripped = ChannelDeepPaginator.SerializedPage.fromPage(newPipePage)
@@ -142,11 +145,15 @@ class ChannelDeepPaginatorTest {
     fun `serialized page with no cookies maps to null on round trip`() {
         val original = ChannelDeepPaginator.SerializedPage(
             url = "https://www.youtube.com/continuation/abc",
+            id = null,
+            ids = null,
             cookies = null,
+            body = null,
         )
         val newPipePage = original.toPage()
         val roundTripped = ChannelDeepPaginator.SerializedPage.fromPage(newPipePage)
         assertEquals(null, roundTripped.cookies)
+        assertEquals(null, roundTripped.body)
     }
 
     /**

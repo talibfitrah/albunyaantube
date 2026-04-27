@@ -19,7 +19,7 @@ import androidx.room.RoomDatabase
         ChannelVideoCache::class,
         ChannelFeedRefreshState::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
