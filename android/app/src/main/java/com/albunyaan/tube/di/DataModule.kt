@@ -105,6 +105,18 @@ object DataModule {
 
     @Provides
     @Singleton
+    @Named("cooldownDataStore")
+    fun provideCooldownDataStore(
+        @ApplicationContext context: Context,
+        @Named("applicationScope") scope: CoroutineScope
+    ): DataStore<Preferences> {
+        return PreferenceDataStoreFactory.create(scope = scope) {
+            File(context.filesDir, "cooldown.preferences_pb")
+        }
+    }
+
+    @Provides
+    @Singleton
     fun provideFilterManager(
         @Named("filtersDataStore") dataStore: DataStore<Preferences>,
         @Named("applicationScope") scope: CoroutineScope
