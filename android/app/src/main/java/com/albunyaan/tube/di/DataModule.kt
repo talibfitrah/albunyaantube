@@ -151,10 +151,30 @@ object DataModule {
         return OkHttpDownloader(okHttpClient, context.cacheDir)
     }
 
+    /**
+     * Wrap the production [OkHttpDownloader] in [RateLimitedDownloader] so all
+     * NewPipe HTTP traffic flows through the global rate-limit + cooldown
+     * gates (spec §4.4). Player priority bypasses both gates per spec D1; see
+     * [RateLimitedDownloader] for the bypass logic.
+     */
+    @Provides
+    @Singleton
+    fun provideRateLimitedDownloader(
+        delegate: OkHttpDownloader,
+        rateLimiter: com.albunyaan.tube.data.extractor.GlobalNewPipeRateLimiter,
+        cooldownState: com.albunyaan.tube.data.extractor.CooldownState,
+    ): com.albunyaan.tube.data.extractor.RateLimitedDownloader {
+        return com.albunyaan.tube.data.extractor.RateLimitedDownloader(
+            delegate, rateLimiter, cooldownState
+        )
+    }
+
     @Provides
     @Singleton
     fun provideNewPipeExtractorClient(
-        downloader: OkHttpDownloader,
+        // Inject the rate-limited wrapper, not the bare [OkHttpDownloader] —
+        // every NewPipe HTTP call must pass through the gates (spec §4.4).
+        downloader: com.albunyaan.tube.data.extractor.RateLimitedDownloader,
         cache: MetadataCache,
         metrics: ExtractorMetricsReporter,
         featureFlags: PlaybackFeatureFlags

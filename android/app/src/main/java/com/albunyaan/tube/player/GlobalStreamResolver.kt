@@ -2,6 +2,8 @@ package com.albunyaan.tube.player
 
 import android.util.Log
 import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
+import com.albunyaan.tube.data.extractor.NewPipePriorityContext
+import com.albunyaan.tube.data.extractor.Priority
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -68,8 +70,18 @@ class GlobalStreamResolver private constructor(
      */
     @Inject
     constructor(extractorClient: NewPipeExtractorClient) : this(
+        // Mark every player-path NewPipe call with [Priority.PLAYER] so
+        // [com.albunyaan.tube.data.extractor.RateLimitedDownloader] bypasses
+        // the rate-limit + cooldown gates (spec D1 — playback must never
+        // block on a refresh-thread bucket and must survive a tripped
+        // cooldown so cached / mid-stream playback can recover).
+        // [extractorClient.resolveStreams] is already wrapped in
+        // `withContext(Dispatchers.IO)`, so the ThreadLocal set by `with`
+        // is observed by the synchronous Downloader call on that IO thread.
         StreamResolutionProvider { videoId, forceRefresh ->
-            extractorClient.resolveStreams(videoId, forceRefresh)
+            NewPipePriorityContext.with(Priority.PLAYER) {
+                extractorClient.resolveStreams(videoId, forceRefresh)
+            }
         }
     )
 

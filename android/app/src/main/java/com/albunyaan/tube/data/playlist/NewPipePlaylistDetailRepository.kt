@@ -3,6 +3,8 @@ package com.albunyaan.tube.data.playlist
 import android.util.Log
 import com.albunyaan.tube.data.channel.Page
 import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
+import com.albunyaan.tube.data.extractor.NewPipePriorityContext
+import com.albunyaan.tube.data.extractor.Priority
 import com.albunyaan.tube.download.DownloadPolicy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -85,6 +87,7 @@ class NewPipePlaylistDetailRepository @Inject constructor(
 
                 if (page == null) {
                     // Initial page - get info which includes first page of items
+                    // [getPlaylistInfo] sets its own USER_FOREGROUND priority.
                     val info = getPlaylistInfo(playlistId, forceRefresh = false)
                     items = info.relatedItems
                         .filterIsInstance<StreamInfoItem>()
@@ -95,9 +98,13 @@ class NewPipePlaylistDetailRepository @Inject constructor(
                     nextPage = Page.fromNewPipePage(info.nextPage)
                     Log.d(TAG, "Fetched initial page: ${items.size} items starting at $itemOffset, hasMore=${nextPage != null}")
                 } else {
-                    // Subsequent pages - getMoreItems expects a URL string
+                    // Subsequent pages - getMoreItems expects a URL string.
+                    // Mark this NewPipe path as USER_FOREGROUND so the rate-limit
+                    // / cooldown gates apply (spec §4.4 / §4.5).
                     val url = "https://www.youtube.com/playlist?list=$playlistId"
-                    val morePage = PlaylistInfo.getMoreItems(youtubeService, url, page.toNewPipePage())
+                    val morePage = NewPipePriorityContext.with(Priority.USER_FOREGROUND) {
+                        PlaylistInfo.getMoreItems(youtubeService, url, page.toNewPipePage())
+                    }
 
                     items = morePage.items
                         .filterIsInstance<StreamInfoItem>()
@@ -148,20 +155,27 @@ class NewPipePlaylistDetailRepository @Inject constructor(
 
             Log.d(TAG, "Fetching playlist info for: $playlistId")
             try {
-                val handler = createPlaylistLinkHandler(playlistId)
-                    ?: throw ExtractionException("Invalid playlist ID: $playlistId")
+                // Mark this NewPipe path as USER_FOREGROUND so
+                // [com.albunyaan.tube.data.extractor.RateLimitedDownloader]
+                // routes the HTTP call through the foreground rate-limit lane
+                // (spec §4.4 / §4.5). Set inside withContext(Dispatchers.IO)
+                // so the ThreadLocal is observed on the actual NewPipe call thread.
+                NewPipePriorityContext.with(Priority.USER_FOREGROUND) {
+                    val handler = createPlaylistLinkHandler(playlistId)
+                        ?: throw ExtractionException("Invalid playlist ID: $playlistId")
 
-                val extractor = youtubeService.getPlaylistExtractor(handler)
-                extractor.fetchPage()
-                val info = PlaylistInfo.getInfo(extractor)
+                    val extractor = youtubeService.getPlaylistExtractor(handler)
+                    extractor.fetchPage()
+                    val info = PlaylistInfo.getInfo(extractor)
 
-                // Cache the result atomically (LinkedHashMap eviction + insertion as one operation)
-                cacheMutex.withLock {
-                    playlistInfoCache[playlistId] = CacheEntry(info, now)
+                    // Cache the result atomically (LinkedHashMap eviction + insertion as one operation)
+                    cacheMutex.withLock {
+                        playlistInfoCache[playlistId] = CacheEntry(info, now)
+                    }
+                    Log.d(TAG, "Cached playlist info for: $playlistId with ${info.streamCount} items")
+
+                    info
                 }
-                Log.d(TAG, "Cached playlist info for: $playlistId with ${info.streamCount} items")
-
-                info
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

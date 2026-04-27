@@ -29,7 +29,11 @@ import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamType
 
 class NewPipeExtractorClient(
-    private val downloader: OkHttpDownloader,
+    // Typed as the abstract NewPipe [org.schabi.newpipe.extractor.downloader.Downloader]
+    // so the Hilt graph can swap in [RateLimitedDownloader] (which wraps the
+    // production [OkHttpDownloader]) without changing this client. The
+    // wrapper enforces the global rate limit + cooldown gates per spec §4.4.
+    private val downloader: org.schabi.newpipe.extractor.downloader.Downloader,
     private val cache: MetadataCache,
     private val metrics: ExtractorMetricsReporter,
     private val featureFlags: PlaybackFeatureFlags,
