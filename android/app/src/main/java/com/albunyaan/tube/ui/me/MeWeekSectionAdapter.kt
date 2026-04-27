@@ -50,8 +50,26 @@ class MeWeekSectionAdapter(
     /**
      * The outer adapter [MeFragment] wires into its ConcatAdapter for
      * this week.
+     *
+     * `isolateViewTypes = false`: REQUIRED to avoid a
+     * ClassCastException collision across multiple week sections. The
+     * fragment's outer ConcatAdapter is also configured with
+     * `isolateViewTypes = false` (so its spanSizeLookup can compare raw
+     * inner view types). If THIS inner ConcatAdapter remapped its 3
+     * view types to ConcatAdapter-internal IDs, two week sections would
+     * each pick the same internal IDs (e.g. both Week 0's HeaderAdapter
+     * and Week 1's VideosAdapter end up reporting view-type 0 to the
+     * shared pool). RecyclerView then hands a VideoVH to HeaderAdapter
+     * and crashes during onBindViewHolder cast. We rely on
+     * WEEK_HEADER_VIEW_TYPE / WEEK_SHORTS_VIEW_TYPE / WEEK_VIDEO_VIEW_TYPE
+     * being globally unique constants so disabling isolation here is safe.
      */
-    val sectionAdapter: ConcatAdapter = ConcatAdapter(headerAdapter, shortsAdapter, videosAdapter)
+    val sectionAdapter: ConcatAdapter = ConcatAdapter(
+        ConcatAdapter.Config.Builder().setIsolateViewTypes(false).build(),
+        headerAdapter,
+        shortsAdapter,
+        videosAdapter,
+    )
 
     init {
         submit(initial)
