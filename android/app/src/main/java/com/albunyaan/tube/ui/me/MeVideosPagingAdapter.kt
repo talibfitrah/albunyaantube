@@ -9,6 +9,7 @@ import androidx.recyclerview.widget.ConcatAdapter
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import coil.load
+import coil.transform.CircleCropTransformation
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.me.MeFeedVideo
 import com.albunyaan.tube.databinding.ItemMeVideoBinding
@@ -37,8 +38,18 @@ import com.albunyaan.tube.databinding.ItemMeVideosHeaderBinding
  */
 class MeVideosPagingAdapter(
     private val onClick: (MeFeedVideo) -> Unit,
+    // ANDROID-PERSONAL-02 round 4 (UX feedback): YouTube-style card layout.
+    // The card now shows the subscribed channel's avatar in a left column
+    // below the thumbnail. The fragment owns the chip list (which carries
+    // imageUrl per channel) so the adapter pulls the URL through this
+    // lookup at bind time. Returning null is fine — Coil falls back to the
+    // placeholder drawable.
+    private val getChannelAvatar: (channelId: String) -> String?,
+    // Avatar tap routes to channel detail. The fragment guards against a
+    // stale lookup (chip list changed mid-bind) inside this lambda.
+    private val onChannelClick: (channelId: String) -> Unit,
 ) {
-    private val pagingAdapter = InnerPagingAdapter(onClick)
+    private val pagingAdapter = InnerPagingAdapter(onClick, getChannelAvatar, onChannelClick)
     private val headerAdapter = HeaderAdapter()
 
     val sectionAdapter: ConcatAdapter = ConcatAdapter(headerAdapter, pagingAdapter)
@@ -89,6 +100,8 @@ class MeVideosPagingAdapter(
 
     private class InnerPagingAdapter(
         private val onClick: (MeFeedVideo) -> Unit,
+        private val getChannelAvatar: (channelId: String) -> String?,
+        private val onChannelClick: (channelId: String) -> Unit,
     ) : PagingDataAdapter<MeFeedVideo, VideoVH>(DIFF) {
 
         override fun getItemViewType(position: Int): Int = VIDEO_VIEW_TYPE
@@ -97,7 +110,7 @@ class MeVideosPagingAdapter(
             val binding = ItemMeVideoBinding.inflate(
                 LayoutInflater.from(parent.context), parent, false
             )
-            return VideoVH(binding, onClick)
+            return VideoVH(binding, onClick, getChannelAvatar, onChannelClick)
         }
 
         override fun onBindViewHolder(holder: VideoVH, position: Int) {
@@ -113,6 +126,8 @@ class MeVideosPagingAdapter(
     class VideoVH(
         private val binding: ItemMeVideoBinding,
         private val onClick: (MeFeedVideo) -> Unit,
+        private val getChannelAvatar: (channelId: String) -> String?,
+        private val onChannelClick: (channelId: String) -> Unit,
     ) : RecyclerView.ViewHolder(binding.root) {
         fun bind(item: MeFeedVideo) {
             binding.videoTitle.text = item.title
@@ -132,6 +147,32 @@ class MeVideosPagingAdapter(
                 // could overwrite the placeholder mid-frame.
                 binding.videoThumbnail.load(R.drawable.thumbnail_placeholder)
             }
+
+            // ANDROID-PERSONAL-02 round 4: load the channel avatar through
+            // Coil with CircleCropTransformation so the 48dp ImageView
+            // renders as a perfect circle even though the source asset is
+            // square. Pattern matches MeChipsAdapter — same placeholder
+            // (thumbnail_placeholder) so behaviour is consistent across
+            // the whole Me tab. The lookup may legitimately return null
+            // (channel chip list hasn't loaded yet, or the channel was
+            // unsubscribed mid-paging-flow); Coil's placeholder fallback
+            // covers that case.
+            val avatarUrl = getChannelAvatar(item.channelId)
+            if (!avatarUrl.isNullOrBlank()) {
+                binding.videoChannelAvatar.load(avatarUrl) {
+                    placeholder(R.drawable.thumbnail_placeholder)
+                    error(R.drawable.thumbnail_placeholder)
+                    transformations(CircleCropTransformation())
+                }
+            } else {
+                // F-CR10 mirror: cancel any in-flight load on a recycled
+                // view by issuing a placeholder load() rather than
+                // setImageResource().
+                binding.videoChannelAvatar.load(R.drawable.thumbnail_placeholder) {
+                    transformations(CircleCropTransformation())
+                }
+            }
+            binding.videoChannelAvatar.setOnClickListener { onChannelClick(item.channelId) }
             binding.root.setOnClickListener { onClick(item) }
         }
 

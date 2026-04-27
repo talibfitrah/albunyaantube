@@ -137,6 +137,7 @@
     <string name="me_see_all">عرض الكل</string>
     <string name="me_remove_from_favorites">إزالة من المفضلة</string>
     <string name="cd_remove_from_favorites">إزالة من المفضلة</string>
+    <string name="me_channel_avatar_content_description">فتح القناة</string>
     <string name="me_section_shorts">المقاطع القصيرة</string>
     <string name="me_section_videos">أحدث الفيديوهات</string>
     <string name="me_refresh_error">تعذر تحديث خلاصتك. اسحب للأسفل للمحاولة مجدداً.</string>

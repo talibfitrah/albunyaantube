@@ -146,6 +146,7 @@
     <string name="me_see_all">Alles bekijken</string>
     <string name="me_remove_from_favorites">Verwijderen uit favorieten</string>
     <string name="cd_remove_from_favorites">Verwijderen uit favorieten</string>
+    <string name="me_channel_avatar_content_description">Kanaal openen</string>
     <string name="me_section_shorts">Shorts</string>
     <string name="me_section_videos">Nieuwste video\'s</string>
     <string name="me_refresh_error">Kon je feed niet vernieuwen. Trek omlaag om het opnieuw te proberen.</string>

@@ -1,4 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  ANDROID-PERSONAL-02 round 4: YouTube-style subscription feed card.
+  Layout structure:
+    * Big 16:9 thumbnail at the top.
+    * Below the thumbnail, a 2-column row:
+        - Left column ("avatarColumnGuide"): fixed 80dp wide. A 48dp
+          circular channel avatar is centered both horizontally and
+          vertically inside this column for whitespace breathing room.
+          Tap on the avatar → navigate to channel detail.
+        - Right column: vertical stack of title (max 2 lines) +
+          meta ("Channel name • relative date", single line).
+    * The card body itself stays clickable (root selectableItemBackground
+      + onClick wired in the adapter); only the avatar swallows its tap
+      and routes to the channel detail screen.
+-->
 <androidx.constraintlayout.widget.ConstraintLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -25,6 +40,40 @@
         app:layout_constraintTop_toTopOf="parent"
         tools:src="@drawable/thumbnail_placeholder" />
 
+    <!--
+      80dp-wide guideline carves the left avatar column out of the row.
+      Everything left of the guideline is the avatar column; everything
+      right is the title/meta column.
+    -->
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/avatarColumnGuide"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        app:layout_constraintGuide_begin="80dp" />
+
+    <!--
+      48dp circular avatar centered inside the 80dp left column. The
+      vertical extent is anchored to the title's top and the meta's
+      bottom so the avatar stays vertically centered against the
+      title+meta block, regardless of whether the title wraps to one
+      or two lines (matches YouTube's feed alignment).
+    -->
+    <ImageView
+        android:id="@+id/videoChannelAvatar"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:clickable="true"
+        android:focusable="true"
+        android:contentDescription="@string/me_channel_avatar_content_description"
+        android:scaleType="centerCrop"
+        app:layout_constraintBottom_toBottomOf="@id/videoMeta"
+        app:layout_constraintEnd_toStartOf="@id/avatarColumnGuide"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="@id/videoTitle"
+        tools:src="@drawable/thumbnail_placeholder" />
+
     <TextView
         android:id="@+id/videoTitle"
         android:layout_width="0dp"
@@ -36,7 +85,7 @@
         android:textAppearance="?attr/textAppearanceTitleSmall"
         android:textColor="?attr/colorOnSurface"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintStart_toEndOf="@id/avatarColumnGuide"
         app:layout_constraintTop_toBottomOf="@id/videoThumbnail"
         tools:text="Video title goes here over two lines of text when long" />
 
@@ -51,8 +100,8 @@
         android:textAppearance="?attr/textAppearanceBodySmall"
         android:textColor="?attr/colorOnSurfaceVariant"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintStart_toEndOf="@id/avatarColumnGuide"
         app:layout_constraintTop_toBottomOf="@id/videoTitle"
-        tools:text="Channel name • 2 days ago" />
+        tools:text="Alafasy • Apr 18" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

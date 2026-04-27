@@ -2,6 +2,7 @@ package com.albunyaan.tube.ui.me
 
 import android.os.Bundle
 import android.view.View
+import androidx.core.os.bundleOf
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
@@ -20,6 +21,7 @@ import com.albunyaan.tube.data.me.MeFeedState
 import com.albunyaan.tube.data.me.MeFeedVideo
 import com.albunyaan.tube.data.me.work.RefreshScheduler
 import com.albunyaan.tube.databinding.FragmentMeBinding
+import com.albunyaan.tube.ui.detail.ChannelDetailFragment
 import com.albunyaan.tube.util.DeviceConfig
 import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
@@ -47,6 +49,15 @@ class MeFragment : Fragment(R.layout.fragment_me) {
     private lateinit var videosAdapter: MeVideosPagingAdapter
     private lateinit var concatAdapter: ConcatAdapter
 
+    // ANDROID-PERSONAL-02 round 4 (UX feedback): the video card now shows
+    // each subscribed channel's avatar. The chip list already carries
+    // imageUrl + label per channel, so we mirror it into a lookup map and
+    // hand it to the videos paging adapter through getChannelAvatar /
+    // onChannelClick lambdas. Refreshed every render(Content); reads on
+    // bind happen on the main thread alongside writes, so a plain Map is
+    // safe (no concurrent access).
+    private var channelMap: Map<String, ChipItem.Channel> = emptyMap()
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         val b = FragmentMeBinding.bind(view).also { binding = it }
@@ -62,7 +73,16 @@ class MeFragment : Fragment(R.layout.fragment_me) {
         shortsAdapter = MeShortsAdapter(onClick = ::playVideo)
         // T11: PagingDataAdapter — fed by MeViewModel.pagedVideos in the
         // collector below, no longer driven by render(state.Content).
-        videosAdapter = MeVideosPagingAdapter(onClick = ::playVideo)
+        // ANDROID-PERSONAL-02 round 4: pass the avatar lookup +
+        // channel-tap handler so the YouTube-style card can render each
+        // row's circular channel avatar and route avatar taps to channel
+        // detail. channelMap is refreshed in render() each time a Content
+        // state arrives.
+        videosAdapter = MeVideosPagingAdapter(
+            onClick = ::playVideo,
+            getChannelAvatar = { channelId -> channelMap[channelId]?.imageUrl },
+            onChannelClick = ::navigateToChannel,
+        )
 
         concatAdapter = ConcatAdapter(
             chipsAdapter.rowAdapter,
@@ -161,6 +181,17 @@ class MeFragment : Fragment(R.layout.fragment_me) {
                 b.meEmpty.root.visibility = View.GONE
                 b.meRecycler.visibility = View.VISIBLE
 
+                // ANDROID-PERSONAL-02 round 4: refresh the avatar lookup
+                // from the chip list before submitting chips. The videos
+                // paging adapter calls getChannelAvatar(channelId) at
+                // bind time, so the map needs to be current by the time
+                // any video row binds. Same render() runs on the main
+                // thread that does the bind, so a plain Map (no
+                // concurrent reads) is fine.
+                channelMap = state.chips
+                    .filterIsInstance<ChipItem.Channel>()
+                    .associateBy { it.id }
+
                 chipsAdapter.selectedId = state.filterChannelId
                 chipsAdapter.submit(state.chips)
                 favoritesAdapter.submit(state.favorites)
@@ -246,6 +277,29 @@ class MeFragment : Fragment(R.layout.fragment_me) {
         if (findNavController().currentDestination?.id == R.id.meFragment) {
             findNavController().navigate(R.id.favoritesFragment)
         }
+    }
+
+    /**
+     * ANDROID-PERSONAL-02 round 4 (UX feedback): tapping the channel
+     * avatar on a video card opens that channel's detail page. Uses the
+     * global action `action_global_channelDetailFragment` (defined in
+     * main_tabs_nav.xml) and matches the args bundle that
+     * ChannelsFragmentNew passes (channelId / channelName / excluded=false).
+     *
+     * The lookup may legitimately fail — chip list refreshed mid-paging,
+     * channel removed from subscriptions while a paging row was in
+     * flight, etc. In that case we just no-op rather than crash.
+     */
+    private fun navigateToChannel(channelId: String) {
+        if (channelId.isBlank()) return
+        val chip = channelMap[channelId] ?: return
+        if (findNavController().currentDestination?.id != R.id.meFragment) return
+        val args = bundleOf(
+            ChannelDetailFragment.ARG_CHANNEL_ID to channelId,
+            ChannelDetailFragment.ARG_CHANNEL_NAME to chip.label,
+            ChannelDetailFragment.ARG_EXCLUDED to false,
+        )
+        findNavController().navigate(R.id.action_global_channelDetailFragment, args)
     }
 
     override fun onDestroyView() {
