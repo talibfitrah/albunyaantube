@@ -4,6 +4,7 @@ import android.app.Application
 import android.util.Log
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import com.albunyaan.tube.app.AppLifecycleTracker
 import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
 import com.albunyaan.tube.download.DownloadScheduler
 import dagger.hilt.android.HiltAndroidApp
@@ -27,9 +28,15 @@ class AlBunyaanApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var extractorClient: NewPipeExtractorClient
 
+    @Inject
+    lateinit var lifecycleTracker: AppLifecycleTracker
+
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "Application initialized with Hilt DI")
+
+        // Register process-level foreground tracker (ANDROID-PERSONAL-02 T8)
+        lifecycleTracker.register()
 
         // Schedule periodic download expiry cleanup (P4-T3)
         downloadScheduler.scheduleExpiryCleanup()
