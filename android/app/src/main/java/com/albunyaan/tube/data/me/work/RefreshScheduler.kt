@@ -84,6 +84,14 @@ class RefreshScheduler @Inject constructor(
      * periodic tick (up to 60 minutes).
      */
     suspend fun enqueueForegroundBurstIfStale(staleThresholdMs: Long = DEFAULT_STALE_THRESHOLD_MS) {
+        // ANDROID-PERSONAL-02 round 3 [Bug G]: short-circuit when there are
+        // no subscriptions. A brand-new install has no refresh-state rows,
+        // so `maxLastSuccessfulFetchAt() ?: 0L → 0L` flips `maxStale = true`
+        // and the worker is enqueued with nothing to do. Pull the subs
+        // up-front and bail if the set is empty.
+        val subscribedIds = subscriptionRepository.getSubscribedChannels()
+            .mapTo(mutableSetOf()) { it.channelId }
+        if (subscribedIds.isEmpty()) return
         val newest = refreshStateDao.maxLastSuccessfulFetchAt() ?: 0L
         val maxStale = System.currentTimeMillis() - newest >= staleThresholdMs
         // ANDROID-PERSONAL-02 round 2 [Bug D]: detect un-fetched subscriptions
@@ -93,15 +101,7 @@ class RefreshScheduler @Inject constructor(
         // pruning hasn't yet reaped (`{A_subscribed, A_orphan}`) and subs
         // is `{A_subscribed, B_new}`, both counts equal 2 but B_new has
         // never been fetched. Set difference catches this.
-        //
-        // Cost: two suspend round-trips (vs one for the count). Both are
-        // cheap Room reads; getKnownChannelIds returns a single column
-        // and getSubscribedChannels is already cached in the
-        // SubscriptionRepository. The orphan-row case is rare but
-        // correctness-critical, so we eat the tiny extra cost.
         val hasNewChannel = !maxStale && run {
-            val subscribedIds = subscriptionRepository.getSubscribedChannels()
-                .mapTo(mutableSetOf()) { it.channelId }
             val knownIds = refreshStateDao.getKnownChannelIds().toSet()
             (subscribedIds - knownIds).isNotEmpty()
         }

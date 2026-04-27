@@ -192,15 +192,22 @@ class DefaultStreamPrefetchService @Inject constructor(
             val result = withTimeoutOrNull(AWAIT_TIMEOUT_MS) {
                 // Join the in-flight job via global resolver
                 // ANDROID-PERSONAL-02 [Bug 1]: prefetch await path must declare
-                // its own priority. If we're starting (not joining) a resolve
-                // here, USER_FOREGROUND is the safe choice — the player path
-                // calls into PlayerRepository directly, not this method.
+                // its own priority. ANDROID-PERSONAL-02 round 3 [Bug F]:
+                // this method is called from the PLAYER path
+                // (PlayerViewModel.resolveWithRetry awaits the in-flight
+                // prefetch BEFORE falling back to PlayerRepository), so we
+                // declare PLAYER priority. Without this, a stalled
+                // USER_FOREGROUND prefetch would hold playback for
+                // AWAIT_TIMEOUT_MS before the player's own resolve trips
+                // Bug-B priority escalation. PLAYER here lets the existing
+                // prefetch be cancelled-and-replaced with a PLAYER-priority
+                // resolve immediately on join.
                 globalResolver.resolveStreams(
                     videoId = videoId,
                     forceRefresh = false,
                     timeoutMs = AWAIT_TIMEOUT_MS,
                     caller = "prefetch_await",
-                    priority = Priority.USER_FOREGROUND,
+                    priority = Priority.PLAYER,
                 )
             }
             // Result may have been stored in prefetchResults by the job, consume it

@@ -236,4 +236,17 @@ class RefreshSchedulerTest {
             infos.size,
         )
     }
+
+    @Test
+    fun `Bug G burst skipped when no subscriptions exist`() = runTest {
+        // ANDROID-PERSONAL-02 round 3 [Bug G]: with zero subscriptions, the
+        // `maxLastSuccessfulFetchAt() ?: 0L` coercion would otherwise flip
+        // `maxStale = true` and enqueue a worker with nothing to do.
+        // No subscribe(...) calls. No refresh-state rows.
+
+        scheduler.enqueueForegroundBurstIfStale(staleThresholdMs = 30L * 60L * 1_000L)
+
+        val infos = oneshotInfos()
+        assertEquals("empty subscriptions must not enqueue a foreground burst", 0, infos.size)
+    }
 }
