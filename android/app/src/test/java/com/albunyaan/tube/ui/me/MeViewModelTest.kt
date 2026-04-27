@@ -3,6 +3,8 @@ package com.albunyaan.tube.ui.me
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.albunyaan.tube.data.local.AppDatabase
+import com.albunyaan.tube.data.local.FavoriteVideo
+import com.albunyaan.tube.data.local.FavoritesRepository
 import com.albunyaan.tube.data.local.SubscribedChannel
 import com.albunyaan.tube.data.me.ChannelFeedFetcher
 import com.albunyaan.tube.data.me.ChipItem
@@ -11,7 +13,10 @@ import com.albunyaan.tube.data.me.MeFeedState
 import com.albunyaan.tube.data.subscriptions.SubscriptionRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
@@ -38,6 +43,7 @@ class MeViewModelTest {
     private lateinit var db: AppDatabase
     private lateinit var subs: SubscriptionRepository
     private lateinit var feed: MeFeedRepository
+    private lateinit var favs: NoopFavoritesRepository
 
     @Before
     fun setUp() {
@@ -60,6 +66,7 @@ class MeViewModelTest {
             fetcher = NoopFetcher,
             ioDispatcher = Dispatchers.Unconfined,
         )
+        favs = NoopFavoritesRepository()
     }
 
     @After
@@ -70,7 +77,7 @@ class MeViewModelTest {
 
     @Test
     fun `empty subscriptions yields Empty state`() = runBlocking {
-        val vm = MeViewModel(subs, feed)
+        val vm = MeViewModel(subs, feed, favs)
         val state = withTimeout(3_000L) { vm.state.first { it !is MeFeedState.Loading } }
         assertTrue("expected Empty, got $state", state is MeFeedState.Empty)
     }
@@ -78,7 +85,7 @@ class MeViewModelTest {
     @Test
     fun `chips include subscribed channels`() = runBlocking {
         subs.subscribe(SubscribedChannel("UC1", "https://yt/UC1", "A", null, 1_000L))
-        val vm = MeViewModel(subs, feed)
+        val vm = MeViewModel(subs, feed, favs)
         val content = withTimeout(3_000L) {
             vm.state.first { it is MeFeedState.Content } as MeFeedState.Content
         }
@@ -121,7 +128,7 @@ class MeViewModelTest {
         // T9: pre-populate cache (replaces the prior init-triggered refresh).
         feedWithItems.refresh(force = true)
 
-        val vm = MeViewModel(subs, feedWithItems)
+        val vm = MeViewModel(subs, feedWithItems, favs)
 
         val unfiltered = withTimeout(3_000L) {
             vm.state.first { it is MeFeedState.Content && it.videos.size == 2 }
@@ -153,5 +160,44 @@ class MeViewModelTest {
             priorLastModified: String?,
         ): ChannelFeedFetcher.FetchResult =
             ChannelFeedFetcher.FetchResult.Items(emptyList(), null, null)
+    }
+
+    /**
+     * Test double for the favorites repository. Backed by an in-memory
+     * MutableStateFlow so tests can stage state via [emit]. The empty
+     * default keeps existing tests behaving as before T10.
+     */
+    private class NoopFavoritesRepository : FavoritesRepository {
+        private val state = MutableStateFlow<List<FavoriteVideo>>(emptyList())
+
+        fun emit(list: List<FavoriteVideo>) { state.value = list }
+
+        override fun getAllFavorites(): Flow<List<FavoriteVideo>> = state
+        override fun isFavorite(videoId: String): Flow<Boolean> =
+            state.map { list -> list.any { it.videoId == videoId } }
+        override suspend fun isFavoriteOnce(videoId: String): Boolean =
+            state.value.any { it.videoId == videoId }
+        override suspend fun addFavorite(
+            videoId: String, title: String, channelName: String,
+            thumbnailUrl: String?, durationSeconds: Int,
+        ) {
+            state.value = state.value.filter { it.videoId != videoId } + FavoriteVideo(
+                videoId, title, channelName, thumbnailUrl, durationSeconds,
+            )
+        }
+        override suspend fun removeFavorite(videoId: String) {
+            state.value = state.value.filter { it.videoId != videoId }
+        }
+        override suspend fun toggleFavorite(
+            videoId: String, title: String, channelName: String,
+            thumbnailUrl: String?, durationSeconds: Int,
+        ): Boolean {
+            val isFav = isFavoriteOnce(videoId)
+            if (isFav) removeFavorite(videoId)
+            else addFavorite(videoId, title, channelName, thumbnailUrl, durationSeconds)
+            return !isFav
+        }
+        override fun getFavoriteCount(): Flow<Int> = state.map { it.size }
+        override suspend fun clearAll() { state.value = emptyList() }
     }
 }

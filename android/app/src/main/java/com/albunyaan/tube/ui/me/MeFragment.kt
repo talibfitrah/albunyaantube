@@ -13,6 +13,8 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.work.WorkManager
 import com.albunyaan.tube.R
+import com.albunyaan.tube.data.local.FavoriteVideo
+import com.albunyaan.tube.data.local.FavoritesRepository
 import com.albunyaan.tube.data.me.ChipItem
 import com.albunyaan.tube.data.me.MeFeedState
 import com.albunyaan.tube.data.me.MeFeedVideo
@@ -29,10 +31,17 @@ class MeFragment : Fragment(R.layout.fragment_me) {
 
     @Inject lateinit var refreshScheduler: RefreshScheduler
 
+    // T10: injected so the long-press snackbar action can call removeFavorite
+    // directly. The MeViewModel observes the same repository, so a removal
+    // here flows back through state.favorites and the row updates without
+    // an extra round-trip.
+    @Inject lateinit var favoritesRepository: FavoritesRepository
+
     private val viewModel: MeViewModel by viewModels()
     private var binding: FragmentMeBinding? = null
 
     private lateinit var chipsAdapter: MeChipsAdapter
+    private lateinit var favoritesAdapter: MeFavoritesAdapter
     private lateinit var shortsAdapter: MeShortsAdapter
     private lateinit var videosAdapter: MeVideosAdapter
     private lateinit var concatAdapter: ConcatAdapter
@@ -44,11 +53,18 @@ class MeFragment : Fragment(R.layout.fragment_me) {
         chipsAdapter = MeChipsAdapter(
             onClick = ::onChipClicked,
         )
+        favoritesAdapter = MeFavoritesAdapter(
+            onClick = ::playFavorite,
+            onLongPress = ::confirmRemoveFavorite,
+            onSeeAll = ::navigateToFavoritesScreen,
+        )
         shortsAdapter = MeShortsAdapter(onClick = ::playVideo)
         videosAdapter = MeVideosAdapter(onClick = ::playVideo)
 
         concatAdapter = ConcatAdapter(
             chipsAdapter.rowAdapter,
+            // T10: favorites row sits between chips and shorts per spec.
+            favoritesAdapter.sectionAdapter,
             shortsAdapter.sectionAdapter,
             videosAdapter.sectionAdapter,
         )
@@ -131,6 +147,7 @@ class MeFragment : Fragment(R.layout.fragment_me) {
 
                 chipsAdapter.selectedId = state.filterChannelId
                 chipsAdapter.submit(state.chips)
+                favoritesAdapter.submit(state.favorites)
                 shortsAdapter.submit(state.shorts)
                 videosAdapter.submit(state.videos)
                 // T9: removed auto-load post-submitList check — there is no
@@ -170,6 +187,45 @@ class MeFragment : Fragment(R.layout.fragment_me) {
         val args = Bundle().apply { putString("videoId", video.videoId) }
         if (findNavController().currentDestination?.id == R.id.meFragment) {
             findNavController().navigate(R.id.playerFragment, args)
+        }
+    }
+
+    /** T10: tile click → open the player with the favorite's videoId. */
+    private fun playFavorite(item: FavoriteVideo) {
+        if (item.videoId.isBlank()) return
+        val args = Bundle().apply { putString("videoId", item.videoId) }
+        if (findNavController().currentDestination?.id == R.id.meFragment) {
+            findNavController().navigate(R.id.playerFragment, args)
+        }
+    }
+
+    /**
+     * T10: long-press on a tile → show a snackbar with a "Remove" action.
+     * The remove call is fired from viewLifecycleOwner.lifecycleScope so it
+     * is cancelled if the view is torn down before the user taps the action.
+     * The repository emission flows back through MeViewModel and the row
+     * updates without an explicit refresh.
+     */
+    private fun confirmRemoveFavorite(item: FavoriteVideo) {
+        val b = binding ?: return
+        Snackbar.make(b.root, item.title, Snackbar.LENGTH_LONG)
+            .setAction(R.string.me_remove_from_favorites) {
+                viewLifecycleOwner.lifecycleScope.launch {
+                    favoritesRepository.removeFavorite(item.videoId)
+                }
+            }
+            .show()
+    }
+
+    /**
+     * T10: "See all" tile → open the existing FavoritesFragment. There is no
+     * meFragment-to-favoritesFragment action defined in main_tabs_nav, so
+     * we navigate by destination id (matches how playerFragment is opened
+     * from the same fragment).
+     */
+    private fun navigateToFavoritesScreen() {
+        if (findNavController().currentDestination?.id == R.id.meFragment) {
+            findNavController().navigate(R.id.favoritesFragment)
         }
     }
 

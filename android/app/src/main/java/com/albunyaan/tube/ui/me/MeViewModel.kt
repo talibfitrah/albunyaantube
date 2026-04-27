@@ -3,6 +3,8 @@ package com.albunyaan.tube.ui.me
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.albunyaan.tube.data.local.ChannelVideoCache
+import com.albunyaan.tube.data.local.FavoriteVideo
+import com.albunyaan.tube.data.local.FavoritesRepository
 import com.albunyaan.tube.data.local.SavedPlaylist
 import com.albunyaan.tube.data.local.SubscribedChannel
 import com.albunyaan.tube.data.me.ChipItem
@@ -22,6 +24,7 @@ import kotlinx.coroutines.flow.stateIn
 class MeViewModel @Inject constructor(
     private val subscriptions: SubscriptionRepository,
     private val feed: MeFeedRepository,
+    private val favorites: FavoritesRepository,
 ) : ViewModel() {
 
     private val filter = MutableStateFlow<String?>(null)
@@ -31,8 +34,12 @@ class MeViewModel @Inject constructor(
         subscriptions.observeSavedPlaylists(),
         feed.observeFeed(),
         filter,
-    ) { channels, playlists, cached, filterId ->
-        buildState(channels, playlists, cached, filterId)
+        // T10: favorites are observed alongside subs/playlists/feed so the
+        // row reacts immediately to add/remove from anywhere (player heart,
+        // long-press snackbar, full Favorites screen).
+        favorites.getAllFavorites(),
+    ) { channels, playlists, cached, filterId, favs ->
+        buildState(channels, playlists, cached, filterId, favs)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000L),
@@ -56,6 +63,7 @@ class MeViewModel @Inject constructor(
         playlists: List<SavedPlaylist>,
         cached: List<ChannelVideoCache>,
         filterId: String?,
+        favorites: List<FavoriteVideo>,
     ): MeFeedState {
         if (channels.isEmpty() && playlists.isEmpty()) return MeFeedState.Empty
 
@@ -79,9 +87,13 @@ class MeViewModel @Inject constructor(
             // T9: SwipeRefreshLayout spinner is now driven directly by the
             // WorkInfo observation in MeFragment. The state-flow's
             // `refreshing` flag is kept (false) for adapter-binding stability
-            // until T10/T11 land their own UI surfaces.
+            // until T11 lands its own UI surfaces.
             refreshing = false,
             filterChannelId = filterId,
+            // T10: ordering preserved as the DAO returns it (DESC by addedAt).
+            // The adapter caps to MAX_TILES; we pass the full list through so
+            // future UIs (full Favorites screen) can reuse the flow source.
+            favorites = favorites,
         )
     }
 

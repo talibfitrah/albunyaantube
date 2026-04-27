@@ -142,6 +142,14 @@
     <string name="me_empty_title">Abonneer je om je feed te zien</string>
     <string name="me_empty_subtitle">Kanalen en afspeellijsten die je opslaat verschijnen hier met hun nieuwste video\'s en shorts.</string>
     <string name="me_empty_cta">Kanalen bekijken</string>
+    <!-- TODO(ANDROID-PERSONAL-02): Translation pending from user. -->
+    <string name="me_favorites">Favorites</string>
+    <!-- TODO(ANDROID-PERSONAL-02): Translation pending from user. -->
+    <string name="me_see_all">See all</string>
+    <!-- TODO(ANDROID-PERSONAL-02): Translation pending from user. -->
+    <string name="me_remove_from_favorites">Remove from favorites</string>
+    <!-- TODO(ANDROID-PERSONAL-02): Translation pending from user. -->
+    <string name="cd_remove_from_favorites">Remove from favorites</string>
     <string name="me_section_shorts">Shorts</string>
     <string name="me_section_videos">Nieuwste video\'s</string>
     <string name="me_refresh_error">Kon je feed niet vernieuwen. Trek omlaag om het opnieuw te proberen.</string>

@@ -133,6 +133,14 @@
     <string name="me_empty_title">اشترك لمشاهدة خلاصتك</string>
     <string name="me_empty_subtitle">ستظهر هنا القنوات وقوائم التشغيل التي تحفظها، مع أحدث الفيديوهات والمقاطع القصيرة.</string>
     <string name="me_empty_cta">تصفح القنوات</string>
+    <!-- TODO(ANDROID-PERSONAL-02): Translation pending from user. -->
+    <string name="me_favorites">Favorites</string>
+    <!-- TODO(ANDROID-PERSONAL-02): Translation pending from user. -->
+    <string name="me_see_all">See all</string>
+    <!-- TODO(ANDROID-PERSONAL-02): Translation pending from user. -->
+    <string name="me_remove_from_favorites">Remove from favorites</string>
+    <!-- TODO(ANDROID-PERSONAL-02): Translation pending from user. -->
+    <string name="cd_remove_from_favorites">Remove from favorites</string>
     <string name="me_section_shorts">المقاطع القصيرة</string>
     <string name="me_section_videos">أحدث الفيديوهات</string>
     <string name="me_refresh_error">تعذر تحديث خلاصتك. اسحب للأسفل للمحاولة مجدداً.</string>

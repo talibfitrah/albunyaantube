@@ -162,6 +162,10 @@
     <string name="me_empty_title">Subscribe to see your feed</string>
     <string name="me_empty_subtitle">Channels and playlists you save will appear here with their latest videos and shorts.</string>
     <string name="me_empty_cta">Browse channels</string>
+    <string name="me_favorites">Favorites</string>
+    <string name="me_see_all">See all</string>
+    <string name="me_remove_from_favorites">Remove from favorites</string>
+    <string name="cd_remove_from_favorites">Remove from favorites</string>
     <string name="me_section_shorts">Shorts</string>
     <string name="me_section_videos">Latest videos</string>
     <string name="me_refresh_error">Couldn\'t refresh your feed. Pull down to try again.</string>

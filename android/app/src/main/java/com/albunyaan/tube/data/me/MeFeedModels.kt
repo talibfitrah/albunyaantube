@@ -1,5 +1,7 @@
 package com.albunyaan.tube.data.me
 
+import com.albunyaan.tube.data.local.FavoriteVideo
+
 sealed class ChipItem {
     abstract val id: String
     abstract val label: String
@@ -41,6 +43,10 @@ sealed class MeFeedState {
         val videos: List<MeFeedVideo>,
         val refreshing: Boolean,
         val filterChannelId: String?,
+        // T10: newest 20 favorites (capped at the adapter level too).
+        // Defaults to empty so any pre-existing test that constructs a
+        // Content() literal without this argument continues to compile.
+        val favorites: List<FavoriteVideo> = emptyList(),
     ) : MeFeedState()
     data class Error(val message: String) : MeFeedState()
 }
