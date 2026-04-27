@@ -12,6 +12,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import androidx.annotation.VisibleForTesting
 import java.util.concurrent.ConcurrentHashMap
@@ -75,12 +76,25 @@ class GlobalStreamResolver private constructor(
         // the rate-limit + cooldown gates (spec D1 — playback must never
         // block on a refresh-thread bucket and must survive a tripped
         // cooldown so cached / mid-stream playback can recover).
-        // [extractorClient.resolveStreams] is already wrapped in
-        // `withContext(Dispatchers.IO)`, so the ThreadLocal set by `with`
-        // is observed by the synchronous Downloader call on that IO thread.
+        //
+        // Why the explicit [withContext(Dispatchers.IO)] BEFORE [with]:
+        // [NewPipePriorityContext] uses a plain ThreadLocal, so it only
+        // propagates across coroutine dispatcher hops if the priority is
+        // already set on the thread the next stage runs on. By forcing the
+        // IO dispatch here, we set the ThreadLocal on an IO thread; even
+        // though [extractorClient.resolveStreams] has its own internal
+        // `withContext(Dispatchers.IO)`, that hop becomes a no-op (already
+        // IO) and the ThreadLocal stays put. Without this outer
+        // `withContext`, a future caller on Dispatchers.Main / Default
+        // would set the ThreadLocal on the wrong thread, the inner IO hop
+        // would land on a fresh worker that has no ThreadLocal, and
+        // [NewPipePriorityContext.currentOrDefault] would silently fall
+        // back to USER_FOREGROUND — defeating the spec D1 player bypass.
         StreamResolutionProvider { videoId, forceRefresh ->
-            NewPipePriorityContext.with(Priority.PLAYER) {
-                extractorClient.resolveStreams(videoId, forceRefresh)
+            withContext(Dispatchers.IO) {
+                NewPipePriorityContext.with(Priority.PLAYER) {
+                    extractorClient.resolveStreams(videoId, forceRefresh)
+                }
             }
         }
     )

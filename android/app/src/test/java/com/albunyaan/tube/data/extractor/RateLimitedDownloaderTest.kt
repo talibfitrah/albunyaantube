@@ -184,6 +184,48 @@ class RateLimitedDownloaderTest {
     }
 
     @Test
+    fun player_priority_does_NOT_trip_cooldown_on_429() = runTest {
+        // Spec D1 invariant: Player NEVER trips cooldown, even on 429.
+        // A regression that drops the `priority != Priority.PLAYER` guard in
+        // RateLimitedDownloader.execute would make this test fail.
+        delegate.nextResponse = Response(429, "Too Many Requests", emptyMap(), "", "https://example.com/api")
+        val sut = RateLimitedDownloader(delegate, limiter, cooldown)
+
+        NewPipePriorityContext.with(Priority.PLAYER) {
+            // Player gets the raw response (including 429) — no IOException, no cooldown trip.
+            val resp = sut.execute(newRequest())
+            assertEquals(429, resp.responseCode())
+        }
+
+        // Spec D1: cooldown must NOT be tripped by a player-priority 429.
+        assertNull(runBlocking { cooldown.untilMs() })
+        // And the rate limiter was bypassed for the player call.
+        verifyBlocking(limiter, { never() }) { acquire(any(), any()) }
+    }
+
+    @Test
+    fun player_priority_does_NOT_trip_cooldown_on_ReCaptcha() = runTest {
+        // Spec D1 invariant: Player NEVER trips cooldown, even on ReCaptchaException.
+        // A regression that drops the `priority != Priority.PLAYER` guard in
+        // RateLimitedDownloader.execute around the catch-block would make this test fail.
+        delegate.nextThrowable = ReCaptchaException("captcha", "https://example.com/api")
+        val sut = RateLimitedDownloader(delegate, limiter, cooldown)
+
+        NewPipePriorityContext.with(Priority.PLAYER) {
+            // The exception still propagates — player isn't shielded from the error,
+            // only from the cooldown side-effect.
+            assertThrows(ReCaptchaException::class.java) {
+                sut.execute(newRequest())
+            }
+        }
+
+        // Spec D1: cooldown must NOT be tripped by a player-priority captcha.
+        assertNull(runBlocking { cooldown.untilMs() })
+        // And the rate limiter was bypassed for the player call.
+        verifyBlocking(limiter, { never() }) { acquire(any(), any()) }
+    }
+
+    @Test
     fun rate_limiter_timeout_throws_IOException() = runTest {
         // Override the default stub so acquire returns false (timeout).
         wheneverBlocking { limiter.acquire(any(), any()) }.doReturn(false)
