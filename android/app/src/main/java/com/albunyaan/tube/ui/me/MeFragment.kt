@@ -26,7 +26,6 @@ import com.albunyaan.tube.util.DeviceConfig
 import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
@@ -139,18 +138,11 @@ class MeFragment : Fragment(R.layout.fragment_me) {
             }
         }
 
-        // T11: paged videos collector. Independent of `state` so it can
-        // continue to deliver pages while render() handles chips / favorites
-        // / shorts / empty UI. collectLatest keeps only the freshest
-        // PagingData on the wire — when filter changes, the previous
-        // pager's flow is cancelled cleanly.
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.pagedVideos.collectLatest { pagingData ->
-                    videosAdapter.submitData(pagingData)
-                }
-            }
-        }
+        // ANDROID-PERSONAL-03 / T4: the paged-videos collector is removed
+        // because the grid is now driven by per-week sub-adapters owned by
+        // the dynamic ConcatAdapter. T6 will rewire this to subscribe to
+        // viewModel.weeks instead. Until then, render() continues to push
+        // a flat list to the legacy adapter for compatibility.
     }
 
     override fun onResume() {

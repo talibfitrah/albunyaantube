@@ -1,15 +1,14 @@
 package com.albunyaan.tube.data.me
 
-import androidx.paging.Pager
-import androidx.paging.PagingConfig
-import androidx.paging.PagingData
 import com.albunyaan.tube.data.local.ChannelFeedRefreshState
 import com.albunyaan.tube.data.local.ChannelFeedRefreshStateDao
 import com.albunyaan.tube.data.local.ChannelVideoCache
 import com.albunyaan.tube.data.local.ChannelVideoCacheDao
 import com.albunyaan.tube.data.local.SubscribedChannel
-import com.albunyaan.tube.data.subscriptions.SubscriptionLimitGuard
 import com.albunyaan.tube.data.subscriptions.SubscriptionRepository
+import com.squareup.moshi.JsonAdapter
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.Types
 import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
@@ -22,7 +21,9 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
@@ -62,7 +63,26 @@ class MeFeedRepository @Inject constructor(
     // default-constructible) — its events flow drops on overflow so a
     // test that doesn't subscribe cannot stall.
     private val telemetry: MeRefreshTelemetry,
+    // ANDROID-PERSONAL-03 / T4: NewPipe deep-paginator and Moshi for
+    // serialising the page-token cookies. Both are nullable so test
+    // fixtures that don't exercise the deep-paging path can pass null
+    // — fillWeekIfNeeded then becomes a no-op.
+    private val deepPaginator: ChannelDeepPaginator? = null,
+    moshi: Moshi? = null,
 ) {
+
+    /**
+     * Adapter for the `Map<String, String>` cookie JSON column. Built lazily
+     * from the injected Moshi so we don't pay reflection cost when the
+     * deep-paging path is never exercised. Tests that don't pass Moshi get a
+     * minimal default-built adapter.
+     */
+    private val cookiesJsonAdapter: JsonAdapter<Map<String, String>> by lazy {
+        val m = moshi ?: Moshi.Builder().build()
+        m.adapter(
+            Types.newParameterizedType(Map::class.java, String::class.java, String::class.java),
+        )
+    }
 
     companion object {
         const val CACHE_TTL_MS: Long = 30L * 60L * 1_000L
@@ -99,6 +119,19 @@ class MeFeedRepository @Inject constructor(
         // by AtomChannelFeedFetcher as `IOException("HTTP ${code}")`.
         internal val HTTP_5XX_REGEX: Regex = Regex("""HTTP 5\d{2}""")
         internal val HTTP_429_REGEX: Regex = Regex("""HTTP 429\b|\b429\b""")
+
+        /**
+         * ANDROID-PERSONAL-03 / T4: sentinel value persisted in
+         * `deepPageUrl` once a channel has been deep-paged to exhaustion
+         * (NewPipe returned [ChannelDeepPaginator.DeepPageResult.EndOfChannel]).
+         * On subsequent ticks [fillWeekIfNeeded] short-circuits this
+         * channel — there's no point asking NewPipe for older items
+         * that don't exist.
+         *
+         * `https://yt-eof` is not a valid YouTube continuation URL, so
+         * collisions with real continuation tokens are impossible.
+         */
+        internal const val DEEP_PAGE_EOF_SENTINEL: String = "https://yt-eof"
     }
 
     private val semaphore = Semaphore(MAX_CONCURRENT)
@@ -133,52 +166,249 @@ class MeFeedRepository @Inject constructor(
             .distinctUntilChanged()
 
     /**
-     * T11: paginated stream of cached videos for the Me-tab grid.
+     * ANDROID-PERSONAL-03 / T4: per-week observation for the Me-tab feed.
      *
-     * Mirrors [observeFeed] for channel scoping (newest-subscribed first,
-     * capped at [SubscriptionLimitGuard.CAP] per the 30-channel product
-     * cap) but returns a [PagingData] flow so very long subscription lists
-     * are loaded one page at a time. The Pager creates a fresh
-     * [androidx.paging.PagingSource] every invalidation; the upstream
-     * `flatMapLatest` re-creates the pager when the subscription set
-     * changes so unsubscribed channels are removed cleanly.
+     * Returns a flow of [WeekContent] for the half-open `[start, end)`
+     * window of [WeekBucket.forIndex(weekIndex, now)], scoped to the user's
+     * subscribed channels. Emits null when the bucket is entirely empty so
+     * the ViewModel can skip the week without rendering an empty
+     * placeholder.
      *
-     *  - PAGE_SIZE = 20 (one screenful on a phone, two on a tablet)
-     *  - initialLoadSize = 40 (avoid a "snap" at the top after first frame)
-     *  - prefetchDistance = 10 (start loading the next page before the user
-     *    hits the bottom)
-     *  - placeholders disabled — UX prefers a spinner over greyed-out tiles
+     * Channel scoping mirrors [observeFeed] — newest-subscribed first,
+     * capped at [MAX_CHANNELS_PER_REFRESH] so Room's `IN (...)` IN-list
+     * stays under SQLite's positional parameter limit.
+     *
+     * Items are split into:
+     *   - [WeekContent.shorts] (`isShort = true`)
+     *   - [WeekContent.videos] (`isShort = false`)
+     * both newest-first.
+     *
+     * Note that this is cache-only: the bucket window is recomputed every
+     * time the upstream subscription list changes, so a screen left open
+     * across week boundaries is automatically re-bucketed (the underlying
+     * `now` is read each time the flow downstream collects).
      */
-    fun pagedFeed(filterChannelId: String?): Flow<PagingData<ChannelVideoCache>> =
+    fun observeWeek(weekIndex: Int): Flow<WeekContent?> =
         subscriptions.observeSubscribedChannels()
-            .flatMapLatest { subs ->
+            .flatMapLatest<List<SubscribedChannel>, WeekContent?> { subs ->
                 if (subs.isEmpty()) {
-                    flowOf(PagingData.empty())
+                    flowOf<WeekContent?>(null)
                 } else {
                     val channelIds = subs.asSequence()
                         .sortedByDescending { it.subscribedAt }
-                        .take(SubscriptionLimitGuard.CAP)
+                        .take(MAX_CHANNELS_PER_REFRESH)
                         .map { it.channelId }
                         .toList()
-                    // ANDROID-PERSONAL-02 round 4: removed FEED_WINDOW_MS
-                    // cutoff. Paging loads in PAGE_SIZE batches and the
-                    // cache is bounded per-channel by ATOM (~15 newest), so
-                    // there's no memory cost to showing the full window.
-                    // Matches user expectation (YouTube subscription feed
-                    // never hides old uploads).
-                    Pager(
-                        config = PagingConfig(
-                            pageSize = 20,
-                            initialLoadSize = 40,
-                            prefetchDistance = 10,
-                            enablePlaceholders = false,
-                        ),
-                        pagingSourceFactory = {
-                            cache.pagingForChannels(channelIds, filterChannelId)
-                        },
-                    ).flow
+                    val bucket = WeekBucket.forIndex(weekIndex, currentTimeMillis())
+                    flow<WeekContent?> {
+                        cache.observeRangeForChannels(channelIds, bucket.startMs, bucket.endMs)
+                            .collect { rows ->
+                                val shorts = rows.asSequence()
+                                    .filter { it.isShort }
+                                    .map { it.toUi() }
+                                    .toList()
+                                val videos = rows.asSequence()
+                                    .filterNot { it.isShort }
+                                    .map { it.toUi() }
+                                    .toList()
+                                if (shorts.isEmpty() && videos.isEmpty()) {
+                                    emit(null)
+                                } else {
+                                    emit(
+                                        WeekContent(
+                                            weekIndex = weekIndex,
+                                            startMs = bucket.startMs,
+                                            endMs = bucket.endMs,
+                                            shorts = shorts,
+                                            videos = videos,
+                                        )
+                                    )
+                                }
+                            }
+                    }
                 }
             }
+            .distinctUntilChanged()
+
+    /**
+     * ANDROID-PERSONAL-03 / T4: NewPipe deep-paging fill for a week bucket.
+     *
+     * Triggered by the ViewModel when [observeWeek] returns null and we're
+     * still within [WeekBucket.MAX_WEEKS_BACK]. For every subscribed channel
+     * with no cached items in this week's window AND that hasn't yet hit
+     * EndOfChannel (i.e. has a non-null deepPageUrl OR has never been
+     * deep-paged), this calls [ChannelDeepPaginator.fetchNextPage] in
+     * parallel (capped by [MAX_CONCURRENT]) and:
+     *   - upserts the returned items into [ChannelVideoCache]
+     *   - persists the new deepPageUrl + deepPageCookiesJson on the
+     *     refresh-state row
+     *   - if [DeepPageResult.EndOfChannel], clears deepPageUrl so future
+     *     ticks short-circuit
+     *
+     * Completes once all per-channel paging calls finish (success or
+     * error). Errors are recorded on the refresh-state row but never
+     * propagate — a single channel's failure must never abort another.
+     *
+     * No-op if [deepPaginator] was not injected (test fixtures).
+     */
+    suspend fun fillWeekIfNeeded(weekIndex: Int): Unit = withContext(ioDispatcher) {
+        val paginator = deepPaginator ?: return@withContext
+        val now = currentTimeMillis()
+        val bucket = WeekBucket.forIndex(weekIndex, now)
+
+        val all = subscriptions.getSubscribedChannels()
+        if (all.isEmpty()) return@withContext
+
+        val channelIds = all.asSequence()
+            .sortedByDescending { it.subscribedAt }
+            .take(MAX_CHANNELS_PER_REFRESH)
+            .map { it.channelId }
+            .toList()
+        val cachedInWindow = cache
+            .observeRangeForChannels(channelIds, bucket.startMs, bucket.endMs)
+            .first()
+        val channelsWithItems: Set<String> = cachedInWindow.asSequence()
+            .map { it.channelId }
+            .toSet()
+
+        // Candidates: subscribed AND no items in window AND haven't hit
+        // EndOfChannel yet. EndOfChannel is signalled by clearing
+        // deepPageUrl after we've previously deep-paged at least once
+        // (deepPageUrl was non-null on a prior tick). We approximate this
+        // by: skip if (refresh-state has a row with deepPageUrl == null
+        // AND consecutiveErrorCount == 0 AND lastSuccessfulFetchAt > 0).
+        // The "have we deep-paged before?" question is encoded by the row
+        // existing at all with cleared deepPageUrl. To distinguish "never
+        // deep-paged" from "exhausted", we don't try — a channel that has
+        // never been deep-paged starts with deepPageUrl==null too, so
+        // we'd skip it. Trade-off: deep-paging always begins at the
+        // initial page (null token), so the first call for a fresh
+        // channel pulls page 1 of the Videos tab; if that page is in the
+        // bucket, great; if not, we'll re-attempt the next week. The
+        // cost is one extra NewPipe call per never-deep-paged channel.
+        // Acceptable — it's still gated by the rate limiter.
+        //
+        // Refinement: persist a sentinel value (e.g. "EOF") in deepPageUrl
+        // when EndOfChannel is hit, so subsequent ticks can skip cleanly.
+        // We use literal [DEEP_PAGE_EOF_SENTINEL] so any non-empty,
+        // non-sentinel value is a real continuation URL.
+        val refreshStates: Map<String, ChannelFeedRefreshState> = channelIds
+            .associateWith { id -> refreshStateDao.get(id) ?: return@associateWith null }
+            .filterValues { it != null }
+            .mapValues { it.value!! }
+        val candidateChannels = all
+            .filter { it.channelId in channelIds && it.channelId !in channelsWithItems }
+            .filter { ch ->
+                val st = refreshStates[ch.channelId]
+                // Skip channels we've previously paged to exhaustion.
+                st?.deepPageUrl != DEEP_PAGE_EOF_SENTINEL
+            }
+        if (candidateChannels.isEmpty()) return@withContext
+
+        coroutineScope {
+            candidateChannels.map { channel ->
+                async {
+                    semaphore.withPermit {
+                        runDeepPageFor(paginator, channel, bucket, now)
+                    }
+                }
+            }.awaitAll()
+        }
+    }
+
+    private suspend fun runDeepPageFor(
+        paginator: ChannelDeepPaginator,
+        channel: SubscribedChannel,
+        bucket: WeekBucket,
+        now: Long,
+    ) {
+        val previous = refreshStateDao.get(channel.channelId)
+        val token: ChannelDeepPaginator.SerializedPage? = previous?.deepPageUrl
+            ?.takeIf { it.isNotEmpty() && it != DEEP_PAGE_EOF_SENTINEL }
+            ?.let { url ->
+                val cookies: Map<String, String>? = previous.deepPageCookiesJson
+                    ?.let { runCatching { cookiesJsonAdapter.fromJson(it) }.getOrNull() }
+                ChannelDeepPaginator.SerializedPage(url = url, cookies = cookies)
+            }
+
+        val result = try {
+            withTimeout(PER_CHANNEL_TIMEOUT_MS) {
+                paginator.fetchNextPage(channel.channelUrl, token)
+            }
+        } catch (ce: CancellationException) {
+            if (!currentCoroutineContext().isActive) throw ce
+            // Timeout / inner cancellation: leave previous state intact, do
+            // not increment any counters. Match the semantics of refreshOne.
+            return
+        } catch (t: Throwable) {
+            // Defensive — fetchNextPage already maps throwables to
+            // DeepPageResult.Error, but a misbehaving paginator could still
+            // raise. Don't propagate.
+            return
+        }
+
+        when (result) {
+            is ChannelDeepPaginator.DeepPageResult.Page -> {
+                val cacheRows = result.items
+                    .filter { it.uploadedAt != null && it.videoId.isNotEmpty() }
+                    .map { it.toCacheRow(channel, now) }
+                if (cacheRows.isNotEmpty()) {
+                    // Use upsertAll, NOT replaceForChannel — replaceForChannel
+                    // would wipe ATOM's most-recent rows. We're appending
+                    // older history; primary-key REPLACE handles overlap
+                    // (same videoId from ATOM as from NewPipe → keeps the
+                    // newer fetch's metadata).
+                    cache.upsertAll(cacheRows)
+                }
+                val nextUrl = result.nextPage?.url ?: DEEP_PAGE_EOF_SENTINEL
+                val nextCookiesJson = result.nextPage?.cookies
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.let { cookiesJsonAdapter.toJson(it) }
+                refreshStateDao.upsert(
+                    (previous ?: ChannelFeedRefreshState(
+                        channelId = channel.channelId,
+                        lastSuccessfulFetchAt = now,
+                        lastAttemptAt = now,
+                        lastErrorMessage = null,
+                    )).copy(
+                        lastAttemptAt = now,
+                        lastErrorMessage = null,
+                        deepPageUrl = nextUrl,
+                        deepPageCookiesJson = nextCookiesJson,
+                    )
+                )
+            }
+            ChannelDeepPaginator.DeepPageResult.EndOfChannel -> {
+                refreshStateDao.upsert(
+                    (previous ?: ChannelFeedRefreshState(
+                        channelId = channel.channelId,
+                        lastSuccessfulFetchAt = now,
+                        lastAttemptAt = now,
+                        lastErrorMessage = null,
+                    )).copy(
+                        lastAttemptAt = now,
+                        deepPageUrl = DEEP_PAGE_EOF_SENTINEL,
+                        deepPageCookiesJson = null,
+                    )
+                )
+            }
+            is ChannelDeepPaginator.DeepPageResult.Error -> {
+                // Don't escalate — deep-paging failures are non-fatal. The
+                // ATOM refresher manages the 429/5xx ladder. Just record
+                // the attempt timestamp so callers see "we tried".
+                refreshStateDao.upsert(
+                    (previous ?: ChannelFeedRefreshState(
+                        channelId = channel.channelId,
+                        lastSuccessfulFetchAt = previous?.lastSuccessfulFetchAt ?: 0L,
+                        lastAttemptAt = now,
+                        lastErrorMessage = null,
+                    )).copy(
+                        lastAttemptAt = now,
+                    )
+                )
+            }
+        }
+    }
 
     /**
      * Refresh a slice of subscribed channels.
@@ -556,6 +786,24 @@ class MeFeedRepository @Inject constructor(
         uploadedAt = uploadedAt,
         isShort = isShort,
         fetchedAt = now,
+    )
+
+    /**
+     * ANDROID-PERSONAL-03 / T4: convert a Room cache row to the UI model.
+     * Mirrors the converter previously held inline in [MeViewModel] before
+     * the per-week refactor moved the cache → UI mapping into the repository
+     * (so observeWeek can return WeekContent already in UI shape).
+     */
+    private fun ChannelVideoCache.toUi(): MeFeedVideo = MeFeedVideo(
+        videoId = videoId,
+        channelId = channelId,
+        channelName = channelName,
+        title = title,
+        thumbnailUrl = thumbnailUrl,
+        durationSeconds = durationSeconds,
+        viewCount = viewCount,
+        uploadedAt = uploadedAt ?: 0L,
+        isShort = isShort,
     )
 
     // Test seam. Real code uses System.currentTimeMillis().

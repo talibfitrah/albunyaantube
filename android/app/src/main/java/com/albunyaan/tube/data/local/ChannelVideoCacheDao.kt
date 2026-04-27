@@ -1,6 +1,5 @@
 package com.albunyaan.tube.data.local
 
-import androidx.paging.PagingSource
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
@@ -42,52 +41,39 @@ interface ChannelVideoCacheDao {
         minUploadedAt: Long,
     ): Flow<List<ChannelVideoCache>>
 
+    /**
+     * ANDROID-PERSONAL-03 / T4: per-week observation for the Me-tab feed.
+     *
+     * Returns the cached rows for the half-open `[fromMs, toMs)` upload
+     * window scoped to the given channel IDs. Newest-first ordering. The
+     * `uploadedAt IS NOT NULL` guard mirrors [observeRecentForChannels] —
+     * untimed rows must never surface in a date-ordered window.
+     *
+     * The repository layer splits results into shorts vs videos by reading
+     * the `isShort` flag — the DAO does not pre-bucket because a single
+     * query keeps Room's invalidation tracker simple (one observer per
+     * week instead of two).
+     */
+    @Query(
+        """SELECT * FROM channel_video_cache
+           WHERE channelId IN (:channelIds)
+             AND uploadedAt IS NOT NULL
+             AND uploadedAt >= :fromMs
+             AND uploadedAt < :toMs
+           ORDER BY uploadedAt DESC"""
+    )
+    fun observeRangeForChannels(
+        channelIds: List<String>,
+        fromMs: Long,
+        toMs: Long,
+    ): Flow<List<ChannelVideoCache>>
+
     @Query(
         """SELECT * FROM channel_video_cache
            WHERE channelId = :channelId
            ORDER BY uploadedAt DESC"""
     )
     suspend fun getForChannel(channelId: String): List<ChannelVideoCache>
-
-    /**
-     * T11: paginated source for the Me-feed videos grid. Mirrors
-     * [observeRecentForChannels] but returns a [PagingSource] so the UI
-     * loads in PAGE_SIZE batches instead of pulling the whole 14-day
-     * window into memory up front.
-     *
-     * - `channelIds`: subscribed-channel scope (capped at
-     *   [com.albunyaan.tube.data.subscriptions.SubscriptionLimitGuard.CAP] in
-     *   the repository).
-     * - `cutoffMs`: minimum uploadedAt — the rolling 14-day window.
-     * - `filterChannelId`: optional chip-driven filter; null = all subscribed.
-     *
-     * The `uploadedAt IS NOT NULL` guard mirrors [observeRecentForChannels]
-     * because the entity column is nullable and untimed rows must never
-     * surface in a date-ordered feed.
-     *
-     * The `isShort = 0` guard excludes Shorts: the Me tab renders Shorts in
-     * a dedicated horizontal row above the long-form grid (see
-     * [com.albunyaan.tube.ui.me.MeShortsAdapter]), so without this clause
-     * every Short would be displayed twice.
-     *
-     * ANDROID-PERSONAL-02 round 4: no upload-date cutoff. Paging loads in
-     * PAGE_SIZE batches; the cache is bounded by what ATOM returns
-     * per-channel (~15 newest items × CAP=30 channels), so showing the full
-     * cache newest-first is safe and matches user expectation (YouTube
-     * subscription feed never hides old uploads).
-     */
-    @Query(
-        """SELECT * FROM channel_video_cache
-           WHERE channelId IN (:channelIds)
-             AND isShort = 0
-             AND uploadedAt IS NOT NULL
-             AND (:filterChannelId IS NULL OR channelId = :filterChannelId)
-           ORDER BY uploadedAt DESC"""
-    )
-    fun pagingForChannels(
-        channelIds: List<String>,
-        filterChannelId: String?,
-    ): PagingSource<Int, ChannelVideoCache>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(rows: List<ChannelVideoCache>)

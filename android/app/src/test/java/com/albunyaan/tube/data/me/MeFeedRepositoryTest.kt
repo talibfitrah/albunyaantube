@@ -882,6 +882,240 @@ class MeFeedRepositoryTest {
         assertEquals(0, fetcher.callsFor("https://yt/UC_NEW"))
     }
 
+    // ANDROID-PERSONAL-03 / T4: observeWeek + fillWeekIfNeeded.
+
+    @Test
+    fun `T4 observeWeek emits null on empty subscriptions`() = runTest {
+        val emitted = repo.observeWeek(weekIndex = 0).first()
+        assertNull(emitted)
+    }
+
+    @Test
+    fun `T4 observeWeek emits null when no rows fall in window`() = runTest {
+        subscribe("UC1")
+        // Item 30 days ago — week 0 is now-7d to now, so item is OUTSIDE.
+        fetcher.responses["https://yt/UC1"] = listOf(
+            item("vold", uploadedAt = clockMillis - 30L * 24L * 60L * 60L * 1_000L),
+        )
+        repo.refresh(force = true)
+
+        val emitted = repo.observeWeek(weekIndex = 0).first()
+        assertNull("week 0 has no items in the past 7 days", emitted)
+    }
+
+    @Test
+    fun `T4 observeWeek splits items into shorts and videos`() = runTest {
+        subscribe("UC1")
+        // Three items in week 0 (within last 7 days):
+        val recent1 = clockMillis - 1L * 24L * 60L * 60L * 1_000L
+        val recent2 = clockMillis - 3L * 24L * 60L * 60L * 1_000L
+        val recent3 = clockMillis - 5L * 24L * 60L * 60L * 1_000L
+        fetcher.responses["https://yt/UC1"] = listOf(
+            item("video1", uploadedAt = recent1, isShort = false),
+            item("short1", uploadedAt = recent2, isShort = true),
+            item("video2", uploadedAt = recent3, isShort = false),
+        )
+        repo.refresh(force = true)
+
+        val w0 = repo.observeWeek(weekIndex = 0).first()
+        assertNotNull(w0)
+        // Newest-first within each bucket.
+        assertEquals(listOf("short1"), w0!!.shorts.map { it.videoId })
+        assertEquals(listOf("video1", "video2"), w0.videos.map { it.videoId })
+        assertEquals(0, w0.weekIndex)
+    }
+
+    @Test
+    fun `T4 observeWeek scopes to weekIndex window not the entire history`() = runTest {
+        subscribe("UC1")
+        val fiveDaysAgo = clockMillis - 5L * 24L * 60L * 60L * 1_000L
+        val tenDaysAgo = clockMillis - 10L * 24L * 60L * 60L * 1_000L
+        fetcher.responses["https://yt/UC1"] = listOf(
+            item("recent", uploadedAt = fiveDaysAgo),
+            item("older", uploadedAt = tenDaysAgo),
+        )
+        repo.refresh(force = true)
+
+        val w0 = repo.observeWeek(weekIndex = 0).first()
+        val w1 = repo.observeWeek(weekIndex = 1).first()
+        assertNotNull(w0)
+        assertEquals(listOf("recent"), w0!!.videos.map { it.videoId })
+        assertNotNull(w1)
+        assertEquals(listOf("older"), w1!!.videos.map { it.videoId })
+    }
+
+    @Test
+    fun `T4 observeWeek excludes rows from unsubscribed channels`() = runTest {
+        subscribe("UC1")
+        subscribe("UC2")
+        val recent = clockMillis - 2L * 24L * 60L * 60L * 1_000L
+        fetcher.responses["https://yt/UC1"] = listOf(item("v1", uploadedAt = recent))
+        fetcher.responses["https://yt/UC2"] = listOf(item("v2", uploadedAt = recent))
+        repo.refresh(force = true)
+
+        val before = repo.observeWeek(weekIndex = 0).first()
+        assertEquals(2, before!!.videos.size)
+
+        subs.unsubscribe("UC2")
+        val after = repo.observeWeek(weekIndex = 0).first()
+        assertEquals("UC2's row must be gone after unsubscribe", listOf("v1"),
+            after!!.videos.map { it.videoId })
+    }
+
+    @Test
+    fun `T4 fillWeekIfNeeded triggers paginator only for channels missing items in window`() = runTest {
+        subscribe("UC_HAS")
+        subscribe("UC_NEEDS")
+        val twoDaysAgo = clockMillis - 2L * 24L * 60L * 60L * 1_000L
+        // UC_HAS already has a fresh item in the bucket via ATOM.
+        fetcher.responses["https://yt/UC_HAS"] = listOf(item("vhas", uploadedAt = twoDaysAgo))
+        // UC_NEEDS has nothing.
+        fetcher.responses["https://yt/UC_NEEDS"] = emptyList()
+        repo.refresh(force = true)
+
+        val provider = StubPageProvider().apply {
+            // Empty items + non-null nextPage = "got page but nothing
+            // matched our regex / nothing was on this page". The paginator
+            // will return DeepPageResult.Page(items=[], nextPage=...) and
+            // we'll persist the continuation URL.
+            page = ChannelDeepPaginator.PageProvider.Raw(
+                items = emptyList(),
+                nextPage = org.schabi.newpipe.extractor.Page("https://yt/continuation/2"),
+            )
+        }
+        val paginator = ChannelDeepPaginator(newPipeInit = null, pageProvider = provider)
+        val repoDeep = MeFeedRepository(
+            subscriptions = subs,
+            cache = db.channelVideoCacheDao(),
+            refreshStateDao = db.channelFeedRefreshStateDao(),
+            fetcher = fetcher,
+            ioDispatcher = Dispatchers.Unconfined,
+            telemetry = MeRefreshTelemetry(),
+            deepPaginator = paginator,
+        ).also { it.currentTimeMillisProvider = { clockMillis } }
+
+        repoDeep.fillWeekIfNeeded(weekIndex = 0)
+
+        // Only UC_NEEDS should have been called.
+        assertEquals(listOf("https://yt/UC_NEEDS"), provider.calls.map { it.first })
+
+        // The continuation URL should be persisted.
+        val state = db.channelFeedRefreshStateDao().get("UC_NEEDS")
+        assertNotNull(state)
+        assertEquals("https://yt/continuation/2", state!!.deepPageUrl)
+    }
+
+    @Test
+    fun `T4 fillWeekIfNeeded persists EOF sentinel when paginator returns EndOfChannel`() = runTest {
+        subscribe("UC1")
+        // No ATOM items so UC1 is a candidate for deep paging.
+        fetcher.responses["https://yt/UC1"] = emptyList()
+        repo.refresh(force = true)
+
+        // EndOfChannel = empty items + null nextPage from PageProvider.
+        val provider = StubPageProvider().apply {
+            page = ChannelDeepPaginator.PageProvider.Raw(items = emptyList(), nextPage = null)
+        }
+        val paginator = ChannelDeepPaginator(newPipeInit = null, pageProvider = provider)
+        val repoDeep = MeFeedRepository(
+            subscriptions = subs,
+            cache = db.channelVideoCacheDao(),
+            refreshStateDao = db.channelFeedRefreshStateDao(),
+            fetcher = fetcher,
+            ioDispatcher = Dispatchers.Unconfined,
+            telemetry = MeRefreshTelemetry(),
+            deepPaginator = paginator,
+        ).also { it.currentTimeMillisProvider = { clockMillis } }
+
+        repoDeep.fillWeekIfNeeded(weekIndex = 5)
+
+        val state = db.channelFeedRefreshStateDao().get("UC1")!!
+        assertEquals(
+            "EOF must be marked with the sentinel so future ticks skip",
+            MeFeedRepository.DEEP_PAGE_EOF_SENTINEL,
+            state.deepPageUrl,
+        )
+        // Subsequent fillWeekIfNeeded must skip — page provider must not be called again.
+        val callsBefore = provider.calls.size
+        repoDeep.fillWeekIfNeeded(weekIndex = 6)
+        assertEquals("EOF sentinel must short-circuit further calls", callsBefore, provider.calls.size)
+    }
+
+    @Test
+    fun `T4 fillWeekIfNeeded is no-op when paginator not injected`() = runTest {
+        subscribe("UC1")
+        fetcher.responses["https://yt/UC1"] = emptyList()
+        repo.refresh(force = true)
+
+        // repo (the @Before-built one) has deepPaginator = null. Must not crash.
+        repo.fillWeekIfNeeded(weekIndex = 0)
+        // No deepPageUrl should have been written.
+        val state = db.channelFeedRefreshStateDao().get("UC1")
+        assertNull(state?.deepPageUrl)
+    }
+
+    @Test
+    fun `T4 fillWeekIfNeeded passes prior token through to paginator`() = runTest {
+        subscribe("UC1")
+        fetcher.responses["https://yt/UC1"] = emptyList()
+        repo.refresh(force = true)
+
+        // Seed a prior token on the refresh-state row.
+        val prior = db.channelFeedRefreshStateDao().get("UC1")!!
+        db.channelFeedRefreshStateDao().upsert(
+            prior.copy(
+                deepPageUrl = "https://yt/continuation/X",
+                deepPageCookiesJson = """{"CONSENT":"YES+9"}""",
+            )
+        )
+
+        val provider = StubPageProvider().apply {
+            page = ChannelDeepPaginator.PageProvider.Raw(items = emptyList(), nextPage = null)
+        }
+        val paginator = ChannelDeepPaginator(newPipeInit = null, pageProvider = provider)
+        val repoDeep = MeFeedRepository(
+            subscriptions = subs,
+            cache = db.channelVideoCacheDao(),
+            refreshStateDao = db.channelFeedRefreshStateDao(),
+            fetcher = fetcher,
+            ioDispatcher = Dispatchers.Unconfined,
+            telemetry = MeRefreshTelemetry(),
+            deepPaginator = paginator,
+        ).also { it.currentTimeMillisProvider = { clockMillis } }
+
+        repoDeep.fillWeekIfNeeded(weekIndex = 0)
+
+        assertEquals(1, provider.calls.size)
+        // The token's URL must reach the page provider via NewPipe Page.
+        val seenPage = provider.calls[0].second
+        assertNotNull(seenPage)
+        assertEquals("https://yt/continuation/X", seenPage!!.url)
+        assertEquals(mapOf("CONSENT" to "YES+9"), seenPage.cookies)
+    }
+
+    /**
+     * Test seam over [ChannelDeepPaginator.PageProvider]. The repository
+     * tests construct a real [ChannelDeepPaginator] with this stub so we
+     * exercise the full mapping logic (StreamInfoItem → ChannelFeedItem,
+     * regex filtering, error mapping).
+     */
+    private class StubPageProvider : ChannelDeepPaginator.PageProvider {
+        var page: ChannelDeepPaginator.PageProvider.Raw =
+            ChannelDeepPaginator.PageProvider.Raw(items = emptyList(), nextPage = null)
+        val calls = java.util.Collections.synchronizedList(
+            mutableListOf<Pair<String, org.schabi.newpipe.extractor.Page?>>()
+        )
+
+        override suspend fun fetch(
+            channelUrl: String,
+            page: org.schabi.newpipe.extractor.Page?,
+        ): ChannelDeepPaginator.PageProvider.Raw {
+            calls += channelUrl to page
+            return this.page
+        }
+    }
+
+
     private fun item(id: String, uploadedAt: Long?, isShort: Boolean = false) =
         ChannelFeedFetcher.ChannelFeedItem(
             videoId = id,

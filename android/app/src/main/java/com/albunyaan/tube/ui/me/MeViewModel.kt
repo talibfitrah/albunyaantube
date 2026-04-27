@@ -4,9 +4,6 @@ package com.albunyaan.tube.ui.me
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.paging.PagingData
-import androidx.paging.cachedIn
-import androidx.paging.map
 import com.albunyaan.tube.data.local.ChannelVideoCache
 import com.albunyaan.tube.data.local.FavoriteVideo
 import com.albunyaan.tube.data.local.FavoritesRepository
@@ -19,13 +16,10 @@ import com.albunyaan.tube.data.me.MeFeedVideo
 import com.albunyaan.tube.data.subscriptions.SubscriptionRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
 @HiltViewModel
@@ -54,19 +48,11 @@ class MeViewModel @Inject constructor(
         initialValue = MeFeedState.Loading,
     )
 
-    /**
-     * T11: paginated long-form videos for the Me-tab grid. Independent of
-     * [state] — the fragment collects this into its [MeVideosPagingAdapter]
-     * directly rather than reading from [MeFeedState.Content.videos]. The
-     * [filter] flow drives re-pagination (the chip toggle re-creates the
-     * Pager); the row is mapped to the [MeFeedVideo] UI shape and cached
-     * in the view-model scope so config-changes don't refetch the first
-     * page.
-     */
-    val pagedVideos: Flow<PagingData<MeFeedVideo>> = filter
-        .flatMapLatest { filterId -> feed.pagedFeed(filterId) }
-        .map { pagingData -> pagingData.map { row -> row.toUi() } }
-        .cachedIn(viewModelScope)
+    // ANDROID-PERSONAL-03 / T4: the legacy `pagedVideos` flow (a single
+    // PagingData<MeFeedVideo>) is removed because the Me-tab grid is now
+    // organised per week. The week-based replacement (`weeks` StateFlow +
+    // `loadNextWeek()`) is added in T5 — this commit only removes the
+    // broken reference so the tree compiles between T4 and T5.
 
     // ANDROID-PERSONAL-02 / T9: the prior `init { refreshFeed(force = false) }`
     // was removed in favour of WorkManager-driven refresh:
