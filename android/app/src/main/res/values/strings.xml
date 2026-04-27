@@ -172,6 +172,11 @@
     <string name="me_refresh_error">Couldn\'t refresh your feed. Pull down to try again.</string>
     <string name="me_filter_clear">All subscriptions</string>
 
+    <!-- ANDROID-PERSONAL-03: weekly grouping headers in the Me feed. -->
+    <string name="me_week_this">This week</string>
+    <string name="me_week_last">Last week</string>
+    <string name="me_week_n_ago">%1$d weeks ago</string>
+
     <!-- Subscribe / Save -->
     <string name="channel_subscribe">Subscribe</string>
     <string name="channel_unsubscribe">Subscribed</string>

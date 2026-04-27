@@ -143,6 +143,11 @@
     <string name="me_refresh_error">تعذر تحديث خلاصتك. اسحب للأسفل للمحاولة مجدداً.</string>
     <string name="me_filter_clear">كل الاشتراكات</string>
 
+    <!-- ANDROID-PERSONAL-03: weekly grouping headers in the Me feed. -->
+    <string name="me_week_this">هذا الأسبوع</string>
+    <string name="me_week_last">الأسبوع الماضي</string>
+    <string name="me_week_n_ago">منذ %1$d أسابيع</string>
+
     <!-- Subscribe / Save -->
     <string name="channel_subscribe">اشتراك</string>
     <string name="channel_unsubscribe">مشترك</string>

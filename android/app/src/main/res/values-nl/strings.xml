@@ -152,6 +152,11 @@
     <string name="me_refresh_error">Kon je feed niet vernieuwen. Trek omlaag om het opnieuw te proberen.</string>
     <string name="me_filter_clear">Alle abonnementen</string>
 
+    <!-- ANDROID-PERSONAL-03: weekly grouping headers in the Me feed. -->
+    <string name="me_week_this">Deze week</string>
+    <string name="me_week_last">Vorige week</string>
+    <string name="me_week_n_ago">%1$d weken geleden</string>
+
     <!-- Subscribe / Save -->
     <string name="channel_subscribe">Abonneren</string>
     <string name="channel_unsubscribe">Geabonneerd</string>
