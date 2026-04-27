@@ -867,6 +867,29 @@ class MeFeedRepository @Inject constructor(
                         outcome = MeRefreshTelemetry.ChannelOutcome.NEW_ITEMS,
                     )
                 )
+
+                // ANDROID-PERSONAL-03 round 6 [field-bug]: when a channel is
+                // refreshed for the FIRST TIME ever (no prior refresh-state
+                // row), ATOM only returns the 15 most recent uploads. For
+                // channels that post shorts heavily (e.g. Mufti Menk's
+                // last 12 days are 15 shorts, no long-form), the user sees
+                // just shorts and assumes the feature is broken. Fire ONE
+                // NewPipe Videos-tab page in the same refresh tick so the
+                // cache also has ~30 long-form items for the new channel.
+                // After this initial pull, subsequent refreshes only do
+                // ATOM (cheap, gated by 304); deep-paging continues on
+                // demand via [fillWeekIfNeeded] when the user scrolls.
+                if (previous == null) {
+                    val paginator = deepPaginator
+                    if (paginator != null) {
+                        runDeepPageFor(
+                            paginator = paginator,
+                            channel = channel,
+                            bucket = WeekBucket.forIndex(0, now),
+                            now = now,
+                        )
+                    }
+                }
             }
         }
     }
