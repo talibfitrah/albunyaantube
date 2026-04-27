@@ -143,13 +143,13 @@
     <string name="me_empty_subtitle">Kanalen en afspeellijsten die je opslaat verschijnen hier met hun nieuwste video\'s en shorts.</string>
     <string name="me_empty_cta">Kanalen bekijken</string>
     <!-- TODO(ANDROID-PERSONAL-02): Translation pending from user. -->
-    <string name="me_favorites">Favorites</string>
+    <string name="me_favorites">Favorieten</string>
     <!-- TODO(ANDROID-PERSONAL-02): Translation pending from user. -->
-    <string name="me_see_all">See all</string>
+    <string name="me_see_all">Alles bekijken</string>
     <!-- TODO(ANDROID-PERSONAL-02): Translation pending from user. -->
-    <string name="me_remove_from_favorites">Remove from favorites</string>
+    <string name="me_remove_from_favorites">Verwijderen uit favorieten</string>
     <!-- TODO(ANDROID-PERSONAL-02): Translation pending from user. -->
-    <string name="cd_remove_from_favorites">Remove from favorites</string>
+    <string name="cd_remove_from_favorites">Verwijderen uit favorieten</string>
     <string name="me_section_shorts">Shorts</string>
     <string name="me_section_videos">Nieuwste video\'s</string>
     <string name="me_refresh_error">Kon je feed niet vernieuwen. Trek omlaag om het opnieuw te proberen.</string>
@@ -162,7 +162,7 @@
     <string name="playlist_unsave">Opgeslagen</string>
     <string name="cd_save_playlist_button">Sla deze afspeellijst op in je bibliotheek</string>
     <!-- TODO(ANDROID-PERSONAL-02): Translation pending from user. -->
-    <string name="me_subscription_cap_reached">You\'re following 30 channels (the limit). Unsubscribe one to follow this channel.</string>
+    <string name="me_subscription_cap_reached">Je volgt 30 kanalen (het maximum). Hef het abonnement op een ander kanaal op om dit kanaal te volgen.</string>
 
     <!-- Settings library -->
     <string name="settings_library_header">Bibliotheek</string>

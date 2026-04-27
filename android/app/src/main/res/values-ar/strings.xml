@@ -134,13 +134,13 @@
     <string name="me_empty_subtitle">ستظهر هنا القنوات وقوائم التشغيل التي تحفظها، مع أحدث الفيديوهات والمقاطع القصيرة.</string>
     <string name="me_empty_cta">تصفح القنوات</string>
     <!-- TODO(ANDROID-PERSONAL-02): Translation pending from user. -->
-    <string name="me_favorites">Favorites</string>
+    <string name="me_favorites">المفضلة</string>
     <!-- TODO(ANDROID-PERSONAL-02): Translation pending from user. -->
-    <string name="me_see_all">See all</string>
+    <string name="me_see_all">عرض الكل</string>
     <!-- TODO(ANDROID-PERSONAL-02): Translation pending from user. -->
-    <string name="me_remove_from_favorites">Remove from favorites</string>
+    <string name="me_remove_from_favorites">إزالة من المفضلة</string>
     <!-- TODO(ANDROID-PERSONAL-02): Translation pending from user. -->
-    <string name="cd_remove_from_favorites">Remove from favorites</string>
+    <string name="cd_remove_from_favorites">إزالة من المفضلة</string>
     <string name="me_section_shorts">المقاطع القصيرة</string>
     <string name="me_section_videos">أحدث الفيديوهات</string>
     <string name="me_refresh_error">تعذر تحديث خلاصتك. اسحب للأسفل للمحاولة مجدداً.</string>
@@ -153,7 +153,7 @@
     <string name="playlist_unsave">محفوظة</string>
     <string name="cd_save_playlist_button">احفظ قائمة التشغيل هذه في مكتبتك</string>
     <!-- TODO(ANDROID-PERSONAL-02): Translation pending from user. -->
-    <string name="me_subscription_cap_reached">You\'re following 30 channels (the limit). Unsubscribe one to follow this channel.</string>
+    <string name="me_subscription_cap_reached">أنت تتابع 30 قناة (الحد الأقصى). الغِ الاشتراك من إحداها لمتابعة هذه القناة.</string>
 
     <!-- Settings library -->
     <string name="settings_library_header">المكتبة</string>

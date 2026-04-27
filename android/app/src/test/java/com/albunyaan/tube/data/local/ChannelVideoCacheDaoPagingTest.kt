@@ -173,4 +173,32 @@ class ChannelVideoCacheDaoPagingTest {
         assertEquals(1, page.data.size)
         assertEquals("hasDate", page.data.first().videoId)
     }
+
+    /**
+     * Regression: the Me tab renders Shorts in a dedicated horizontal row
+     * above the long-form videos grid. The DAO's paging query must exclude
+     * `isShort = 1` rows or every Short would render twice (once in the
+     * Shorts row, once in the grid below). Stage-2 holistic review catch.
+     */
+    @Test
+    fun `paging excludes shorts rows`() = runTest {
+        cache.upsertAll(
+            listOf(
+                row("longA", "UCa", uploadedAt = 3_000L, isShort = false),
+                row("shortB", "UCa", uploadedAt = 2_000L, isShort = true),
+                row("longC", "UCa", uploadedAt = 1_000L, isShort = false),
+            )
+        )
+
+        val page = loadFirstPage(
+            channelIds = listOf("UCa"),
+            cutoffMs = 0L,
+            filterChannelId = null,
+            loadSize = 20,
+        )
+
+        assertEquals(2, page.data.size)
+        assertEquals(listOf("longA", "longC"), page.data.map { it.videoId })
+        assertTrue(page.data.none { it.isShort })
+    }
 }

@@ -64,10 +64,16 @@ interface ChannelVideoCacheDao {
      * The `uploadedAt IS NOT NULL` guard mirrors [observeRecentForChannels]
      * because the entity column is nullable and untimed rows must never
      * surface in a date-ordered feed.
+     *
+     * The `isShort = 0` guard excludes Shorts: the Me tab renders Shorts in
+     * a dedicated horizontal row above the long-form grid (see
+     * [com.albunyaan.tube.ui.me.MeShortsAdapter]), so without this clause
+     * every Short would be displayed twice.
      */
     @Query(
         """SELECT * FROM channel_video_cache
            WHERE channelId IN (:channelIds)
+             AND isShort = 0
              AND uploadedAt IS NOT NULL AND uploadedAt >= :cutoffMs
              AND (:filterChannelId IS NULL OR channelId = :filterChannelId)
            ORDER BY uploadedAt DESC"""
