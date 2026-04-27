@@ -97,6 +97,16 @@ class MeVideosAdapter(
             binding.root.setOnClickListener { onClick(item) }
         }
 
+        /**
+         * Me-feed videos show only channel name + relative upload date.
+         * Duration and view count are intentionally NOT displayed: the ATOM
+         * source ([com.albunyaan.tube.data.me.AtomChannelFeedFetcher]) does
+         * not expose them, and we do not want to fall back to NewPipe
+         * scraping just to render two metadata fields per row. The data
+         * model fields [MeFeedVideo.durationSeconds] / [MeFeedVideo.viewCount]
+         * remain on the type for cache-layer compatibility but are always
+         * null for items refreshed via ATOM. ANDROID-PERSONAL-02 / spec §8.
+         */
         private fun buildMeta(item: MeFeedVideo): CharSequence {
             val relative = if (item.uploadedAt > 0L) {
                 DateUtils.getRelativeTimeSpanString(
