@@ -14,6 +14,11 @@ import androidx.room.PrimaryKey
  * backoff. All v3 fields are additive with safe defaults so the v2 -> v3
  * migration is non-destructive (see [MIGRATION_2_3]).
  *
+ * v4 (ANDROID-PERSONAL-03 / NewPipe deep paging): adds the columns below to
+ * support paginating *older* items from a channel's Videos tab when the
+ * ATOM 15-most-recent ceiling is exhausted. Both fields are nullable
+ * (default null = haven't yet deep-paged this channel).
+ *
  * - [etag] / [lastModified]: cached `If-None-Match` / `If-Modified-Since`
  *   headers. Most ticks return HTTP 304 with zero body, dramatically
  *   reducing bandwidth and the chance of triggering YouTube's anti-bot.
@@ -22,6 +27,13 @@ import androidx.room.PrimaryKey
  *   -> reset error only; any error -> increment error).
  * - [backoffUntilMs]: per-channel cooldown after 429 (1h/4h/24h escalation)
  *   or 5xx (5min/30min/2h). Workers must skip the channel until this passes.
+ * - [deepPageUrl]: continuation URL from NewPipe's [org.schabi.newpipe.extractor.Page].
+ *   Persisted so deep-paging survives process restart. null means we
+ *   haven't yet deep-paged this channel (or we hit EndOfChannel and
+ *   should stop).
+ * - [deepPageCookiesJson]: JSON-encoded cookie map from NewPipe's [Page].
+ *   Same survive-restart semantics as [deepPageUrl]. May be null when no
+ *   cookies were present.
  */
 @Entity(tableName = "channel_feed_refresh_state")
 data class ChannelFeedRefreshState(
@@ -34,4 +46,6 @@ data class ChannelFeedRefreshState(
     val consecutiveErrorCount: Int = 0,
     val consecutiveEmptyCount: Int = 0,
     val backoffUntilMs: Long? = null,
+    val deepPageUrl: String? = null,
+    val deepPageCookiesJson: String? = null,
 )

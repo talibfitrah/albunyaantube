@@ -67,3 +67,19 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
         db.execSQL("ALTER TABLE channel_feed_refresh_state ADD COLUMN backoffUntilMs INTEGER")
     }
 }
+
+/**
+ * v3 -> v4: NewPipe deep-paging columns on `channel_feed_refresh_state`.
+ *
+ * Additive only — both columns are nullable TEXT with implicit-null defaults
+ * so existing rows continue to work without explicit DEFAULT clauses.
+ * See [ChannelFeedRefreshState] for column-level documentation.
+ *
+ * ANDROID-PERSONAL-03 / T2.
+ */
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE channel_feed_refresh_state ADD COLUMN deepPageUrl TEXT")
+        db.execSQL("ALTER TABLE channel_feed_refresh_state ADD COLUMN deepPageCookiesJson TEXT")
+    }
+}

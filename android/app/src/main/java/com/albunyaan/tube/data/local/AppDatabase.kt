@@ -9,6 +9,7 @@ import androidx.room.RoomDatabase
  * v1: favorite videos
  * v2: subscribed channels, saved playlists, channel video cache, feed refresh state
  * v3: ATOM refresh per-channel ETag + backoff columns (additive)
+ * v4: NewPipe deep-paging columns (deepPageUrl, deepPageCookiesJson) (additive)
  */
 @Database(
     entities = [
@@ -18,7 +19,7 @@ import androidx.room.RoomDatabase
         ChannelVideoCache::class,
         ChannelFeedRefreshState::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {

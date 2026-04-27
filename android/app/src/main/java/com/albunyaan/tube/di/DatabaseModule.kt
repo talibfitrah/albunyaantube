@@ -12,6 +12,7 @@ import com.albunyaan.tube.data.local.FavoritesRepository
 import com.albunyaan.tube.data.local.FavoritesRepositoryImpl
 import com.albunyaan.tube.data.local.MIGRATION_1_2
 import com.albunyaan.tube.data.local.MIGRATION_2_3
+import com.albunyaan.tube.data.local.MIGRATION_3_4
 import com.albunyaan.tube.data.local.SavedPlaylistDao
 import com.albunyaan.tube.data.local.SubscribedChannelDao
 import dagger.Module
@@ -38,7 +39,7 @@ object DatabaseModule {
             AppDatabase::class.java,
             AppDatabase.DATABASE_NAME
         )
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
 
         // SAFETY: Only allow destructive migration in debug builds.
         // Release builds will crash on schema mismatch, forcing proper migration implementation.
