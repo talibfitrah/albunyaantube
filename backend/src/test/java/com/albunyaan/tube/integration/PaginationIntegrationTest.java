@@ -220,7 +220,7 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
 
             do {
                 CursorPageDto<ContentItemDto> page = publicContentService.getContent(
-                        "CHANNELS", cursor, pageSize, null, null, null, null);
+                        "CHANNELS", cursor, pageSize, null, null, null, null, null);
 
                 for (ContentItemDto item : page.getData()) {
                     // Assert no duplicates
@@ -263,7 +263,7 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
 
             // Act
             CursorPageDto<ContentItemDto> page = publicContentService.getContent(
-                    "CHANNELS", null, pageSize, null, null, null, null);
+                    "CHANNELS", null, pageSize, null, null, null, null, null);
 
             // Assert
             assertEquals(totalChannels, page.getData().size());
@@ -276,7 +276,7 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
         void emptyDataset_returnsEmptyPage() throws Exception {
             // Act: Query with no data
             CursorPageDto<ContentItemDto> page = publicContentService.getContent(
-                    "CHANNELS", null, 20, null, null, null, null);
+                    "CHANNELS", null, 20, null, null, null, null, null);
 
             // Assert
             assertTrue(page.getData().isEmpty(), "Data should be empty");
@@ -309,7 +309,7 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
 
             // Act
             CursorPageDto<ContentItemDto> page = publicContentService.getContent(
-                    "CHANNELS", null, 50, testCategory.getId(), null, null, null);
+                    "CHANNELS", null, 50, testCategory.getId(), null, null, null, null);
 
             // Assert
             assertEquals(channelsInCategory, page.getData().size(),
@@ -330,7 +330,7 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
             String cursor = null;
             do {
                 CursorPageDto<ContentItemDto> page = publicContentService.getContent(
-                        "CHANNELS", cursor, 10, null, null, null, null);
+                        "CHANNELS", cursor, 10, null, null, null, null, null);
                 page.getData().forEach(item -> ids10.add(item.getId()));
                 cursor = page.getPageInfo().getNextCursor();
             } while (cursor != null);
@@ -338,7 +338,7 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
             cursor = null;
             do {
                 CursorPageDto<ContentItemDto> page = publicContentService.getContent(
-                        "CHANNELS", cursor, 15, null, null, null, null);
+                        "CHANNELS", cursor, 15, null, null, null, null, null);
                 page.getData().forEach(item -> ids15.add(item.getId()));
                 cursor = page.getPageInfo().getNextCursor();
             } while (cursor != null);
@@ -367,7 +367,7 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
 
             do {
                 CursorPageDto<ContentItemDto> page = publicContentService.getContent(
-                        "PLAYLISTS", cursor, pageSize, null, null, null, null);
+                        "PLAYLISTS", cursor, pageSize, null, null, null, null, null);
 
                 for (ContentItemDto item : page.getData()) {
                     assertFalse(seenIds.contains(item.getId()),
@@ -398,7 +398,7 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
 
             // Act
             CursorPageDto<ContentItemDto> page = publicContentService.getContent(
-                    "PLAYLISTS", null, pageSize, null, null, null, null);
+                    "PLAYLISTS", null, pageSize, null, null, null, null, null);
 
             // Assert
             assertEquals(pageSize, page.getData().size());
@@ -426,7 +426,7 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
 
             do {
                 CursorPageDto<ContentItemDto> page = publicContentService.getContent(
-                        "VIDEOS", cursor, pageSize, null, null, null, null);
+                        "VIDEOS", cursor, pageSize, null, null, null, null, null);
 
                 for (ContentItemDto item : page.getData()) {
                     assertFalse(seenIds.contains(item.getId()),
@@ -464,7 +464,7 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
 
             // Act: Get first page
             CursorPageDto<ContentItemDto> firstPage = publicContentService.getContent(
-                    "VIDEOS", null, pageSize, null, null, null, null);
+                    "VIDEOS", null, pageSize, null, null, null, null, null);
 
             // Assert first page
             assertEquals(pageSize, firstPage.getData().size());
@@ -472,7 +472,7 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
 
             // Act: Get second (last) page
             CursorPageDto<ContentItemDto> lastPage = publicContentService.getContent(
-                    "VIDEOS", firstPage.getPageInfo().getNextCursor(), pageSize, null, null, null, null);
+                    "VIDEOS", firstPage.getPageInfo().getNextCursor(), pageSize, null, null, null, null, null);
 
             // Assert last page
             assertEquals(5, lastPage.getData().size());
@@ -657,7 +657,7 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
 
             do {
                 CursorPageDto<ContentItemDto> page = publicContentService.getContent(
-                        "CHANNELS", cursor, pageSize, null, null, null, null);
+                        "CHANNELS", cursor, pageSize, null, null, null, null, null);
 
                 for (ContentItemDto item : page.getData()) {
                     seenIds.add(item.getId());
@@ -686,7 +686,7 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
 
             do {
                 CursorPageDto<ContentItemDto> page = publicContentService.getContent(
-                        "PLAYLISTS", cursor, 1, null, null, null, null);
+                        "PLAYLISTS", cursor, 1, null, null, null, null, null);
 
                 assertEquals(1, page.getData().size(), "Each page should have exactly 1 item");
                 seenIds.add(page.getData().get(0).getId());
@@ -709,7 +709,7 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
 
             // Act: Request page size larger than total items
             CursorPageDto<ContentItemDto> page = publicContentService.getContent(
-                    "VIDEOS", null, 100, null, null, null, null);
+                    "VIDEOS", null, 100, null, null, null, null, null);
 
             // Assert
             assertEquals(totalVideos, page.getData().size());
@@ -724,7 +724,7 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
 
             // Act
             CursorPageDto<ContentItemDto> page = publicContentService.getContent(
-                    "CHANNELS", null, 10, null, null, null, null);
+                    "CHANNELS", null, 10, null, null, null, null, null);
 
             String cursor = page.getPageInfo().getNextCursor();
 
@@ -746,15 +746,15 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
 
             // Act: Simulate concurrent reads by fetching multiple pages at once
             CursorPageDto<ContentItemDto> page1 = publicContentService.getContent(
-                    "CHANNELS", null, 20, null, null, null, null);
+                    "CHANNELS", null, 20, null, null, null, null, null);
 
             // Start second traversal while first is ongoing
             CursorPageDto<ContentItemDto> page2Start = publicContentService.getContent(
-                    "CHANNELS", null, 15, null, null, null, null);
+                    "CHANNELS", null, 15, null, null, null, null, null);
 
             // Continue first traversal
             CursorPageDto<ContentItemDto> page1Next = publicContentService.getContent(
-                    "CHANNELS", page1.getPageInfo().getNextCursor(), 20, null, null, null, null);
+                    "CHANNELS", page1.getPageInfo().getNextCursor(), 20, null, null, null, null, null);
 
             // Assert: Both traversals should work correctly
             assertEquals(20, page1.getData().size());
@@ -790,7 +790,7 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
 
             do {
                 CursorPageDto<ContentItemDto> page = publicContentService.getContent(
-                        "CHANNELS", cursor, pageSize, null, null, null, null);
+                        "CHANNELS", cursor, pageSize, null, null, null, null, null);
 
                 for (ContentItemDto item : page.getData()) {
                     assertFalse(seenIds.contains(item.getId()),
@@ -867,7 +867,7 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
 
             // Act: Pass garbage cursor
             CursorPageDto<ContentItemDto> page = publicContentService.getContent(
-                    "CHANNELS", "completely-invalid-cursor-xyz123", 10, null, null, null, null);
+                    "CHANNELS", "completely-invalid-cursor-xyz123", 10, null, null, null, null, null);
 
             // Assert: Should return first page or handle gracefully
             assertNotNull(page);
@@ -883,7 +883,7 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
 
             // Act: Pass malformed base64
             CursorPageDto<ContentItemDto> page = publicContentService.getContent(
-                    "CHANNELS", "!!!not-base64!!!", 10, null, null, null, null);
+                    "CHANNELS", "!!!not-base64!!!", 10, null, null, null, null, null);
 
             // Assert
             assertNotNull(page);
@@ -897,7 +897,7 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
 
             // Act
             CursorPageDto<ContentItemDto> page = publicContentService.getContent(
-                    "CHANNELS", "", 10, null, null, null, null);
+                    "CHANNELS", "", 10, null, null, null, null, null);
 
             // Assert: Empty string should be treated like null (first page)
             assertNotNull(page);
@@ -913,12 +913,12 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
 
             // Get a cursor from channels
             CursorPageDto<ContentItemDto> channelPage = publicContentService.getContent(
-                    "CHANNELS", null, 10, null, null, null, null);
+                    "CHANNELS", null, 10, null, null, null, null, null);
             String channelCursor = channelPage.getPageInfo().getNextCursor();
 
             // Act: Use channel cursor for playlists query
             CursorPageDto<ContentItemDto> playlistPage = publicContentService.getContent(
-                    "PLAYLISTS", channelCursor, 10, null, null, null, null);
+                    "PLAYLISTS", channelCursor, 10, null, null, null, null, null);
 
             // Assert: Should handle gracefully (may return first page or different results)
             assertNotNull(playlistPage);
@@ -940,7 +940,7 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
 
             // Get first page
             CursorPageDto<ContentItemDto> firstPage = publicContentService.getContent(
-                    "CHANNELS", null, 20, null, null, null, null);
+                    "CHANNELS", null, 20, null, null, null, null, null);
 
             String cursor = firstPage.getPageInfo().getNextCursor();
             Set<String> seenIds = new HashSet<>();
@@ -955,7 +955,7 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
             // Continue fetching with cursor
             while (cursor != null) {
                 CursorPageDto<ContentItemDto> page = publicContentService.getContent(
-                        "CHANNELS", cursor, 20, null, null, null, null);
+                        "CHANNELS", cursor, 20, null, null, null, null, null);
 
                 for (ContentItemDto item : page.getData()) {
                     assertFalse(seenIds.contains(item.getId()),
@@ -980,7 +980,7 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
 
             // Get first page
             CursorPageDto<ContentItemDto> firstPage = publicContentService.getContent(
-                    "CHANNELS", null, 20, null, null, null, null);
+                    "CHANNELS", null, 20, null, null, null, null, null);
 
             String cursor = firstPage.getPageInfo().getNextCursor();
             Set<String> seenIds = new HashSet<>();
@@ -995,7 +995,7 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
             // Continue fetching - the new channel may or may not appear
             while (cursor != null) {
                 CursorPageDto<ContentItemDto> page = publicContentService.getContent(
-                        "CHANNELS", cursor, 20, null, null, null, null);
+                        "CHANNELS", cursor, 20, null, null, null, null, null);
 
                 for (ContentItemDto item : page.getData()) {
                     seenIds.add(item.getId()); // Don't assert no duplicates - insertion may cause cursor shifts
@@ -1017,7 +1017,7 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
 
             // Get first page
             CursorPageDto<ContentItemDto> firstPage = publicContentService.getContent(
-                    "CHANNELS", null, 20, null, null, null, null);
+                    "CHANNELS", null, 20, null, null, null, null, null);
 
             String cursor = firstPage.getPageInfo().getNextCursor();
             Set<String> seenIds = new HashSet<>();
@@ -1031,7 +1031,7 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
             // Continue fetching
             while (cursor != null) {
                 CursorPageDto<ContentItemDto> page = publicContentService.getContent(
-                        "CHANNELS", cursor, 20, null, null, null, null);
+                        "CHANNELS", cursor, 20, null, null, null, null, null);
 
                 for (ContentItemDto item : page.getData()) {
                     seenIds.add(item.getId());

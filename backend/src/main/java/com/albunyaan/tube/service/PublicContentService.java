@@ -87,10 +87,11 @@ public class PublicContentService {
      * @return Paginated content
      */
     @Cacheable(value = CacheConfig.CACHE_PUBLIC_CONTENT,
-               key = "(#type == null || #type.isBlank() ? 'HOME' : #type).toUpperCase(T(java.util.Locale).ROOT) + '-' + T(com.albunyaan.tube.service.PublicContentService).cacheCursorKey(#type, #cursor) + '-' + #limit + '-' + #category + '-' + #length + '-' + #date + '-' + #sort")
+               key = "(#type == null || #type.isBlank() ? 'HOME' : #type).toUpperCase(T(java.util.Locale).ROOT) + '-' + T(com.albunyaan.tube.service.PublicContentService).cacheCursorKey(#type, #cursor) + '-' + #limit + '-' + #category + '-' + #length + '-' + #date + '-' + #sort + '-q' + (#q == null ? '' : #q)",
+               condition = "#q == null || #q.isBlank()")
     public CursorPageDto<ContentItemDto> getContent(
             String type, String cursor, int limit,
-            String category, String length, String date, String sort
+            String category, String length, String date, String sort, String q
     ) throws ExecutionException, InterruptedException, TimeoutException {
 
         // Null-safe: default to HOME if type is null or blank
@@ -106,13 +107,28 @@ public class PublicContentService {
             allCategoryIds = resolveAllCategoryIds(category);
         }
 
+        TextFilter textFilter = new TextFilter(q);
+
         // For content types that support real cursor pagination
         switch (type.toUpperCase(Locale.ROOT)) {
             case "CHANNELS":
+                if (textFilter.isActive()) {
+                    return searchWithOffsetPagination(
+                            getChannels(MAX_SEARCH_FETCH, category, allCategoryIds), textFilter, cursor, limit);
+                }
                 return getChannelsWithCursor(limit, category, allCategoryIds, cursor);
             case "PLAYLISTS":
+                if (textFilter.isActive()) {
+                    return searchWithOffsetPagination(
+                            getPlaylists(MAX_SEARCH_FETCH, category, allCategoryIds), textFilter, cursor, limit);
+                }
                 return getPlaylistsWithCursor(limit, category, allCategoryIds, cursor);
             case "VIDEOS":
+                if (textFilter.isActive()) {
+                    return searchWithOffsetPagination(
+                            getVideos(MAX_SEARCH_FETCH, category, allCategoryIds, length, date, sort),
+                            textFilter, cursor, limit);
+                }
                 return getVideosWithCursor(limit, category, allCategoryIds, cursor, length, date, sort);
             case "HOME":
             default:
@@ -1550,6 +1566,19 @@ public class PublicContentService {
         return cursor;
     }
 
+    private static final int MAX_SEARCH_FETCH = 1000;
+
+    private CursorPageDto<ContentItemDto> searchWithOffsetPagination(
+            List<ContentItemDto> allItems, TextFilter filter, String cursor, int limit) {
+        List<ContentItemDto> filtered = filter.apply(allItems);
+        int offset = decodeCursorOffset(cursor);
+        int from = Math.min(offset, filtered.size());
+        int to = Math.min(offset + limit, filtered.size());
+        List<ContentItemDto> page = filtered.subList(from, to);
+        boolean hasNext = to < filtered.size();
+        return new CursorPageDto<>(page, hasNext ? encodeCursor(offset + limit) : null);
+    }
+
     private String encodeCursor(int offset) {
         return Base64.getEncoder().encodeToString(String.valueOf(offset).getBytes());
     }
@@ -1580,5 +1609,31 @@ public class PublicContentService {
                 throw (e instanceof RuntimeException re) ? re : new RuntimeException(e);
             }
         }, contentExecutor);
+    }
+
+    /** Package-visible for unit testing. Case-insensitive text filter across DTO fields. */
+    static class TextFilter {
+        private final String lower;
+
+        TextFilter(String q) {
+            this.lower = (q == null) ? "" : q.trim().toLowerCase(Locale.ROOT);
+        }
+
+        boolean isActive() { return !lower.isEmpty(); }
+
+        boolean matches(ContentItemDto dto) {
+            return containsLower(dto.getName())
+                    || containsLower(dto.getTitle())
+                    || containsLower(dto.getDescription());
+        }
+
+        List<ContentItemDto> apply(List<ContentItemDto> items) {
+            if (!isActive()) return items;
+            return items.stream().filter(this::matches).collect(Collectors.toList());
+        }
+
+        private boolean containsLower(String field) {
+            return field != null && field.toLowerCase(Locale.ROOT).contains(lower);
+        }
     }
 }

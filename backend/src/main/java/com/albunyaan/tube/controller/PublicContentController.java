@@ -96,13 +96,15 @@ public class PublicContentController {
             @RequestParam(required = false) String category,
             @RequestParam(required = false) String length,
             @RequestParam(required = false) String date,
-            @RequestParam(required = false) String sort
+            @RequestParam(required = false) String sort,
+            @RequestParam(required = false) String q
     ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Validate and cap limit
         int validLimit = Math.min(Math.max(limit, 1), 50);
+        String normalizedQ = (q != null && !q.isBlank()) ? q.trim() : null;
 
         CursorPageDto<ContentItemDto> page = contentService.getContent(
-                type, cursor, validLimit, category, length, date, sort
+                type, cursor, validLimit, category, length, date, sort, normalizedQ
         );
 
         return ResponseEntity.ok(page);
