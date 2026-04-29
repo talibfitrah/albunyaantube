@@ -33,6 +33,7 @@ class NewPipeExtractorClient(
     private val cache: MetadataCache,
     private val metrics: ExtractorMetricsReporter,
     private val featureFlags: PlaybackFeatureFlags,
+    private val clientRotator: YoutubeClientRotator = YoutubeClientRotator(),
     /**
      * Clock provider for timestamps. Uses SystemClock.elapsedRealtime() by default
      * to match StreamModels.areUrlsExpired() which also uses elapsedRealtime().
@@ -98,13 +99,35 @@ class NewPipeExtractorClient(
         try {
             val handler = streamLinkHandlerFactory.fromId(videoId)
             val extractor = youtubeService.getStreamExtractor(handler)
-            // Apply runtime iOS fetch setting before extraction (enables toggle without restart).
+            // Apply client setting before extraction. On initial attempt, derive client from
+            // feature flags (IOS when isIosFetchEnabled, ANDROID otherwise). When forceRefresh=true
+            // and client rotation is enabled, advance to the next fallback client instead.
             // NOTE: Synchronization only ensures atomic apply of the setting to NewPipe's global state.
             // It does NOT guarantee that concurrent extractions (in fetchPage()) observe the same
             // value throughout their execution. Full serialization would be too costly. This is
             // acceptable since toggles are rare (ops/debug only) and not toggled during playback.
-            synchronized(NewPipeExtractorClient::class.java) {
-                applyIosFetchSetting()
+            if (forceRefresh && featureFlags.isClientRotationEnabled) {
+                val nextClient = clientRotator.nextClient(videoId)
+                if (nextClient != null) {
+                    synchronized(NewPipeExtractorClient::class.java) {
+                        applyClientSetting(nextClient)
+                    }
+                } else {
+                    // All clients exhausted — restore initial setting and report failure
+                    synchronized(NewPipeExtractorClient::class.java) {
+                        applyClientSetting(clientRotator.initialClient(featureFlags.isIosFetchEnabled))
+                    }
+                    metrics.onStreamResolveFailure(videoId, ExtractionException("All YouTube clients exhausted for $videoId"))
+                    return@withContext null
+                }
+            } else {
+                synchronized(NewPipeExtractorClient::class.java) {
+                    if (forceRefresh || !featureFlags.isClientRotationEnabled) {
+                        applyIosFetchSetting()
+                    } else {
+                        applyClientSetting(clientRotator.initialClient(featureFlags.isIosFetchEnabled))
+                    }
+                }
             }
             // CRITICAL: Must call fetchPage() before getInfo() to get ALL video formats!
             extractor.fetchPage()
@@ -112,6 +135,7 @@ class NewPipeExtractorClient(
             val urlGeneratedAt = clock()
             val resolved = info.toResolvedStreams(videoId, urlGeneratedAt) ?: return@withContext null
             synchronized(streamCacheLock) { streamCache[videoId] = CacheEntry(resolved, urlGeneratedAt) }
+            clientRotator.reset(videoId)
             metrics.onStreamResolveSuccess(videoId, clock() - start)
             resolved
         } catch (c: CancellationException) {
@@ -824,6 +848,13 @@ class NewPipeExtractorClient(
         YoutubeStreamExtractor.setFetchIosClient(iosFetchEnabled)
         if (BuildConfig.DEBUG) {
             android.util.Log.d(ADAPTIVE_PROBE_TAG, "applyIosFetchSetting: fetchIosClient=$iosFetchEnabled")
+        }
+    }
+
+    private fun applyClientSetting(client: YoutubeClientRotator.Client) {
+        YoutubeStreamExtractor.setFetchIosClient(client == YoutubeClientRotator.Client.IOS)
+        if (BuildConfig.DEBUG) {
+            android.util.Log.d(ADAPTIVE_PROBE_TAG, "applyClientSetting: client=$client")
         }
     }
 
