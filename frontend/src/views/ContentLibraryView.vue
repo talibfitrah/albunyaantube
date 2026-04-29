@@ -2006,12 +2006,14 @@ onUnmounted(() => {
 }
 
 :root[data-theme="dark"] .action-btn {
-  opacity: 1;
-  filter: brightness(1.4);
+  filter: brightness(0) invert(1);
+  opacity: 0.8;
 }
 
 :root[data-theme="dark"] .action-btn:hover {
-  filter: brightness(1.6);
+  filter: brightness(0) invert(1);
+  opacity: 1;
+  background: var(--color-surface-alt);
 }
 
 /* Mobile Filter Bottom Sheet */

@@ -35,18 +35,21 @@ public class ContentReportService {
     private final VideoRepository videoRepository;
     private final ChannelRepository channelRepository;
     private final PlaylistRepository playlistRepository;
+    private final PublicContentCacheService publicContentCacheService;
 
     public ContentReportService(
             ContentReportRepository reportRepository,
             @Qualifier("reportRateLimitCache") Cache<String, AtomicInteger> rateLimitCache,
             VideoRepository videoRepository,
             ChannelRepository channelRepository,
-            PlaylistRepository playlistRepository) {
+            PlaylistRepository playlistRepository,
+            PublicContentCacheService publicContentCacheService) {
         this.reportRepository = reportRepository;
         this.rateLimitCache = rateLimitCache;
         this.videoRepository = videoRepository;
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
+        this.publicContentCacheService = publicContentCacheService;
     }
 
     public ContentReport submitReport(
@@ -104,29 +107,45 @@ public class ContentReportService {
     }
 
     private void archiveReportedContent(ReportTargetType targetType, String targetId) {
+        boolean archived = false;
         try {
             switch (targetType) {
-                case VIDEO -> videoRepository.findByYoutubeId(targetId).ifPresent(v -> {
-                    v.setValidationStatus(ValidationStatus.ARCHIVED);
-                    try { videoRepository.save(v); } catch (Exception e) {
-                        log.warn("Failed to archive video {}: {}", targetId, e.getMessage());
+                case VIDEO -> {
+                    var opt = videoRepository.findByYoutubeId(targetId);
+                    if (opt.isPresent()) {
+                        opt.get().setValidationStatus(ValidationStatus.ARCHIVED);
+                        videoRepository.save(opt.get());
+                        archived = true;
+                    } else {
+                        log.warn("Cannot archive video {}: not found in database", targetId);
                     }
-                });
-                case CHANNEL -> channelRepository.findByYoutubeId(targetId).ifPresent(ch -> {
-                    ch.setValidationStatus(ValidationStatus.ARCHIVED);
-                    try { channelRepository.save(ch); } catch (Exception e) {
-                        log.warn("Failed to archive channel {}: {}", targetId, e.getMessage());
+                }
+                case CHANNEL -> {
+                    var opt = channelRepository.findByYoutubeId(targetId);
+                    if (opt.isPresent()) {
+                        opt.get().setValidationStatus(ValidationStatus.ARCHIVED);
+                        channelRepository.save(opt.get());
+                        archived = true;
+                    } else {
+                        log.warn("Cannot archive channel {}: not found in database", targetId);
                     }
-                });
-                case PLAYLIST -> playlistRepository.findByYoutubeId(targetId).ifPresent(pl -> {
-                    pl.setValidationStatus(ValidationStatus.ARCHIVED);
-                    try { playlistRepository.save(pl); } catch (Exception e) {
-                        log.warn("Failed to archive playlist {}: {}", targetId, e.getMessage());
+                }
+                case PLAYLIST -> {
+                    var opt = playlistRepository.findByYoutubeId(targetId);
+                    if (opt.isPresent()) {
+                        opt.get().setValidationStatus(ValidationStatus.ARCHIVED);
+                        playlistRepository.save(opt.get());
+                        archived = true;
+                    } else {
+                        log.warn("Cannot archive playlist {}: not found in database", targetId);
                     }
-                });
+                }
             }
         } catch (Exception e) {
             log.warn("Failed to archive {} {}: {}", targetType, targetId, e.getMessage());
+        }
+        if (archived) {
+            publicContentCacheService.evictPublicContentCaches();
         }
     }
 
