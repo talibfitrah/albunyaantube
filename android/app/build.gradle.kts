@@ -84,6 +84,9 @@ android {
         // Default ON - disable in local.properties: playback.degradation.enabled=false
         val enableDegradation = localProperties.getProperty("playback.degradation.enabled", "true").toBoolean()
         buildConfigField("boolean", "ENABLE_DEGRADATION_MANAGER", "$enableDegradation")
+
+        buildConfigField("Boolean", "ENABLE_CLIENT_ROTATION", "true")
+        buildConfigField("Boolean", "ENABLE_HLS_PROBATION", "true")
     }
 
     signingConfigs {
@@ -200,7 +203,7 @@ dependencies {
     implementation("androidx.viewpager2:viewpager2:1.1.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     // AndroidX Media3 (replaces ExoPlayer 2.x)
-    val media3Version = "1.9.0"
+    val media3Version = "1.9.2"
     implementation("androidx.media3:media3-exoplayer:$media3Version")
     implementation("androidx.media3:media3-exoplayer-hls:$media3Version")
     implementation("androidx.media3:media3-exoplayer-dash:$media3Version")
@@ -212,10 +215,9 @@ dependencies {
     implementation("com.squareup.moshi:moshi:1.15.2")
     implementation("com.squareup.moshi:moshi-kotlin:1.15.2")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
-    // NewPipeExtractor v0.26.0 (2026-02-22): Adds AccountTerminatedException, minor fixes
-    // Only breaking change: Service.getMediaCapabilities() returns Set instead of List (we don't use this API)
-    // Release notes: https://github.com/TeamNewPipe/NewPipeExtractor/releases/tag/v0.26.0
-    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.0")
+    // NewPipeExtractor v0.26.1: patch release on top of v0.26.0
+    // Release notes: https://github.com/TeamNewPipe/NewPipeExtractor/releases/tag/v0.26.1
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.1")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     implementation("io.coil-kt:coil:2.7.0")
