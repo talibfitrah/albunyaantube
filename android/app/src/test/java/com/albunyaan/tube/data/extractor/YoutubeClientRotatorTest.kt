@@ -78,4 +78,19 @@ class YoutubeClientRotatorTest {
         // State is still valid → nextIndex would be 2 → null (exhausted)
         assertNull(rotator.nextClient("v1"))
     }
+
+    @Test
+    fun evictExpired_exactTtlBoundary_stateKept() {
+        fakeTime = 0L
+        rotator.nextClient("v1")           // state written at t=0
+        fakeTime = 30L * 60 * 1000        // exactly at TTL (= not yet expired under strict >)
+        assertNull(rotator.nextClient("v1"))  // state kept → already exhausted → null
+    }
+
+    @Test
+    fun reset_nonExistentKey_noOp() {
+        rotator.reset("nonExistentVideo")   // should not throw
+        // nextClient for that video still starts fresh
+        assertEquals(YoutubeClientRotator.Client.ANDROID, rotator.nextClient("nonExistentVideo"))
+    }
 }

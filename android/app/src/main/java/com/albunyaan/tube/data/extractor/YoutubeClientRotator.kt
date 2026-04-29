@@ -5,6 +5,11 @@ import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Manages per-video YouTube client fallback order (IOS → ANDROID).
+ * Call [initialClient] to get the first client to try. On failure, call [nextClient]
+ * to advance to the next fallback. State is evicted after 30 minutes of inactivity.
+ */
 @Singleton
 class YoutubeClientRotator @Inject constructor() {
 
@@ -19,13 +24,17 @@ class YoutubeClientRotator @Inject constructor() {
 
     private val states = ConcurrentHashMap<String, RotationState>()
 
-    var clock: () -> Long = { SystemClock.elapsedRealtime() }
+    internal var clock: () -> Long = { SystemClock.elapsedRealtime() }
 
     fun initialClient(isIosEnabled: Boolean): Client =
         if (isIosEnabled) Client.IOS else Client.ANDROID
 
     /**
-     * Advance to the next client for this video. Returns null when all clients exhausted.
+     * Advance to the next client for this video after the initial attempt ([initialClient]) failed.
+     * Returns null when all fallback clients are exhausted.
+     *
+     * Must only be called after [initialClient] has already been attempted for this video —
+     * calling it first silently skips the IOS client.
      */
     fun nextClient(videoId: String): Client? {
         evictExpired()
