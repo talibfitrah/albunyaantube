@@ -133,8 +133,16 @@ class NewPipeExtractorClient(
             extractor.fetchPage()
             val info = StreamInfo.getInfo(extractor)
             val urlGeneratedAt = clock()
-            val resolved = info.toResolvedStreams(videoId, urlGeneratedAt) ?: return@withContext null
+            val resolved = info.toResolvedStreams(videoId, urlGeneratedAt)
+            if (resolved == null) {
+                // Client responded but stream mapping failed — reset rotator so the next
+                // retry starts fresh rather than advancing to the next rotation slot on a
+                // non-transport failure.
+                clientRotator.reset(videoId)
+                return@withContext null
+            }
             synchronized(streamCacheLock) { streamCache[videoId] = CacheEntry(resolved, urlGeneratedAt) }
+            // Reset per-video rotation state — safe no-op if rotator was never advanced for this video
             clientRotator.reset(videoId)
             metrics.onStreamResolveSuccess(videoId, clock() - start)
             resolved
