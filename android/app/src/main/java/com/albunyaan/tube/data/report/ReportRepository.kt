@@ -3,6 +3,7 @@ package com.albunyaan.tube.data.report
 import com.albunyaan.tube.data.source.api.ReportApi
 import java.io.IOException
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 
 interface ReportRepository {
     suspend fun submitReport(
@@ -37,6 +38,8 @@ class RetrofitReportRepository @Inject constructor(
                 response.code() == 429 -> Result.failure(RateLimitException())
                 else -> Result.failure(IOException("HTTP ${response.code()}"))
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result.failure(e)
         }

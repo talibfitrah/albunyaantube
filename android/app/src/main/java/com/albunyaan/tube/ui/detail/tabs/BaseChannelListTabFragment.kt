@@ -231,7 +231,7 @@ abstract class BaseChannelListTabFragment<T> : Fragment(R.layout.fragment_channe
     private fun observeState() {
         viewLifecycleOwner.lifecycleScope.launch {
             combine(getState(), viewModel.searchQuery) { state, query ->
-                val lowerQuery = query.trim().lowercase()
+                val lowerQuery = query.trim().lowercase(java.util.Locale.ROOT)
                 if (lowerQuery.isEmpty()) {
                     state
                 } else {

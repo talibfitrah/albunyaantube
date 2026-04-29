@@ -96,7 +96,7 @@ public class ContentReportService {
     }
 
     private void checkRateLimit(String deviceKey) {
-        if (deviceKey == null || deviceKey.isBlank()) return;
+        if (deviceKey == null || deviceKey.isBlank()) deviceKey = "ANONYMOUS_DEVICE";
         AtomicInteger count = rateLimitCache.get(deviceKey, k -> new AtomicInteger(0));
         int current = count.incrementAndGet();
         if (current > RATE_LIMIT_MAX) {

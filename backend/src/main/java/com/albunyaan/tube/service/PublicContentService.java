@@ -1566,6 +1566,7 @@ public class PublicContentService {
         return cursor;
     }
 
+    // TODO: replace with Firestore full-text index (Algolia/extensions) before collection exceeds ~500 items
     private static final int MAX_SEARCH_FETCH = 1000;
 
     private CursorPageDto<ContentItemDto> searchWithOffsetPagination(

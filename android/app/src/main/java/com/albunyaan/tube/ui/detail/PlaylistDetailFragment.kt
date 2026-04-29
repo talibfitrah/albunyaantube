@@ -241,21 +241,21 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
                 // Items (videos) state, filtered by search query
                 launch {
                     combine(viewModel.itemsState, viewModel.searchQuery) { state, query ->
-                        val lowerQuery = query.trim().lowercase()
+                        val lowerQuery = query.trim().lowercase(java.util.Locale.ROOT)
                         if (lowerQuery.isEmpty()) state
                         else when (state) {
                             is PlaylistDetailViewModel.PaginatedState.Loaded -> {
                                 val filtered = state.items.filter {
-                                    it.title.lowercase().contains(lowerQuery) ||
-                                    it.channelName?.lowercase()?.contains(lowerQuery) == true
+                                    it.title.lowercase(java.util.Locale.ROOT).contains(lowerQuery) ||
+                                    it.channelName?.lowercase(java.util.Locale.ROOT)?.contains(lowerQuery) == true
                                 }
                                 if (filtered.isEmpty()) PlaylistDetailViewModel.PaginatedState.Empty
                                 else state.copy(items = filtered, nextPage = null)
                             }
                             is PlaylistDetailViewModel.PaginatedState.ErrorAppend -> {
                                 val filtered = state.items.filter {
-                                    it.title.lowercase().contains(lowerQuery) ||
-                                    it.channelName?.lowercase()?.contains(lowerQuery) == true
+                                    it.title.lowercase(java.util.Locale.ROOT).contains(lowerQuery) ||
+                                    it.channelName?.lowercase(java.util.Locale.ROOT)?.contains(lowerQuery) == true
                                 }
                                 state.copy(items = filtered)
                             }

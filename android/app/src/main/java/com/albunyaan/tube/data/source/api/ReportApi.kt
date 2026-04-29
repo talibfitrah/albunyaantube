@@ -8,5 +8,5 @@ import retrofit2.http.POST
 interface ReportApi {
 
     @POST("api/v1/reports")
-    suspend fun submitReport(@Body request: ReportRequest): Response<Unit>
+    suspend fun submitReport(@Body request: ReportRequest): Response<Void>
 }

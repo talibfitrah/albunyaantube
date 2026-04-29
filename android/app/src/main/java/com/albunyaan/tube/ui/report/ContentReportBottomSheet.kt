@@ -122,7 +122,8 @@ class ContentReportBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun showSnackbar(message: String) {
-        val anchor = activity?.window?.decorView?.findViewById<View>(android.R.id.content)
+        val anchor = view
+            ?: activity?.window?.decorView?.findViewById<View>(android.R.id.content)
             ?: return
         Snackbar.make(anchor, message, Snackbar.LENGTH_LONG).show()
     }

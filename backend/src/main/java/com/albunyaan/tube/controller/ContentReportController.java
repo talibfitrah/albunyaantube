@@ -7,6 +7,11 @@ import com.albunyaan.tube.model.ReportTargetType;
 import com.albunyaan.tube.security.FirebaseUserDetails;
 import com.albunyaan.tube.service.ContentReportService;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -31,7 +36,7 @@ public class ContentReportController {
 
     @PostMapping("/api/v1/reports")
     public ResponseEntity<?> submitReport(
-            @RequestBody SubmitReportRequest body,
+            @Valid @RequestBody SubmitReportRequest body,
             HttpServletRequest request) {
         String deviceKey = request.getHeader(HEADER_DEVICE_ID);
         if (deviceKey == null || deviceKey.isBlank()) {
@@ -45,8 +50,11 @@ public class ContentReportController {
         } catch (ContentReportService.RateLimitExceededException e) {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                     .body(Map.of("error", "Rate limit exceeded. Please try again later."));
-        } catch (ExecutionException | InterruptedException | TimeoutException e) {
+        } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to submit report."));
+        } catch (ExecutionException | TimeoutException e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Failed to submit report."));
         }
@@ -84,10 +92,10 @@ public class ContentReportController {
     }
 
     public record SubmitReportRequest(
-            ReportTargetType targetType,
-            String targetId,
-            List<ReportReason> reasons,
-            String otherDescription) {}
+            @NotNull ReportTargetType targetType,
+            @NotBlank @Size(max = 128) String targetId,
+            @NotEmpty List<ReportReason> reasons,
+            @Size(max = 500) String otherDescription) {}
 
     public record ResolveReportRequest(ReportStatus status, String note) {}
 }

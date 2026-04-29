@@ -68,7 +68,7 @@ class FakeContentService : ContentService {
             ContentType.ALL -> videos + channels + playlists  // Mixed content for Featured section
         }
 
-        val lowerQuery = query?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+        val lowerQuery = query?.trim()?.lowercase(java.util.Locale.ROOT)?.takeIf { it.isNotEmpty() }
 
         val filtered = sourceItems.filter { item ->
             val matchesFilter = when (item) {
@@ -77,12 +77,12 @@ class FakeContentService : ContentService {
                 is ContentItem.Playlist -> filters.category?.let { item.category == it } ?: true
             }
             val matchesQuery = lowerQuery == null || when (item) {
-                is ContentItem.Video -> item.title.lowercase().contains(lowerQuery)
-                        || item.description.lowercase().contains(lowerQuery)
-                is ContentItem.Channel -> item.name.lowercase().contains(lowerQuery)
-                        || item.description?.lowercase()?.contains(lowerQuery) == true
-                is ContentItem.Playlist -> item.title.lowercase().contains(lowerQuery)
-                        || item.description?.lowercase()?.contains(lowerQuery) == true
+                is ContentItem.Video -> item.title.lowercase(java.util.Locale.ROOT).contains(lowerQuery)
+                        || item.description.lowercase(java.util.Locale.ROOT).contains(lowerQuery)
+                is ContentItem.Channel -> item.name.lowercase(java.util.Locale.ROOT).contains(lowerQuery)
+                        || item.description?.lowercase(java.util.Locale.ROOT)?.contains(lowerQuery) == true
+                is ContentItem.Playlist -> item.title.lowercase(java.util.Locale.ROOT).contains(lowerQuery)
+                        || item.description?.lowercase(java.util.Locale.ROOT)?.contains(lowerQuery) == true
             }
             matchesFilter && matchesQuery
         }.sortByOption(filters.sortOption)
@@ -147,7 +147,7 @@ class FakeContentService : ContentService {
                 channels.filter { it.category == categoryName } +
                 playlists.filter { it.category == categoryName })
             HomeSection(
-                categoryId = categoryName.lowercase(),
+                categoryId = categoryName.lowercase(java.util.Locale.ROOT),
                 categoryName = categoryName,
                 items = categoryItems.take(contentLimit),
                 totalItemCount = categoryItems.size
@@ -163,17 +163,17 @@ class FakeContentService : ContentService {
     }
 
     override suspend fun search(query: String, type: String?, limit: Int): List<ContentItem> {
-        val searchQuery = query.lowercase()
+        val searchQuery = query.lowercase(java.util.Locale.ROOT)
         val allItems = videos + channels + playlists
 
         return allItems.filter { item ->
             when (item) {
-                is ContentItem.Video -> item.title.lowercase().contains(searchQuery) ||
-                                       item.category.lowercase().contains(searchQuery)
-                is ContentItem.Channel -> item.name.lowercase().contains(searchQuery) ||
-                                         item.category.lowercase().contains(searchQuery)
-                is ContentItem.Playlist -> item.title.lowercase().contains(searchQuery) ||
-                                          item.category.lowercase().contains(searchQuery)
+                is ContentItem.Video -> item.title.lowercase(java.util.Locale.ROOT).contains(searchQuery) ||
+                                       item.category.lowercase(java.util.Locale.ROOT).contains(searchQuery)
+                is ContentItem.Channel -> item.name.lowercase(java.util.Locale.ROOT).contains(searchQuery) ||
+                                         item.category.lowercase(java.util.Locale.ROOT).contains(searchQuery)
+                is ContentItem.Playlist -> item.title.lowercase(java.util.Locale.ROOT).contains(searchQuery) ||
+                                          item.category.lowercase(java.util.Locale.ROOT).contains(searchQuery)
             }
         }.take(limit)
     }
@@ -181,7 +181,7 @@ class FakeContentService : ContentService {
     override suspend fun fetchCategories(): List<Category> {
         return categories.map { category ->
             Category(
-                id = category.lowercase(),
+                id = category.lowercase(java.util.Locale.ROOT),
                 name = category,
                 hasSubcategories = false
             )
