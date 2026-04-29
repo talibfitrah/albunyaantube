@@ -321,16 +321,71 @@
         android:layoutDirection="locale"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
-        <!-- Main Content (Videos list) -->
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/videosRecyclerView"
+        <!-- Normal content: search bar + RecyclerView stacked vertically -->
+        <LinearLayout
+            android:id="@+id/contentLayout"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:clipToPadding="false"
-            android:paddingBottom="@dimen/bottom_nav_height"
-            android:visibility="gone"
-            tools:visibility="visible"
-            tools:listitem="@layout/item_video_list" />
+            android:orientation="vertical">
+
+            <!-- Search bar (client-side filtering for playlist items) -->
+            <LinearLayout
+                android:id="@+id/searchBar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingStart="@dimen/spacing_md"
+                android:paddingEnd="@dimen/spacing_sm"
+                android:paddingTop="@dimen/spacing_sm"
+                android:paddingBottom="@dimen/spacing_sm"
+                android:gravity="center_vertical">
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/searchInputLayout"
+                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:hint="@string/search_hint"
+                    app:startIconDrawable="@drawable/ic_search"
+                    app:startIconContentDescription="@string/search_hint">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/searchEditText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:imeOptions="actionSearch"
+                        android:inputType="text"
+                        android:maxLines="1"
+                        android:textAlignment="viewStart" />
+
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <ImageButton
+                    android:id="@+id/searchClearButton"
+                    android:layout_width="@dimen/icon_small"
+                    android:layout_height="@dimen/icon_small"
+                    android:layout_marginStart="@dimen/spacing_sm"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:src="@drawable/ic_close"
+                    android:visibility="gone"
+                    android:contentDescription="@string/search_clear" />
+
+            </LinearLayout>
+
+            <!-- Main Content (Videos list) -->
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/videosRecyclerView"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:clipToPadding="false"
+                android:paddingBottom="@dimen/bottom_nav_height"
+                android:visibility="gone"
+                tools:visibility="visible"
+                tools:listitem="@layout/item_video_list" />
+
+        </LinearLayout>
 
         <!-- List Skeleton (shown while loading items) -->
         <LinearLayout

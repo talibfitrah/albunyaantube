@@ -22,12 +22,15 @@ import com.albunyaan.tube.data.extractor.cache.MetadataCache
 import com.albunyaan.tube.data.filters.FilterManager
 import com.albunyaan.tube.data.paging.ContentPagingRepository
 import com.albunyaan.tube.data.paging.DefaultContentPagingRepository
+import com.albunyaan.tube.data.report.ReportRepository
+import com.albunyaan.tube.data.report.RetrofitReportRepository
 import com.albunyaan.tube.data.source.ContentService
 import com.albunyaan.tube.data.source.FakeContentService
 import com.albunyaan.tube.data.source.RetrofitContentService
 import com.albunyaan.tube.data.source.RetrofitDownloadService
 import com.albunyaan.tube.data.source.api.ContentApi
 import com.albunyaan.tube.data.source.api.DownloadApi
+import com.albunyaan.tube.data.source.api.ReportApi
 import com.albunyaan.tube.player.DefaultPlayerRepository
 import com.albunyaan.tube.player.ExtractionRateLimiter
 import com.albunyaan.tube.player.GlobalStreamResolver
@@ -266,6 +269,12 @@ object DataModule {
     @Provides
     fun provideImagesEnabled(): Boolean {
         return BuildConfig.ENABLE_THUMBNAIL_IMAGES
+    }
+
+    @Provides
+    @Singleton
+    fun provideReportRepository(api: ReportApi): ReportRepository {
+        return RetrofitReportRepository(api)
     }
 
     // Note: ChannelDetailRepository binding moved to ChannelDetailRepositoryModule

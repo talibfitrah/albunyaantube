@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <ScrollView
+        android:layout_width="540dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:fillViewport="false">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingStart="@dimen/spacing_md"
+            android:paddingEnd="@dimen/spacing_md"
+            android:paddingBottom="@dimen/spacing_lg">
+
+            <!-- Drag handle -->
+            <View
+                android:layout_width="32dp"
+                android:layout_height="4dp"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="@dimen/spacing_sm"
+                android:layout_marginBottom="@dimen/spacing_md"
+                android:background="@drawable/bg_drag_handle" />
+
+            <!-- Title -->
+            <TextView
+                android:id="@+id/reportTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/spacing_xs"
+                android:text="@string/report_title"
+                android:textAlignment="viewStart"
+                android:textAppearance="?attr/textAppearanceTitleLarge" />
+
+            <!-- Subtitle -->
+            <TextView
+                android:id="@+id/reportSubtitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/spacing_md"
+                android:text="@string/report_subtitle"
+                android:textAlignment="viewStart"
+                android:textAppearance="?attr/textAppearanceBodyMedium" />
+
+            <CheckBox
+                android:id="@+id/checkMusic"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/report_reason_music"
+                android:textAppearance="?attr/textAppearanceBodyLarge" />
+
+            <CheckBox
+                android:id="@+id/checkNudity"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/report_reason_nudity"
+                android:textAppearance="?attr/textAppearanceBodyLarge" />
+
+            <CheckBox
+                android:id="@+id/checkBadLanguage"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/report_reason_bad_language"
+                android:textAppearance="?attr/textAppearanceBodyLarge" />
+
+            <CheckBox
+                android:id="@+id/checkFlirting"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/report_reason_flirting"
+                android:textAppearance="?attr/textAppearanceBodyLarge" />
+
+            <CheckBox
+                android:id="@+id/checkRomance"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/report_reason_romance"
+                android:textAppearance="?attr/textAppearanceBodyLarge" />
+
+            <CheckBox
+                android:id="@+id/checkAwrah"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/report_reason_awrah"
+                android:textAppearance="?attr/textAppearanceBodyLarge" />
+
+            <CheckBox
+                android:id="@+id/checkShirk"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/report_reason_shirk"
+                android:textAppearance="?attr/textAppearanceBodyLarge" />
+
+            <CheckBox
+                android:id="@+id/checkBidah"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/report_reason_bidah"
+                android:textAppearance="?attr/textAppearanceBodyLarge" />
+
+            <CheckBox
+                android:id="@+id/checkViolence"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/report_reason_violence"
+                android:textAppearance="?attr/textAppearanceBodyLarge" />
+
+            <CheckBox
+                android:id="@+id/checkMisinformation"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/report_reason_misinformation"
+                android:textAppearance="?attr/textAppearanceBodyLarge" />
+
+            <CheckBox
+                android:id="@+id/checkOther"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/report_reason_other"
+                android:textAppearance="?attr/textAppearanceBodyLarge" />
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/otherInputLayout"
+                style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_sm"
+                android:hint="@string/report_other_hint"
+                android:visibility="gone">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/otherEditText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="textMultiLine"
+                    android:maxLines="4"
+                    android:minLines="2"
+                    android:textAlignment="viewStart" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_md"
+                android:gravity="end"
+                android:orientation="horizontal">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/cancelButton"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="@dimen/spacing_sm"
+                    android:text="@string/cancel" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/submitButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/report_submit" />
+            </LinearLayout>
+
+        </LinearLayout>
+    </ScrollView>
+</FrameLayout>

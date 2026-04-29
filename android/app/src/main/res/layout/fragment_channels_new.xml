@@ -6,6 +6,51 @@
     android:layout_height="match_parent"
     android:orientation="vertical">
 
+    <!-- Search bar -->
+    <LinearLayout
+        android:id="@+id/searchBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/spacing_md"
+        android:paddingEnd="@dimen/spacing_sm"
+        android:paddingTop="@dimen/spacing_sm"
+        android:paddingBottom="@dimen/spacing_sm"
+        android:gravity="center_vertical">
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/searchInputLayout"
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="@string/search_hint"
+            app:startIconDrawable="@drawable/ic_search"
+            app:startIconContentDescription="@string/search_hint">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/searchEditText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:imeOptions="actionSearch"
+                android:inputType="text"
+                android:maxLines="1"
+                android:textAlignment="viewStart" />
+
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <ImageButton
+            android:id="@+id/searchClearButton"
+            android:layout_width="@dimen/icon_small"
+            android:layout_height="@dimen/icon_small"
+            android:layout_marginStart="@dimen/spacing_sm"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_close"
+            android:visibility="gone"
+            android:contentDescription="@string/search_clear" />
+
+    </LinearLayout>
+
     <!-- Filter indicator bar (hidden by default) -->
     <com.google.android.material.chip.Chip
         android:id="@+id/filterChip"
@@ -46,6 +91,48 @@
             layout="@layout/view_list_skeleton"
             android:visibility="gone" />
 
+        <!-- Empty state view -->
+        <LinearLayout
+            android:id="@+id/emptyState"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:padding="@dimen/spacing_lg"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <ImageView
+                android:id="@+id/emptyIcon"
+                android:layout_width="@dimen/icon_xlarge"
+                android:layout_height="@dimen/icon_xlarge"
+                android:src="@drawable/ic_videos"
+                app:tint="@color/home_empty_icon"
+                android:importantForAccessibility="no" />
+
+            <TextView
+                android:id="@+id/emptyTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_md"
+                android:text="@string/videos_empty_title"
+                android:textAlignment="center"
+                android:textSize="@dimen/text_section_title"
+                android:textStyle="bold"
+                android:textColor="@color/home_text_primary" />
+
+            <TextView
+                android:id="@+id/emptySubtitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_sm"
+                android:text="@string/videos_empty_subtitle"
+                android:textAlignment="center"
+                android:textSize="@dimen/text_body"
+                android:textColor="@color/home_empty_text" />
+
+        </LinearLayout>
+
         <!-- Bottom loading indicator for pagination -->
         <ProgressBar
             android:id="@+id/loadingMore"
@@ -54,7 +141,8 @@
             android:layout_gravity="bottom|center_horizontal"
             android:layout_marginBottom="@dimen/bottom_nav_height"
             android:indeterminate="true"
-            android:visibility="gone" />
+            android:visibility="gone"
+            android:contentDescription="@string/loading_more" />
 
         <!-- Categories FAB - positioned above bottom nav -->
         <com.google.android.material.floatingactionbutton.FloatingActionButton

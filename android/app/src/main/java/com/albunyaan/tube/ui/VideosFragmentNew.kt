@@ -1,8 +1,13 @@
 package com.albunyaan.tube.ui
 
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.text.Editable
+import android.text.TextWatcher
 import android.util.Log
 import android.view.View
+import android.view.inputmethod.EditorInfo
 import androidx.core.os.bundleOf
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
@@ -52,6 +57,7 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
     }
 
     private val autofillHelper = AutofillPaginationHelper(TAG)
+    private val searchHandler = Handler(Looper.getMainLooper())
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -59,8 +65,45 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
 
         setupRecyclerView()
         setupSwipeRefresh()
+        setupSearch()
         observeFilters()
         observeViewModel()
+    }
+
+    private fun setupSearch() {
+        val editText = binding?.searchEditText ?: return
+        val clearBtn = binding?.searchClearButton ?: return
+
+        editText.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                val query = s?.toString() ?: ""
+                clearBtn.visibility = if (query.isNotEmpty()) View.VISIBLE else View.GONE
+                searchHandler.removeCallbacksAndMessages(null)
+                searchHandler.postDelayed({
+                    autofillHelper.reset()
+                    viewModel.setSearchQuery(query)
+                }, SEARCH_DEBOUNCE_MS)
+            }
+        })
+
+        editText.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_SEARCH) {
+                searchHandler.removeCallbacksAndMessages(null)
+                val query = editText.text?.toString() ?: ""
+                autofillHelper.reset()
+                viewModel.setSearchQuery(query)
+                true
+            } else false
+        }
+
+        clearBtn.setOnClickListener {
+            searchHandler.removeCallbacksAndMessages(null)
+            editText.text?.clear()
+            autofillHelper.reset()
+            viewModel.setSearchQuery("")
+        }
     }
 
     private fun observeFilters() {
@@ -165,11 +208,12 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
                     }
                     is ContentListViewModel.ContentState.Success -> {
                         val videos = state.items.filterIsInstance<ContentItem.Video>()
-                        Log.d(TAG, "Videos loaded: ${videos.size} items, hasMore=${state.hasMoreData}")
+                        Log.d(TAG, "Videos loaded: ${videos.size} items, hasMore=${state.hasMoreData}, search=${state.isSearchActive}")
                         binding?.let { binding ->
                             binding.listSkeleton.root.visibility = View.GONE
                             binding.swipeRefresh.visibility = View.VISIBLE
                             binding.swipeRefresh.isRefreshing = false
+                            binding.swipeRefresh.isEnabled = !state.isSearchActive
                             binding.loadingMore.visibility = View.GONE
 
                             // Surface pagination errors as a transient message while keeping content visible
@@ -200,9 +244,15 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
                             if (videos.isEmpty()) {
                                 binding.emptyState.visibility = View.VISIBLE
                                 binding.recyclerView.visibility = View.GONE
-                                binding.emptyIcon.setImageResource(R.drawable.ic_videos)
-                                binding.emptyTitle.text = getString(R.string.videos_empty_title)
-                                binding.emptySubtitle.text = getString(R.string.videos_empty_subtitle)
+                                if (state.isSearchActive) {
+                                    binding.emptyIcon.setImageResource(R.drawable.ic_search)
+                                    binding.emptyTitle.text = getString(R.string.search_no_results)
+                                    binding.emptySubtitle.text = getString(R.string.search_try_different_hint)
+                                } else {
+                                    binding.emptyIcon.setImageResource(R.drawable.ic_videos)
+                                    binding.emptyTitle.text = getString(R.string.videos_empty_title)
+                                    binding.emptySubtitle.text = getString(R.string.videos_empty_subtitle)
+                                }
                             } else {
                                 binding.emptyState.visibility = View.GONE
                                 binding.recyclerView.visibility = View.VISIBLE
@@ -243,9 +293,11 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
     companion object {
         private const val TAG = "VideosFragmentNew"
         private const val LOAD_MORE_THRESHOLD = 5
+        private const val SEARCH_DEBOUNCE_MS = 300L
     }
 
     override fun onDestroyView() {
+        searchHandler.removeCallbacksAndMessages(null)
         autofillHelper.reset()
         binding = null
         super.onDestroyView()

@@ -67,6 +67,10 @@ class ChannelLiveTabFragment : BaseChannelListTabFragment<ChannelLiveStream>() {
 
     override fun createAdapter(): RecyclerView.Adapter<*> = adapter
 
+    override fun matchesQuery(item: ChannelLiveStream, lowerQuery: String): Boolean =
+        item.title.lowercase().contains(lowerQuery) ||
+        item.uploaderName?.lowercase()?.contains(lowerQuery) == true
+
     override fun updateAdapterData(items: List<ChannelLiveStream>) {
         adapter.submitList(items)
     }

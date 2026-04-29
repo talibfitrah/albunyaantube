@@ -14,6 +14,7 @@ export const navRoutes: NavRoute[] = [
   { labelKey: 'navigation.contentSearch', route: { name: 'content-search' } },
   { labelKey: 'navigation.categories', route: { name: 'categories' }, requiredRole: 'ADMIN' },
   { labelKey: 'navigation.approvals', route: { name: 'approvals' } },
+  { labelKey: 'navigation.reports', route: { name: 'reports' } },
   { labelKey: 'navigation.contentLibrary', route: { name: 'content-library' }, requiredRole: 'ADMIN' },
   { labelKey: 'navigation.contentSorting', route: { name: 'content-sorting' }, requiredRole: 'ADMIN' },
   { labelKey: 'navigation.exclusions', route: { name: 'exclusions' }, requiredRole: 'ADMIN' },

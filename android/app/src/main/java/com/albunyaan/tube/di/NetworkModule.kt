@@ -4,6 +4,7 @@ import android.content.Context
 import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.data.source.api.ContentApi
 import com.albunyaan.tube.data.source.api.DownloadApi
+import com.albunyaan.tube.data.source.api.ReportApi
 import com.squareup.moshi.FromJson
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.ToJson
@@ -77,16 +78,34 @@ object NetworkModule {
             Thread { cacheDir.deleteRecursively() }.start()
         }
 
+        val deviceId = getOrCreateDeviceId(context)
+
         return OkHttpClient.Builder()
             .addInterceptor(HttpLoggingInterceptor().apply {
                 level = HttpLoggingInterceptor.Level.BASIC
             })
+            .addInterceptor { chain ->
+                chain.proceed(
+                    chain.request().newBuilder()
+                        .header("X-Device-Id", deviceId)
+                        .build()
+                )
+            }
             // No HTTP cache — API responses are admin-curated and change frequently.
             // Server-side Caffeine cache handles backend performance.
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .writeTimeout(20, TimeUnit.SECONDS)
             .build()
+    }
+
+    private fun getOrCreateDeviceId(context: Context): String {
+        val prefs = context.getSharedPreferences("device_prefs", Context.MODE_PRIVATE)
+        val existing = prefs.getString("device_id", null)
+        if (existing != null) return existing
+        val newId = java.util.UUID.randomUUID().toString()
+        prefs.edit().putString("device_id", newId).apply()
+        return newId
     }
 
     @Provides
@@ -109,6 +128,12 @@ object NetworkModule {
     @Singleton
     fun provideDownloadApi(retrofit: Retrofit): DownloadApi {
         return retrofit.create(DownloadApi::class.java)
+    }
+
+    @Provides
+    @Singleton
+    fun provideReportApi(retrofit: Retrofit): ReportApi {
+        return retrofit.create(ReportApi::class.java)
     }
 }
 

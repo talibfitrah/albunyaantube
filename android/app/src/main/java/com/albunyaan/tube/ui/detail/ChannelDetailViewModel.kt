@@ -78,6 +78,16 @@ class ChannelDetailViewModel @AssistedInject constructor(
     // About tab reuses header state
     val aboutState: StateFlow<HeaderState> get() = headerState
 
+    // Client-side search query for filtering tab content
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    val isSearchActive: Boolean get() = _searchQuery.value.isNotEmpty()
+
+    fun setSearchQuery(q: String) {
+        _searchQuery.value = q
+    }
+
     // Selected tab for state restoration
     private val _selectedTab = MutableStateFlow(0)
     val selectedTab: StateFlow<Int> = _selectedTab.asStateFlow()

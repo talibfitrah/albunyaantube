@@ -72,4 +72,8 @@ class ChannelVideosTabFragment : BaseChannelListTabFragment<ChannelVideo>() {
     override fun updateAdapterData(items: List<ChannelVideo>) {
         adapter.submitList(items)
     }
+
+    override fun matchesQuery(item: ChannelVideo, lowerQuery: String): Boolean =
+        item.title.lowercase().contains(lowerQuery) ||
+        item.uploaderName?.lowercase()?.contains(lowerQuery) == true
 }
