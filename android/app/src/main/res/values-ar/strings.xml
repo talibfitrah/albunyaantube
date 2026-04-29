@@ -190,6 +190,7 @@
     <string name="player_toggle_description">إظهار/إخفاء وصف الفيديو</string>
     <string name="player_action_like">إعجاب بالفيديو</string>
     <string name="player_action_share">مشاركة الفيديو</string>
+    <string name="action_share">مشاركة</string>
     <string name="player_action_download">تنزيل الفيديو</string>
     <string name="player_button_download">تنزيل</string>
     <string name="home_select_category">اختيار تصنيف المحتوى</string>
@@ -533,8 +534,12 @@
 
     <!-- Share -->
     <string name="share_watch_in_app">شاهد في فطرة تيوب:</string>
+    <string name="share_channel_in_app">افتح هذه القناة في فطرة تيوب:</string>
+    <string name="share_playlist_in_app">افتح قائمة التشغيل هذه في فطرة تيوب:</string>
     <string name="share_app_promo">حمّل فطرة تيوب للمحتوى الإسلامي بدون إعلانات!</string>
     <string name="share_video_chooser">مشاركة الفيديو</string>
+    <string name="share_channel_chooser">مشاركة القناة</string>
+    <string name="share_playlist_chooser">مشاركة قائمة التشغيل</string>
 
     <!-- Download Quality Dialog -->
     <string name="download_quality_title">اختر جودة التنزيل</string>

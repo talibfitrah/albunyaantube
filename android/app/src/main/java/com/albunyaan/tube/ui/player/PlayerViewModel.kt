@@ -23,6 +23,7 @@ import com.albunyaan.tube.player.SyntheticDashMpdRegistry
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import com.albunyaan.tube.data.channel.Page
+import com.albunyaan.tube.data.extractor.ExtractorClient
 import com.albunyaan.tube.data.playlist.PlaylistItem
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineDispatcher
@@ -59,7 +60,8 @@ class PlayerViewModel @Inject constructor(
     private val favoritesRepository: FavoritesRepository,
     private val metricsReporter: ExtractorMetricsReporter,
     private val playbackMetrics: PlaybackMetricsCollector,
-    private val mpdRegistry: SyntheticDashMpdRegistry
+    private val mpdRegistry: SyntheticDashMpdRegistry,
+    private val extractorClient: ExtractorClient
 ) : ViewModel() {
 
     private val dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate
@@ -94,6 +96,7 @@ class PlayerViewModel @Inject constructor(
 
     // PR5: Pending refresh job for cancellation when video changes or new refresh requested
     private var pendingRefreshJob: Job? = null
+    private var metadataHydrationJob: Job? = null
 
     // Live stream proactive refresh: job that schedules URL refresh before expiration
     private var liveRefreshJob: Job? = null
@@ -208,12 +211,15 @@ class PlayerViewModel @Inject constructor(
         // PR5: Cancel any pending delayed refresh for the old video
         pendingRefreshJob?.cancel()
         pendingRefreshJob = null
+        metadataHydrationJob?.cancel()
+        metadataHydrationJob = null
         // Cancel live stream refresh for the old video
         liveRefreshJob?.cancel()
         liveRefreshJob = null
         current?.let { addToHistory(it) }
         currentItem = item
         applyQueueState()
+        hydrateCurrentItemMetadataIfNeeded(item)
         publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(item, PlaybackStartReason.USER_SELECTED))
         resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
     }
@@ -228,6 +234,8 @@ class PlayerViewModel @Inject constructor(
         // PR5: Cancel any pending delayed refresh for the old video
         pendingRefreshJob?.cancel()
         pendingRefreshJob = null
+        metadataHydrationJob?.cancel()
+        metadataHydrationJob = null
         // Cancel live stream refresh for the old video
         liveRefreshJob?.cancel()
         liveRefreshJob = null
@@ -594,6 +602,7 @@ class PlayerViewModel @Inject constructor(
         queue.clear()
         previousItems.clear()
         applyQueueState()
+        hydrateCurrentItemMetadataIfNeeded(item)
 
         publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(item, PlaybackStartReason.USER_SELECTED))
 
@@ -855,9 +864,62 @@ class PlayerViewModel @Inject constructor(
             )
         )
         currentItem?.let {
+            hydrateCurrentItemMetadataIfNeeded(it)
             publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(it, PlaybackStartReason.AUTO))
             resolveStreamFor(it, PlaybackStartReason.AUTO)
         }
+    }
+
+    private fun hydrateCurrentItemMetadataIfNeeded(item: UpNextItem) {
+        if (!needsMetadataHydration(item)) {
+            return
+        }
+
+        metadataHydrationJob?.cancel()
+        metadataHydrationJob = viewModelScope.launch(dispatcher) {
+            val metadata = runCatching {
+                withTimeoutOrNull(EXTRACTOR_TIMEOUT_MS) {
+                    extractorClient.fetchVideoMetadata(listOf(item.streamId))[item.streamId]
+                }
+            }.getOrNull() ?: return@launch
+
+            val current = currentItem ?: return@launch
+            if (current.streamId != item.streamId) {
+                return@launch
+            }
+
+            val shouldReplaceTitle = current.title.isBlank() ||
+                current.title.equals("Video", ignoreCase = true) ||
+                (current.channelName.isBlank() && current.description.isNullOrBlank() && current.viewCount == null)
+
+            val hydrated = current.copy(
+                title = if (shouldReplaceTitle) {
+                    metadata.title?.takeIf { it.isNotBlank() } ?: current.title
+                } else {
+                    current.title
+                },
+                channelName = if (current.channelName.isNotBlank()) current.channelName else (metadata.channelName ?: current.channelName),
+                durationSeconds = if (current.durationSeconds > 0) current.durationSeconds else (metadata.durationSeconds ?: 0),
+                thumbnailUrl = current.thumbnailUrl ?: metadata.thumbnailUrl,
+                description = current.description ?: metadata.description,
+                viewCount = current.viewCount ?: metadata.viewCount
+            )
+
+            if (hydrated != current) {
+                currentItem = hydrated
+                applyQueueState()
+            }
+        }
+    }
+
+    private fun needsMetadataHydration(item: UpNextItem): Boolean {
+        return item.title.isBlank() ||
+            item.title.equals("Video", ignoreCase = true) ||
+            item.thumbnailUrl.isNullOrBlank() ||
+            item.description.isNullOrBlank() ||
+            item.viewCount == null ||
+            item.durationSeconds <= 0 ||
+            item.channelName.isBlank()
     }
 
     private fun applyQueueState() {

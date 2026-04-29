@@ -8,4 +8,7 @@
     <cache-path
         name="updates"
         path="updates/" />
+    <cache-path
+        name="share_cache"
+        path="share_cache/" />
 </paths>

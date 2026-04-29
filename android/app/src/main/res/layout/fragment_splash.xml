@@ -12,6 +12,7 @@
         android:layout_height="@dimen/splash_logo_size"
         android:src="@drawable/albunyaantube_logo"
         android:contentDescription="@string/app_name"
+        android:visibility="invisible"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"

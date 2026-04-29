@@ -1,5 +1,6 @@
 package com.albunyaan.tube.ui.detail
 
+import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import android.view.View
@@ -15,6 +16,7 @@ import com.albunyaan.tube.R
 import com.albunyaan.tube.data.channel.ChannelHeader
 import com.albunyaan.tube.data.channel.ChannelTab
 import com.albunyaan.tube.databinding.FragmentChannelDetailBinding
+import com.albunyaan.tube.share.ShareLinks
 import com.albunyaan.tube.ui.detail.tabs.ChannelAboutTabFragment
 import com.albunyaan.tube.ui.detail.tabs.ChannelLiveTabFragment
 import com.albunyaan.tube.ui.detail.tabs.ChannelPlaylistsTabFragment
@@ -56,6 +58,7 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
     private var tabLayoutMediator: TabLayoutMediator? = null
     private var pageChangeCallback: androidx.viewpager2.widget.ViewPager2.OnPageChangeCallback? = null
     private var appBarOffsetListener: AppBarLayout.OnOffsetChangedListener? = null
+    private var currentHeader: ChannelHeader? = null
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -75,8 +78,18 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
         binding?.apply {
             toolbar.navigationIcon = AppCompatResources.getDrawable(requireContext(), R.drawable.ic_arrow_back)
             toolbar.title = channelName ?: channelId
+            toolbar.inflateMenu(R.menu.detail_share_menu)
             toolbar.setNavigationOnClickListener {
                 findNavController().navigateUp()
+            }
+            toolbar.setOnMenuItemClickListener { item ->
+                when (item.itemId) {
+                    R.id.action_share -> {
+                        shareChannel()
+                        true
+                    }
+                    else -> false
+                }
             }
 
             val listener = AppBarLayout.OnOffsetChangedListener { appBarLayout, verticalOffset ->
@@ -84,11 +97,14 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
                 // Use colorOnPrimary for expanded state (white in both light/dark themes) for visibility over banner
                 val expandedColor = MaterialColors.getColor(toolbar, com.google.android.material.R.attr.colorOnPrimary)
                 val collapsedColor = MaterialColors.getColor(toolbar, com.google.android.material.R.attr.colorOnSurface)
-                toolbar.navigationIcon?.mutate()?.setTint(if (collapsed) collapsedColor else expandedColor)
-                toolbar.setTitleTextColor(if (collapsed) collapsedColor else expandedColor)
+                val toolbarColor = if (collapsed) collapsedColor else expandedColor
+                toolbar.navigationIcon?.mutate()?.setTint(toolbarColor)
+                toolbar.setTitleTextColor(toolbarColor)
+                tintToolbarActions(toolbarColor)
             }
             appBarLayout.addOnOffsetChangedListener(listener)
             appBarOffsetListener = listener
+            tintToolbarActions(MaterialColors.getColor(toolbar, com.google.android.material.R.attr.colorOnPrimary))
 
             // Show exclusion banner if needed
             exclusionBanner.isVisible = isExcluded
@@ -184,6 +200,7 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
     }
 
     private fun bindHeader(header: ChannelHeader) {
+        currentHeader = header
         binding?.apply {
             // Update toolbar title
             toolbar.title = header.title
@@ -238,6 +255,42 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
         }
     }
 
+    private fun shareChannel() {
+        if (channelId.isBlank()) return
+
+        val header = currentHeader
+        val title = header?.title?.takeIf { it.isNotBlank() }
+            ?: channelName?.takeIf { it.isNotBlank() }
+            ?: channelId
+        val shareUrl = ShareLinks.channel(
+            channelId = channelId,
+            title = title,
+            imageUrl = header?.avatarUrl ?: header?.bannerUrl,
+            description = header?.summaryLine ?: header?.shortDescription ?: header?.fullDescription
+        )
+        val shareMessage = buildString {
+            append(title)
+            append("\n\n")
+            append(getString(R.string.share_channel_in_app))
+            append("\n")
+            append(shareUrl)
+            append("\n\n")
+            append(getString(R.string.share_app_promo))
+        }
+
+        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, title)
+            putExtra(Intent.EXTRA_TITLE, title)
+            putExtra(Intent.EXTRA_TEXT, shareMessage)
+        }
+        startActivity(Intent.createChooser(shareIntent, getString(R.string.share_channel_chooser)))
+    }
+
+    private fun tintToolbarActions(color: Int) {
+        binding?.toolbar?.menu?.findItem(R.id.action_share)?.icon?.mutate()?.setTint(color)
+    }
+
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         binding?.viewPager?.currentItem?.let { position ->
@@ -252,6 +305,7 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
         pageChangeCallback = null
         binding?.appBarLayout?.removeOnOffsetChangedListener(appBarOffsetListener)
         appBarOffsetListener = null
+        currentHeader = null
         binding = null
         super.onDestroyView()
     }

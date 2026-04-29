@@ -2,7 +2,6 @@ package com.albunyaan.tube.ui
 
 import android.os.Bundle
 import android.view.View
-import android.widget.TextView
 import androidx.core.view.ViewCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
@@ -26,7 +25,7 @@ class MainShellFragment : Fragment(R.layout.fragment_main_shell) {
 
     private var navigationView: NavigationBarView? = null
     private var navHostFragment: View? = null
-    private var offlineBanner: TextView? = null
+    private var offlineBanner: View? = null
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)

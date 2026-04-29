@@ -1,10 +1,13 @@
 package com.albunyaan.tube.update
 
+import android.content.Context
+import android.os.Build
 import android.util.Log
 import com.albunyaan.tube.BuildConfig
 import com.squareup.moshi.JsonClass
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -49,12 +52,30 @@ internal data class GithubAssetDto(
  */
 @Singleton
 class UpdateChecker @Inject constructor(
-    private val okHttpClient: OkHttpClient
+    private val okHttpClient: OkHttpClient,
+    @ApplicationContext private val context: Context
 ) {
     private val moshi: Moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
     private val adapter = moshi.adapter(GithubReleaseDto::class.java)
 
+    // Play Store manages its own update delivery — skip GitHub check for those installs.
+    private fun isInstalledFromPlayStore(): Boolean {
+        val installer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            runCatching {
+                context.packageManager.getInstallSourceInfo(context.packageName).installingPackageName
+            }.getOrNull()
+        } else {
+            @Suppress("DEPRECATION")
+            context.packageManager.getInstallerPackageName(context.packageName)
+        }
+        return installer == "com.android.vending"
+    }
+
     suspend fun checkForUpdate(): Result<UpdateInfo?> = withContext(Dispatchers.IO) {
+        if (isInstalledFromPlayStore()) {
+            Log.d(TAG, "Installed from Play Store — skipping GitHub update check")
+            return@withContext Result.success(null)
+        }
         runCatching {
             val request = Request.Builder()
                 .url(RELEASES_URL)

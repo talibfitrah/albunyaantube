@@ -4,7 +4,11 @@ import com.albunyaan.tube.analytics.ExtractorMetricsReporter
 import com.albunyaan.tube.analytics.PlaybackMetricsCollector
 import com.albunyaan.tube.data.channel.Page
 import com.albunyaan.tube.data.extractor.AudioTrack
+import com.albunyaan.tube.data.extractor.ChannelMetadata
+import com.albunyaan.tube.data.extractor.ExtractorClient
+import com.albunyaan.tube.data.extractor.PlaylistMetadata
 import com.albunyaan.tube.data.extractor.ResolvedStreams
+import com.albunyaan.tube.data.extractor.VideoMetadata
 import com.albunyaan.tube.data.extractor.VideoTrack
 import com.albunyaan.tube.data.local.FavoriteVideo
 import com.albunyaan.tube.data.local.FavoritesRepository
@@ -71,6 +75,7 @@ class PlayerViewModelPlaylistPagingTest {
     private lateinit var fakeMetricsReporter: FakeExtractorMetricsReporter
     private lateinit var playbackMetrics: PlaybackMetricsCollector
     private lateinit var mpdRegistry: SyntheticDashMpdRegistry
+    private lateinit var fakeExtractorClient: ExtractorClient
 
     @Before
     fun setup() {
@@ -84,6 +89,11 @@ class PlayerViewModelPlaylistPagingTest {
         fakeMetricsReporter = FakeExtractorMetricsReporter()
         playbackMetrics = PlaybackMetricsCollector()  // Use real metrics collector for tests
         mpdRegistry = SyntheticDashMpdRegistry()  // Use real registry - it's an in-memory cache with no external deps
+        fakeExtractorClient = object : ExtractorClient {
+            override suspend fun fetchVideoMetadata(ids: List<String>): Map<String, VideoMetadata> = emptyMap()
+            override suspend fun fetchChannelMetadata(ids: List<String>): Map<String, ChannelMetadata> = emptyMap()
+            override suspend fun fetchPlaylistMetadata(ids: List<String>): Map<String, PlaylistMetadata> = emptyMap()
+        }
     }
 
     @After
@@ -101,7 +111,8 @@ class PlayerViewModelPlaylistPagingTest {
             favoritesRepository = fakeFavoritesRepository,
             metricsReporter = fakeMetricsReporter,
             playbackMetrics = playbackMetrics,
-            mpdRegistry = mpdRegistry
+            mpdRegistry = mpdRegistry,
+            extractorClient = fakeExtractorClient
         )
     }
 

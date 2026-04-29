@@ -54,6 +54,7 @@ import com.albunyaan.tube.ui.utils.isTablet
 import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.R
 import com.albunyaan.tube.databinding.FragmentPlayerBinding
+import com.albunyaan.tube.share.ShareLinks
 import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
 import com.albunyaan.tube.data.extractor.PlaybackSelection
@@ -2968,15 +2969,16 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         // ANDROID-MULTI-01 Issue 4: prefer the canonical https watch URL for link
         // unfurlers (WhatsApp / Telegram / Slack / Skype) — they cannot preview a
         // custom scheme like albunyaantube://. The backend's WatchPageController
-        // serves an OpenGraph-tagged HTML page at /watch/{id} and auto-deep-links
-        // mobile visitors into the app. If no SHARE_BASE_URL is configured (dev
+        // serves an OpenGraph-tagged HTML page at /api/watch/{id}; this keeps the
+        // default production reverse proxy on the backend path instead of falling
+        // through to the SPA index.html. If no SHARE_BASE_URL is configured (dev
         // builds or not-yet-deployed backend), we fall back to the raw deep link.
-        val shareBaseUrl = BuildConfig.SHARE_BASE_URL.trimEnd('/')
-        val videoDeepLink = if (shareBaseUrl.isNotEmpty()) {
-            "$shareBaseUrl/watch/${currentItem.streamId}"
-        } else {
-            "albunyaantube://video/${currentItem.streamId}"
-        }
+        val videoDeepLink = ShareLinks.video(
+            videoId = currentItem.streamId,
+            title = title,
+            imageUrl = currentItem.thumbnailUrl,
+            description = currentItem.description
+        )
 
         // Simple, clean share message - title, link, and app promo
         // Skip description as it often contains HTML tags (<br>, etc.)
@@ -2993,6 +2995,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
             putExtra(Intent.EXTRA_SUBJECT, title)
+            putExtra(Intent.EXTRA_TITLE, title)
             putExtra(Intent.EXTRA_TEXT, shareMessage)
         }
 

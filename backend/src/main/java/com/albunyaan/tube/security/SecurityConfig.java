@@ -67,6 +67,16 @@ public class SecurityConfig {
                         // first to sniff Content-Type before committing to a full fetch.
                         .requestMatchers(HttpMethod.GET, "/watch/**").permitAll()
                         .requestMatchers(HttpMethod.HEAD, "/watch/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/watch/**").permitAll()
+                        .requestMatchers(HttpMethod.HEAD, "/api/watch/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/channel/**").permitAll()
+                        .requestMatchers(HttpMethod.HEAD, "/channel/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/channel/**").permitAll()
+                        .requestMatchers(HttpMethod.HEAD, "/api/channel/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/playlist/**").permitAll()
+                        .requestMatchers(HttpMethod.HEAD, "/playlist/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/playlist/**").permitAll()
+                        .requestMatchers(HttpMethod.HEAD, "/api/playlist/**").permitAll()
 
                         // Actuator endpoints - ADMIN only for production security
                         .requestMatchers("/actuator/**").hasRole("ADMIN")
@@ -118,4 +128,3 @@ public class SecurityConfig {
         return source;
     }
 }
-

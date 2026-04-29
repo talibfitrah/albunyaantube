@@ -201,6 +201,7 @@
     <string name="player_toggle_description">Video beschrijving tonen/verbergen</string>
     <string name="player_action_like">Video liken</string>
     <string name="player_action_share">Video delen</string>
+    <string name="action_share">Delen</string>
     <string name="player_action_download">Video downloaden</string>
     <string name="player_button_download">Downloaden</string>
     <string name="player_action_minimize">Speler minimaliseren</string>
@@ -474,8 +475,12 @@
 
     <!-- Share -->
     <string name="share_watch_in_app">Bekijk in FitrahTube:</string>
+    <string name="share_channel_in_app">Open dit kanaal in FitrahTube:</string>
+    <string name="share_playlist_in_app">Open deze afspeellijst in FitrahTube:</string>
     <string name="share_app_promo">Download FitrahTube voor advertentievrije islamitische content!</string>
     <string name="share_video_chooser">Video delen</string>
+    <string name="share_channel_chooser">Kanaal delen</string>
+    <string name="share_playlist_chooser">Afspeellijst delen</string>
 
     <!-- Download Quality Dialog -->
     <string name="download_quality_title">Downloadkwaliteit selecteren</string>

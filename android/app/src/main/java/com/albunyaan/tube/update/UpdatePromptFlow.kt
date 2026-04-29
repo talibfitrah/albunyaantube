@@ -1,18 +1,25 @@
 package com.albunyaan.tube.update
 
 import android.app.Activity
-import android.app.ProgressDialog
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.util.Log
+import android.view.Gravity
+import android.view.LayoutInflater
+import android.view.WindowManager
+import android.widget.TextView
 import androidx.annotation.StringRes
+import androidx.appcompat.app.AlertDialog
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import com.albunyaan.tube.R
+import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.progressindicator.LinearProgressIndicator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -65,19 +72,35 @@ class UpdatePromptFlow @Inject constructor(
         info: UpdateInfo
     ) {
         if (activity.isFinishing || activity.isDestroyed) return
-        val message = activity.getString(
-            R.string.update_available_message,
-            info.releaseName,
+        val dialogView = LayoutInflater.from(activity)
+            .inflate(R.layout.dialog_update_available, null)
+        dialogView.findViewById<TextView>(R.id.update_version_label).text =
+            activity.getString(R.string.update_version_ready, info.releaseName)
+        dialogView.findViewById<TextView>(R.id.update_release_notes).text =
             info.releaseNotes.ifBlank { activity.getString(R.string.update_no_release_notes) }
-        )
-        MaterialAlertDialogBuilder(activity)
-            .setTitle(R.string.update_available_title)
-            .setMessage(message)
-            .setPositiveButton(R.string.update_download_and_install) { _, _ ->
-                ensurePermissionThenInstall(activity, lifecycleOwner, info)
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+        val dialog = MaterialAlertDialogBuilder(activity)
+            .setView(dialogView)
+            .create()
+        dialogView.findViewById<MaterialButton>(R.id.update_btn_later).setOnClickListener {
+            dialog.dismiss()
+        }
+        dialogView.findViewById<MaterialButton>(R.id.update_btn_install).setOnClickListener {
+            dialog.dismiss()
+            ensurePermissionThenInstall(activity, lifecycleOwner, info)
+        }
+        dialog.show()
+        // Transparent window so only our card is visible.
+        // Width = 85% of screen, capped at 480dp — leaves breathing room on phones
+        // and prevents an over-wide card on tablets and TV.
+        dialog.window?.apply {
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            val density = activity.resources.displayMetrics.density
+            val screenWidth = activity.resources.displayMetrics.widthPixels
+            val maxWidthPx = (480 * density).toInt()
+            val dialogWidth = minOf((screenWidth * 0.85f).toInt(), maxWidthPx)
+            setLayout(dialogWidth, WindowManager.LayoutParams.WRAP_CONTENT)
+            setGravity(Gravity.CENTER)
+        }
     }
 
     private fun ensurePermissionThenInstall(
@@ -103,29 +126,27 @@ class UpdatePromptFlow @Inject constructor(
         downloadAndInstall(activity, lifecycleOwner, info)
     }
 
-    @Suppress("DEPRECATION") // ProgressDialog is deprecated but adequate for a one-shot flow.
     private fun downloadAndInstall(
         activity: Activity,
         lifecycleOwner: LifecycleOwner,
         info: UpdateInfo
     ) {
         lifecycleOwner.lifecycleScope.launch {
-            // Acquire the mutex BEFORE showing any UI (CodeRabbit #3). The previous
-            // ordering (show dialog → tryLock → dismiss on failure) caused a jarring
-            // flash of the progress dialog when a second tap hit while the first
-            // download was still running.
+            // Acquire the mutex BEFORE showing any UI (CodeRabbit #3).
             if (!downloadMutex.tryLock()) {
                 toast(activity, R.string.update_downloading)
                 return@launch
             }
-            val progress = ProgressDialog(activity).apply {
-                setMessage(activity.getString(R.string.update_downloading))
-                setCancelable(false)
-                setIndeterminate(false)
-                max = 100
-                setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
-                show()
-            }
+            val dialogView = LayoutInflater.from(activity)
+                .inflate(R.layout.dialog_update_progress, null)
+            val progressBar = dialogView.findViewById<LinearProgressIndicator>(R.id.update_progress_bar)
+            val progressLabel = dialogView.findViewById<TextView>(R.id.update_progress_label)
+            val progressDialog: AlertDialog = MaterialAlertDialogBuilder(activity)
+                .setTitle(R.string.update_downloading)
+                .setView(dialogView)
+                .setCancelable(false)
+                .create()
+                .also { it.show() }
             try {
                 val file = installer.download(
                     activity,
@@ -133,12 +154,12 @@ class UpdatePromptFlow @Inject constructor(
                     expectedSizeBytes = info.apkSizeBytes
                 ) { fraction ->
                     val pct = (fraction * 100f).toInt().coerceIn(0, 100)
-                    activity.runOnUiThread { progress.progress = pct }
+                    activity.runOnUiThread {
+                        progressBar.progress = pct
+                        progressLabel.text = activity.getString(R.string.update_progress_percent, pct)
+                    }
                 }
                 withContext(Dispatchers.Main) {
-                    // CodeRabbit #9: match the isFinishing + isDestroyed guard used
-                    // elsewhere in this file so we don't hand a finished activity to
-                    // the installer intent launcher after a configuration change.
                     if (!activity.isFinishing && !activity.isDestroyed) {
                         installer.launchInstaller(activity, file)
                     }
@@ -150,7 +171,7 @@ class UpdatePromptFlow @Inject constructor(
                 toast(activity, R.string.update_download_failed)
             } finally {
                 downloadMutex.unlock()
-                runCatching { progress.dismiss() }
+                runCatching { progressDialog.dismiss() }
             }
         }
     }

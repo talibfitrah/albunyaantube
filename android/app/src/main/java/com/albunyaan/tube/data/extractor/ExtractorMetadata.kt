@@ -2,6 +2,7 @@ package com.albunyaan.tube.data.extractor
 
 data class VideoMetadata(
     val title: String? = null,
+    val channelName: String? = null,
     val description: String? = null,
     val thumbnailUrl: String? = null,
     val durationSeconds: Int? = null,

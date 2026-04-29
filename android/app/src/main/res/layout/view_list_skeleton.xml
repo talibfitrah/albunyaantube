@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Reusable skeleton placeholder for list/grid screens (Channels, Videos, Playlists).
+    Shown while the initial request is in flight, or after it has failed and we have
+    no cached data — pairs with the global offline banner so the user understands
+    why content is missing.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:paddingTop="@dimen/spacing_sm"
+    android:paddingBottom="@dimen/bottom_nav_height"
+    android:importantForAccessibility="no">
+
+    <include layout="@layout/skeleton_content_item" />
+    <include layout="@layout/skeleton_content_item" />
+    <include layout="@layout/skeleton_content_item" />
+    <include layout="@layout/skeleton_content_item" />
+    <include layout="@layout/skeleton_content_item" />
+    <include layout="@layout/skeleton_content_item" />
+
+</LinearLayout>
