@@ -1484,7 +1484,8 @@ public class PublicContentService {
                 channel.getSubscribers(),
                 channel.getDescription(),
                 channel.getThumbnailUrl(),
-                channel.getVideoCount()
+                channel.getVideoCount(),
+                channel.getKeywords()
         );
     }
 
@@ -1495,7 +1496,8 @@ public class PublicContentService {
                 playlist.getCategory() != null ? playlist.getCategory().getName() : null,
                 playlist.getItemCount(),
                 playlist.getDescription(),
-                playlist.getThumbnailUrl()
+                playlist.getThumbnailUrl(),
+                playlist.getKeywords()
         );
     }
 
@@ -1518,7 +1520,9 @@ public class PublicContentService {
                 uploadedDaysAgo,
                 video.getDescription(),
                 video.getThumbnailUrl(),
-                video.getViewCount()
+                video.getViewCount(),
+                video.getChannelTitle(),
+                video.getKeywords()
         );
     }
 
@@ -1612,20 +1616,27 @@ public class PublicContentService {
         }, contentExecutor);
     }
 
-    /** Package-visible for unit testing. Case-insensitive text filter across DTO fields. */
+    /** Package-visible for unit testing. Tokenized AND-match filter across all content fields. */
     static class TextFilter {
-        private final String lower;
+        private final String[] tokens;
 
         TextFilter(String q) {
-            this.lower = (q == null) ? "" : q.trim().toLowerCase(Locale.ROOT);
+            if (q == null || q.trim().isEmpty()) {
+                this.tokens = new String[0];
+            } else {
+                this.tokens = q.trim().toLowerCase(Locale.ROOT).split("\\s+");
+            }
         }
 
-        boolean isActive() { return !lower.isEmpty(); }
+        boolean isActive() { return tokens.length > 0; }
 
         boolean matches(ContentItemDto dto) {
-            return containsLower(dto.getName())
-                    || containsLower(dto.getTitle())
-                    || containsLower(dto.getDescription());
+            if (!isActive()) return true;
+            String combined = buildCombined(dto);
+            for (String token : tokens) {
+                if (!combined.contains(token)) return false;
+            }
+            return true;
         }
 
         List<ContentItemDto> apply(List<ContentItemDto> items) {
@@ -1633,8 +1644,23 @@ public class PublicContentService {
             return items.stream().filter(this::matches).collect(Collectors.toList());
         }
 
-        private boolean containsLower(String field) {
-            return field != null && field.toLowerCase(Locale.ROOT).contains(lower);
+        private String buildCombined(ContentItemDto dto) {
+            StringBuilder sb = new StringBuilder();
+            appendField(sb, dto.getName());
+            appendField(sb, dto.getTitle());
+            appendField(sb, dto.getDescription());
+            appendField(sb, dto.getChannelTitle());
+            List<String> kws = dto.getKeywords();
+            if (kws != null) {
+                for (String kw : kws) appendField(sb, kw);
+            }
+            return sb.toString().toLowerCase(Locale.ROOT);
+        }
+
+        private void appendField(StringBuilder sb, String field) {
+            if (field != null && !field.isEmpty()) {
+                sb.append(' ').append(field);
+            }
         }
     }
 }

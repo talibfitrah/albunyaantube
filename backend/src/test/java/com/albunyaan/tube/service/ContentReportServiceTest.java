@@ -3,7 +3,10 @@ package com.albunyaan.tube.service;
 import com.albunyaan.tube.model.ContentReport;
 import com.albunyaan.tube.model.ReportReason;
 import com.albunyaan.tube.model.ReportTargetType;
+import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.ContentReportRepository;
+import com.albunyaan.tube.repository.PlaylistRepository;
+import com.albunyaan.tube.repository.VideoRepository;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import org.junit.jupiter.api.BeforeEach;
@@ -31,6 +34,12 @@ class ContentReportServiceTest {
 
     @Mock
     ContentReportRepository reportRepository;
+    @Mock
+    VideoRepository videoRepository;
+    @Mock
+    ChannelRepository channelRepository;
+    @Mock
+    PlaylistRepository playlistRepository;
 
     Cache<String, AtomicInteger> rateLimitCache;
     ContentReportService service;
@@ -41,7 +50,7 @@ class ContentReportServiceTest {
     @BeforeEach
     void setUp() {
         rateLimitCache = Caffeine.newBuilder().build();
-        service = new ContentReportService(reportRepository, rateLimitCache);
+        service = new ContentReportService(reportRepository, rateLimitCache, videoRepository, channelRepository, playlistRepository);
     }
 
     @Test

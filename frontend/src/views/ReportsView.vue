@@ -109,27 +109,36 @@
               </div>
             </td>
             <td>
-              <div v-if="report.status === 'PENDING'" class="action-buttons">
+              <div class="action-buttons">
                 <button
                   type="button"
-                  class="btn-resolve"
-                  :disabled="actionLoadingId === report.id"
-                  @click="openResolveDialog(report, 'RESOLVED')"
+                  class="btn-preview"
+                  @click="openPreview(report)"
                 >
-                  {{ t('reports.actions.resolve') }}
+                  {{ t('reports.actions.preview') }}
                 </button>
-                <button
-                  type="button"
-                  class="btn-reject"
-                  :disabled="actionLoadingId === report.id"
-                  @click="openResolveDialog(report, 'REJECTED')"
-                >
-                  {{ t('reports.actions.reject') }}
-                </button>
+                <template v-if="report.status === 'PENDING'">
+                  <button
+                    type="button"
+                    class="btn-resolve"
+                    :disabled="actionLoadingId === report.id"
+                    @click="openResolveDialog(report, 'RESOLVED')"
+                  >
+                    {{ t('reports.actions.resolve') }}
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-reject"
+                    :disabled="actionLoadingId === report.id"
+                    @click="openResolveDialog(report, 'REJECTED')"
+                  >
+                    {{ t('reports.actions.reject') }}
+                  </button>
+                </template>
+                <span v-else class="resolved-by">
+                  {{ report.resolvedBy || '—' }}
+                </span>
               </div>
-              <span v-else class="resolved-by">
-                {{ report.resolvedBy || '—' }}
-              </span>
             </td>
           </tr>
         </tbody>
@@ -146,6 +155,29 @@
         {{ t('reports.pagination.next') }} →
       </button>
     </div>
+
+    <!-- Preview modals by target type -->
+    <ChannelDetailModal
+      v-if="previewItem?.targetType === 'CHANNEL'"
+      :open="showPreview"
+      :channel-id="''"
+      :channel-youtube-id="previewItem.targetId"
+      @close="closePreview"
+    />
+    <PlaylistDetailModal
+      v-if="previewItem?.targetType === 'PLAYLIST'"
+      :open="showPreview"
+      :playlist-id="''"
+      :playlist-youtube-id="previewItem.targetId"
+      @close="closePreview"
+    />
+    <VideoPreviewModal
+      v-if="previewItem?.targetType === 'VIDEO'"
+      :open="showPreview"
+      :youtube-id="previewItem.targetId"
+      :title="previewItem.targetId"
+      @close="closePreview"
+    />
 
     <!-- Resolve / Reject dialog -->
     <div v-if="resolveDialog.visible" class="dialog-backdrop" role="dialog" aria-modal="true" :aria-label="t('reports.dialog.title')">
@@ -180,6 +212,9 @@
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
+import ChannelDetailModal from '@/components/exclusions/ChannelDetailModal.vue';
+import PlaylistDetailModal from '@/components/exclusions/PlaylistDetailModal.vue';
+import VideoPreviewModal from '@/components/VideoPreviewModal.vue';
 import {
   fetchReports,
   fetchReportStats,
@@ -225,6 +260,20 @@ const targetTypeOptions = computed<{ value: TargetOption; label: string }[]>(() 
   { value: 'CHANNEL', label: t('reports.filters.channel') },
   { value: 'PLAYLIST', label: t('reports.filters.playlist') },
 ]);
+
+// Preview state
+const showPreview = ref(false);
+const previewItem = ref<ContentReport | null>(null);
+
+function openPreview(report: ContentReport) {
+  previewItem.value = report;
+  showPreview.value = true;
+}
+
+function closePreview() {
+  showPreview.value = false;
+  setTimeout(() => { previewItem.value = null; }, 300);
+}
 
 // Resolve dialog
 const resolveDialog = ref({
@@ -513,6 +562,8 @@ onMounted(() => {
   transition: opacity 0.15s;
 }
 
+.btn-preview { background: transparent; color: var(--color-brand, #059669); border: 1px solid var(--color-brand, #059669); }
+.btn-preview:hover { background: var(--color-surface-hover, #f3f4f6); }
 .btn-resolve { background: #059669; color: #fff; }
 .btn-reject { background: #dc2626; color: #fff; }
 .btn-cancel { background: var(--color-surface-hover, #f3f4f6); color: var(--color-text, #111); border: 1px solid var(--color-border, #e5e7eb); }

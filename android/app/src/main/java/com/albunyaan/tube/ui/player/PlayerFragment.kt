@@ -1354,8 +1354,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         override fun onCreateMenu(menu: Menu, menuInflater: MenuInflater) {
             menuInflater.inflate(R.menu.player_menu, menu)
             menuInflater.inflate(R.menu.menu_report, menu)
-            menu.findItem(R.id.action_report)?.isVisible =
-                viewModel.state.value.currentItem != null
         }
 
         override fun onMenuItemSelected(menuItem: MenuItem): Boolean {

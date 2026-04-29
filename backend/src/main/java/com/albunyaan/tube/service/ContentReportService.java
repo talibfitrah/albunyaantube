@@ -4,7 +4,11 @@ import com.albunyaan.tube.model.ContentReport;
 import com.albunyaan.tube.model.ReportReason;
 import com.albunyaan.tube.model.ReportStatus;
 import com.albunyaan.tube.model.ReportTargetType;
+import com.albunyaan.tube.model.ValidationStatus;
+import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.ContentReportRepository;
+import com.albunyaan.tube.repository.PlaylistRepository;
+import com.albunyaan.tube.repository.VideoRepository;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.google.cloud.Timestamp;
 import org.slf4j.Logger;
@@ -28,12 +32,21 @@ public class ContentReportService {
 
     private final ContentReportRepository reportRepository;
     private final Cache<String, AtomicInteger> rateLimitCache;
+    private final VideoRepository videoRepository;
+    private final ChannelRepository channelRepository;
+    private final PlaylistRepository playlistRepository;
 
     public ContentReportService(
             ContentReportRepository reportRepository,
-            @Qualifier("reportRateLimitCache") Cache<String, AtomicInteger> rateLimitCache) {
+            @Qualifier("reportRateLimitCache") Cache<String, AtomicInteger> rateLimitCache,
+            VideoRepository videoRepository,
+            ChannelRepository channelRepository,
+            PlaylistRepository playlistRepository) {
         this.reportRepository = reportRepository;
         this.rateLimitCache = rateLimitCache;
+        this.videoRepository = videoRepository;
+        this.channelRepository = channelRepository;
+        this.playlistRepository = playlistRepository;
     }
 
     public ContentReport submitReport(
@@ -83,7 +96,38 @@ public class ContentReportService {
         report.setResolvedAt(Timestamp.now());
         report.setResolvedBy(resolvedBy);
         report.setResolutionNote(note);
-        return reportRepository.update(report);
+        ContentReport saved = reportRepository.update(report);
+        if (newStatus == ReportStatus.RESOLVED) {
+            archiveReportedContent(report.getTargetType(), report.getTargetId());
+        }
+        return saved;
+    }
+
+    private void archiveReportedContent(ReportTargetType targetType, String targetId) {
+        try {
+            switch (targetType) {
+                case VIDEO -> videoRepository.findByYoutubeId(targetId).ifPresent(v -> {
+                    v.setValidationStatus(ValidationStatus.ARCHIVED);
+                    try { videoRepository.save(v); } catch (Exception e) {
+                        log.warn("Failed to archive video {}: {}", targetId, e.getMessage());
+                    }
+                });
+                case CHANNEL -> channelRepository.findByYoutubeId(targetId).ifPresent(ch -> {
+                    ch.setValidationStatus(ValidationStatus.ARCHIVED);
+                    try { channelRepository.save(ch); } catch (Exception e) {
+                        log.warn("Failed to archive channel {}: {}", targetId, e.getMessage());
+                    }
+                });
+                case PLAYLIST -> playlistRepository.findByYoutubeId(targetId).ifPresent(pl -> {
+                    pl.setValidationStatus(ValidationStatus.ARCHIVED);
+                    try { playlistRepository.save(pl); } catch (Exception e) {
+                        log.warn("Failed to archive playlist {}: {}", targetId, e.getMessage());
+                    }
+                });
+            }
+        } catch (Exception e) {
+            log.warn("Failed to archive {} {}: {}", targetType, targetId, e.getMessage());
+        }
     }
 
     public ReportStats getStats() throws ExecutionException, InterruptedException, TimeoutException {

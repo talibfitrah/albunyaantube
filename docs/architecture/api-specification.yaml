@@ -3012,6 +3012,43 @@ components:
       description: Firebase Authentication JWT token
 
   schemas:
+    ContentReport:
+      type: object
+      properties:
+        id:
+          type: string
+        targetType:
+          type: string
+          enum: [VIDEO, PLAYLIST, CHANNEL]
+        targetId:
+          type: string
+        reasons:
+          type: array
+          items:
+            type: string
+            enum: [MUSIC, NUDITY, BAD_LANGUAGE, FLIRTING, ROMANCE, AWRAH, SHIRK, BIDAH, VIOLENCE, MISINFORMATION, OTHER]
+        otherDescription:
+          type: string
+          nullable: true
+        deviceId:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, RESOLVED, REJECTED]
+        createdAt:
+          type: string
+          format: date-time
+        resolvedAt:
+          type: string
+          format: date-time
+          nullable: true
+        resolvedBy:
+          type: string
+          nullable: true
+        resolutionNote:
+          type: string
+          nullable: true
+
     HomeCategoryDto:
       type: object
       properties:

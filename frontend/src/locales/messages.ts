@@ -639,6 +639,7 @@ export const messages = {
         retry: 'Retry'
       },
       actions: {
+        preview: 'Preview',
         resolve: 'Resolve',
         reject: 'Reject'
       },
@@ -2023,6 +2024,7 @@ export const messages = {
         retry: 'إعادة المحاولة'
       },
       actions: {
+        preview: 'معاينة',
         resolve: 'معالجة',
         reject: 'رفض'
       },
@@ -3238,6 +3240,7 @@ export const messages = {
         retry: 'Opnieuw proberen'
       },
       actions: {
+        preview: 'Bekijken',
         resolve: 'Oplossen',
         reject: 'Afwijzen'
       },

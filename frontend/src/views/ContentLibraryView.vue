@@ -1995,12 +1995,23 @@ onUnmounted(() => {
   background: transparent;
   cursor: pointer;
   font-size: 1.125rem;
-  opacity: 0.6;
-  transition: opacity 0.2s ease;
+  opacity: 0.85;
+  transition: opacity 0.2s ease, background 0.15s;
+  border-radius: 0.25rem;
 }
 
 .action-btn:hover {
   opacity: 1;
+  background: var(--color-surface-alt);
+}
+
+:root[data-theme="dark"] .action-btn {
+  opacity: 1;
+  filter: brightness(1.4);
+}
+
+:root[data-theme="dark"] .action-btn:hover {
+  filter: brightness(1.6);
 }
 
 /* Mobile Filter Bottom Sheet */
