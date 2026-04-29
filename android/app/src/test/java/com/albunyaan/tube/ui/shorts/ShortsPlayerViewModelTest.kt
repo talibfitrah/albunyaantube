@@ -8,6 +8,7 @@ import com.albunyaan.tube.data.local.FollowedChannelsRepository
 import com.albunyaan.tube.data.shorts.ShortsFeedRepository
 import com.albunyaan.tube.data.shorts.ShortsItem
 import com.albunyaan.tube.data.shorts.ShortsPage
+import com.albunyaan.tube.player.AdaptiveBufferPolicy
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -52,6 +53,7 @@ class ShortsPlayerViewModelTest {
     private val favorites: FavoritesRepository = mock()
     private val follows: FollowedChannelsRepository = mock()
     private val channelDetailRepo: ChannelDetailRepository = mock()
+    private val bufferPolicy: AdaptiveBufferPolicy = mock()
 
     @Before
     fun setup() {
@@ -132,6 +134,7 @@ class ShortsPlayerViewModelTest {
             favorites = favorites,
             follows = follows,
             channelDetailRepo = channelDetailRepo,
+            bufferPolicy = bufferPolicy,
             initialShortId = null,
             channelId = null
         )
@@ -154,6 +157,7 @@ class ShortsPlayerViewModelTest {
             favorites = favorites,
             follows = follows,
             channelDetailRepo = channelDetailRepo,
+            bufferPolicy = bufferPolicy,
             initialShortId = null,
             channelId = null
         )
@@ -186,6 +190,7 @@ class ShortsPlayerViewModelTest {
             favorites = favorites,
             follows = follows,
             channelDetailRepo = channelDetailRepo,
+            bufferPolicy = bufferPolicy,
             initialShortId = null,
             channelId = null
         )
@@ -216,6 +221,7 @@ class ShortsPlayerViewModelTest {
             favorites = favorites,
             follows = follows,
             channelDetailRepo = channelDetailRepo,
+            bufferPolicy = bufferPolicy,
             initialShortId = null,
             channelId = null
         )
@@ -243,6 +249,7 @@ class ShortsPlayerViewModelTest {
             favorites = favorites,
             follows = follows,
             channelDetailRepo = channelDetailRepo,
+            bufferPolicy = bufferPolicy,
             initialShortId = null,
             channelId = "UC1"
         )
@@ -266,6 +273,7 @@ class ShortsPlayerViewModelTest {
             favorites = favorites,
             follows = follows,
             channelDetailRepo = channelDetailRepo,
+            bufferPolicy = bufferPolicy,
             initialShortId = null,
             channelId = "UC1"
         )
@@ -312,6 +320,7 @@ class ShortsPlayerViewModelTest {
             favorites = favorites,
             follows = follows,
             channelDetailRepo = channelDetailRepo,
+            bufferPolicy = bufferPolicy,
             initialShortId = null,
             channelId = "UC1"
         )
@@ -346,6 +355,7 @@ class ShortsPlayerViewModelTest {
             favorites = favorites,
             follows = follows,
             channelDetailRepo = channelDetailRepo,
+            bufferPolicy = bufferPolicy,
             initialShortId = null,
             channelId = null
         )
@@ -367,6 +377,7 @@ class ShortsPlayerViewModelTest {
             favorites = favorites,
             follows = follows,
             channelDetailRepo = channelDetailRepo,
+            bufferPolicy = bufferPolicy,
             initialShortId = null,
             channelId = null
         )
@@ -404,6 +415,7 @@ class ShortsPlayerViewModelTest {
             favorites = favorites,
             follows = follows,
             channelDetailRepo = channelDetailRepo,
+            bufferPolicy = bufferPolicy,
             initialShortId = "v3",
             channelId = null
         )
@@ -447,6 +459,7 @@ class ShortsPlayerViewModelTest {
             favorites = favorites,
             follows = follows,
             channelDetailRepo = channelDetailRepo,
+            bufferPolicy = bufferPolicy,
             initialShortId = null,
             channelId = null
         )
@@ -478,6 +491,7 @@ class ShortsPlayerViewModelTest {
             favorites = favorites,
             follows = follows,
             channelDetailRepo = channelDetailRepo,
+            bufferPolicy = bufferPolicy,
             initialShortId = null,
             channelId = null
         )
@@ -497,6 +511,7 @@ class ShortsPlayerViewModelTest {
             favorites = favorites,
             follows = follows,
             channelDetailRepo = channelDetailRepo,
+            bufferPolicy = bufferPolicy,
             initialShortId = null,
             channelId = null
         )
