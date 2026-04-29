@@ -29,6 +29,7 @@ import com.albunyaan.tube.download.DownloadStatus
 import com.albunyaan.tube.download.PlaylistDownloadItem
 import com.albunyaan.tube.player.StreamPrefetchService
 import com.albunyaan.tube.share.ShareLinks
+import com.albunyaan.tube.share.ShareMetadataPublisher
 import com.albunyaan.tube.ui.detail.adapters.PlaylistVideosAdapter
 import com.google.android.material.chip.Chip
 import dagger.hilt.android.AndroidEntryPoint
@@ -412,29 +413,36 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
         val title = header?.title?.takeIf { it.isNotBlank() }
             ?: playlistTitleArg?.takeIf { it.isNotBlank() }
             ?: playlistId
+        val imageUrl = header?.thumbnailUrl ?: header?.bannerUrl
+        val description = header?.description
         val shareUrl = ShareLinks.playlist(
             playlistId = playlistId,
             title = title,
-            imageUrl = header?.thumbnailUrl ?: header?.bannerUrl,
-            description = header?.description
+            imageUrl = imageUrl,
+            description = description
         )
-        val shareMessage = buildString {
-            append(title)
-            append("\n\n")
-            append(getString(R.string.share_playlist_in_app))
-            append("\n")
-            append(shareUrl)
-            append("\n\n")
-            append(getString(R.string.share_app_promo))
-        }
+        viewLifecycleOwner.lifecycleScope.launch {
+            ShareMetadataPublisher.publish("playlist", playlistId, title, imageUrl, description)
+            if (!isAdded) return@launch
 
-        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_SUBJECT, title)
-            putExtra(Intent.EXTRA_TITLE, title)
-            putExtra(Intent.EXTRA_TEXT, shareMessage)
+            val shareMessage = buildString {
+                append(title)
+                append("\n\n")
+                append(getString(R.string.share_playlist_in_app))
+                append("\n")
+                append(shareUrl)
+                append("\n\n")
+                append(getString(R.string.share_app_promo))
+            }
+
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_SUBJECT, title)
+                putExtra(Intent.EXTRA_TITLE, title)
+                putExtra(Intent.EXTRA_TEXT, shareMessage)
+            }
+            startActivity(Intent.createChooser(shareIntent, getString(R.string.share_playlist_chooser)))
         }
-        startActivity(Intent.createChooser(shareIntent, getString(R.string.share_playlist_chooser)))
     }
 
     private fun tintToolbarActions(color: Int) {

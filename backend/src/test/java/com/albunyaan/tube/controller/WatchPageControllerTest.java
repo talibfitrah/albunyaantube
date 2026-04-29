@@ -23,6 +23,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -151,15 +152,41 @@ class WatchPageControllerTest {
         channel.setStatus("APPROVED");
         channel.setName("Test Channel");
         channel.setDescription("Channel description");
-        channel.setThumbnailUrl("https://yt3.googleusercontent.com/avatar.jpg");
+        channel.setThumbnailUrl("https://yt3.googleusercontent.com/avatar=s160-c-k-c0x00ffffff-no-rj");
         when(contentService.getChannelDetails("UCabc123")).thenReturn(channel);
 
         mockMvc.perform(get("/api/channel/{channelId}", "UCabc123"))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_HTML))
                 .andExpect(content().string(containsString("property=\"og:type\" content=\"profile\"")))
-                .andExpect(content().string(containsString("property=\"og:image\" content=\"https://yt3.googleusercontent.com/avatar.jpg\"")))
-                .andExpect(content().string(containsString("name=\"twitter:image\" content=\"https://yt3.googleusercontent.com/avatar.jpg\"")));
+                .andExpect(content().string(containsString("property=\"og:image\" content=\"https://yt3.googleusercontent.com/avatar=s512-c-k-c0x00ffffff-no-rj\"")))
+                .andExpect(content().string(containsString("property=\"og:image:width\" content=\"512\"")))
+                .andExpect(content().string(containsString("property=\"og:image:height\" content=\"512\"")))
+                .andExpect(content().string(containsString("name=\"twitter:image\" content=\"https://yt3.googleusercontent.com/avatar=s512-c-k-c0x00ffffff-no-rj\"")));
+    }
+
+    @Test
+    @DisplayName("GET /api/channel/{channelId} can use cached app metadata without query params")
+    void channelSharePage_usesCachedMetadataForCleanUrl() throws Exception {
+        when(contentService.getChannelDetails("UCmissing")).thenThrow(new RuntimeException("not found"));
+
+        mockMvc.perform(post("/api/share-metadata/{type}/{id}", "channel", "UCmissing")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "Cached Channel",
+                                  "image": "https://yt3.googleusercontent.com/avatar=s160-c-k-c0x00ffffff-no-rj",
+                                  "description": "Cached description"
+                                }
+                                """))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/channel/{channelId}", "UCmissing"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("property=\"og:title\" content=\"Cached Channel\"")))
+                .andExpect(content().string(containsString("property=\"og:image\" content=\"https://yt3.googleusercontent.com/avatar=s512-c-k-c0x00ffffff-no-rj\"")))
+                .andExpect(content().string(containsString("property=\"og:url\" content=\"http://localhost/api/channel/UCmissing\"")))
+                .andExpect(content().string(not(containsString("?title="))));
     }
 
     @Test

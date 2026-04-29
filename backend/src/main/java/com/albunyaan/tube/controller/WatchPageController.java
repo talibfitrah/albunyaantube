@@ -11,12 +11,16 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.ResponseBody;
 
 import jakarta.servlet.http.HttpServletRequest;
 
 import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -40,6 +44,8 @@ public class WatchPageController {
     private static final Logger log = LoggerFactory.getLogger(WatchPageController.class);
 
     private static final int DESCRIPTION_MAX_CHARS = 300;
+    private static final int TITLE_MAX_CHARS = 160;
+    private static final long SHARE_METADATA_TTL_MILLIS = 10 * 60 * 1000L;
     private static final String PUBLIC_SHARE_HOST = "app.fitrahtube.com";
 
     /**
@@ -53,13 +59,43 @@ public class WatchPageController {
             "^https?://(?:i\\.ytimg\\.com|img\\.youtube\\.com)/(?:vi|vi_webp)/([A-Za-z0-9_-]{11})/.*",
             Pattern.CASE_INSENSITIVE
     );
+    private static final Pattern YOUTUBE_AVATAR_SIZE_PATTERN = Pattern.compile("=s\\d+(?=-|$)");
     private static final Pattern HTTPS_URL_PATTERN = Pattern.compile("^https://[^\\s\"'<>]+$", Pattern.CASE_INSENSITIVE);
     private static final Pattern SAFE_HOST_PATTERN = Pattern.compile("^[A-Za-z0-9.-]+(?::[0-9]{1,5})?$");
 
     private final PublicContentService contentService;
+    private final Map<String, CachedShareMetadata> shareMetadataCache = new ConcurrentHashMap<>();
 
     public WatchPageController(PublicContentService contentService) {
         this.contentService = contentService;
+    }
+
+    @PostMapping(value = "/api/share-metadata/{type}/{id}", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseBody
+    public ResponseEntity<Void> shareMetadata(
+            @PathVariable String type,
+            @PathVariable String id,
+            @RequestBody(required = false) ShareMetadataRequest metadata
+    ) {
+        if (!isSupportedShareType(type) || id == null || !VIDEO_ID_PATTERN.matcher(id).matches()) {
+            return ResponseEntity.badRequest().build();
+        }
+        if (metadata == null) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        String image = "channel".equals(type)
+                ? resolveChannelImage(metadata.image())
+                : resolvePreviewImage(metadata.image(), "watch".equals(type) ? id : "");
+        String title = truncate(firstNonBlank(metadata.title(), ""), TITLE_MAX_CHARS);
+        String description = truncate(firstNonBlank(metadata.description(), ""), DESCRIPTION_MAX_CHARS);
+        if (title.isEmpty() && description.isEmpty() && image.isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        cleanupExpiredShareMetadata();
+        shareMetadataCache.put(cacheKey(type, id), new CachedShareMetadata(title, description, image, System.currentTimeMillis()));
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping(value = {"/watch/{videoId}", "/api/watch/{videoId}"}, produces = MediaType.TEXT_HTML_VALUE)
@@ -81,17 +117,17 @@ public class WatchPageController {
                     .body(buildUnavailableHtml("", "", "", "FitrahTube", "This video is not available.", ""));
         }
         String canonicalUrl = buildCanonicalUrl(request);
-        String requestedUrl = buildCanonicalUrl(request, true);
+        ShareMetadata metadata = getShareMetadata("watch", videoId);
         try {
             Video video = contentService.getVideoDetails(videoId);
             if (video == null) {
-                return videoFallback(videoId, requestedUrl, title, image, description);
+                return videoFallback(videoId, canonicalUrl, title, image, description, metadata);
             }
             String html = buildHtml(video, canonicalUrl);
             return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(html);
         } catch (Exception e) {
             log.warn("Watch page fallback for videoId={}: {}", videoId, e.getMessage());
-            return videoFallback(videoId, requestedUrl, title, image, description);
+            return videoFallback(videoId, canonicalUrl, title, image, description, metadata);
         }
     }
 
@@ -110,15 +146,19 @@ public class WatchPageController {
                     .body(buildUnavailableHtml("", "", "", "FitrahTube", "This channel is not available.", ""));
         }
         String canonicalUrl = buildCanonicalUrl(request);
-        String requestedUrl = buildCanonicalUrl(request, true);
+        ShareMetadata metadata = getShareMetadata("channel", channelId);
         try {
             Object details = contentService.getChannelDetails(channelId);
             if (details instanceof Channel channel) {
+                String imageUrl = firstNonBlank(
+                        resolveChannelImage(channel.getThumbnailUrl()),
+                        metadata.image()
+                );
                 String html = buildShareHtml(
-                        nullSafe(channel.getName(), "FitrahTube Channel"),
+                        firstNonBlank(channel.getName(), metadata.title(), "FitrahTube Channel"),
                         "FitrahTube channel",
-                        truncate(nullSafe(channel.getDescription(), ""), DESCRIPTION_MAX_CHARS),
-                        resolvePreviewImage(channel.getThumbnailUrl(), ""),
+                        truncate(firstNonBlank(channel.getDescription(), metadata.description(), ""), DESCRIPTION_MAX_CHARS),
+                        imageUrl,
                         canonicalUrl,
                         "albunyaantube://channel/" + channelId,
                         "Open channel in FitrahTube",
@@ -133,13 +173,14 @@ public class WatchPageController {
                 channelId,
                 canonicalUrl,
                 "albunyaantube://channel/" + channelId,
-                firstNonBlank(title, "FitrahTube Channel"),
-                firstNonBlank(description, "Open this channel in FitrahTube."),
+                title,
+                description,
                 image,
                 "Open channel in FitrahTube",
                 "profile",
                 "channel",
-                requestedUrl
+                canonicalUrl,
+                metadata
         );
     }
 
@@ -158,18 +199,22 @@ public class WatchPageController {
                     .body(buildUnavailableHtml("", "", "", "FitrahTube", "This playlist is not available.", ""));
         }
         String canonicalUrl = buildCanonicalUrl(request);
-        String requestedUrl = buildCanonicalUrl(request, true);
+        ShareMetadata metadata = getShareMetadata("playlist", playlistId);
         try {
             Object details = contentService.getPlaylistDetails(playlistId);
             if (details instanceof Playlist playlist) {
+                String imageUrl = firstNonBlank(
+                        resolvePreviewImage(playlist.getThumbnailUrl(), ""),
+                        metadata.image()
+                );
                 String itemCount = playlist.getItemCount() == null
                         ? "FitrahTube playlist"
                         : playlist.getItemCount() + " videos";
                 String html = buildShareHtml(
-                        nullSafe(playlist.getTitle(), "FitrahTube Playlist"),
+                        firstNonBlank(playlist.getTitle(), metadata.title(), "FitrahTube Playlist"),
                         itemCount,
-                        truncate(nullSafe(playlist.getDescription(), ""), DESCRIPTION_MAX_CHARS),
-                        resolvePreviewImage(playlist.getThumbnailUrl(), ""),
+                        truncate(firstNonBlank(playlist.getDescription(), metadata.description(), ""), DESCRIPTION_MAX_CHARS),
+                        imageUrl,
                         canonicalUrl,
                         "albunyaantube://playlist/" + playlistId,
                         "Open playlist in FitrahTube",
@@ -184,13 +229,14 @@ public class WatchPageController {
                 playlistId,
                 canonicalUrl,
                 "albunyaantube://playlist/" + playlistId,
-                firstNonBlank(title, "FitrahTube Playlist"),
-                firstNonBlank(description, "Open this playlist in FitrahTube."),
+                title,
+                description,
                 image,
                 "Open playlist in FitrahTube",
                 "website",
                 "playlist",
-                requestedUrl
+                canonicalUrl,
+                metadata
         );
     }
 
@@ -213,14 +259,15 @@ public class WatchPageController {
             String canonicalUrl,
             String title,
             String image,
-            String description
+            String description,
+            ShareMetadata metadata
     ) {
         if (YOUTUBE_ID_PATTERN.matcher(videoId).matches()) {
             String html = buildShareHtml(
-                    firstNonBlank(title, "FitrahTube Video"),
+                    firstNonBlank(title, metadata.title(), "FitrahTube Video"),
                     "",
-                    firstNonBlank(description, "Watch this video in FitrahTube."),
-                    resolvePreviewImage(image, videoId),
+                    firstNonBlank(description, metadata.description(), "Watch this video in FitrahTube."),
+                    firstNonBlank(resolvePreviewImage(image, videoId), metadata.image()),
                     canonicalUrl,
                     "albunyaantube://video/" + videoId,
                     "Open in FitrahTube",
@@ -249,14 +296,17 @@ public class WatchPageController {
             String ctaText,
             String ogType,
             String itemType,
-            String fallbackUrl
+            String fallbackUrl,
+            ShareMetadata metadata
     ) {
-        String previewImage = resolvePreviewImage(image, "");
+        String previewImage = "profile".equals(ogType)
+                ? resolveChannelImage(firstNonBlank(image, metadata.image()))
+                : resolvePreviewImage(firstNonBlank(image, metadata.image()), "");
         if (!previewImage.isEmpty()) {
             String html = buildShareHtml(
-                    title,
+                    firstNonBlank(title, metadata.title(), "FitrahTube"),
                     "",
-                    truncate(description, DESCRIPTION_MAX_CHARS),
+                    truncate(firstNonBlank(description, metadata.description(), ""), DESCRIPTION_MAX_CHARS),
                     previewImage,
                     firstNonBlank(fallbackUrl, canonicalUrl),
                     deepLink,
@@ -283,6 +333,9 @@ public class WatchPageController {
         String subtitle = escapeHtml(nullSafe(rawSubtitle, ""));
         String description = escapeHtml(truncate(nullSafe(rawDescription, ""), DESCRIPTION_MAX_CHARS));
         String thumbnail = escapeAttr(nullSafe(rawThumbnail, ""));
+        boolean profileImage = "profile".equals(ogType);
+        int imageWidth = profileImage ? 512 : 480;
+        int imageHeight = profileImage ? 512 : 360;
 
         StringBuilder html = new StringBuilder(4096);
         html.append("<!DOCTYPE html>\n<html lang=\"en\"><head>\n");
@@ -309,8 +362,8 @@ public class WatchPageController {
             if (isStableYoutubeJpeg(rawThumbnail)) {
                 html.append("<meta property=\"og:image:type\" content=\"image/jpeg\">\n");
             }
-            html.append("<meta property=\"og:image:width\" content=\"480\">\n");
-            html.append("<meta property=\"og:image:height\" content=\"360\">\n");
+            html.append("<meta property=\"og:image:width\" content=\"").append(imageWidth).append("\">\n");
+            html.append("<meta property=\"og:image:height\" content=\"").append(imageHeight).append("\">\n");
             html.append("<meta property=\"og:image:alt\" content=\"").append(title).append("\">\n");
         }
         // Twitter cards — used by Slack, Skype and a few others in addition to OG
@@ -326,7 +379,9 @@ public class WatchPageController {
         html.append("margin:0;background:#0b0d12;color:#e4e7eb;min-height:100vh;");
         html.append("display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px}\n");
         html.append(".card{max-width:640px;width:100%;background:#13161d;border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)}\n");
-        html.append(".thumb{width:100%;aspect-ratio:16/9;object-fit:cover;background:#000;display:block}\n");
+        html.append(".thumb{width:100%;aspect-ratio:")
+                .append(profileImage ? "1/1" : "16/9")
+                .append(";object-fit:cover;background:#000;display:block}\n");
         html.append(".body{padding:20px}\n");
         html.append("h1{margin:0 0 8px;font-size:20px;line-height:1.3}\n");
         html.append(".subtitle{color:#9ca3af;font-size:14px;margin:0 0 16px}\n");
@@ -425,6 +480,17 @@ public class WatchPageController {
         }
 
         return "";
+    }
+
+    private static String resolveChannelImage(String rawImageUrl) {
+        String imageUrl = nullSafe(rawImageUrl, "").trim();
+        if (!HTTPS_URL_PATTERN.matcher(imageUrl).matches()) {
+            return "";
+        }
+        if (imageUrl.contains("yt3.googleusercontent.com") || imageUrl.contains("yt3.ggpht.com")) {
+            return YOUTUBE_AVATAR_SIZE_PATTERN.matcher(imageUrl).replaceFirst("=s512");
+        }
+        return imageUrl;
     }
 
     private static boolean isStableYoutubeJpeg(String thumbnailUrl) {
@@ -534,11 +600,60 @@ public class WatchPageController {
         return s.length() <= maxChars ? s : s.substring(0, maxChars - 1) + "…";
     }
 
+    private static boolean isSupportedShareType(String type) {
+        return "watch".equals(type) || "channel".equals(type) || "playlist".equals(type);
+    }
+
+    private ShareMetadata getShareMetadata(String type, String id) {
+        CachedShareMetadata cached = shareMetadataCache.get(cacheKey(type, id));
+        if (cached == null) {
+            return ShareMetadata.EMPTY;
+        }
+        if (System.currentTimeMillis() - cached.createdAtMillis() > SHARE_METADATA_TTL_MILLIS) {
+            shareMetadataCache.remove(cacheKey(type, id));
+            return ShareMetadata.EMPTY;
+        }
+        return new ShareMetadata(cached.title(), cached.description(), cached.image());
+    }
+
+    private void cleanupExpiredShareMetadata() {
+        long now = System.currentTimeMillis();
+        shareMetadataCache.entrySet().removeIf(entry ->
+                now - entry.getValue().createdAtMillis() > SHARE_METADATA_TTL_MILLIS
+        );
+    }
+
+    private static String cacheKey(String type, String id) {
+        return type + ":" + id;
+    }
+
     private static String firstNonBlank(String value, String fallback) {
         return (value == null || value.isBlank()) ? fallback : value.trim();
     }
 
+    private static String firstNonBlank(String... values) {
+        if (values == null) {
+            return "";
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return "";
+    }
+
     private static String nullSafe(String s, String fallback) {
         return (s == null || s.isEmpty()) ? fallback : s;
+    }
+
+    private record ShareMetadataRequest(String title, String description, String image) {
+    }
+
+    private record CachedShareMetadata(String title, String description, String image, long createdAtMillis) {
+    }
+
+    private record ShareMetadata(String title, String description, String image) {
+        private static final ShareMetadata EMPTY = new ShareMetadata("", "", "");
     }
 }

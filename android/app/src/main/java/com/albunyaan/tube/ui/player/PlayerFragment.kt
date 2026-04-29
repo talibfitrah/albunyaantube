@@ -55,6 +55,7 @@ import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.R
 import com.albunyaan.tube.databinding.FragmentPlayerBinding
 import com.albunyaan.tube.share.ShareLinks
+import com.albunyaan.tube.share.ShareMetadataPublisher
 import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
 import com.albunyaan.tube.data.extractor.PlaybackSelection
@@ -2979,27 +2980,37 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             imageUrl = currentItem.thumbnailUrl,
             description = currentItem.description
         )
+        viewLifecycleOwner.lifecycleScope.launch {
+            ShareMetadataPublisher.publish(
+                type = "watch",
+                id = currentItem.streamId,
+                title = title,
+                imageUrl = currentItem.thumbnailUrl,
+                description = currentItem.description
+            )
+            if (!isAdded) return@launch
 
-        // Simple, clean share message - title, link, and app promo
-        // Skip description as it often contains HTML tags (<br>, etc.)
-        val shareMessage = buildString {
-            append(title)
-            append("\n\n")
-            append(getString(R.string.share_watch_in_app))
-            append("\n")
-            append(videoDeepLink)
-            append("\n\n")
-            append(getString(R.string.share_app_promo))
+            // Simple, clean share message - title, link, and app promo
+            // Skip description as it often contains HTML tags (<br>, etc.)
+            val shareMessage = buildString {
+                append(title)
+                append("\n\n")
+                append(getString(R.string.share_watch_in_app))
+                append("\n")
+                append(videoDeepLink)
+                append("\n\n")
+                append(getString(R.string.share_app_promo))
+            }
+
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_SUBJECT, title)
+                putExtra(Intent.EXTRA_TITLE, title)
+                putExtra(Intent.EXTRA_TEXT, shareMessage)
+            }
+
+            startActivity(Intent.createChooser(shareIntent, getString(R.string.share_video_chooser)))
         }
-
-        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_SUBJECT, title)
-            putExtra(Intent.EXTRA_TITLE, title)
-            putExtra(Intent.EXTRA_TEXT, shareMessage)
-        }
-
-        startActivity(Intent.createChooser(shareIntent, getString(R.string.share_video_chooser)))
     }
 
     /**

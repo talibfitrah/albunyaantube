@@ -69,6 +69,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.HEAD, "/watch/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/watch/**").permitAll()
                         .requestMatchers(HttpMethod.HEAD, "/api/watch/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/share-metadata/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/channel/**").permitAll()
                         .requestMatchers(HttpMethod.HEAD, "/channel/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/channel/**").permitAll()

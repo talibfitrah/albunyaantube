@@ -7,59 +7,56 @@ object ShareLinks {
 
     fun video(
         videoId: String,
+        @Suppress("UNUSED_PARAMETER")
         title: String? = null,
+        @Suppress("UNUSED_PARAMETER")
         imageUrl: String? = null,
+        @Suppress("UNUSED_PARAMETER")
         description: String? = null
     ): String {
         return publicShareUrl(
             type = "watch",
             id = videoId,
-            fallbackDeepLink = "albunyaantube://video/${Uri.encode(videoId)}",
-            title = title,
-            imageUrl = imageUrl,
-            description = description
+            fallbackDeepLink = "albunyaantube://video/${Uri.encode(videoId)}"
         )
     }
 
     fun channel(
         channelId: String,
+        @Suppress("UNUSED_PARAMETER")
         title: String?,
+        @Suppress("UNUSED_PARAMETER")
         imageUrl: String?,
+        @Suppress("UNUSED_PARAMETER")
         description: String?
     ): String {
         return publicShareUrl(
             type = "channel",
             id = channelId,
-            fallbackDeepLink = "albunyaantube://channel/${Uri.encode(channelId)}",
-            title = title,
-            imageUrl = imageUrl,
-            description = description
+            fallbackDeepLink = "albunyaantube://channel/${Uri.encode(channelId)}"
         )
     }
 
     fun playlist(
         playlistId: String,
+        @Suppress("UNUSED_PARAMETER")
         title: String?,
+        @Suppress("UNUSED_PARAMETER")
         imageUrl: String?,
+        @Suppress("UNUSED_PARAMETER")
         description: String?
     ): String {
         return publicShareUrl(
             type = "playlist",
             id = playlistId,
-            fallbackDeepLink = "albunyaantube://playlist/${Uri.encode(playlistId)}",
-            title = title,
-            imageUrl = imageUrl,
-            description = description
+            fallbackDeepLink = "albunyaantube://playlist/${Uri.encode(playlistId)}"
         )
     }
 
     private fun publicShareUrl(
         type: String,
         id: String,
-        fallbackDeepLink: String,
-        title: String? = null,
-        imageUrl: String? = null,
-        description: String? = null
+        fallbackDeepLink: String
     ): String {
         val shareBaseUrl = BuildConfig.SHARE_BASE_URL.trimEnd('/')
         if (shareBaseUrl.isBlank()) {
@@ -71,21 +68,7 @@ object ShareLinks {
             .appendPath("api")
             .appendPath(type)
             .appendPath(id)
-            .apply {
-                title?.trim()?.takeIf { it.isNotEmpty() }?.let {
-                    appendQueryParameter("title", it.take(MAX_TITLE_CHARS))
-                }
-                imageUrl?.trim()?.takeIf { it.startsWith("https://", ignoreCase = true) }?.let {
-                    appendQueryParameter("image", it)
-                }
-                description?.trim()?.takeIf { it.isNotEmpty() }?.let {
-                    appendQueryParameter("description", it.take(MAX_DESCRIPTION_CHARS))
-                }
-            }
             .build()
             .toString()
     }
-
-    private const val MAX_TITLE_CHARS = 160
-    private const val MAX_DESCRIPTION_CHARS = 220
 }

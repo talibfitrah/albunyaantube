@@ -17,6 +17,7 @@ import com.albunyaan.tube.data.channel.ChannelHeader
 import com.albunyaan.tube.data.channel.ChannelTab
 import com.albunyaan.tube.databinding.FragmentChannelDetailBinding
 import com.albunyaan.tube.share.ShareLinks
+import com.albunyaan.tube.share.ShareMetadataPublisher
 import com.albunyaan.tube.ui.detail.tabs.ChannelAboutTabFragment
 import com.albunyaan.tube.ui.detail.tabs.ChannelLiveTabFragment
 import com.albunyaan.tube.ui.detail.tabs.ChannelPlaylistsTabFragment
@@ -262,29 +263,36 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
         val title = header?.title?.takeIf { it.isNotBlank() }
             ?: channelName?.takeIf { it.isNotBlank() }
             ?: channelId
+        val imageUrl = header?.avatarUrl ?: header?.bannerUrl
+        val description = header?.summaryLine ?: header?.shortDescription ?: header?.fullDescription
         val shareUrl = ShareLinks.channel(
             channelId = channelId,
             title = title,
-            imageUrl = header?.avatarUrl ?: header?.bannerUrl,
-            description = header?.summaryLine ?: header?.shortDescription ?: header?.fullDescription
+            imageUrl = imageUrl,
+            description = description
         )
-        val shareMessage = buildString {
-            append(title)
-            append("\n\n")
-            append(getString(R.string.share_channel_in_app))
-            append("\n")
-            append(shareUrl)
-            append("\n\n")
-            append(getString(R.string.share_app_promo))
-        }
+        viewLifecycleOwner.lifecycleScope.launch {
+            ShareMetadataPublisher.publish("channel", channelId, title, imageUrl, description)
+            if (!isAdded) return@launch
 
-        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_SUBJECT, title)
-            putExtra(Intent.EXTRA_TITLE, title)
-            putExtra(Intent.EXTRA_TEXT, shareMessage)
+            val shareMessage = buildString {
+                append(title)
+                append("\n\n")
+                append(getString(R.string.share_channel_in_app))
+                append("\n")
+                append(shareUrl)
+                append("\n\n")
+                append(getString(R.string.share_app_promo))
+            }
+
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_SUBJECT, title)
+                putExtra(Intent.EXTRA_TITLE, title)
+                putExtra(Intent.EXTRA_TEXT, shareMessage)
+            }
+            startActivity(Intent.createChooser(shareIntent, getString(R.string.share_channel_chooser)))
         }
-        startActivity(Intent.createChooser(shareIntent, getString(R.string.share_channel_chooser)))
     }
 
     private fun tintToolbarActions(color: Int) {
