@@ -350,7 +350,7 @@
                 <td class="col-actions">
                   <button type="button" class="action-btn" @click="openDetailsModal(item)" :title="t('contentLibrary.view')">👁</button>
                   <button type="button" class="action-btn" @click="openCategoryModal(item)" :title="t('contentLibrary.categories')">🏷</button>
-                  <button type="button" class="action-btn" @click="openKeywordsModal(item)" :title="t('contentLibrary.keywords')">🔑</button>
+                  <button type="button" class="action-btn keywords-btn" @click="openKeywordsModal(item)" :title="t('contentLibrary.keywords')">🔑</button>
                   <button type="button" class="action-btn delete" @click="confirmDelete(item)" :title="t('contentLibrary.delete')">🗑</button>
                 </td>
               </tr>
@@ -2005,14 +2005,22 @@ onUnmounted(() => {
   background: var(--color-surface-alt);
 }
 
-:root[data-theme="dark"] .action-btn {
+:root[data-theme="dark"] .action-btn:not(.keywords-btn) {
   filter: brightness(0) invert(1);
   opacity: 0.8;
 }
 
-:root[data-theme="dark"] .action-btn:hover {
+:root[data-theme="dark"] .action-btn.keywords-btn {
+  opacity: 1;
+}
+
+:root[data-theme="dark"] .action-btn:not(.keywords-btn):hover {
   filter: brightness(0) invert(1);
   opacity: 1;
+  background: var(--color-surface-alt);
+}
+
+:root[data-theme="dark"] .action-btn.keywords-btn:hover {
   background: var(--color-surface-alt);
 }
 

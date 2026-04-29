@@ -1187,6 +1187,22 @@ onUnmounted(() => {
   background: rgba(217, 45, 32, 0.15);
 }
 
+:root[data-theme="dark"] .icon-button {
+  filter: brightness(0) invert(1);
+  opacity: 0.8;
+}
+
+:root[data-theme="dark"] .icon-button:hover {
+  filter: brightness(0) invert(1);
+  opacity: 1;
+  background: var(--color-surface-alt);
+}
+
+:root[data-theme="dark"] .icon-button.restore:hover,
+:root[data-theme="dark"] .icon-button.delete:hover {
+  background: var(--color-surface-alt);
+}
+
 /* Mobile Cards */
 .content-cards {
   display: flex;
