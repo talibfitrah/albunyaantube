@@ -24,7 +24,8 @@ class RetrofitContentService(
         type: ContentType,
         cursor: String?,
         pageSize: Int,
-        filters: FilterState
+        filters: FilterState,
+        query: String?
     ): CursorResponse {
         // API Contract: GET /api/v1/content
         // - When type parameter is omitted (null), the API returns mixed content
@@ -39,7 +40,8 @@ class RetrofitContentService(
             category = filters.category,
             length = filters.videoLength.toQueryValue(),
             date = filters.publishedDate.toQueryValue(),
-            sort = filters.sortOption.toQueryValue()
+            sort = filters.sortOption.toQueryValue(),
+            query = query?.takeIf { it.isNotBlank() }
         )
         // Use mapper to convert generated DTOs to domain models
         val baseItems = response.data.toDomainContentItems()

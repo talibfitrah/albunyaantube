@@ -58,7 +58,8 @@ class FakeContentService : ContentService {
         type: ContentType,
         cursor: String?,
         pageSize: Int,
-        filters: FilterState
+        filters: FilterState,
+        query: String?
     ): CursorResponse {
         val sourceItems: List<ContentItem> = when (type) {
             ContentType.HOME, ContentType.VIDEOS -> videos
@@ -67,12 +68,23 @@ class FakeContentService : ContentService {
             ContentType.ALL -> videos + channels + playlists  // Mixed content for Featured section
         }
 
+        val lowerQuery = query?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+
         val filtered = sourceItems.filter { item ->
-            when (item) {
+            val matchesFilter = when (item) {
                 is ContentItem.Video -> filters.matchesVideo(item)
                 is ContentItem.Channel -> filters.category?.let { item.category == it } ?: true
                 is ContentItem.Playlist -> filters.category?.let { item.category == it } ?: true
             }
+            val matchesQuery = lowerQuery == null || when (item) {
+                is ContentItem.Video -> item.title.lowercase().contains(lowerQuery)
+                        || item.description.lowercase().contains(lowerQuery)
+                is ContentItem.Channel -> item.name.lowercase().contains(lowerQuery)
+                        || item.description?.lowercase()?.contains(lowerQuery) == true
+                is ContentItem.Playlist -> item.title.lowercase().contains(lowerQuery)
+                        || item.description?.lowercase()?.contains(lowerQuery) == true
+            }
+            matchesFilter && matchesQuery
         }.sortByOption(filters.sortOption)
 
         val pageIndex = cursor?.toIntOrNull() ?: 0
