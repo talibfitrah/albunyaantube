@@ -85,8 +85,8 @@ android {
         val enableDegradation = localProperties.getProperty("playback.degradation.enabled", "true").toBoolean()
         buildConfigField("boolean", "ENABLE_DEGRADATION_MANAGER", "$enableDegradation")
 
-        buildConfigField("Boolean", "ENABLE_CLIENT_ROTATION", "true")
-        buildConfigField("Boolean", "ENABLE_HLS_PROBATION", "true")
+        buildConfigField("boolean", "ENABLE_CLIENT_ROTATION", "true")
+        buildConfigField("boolean", "ENABLE_HLS_PROBATION", "true")
     }
 
     signingConfigs {
