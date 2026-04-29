@@ -628,7 +628,7 @@ export const messages = {
       table: {
         col: {
           type: 'Type',
-          targetId: 'Target ID',
+          content: 'Content',
           reasons: 'Reasons',
           submitted: 'Submitted',
           status: 'Status',
@@ -2013,7 +2013,7 @@ export const messages = {
       table: {
         col: {
           type: 'النوع',
-          targetId: 'المعرّف',
+          content: 'المحتوى',
           reasons: 'الأسباب',
           submitted: 'تاريخ الإرسال',
           status: 'الحالة',
@@ -3229,7 +3229,7 @@ export const messages = {
       table: {
         col: {
           type: 'Type',
-          targetId: 'Doel-ID',
+          content: 'Inhoud',
           reasons: 'Redenen',
           submitted: 'Ingediend',
           status: 'Status',

@@ -72,7 +72,7 @@
         <thead>
           <tr>
             <th scope="col">{{ t('reports.table.col.type') }}</th>
-            <th scope="col">{{ t('reports.table.col.targetId') }}</th>
+            <th scope="col">{{ t('reports.table.col.content') }}</th>
             <th scope="col">{{ t('reports.table.col.reasons') }}</th>
             <th scope="col">{{ t('reports.table.col.submitted') }}</th>
             <th scope="col">{{ t('reports.table.col.status') }}</th>
@@ -92,8 +92,22 @@
           </tr>
           <tr v-for="report in reports" :key="report.id">
             <td><span class="type-badge" :class="report.targetType.toLowerCase()">{{ report.targetType }}</span></td>
-            <td class="target-id">
-              <span :title="report.targetId">{{ report.targetId }}</span>
+            <td class="content-cell">
+              <div class="content-info">
+                <img
+                  v-if="getContentMeta(report)?.thumbnailUrl"
+                  :src="getContentMeta(report)!.thumbnailUrl"
+                  class="content-thumb"
+                  :class="{ 'thumb-circle': report.targetType === 'CHANNEL' }"
+                  loading="lazy"
+                  alt=""
+                />
+                <div v-else class="content-thumb-placeholder" :class="report.targetType.toLowerCase()" />
+                <div class="content-details">
+                  <span class="content-title">{{ getContentMeta(report)?.title ?? '…' }}</span>
+                  <span class="content-id" :title="report.targetId">{{ report.targetId }}</span>
+                </div>
+              </div>
             </td>
             <td>
               <ul class="reason-list">
@@ -215,6 +229,7 @@ import { useI18n } from 'vue-i18n';
 import ChannelDetailModal from '@/components/exclusions/ChannelDetailModal.vue';
 import PlaylistDetailModal from '@/components/exclusions/PlaylistDetailModal.vue';
 import VideoPreviewModal from '@/components/VideoPreviewModal.vue';
+import apiClient from '@/services/api/client';
 import {
   fetchReports,
   fetchReportStats,
@@ -275,6 +290,46 @@ function closePreview() {
   setTimeout(() => { previewItem.value = null; }, 300);
 }
 
+// Content metadata (thumbnail + title for the reports table)
+interface ContentMeta { thumbnailUrl?: string; title: string; }
+const contentMeta = ref<Record<string, ContentMeta>>({});
+
+function getContentMeta(report: ContentReport): ContentMeta | null {
+  return contentMeta.value[`${report.targetType}:${report.targetId}`] ?? null;
+}
+
+async function fetchContentMeta(items: ContentReport[]) {
+  const seen = new Set<string>();
+  const unique = items.filter(r => {
+    const key = `${r.targetType}:${r.targetId}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  await Promise.allSettled(unique.map(async (r) => {
+    const key = `${r.targetType}:${r.targetId}`;
+    if (contentMeta.value[key]) return;
+    let url = '';
+    if (r.targetType === 'VIDEO') url = `/api/v1/videos/${r.targetId}`;
+    else if (r.targetType === 'CHANNEL') url = `/api/v1/channels/${r.targetId}`;
+    else if (r.targetType === 'PLAYLIST') url = `/api/v1/playlists/${r.targetId}`;
+    if (!url) return;
+    try {
+      const res = await apiClient.get<{ title?: string; name?: string; thumbnailUrl?: string }>(url);
+      const d = res.data;
+      const fallbackThumb = r.targetType === 'VIDEO'
+        ? `https://img.youtube.com/vi/${r.targetId}/mqdefault.jpg`
+        : undefined;
+      contentMeta.value[key] = {
+        thumbnailUrl: d.thumbnailUrl ?? fallbackThumb,
+        title: d.title ?? d.name ?? r.targetId,
+      };
+    } catch {
+      contentMeta.value[key] = { title: r.targetId };
+    }
+  }));
+}
+
 // Resolve dialog
 const resolveDialog = ref({
   visible: false,
@@ -295,6 +350,7 @@ async function load() {
     });
     reports.value = data;
     hasNextPage.value = data.length === PAGE_SIZE;
+    fetchContentMeta(data);
   } catch {
     error.value = true;
   } finally {
@@ -441,12 +497,13 @@ onMounted(() => {
   background: transparent;
   cursor: pointer;
   font-size: 0.875rem;
-  color: var(--color-text, #111);
-  transition: background 0.15s, border-color 0.15s;
+  color: var(--color-text-primary, #132820);
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 
 .filter-option:hover {
-  background: var(--color-surface-hover, #f3f4f6);
+  background: var(--color-surface-alt, #e8f1ec);
+  color: var(--color-text-primary, #132820);
 }
 
 .filter-option.active {
@@ -494,15 +551,71 @@ onMounted(() => {
 .type-badge.channel { background: #fef9c3; color: #854d0e; }
 .type-badge.playlist { background: #d1fae5; color: #065f46; }
 
-.target-id span {
-  font-family: monospace;
+.content-cell { min-width: 180px; max-width: 260px; }
+
+.content-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.content-thumb {
+  width: 56px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+  background: var(--color-surface-alt, #e8f1ec);
+}
+
+.content-thumb.thumb-circle {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+
+.content-thumb-placeholder {
+  width: 56px;
+  height: 40px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  background: var(--color-surface-alt, #e8f1ec);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.content-thumb-placeholder.channel {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+
+.content-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.content-title {
   font-size: 0.8rem;
-  max-width: 140px;
-  display: inline-block;
+  font-weight: 500;
+  color: var(--color-text-primary, #132820);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 160px;
+}
+
+.content-id {
+  font-family: monospace;
+  font-size: 0.7rem;
+  color: var(--color-text-secondary, #4f665c);
   white-space: nowrap;
-  vertical-align: bottom;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
 }
 
 .reason-list {
@@ -563,10 +676,10 @@ onMounted(() => {
 }
 
 .btn-preview { background: transparent; color: var(--color-brand, #059669); border: 1px solid var(--color-brand, #059669); }
-.btn-preview:hover { background: var(--color-surface-hover, #f3f4f6); }
+.btn-preview:hover { background: var(--color-brand-soft, rgba(22,131,90,0.12)); color: var(--color-brand, #059669); }
 .btn-resolve { background: #059669; color: #fff; }
 .btn-reject { background: #dc2626; color: #fff; }
-.btn-cancel { background: var(--color-surface-hover, #f3f4f6); color: var(--color-text, #111); border: 1px solid var(--color-border, #e5e7eb); }
+.btn-cancel { background: var(--color-surface-alt, #e8f1ec); color: var(--color-text-primary, #132820); border: 1px solid var(--color-border, #e5e7eb); }
 .btn-confirm { min-width: 90px; }
 
 .btn-resolve:disabled,
