@@ -24,6 +24,7 @@ public class ContentReportService {
 
     private static final Logger log = LoggerFactory.getLogger(ContentReportService.class);
     private static final int RATE_LIMIT_MAX = 5;
+    private static final String ANONYMOUS_DEVICE_KEY = "ANONYMOUS_DEVICE";
 
     private final ContentReportRepository reportRepository;
     private final Cache<String, AtomicInteger> rateLimitCache;
@@ -96,7 +97,7 @@ public class ContentReportService {
     }
 
     private void checkRateLimit(String deviceKey) {
-        if (deviceKey == null || deviceKey.isBlank()) deviceKey = "ANONYMOUS_DEVICE";
+        if (deviceKey == null || deviceKey.isBlank()) deviceKey = ANONYMOUS_DEVICE_KEY;
         AtomicInteger count = rateLimitCache.get(deviceKey, k -> new AtomicInteger(0));
         int current = count.incrementAndGet();
         if (current > RATE_LIMIT_MAX) {

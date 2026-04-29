@@ -9,6 +9,7 @@ import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.source.ContentService
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -47,6 +48,7 @@ class ContentListViewModel(
     // Search query — kept separate from FilterState to avoid DataStore persistence
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+    private var searchJob: Job? = null
 
     val isSearchActive: Boolean
         get() = _searchQuery.value.isNotEmpty()
@@ -54,7 +56,11 @@ class ContentListViewModel(
     fun setSearchQuery(q: String) {
         if (_searchQuery.value == q) return
         _searchQuery.value = q
-        loadContent()
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
+            delay(300L)
+            loadContent()
+        }
     }
 
     // Public read-only accessors for Fragment-side guards
