@@ -56,6 +56,8 @@ class PlaybackFeatureFlags @Inject constructor(
         const val KEY_DEGRADATION_MANAGER = "degradation_manager"
         const val KEY_IOS_FETCH = "ios_fetch"
         const val KEY_GENEROUS_CROP_BUDGET = "generous_crop_budget"
+        const val KEY_CLIENT_ROTATION = "client_rotation"
+        const val KEY_HLS_PROBATION = "hls_probation"
 
         /** Set of all valid override keys for validation */
         private val VALID_KEYS = setOf(
@@ -63,7 +65,9 @@ class PlaybackFeatureFlags @Inject constructor(
             KEY_MPD_PREFETCH,
             KEY_DEGRADATION_MANAGER,
             KEY_IOS_FETCH,
-            KEY_GENEROUS_CROP_BUDGET
+            KEY_GENEROUS_CROP_BUDGET,
+            KEY_CLIENT_ROTATION,
+            KEY_HLS_PROBATION
         )
 
         /**
@@ -125,6 +129,8 @@ class PlaybackFeatureFlags @Inject constructor(
             .remove(KEY_DEGRADATION_MANAGER)
             .remove(KEY_IOS_FETCH)
             .remove(KEY_GENEROUS_CROP_BUDGET)
+            .remove(KEY_CLIENT_ROTATION)
+            .remove(KEY_HLS_PROBATION)
             .apply()
     }
 
@@ -186,6 +192,28 @@ class PlaybackFeatureFlags @Inject constructor(
         get() = resolveFlag(KEY_GENEROUS_CROP_BUDGET, isSamsungS25Ultra())
 
     /**
+     * Whether client-side rotation handling is enabled for the shorts player.
+     *
+     * When enabled, the shorts player manages orientation changes internally
+     * rather than relying on system rotation.
+     *
+     * Build-time default: [BuildConfig.ENABLE_CLIENT_ROTATION]
+     */
+    val isClientRotationEnabled: Boolean
+        get() = resolveFlag(KEY_CLIENT_ROTATION, BuildConfig.ENABLE_CLIENT_ROTATION)
+
+    /**
+     * Whether HLS probation mode is enabled.
+     *
+     * When enabled, newly selected HLS streams are evaluated in a probation
+     * period before fully committing to playback on that stream.
+     *
+     * Build-time default: [BuildConfig.ENABLE_HLS_PROBATION]
+     */
+    val isHlsProbationEnabled: Boolean
+        get() = resolveFlag(KEY_HLS_PROBATION, BuildConfig.ENABLE_HLS_PROBATION)
+
+    /**
      * Set a runtime override for synthetic adaptive DASH.
      * @param enabled true to enable, false to disable, null to use build-time default
      */
@@ -231,6 +259,24 @@ class PlaybackFeatureFlags @Inject constructor(
     }
 
     /**
+     * Set a runtime override for client rotation.
+     * @param enabled true to enable, false to disable, null to use build-time default
+     */
+    fun setClientRotationEnabled(enabled: Boolean?) {
+        setOverride(KEY_CLIENT_ROTATION, enabled)
+        Log.i(TAG, "CLIENT_ROTATION override set to: $enabled (effective: $isClientRotationEnabled)")
+    }
+
+    /**
+     * Set a runtime override for HLS probation.
+     * @param enabled true to enable, false to disable, null to use build-time default
+     */
+    fun setHlsProbationEnabled(enabled: Boolean?) {
+        setOverride(KEY_HLS_PROBATION, enabled)
+        Log.i(TAG, "HLS_PROBATION override set to: $enabled (effective: $isHlsProbationEnabled)")
+    }
+
+    /**
      * Clear a specific flag's runtime override, reverting to build-time default.
      * @throws IllegalArgumentException if key is not a valid feature flag key
      */
@@ -251,6 +297,8 @@ class PlaybackFeatureFlags @Inject constructor(
             .remove(KEY_DEGRADATION_MANAGER)
             .remove(KEY_IOS_FETCH)
             .remove(KEY_GENEROUS_CROP_BUDGET)
+            .remove(KEY_CLIENT_ROTATION)
+            .remove(KEY_HLS_PROBATION)
             .apply()
         Log.i(TAG, "All overrides cleared - reverting to build-time defaults")
     }
@@ -274,7 +322,9 @@ class PlaybackFeatureFlags @Inject constructor(
             KEY_MPD_PREFETCH to getFlagState(KEY_MPD_PREFETCH, BuildConfig.ENABLE_MPD_PREFETCH),
             KEY_DEGRADATION_MANAGER to getFlagState(KEY_DEGRADATION_MANAGER, BuildConfig.ENABLE_DEGRADATION_MANAGER),
             KEY_IOS_FETCH to getFlagState(KEY_IOS_FETCH, BuildConfig.ENABLE_NPE_IOS_FETCH),
-            KEY_GENEROUS_CROP_BUDGET to getFlagState(KEY_GENEROUS_CROP_BUDGET, isSamsungS25Ultra())
+            KEY_GENEROUS_CROP_BUDGET to getFlagState(KEY_GENEROUS_CROP_BUDGET, isSamsungS25Ultra()),
+            KEY_CLIENT_ROTATION to getFlagState(KEY_CLIENT_ROTATION, BuildConfig.ENABLE_CLIENT_ROTATION),
+            KEY_HLS_PROBATION to getFlagState(KEY_HLS_PROBATION, BuildConfig.ENABLE_HLS_PROBATION)
         )
     }
 
