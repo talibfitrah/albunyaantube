@@ -1031,6 +1031,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     viewModel.state.value.currentItem?.streamId?.let { streamId ->
                         viewModel.metrics.onRebufferingStarted(streamId)
                     }
+                    // Telemetry: only count mid-play rebuffers (not initial buffering before first frame)
+                    if (videoFrameRendered) {
+                        streamTelemetry.recordRebuffer()
+                    }
                 }
 
                 // Delegate to recovery manager for freeze detection
@@ -2856,6 +2860,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         return object : PlaybackRecoveryManager.RecoveryCallbacks {
             override fun onRecoveryStarted(step: PlaybackRecoveryManager.RecoveryStep, attempt: Int) {
                 android.util.Log.i("PlayerFragment", "Recovery started: step=$step, attempt=$attempt")
+                streamTelemetry.recordRecoveryStep()
                 val state = viewModel.state.value
                 val streamState = state.streamState
 

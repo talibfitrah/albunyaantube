@@ -3,6 +3,7 @@ package com.albunyaan.tube.player
 import android.net.Uri
 import android.os.SystemClock
 import android.util.Log
+import androidx.annotation.MainThread
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -407,6 +408,7 @@ class StreamRequestTelemetry @Inject constructor() {
     private var activeSession: PlaybackSession? = null
 
     /** Start a new session for [videoId], replacing any previous active session. */
+    @MainThread
     fun startSession(videoId: String): PlaybackSession {
         val session = PlaybackSession(
             videoId = videoId,
@@ -417,6 +419,7 @@ class StreamRequestTelemetry @Inject constructor() {
     }
 
     /** Record the time-to-first-frame (ms since session start). No-op if already recorded. */
+    @MainThread
     fun recordFirstFrame() {
         val session = activeSession ?: return
         if (session.firstFrameMs < 0) {
@@ -425,40 +428,60 @@ class StreamRequestTelemetry @Inject constructor() {
     }
 
     /** Increment rebuffer counter for the active session. */
-    fun recordRebuffer() { activeSession?.rebufferCount = (activeSession?.rebufferCount ?: 0) + 1 }
+    @MainThread
+    fun recordRebuffer() {
+        val session = activeSession ?: return
+        session.rebufferCount++
+    }
 
     /** Increment HTTP 403 counter for the active session. */
-    fun record403() { activeSession?.http403Count = (activeSession?.http403Count ?: 0) + 1 }
+    @MainThread
+    fun record403() {
+        val session = activeSession ?: return
+        session.http403Count++
+    }
 
     /** Increment ABR switch counter for the active session. */
-    fun recordAbrSwitch() { activeSession?.abrSwitchCount = (activeSession?.abrSwitchCount ?: 0) + 1 }
+    @MainThread
+    fun recordAbrSwitch() {
+        val session = activeSession ?: return
+        session.abrSwitchCount++
+    }
 
     /** Increment recovery step counter for the active session. */
-    fun recordRecoveryStep() { activeSession?.recoveryStepCount = (activeSession?.recoveryStepCount ?: 0) + 1 }
+    @MainThread
+    fun recordRecoveryStep() {
+        val session = activeSession ?: return
+        session.recoveryStepCount++
+    }
 
     /** Return the currently active session, or null if none. */
+    @MainThread
     fun getActiveSession(): PlaybackSession? = activeSession
 
     /**
      * End the active session: log a JSON summary line and clear [activeSession].
      * No-op if there is no active session.
      */
+    @MainThread
     fun endSession() {
         val session = activeSession ?: return
         activeSession = null
         val durationMs = (sessionTestClock?.invoke() ?: System.currentTimeMillis()) - session.startedAtMs
         Log.i(TAG, buildString {
             append("{")
-            append("\"videoId\":\"${session.videoId}\",")
+            append("\"videoId\":\"${session.videoId.escapeJson()}\",")
             append("\"durationMs\":$durationMs,")
             append("\"firstFrameMs\":${session.firstFrameMs},")
             append("\"rebufferCount\":${session.rebufferCount},")
             append("\"http403Count\":${session.http403Count},")
             append("\"abrSwitchCount\":${session.abrSwitchCount},")
             append("\"recoveryStepCount\":${session.recoveryStepCount},")
-            append("\"clientUsed\":\"${session.clientUsed}\",")
-            append("\"selectedSourceType\":\"${session.selectedSourceType}\"")
+            append("\"clientUsed\":\"${session.clientUsed.escapeJson()}\",")
+            append("\"selectedSourceType\":\"${session.selectedSourceType.escapeJson()}\"")
             append("}")
         })
     }
+
+    private fun String.escapeJson() = replace("\\", "\\\\").replace("\"", "\\\"")
 }
