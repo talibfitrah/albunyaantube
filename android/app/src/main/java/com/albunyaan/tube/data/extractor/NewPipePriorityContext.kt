@@ -5,6 +5,9 @@ package com.albunyaan.tube.data.extractor
  *
  * - [PLAYER]: bypasses the bucket entirely — playback must never block
  *   on a refresh-thread bucket because the user is actively watching.
+ * - [VISIBLE_INTERACTIVE]: channel/detail pages the user is looking at right
+ *   now. Uses the foreground bucket, but fails quickly so visible screens do
+ *   not sit behind long NewPipe waits when the budget is exhausted.
  * - [USER_FOREGROUND]: Home / Search / paged grids the user is looking at.
  *   Acquires from the bucket with a foreground timeout.
  * - [BACKGROUND_REFRESH]: Reserved for any future background NewPipe path
@@ -16,6 +19,7 @@ package com.albunyaan.tube.data.extractor
  */
 enum class Priority {
     PLAYER,
+    VISIBLE_INTERACTIVE,
     USER_FOREGROUND,
     BACKGROUND_REFRESH,
 }

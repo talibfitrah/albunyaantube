@@ -10,6 +10,7 @@ import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
@@ -37,6 +38,7 @@ class GlobalStreamResolverTest {
     fun tearDown() {
         // Clear the cleanup listener to prevent cross-test leakage
         resolver.setOnJobCleanupListener(null)
+        resolver.cancelAll()
     }
 
     // --- Single-Flight Tests ---
@@ -665,14 +667,14 @@ class GlobalStreamResolverTest {
      * tests can assert priority propagation (ANDROID-PERSONAL-02 [Bug 1]).
      */
     private class FakeResolutionProvider : StreamResolutionProvider {
-        private val gates = mutableMapOf<String, CompletableDeferred<Unit>>()
-        private val results = mutableMapOf<String, ResolvedStreams?>()
-        private val callCounts = mutableMapOf<String, AtomicInteger>()
-        private val extractionStarted = mutableMapOf<String, CompletableDeferred<Unit>>()
+        private val gates = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
+        private val results = ConcurrentHashMap<String, ResolvedStreams>()
+        private val callCounts = ConcurrentHashMap<String, AtomicInteger>()
+        private val extractionStarted = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
         // Last priority observed by the provider for each videoId.
         // AtomicReference is overkill for the in-test single-thread case
         // but cheap and correct under StandardTestDispatcher.
-        private val observedPriorities = mutableMapOf<String, AtomicReference<Priority?>>()
+        private val observedPriorities = ConcurrentHashMap<String, AtomicReference<Priority?>>()
 
         fun setGate(videoId: String, gate: CompletableDeferred<Unit>) {
             gates[videoId] = gate
@@ -680,14 +682,17 @@ class GlobalStreamResolverTest {
         }
 
         fun setResult(videoId: String, result: ResolvedStreams?) {
-            results[videoId] = result
-            if (!extractionStarted.containsKey(videoId)) {
-                extractionStarted[videoId] = CompletableDeferred()
+            if (result == null) {
+                results.remove(videoId)
+            } else {
+                results[videoId] = result
             }
+            extractionStarted.putIfAbsent(videoId, CompletableDeferred())
         }
 
         suspend fun waitForExtractionStart(videoId: String) {
             extractionStarted[videoId]?.await()
+                ?: error("No extraction-start marker registered for $videoId")
         }
 
         fun getCallCount(videoId: String): Int {
@@ -703,8 +708,8 @@ class GlobalStreamResolverTest {
             forceRefresh: Boolean,
             priority: Priority,
         ): ResolvedStreams? {
-            callCounts.getOrPut(videoId) { AtomicInteger(0) }.incrementAndGet()
-            observedPriorities.getOrPut(videoId) { AtomicReference<Priority?>(null) }.set(priority)
+            callCounts.computeIfAbsent(videoId) { AtomicInteger(0) }.incrementAndGet()
+            observedPriorities.computeIfAbsent(videoId) { AtomicReference<Priority?>(null) }.set(priority)
             extractionStarted[videoId]?.complete(Unit)
             gates[videoId]?.await()
             return results[videoId]

@@ -484,4 +484,81 @@ class StreamRequestTelemetry @Inject constructor() {
     }
 
     private fun String.escapeJson() = replace("\\", "\\\\").replace("\"", "\\\"")
+
+    // -------------------------------------------------------------------------
+    // Channel + page + resolve timing — extension of PlaybackSession telemetry.
+    // Pure log emitters; no in-memory bookkeeping. Each call writes one
+    // structured JSON line to logcat under [TAG] for offline analysis.
+    // -------------------------------------------------------------------------
+
+    fun recordChannelHeaderLoad(
+        channelId: String,
+        durationMs: Long,
+        success: Boolean,
+        error: String? = null,
+    ) {
+        Log.i(TAG, buildString {
+            append("{\"event\":\"channel_header\",")
+            append("\"channelId\":\"${channelId.escapeJson()}\",")
+            append("\"durationMs\":$durationMs,")
+            append("\"success\":$success")
+            if (error != null) append(",\"error\":\"${error.escapeJson()}\"")
+            append("}")
+        })
+    }
+
+    fun recordChannelTabLoad(
+        channelId: String,
+        tab: String,
+        durationMs: Long,
+        pageFetches: Int,
+        emptyContinuations: Int,
+        itemsReturned: Int,
+        isAppend: Boolean,
+        success: Boolean,
+        error: String? = null,
+    ) {
+        Log.i(TAG, buildString {
+            append("{\"event\":\"channel_tab\",")
+            append("\"channelId\":\"${channelId.escapeJson()}\",")
+            append("\"tab\":\"${tab.escapeJson()}\",")
+            append("\"durationMs\":$durationMs,")
+            append("\"pageFetches\":$pageFetches,")
+            append("\"emptyContinuations\":$emptyContinuations,")
+            append("\"itemsReturned\":$itemsReturned,")
+            append("\"isAppend\":$isAppend,")
+            append("\"success\":$success")
+            if (error != null) append(",\"error\":\"${error.escapeJson()}\"")
+            append("}")
+        })
+    }
+
+    fun recordPlayerResolve(
+        videoId: String,
+        durationMs: Long,
+        priority: String,
+        success: Boolean,
+        error: String? = null,
+    ) {
+        Log.i(TAG, buildString {
+            append("{\"event\":\"player_resolve\",")
+            append("\"videoId\":\"${videoId.escapeJson()}\",")
+            append("\"durationMs\":$durationMs,")
+            append("\"priority\":\"${priority.escapeJson()}\",")
+            append("\"success\":$success")
+            if (error != null) append(",\"error\":\"${error.escapeJson()}\"")
+            append("}")
+        })
+    }
+
+    fun recordAutofillRejection(
+        channelId: String,
+        tab: String,
+        reason: String,
+    ) {
+        Log.d(TAG, "{\"event\":\"autofill_rejected\"," +
+            "\"channelId\":\"${channelId.escapeJson()}\"," +
+            "\"tab\":\"${tab.escapeJson()}\"," +
+            "\"reason\":\"${reason.escapeJson()}\"}")
+    }
 }

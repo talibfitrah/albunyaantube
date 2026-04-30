@@ -11,6 +11,9 @@ import com.albunyaan.tube.data.channel.ChannelShort
 import com.albunyaan.tube.data.channel.ChannelTab
 import com.albunyaan.tube.data.channel.ChannelVideo
 import com.albunyaan.tube.data.channel.Page
+import com.albunyaan.tube.data.local.ChannelVideoCache
+import com.albunyaan.tube.data.local.ChannelVideoCacheDao
+import com.albunyaan.tube.player.StreamRequestTelemetry
 import androidx.annotation.VisibleForTesting
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
@@ -34,6 +37,8 @@ import kotlinx.coroutines.launch
 @HiltViewModel(assistedFactory = ChannelDetailViewModel.Factory::class)
 class ChannelDetailViewModel @AssistedInject constructor(
     private val repository: ChannelDetailRepository,
+    private val telemetry: StreamRequestTelemetry,
+    private val channelVideoCacheDao: ChannelVideoCacheDao,
     @Assisted private val channelId: String
 ) : ViewModel() {
 
@@ -326,41 +331,79 @@ class ChannelDetailViewModel @AssistedInject constructor(
     // Private loading methods for each tab type
 
     private suspend fun loadVideosInitial(controller: TabPaginationController) {
-        // Keep LoadingInitial visible throughout auto-fetch loop to avoid flashing empty list
-        // Loop through empty pages with continuations (bounded to prevent infinite loops)
+        val startMs = System.currentTimeMillis()
+        var pageFetches = 0
+        var emptyContinuations = 0
         var accumulatedItems = emptyList<ChannelVideo>()
-        var currentNextPage: Page? = null
-        var fetchCount = 0
-
-        while (fetchCount < MAX_EMPTY_PAGE_FETCHES) {
-            fetchCount++
-            val page = repository.getVideos(channelId, currentNextPage)
-            accumulatedItems = accumulatedItems + page.items
-
-            controller.nextPage = page.nextPage
-            controller.hasReachedEnd = page.nextPage == null
-
-            // If we have items or no more pages, we're done
-            if (accumulatedItems.isNotEmpty() || page.nextPage == null) {
-                break
+        var loadError: String? = null
+        try {
+            // Step 6: paint cached videos before NewPipe responds. The fresh
+            // fetch overwrites this cached state on completion. On error the
+            // cached emit is replaced with ErrorInitial by [loadInitial]'s
+            // catch — pre-existing UX, intentionally unchanged here.
+            val cached = readCachedVideosFor(channelId)
+            if (cached.isNotEmpty()) {
+                _videosState.value = PaginatedState.Loaded(
+                    cached,
+                    nextPage = null,
+                    showLoadMoreFooter = false,
+                )
+                Log.d(TAG, "Videos initial: emitted ${cached.size} cached items pre-NewPipe")
             }
 
-            // Empty page with continuation - continue fetching without updating UI
-            Log.d(TAG, "Videos: empty page $fetchCount with continuation, auto-fetching next")
-            currentNextPage = page.nextPage
-        }
+            // Keep LoadingInitial visible throughout auto-fetch loop to avoid flashing empty list
+            // Loop through empty pages with continuations (bounded to prevent infinite loops)
+            var currentNextPage: Page? = null
 
-        // Final state determination
-        if (accumulatedItems.isEmpty() && controller.nextPage == null) {
-            _videosState.value = PaginatedState.Empty
-        } else {
-            _videosState.value = PaginatedState.Loaded(
-                accumulatedItems,
-                controller.nextPage,
-                showLoadMoreFooter = accumulatedItems.isEmpty() && controller.nextPage != null,
+            while (pageFetches < MAX_INITIAL_EMPTY_PAGE_FETCHES) {
+                pageFetches++
+                val page = repository.getVideos(channelId, currentNextPage)
+                accumulatedItems = accumulatedItems + page.items
+
+                controller.nextPage = page.nextPage
+                controller.hasReachedEnd = page.nextPage == null
+
+                // If we have items or no more pages, we're done
+                if (accumulatedItems.isNotEmpty() || page.nextPage == null) {
+                    break
+                }
+
+                // Empty page with continuation - continue fetching without updating UI
+                emptyContinuations++
+                Log.d(TAG, "Videos: empty page $pageFetches with continuation, auto-fetching next")
+                currentNextPage = page.nextPage
+            }
+
+            // Final state determination
+            if (accumulatedItems.isEmpty() && controller.nextPage == null) {
+                _videosState.value = PaginatedState.Empty
+            } else {
+                _videosState.value = PaginatedState.Loaded(
+                    accumulatedItems,
+                    controller.nextPage,
+                    showLoadMoreFooter = accumulatedItems.isEmpty() && controller.nextPage != null,
+                )
+            }
+            Log.d(TAG, "Videos initial: ${accumulatedItems.size} items after $pageFetches fetches, hasMore=${controller.nextPage != null}")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            loadError = "Cancelled"
+            throw e
+        } catch (e: Throwable) {
+            loadError = e::class.simpleName ?: "Unknown"
+            throw e
+        } finally {
+            telemetry.recordChannelTabLoad(
+                channelId = channelId,
+                tab = "Videos",
+                durationMs = System.currentTimeMillis() - startMs,
+                pageFetches = pageFetches,
+                emptyContinuations = emptyContinuations,
+                itemsReturned = accumulatedItems.size,
+                isAppend = false,
+                success = loadError == null,
+                error = loadError,
             )
         }
-        Log.d(TAG, "Videos initial: ${accumulatedItems.size} items after $fetchCount fetches, hasMore=${controller.nextPage != null}")
     }
 
     private suspend fun loadVideosNextPage(controller: TabPaginationController) {
@@ -381,72 +424,124 @@ class ChannelDetailViewModel @AssistedInject constructor(
         // Transition to Loaded with isAppending=true for retry from ErrorAppend
         _videosState.value = PaginatedState.Loaded(currentItems, controller.nextPage, isAppending = true, showLoadMoreFooter = currentShowLoadMore)
 
-        // Loop through empty pages with continuations (bounded to prevent infinite loops)
+        val startMs = System.currentTimeMillis()
+        var pageFetches = 0
+        var emptyContinuations = 0
         var accumulatedNewItems = emptyList<ChannelVideo>()
-        var currentNextPage = controller.nextPage
-        var fetchCount = 0
+        var loadError: String? = null
+        try {
+            // Loop through empty pages with continuations (bounded to prevent infinite loops)
+            var currentNextPage = controller.nextPage
 
-        while (fetchCount < MAX_EMPTY_PAGE_FETCHES && currentNextPage != null) {
-            fetchCount++
-            val page = repository.getVideos(channelId, currentNextPage)
-            accumulatedNewItems = accumulatedNewItems + page.items
+            while (pageFetches < MAX_APPEND_EMPTY_PAGE_FETCHES && currentNextPage != null) {
+                pageFetches++
+                val page = repository.getVideos(channelId, currentNextPage)
+                accumulatedNewItems = accumulatedNewItems + page.items
 
-            controller.nextPage = page.nextPage
-            controller.hasReachedEnd = page.nextPage == null
+                controller.nextPage = page.nextPage
+                controller.hasReachedEnd = page.nextPage == null
 
-            // If we have new items or no more pages, we're done
-            if (accumulatedNewItems.isNotEmpty() || page.nextPage == null) {
-                break
+                // If we have new items or no more pages, we're done
+                if (accumulatedNewItems.isNotEmpty() || page.nextPage == null) {
+                    break
+                }
+
+                // Empty page with continuation - continue fetching
+                emptyContinuations++
+                Log.d(TAG, "Videos append: empty page $pageFetches with continuation, auto-fetching next")
+                currentNextPage = page.nextPage
             }
 
-            // Empty page with continuation - continue fetching
-            Log.d(TAG, "Videos append: empty page $fetchCount with continuation, auto-fetching next")
-            currentNextPage = page.nextPage
-        }
+            val newItems = currentItems + accumulatedNewItems
 
-        val newItems = currentItems + accumulatedNewItems
-
-        // Normalize to Empty if final result has no items and no continuation
-        if (newItems.isEmpty() && controller.nextPage == null) {
-            _videosState.value = PaginatedState.Empty
-        } else {
-            _videosState.value = PaginatedState.Loaded(newItems, controller.nextPage, showLoadMoreFooter = currentShowLoadMore)
+            // Normalize to Empty if final result has no items and no continuation
+            if (newItems.isEmpty() && controller.nextPage == null) {
+                _videosState.value = PaginatedState.Empty
+            } else {
+                _videosState.value = PaginatedState.Loaded(
+                    newItems,
+                    controller.nextPage,
+                    showLoadMoreFooter = currentShowLoadMore || (accumulatedNewItems.isEmpty() && controller.nextPage != null),
+                )
+            }
+            Log.d(TAG, "Videos append: +${accumulatedNewItems.size} items after $pageFetches fetches, total=${newItems.size}")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            loadError = "Cancelled"
+            throw e
+        } catch (e: Throwable) {
+            loadError = e::class.simpleName ?: "Unknown"
+            throw e
+        } finally {
+            telemetry.recordChannelTabLoad(
+                channelId = channelId,
+                tab = "Videos",
+                durationMs = System.currentTimeMillis() - startMs,
+                pageFetches = pageFetches,
+                emptyContinuations = emptyContinuations,
+                itemsReturned = accumulatedNewItems.size,
+                isAppend = true,
+                success = loadError == null,
+                error = loadError,
+            )
         }
-        Log.d(TAG, "Videos append: +${accumulatedNewItems.size} items after $fetchCount fetches, total=${newItems.size}")
     }
 
     private suspend fun loadLiveInitial(controller: TabPaginationController) {
-        // Keep LoadingInitial visible throughout auto-fetch loop to avoid flashing empty list
+        val startMs = System.currentTimeMillis()
+        var pageFetches = 0
+        var emptyContinuations = 0
         var accumulatedItems = emptyList<ChannelLiveStream>()
-        var currentNextPage: Page? = null
-        var fetchCount = 0
+        var loadError: String? = null
+        try {
+            // Keep LoadingInitial visible throughout auto-fetch loop to avoid flashing empty list
+            var currentNextPage: Page? = null
 
-        while (fetchCount < MAX_EMPTY_PAGE_FETCHES) {
-            fetchCount++
-            val page = repository.getLiveStreams(channelId, currentNextPage)
-            accumulatedItems = accumulatedItems + page.items
+            while (pageFetches < MAX_INITIAL_EMPTY_PAGE_FETCHES) {
+                pageFetches++
+                val page = repository.getLiveStreams(channelId, currentNextPage)
+                accumulatedItems = accumulatedItems + page.items
 
-            controller.nextPage = page.nextPage
-            controller.hasReachedEnd = page.nextPage == null
+                controller.nextPage = page.nextPage
+                controller.hasReachedEnd = page.nextPage == null
 
-            if (accumulatedItems.isNotEmpty() || page.nextPage == null) {
-                break
+                if (accumulatedItems.isNotEmpty() || page.nextPage == null) {
+                    break
+                }
+
+                emptyContinuations++
+                Log.d(TAG, "Live: empty page $pageFetches with continuation, auto-fetching next")
+                currentNextPage = page.nextPage
             }
 
-            Log.d(TAG, "Live: empty page $fetchCount with continuation, auto-fetching next")
-            currentNextPage = page.nextPage
-        }
-
-        if (accumulatedItems.isEmpty() && controller.nextPage == null) {
-            _liveState.value = PaginatedState.Empty
-        } else {
-            _liveState.value = PaginatedState.Loaded(
-                accumulatedItems,
-                controller.nextPage,
-                showLoadMoreFooter = accumulatedItems.isEmpty() && controller.nextPage != null,
+            if (accumulatedItems.isEmpty() && controller.nextPage == null) {
+                _liveState.value = PaginatedState.Empty
+            } else {
+                _liveState.value = PaginatedState.Loaded(
+                    accumulatedItems,
+                    controller.nextPage,
+                    showLoadMoreFooter = accumulatedItems.isEmpty() && controller.nextPage != null,
+                )
+            }
+            Log.d(TAG, "Live initial: ${accumulatedItems.size} items after $pageFetches fetches, hasMore=${controller.nextPage != null}")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            loadError = "Cancelled"
+            throw e
+        } catch (e: Throwable) {
+            loadError = e::class.simpleName ?: "Unknown"
+            throw e
+        } finally {
+            telemetry.recordChannelTabLoad(
+                channelId = channelId,
+                tab = "Live",
+                durationMs = System.currentTimeMillis() - startMs,
+                pageFetches = pageFetches,
+                emptyContinuations = emptyContinuations,
+                itemsReturned = accumulatedItems.size,
+                isAppend = false,
+                success = loadError == null,
+                error = loadError,
             )
         }
-        Log.d(TAG, "Live initial: ${accumulatedItems.size} items after $fetchCount fetches, hasMore=${controller.nextPage != null}")
     }
 
     private suspend fun loadLiveNextPage(controller: TabPaginationController) {
@@ -471,7 +566,7 @@ class ChannelDetailViewModel @AssistedInject constructor(
         var currentNextPage = controller.nextPage
         var fetchCount = 0
 
-        while (fetchCount < MAX_EMPTY_PAGE_FETCHES && currentNextPage != null) {
+        while (fetchCount < MAX_APPEND_EMPTY_PAGE_FETCHES && currentNextPage != null) {
             fetchCount++
             val page = repository.getLiveStreams(channelId, currentNextPage)
             accumulatedNewItems = accumulatedNewItems + page.items
@@ -492,43 +587,71 @@ class ChannelDetailViewModel @AssistedInject constructor(
         if (newItems.isEmpty() && controller.nextPage == null) {
             _liveState.value = PaginatedState.Empty
         } else {
-            _liveState.value = PaginatedState.Loaded(newItems, controller.nextPage, showLoadMoreFooter = currentShowLoadMore)
+            _liveState.value = PaginatedState.Loaded(
+                newItems,
+                controller.nextPage,
+                showLoadMoreFooter = currentShowLoadMore || (accumulatedNewItems.isEmpty() && controller.nextPage != null),
+            )
         }
         Log.d(TAG, "Live append: +${accumulatedNewItems.size} items after $fetchCount fetches, total=${newItems.size}")
     }
 
     private suspend fun loadShortsInitial(controller: TabPaginationController) {
-        // Keep LoadingInitial visible throughout auto-fetch loop to avoid flashing empty list
+        val startMs = System.currentTimeMillis()
+        var pageFetches = 0
+        var emptyContinuations = 0
         var accumulatedItems = emptyList<ChannelShort>()
-        var currentNextPage: Page? = null
-        var fetchCount = 0
+        var loadError: String? = null
+        try {
+            // Keep LoadingInitial visible throughout auto-fetch loop to avoid flashing empty list
+            var currentNextPage: Page? = null
 
-        while (fetchCount < MAX_EMPTY_PAGE_FETCHES) {
-            fetchCount++
-            val page = repository.getShorts(channelId, currentNextPage)
-            accumulatedItems = accumulatedItems + page.items
+            while (pageFetches < MAX_INITIAL_EMPTY_PAGE_FETCHES) {
+                pageFetches++
+                val page = repository.getShorts(channelId, currentNextPage)
+                accumulatedItems = accumulatedItems + page.items
 
-            controller.nextPage = page.nextPage
-            controller.hasReachedEnd = page.nextPage == null
+                controller.nextPage = page.nextPage
+                controller.hasReachedEnd = page.nextPage == null
 
-            if (accumulatedItems.isNotEmpty() || page.nextPage == null) {
-                break
+                if (accumulatedItems.isNotEmpty() || page.nextPage == null) {
+                    break
+                }
+
+                emptyContinuations++
+                Log.d(TAG, "Shorts: empty page $pageFetches with continuation, auto-fetching next")
+                currentNextPage = page.nextPage
             }
 
-            Log.d(TAG, "Shorts: empty page $fetchCount with continuation, auto-fetching next")
-            currentNextPage = page.nextPage
-        }
-
-        if (accumulatedItems.isEmpty() && controller.nextPage == null) {
-            _shortsState.value = PaginatedState.Empty
-        } else {
-            _shortsState.value = PaginatedState.Loaded(
-                accumulatedItems,
-                controller.nextPage,
-                showLoadMoreFooter = accumulatedItems.isEmpty() && controller.nextPage != null,
+            if (accumulatedItems.isEmpty() && controller.nextPage == null) {
+                _shortsState.value = PaginatedState.Empty
+            } else {
+                _shortsState.value = PaginatedState.Loaded(
+                    accumulatedItems,
+                    controller.nextPage,
+                    showLoadMoreFooter = accumulatedItems.isEmpty() && controller.nextPage != null,
+                )
+            }
+            Log.d(TAG, "Shorts initial: ${accumulatedItems.size} items after $pageFetches fetches, hasMore=${controller.nextPage != null}")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            loadError = "Cancelled"
+            throw e
+        } catch (e: Throwable) {
+            loadError = e::class.simpleName ?: "Unknown"
+            throw e
+        } finally {
+            telemetry.recordChannelTabLoad(
+                channelId = channelId,
+                tab = "Shorts",
+                durationMs = System.currentTimeMillis() - startMs,
+                pageFetches = pageFetches,
+                emptyContinuations = emptyContinuations,
+                itemsReturned = accumulatedItems.size,
+                isAppend = false,
+                success = loadError == null,
+                error = loadError,
             )
         }
-        Log.d(TAG, "Shorts initial: ${accumulatedItems.size} items after $fetchCount fetches, hasMore=${controller.nextPage != null}")
     }
 
     private suspend fun loadShortsNextPage(controller: TabPaginationController) {
@@ -553,7 +676,7 @@ class ChannelDetailViewModel @AssistedInject constructor(
         var currentNextPage = controller.nextPage
         var fetchCount = 0
 
-        while (fetchCount < MAX_EMPTY_PAGE_FETCHES && currentNextPage != null) {
+        while (fetchCount < MAX_APPEND_EMPTY_PAGE_FETCHES && currentNextPage != null) {
             fetchCount++
             val page = repository.getShorts(channelId, currentNextPage)
             accumulatedNewItems = accumulatedNewItems + page.items
@@ -574,43 +697,71 @@ class ChannelDetailViewModel @AssistedInject constructor(
         if (newItems.isEmpty() && controller.nextPage == null) {
             _shortsState.value = PaginatedState.Empty
         } else {
-            _shortsState.value = PaginatedState.Loaded(newItems, controller.nextPage, showLoadMoreFooter = currentShowLoadMore)
+            _shortsState.value = PaginatedState.Loaded(
+                newItems,
+                controller.nextPage,
+                showLoadMoreFooter = currentShowLoadMore || (accumulatedNewItems.isEmpty() && controller.nextPage != null),
+            )
         }
         Log.d(TAG, "Shorts append: +${accumulatedNewItems.size} items after $fetchCount fetches, total=${newItems.size}")
     }
 
     private suspend fun loadPlaylistsInitial(controller: TabPaginationController) {
-        // Keep LoadingInitial visible throughout auto-fetch loop to avoid flashing empty list
+        val startMs = System.currentTimeMillis()
+        var pageFetches = 0
+        var emptyContinuations = 0
         var accumulatedItems = emptyList<ChannelPlaylist>()
-        var currentNextPage: Page? = null
-        var fetchCount = 0
+        var loadError: String? = null
+        try {
+            // Keep LoadingInitial visible throughout auto-fetch loop to avoid flashing empty list
+            var currentNextPage: Page? = null
 
-        while (fetchCount < MAX_EMPTY_PAGE_FETCHES) {
-            fetchCount++
-            val page = repository.getPlaylists(channelId, currentNextPage)
-            accumulatedItems = accumulatedItems + page.items
+            while (pageFetches < MAX_INITIAL_EMPTY_PAGE_FETCHES) {
+                pageFetches++
+                val page = repository.getPlaylists(channelId, currentNextPage)
+                accumulatedItems = accumulatedItems + page.items
 
-            controller.nextPage = page.nextPage
-            controller.hasReachedEnd = page.nextPage == null
+                controller.nextPage = page.nextPage
+                controller.hasReachedEnd = page.nextPage == null
 
-            if (accumulatedItems.isNotEmpty() || page.nextPage == null) {
-                break
+                if (accumulatedItems.isNotEmpty() || page.nextPage == null) {
+                    break
+                }
+
+                emptyContinuations++
+                Log.d(TAG, "Playlists: empty page $pageFetches with continuation, auto-fetching next")
+                currentNextPage = page.nextPage
             }
 
-            Log.d(TAG, "Playlists: empty page $fetchCount with continuation, auto-fetching next")
-            currentNextPage = page.nextPage
-        }
-
-        if (accumulatedItems.isEmpty() && controller.nextPage == null) {
-            _playlistsState.value = PaginatedState.Empty
-        } else {
-            _playlistsState.value = PaginatedState.Loaded(
-                accumulatedItems,
-                controller.nextPage,
-                showLoadMoreFooter = accumulatedItems.isEmpty() && controller.nextPage != null,
+            if (accumulatedItems.isEmpty() && controller.nextPage == null) {
+                _playlistsState.value = PaginatedState.Empty
+            } else {
+                _playlistsState.value = PaginatedState.Loaded(
+                    accumulatedItems,
+                    controller.nextPage,
+                    showLoadMoreFooter = accumulatedItems.isEmpty() && controller.nextPage != null,
+                )
+            }
+            Log.d(TAG, "Playlists initial: ${accumulatedItems.size} items after $pageFetches fetches, hasMore=${controller.nextPage != null}")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            loadError = "Cancelled"
+            throw e
+        } catch (e: Throwable) {
+            loadError = e::class.simpleName ?: "Unknown"
+            throw e
+        } finally {
+            telemetry.recordChannelTabLoad(
+                channelId = channelId,
+                tab = "Playlists",
+                durationMs = System.currentTimeMillis() - startMs,
+                pageFetches = pageFetches,
+                emptyContinuations = emptyContinuations,
+                itemsReturned = accumulatedItems.size,
+                isAppend = false,
+                success = loadError == null,
+                error = loadError,
             )
         }
-        Log.d(TAG, "Playlists initial: ${accumulatedItems.size} items after $fetchCount fetches, hasMore=${controller.nextPage != null}")
     }
 
     private suspend fun loadPlaylistsNextPage(controller: TabPaginationController) {
@@ -635,7 +786,7 @@ class ChannelDetailViewModel @AssistedInject constructor(
         var currentNextPage = controller.nextPage
         var fetchCount = 0
 
-        while (fetchCount < MAX_EMPTY_PAGE_FETCHES && currentNextPage != null) {
+        while (fetchCount < MAX_APPEND_EMPTY_PAGE_FETCHES && currentNextPage != null) {
             fetchCount++
             val page = repository.getPlaylists(channelId, currentNextPage)
             accumulatedNewItems = accumulatedNewItems + page.items
@@ -656,7 +807,11 @@ class ChannelDetailViewModel @AssistedInject constructor(
         if (newItems.isEmpty() && controller.nextPage == null) {
             _playlistsState.value = PaginatedState.Empty
         } else {
-            _playlistsState.value = PaginatedState.Loaded(newItems, controller.nextPage, showLoadMoreFooter = currentShowLoadMore)
+            _playlistsState.value = PaginatedState.Loaded(
+                newItems,
+                controller.nextPage,
+                showLoadMoreFooter = currentShowLoadMore || (accumulatedNewItems.isEmpty() && controller.nextPage != null),
+            )
         }
         Log.d(TAG, "Playlists append: +${accumulatedNewItems.size} items after $fetchCount fetches, total=${newItems.size}")
     }
@@ -730,6 +885,37 @@ class ChannelDetailViewModel @AssistedInject constructor(
         }
     }
 
+    /**
+     * Step 6: read previously-fetched videos from local cache so the Videos
+     * tab can paint immediately on channel re-open. Returns an empty list if
+     * the cache is empty or unavailable. Errors are swallowed so a cache
+     * failure cannot block the NewPipe fetch path.
+     */
+    private suspend fun readCachedVideosFor(channelId: String): List<ChannelVideo> {
+        return try {
+            channelVideoCacheDao.getForChannel(channelId)
+                .filter { !it.isShort }
+                .map { it.toChannelVideo() }
+        } catch (e: Exception) {
+            Log.w(TAG, "Cache read failed for channel $channelId: ${e.message}")
+            emptyList()
+        }
+    }
+
+    private fun ChannelVideoCache.toChannelVideo(): ChannelVideo = ChannelVideo(
+        id = videoId,
+        title = title,
+        thumbnailUrl = thumbnailUrl,
+        durationSeconds = durationSeconds?.toInt(),
+        viewCount = viewCount,
+        // publishedTime is the textual upload date from NewPipe (e.g. "3 days
+        // ago"). The cache only stores the parsed millis, not the textual
+        // form, so we leave this null on cache reads — UI handles the
+        // null/blank case and the NewPipe refresh fills it in.
+        publishedTime = null,
+        uploaderName = channelName,
+    )
+
     // State classes
 
     sealed class HeaderState {
@@ -781,12 +967,12 @@ class ChannelDetailViewModel @AssistedInject constructor(
         private const val TAG = "ChannelDetailViewModel"
         private const val MIN_APPEND_INTERVAL_MS = 1000L // Rate limit: 1 second between requests
         private const val PAGINATION_THRESHOLD = 5 // Trigger pagination when 5 items from end
-        // Raised from 5 → 15: channels with shorts-heavy uploads (e.g. Mufti
-        // Menk's Videos tab post-filter) routinely return several empty
-        // continuation pages before the next long-form video lands. With
-        // the prior limit users saw the list cap at 20-30 items because
-        // append silently returned 0 new items, the recycler couldn't grow,
-        // and the scroll listener never fired again.
-        private const val MAX_EMPTY_PAGE_FETCHES = 15
+        // Hidden empty-page fetches are bounded tightly so channel screens do
+        // not feel frozen while NewPipe walks many filtered continuation pages.
+        // Four initial attempts preserves the known case where content appears
+        // after three empty pages; append gets one extra chance before the
+        // existing Load More footer asks the user to opt into deeper paging.
+        private const val MAX_INITIAL_EMPTY_PAGE_FETCHES = 4
+        private const val MAX_APPEND_EMPTY_PAGE_FETCHES = 5
     }
 }

@@ -3,6 +3,7 @@ package com.albunyaan.tube.ui.shorts
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.ui.PlayerView
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.albunyaan.tube.data.extractor.Priority
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.VideoTrack
 import com.albunyaan.tube.player.PlayerRepository
@@ -71,7 +72,8 @@ class PlayerBinderTest {
 
         override suspend fun resolveStreams(
             videoId: String,
-            forceRefresh: Boolean
+            forceRefresh: Boolean,
+            priority: Priority
         ): ResolvedStreams? = deferred.getOrPut(videoId) { CompletableDeferred() }.await()
 
         fun complete(videoId: String, result: ResolvedStreams?) {

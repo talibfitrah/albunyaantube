@@ -14,7 +14,8 @@ import javax.inject.Singleton
  * - Capacity: 20 tokens
  * - Refill: 1 token / 30 s
  * - Player priority: bypasses bucket entirely (playback must never block)
- * - Foreground acquire timeout: 30 s for visible Home / Search / channel grids
+ * - Visible interactive acquire timeout: 2 s for user-facing channel/detail loads
+ * - Foreground acquire timeout: 30 s for explicit user work that may wait longer
  * - Background refresh/prefetch: opportunistic only, with a foreground reserve
  *
  * Smaller bucket than v1 because the Me-tab refresh no longer consumes from
@@ -74,12 +75,13 @@ class GlobalNewPipeRateLimiter @VisibleForTesting internal constructor(
     ): Boolean {
         if (priority == Priority.PLAYER) return true
 
-        val effectiveTimeoutMs =
-            if (priority == Priority.BACKGROUND_REFRESH && timeoutMs == DEFAULT_ACQUIRE_TIMEOUT_MS) {
+        val effectiveTimeoutMs = when {
+            priority == Priority.VISIBLE_INTERACTIVE && timeoutMs == DEFAULT_ACQUIRE_TIMEOUT_MS ->
+                DEFAULT_VISIBLE_INTERACTIVE_ACQUIRE_TIMEOUT_MS
+            priority == Priority.BACKGROUND_REFRESH && timeoutMs == DEFAULT_ACQUIRE_TIMEOUT_MS ->
                 DEFAULT_BACKGROUND_ACQUIRE_TIMEOUT_MS
-            } else {
-                timeoutMs
-            }
+            else -> timeoutMs
+        }
         val deadline = now() + effectiveTimeoutMs
         while (true) {
             mutex.withLock {
@@ -125,6 +127,7 @@ class GlobalNewPipeRateLimiter @VisibleForTesting internal constructor(
         const val DEFAULT_TOKENS: Int = 20
         const val DEFAULT_REFILL_MS: Long = 30_000L
         const val DEFAULT_ACQUIRE_TIMEOUT_MS: Long = 30_000L
+        const val DEFAULT_VISIBLE_INTERACTIVE_ACQUIRE_TIMEOUT_MS: Long = 2_000L
         private const val DEFAULT_BACKGROUND_ACQUIRE_TIMEOUT_MS: Long = 0L
         private const val BACKGROUND_FOREGROUND_RESERVE_TOKENS: Int = 5
 

@@ -284,7 +284,8 @@ class HomeViewModelTest {
             type: ContentType,
             cursor: String?,
             pageSize: Int,
-            filters: FilterState
+            filters: FilterState,
+            query: String?
         ): CursorResponse {
             return CursorResponse(emptyList(), null)
         }

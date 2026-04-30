@@ -59,7 +59,8 @@ fun interface StreamResolutionProvider {
  */
 @Singleton
 class GlobalStreamResolver private constructor(
-    private val resolutionProvider: StreamResolutionProvider
+    private val resolutionProvider: StreamResolutionProvider,
+    private val resolverScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
 ) {
     companion object {
         private const val TAG = "GlobalStreamResolver"
@@ -72,7 +73,10 @@ class GlobalStreamResolver private constructor(
          */
         @JvmStatic
         fun createForTesting(provider: StreamResolutionProvider): GlobalStreamResolver {
-            return GlobalStreamResolver(provider)
+            return GlobalStreamResolver(
+                provider,
+                CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            )
         }
     }
 
@@ -115,9 +119,6 @@ class GlobalStreamResolver private constructor(
         }
     )
 
-    // Internal scope that survives fragment destruction
-    private val resolverScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
     /**
      * In-flight resolve job paired with the [Priority] under which it was
      * created. Tracking the priority is required so a later, higher-priority
@@ -144,6 +145,7 @@ class GlobalStreamResolver private constructor(
      */
     private fun Priority.rank(): Int = when (this) {
         Priority.PLAYER -> 2
+        Priority.VISIBLE_INTERACTIVE -> 1
         Priority.USER_FOREGROUND -> 1
         Priority.BACKGROUND_REFRESH -> 0
     }

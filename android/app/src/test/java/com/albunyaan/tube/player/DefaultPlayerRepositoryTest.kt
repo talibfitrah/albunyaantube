@@ -99,6 +99,19 @@ class DefaultPlayerRepositoryTest {
     }
 
     @Test
+    fun `VISIBLE_INTERACTIVE priority is forwarded`() = runTest {
+        fakeProvider.setResult("video-visible", makeStreams("video-visible"))
+
+        repository.resolveStreams("video-visible", priority = Priority.VISIBLE_INTERACTIVE)
+
+        assertEquals(
+            "VISIBLE_INTERACTIVE must reach the provider for fast visible metadata work",
+            Priority.VISIBLE_INTERACTIVE,
+            fakeProvider.observedPriority.get(),
+        )
+    }
+
+    @Test
     fun `forceRefresh and priority compose correctly`() = runTest {
         fakeProvider.setResult("video5", makeStreams("video5"))
 

@@ -9,7 +9,12 @@ import com.albunyaan.tube.data.channel.ChannelShort
 import com.albunyaan.tube.data.channel.ChannelTab
 import com.albunyaan.tube.data.channel.ChannelVideo
 import com.albunyaan.tube.data.channel.Page
+import com.albunyaan.tube.data.local.ChannelOldest
+import com.albunyaan.tube.data.local.ChannelVideoCache
+import com.albunyaan.tube.data.local.ChannelVideoCacheDao
+import com.albunyaan.tube.player.StreamRequestTelemetry
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -43,6 +48,8 @@ class ChannelDetailViewModelTest {
 
     private val testDispatcher = StandardTestDispatcher()
     private lateinit var fakeRepository: FakeChannelDetailRepository
+    private lateinit var fakeCacheDao: FakeChannelVideoCacheDao
+    private lateinit var fakeTelemetry: StreamRequestTelemetry
 
     /**
      * Fake clock for deterministic rate limiting tests.
@@ -56,6 +63,8 @@ class ChannelDetailViewModelTest {
     fun setup() {
         Dispatchers.setMain(testDispatcher)
         fakeRepository = FakeChannelDetailRepository()
+        fakeCacheDao = FakeChannelVideoCacheDao()
+        fakeTelemetry = StreamRequestTelemetry()
         fakeCurrentTimeMs = 2000L
     }
 
@@ -68,7 +77,7 @@ class ChannelDetailViewModelTest {
      * Create a ViewModel with an injectable time provider for deterministic rate limiting tests.
      */
     private fun createViewModel(channelId: String = "UCtest123"): ChannelDetailViewModel {
-        return ChannelDetailViewModel(fakeRepository, channelId).apply {
+        return ChannelDetailViewModel(fakeRepository, fakeTelemetry, fakeCacheDao, channelId).apply {
             timeProvider = { fakeCurrentTimeMs }
         }
     }
@@ -143,6 +152,84 @@ class ChannelDetailViewModelTest {
         val state = viewModel.videosState.value
         assertTrue("Expected Loaded state", state is ChannelDetailViewModel.PaginatedState.Loaded)
         assertEquals(2, (state as ChannelDetailViewModel.PaginatedState.Loaded).items.size)
+    }
+
+    @Test
+    fun `videos initial reads local cache and lets fresh NewPipe data win`() = runTest {
+        // Step 6: cache-first paint. The cache row is emitted before NewPipe
+        // responds so users see something immediately; the fresh fetch then
+        // replaces the cached state so this assertion checks the FINAL state.
+        val cachedRow = ChannelVideoCache(
+            videoId = "cached-v1",
+            channelId = "UCtest123",
+            channelName = "Test Channel",
+            title = "Stale title",
+            thumbnailUrl = null,
+            durationSeconds = null,
+            viewCount = null,
+            uploadedAt = null,
+            isShort = false,
+            fetchedAt = 0L,
+        )
+        fakeCacheDao.rowsForChannel = mapOf("UCtest123" to listOf(cachedRow))
+        fakeRepository.headerResponse = createTestHeader("UCtest123", "Test Channel")
+        fakeRepository.videosResponse = ChannelPage(
+            listOf(createTestVideo("v1", "Fresh title")),
+            null,
+        )
+
+        val viewModel = createViewModel("UCtest123")
+        advanceUntilIdle()
+
+        // Cache was queried at least once for this channel
+        assertTrue(
+            "Expected getForChannel to be called",
+            fakeCacheDao.getForChannelCallCount >= 1,
+        )
+
+        // Final state is the fresh NewPipe item, not the cached row
+        val state = viewModel.videosState.value
+        assertTrue("Expected Loaded state", state is ChannelDetailViewModel.PaginatedState.Loaded)
+        val loaded = state as ChannelDetailViewModel.PaginatedState.Loaded
+        assertEquals(1, loaded.items.size)
+        assertEquals("v1", loaded.items[0].id)
+        assertEquals("Fresh title", loaded.items[0].title)
+    }
+
+    @Test
+    fun `videos initial filters cached shorts so only long-form rows paint`() = runTest {
+        // Step 6 sanity: the cache table holds both videos and shorts (Me-tab
+        // also writes to it). The Videos tab must drop isShort=true rows so
+        // shorts never bleed into the long-form list during the cached paint.
+        val shortRow = ChannelVideoCache(
+            videoId = "short1",
+            channelId = "UCtest123",
+            channelName = "Test Channel",
+            title = "A short",
+            thumbnailUrl = null,
+            durationSeconds = 30L,
+            viewCount = null,
+            uploadedAt = null,
+            isShort = true,
+            fetchedAt = 0L,
+        )
+        fakeCacheDao.rowsForChannel = mapOf("UCtest123" to listOf(shortRow))
+        fakeRepository.headerResponse = createTestHeader("UCtest123", "Test Channel")
+        // NewPipe never responds in this test (videosResponse defaults to empty
+        // page), so the cached paint is what we observe — the shorts row must
+        // be filtered out before the empty NewPipe response replaces state.
+        fakeRepository.videosResponse = ChannelPage(emptyList(), null)
+
+        val viewModel = createViewModel("UCtest123")
+        advanceUntilIdle()
+
+        // With cache filtered to non-shorts and NewPipe empty, the final state
+        // must be Empty (no cached row leaked through).
+        val state = viewModel.videosState.value
+        assertTrue(
+            "Expected Empty state when cache only has shorts and NewPipe is empty",
+            state is ChannelDetailViewModel.PaginatedState.Empty,
+        )
     }
 
     @Test
@@ -650,7 +737,7 @@ class ChannelDetailViewModelTest {
 
     @Test
     fun `videos limits consecutive empty page fetches to prevent infinite loops`() = runTest {
-        // Create more continuation pages than the limit (5)
+        // Create more continuation pages than the initial hidden-fetch limit.
         val pages = (1..10).map { i ->
             ChannelPage<ChannelVideo>(emptyList(), Page("http://continuation$i", null, null, null))
         }
@@ -659,11 +746,45 @@ class ChannelDetailViewModelTest {
         fakeRepository.videosPagedResponses = pages
 
         // Creating the ViewModel triggers loadHeader -> loadInitial(VIDEOS)
-        createViewModel("UCtest123")
+        val viewModel = createViewModel("UCtest123")
         advanceUntilIdle()
 
-        // Should stop at MAX_EMPTY_PAGE_FETCHES (5), not fetch all 10
-        assertEquals("Should limit empty page fetches to 5", 5, fakeRepository.videosCallCount)
+        // Should stop at MAX_INITIAL_EMPTY_PAGE_FETCHES (4), not fetch all 10.
+        assertEquals("Should limit initial empty page fetches to 4", 4, fakeRepository.videosCallCount)
+
+        val state = viewModel.videosState.value
+        assertTrue("Expected Loaded state with manual continuation", state is ChannelDetailViewModel.PaginatedState.Loaded)
+        assertTrue((state as ChannelDetailViewModel.PaginatedState.Loaded).showLoadMoreFooter)
+    }
+
+    @Test
+    fun `videos append shows load more when empty continuation cap is reached`() = runTest {
+        val firstNextPage = Page("http://initial-next", null, null, null)
+        val initialVideos = listOf(createTestVideo("v1", "Video 1"))
+        val emptyContinuationPages = (1..6).map { i ->
+            ChannelPage<ChannelVideo>(emptyList(), Page("http://append-continuation$i", null, null, null))
+        }
+
+        fakeRepository.headerResponse = createTestHeader("UCtest123", "Test Channel")
+        fakeRepository.videosResponse = ChannelPage(initialVideos, firstNextPage)
+
+        val viewModel = createViewModel("UCtest123")
+        advanceUntilIdle()
+
+        fakeRepository.videosCallCount = 0
+        fakeRepository.videosPagedResponses = emptyContinuationPages
+        advanceTimeBy(1100L)
+
+        assertTrue(viewModel.loadNextPage(ChannelTab.VIDEOS))
+        advanceUntilIdle()
+
+        assertEquals("Append should stop at the empty-page cap", 5, fakeRepository.videosCallCount)
+        val state = viewModel.videosState.value
+        assertTrue("Expected Loaded state", state is ChannelDetailViewModel.PaginatedState.Loaded)
+        val loaded = state as ChannelDetailViewModel.PaginatedState.Loaded
+        assertEquals("Existing items should be preserved", 1, loaded.items.size)
+        assertTrue("Load More footer should appear after capped empty append", loaded.showLoadMoreFooter)
+        assertEquals("Continuation should be preserved for manual Load More", "http://append-continuation5", loaded.nextPage?.url)
     }
 
     @Test
@@ -929,5 +1050,54 @@ class ChannelDetailViewModelTest {
         override suspend fun getAbout(channelId: String, forceRefresh: Boolean): ChannelHeader {
             return getChannelHeader(channelId, forceRefresh)
         }
+    }
+
+    /**
+     * Fake [ChannelVideoCacheDao] used to exercise the Step 6 cache-read path
+     * in the ViewModel. Only [getForChannel] and [upsertAll] are wired —
+     * the Flow/cleanup methods aren't reached by the ViewModel under test.
+     */
+    private class FakeChannelVideoCacheDao : ChannelVideoCacheDao {
+        var rowsForChannel: Map<String, List<ChannelVideoCache>> = emptyMap()
+        var lastUpsert: List<ChannelVideoCache>? = null
+        var getForChannelCallCount: Int = 0
+
+        override suspend fun getForChannel(channelId: String): List<ChannelVideoCache> {
+            getForChannelCallCount++
+            return rowsForChannel[channelId] ?: emptyList()
+        }
+
+        override suspend fun upsertAll(rows: List<ChannelVideoCache>) {
+            lastUpsert = rows
+        }
+
+        override fun observeRecent(minUploadedAt: Long): Flow<List<ChannelVideoCache>> =
+            throw NotImplementedError("not exercised by ChannelDetailViewModel tests")
+
+        override fun observeRecentForChannels(
+            channelIds: List<String>,
+            minUploadedAt: Long,
+        ): Flow<List<ChannelVideoCache>> =
+            throw NotImplementedError("not exercised by ChannelDetailViewModel tests")
+
+        override fun observeRangeForChannels(
+            channelIds: List<String>,
+            fromMs: Long,
+            toMs: Long,
+        ): Flow<List<ChannelVideoCache>> =
+            throw NotImplementedError("not exercised by ChannelDetailViewModel tests")
+
+        override suspend fun deleteForChannel(channelId: String) {
+            // no-op for tests
+        }
+
+        override suspend fun pruneUnsubscribed() {
+            // no-op for tests
+        }
+
+        override suspend fun countForChannels(channelIds: List<String>): Int = 0
+
+        override suspend fun oldestPerChannel(channelIds: List<String>): List<ChannelOldest> =
+            emptyList()
     }
 }

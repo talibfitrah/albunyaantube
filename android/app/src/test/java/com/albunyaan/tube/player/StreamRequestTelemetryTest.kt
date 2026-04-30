@@ -739,4 +739,66 @@ class StreamRequestTelemetryTest {
         // Body should be truncated to 1000 characters
         assertEquals(1000, record.responseBody?.length)
     }
+
+    // --- Channel + page + player-resolve timing methods (Step 5 telemetry) ---
+    // These methods write structured JSON log lines and keep no in-memory state,
+    // so coverage here is smoke-level: prove the calls don't throw across the
+    // input shapes we actually emit from production code.
+
+    @Test
+    fun `recordChannelHeaderLoad accepts success and failure`() {
+        telemetry.recordChannelHeaderLoad("UCtest", 120L, success = true)
+        telemetry.recordChannelHeaderLoad(
+            "UCtest", 250L, success = false, error = "RateLimit",
+        )
+    }
+
+    @Test
+    fun `recordChannelTabLoad accepts initial and append shapes`() {
+        telemetry.recordChannelTabLoad(
+            channelId = "UCtest", tab = "Videos",
+            durationMs = 800L,
+            pageFetches = 2, emptyContinuations = 1,
+            itemsReturned = 12, isAppend = false, success = true,
+        )
+        telemetry.recordChannelTabLoad(
+            channelId = "UCtest", tab = "Videos",
+            durationMs = 1200L,
+            pageFetches = 5, emptyContinuations = 5,
+            itemsReturned = 0, isAppend = true, success = false,
+            error = "Cancelled",
+        )
+    }
+
+    @Test
+    fun `recordPlayerResolve accepts both priorities`() {
+        telemetry.recordPlayerResolve("vid1", 480L, priority = "PLAYER", success = true)
+        telemetry.recordPlayerResolve(
+            "vid1", 2_500L, priority = "VISIBLE_INTERACTIVE",
+            success = false, error = "TimeoutCancellationException",
+        )
+    }
+
+    @Test
+    fun `recordAutofillRejection emits without error`() {
+        telemetry.recordAutofillRejection("UCtest", "Videos", reason = "rate_limited")
+        telemetry.recordAutofillRejection("UCtest", "Shorts", reason = "already_appending")
+    }
+
+    @Test
+    fun `telemetry methods escape JSON-special characters safely`() {
+        // Quote and backslash must not break the emitted JSON. We can't intercept
+        // logcat from a unit test, but the call must not throw during string build.
+        telemetry.recordChannelHeaderLoad(
+            channelId = "UC\"escape\\me",
+            durationMs = 100L,
+            success = false,
+            error = "msg with \" and \\ chars",
+        )
+        telemetry.recordChannelTabLoad(
+            channelId = "UC\"a", tab = "Vi\\deos",
+            durationMs = 1L, pageFetches = 1, emptyContinuations = 0,
+            itemsReturned = 0, isAppend = false, success = true,
+        )
+    }
 }

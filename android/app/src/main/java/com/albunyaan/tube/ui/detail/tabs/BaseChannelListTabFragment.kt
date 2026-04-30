@@ -16,6 +16,7 @@ import com.albunyaan.tube.data.channel.Page
 import com.albunyaan.tube.databinding.FragmentChannelListTabBinding
 import com.albunyaan.tube.ui.detail.ChannelDetailViewModel
 import com.albunyaan.tube.ui.detail.adapters.ListFooterAdapter
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -40,6 +41,9 @@ abstract class BaseChannelListTabFragment<T> : Fragment(R.layout.fragment_channe
 
     // Track delayed recheck retries to prevent unbounded retry loops
     private var delayedRecheckRetries = 0
+
+    private var delayedAppendRecheckJob: Job? = null
+    private var delayedAutofillRecheckJob: Job? = null
 
     // Footer adapter for pagination (Load More button, loading spinner, error)
     private var footerAdapter: ListFooterAdapter? = null
@@ -84,20 +88,25 @@ abstract class BaseChannelListTabFragment<T> : Fragment(R.layout.fragment_channe
     }
 
     private fun scheduleDelayedAppendRecheck() {
-        viewLifecycleOwner.lifecycleScope.launch {
-            delay(AUTOFILL_RECHECK_DELAY_MS)
-            if (binding == null || !isAdded || !isResumed) return@launch
-            val currentState = getState().value
-            // Retry if Loaded+not appending, OR if ErrorAppend (append failed and should retry)
-            val shouldRetry = when (currentState) {
-                is ChannelDetailViewModel.PaginatedState.Loaded ->
-                    currentState.nextPage != null && !currentState.isAppending
-                is ChannelDetailViewModel.PaginatedState.ErrorAppend ->
-                    currentState.nextPage != null
-                else -> false
-            }
-            if (shouldRetry) {
-                viewModel.loadNextPage(tab)
+        if (delayedAppendRecheckJob?.isActive == true) return
+        delayedAppendRecheckJob = viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                delay(AUTOFILL_RECHECK_DELAY_MS)
+                if (binding == null || !isAdded || !isResumed) return@launch
+                val currentState = getState().value
+                // Retry if Loaded+not appending, OR if ErrorAppend (append failed and should retry)
+                val shouldRetry = when (currentState) {
+                    is ChannelDetailViewModel.PaginatedState.Loaded ->
+                        currentState.nextPage != null && !currentState.isAppending
+                    is ChannelDetailViewModel.PaginatedState.ErrorAppend ->
+                        currentState.nextPage != null
+                    else -> false
+                }
+                if (shouldRetry) {
+                    viewModel.loadNextPage(tab)
+                }
+            } finally {
+                delayedAppendRecheckJob = null
             }
         }
     }
@@ -181,17 +190,22 @@ abstract class BaseChannelListTabFragment<T> : Fragment(R.layout.fragment_channe
             }
             return
         }
+        if (delayedAutofillRecheckJob?.isActive == true) return
 
-        viewLifecycleOwner.lifecycleScope.launch {
-            delay(AUTOFILL_RECHECK_DELAY_MS)
-            delayedRecheckRetries++  // Increment after delay to prevent premature limit hits
-            // Re-check only if view is still active
-            if (binding != null && isAdded && isResumed) {
-                // Get current state to check actual isAppending value
-                val currentState = getState().value
-                if (currentState is ChannelDetailViewModel.PaginatedState.Loaded) {
-                    checkAutofillPagination(currentState.items.size, currentState.nextPage, currentState.isAppending)
+        delayedAutofillRecheckJob = viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                delay(AUTOFILL_RECHECK_DELAY_MS)
+                delayedRecheckRetries++  // Increment after delay to prevent premature limit hits
+                // Re-check only if view is still active
+                if (binding != null && isAdded && isResumed) {
+                    // Get current state to check actual isAppending value
+                    val currentState = getState().value
+                    if (currentState is ChannelDetailViewModel.PaginatedState.Loaded) {
+                        checkAutofillPagination(currentState.items.size, currentState.nextPage, currentState.isAppending)
+                    }
                 }
+            } finally {
+                delayedAutofillRecheckJob = null
             }
         }
     }
@@ -202,6 +216,10 @@ abstract class BaseChannelListTabFragment<T> : Fragment(R.layout.fragment_channe
     private fun resetAutofillCounter() {
         autofillAttempts = 0
         delayedRecheckRetries = 0
+        delayedAppendRecheckJob?.cancel()
+        delayedAppendRecheckJob = null
+        delayedAutofillRecheckJob?.cancel()
+        delayedAutofillRecheckJob = null
         // Clear the load more footer flag when resetting
         viewModel.setShowLoadMoreFooter(tab, false)
     }
@@ -356,6 +374,10 @@ abstract class BaseChannelListTabFragment<T> : Fragment(R.layout.fragment_channe
     protected abstract fun updateAdapterData(items: List<T>)
 
     override fun onDestroyView() {
+        delayedAppendRecheckJob?.cancel()
+        delayedAppendRecheckJob = null
+        delayedAutofillRecheckJob?.cancel()
+        delayedAutofillRecheckJob = null
         footerAdapter = null
         binding = null
         super.onDestroyView()
@@ -364,18 +386,15 @@ abstract class BaseChannelListTabFragment<T> : Fragment(R.layout.fragment_channe
     companion object {
         private const val TAG = "BaseChannelListTab"
         /**
-         * Maximum number of autofill pagination attempts for phones.
-         * Raised from 3→8 to give large channels enough headroom to fill the
-         * screen when YouTube paginates with many empty/short-only pages.
+         * Maximum number of automatic pagination attempts for phones before
+         * the existing footer asks the user to opt into deeper paging.
          */
-        private const val MAX_AUTOFILL_ATTEMPTS_PHONE = 8
+        private const val MAX_AUTOFILL_ATTEMPTS_PHONE = 1
 
         /**
-         * Maximum number of autofill pagination attempts for tablets/TVs.
-         * Raised from 5→12 because larger screens can display more items and
-         * need more pages to become scrollable.
+         * Tablets/TVs get one extra automatic page because the viewport is taller.
          */
-        private const val MAX_AUTOFILL_ATTEMPTS_TABLET = 12
+        private const val MAX_AUTOFILL_ATTEMPTS_TABLET = 2
 
         /**
          * Delay before re-checking autofill pagination after rate-limiting.
@@ -386,6 +405,6 @@ abstract class BaseChannelListTabFragment<T> : Fragment(R.layout.fragment_channe
         /**
          * Maximum number of delayed recheck retries to prevent unbounded retry loops.
          */
-        private const val MAX_DELAYED_RECHECK_RETRIES = 5
+        private const val MAX_DELAYED_RECHECK_RETRIES = 1
     }
 }

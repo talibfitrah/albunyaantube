@@ -1375,13 +1375,12 @@ class PlayerViewModel @Inject constructor(
 
                 try {
                     android.util.Log.d("PlayerViewModel", "Prefetch: Starting for ${item.streamId}")
-                    // ANDROID-PERSONAL-02 round 2 [Bug A]: prefetch is background-ish work
-                    // (the user is currently watching a different video). Declare
-                    // USER_FOREGROUND so the resolve goes through the rate-limit and
-                    // cooldown gates instead of riding the player bypass (spec D1).
+                    // Queue prefetch is background work: keep it behind visible
+                    // channel/search loads and let it skip when the NewPipe budget
+                    // is under pressure.
                     val resolved = repository.resolveStreams(
                         item.streamId,
-                        priority = Priority.USER_FOREGROUND,
+                        priority = Priority.BACKGROUND_REFRESH,
                     )
                     if (resolved != null) {
                         // PR5: Signal success to reset backoff state

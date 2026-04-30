@@ -186,6 +186,25 @@ class RateLimitedDownloaderTest {
     }
 
     @Test
+    fun visible_interactive_priority_uses_rate_limiter_and_reaches_delegate() = runTest {
+        delegate.nextResponse = ok()
+        val sut = RateLimitedDownloader(delegate, limiter, cooldown)
+
+        NewPipePriorityContext.with(Priority.VISIBLE_INTERACTIVE) {
+            val resp = sut.execute(newRequest())
+            assertEquals(200, resp.responseCode())
+        }
+
+        verifyBlocking(limiter) {
+            acquire(
+                Priority.VISIBLE_INTERACTIVE,
+                GlobalNewPipeRateLimiter.DEFAULT_ACQUIRE_TIMEOUT_MS,
+            )
+        }
+        assertEquals(1, delegate.callCount)
+    }
+
+    @Test
     fun player_priority_does_NOT_trip_cooldown_on_429() = runTest {
         // Spec D1 invariant: Player NEVER trips cooldown, even on 429.
         // A regression that drops the `priority != Priority.PLAYER` guard in

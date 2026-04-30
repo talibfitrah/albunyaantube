@@ -26,7 +26,7 @@ import org.mockito.kotlin.verify
 class ShortsFeedRepositoryTest {
 
     private val contentService: ContentService = mock {
-        onBlocking { fetchContent(any(), anyOrNull(), any(), any()) } doReturn CursorResponse(emptyList(), null)
+        onBlocking { fetchContent(any(), anyOrNull(), any(), any(), anyOrNull()) } doReturn CursorResponse(emptyList(), null)
     }
     private val channelDetailRepository: ChannelDetailRepository = mock()
     private val repo = ShortsFeedRepository(contentService, channelDetailRepository)
@@ -41,7 +41,8 @@ class ShortsFeedRepositoryTest {
             typeCaptor.capture(),
             anyOrNull(),
             eq(10),
-            filterCaptor.capture()
+            filterCaptor.capture(),
+            isNull()
         )
         assertEquals(ContentType.VIDEOS, typeCaptor.firstValue)
         assertEquals(VideoLength.UNDER_FOUR_MIN, filterCaptor.firstValue.videoLength)

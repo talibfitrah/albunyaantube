@@ -350,7 +350,8 @@ class ContentListViewModelTest {
             type: ContentType,
             cursor: String?,
             pageSize: Int,
-            filters: FilterState
+            filters: FilterState,
+            query: String?
         ): CursorResponse {
             val index = callCount++
             if (errorOnCall == index) {

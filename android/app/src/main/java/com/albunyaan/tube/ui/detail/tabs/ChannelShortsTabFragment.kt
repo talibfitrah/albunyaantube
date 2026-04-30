@@ -26,6 +26,7 @@ import com.albunyaan.tube.ui.detail.adapters.ChannelShortsAdapter
 import com.albunyaan.tube.ui.detail.adapters.ListFooterAdapter
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.lifecycle.withCreationCallback
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -49,6 +50,10 @@ class ChannelShortsTabFragment : Fragment(R.layout.fragment_channel_shorts_tab) 
 
     // Track autofill attempts to prevent excessive fetches on large screens
     private var autofillAttempts = 0
+
+    private var delayedRecheckRetries = 0
+    private var delayedAppendRecheckJob: Job? = null
+    private var delayedAutofillRecheckJob: Job? = null
 
     // Footer adapter for pagination (Load More button, loading spinner, error)
     private var footerAdapter: ListFooterAdapter? = null
@@ -162,20 +167,25 @@ class ChannelShortsTabFragment : Fragment(R.layout.fragment_channel_shorts_tab) 
     }
 
     private fun scheduleDelayedAppendRecheck() {
-        viewLifecycleOwner.lifecycleScope.launch {
-            delay(AUTOFILL_RECHECK_DELAY_MS)
-            if (binding == null || !isAdded || !isResumed) return@launch
-            val currentState = viewModel.shortsState.value
-            // Retry if Loaded+not appending, OR if ErrorAppend (append failed and should retry)
-            val shouldRetry = when (currentState) {
-                is ChannelDetailViewModel.PaginatedState.Loaded ->
-                    currentState.nextPage != null && !currentState.isAppending
-                is ChannelDetailViewModel.PaginatedState.ErrorAppend ->
-                    currentState.nextPage != null
-                else -> false
-            }
-            if (shouldRetry) {
-                viewModel.loadNextPage(ChannelTab.SHORTS)
+        if (delayedAppendRecheckJob?.isActive == true) return
+        delayedAppendRecheckJob = viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                delay(AUTOFILL_RECHECK_DELAY_MS)
+                if (binding == null || !isAdded || !isResumed) return@launch
+                val currentState = viewModel.shortsState.value
+                // Retry if Loaded+not appending, OR if ErrorAppend (append failed and should retry)
+                val shouldRetry = when (currentState) {
+                    is ChannelDetailViewModel.PaginatedState.Loaded ->
+                        currentState.nextPage != null && !currentState.isAppending
+                    is ChannelDetailViewModel.PaginatedState.ErrorAppend ->
+                        currentState.nextPage != null
+                    else -> false
+                }
+                if (shouldRetry) {
+                    viewModel.loadNextPage(ChannelTab.SHORTS)
+                }
+            } finally {
+                delayedAppendRecheckJob = null
             }
         }
     }
@@ -202,6 +212,11 @@ class ChannelShortsTabFragment : Fragment(R.layout.fragment_channel_shorts_tab) 
      */
     private fun resetAutofillCounter() {
         autofillAttempts = 0
+        delayedRecheckRetries = 0
+        delayedAppendRecheckJob?.cancel()
+        delayedAppendRecheckJob = null
+        delayedAutofillRecheckJob?.cancel()
+        delayedAutofillRecheckJob = null
         // Clear the load more footer flag when resetting
         viewModel.setShowLoadMoreFooter(ChannelTab.SHORTS, false)
     }
@@ -356,7 +371,7 @@ class ChannelShortsTabFragment : Fragment(R.layout.fragment_channel_shorts_tab) 
                     if (BuildConfig.DEBUG) {
                         Log.d(TAG, "SHORTS: autofill request rejected (rate limited or already loading), scheduling re-check")
                     }
-                    scheduleDelayedAutofillRecheck(itemCount, nextPage)
+                    scheduleDelayedAutofillRecheck()
                 }
             } else {
                 // List is now scrollable, reset counter
@@ -369,17 +384,37 @@ class ChannelShortsTabFragment : Fragment(R.layout.fragment_channel_shorts_tab) 
      * Schedule a delayed re-check for autofill pagination after rate limiting.
      * This ensures we retry after the rate limit window expires.
      */
-    private fun scheduleDelayedAutofillRecheck(itemCount: Int, nextPage: Page?) {
-        viewLifecycleOwner.lifecycleScope.launch {
-            delay(AUTOFILL_RECHECK_DELAY_MS)
-            // Re-check only if view is still active
-            if (binding != null && isAdded && isResumed) {
-                checkAutofillPagination(itemCount, nextPage, isAppending = false)
+    private fun scheduleDelayedAutofillRecheck() {
+        if (delayedRecheckRetries >= MAX_DELAYED_RECHECK_RETRIES) {
+            if (BuildConfig.DEBUG) {
+                Log.d(TAG, "SHORTS: delayed recheck limit reached ($MAX_DELAYED_RECHECK_RETRIES), stopping")
+            }
+            return
+        }
+        if (delayedAutofillRecheckJob?.isActive == true) return
+
+        delayedAutofillRecheckJob = viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                delay(AUTOFILL_RECHECK_DELAY_MS)
+                delayedRecheckRetries++
+                // Re-check only if view is still active
+                if (binding != null && isAdded && isResumed) {
+                    val currentState = viewModel.shortsState.value
+                    if (currentState is ChannelDetailViewModel.PaginatedState.Loaded) {
+                        checkAutofillPagination(currentState.items.size, currentState.nextPage, currentState.isAppending)
+                    }
+                }
+            } finally {
+                delayedAutofillRecheckJob = null
             }
         }
     }
 
     override fun onDestroyView() {
+        delayedAppendRecheckJob?.cancel()
+        delayedAppendRecheckJob = null
+        delayedAutofillRecheckJob?.cancel()
+        delayedAutofillRecheckJob = null
         prefetchController?.detach()
         prefetchController = null
         footerAdapter = null
@@ -390,22 +425,22 @@ class ChannelShortsTabFragment : Fragment(R.layout.fragment_channel_shorts_tab) 
     companion object {
         private const val TAG = "ChannelShortsTab"
         /**
-         * Maximum number of autofill pagination attempts for phones.
-         * Lower limit since phone viewports are smaller.
+         * Maximum number of automatic pagination attempts for phones before
+         * the existing footer asks the user to opt into deeper paging.
          */
-        private const val MAX_AUTOFILL_ATTEMPTS_PHONE = 3
+        private const val MAX_AUTOFILL_ATTEMPTS_PHONE = 1
 
         /**
-         * Maximum number of autofill pagination attempts for tablets/TVs.
-         * Higher limit since larger screens can display more items and need more
-         * pages to become scrollable.
+         * Tablets/TVs get one extra automatic page because the viewport is taller.
          */
-        private const val MAX_AUTOFILL_ATTEMPTS_TABLET = 5
+        private const val MAX_AUTOFILL_ATTEMPTS_TABLET = 2
 
         /**
          * Delay before re-checking autofill pagination after rate-limiting.
          * Set slightly above the rate limit interval (1000ms) to ensure the next request is accepted.
          */
         private const val AUTOFILL_RECHECK_DELAY_MS = 1100L
+
+        private const val MAX_DELAYED_RECHECK_RETRIES = 1
     }
 }

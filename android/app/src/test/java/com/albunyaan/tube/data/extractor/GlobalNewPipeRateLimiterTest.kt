@@ -5,6 +5,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -71,5 +72,18 @@ class GlobalNewPipeRateLimiterTest {
             now = { currentTime },
         )
         assertFalse(limiter.acquire(Priority.USER_FOREGROUND, timeoutMs = 100L))
+    }
+
+    @Test
+    fun visible_interactive_default_timeout_is_fast() = runTest {
+        val limiter = GlobalNewPipeRateLimiter(
+            initialTokens = 0,
+            capacity = 0,
+            refillPeriodMs = 30_000L,
+            now = { currentTime },
+        )
+
+        assertFalse(limiter.acquire(Priority.VISIBLE_INTERACTIVE))
+        assertEquals(GlobalNewPipeRateLimiter.DEFAULT_VISIBLE_INTERACTIVE_ACQUIRE_TIMEOUT_MS, currentTime)
     }
 }
