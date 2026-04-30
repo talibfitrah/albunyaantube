@@ -119,7 +119,7 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
             if (currentPos != null) {
                 val currentVideoId = viewModel.items.value.getOrNull(currentPos)?.id
                 if (currentVideoId != null) {
-                    mpdRegistry.unregister(currentVideoId)
+                    mpdRegistry.unregisterBoth(currentVideoId)
                 }
             }
             binder?.forceRefreshCurrent()
@@ -560,7 +560,7 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
         if (currentPos != null) {
             val currentVideoId = viewModel.items.value.getOrNull(currentPos)?.id
             if (currentVideoId != null) {
-                mpdRegistry.unregister(currentVideoId)
+                mpdRegistry.unregisterBoth(currentVideoId)
             }
         }
         // Restore system bars here (not in onPause) to prevent flicker on transient

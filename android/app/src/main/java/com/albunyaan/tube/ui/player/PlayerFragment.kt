@@ -526,7 +526,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // rate-limited, so the next allowed refresh uses fresh URLs. Different from
             // auto-recovery path (line ~1475) where invalidation is conditional.
             viewModel.state.value.currentItem?.streamId?.let { videoId ->
-                mpdRegistry.unregister(videoId)
+                mpdRegistry.unregisterBoth(videoId)
             }
             // PR5: Show feedback if rate-limited
             if (!viewModel.forceRefreshCurrentStream()) {
@@ -544,7 +544,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // Manual retry: ALWAYS invalidate MPD first, regardless of rate limit.
             // Same reasoning as refresh button - user action clears stale URLs.
             viewModel.state.value.currentItem?.streamId?.let { videoId ->
-                mpdRegistry.unregister(videoId)
+                mpdRegistry.unregisterBoth(videoId)
             }
             // PR5: Show feedback if rate-limited
             if (!viewModel.forceRefreshCurrentStream()) {
@@ -1830,7 +1830,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         // Without this, a refresh within TTL (2 min) can hit the MPD cache and reuse the same
         // failing URLs, causing 403 loops. This ensures the next media source build regenerates
         // the MPD with fresh URLs from the new extraction.
-        mpdRegistry.unregister(currentItem.streamId)
+        mpdRegistry.unregisterBoth(currentItem.streamId)
         if (BuildConfig.DEBUG) {
             android.util.Log.d("PlayerFragment", "Invalidated cached MPD for ${currentItem.streamId} before refresh")
         }
@@ -1935,7 +1935,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 }
 
                 // Invalidate cached MPD to force fresh extraction with potentially different URLs
-                mpdRegistry.unregister(videoId)
+                mpdRegistry.unregisterBoth(videoId)
                 android.util.Log.d("PlayerFragment", "Invalidated cached MPD for $videoId during fallback")
 
                 degradationManager.onDegradationApplied(videoId, action)
