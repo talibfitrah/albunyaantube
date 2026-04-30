@@ -746,6 +746,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             viewModel.metrics.onSessionEnded(streamId)
         }
 
+        // Telemetry: flush the active PlaybackSession log line
+        streamTelemetry.endSession()
+
         // Clean up player resources - ExoPlayer handles its own callback cleanup during release
         binding?.playerView?.player = null
         preparedStreamKey = null
@@ -1088,6 +1091,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 viewModel.state.value.currentItem?.streamId?.let { streamId ->
                     viewModel.metrics.onFirstFrameRendered(streamId)
                 }
+
+                // Telemetry: record time-to-first-frame in the active session
+                streamTelemetry.recordFirstFrame()
             }
 
             override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
@@ -2046,6 +2052,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 playbackPositionMs = player.currentPosition
             )
 
+            // Telemetry: count this 403 in the active session
+            streamTelemetry.record403()
+
             android.util.Log.w(
                 "PlayerFragment",
                 "HTTP 403 detected: type=$failureType, videoId=$videoId, " +
@@ -2585,6 +2594,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         // Reset state when switching to a different stream (not quality switch)
         if (!isSameStream) {
+            // Telemetry: end the previous session (if any) and start a fresh one
+            streamTelemetry.endSession()
+            streamTelemetry.startSession(streamState.streamId)
+
             // Phase 1B: Reset playback start time for HLS early 403 detection
             streamPlaybackStartTimeMs = 0L
 
