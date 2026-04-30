@@ -104,6 +104,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     @Inject lateinit var bufferPolicy: AdaptiveBufferPolicy
     @Inject lateinit var cronetDataSourceFactory: com.albunyaan.tube.player.CronetDataSourceFactory
     @Inject lateinit var simpleCache: SimpleCache
+    @Inject lateinit var neverFreezeTrackSelectionFactory: com.albunyaan.tube.player.NeverFreezeTrackSelectionFactory
 
     private var binding: FragmentPlayerBinding? = null
     private var player: ExoPlayer? = null
@@ -849,9 +850,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         // Configure track selector for adaptive streaming quality constraints
         // Phase 3: Use QualityTrackSelector for CAP/LOCK mode support
-        val trackSelector = QualityTrackSelector.createForDiscreteQualities(requireContext()).also {
-            this.trackSelector = it
-        }
+        val trackSelector = if (featureFlags.isNeverFreezeAbrEnabled) {
+            QualityTrackSelector(requireContext(), neverFreezeTrackSelectionFactory.create())
+        } else {
+            QualityTrackSelector.createForDiscreteQualities(requireContext())
+        }.also { this.trackSelector = it }
 
         val renderersFactory = DefaultRenderersFactory(requireContext())
             .setEnableDecoderFallback(true)
