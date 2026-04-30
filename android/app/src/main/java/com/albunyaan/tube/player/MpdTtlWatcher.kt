@@ -26,9 +26,10 @@ class MpdTtlWatcher(
                 Log.d(TAG, "No entry for $videoId — TTL watcher inactive")
                 return@launch
             }
-            val refreshDelay = (SyntheticDashMpdRegistry.MPD_TTL_MS * TTL_REFRESH_FRACTION).toLong()
-            Log.d(TAG, "TTL watcher for $videoId: refresh in ${refreshDelay}ms (registeredAt=${entry.registeredAtMs})")
-            delay(refreshDelay)
+            val refreshAtMs = entry.registeredAtMs + (SyntheticDashMpdRegistry.MPD_TTL_MS * TTL_REFRESH_FRACTION).toLong()
+            val delayMs = (refreshAtMs - clock()).coerceAtLeast(0L)
+            Log.d(TAG, "TTL watcher for $videoId: refresh in ${delayMs}ms (refreshAt=$refreshAtMs, registeredAt=${entry.registeredAtMs})")
+            if (delayMs > 0L) delay(delayMs)
             Log.d(TAG, "TTL 90% reached for $videoId — triggering refresh")
             onRefreshNeeded()
         }

@@ -142,6 +142,7 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
     }
 
     private fun navigateToPlayer(video: ContentItem.Video) {
+        prefetchService.triggerPrefetch(video.id, viewLifecycleOwner.lifecycleScope)
         findNavController().navigate(
             R.id.action_global_playerFragment,
             bundleOf(

@@ -73,6 +73,7 @@ class ChannelShortsTabFragment : Fragment(R.layout.fragment_channel_shorts_tab) 
 
     private val adapter by lazy {
         ChannelShortsAdapter { short ->
+            prefetchService.triggerPrefetch(short.id, lifecycleScope)
             // Navigate to video player for shorts
             findNavController().navigate(
                 R.id.action_global_shortsPlayerFragment,

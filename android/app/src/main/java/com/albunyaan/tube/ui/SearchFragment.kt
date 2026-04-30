@@ -282,6 +282,7 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
     private fun handleItemClick(item: ContentItem) {
         when (item) {
             is ContentItem.Video -> {
+                prefetchService.triggerPrefetch(item.id, viewLifecycleOwner.lifecycleScope)
                 findNavController().navigate(
                     R.id.action_global_playerFragment,
                     android.os.Bundle().apply {

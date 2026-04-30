@@ -27,6 +27,9 @@ class CronetDataSourceFactory @Inject constructor(
     // Built lazily; null means Cronet is unavailable → fall back to DefaultHttpDataSource.
     private val engine: CronetEngine? by lazy { buildEngine() }
 
+    // Single bounded pool shared by all CronetDataSource instances from this factory.
+    private val cronetExecutor = Executors.newFixedThreadPool(4)
+
     fun createForAndroidUA(): DataSource.Factory =
         create(HttpConstants.YOUTUBE_USER_AGENT)
 
@@ -39,7 +42,7 @@ class CronetDataSourceFactory @Inject constructor(
             .setConnectTimeoutMs(15_000)
             .setReadTimeoutMs(20_000)
             .setAllowCrossProtocolRedirects(true)
-        return CronetDataSource.Factory(e, Executors.newCachedThreadPool())
+        return CronetDataSource.Factory(e, cronetExecutor)
             .setUserAgent(userAgent)
             .setConnectionTimeoutMs(15_000)
             .setReadTimeoutMs(20_000)

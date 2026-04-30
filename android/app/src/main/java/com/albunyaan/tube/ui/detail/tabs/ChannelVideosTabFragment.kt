@@ -55,6 +55,7 @@ class ChannelVideosTabFragment : BaseChannelListTabFragment<ChannelVideo>() {
 
     private val adapter by lazy {
         ChannelVideoAdapter { video ->
+            prefetchService.triggerPrefetch(video.id, lifecycleScope)
             // Navigate to video player
             findNavController().navigate(
                 R.id.action_global_playerFragment,

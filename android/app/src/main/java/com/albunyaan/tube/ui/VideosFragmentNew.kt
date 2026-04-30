@@ -134,6 +134,7 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
     }
 
     private fun navigateToPlayer(video: ContentItem.Video) {
+        prefetchService.triggerPrefetch(video.id, viewLifecycleOwner.lifecycleScope)
         val bundle = bundleOf(
             "videoId" to video.id,
             "title" to video.title,

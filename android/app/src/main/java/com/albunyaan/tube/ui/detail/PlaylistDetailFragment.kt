@@ -134,6 +134,7 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
     private fun setupRecyclerView() {
         videosAdapter = PlaylistVideosAdapter { item, position ->
             Log.d(TAG, "Video clicked: ${item.title} at position $position")
+            prefetchService.triggerPrefetch(item.videoId, lifecycleScope)
             navigateToPlayer(item.videoId, position)
         }
 
@@ -503,7 +504,11 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
      * Prefetch the first video in the playlist for smoother "Play All" start.
      */
     private fun prefetchFirstPlaylistItem() {
-        // No-op: predictive prefetch controller handles visibility-based prefetch.
+        val state = viewModel.itemsState.value
+        if (state is PlaylistDetailViewModel.PaginatedState.Loaded && state.items.isNotEmpty()) {
+            val firstItem = state.items.first()
+            prefetchService.triggerPrefetch(firstItem.videoId, lifecycleScope)
+        }
     }
 
     private fun navigateToPlayer(targetVideoId: String? = null, startIndex: Int = 0, shuffled: Boolean = false) {
