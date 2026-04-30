@@ -4425,6 +4425,10 @@ components:
           format: int64
           nullable: true
           description: View count (videos only)
+        channelTitle:
+          type: string
+          nullable: true
+          description: Channel name for video/stream results
         # Channel-specific fields
         subscribers:
           type: integer

@@ -9,7 +9,8 @@ sealed class ContentItem {
         val uploadedDaysAgo: Int,
         val description: String,
         val thumbnailUrl: String? = null,
-        val viewCount: Long? = null
+        val viewCount: Long? = null,
+        val channelName: String? = null
     ) : ContentItem()
 
     data class Channel(

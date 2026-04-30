@@ -84,7 +84,8 @@ fun ApiContentItemDto.toDomain(): DomainContentItem {
             uploadedDaysAgo = this.uploadedDaysAgo ?: 0,
             description = this.description ?: "",
             thumbnailUrl = this.thumbnailUrl,
-            viewCount = this.viewCount
+            viewCount = this.viewCount,
+            channelName = this.channelTitle
         )
         ApiContentItemDto.Type.CHANNEL -> DomainContentItem.Channel(
             id = this.id,
