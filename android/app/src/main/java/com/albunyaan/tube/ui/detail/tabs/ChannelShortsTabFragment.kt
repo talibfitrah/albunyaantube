@@ -162,10 +162,15 @@ class ChannelShortsTabFragment : Fragment(R.layout.fragment_channel_shorts_tab) 
             delay(AUTOFILL_RECHECK_DELAY_MS)
             if (binding == null || !isAdded || !isResumed) return@launch
             val currentState = viewModel.shortsState.value
-            if (currentState is ChannelDetailViewModel.PaginatedState.Loaded &&
-                currentState.nextPage != null &&
-                !currentState.isAppending
-            ) {
+            // Retry if Loaded+not appending, OR if ErrorAppend (append failed and should retry)
+            val shouldRetry = when (currentState) {
+                is ChannelDetailViewModel.PaginatedState.Loaded ->
+                    currentState.nextPage != null && !currentState.isAppending
+                is ChannelDetailViewModel.PaginatedState.ErrorAppend ->
+                    currentState.nextPage != null
+                else -> false
+            }
+            if (shouldRetry) {
                 viewModel.loadNextPage(ChannelTab.SHORTS)
             }
         }

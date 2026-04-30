@@ -88,10 +88,15 @@ abstract class BaseChannelListTabFragment<T> : Fragment(R.layout.fragment_channe
             delay(AUTOFILL_RECHECK_DELAY_MS)
             if (binding == null || !isAdded || !isResumed) return@launch
             val currentState = getState().value
-            if (currentState is ChannelDetailViewModel.PaginatedState.Loaded &&
-                currentState.nextPage != null &&
-                !currentState.isAppending
-            ) {
+            // Retry if Loaded+not appending, OR if ErrorAppend (append failed and should retry)
+            val shouldRetry = when (currentState) {
+                is ChannelDetailViewModel.PaginatedState.Loaded ->
+                    currentState.nextPage != null && !currentState.isAppending
+                is ChannelDetailViewModel.PaginatedState.ErrorAppend ->
+                    currentState.nextPage != null
+                else -> false
+            }
+            if (shouldRetry) {
                 viewModel.loadNextPage(tab)
             }
         }
