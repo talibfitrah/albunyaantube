@@ -87,6 +87,7 @@ android {
 
         buildConfigField("boolean", "ENABLE_CLIENT_ROTATION", "true")
         buildConfigField("boolean", "ENABLE_HLS_PROBATION", "true")
+        buildConfigField("boolean", "ENABLE_CRONET", "true")
     }
 
     signingConfigs {

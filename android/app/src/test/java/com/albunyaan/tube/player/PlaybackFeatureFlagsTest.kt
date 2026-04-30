@@ -222,7 +222,8 @@ class PlaybackFeatureFlagsTest {
         assertTrue("Should contain generous_crop_budget", diagnostics.containsKey("generous_crop_budget"))
         assertTrue("Should contain client_rotation", diagnostics.containsKey("client_rotation"))
         assertTrue("Should contain hls_probation", diagnostics.containsKey("hls_probation"))
-        assertEquals("Should have 7 flags", 7, diagnostics.size)
+        assertTrue("Should contain cronet_enabled", diagnostics.containsKey("cronet_enabled"))
+        assertEquals("Should have 8 flags", 8, diagnostics.size)
     }
 
     // --- Generous Crop Budget Flag Tests ---

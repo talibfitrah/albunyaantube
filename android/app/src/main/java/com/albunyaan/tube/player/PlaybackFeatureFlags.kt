@@ -58,6 +58,7 @@ class PlaybackFeatureFlags @Inject constructor(
         const val KEY_GENEROUS_CROP_BUDGET = "generous_crop_budget"
         const val KEY_CLIENT_ROTATION = "client_rotation"
         const val KEY_HLS_PROBATION = "hls_probation"
+        const val KEY_CRONET_ENABLED = "cronet_enabled"
 
         /** Set of all valid override keys for validation */
         private val VALID_KEYS = setOf(
@@ -67,7 +68,8 @@ class PlaybackFeatureFlags @Inject constructor(
             KEY_IOS_FETCH,
             KEY_GENEROUS_CROP_BUDGET,
             KEY_CLIENT_ROTATION,
-            KEY_HLS_PROBATION
+            KEY_HLS_PROBATION,
+            KEY_CRONET_ENABLED
         )
 
         /**
@@ -131,6 +133,7 @@ class PlaybackFeatureFlags @Inject constructor(
             .remove(KEY_GENEROUS_CROP_BUDGET)
             .remove(KEY_CLIENT_ROTATION)
             .remove(KEY_HLS_PROBATION)
+            .remove(KEY_CRONET_ENABLED)
             .apply()
     }
 
@@ -213,6 +216,9 @@ class PlaybackFeatureFlags @Inject constructor(
     val isHlsProbationEnabled: Boolean
         get() = resolveFlag(KEY_HLS_PROBATION, BuildConfig.ENABLE_HLS_PROBATION)
 
+    val isCronetEnabled: Boolean
+        get() = resolveFlag(KEY_CRONET_ENABLED, BuildConfig.ENABLE_CRONET)
+
     /**
      * Set a runtime override for synthetic adaptive DASH.
      * @param enabled true to enable, false to disable, null to use build-time default
@@ -276,6 +282,11 @@ class PlaybackFeatureFlags @Inject constructor(
         Log.i(TAG, "HLS_PROBATION override set to: $enabled (effective: $isHlsProbationEnabled)")
     }
 
+    fun setCronetEnabled(enabled: Boolean?) {
+        setOverride(KEY_CRONET_ENABLED, enabled)
+        Log.i(TAG, "CRONET_ENABLED override set to: $enabled (effective: $isCronetEnabled)")
+    }
+
     /**
      * Clear a specific flag's runtime override, reverting to build-time default.
      * @throws IllegalArgumentException if key is not a valid feature flag key
@@ -299,6 +310,7 @@ class PlaybackFeatureFlags @Inject constructor(
             .remove(KEY_GENEROUS_CROP_BUDGET)
             .remove(KEY_CLIENT_ROTATION)
             .remove(KEY_HLS_PROBATION)
+            .remove(KEY_CRONET_ENABLED)
             .apply()
         Log.i(TAG, "All overrides cleared - reverting to build-time defaults")
     }
@@ -324,7 +336,8 @@ class PlaybackFeatureFlags @Inject constructor(
             KEY_IOS_FETCH to getFlagState(KEY_IOS_FETCH, BuildConfig.ENABLE_NPE_IOS_FETCH),
             KEY_GENEROUS_CROP_BUDGET to getFlagState(KEY_GENEROUS_CROP_BUDGET, isSamsungS25Ultra()),
             KEY_CLIENT_ROTATION to getFlagState(KEY_CLIENT_ROTATION, BuildConfig.ENABLE_CLIENT_ROTATION),
-            KEY_HLS_PROBATION to getFlagState(KEY_HLS_PROBATION, BuildConfig.ENABLE_HLS_PROBATION)
+            KEY_HLS_PROBATION to getFlagState(KEY_HLS_PROBATION, BuildConfig.ENABLE_HLS_PROBATION),
+            KEY_CRONET_ENABLED to getFlagState(KEY_CRONET_ENABLED, BuildConfig.ENABLE_CRONET)
         )
     }
 
