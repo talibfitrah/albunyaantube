@@ -27,6 +27,15 @@
         <item name="popupMenuStyle">@style/Widget.Albunyaan.PopupMenu</item>
         <item name="android:popupMenuStyle">@style/Widget.Albunyaan.PopupMenu</item>
 
+        <!-- Toolbar overflow popups (channel/playlist detail kebab, player
+             kebab via MenuProvider). MaterialToolbar reads actionBarPopupTheme
+             from the activity theme to style its overflow PopupMenu — the
+             popupMenuStyle attributes above only reach standalone PopupMenu
+             instances, not toolbar.inflateMenu(). Without this, the channel
+             and playlist toolbar overflows fell back to Material3's default
+             4 dp corner radius and bypassed Widget.Albunyaan.PopupMenu. -->
+        <item name="actionBarPopupTheme">@style/ThemeOverlay.Albunyaan.PopupMenu</item>
+
         <!-- MaterialAlertDialog Theme (kebab pickers: quality, audio, subtitles,
              theme, language, and any other Material dialogs). Without this, the
              dialogs render with Material3's stock 4 dp corner radius and the
@@ -42,6 +51,19 @@
     <style name="Widget.Albunyaan.PopupMenu" parent="Widget.Material3.PopupMenu">
         <item name="android:popupBackground">@drawable/bg_popup_menu</item>
         <item name="android:overlapAnchor">false</item>
+    </style>
+
+    <!-- Toolbar overflow popup theme. MaterialToolbar's internal action-menu
+         context is built from actionBarPopupTheme — that's what determines
+         the popup background and item styling for the overflow kebab. We
+         re-declare popupMenuStyle here so the Toolbar's popup picks up our
+         branded background even though it doesn't read the activity-level
+         popupMenuStyle directly. Parent is ThemeOverlay.Material3 (neutral,
+         DayNight-aware) so colorSurface and other theme attrs continue to
+         flow through from the host theme. -->
+    <style name="ThemeOverlay.Albunyaan.PopupMenu" parent="ThemeOverlay.Material3">
+        <item name="popupMenuStyle">@style/Widget.Albunyaan.PopupMenu</item>
+        <item name="android:popupMenuStyle">@style/Widget.Albunyaan.PopupMenu</item>
     </style>
 
     <!-- Branded MaterialAlertDialog overlay applied via materialAlertDialogTheme.
