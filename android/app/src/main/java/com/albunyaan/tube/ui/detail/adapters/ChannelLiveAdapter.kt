@@ -22,7 +22,8 @@ import java.util.Locale
  * Shows LIVE or UPCOMING badge on thumbnails.
  */
 class ChannelLiveAdapter(
-    private val onStreamClick: (ChannelLiveStream) -> Unit
+    private val onStreamClick: (ChannelLiveStream) -> Unit,
+    private val onStreamLongPress: ((ChannelLiveStream) -> Unit)? = null,
 ) : ListAdapter<ChannelLiveStream, ChannelLiveAdapter.ViewHolder>(DIFF_CALLBACK) {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
@@ -31,7 +32,7 @@ class ChannelLiveAdapter(
             parent,
             false
         )
-        return ViewHolder(binding, onStreamClick)
+        return ViewHolder(binding, onStreamClick, onStreamLongPress)
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
@@ -40,7 +41,8 @@ class ChannelLiveAdapter(
 
     class ViewHolder(
         private val binding: ItemChannelLiveBinding,
-        private val onStreamClick: (ChannelLiveStream) -> Unit
+        private val onStreamClick: (ChannelLiveStream) -> Unit,
+        private val onStreamLongPress: ((ChannelLiveStream) -> Unit)?,
     ) : RecyclerView.ViewHolder(binding.root) {
 
         private val context: Context get() = binding.root.context
@@ -90,6 +92,11 @@ class ChannelLiveAdapter(
 
             binding.root.setOnClickListener {
                 onStreamClick(stream)
+            }
+            binding.root.setOnLongClickListener {
+                val cb = onStreamLongPress ?: return@setOnLongClickListener false
+                cb(stream)
+                true
             }
         }
 

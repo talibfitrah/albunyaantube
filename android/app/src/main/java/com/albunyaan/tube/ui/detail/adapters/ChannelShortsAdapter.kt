@@ -15,7 +15,8 @@ import com.albunyaan.tube.util.ImageLoading.loadYouTubeThumbnail
  * Displays 9:16 vertical thumbnails in a grid.
  */
 class ChannelShortsAdapter(
-    private val onShortClick: (ChannelShort) -> Unit
+    private val onShortClick: (ChannelShort) -> Unit,
+    private val onShortLongPress: ((ChannelShort) -> Unit)? = null,
 ) : ListAdapter<ChannelShort, ChannelShortsAdapter.ViewHolder>(DIFF_CALLBACK) {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
@@ -24,7 +25,7 @@ class ChannelShortsAdapter(
             parent,
             false
         )
-        return ViewHolder(binding, onShortClick)
+        return ViewHolder(binding, onShortClick, onShortLongPress)
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
@@ -33,7 +34,8 @@ class ChannelShortsAdapter(
 
     class ViewHolder(
         private val binding: ItemChannelShortBinding,
-        private val onShortClick: (ChannelShort) -> Unit
+        private val onShortClick: (ChannelShort) -> Unit,
+        private val onShortLongPress: ((ChannelShort) -> Unit)?,
     ) : RecyclerView.ViewHolder(binding.root) {
 
         fun bind(short: ChannelShort) {
@@ -56,6 +58,11 @@ class ChannelShortsAdapter(
 
             binding.root.setOnClickListener {
                 onShortClick(short)
+            }
+            binding.root.setOnLongClickListener {
+                val cb = onShortLongPress ?: return@setOnLongClickListener false
+                cb(short)
+                true
             }
         }
 

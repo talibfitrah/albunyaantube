@@ -18,7 +18,8 @@ import java.util.Locale
  * Reuses the item_video_list layout.
  */
 class ChannelVideoAdapter(
-    private val onVideoClick: (ChannelVideo) -> Unit
+    private val onVideoClick: (ChannelVideo) -> Unit,
+    private val onVideoLongPress: ((ChannelVideo) -> Unit)? = null,
 ) : ListAdapter<ChannelVideo, ChannelVideoAdapter.ViewHolder>(DIFF_CALLBACK) {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
@@ -27,7 +28,7 @@ class ChannelVideoAdapter(
             parent,
             false
         )
-        return ViewHolder(binding, onVideoClick)
+        return ViewHolder(binding, onVideoClick, onVideoLongPress)
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
@@ -36,7 +37,8 @@ class ChannelVideoAdapter(
 
     class ViewHolder(
         private val binding: ItemVideoListBinding,
-        private val onVideoClick: (ChannelVideo) -> Unit
+        private val onVideoClick: (ChannelVideo) -> Unit,
+        private val onVideoLongPress: ((ChannelVideo) -> Unit)?,
     ) : RecyclerView.ViewHolder(binding.root) {
 
         private val context get() = binding.root.context
@@ -78,6 +80,11 @@ class ChannelVideoAdapter(
 
             binding.root.setOnClickListener {
                 onVideoClick(video)
+            }
+            binding.root.setOnLongClickListener {
+                val cb = onVideoLongPress ?: return@setOnLongClickListener false
+                cb(video)
+                true
             }
         }
 

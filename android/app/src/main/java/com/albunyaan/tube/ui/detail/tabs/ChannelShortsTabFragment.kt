@@ -79,20 +79,34 @@ class ChannelShortsTabFragment : Fragment(R.layout.fragment_channel_shorts_tab) 
     )
 
     private val adapter by lazy {
-        ChannelShortsAdapter { short ->
-            findNavController().navigate(
-                R.id.action_global_shortsPlayerFragment,
-                Bundle().apply {
-                    putString("initialShortId", short.id)
-                    putString("channelId", channelId)
-                    putString("initialShortTitle", short.title)
-                    putString("initialChannelName", channelName)
-                    putString("initialThumbnailUrl", short.thumbnailUrl)
-                    putString("initialChannelAvatarUrl", channelAvatarUrl)
-                    putInt("initialDurationSeconds", short.durationSeconds ?: 0)
-                }
-            )
-        }
+        ChannelShortsAdapter(
+            onShortClick = { short ->
+                findNavController().navigate(
+                    R.id.action_global_shortsPlayerFragment,
+                    Bundle().apply {
+                        putString("initialShortId", short.id)
+                        putString("channelId", channelId)
+                        putString("initialShortTitle", short.title)
+                        putString("initialChannelName", channelName)
+                        putString("initialThumbnailUrl", short.thumbnailUrl)
+                        putString("initialChannelAvatarUrl", channelAvatarUrl)
+                        putInt("initialDurationSeconds", short.durationSeconds ?: 0)
+                    }
+                )
+            },
+            onShortLongPress = { short ->
+                // Long-press a Short → report it with parent=CHANNEL +
+                // contentSubType=SHORT so admin's resolve adds it to the
+                // channel's shorts exclusion bucket.
+                com.albunyaan.tube.ui.report.ContentReportBottomSheet.newInstance(
+                    targetType = com.albunyaan.tube.data.report.ReportTargetType.VIDEO,
+                    targetId = short.id,
+                    parentType = com.albunyaan.tube.data.report.ReportTargetType.CHANNEL,
+                    parentId = channelId,
+                    contentSubType = com.albunyaan.tube.data.report.ReportContentSubType.SHORT,
+                ).show(parentFragmentManager, com.albunyaan.tube.ui.report.ContentReportBottomSheet.TAG)
+            },
+        )
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {

@@ -38,17 +38,31 @@ class ChannelPlaylistsTabFragment : BaseChannelListTabFragment<ChannelPlaylist>(
     )
 
     private val adapter by lazy {
-        ChannelPlaylistsAdapter { playlist ->
-            // Navigate to playlist detail using global action
-            findNavController().navigate(
-                R.id.action_global_playlistDetailFragment,
-                android.os.Bundle().apply {
-                    putString("playlistId", playlist.id)
-                    putString("playlistTitle", playlist.title)
-                    putBoolean("excluded", false)
-                }
-            )
-        }
+        ChannelPlaylistsAdapter(
+            onPlaylistClick = { playlist ->
+                // Navigate to playlist detail using global action
+                findNavController().navigate(
+                    R.id.action_global_playlistDetailFragment,
+                    android.os.Bundle().apply {
+                        putString("playlistId", playlist.id)
+                        putString("playlistTitle", playlist.title)
+                        putBoolean("excluded", false)
+                    }
+                )
+            },
+            onPlaylistLongPress = { playlist ->
+                // Long-press a playlist within a channel → report it with
+                // parent=CHANNEL so admin resolve adds the playlist id to
+                // the channel's playlists exclusion bucket.
+                com.albunyaan.tube.ui.report.ContentReportBottomSheet.newInstance(
+                    targetType = com.albunyaan.tube.data.report.ReportTargetType.PLAYLIST,
+                    targetId = playlist.id,
+                    parentType = com.albunyaan.tube.data.report.ReportTargetType.CHANNEL,
+                    parentId = channelId,
+                    contentSubType = null,
+                ).show(parentFragmentManager, com.albunyaan.tube.ui.report.ContentReportBottomSheet.TAG)
+            },
+        )
     }
 
     override fun getState(): StateFlow<ChannelDetailViewModel.PaginatedState<ChannelPlaylist>> = viewModel.playlistsState

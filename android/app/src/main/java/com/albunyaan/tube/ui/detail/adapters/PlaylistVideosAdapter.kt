@@ -29,7 +29,8 @@ data class PlaylistVideoUiItem(
  * Supports showing download state per item.
  */
 class PlaylistVideosAdapter(
-    private val onVideoClick: (PlaylistItem, Int) -> Unit
+    private val onVideoClick: (PlaylistItem, Int) -> Unit,
+    private val onVideoLongPress: ((PlaylistItem) -> Unit)? = null,
 ) : ListAdapter<PlaylistVideoUiItem, PlaylistVideosAdapter.ViewHolder>(DIFF_CALLBACK) {
 
     // Cache locale and NumberFormat at adapter level for scrolling performance
@@ -44,7 +45,7 @@ class PlaylistVideosAdapter(
         )
         // Initialize or update cached values on first ViewHolder creation
         val numberFormat = getOrCreateNumberFormat(parent.context)
-        return ViewHolder(binding, onVideoClick, numberFormat)
+        return ViewHolder(binding, onVideoClick, onVideoLongPress, numberFormat)
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
@@ -74,6 +75,7 @@ class PlaylistVideosAdapter(
     class ViewHolder(
         private val binding: ItemPlaylistVideoBinding,
         private val onVideoClick: (PlaylistItem, Int) -> Unit,
+        private val onVideoLongPress: ((PlaylistItem) -> Unit)?,
         private val numberFormat: NumberFormat
     ) : RecyclerView.ViewHolder(binding.root) {
 
@@ -122,6 +124,11 @@ class PlaylistVideosAdapter(
                 if (position != RecyclerView.NO_POSITION) {
                     onVideoClick(item, position)
                 }
+            }
+            binding.root.setOnLongClickListener {
+                val cb = onVideoLongPress ?: return@setOnLongClickListener false
+                cb(item)
+                true
             }
 
             // Accessibility content description

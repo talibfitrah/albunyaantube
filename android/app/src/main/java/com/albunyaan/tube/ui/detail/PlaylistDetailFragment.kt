@@ -259,11 +259,25 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
     }
 
     private fun setupRecyclerView() {
-        videosAdapter = PlaylistVideosAdapter { item, position ->
-            Log.d(TAG, "Video clicked: ${item.title} at position $position")
-            prefetchService.triggerPrefetch(item.videoId, lifecycleScope)
-            navigateToPlayer(item.videoId, position)
-        }
+        videosAdapter = PlaylistVideosAdapter(
+            onVideoClick = { item, position ->
+                Log.d(TAG, "Video clicked: ${item.title} at position $position")
+                prefetchService.triggerPrefetch(item.videoId, lifecycleScope)
+                navigateToPlayer(item.videoId, position)
+            },
+            onVideoLongPress = { item ->
+                // Long-press a playlist video → report with parent=PLAYLIST
+                // so admin resolve adds the videoId to this playlist's
+                // excludedVideoIds rather than archiving the video globally.
+                ContentReportBottomSheet.newInstance(
+                    targetType = ReportTargetType.VIDEO,
+                    targetId = item.videoId,
+                    parentType = ReportTargetType.PLAYLIST,
+                    parentId = playlistId,
+                    contentSubType = null,
+                ).show(parentFragmentManager, ContentReportBottomSheet.TAG)
+            },
+        )
 
         binding?.videosRecyclerView?.apply {
             adapter = videosAdapter

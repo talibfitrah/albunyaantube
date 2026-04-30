@@ -15,7 +15,8 @@ import com.albunyaan.tube.databinding.ItemPlaylistBinding
  * Reuses the existing item_playlist layout.
  */
 class ChannelPlaylistsAdapter(
-    private val onPlaylistClick: (ChannelPlaylist) -> Unit
+    private val onPlaylistClick: (ChannelPlaylist) -> Unit,
+    private val onPlaylistLongPress: ((ChannelPlaylist) -> Unit)? = null,
 ) : ListAdapter<ChannelPlaylist, ChannelPlaylistsAdapter.ViewHolder>(DIFF_CALLBACK) {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
@@ -24,7 +25,7 @@ class ChannelPlaylistsAdapter(
             parent,
             false
         )
-        return ViewHolder(binding, onPlaylistClick)
+        return ViewHolder(binding, onPlaylistClick, onPlaylistLongPress)
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
@@ -33,7 +34,8 @@ class ChannelPlaylistsAdapter(
 
     class ViewHolder(
         private val binding: ItemPlaylistBinding,
-        private val onPlaylistClick: (ChannelPlaylist) -> Unit
+        private val onPlaylistClick: (ChannelPlaylist) -> Unit,
+        private val onPlaylistLongPress: ((ChannelPlaylist) -> Unit)?,
     ) : RecyclerView.ViewHolder(binding.root) {
 
         fun bind(playlist: ChannelPlaylist) {
@@ -69,6 +71,11 @@ class ChannelPlaylistsAdapter(
 
             binding.root.setOnClickListener {
                 onPlaylistClick(playlist)
+            }
+            binding.root.setOnLongClickListener {
+                val cb = onPlaylistLongPress ?: return@setOnLongClickListener false
+                cb(playlist)
+                true
             }
         }
     }
