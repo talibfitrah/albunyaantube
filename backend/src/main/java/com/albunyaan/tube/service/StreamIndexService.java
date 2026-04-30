@@ -74,6 +74,10 @@ public class StreamIndexService {
             for (StreamItemDto item : items) {
                 if (excluded.contains(item.getId())) continue;
                 String channelId = extractChannelId(item.getUploaderUrl());
+                if (channelId == null) {
+                    log.warn("Could not extract channelId from uploaderUrl='{}', skipping stream {}", item.getUploaderUrl(), item.getId());
+                    continue;
+                }
                 upsert(item, channelId, item.getUploaderName(), sourceKey);
             }
         } catch (Exception e) {
@@ -87,11 +91,16 @@ public class StreamIndexService {
     public void removeSource(String sourceType, String sourceYoutubeId) {
         String sourceKey = sourceType.toLowerCase() + ":" + sourceYoutubeId;
         try {
-            List<SearchableStream> streams = streamRepository.findBySourceKey(sourceKey, 500);
-            for (SearchableStream stream : streams) {
-                streamRepository.removeSource(stream.getStreamId(), sourceKey);
-            }
-            log.info("Removed search index source {} ({} streams)", sourceKey, streams.size());
+            List<SearchableStream> batch;
+            int removed = 0;
+            do {
+                batch = streamRepository.findBySourceKey(sourceKey, 500);
+                for (SearchableStream stream : batch) {
+                    streamRepository.removeSource(stream.getStreamId(), sourceKey);
+                    removed++;
+                }
+            } while (batch.size() == 500);
+            log.info("Removed search index source {} ({} streams)", sourceKey, removed);
         } catch (Exception e) {
             log.warn("removeSource failed for {}: {}", sourceKey, e.getMessage());
         }
@@ -99,6 +108,10 @@ public class StreamIndexService {
 
     private void upsert(StreamItemDto item, String channelId, String channelName, String sourceKey) {
         try {
+            if (item.getId() == null || item.getName() == null) {
+                log.warn("Skipping stream with null id or name (sourceKey={})", sourceKey);
+                return;
+            }
             String titleNorm = tokenizer.normalizeArabic(item.getName().toLowerCase(Locale.ROOT));
             List<String> tokens = tokenizer.tokenize(item.getName(), channelName);
 

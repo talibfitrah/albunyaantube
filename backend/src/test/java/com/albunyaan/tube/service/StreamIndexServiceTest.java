@@ -84,6 +84,20 @@ class StreamIndexServiceTest {
     }
 
     @Test
+    void indexFromChannel_skipsExcludedLiveStream() throws Exception {
+        Channel ch = new Channel("UC123");
+        ch.setStatus("APPROVED");
+        ch.setName("Test Channel");
+        ch.getExcludedItems().setLiveStreams(List.of("abc12345678"));
+        when(channelRepository.findByYoutubeId("UC123")).thenReturn(Optional.of(ch));
+
+        StreamItemDto item = makeItem("abc12345678", "Test Live");
+        item.setStreamType("LIVESTREAM");
+        service.indexFromChannel("UC123", List.of(item));
+        verifyNoInteractions(streamRepository);
+    }
+
+    @Test
     void indexFromPlaylist_skipsIfPlaylistNotApproved() throws Exception {
         when(playlistRepository.findByYoutubeId("PL123")).thenReturn(Optional.empty());
         service.indexFromPlaylist("PL123", List.of(makeItem("abc12345678", "Test")));
