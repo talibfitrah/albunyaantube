@@ -99,6 +99,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     @Inject lateinit var degradationManager: com.albunyaan.tube.player.PlaybackDegradationManager
     @Inject lateinit var featureFlags: com.albunyaan.tube.player.PlaybackFeatureFlags
     @Inject lateinit var mpdRegistry: com.albunyaan.tube.player.SyntheticDashMpdRegistry
+    @Inject lateinit var probationChecker: com.albunyaan.tube.player.HlsProbationChecker
     @Inject lateinit var bufferPolicy: AdaptiveBufferPolicy
 
     private var binding: FragmentPlayerBinding? = null
@@ -806,7 +807,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             multiRepFactory,
             coldStartQualityChooser,
             featureFlags,
-            mpdRegistry
+            mpdRegistry,
+            probationChecker
         )
     }
 

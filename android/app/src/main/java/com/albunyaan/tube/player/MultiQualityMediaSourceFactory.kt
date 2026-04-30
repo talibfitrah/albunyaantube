@@ -70,7 +70,8 @@ class MultiQualityMediaSourceFactory(
     private val multiRepFactory: MultiRepSyntheticDashMediaSourceFactory? = null,
     private val coldStartQualityChooser: ColdStartQualityChooser? = null,
     private val featureFlags: PlaybackFeatureFlags? = null,
-    private val mpdRegistry: SyntheticDashMpdRegistry? = null
+    private val mpdRegistry: SyntheticDashMpdRegistry? = null,
+    private val probationChecker: HlsProbationChecker? = null
 ) {
 
     // Standard data source for progressive/DASH (Android User-Agent)
@@ -504,6 +505,17 @@ class MultiQualityMediaSourceFactory(
         // Try HLS first (better compatibility) unless poisoned
         val hlsResult = if (!hlsPoisoned) {
             resolved.hlsUrl?.let { hlsUrl ->
+                // Phase 6 probation: HEAD-probe the manifest before committing to HLS.
+                // A non-2xx response or timeout means the URL is already invalid (e.g. 403
+                // from an expired iOS token). Poisoning now lets the factory fall through to
+                // DASH / SYNTH_ADAPTIVE immediately, avoiding a stall on the main thread.
+                if (featureFlags?.isHlsProbationEnabled == true && probationChecker != null && videoId != null) {
+                    if (!probationChecker.probe(hlsUrl)) {
+                        android.util.Log.w(TAG, "HLS probation failed for $videoId — poisoning and skipping HLS")
+                        hlsPoisonRegistry?.poisonHls(videoId, reason = "PROBATION_FAIL")
+                        return@let null
+                    }
+                }
                 try {
                     val mediaItem = MediaItem.Builder()
                         .setUri(hlsUrl)
