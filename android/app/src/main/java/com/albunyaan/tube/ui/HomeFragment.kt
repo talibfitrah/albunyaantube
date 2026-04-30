@@ -19,6 +19,7 @@ import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.player.PlaybackFeatureFlags
 import com.albunyaan.tube.player.PredictivePrefetchController
 import com.albunyaan.tube.player.StreamPrefetchService
+import com.albunyaan.tube.ui.detail.ChannelDetailFragment
 import dagger.hilt.android.AndroidEntryPoint
 import com.albunyaan.tube.databinding.FragmentHomeNewBinding
 import javax.inject.Inject
@@ -135,7 +136,11 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
                 Log.d(TAG, "Channel clicked: ${item.name}")
                 findNavController().navigate(
                     R.id.action_global_channelDetailFragment,
-                    bundleOf("channelId" to item.id, "channelName" to item.name)
+                    bundleOf(
+                        ChannelDetailFragment.ARG_CHANNEL_ID to item.id,
+                        ChannelDetailFragment.ARG_CHANNEL_NAME to item.name,
+                        ChannelDetailFragment.ARG_CHANNEL_AVATAR_URL to item.thumbnailUrl
+                    )
                 )
             }
         }

@@ -129,12 +129,15 @@ class DefaultStreamPrefetchService @Inject constructor(
                 // ANDROID-PERSONAL-02 [Bug 1]: prefetch is NOT real-time playback
                 // — it must respect the rate-limit + cooldown gates so a tripped
                 // cooldown actually halts background work (spec D1).
+                // CRITICAL FIX: Use timeoutMs=0 for NewPipe acquire (non-blocking).
+                // Prefetch must NOT wait for tokens — if none available, skip.
+                // This prevents background prefetch from starving channel/Me UI loads.
                 val resolved = globalResolver.resolveStreams(
                     videoId = videoId,
                     forceRefresh = false,
-                    timeoutMs = PREFETCH_TIMEOUT_MS,
+                    timeoutMs = 0L,
                     caller = "prefetch",
-                    priority = Priority.USER_FOREGROUND,
+                    priority = Priority.BACKGROUND_REFRESH,
                 )
                 if (resolved != null) {
                     // Evict oldest results if cache is full (FIFO order)

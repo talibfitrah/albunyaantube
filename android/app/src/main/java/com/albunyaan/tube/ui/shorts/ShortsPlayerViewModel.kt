@@ -52,7 +52,12 @@ class ShortsPlayerViewModel @AssistedInject constructor(
     private val featureFlags: com.albunyaan.tube.player.PlaybackFeatureFlags,
     private val neverFreezeTrackSelectionFactory: com.albunyaan.tube.player.NeverFreezeTrackSelectionFactory,
     @Assisted("initialShortId") private val initialShortId: String?,
-    @Assisted("channelId") private val channelId: String?
+    @Assisted("channelId") private val channelId: String?,
+    @Assisted("initialShortTitle") private val initialShortTitle: String? = null,
+    @Assisted("initialChannelName") private val initialChannelName: String? = null,
+    @Assisted("initialThumbnailUrl") private val initialThumbnailUrl: String? = null,
+    @Assisted("initialChannelAvatarUrl") private val initialChannelAvatarUrl: String? = null,
+    @Assisted("initialDurationSeconds") private val initialDurationSeconds: Int = 0,
 ) : ViewModel() {
 
     /**
@@ -109,6 +114,7 @@ class ShortsPlayerViewModel @AssistedInject constructor(
     private val loadMutex = Mutex()
 
     init {
+        seedInitialShortIfAvailable()
         loadNextPage()
     }
 
@@ -175,11 +181,16 @@ class ShortsPlayerViewModel @AssistedInject constructor(
                     } else {
                         page.items
                     }
-                    val combined = _items.value + decorated
+                    val combined = appendDistinct(_items.value, decorated)
                     val ordered = if (!initialShortApplied && initialShortId != null) {
                         val head = combined.firstOrNull { it.id == initialShortId }
-                        initialShortApplied = true
-                        if (head != null) listOf(head) + combined.filter { it.id != initialShortId } else combined
+                        if (head != null) {
+                            initialShortApplied = true
+                            listOf(head) + combined.filter { it.id != initialShortId }
+                        } else {
+                            if (page.nextCursor == null) initialShortApplied = true
+                            combined
+                        }
                     } else {
                         combined
                     }
@@ -214,12 +225,33 @@ class ShortsPlayerViewModel @AssistedInject constructor(
         // resolved (e.g. header failed on page 1 and succeeded on page 2).
         // Without this, page-1 items would keep blank channelName forever.
         val current = _items.value
-        if (current.any { it.channelName.isBlank() }) {
+        if (current.any { it.channelName.isBlank() || it.channelAvatarUrl.isNullOrBlank() || it.channelId.isBlank() }) {
             _items.value = current.map { item ->
-                if (item.channelName.isBlank()) item.withChannelHeader(header) else item
+                if (item.channelName.isBlank() || item.channelAvatarUrl.isNullOrBlank() || item.channelId.isBlank()) {
+                    item.withChannelHeader(header)
+                } else {
+                    item
+                }
             }
         }
         return header
+    }
+
+    private fun seedInitialShortIfAvailable() {
+        val id = initialShortId?.takeIf { it.isNotBlank() } ?: return
+        val title = initialShortTitle?.takeIf { it.isNotBlank() } ?: return
+        _items.value = listOf(
+            ShortsItem(
+                id = id,
+                title = title,
+                channelId = channelId.orEmpty(),
+                channelName = initialChannelName.orEmpty(),
+                channelAvatarUrl = initialChannelAvatarUrl,
+                thumbnailUrl = initialThumbnailUrl,
+                durationSeconds = initialDurationSeconds.coerceAtLeast(0),
+            )
+        )
+        initialShortApplied = true
     }
 
     override fun onCleared() {
@@ -231,9 +263,15 @@ class ShortsPlayerViewModel @AssistedInject constructor(
         val resolvedChannelId = header.id.ifBlank { this@ShortsPlayerViewModel.channelId ?: "" }
         return copy(
             channelId = resolvedChannelId,
-            channelName = header.title,
-            channelAvatarUrl = header.avatarUrl
+            channelName = header.title.ifBlank { channelName },
+            channelAvatarUrl = header.avatarUrl ?: channelAvatarUrl
         )
+    }
+
+    private fun appendDistinct(current: List<ShortsItem>, incoming: List<ShortsItem>): List<ShortsItem> {
+        if (incoming.isEmpty()) return current
+        val seen = current.asSequence().map { it.id }.toMutableSet()
+        return current + incoming.filter { seen.add(it.id) }
     }
 
     sealed interface LoadEvent {
@@ -245,7 +283,12 @@ class ShortsPlayerViewModel @AssistedInject constructor(
     interface Factory {
         fun create(
             @Assisted("initialShortId") initialShortId: String?,
-            @Assisted("channelId") channelId: String?
+            @Assisted("channelId") channelId: String?,
+            @Assisted("initialShortTitle") initialShortTitle: String?,
+            @Assisted("initialChannelName") initialChannelName: String?,
+            @Assisted("initialThumbnailUrl") initialThumbnailUrl: String?,
+            @Assisted("initialChannelAvatarUrl") initialChannelAvatarUrl: String?,
+            @Assisted("initialDurationSeconds") initialDurationSeconds: Int,
         ): ShortsPlayerViewModel
     }
 

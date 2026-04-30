@@ -92,11 +92,32 @@ class IndexControllerTest {
     }
 
     @Test
-    void rateLimitsRepeatedRequests() {
-        IndexStreamsRequest req = req("CHANNEL", "UCxxxxxxxxxxxxxxxxxxxxxx", List.of());
+    void dedupesExactRepeatedRequests() {
+        IndexStreamsRequest req = req(
+                "CHANNEL",
+                "UCxxxxxxxxxxxxxxxxxxxxxx",
+                List.of(item("abc12345678", "Good Title", "https://i.ytimg.com/vi/abc12345678/hq.jpg"))
+        );
         controller.indexStreams("dev1", req, mockRequest); // first: 202
         ResponseEntity<Void> second = controller.indexStreams("dev1", req, mockRequest);
         assertEquals(HttpStatus.TOO_MANY_REQUESTS, second.getStatusCode());
+    }
+
+    @Test
+    void acceptsDistinctPaginatedBatchesForSameSource() {
+        IndexStreamsRequest firstPage = req(
+                "CHANNEL",
+                "UCxxxxxxxxxxxxxxxxxxxxxx",
+                List.of(item("abc12345678", "First", "https://i.ytimg.com/vi/abc12345678/hq.jpg"))
+        );
+        IndexStreamsRequest secondPage = req(
+                "CHANNEL",
+                "UCxxxxxxxxxxxxxxxxxxxxxx",
+                List.of(item("def12345678", "Second", "https://i.ytimg.com/vi/def12345678/hq.jpg"))
+        );
+
+        assertEquals(HttpStatus.ACCEPTED, controller.indexStreams("dev1", firstPage, mockRequest).getStatusCode());
+        assertEquals(HttpStatus.ACCEPTED, controller.indexStreams("dev1", secondPage, mockRequest).getStatusCode());
     }
 
     private IndexStreamsRequest req(String sourceType, String sourceId, List<StreamItemDto> items) {

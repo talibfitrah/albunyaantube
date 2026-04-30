@@ -117,8 +117,11 @@ class ChannelDetailViewModel @AssistedInject constructor(
                 _headerState.value = HeaderState.Success(header)
                 Log.d(TAG, "Header loaded: ${header.title}")
 
-                // Pre-load first tab (Videos)
-                loadInitial(ChannelTab.VIDEOS)
+                // Load whichever tab the user is actually viewing. This
+                // matters when the user switches tabs before the header
+                // finishes; Shorts/Playlists should not wait for fragment
+                // lifecycle timing to kick off their first page.
+                ensureTabLoaded(tabForPosition(_selectedTab.value))
             } catch (e: Exception) {
                 val errorMsg = "Failed to load channel: ${e.message}"
                 _headerState.value = HeaderState.Error(errorMsg)
@@ -296,10 +299,11 @@ class ChannelDetailViewModel @AssistedInject constructor(
     /**
      * Called when user scrolls the list. Triggers pagination if near end.
      */
-    fun onListScrolled(tab: ChannelTab, lastVisibleItem: Int, totalCount: Int) {
+    fun onListScrolled(tab: ChannelTab, lastVisibleItem: Int, totalCount: Int): Boolean {
         if (totalCount - lastVisibleItem <= PAGINATION_THRESHOLD) {
-            loadNextPage(tab)
+            return loadNextPage(tab)
         }
+        return true
     }
 
     /**
@@ -307,6 +311,16 @@ class ChannelDetailViewModel @AssistedInject constructor(
      */
     fun setSelectedTab(position: Int) {
         _selectedTab.value = position
+        if (_headerState.value is HeaderState.Success) {
+            ensureTabLoaded(tabForPosition(position))
+        }
+    }
+
+    fun ensureTabLoaded(tab: ChannelTab) {
+        if (tab == ChannelTab.ABOUT) return
+        if (stateFor(tab) is PaginatedState.Idle) {
+            loadInitial(tab)
+        }
     }
 
     // Private loading methods for each tab type
@@ -337,10 +351,14 @@ class ChannelDetailViewModel @AssistedInject constructor(
         }
 
         // Final state determination
-        if (accumulatedItems.isEmpty()) {
+        if (accumulatedItems.isEmpty() && controller.nextPage == null) {
             _videosState.value = PaginatedState.Empty
         } else {
-            _videosState.value = PaginatedState.Loaded(accumulatedItems, controller.nextPage)
+            _videosState.value = PaginatedState.Loaded(
+                accumulatedItems,
+                controller.nextPage,
+                showLoadMoreFooter = accumulatedItems.isEmpty() && controller.nextPage != null,
+            )
         }
         Log.d(TAG, "Videos initial: ${accumulatedItems.size} items after $fetchCount fetches, hasMore=${controller.nextPage != null}")
     }
@@ -419,10 +437,14 @@ class ChannelDetailViewModel @AssistedInject constructor(
             currentNextPage = page.nextPage
         }
 
-        if (accumulatedItems.isEmpty()) {
+        if (accumulatedItems.isEmpty() && controller.nextPage == null) {
             _liveState.value = PaginatedState.Empty
         } else {
-            _liveState.value = PaginatedState.Loaded(accumulatedItems, controller.nextPage)
+            _liveState.value = PaginatedState.Loaded(
+                accumulatedItems,
+                controller.nextPage,
+                showLoadMoreFooter = accumulatedItems.isEmpty() && controller.nextPage != null,
+            )
         }
         Log.d(TAG, "Live initial: ${accumulatedItems.size} items after $fetchCount fetches, hasMore=${controller.nextPage != null}")
     }
@@ -497,10 +519,14 @@ class ChannelDetailViewModel @AssistedInject constructor(
             currentNextPage = page.nextPage
         }
 
-        if (accumulatedItems.isEmpty()) {
+        if (accumulatedItems.isEmpty() && controller.nextPage == null) {
             _shortsState.value = PaginatedState.Empty
         } else {
-            _shortsState.value = PaginatedState.Loaded(accumulatedItems, controller.nextPage)
+            _shortsState.value = PaginatedState.Loaded(
+                accumulatedItems,
+                controller.nextPage,
+                showLoadMoreFooter = accumulatedItems.isEmpty() && controller.nextPage != null,
+            )
         }
         Log.d(TAG, "Shorts initial: ${accumulatedItems.size} items after $fetchCount fetches, hasMore=${controller.nextPage != null}")
     }
@@ -575,10 +601,14 @@ class ChannelDetailViewModel @AssistedInject constructor(
             currentNextPage = page.nextPage
         }
 
-        if (accumulatedItems.isEmpty()) {
+        if (accumulatedItems.isEmpty() && controller.nextPage == null) {
             _playlistsState.value = PaginatedState.Empty
         } else {
-            _playlistsState.value = PaginatedState.Loaded(accumulatedItems, controller.nextPage)
+            _playlistsState.value = PaginatedState.Loaded(
+                accumulatedItems,
+                controller.nextPage,
+                showLoadMoreFooter = accumulatedItems.isEmpty() && controller.nextPage != null,
+            )
         }
         Log.d(TAG, "Playlists initial: ${accumulatedItems.size} items after $fetchCount fetches, hasMore=${controller.nextPage != null}")
     }
@@ -654,6 +684,20 @@ class ChannelDetailViewModel @AssistedInject constructor(
             ChannelTab.PLAYLISTS -> (_playlistsState.value as? PaginatedState.ErrorAppend)?.nextPage
             ChannelTab.ABOUT -> null
         }
+    }
+
+    private fun stateFor(tab: ChannelTab): PaginatedState<*> {
+        return when (tab) {
+            ChannelTab.VIDEOS -> _videosState.value
+            ChannelTab.LIVE -> _liveState.value
+            ChannelTab.SHORTS -> _shortsState.value
+            ChannelTab.PLAYLISTS -> _playlistsState.value
+            ChannelTab.ABOUT -> PaginatedState.Empty
+        }
+    }
+
+    private fun tabForPosition(position: Int): ChannelTab {
+        return ChannelTab.entries.getOrNull(position) ?: ChannelTab.VIDEOS
     }
 
     private fun handleAppendError(tab: ChannelTab, message: String) {

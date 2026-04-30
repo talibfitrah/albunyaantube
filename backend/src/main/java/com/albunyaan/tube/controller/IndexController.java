@@ -36,12 +36,14 @@ public class IndexController {
             "i.ytimg.com", "i9.ytimg.com", "yt3.ggpht.com", "yt3.googleusercontent.com"
     );
     private static final int MAX_ITEMS = 50;
-    private static final long RATE_LIMIT_MS = 30_000L; // 30 seconds per device per source
+    private static final long REQUEST_DEDUPE_MS = 30_000L; // suppress exact retries, not distinct pages
 
-    // Compound key: sourceKey + ":" + deviceId → last allowed timestamp. Bounded and auto-evicting.
-    private final Cache<String, Long> rateLimitCache = Caffeine.newBuilder()
+    // Compound key: sourceKey + ":" + deviceId + ":" + item ids → recent request timestamp.
+    // Channel/playlist pagination sends one distinct batch per page; dedupe exact
+    // retries only so deep pages can still be indexed for global search.
+    private final Cache<String, Long> requestDedupeCache = Caffeine.newBuilder()
             .maximumSize(10_000)
-            .expireAfterWrite(RATE_LIMIT_MS, TimeUnit.MILLISECONDS)
+            .expireAfterWrite(REQUEST_DEDUPE_MS, TimeUnit.MILLISECONDS)
             .build();
 
     private final StreamIndexService streamIndexService;
@@ -62,11 +64,6 @@ public class IndexController {
         if (!isValidSourceId(request.getSourceType(), request.getSourceId())) {
             return ResponseEntity.badRequest().build();
         }
-        String effectiveKey = (deviceId != null && !deviceId.isBlank()) ? deviceId : httpRequest.getRemoteAddr();
-        if (isRateLimited(request.getSourceType() + ":" + request.getSourceId(), effectiveKey)) {
-            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).build();
-        }
-
         List<StreamItemDto> items = request.getItems() == null ? List.of() : request.getItems().stream()
                 .limit(MAX_ITEMS)
                 .filter(this::isValidItem)
@@ -74,6 +71,10 @@ public class IndexController {
 
         String sourceId = request.getSourceId();
         String sourceType = request.getSourceType();
+        String effectiveKey = (deviceId != null && !deviceId.isBlank()) ? deviceId : httpRequest.getRemoteAddr();
+        if (!items.isEmpty() && isDuplicateRequest(sourceType + ":" + sourceId, effectiveKey, items)) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).build();
+        }
 
         CompletableFuture.runAsync(() -> {
             try {
@@ -111,16 +112,20 @@ public class IndexController {
         return true;
     }
 
-    private boolean isRateLimited(String sourceKey, String deviceId) {
-        String key = sourceKey + ":" + deviceId;
-        boolean[] limited = {false};
-        rateLimitCache.asMap().compute(key, (k, last) -> {
+    private boolean isDuplicateRequest(String sourceKey, String deviceId, List<StreamItemDto> items) {
+        String itemSignature = items.stream()
+                .map(StreamItemDto::getId)
+                .sorted()
+                .collect(Collectors.joining(","));
+        String key = sourceKey + ":" + deviceId + ":" + itemSignature;
+        boolean[] duplicate = {false};
+        requestDedupeCache.asMap().compute(key, (k, last) -> {
             if (last != null) {
-                limited[0] = true;
+                duplicate[0] = true;
                 return last;
             }
             return System.currentTimeMillis();
         });
-        return limited[0];
+        return duplicate[0];
     }
 }

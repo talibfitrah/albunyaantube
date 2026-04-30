@@ -75,10 +75,25 @@ abstract class BaseChannelListTabFragment<T> : Fragment(R.layout.fragment_channe
                         val layoutManager = recyclerView.layoutManager as LinearLayoutManager
                         val lastVisible = layoutManager.findLastVisibleItemPosition()
                         val total = layoutManager.itemCount
-                        viewModel.onListScrolled(tab, lastVisible, total)
+                        val accepted = viewModel.onListScrolled(tab, lastVisible, total)
+                        if (!accepted) scheduleDelayedAppendRecheck()
                     }
                 }
             })
+        }
+    }
+
+    private fun scheduleDelayedAppendRecheck() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            delay(AUTOFILL_RECHECK_DELAY_MS)
+            if (binding == null || !isAdded || !isResumed) return@launch
+            val currentState = getState().value
+            if (currentState is ChannelDetailViewModel.PaginatedState.Loaded &&
+                currentState.nextPage != null &&
+                !currentState.isAppending
+            ) {
+                viewModel.loadNextPage(tab)
+            }
         }
     }
 

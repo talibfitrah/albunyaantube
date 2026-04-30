@@ -6,11 +6,11 @@ package com.albunyaan.tube.data.extractor
  * - [PLAYER]: bypasses the bucket entirely — playback must never block
  *   on a refresh-thread bucket because the user is actively watching.
  * - [USER_FOREGROUND]: Home / Search / paged grids the user is looking at.
- *   Acquires from the bucket with a 10 s timeout.
+ *   Acquires from the bucket with a foreground timeout.
  * - [BACKGROUND_REFRESH]: Reserved for any future background NewPipe path
  *   (the Me tab itself uses ATOM, so it does not consume the bucket).
- *   Same bucket as USER_FOREGROUND but distinct so callers can be tagged
- *   in telemetry.
+ *   Uses the same bucket as USER_FOREGROUND, but only opportunistically so it
+ *   cannot drain the foreground reserve.
  *
  * Declaration order is not significant — no compareTo/ordinal usage.
  */

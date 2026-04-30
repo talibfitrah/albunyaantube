@@ -14,7 +14,8 @@ import javax.inject.Singleton
  * - Capacity: 20 tokens
  * - Refill: 1 token / 30 s
  * - Player priority: bypasses bucket entirely (playback must never block)
- * - Acquire timeout: 10 s for Home / Search / paged grids
+ * - Foreground acquire timeout: 30 s for visible Home / Search / channel grids
+ * - Background refresh/prefetch: opportunistic only, with a foreground reserve
  *
  * Smaller bucket than v1 because the Me-tab refresh no longer consumes from
  * it (T2 swapped Me-feed away from NewPipe to ATOM). The bucket now exists
@@ -73,11 +74,22 @@ class GlobalNewPipeRateLimiter @VisibleForTesting internal constructor(
     ): Boolean {
         if (priority == Priority.PLAYER) return true
 
-        val deadline = now() + timeoutMs
+        val effectiveTimeoutMs =
+            if (priority == Priority.BACKGROUND_REFRESH && timeoutMs == DEFAULT_ACQUIRE_TIMEOUT_MS) {
+                DEFAULT_BACKGROUND_ACQUIRE_TIMEOUT_MS
+            } else {
+                timeoutMs
+            }
+        val deadline = now() + effectiveTimeoutMs
         while (true) {
             mutex.withLock {
                 refillLocked()
-                if (tokens > 0) {
+                val reserve = if (priority == Priority.BACKGROUND_REFRESH) {
+                    BACKGROUND_FOREGROUND_RESERVE_TOKENS
+                } else {
+                    0
+                }
+                if (tokens > reserve) {
                     tokens--
                     return true
                 }
@@ -112,7 +124,9 @@ class GlobalNewPipeRateLimiter @VisibleForTesting internal constructor(
     companion object {
         const val DEFAULT_TOKENS: Int = 20
         const val DEFAULT_REFILL_MS: Long = 30_000L
-        const val DEFAULT_ACQUIRE_TIMEOUT_MS: Long = 10_000L
+        const val DEFAULT_ACQUIRE_TIMEOUT_MS: Long = 30_000L
+        private const val DEFAULT_BACKGROUND_ACQUIRE_TIMEOUT_MS: Long = 0L
+        private const val BACKGROUND_FOREGROUND_RESERVE_TOKENS: Int = 5
 
         /**
          * Floor for the per-iteration wait so a tight loop with tiny remaining

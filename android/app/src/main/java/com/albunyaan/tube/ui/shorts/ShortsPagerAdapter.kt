@@ -47,6 +47,7 @@ class ShortsPagerAdapter(
     data class Callbacks(
         val onLike: (Int) -> Unit,
         val onShare: (Int) -> Unit,
+        val onReport: (Int) -> Unit,
         val onDownload: (Int) -> Unit,
         val onChannelTap: (Int) -> Unit,
         val onTapVideo: (Int) -> Unit,
@@ -150,6 +151,10 @@ class ShortsPagerAdapter(
             onShare = {
                 val pos = bindingAdapterPosition
                 if (pos != androidx.recyclerview.widget.RecyclerView.NO_POSITION) callbacks.onShare(pos)
+            },
+            onReport = {
+                val pos = bindingAdapterPosition
+                if (pos != androidx.recyclerview.widget.RecyclerView.NO_POSITION) callbacks.onReport(pos)
             },
             onDownload = {
                 val pos = bindingAdapterPosition

@@ -80,6 +80,11 @@
             app:argType="string"
             app:nullable="true" />
         <argument
+            android:name="channelAvatarUrl"
+            app:argType="string"
+            app:nullable="true"
+            android:defaultValue="@null" />
+        <argument
             android:name="excluded"
             app:argType="boolean"
             android:defaultValue="false" />
@@ -225,6 +230,30 @@
             app:argType="string"
             app:nullable="true"
             android:defaultValue="@null"/>
+        <argument
+            android:name="initialShortTitle"
+            app:argType="string"
+            app:nullable="true"
+            android:defaultValue="@null"/>
+        <argument
+            android:name="initialChannelName"
+            app:argType="string"
+            app:nullable="true"
+            android:defaultValue="@null"/>
+        <argument
+            android:name="initialThumbnailUrl"
+            app:argType="string"
+            app:nullable="true"
+            android:defaultValue="@null"/>
+        <argument
+            android:name="initialChannelAvatarUrl"
+            app:argType="string"
+            app:nullable="true"
+            android:defaultValue="@null"/>
+        <argument
+            android:name="initialDurationSeconds"
+            app:argType="integer"
+            android:defaultValue="0"/>
         <deepLink app:uri="albunyaantube://shorts/{initialShortId}"/>
     </fragment>
 

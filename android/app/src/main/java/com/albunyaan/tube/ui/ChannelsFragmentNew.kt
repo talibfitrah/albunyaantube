@@ -137,6 +137,7 @@ class ChannelsFragmentNew : Fragment(R.layout.fragment_channels_new) {
             val args = bundleOf(
                 ChannelDetailFragment.ARG_CHANNEL_ID to channel.id,
                 ChannelDetailFragment.ARG_CHANNEL_NAME to channel.name,
+                ChannelDetailFragment.ARG_CHANNEL_AVATAR_URL to channel.thumbnailUrl,
                 ChannelDetailFragment.ARG_EXCLUDED to false
             )
             findNavController().navigate(R.id.action_channelsFragment_to_channelDetailFragment, args)

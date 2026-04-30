@@ -20,6 +20,7 @@ import com.albunyaan.tube.databinding.FragmentChannelShortsTabBinding
 import com.albunyaan.tube.player.PlaybackFeatureFlags
 import com.albunyaan.tube.player.PredictivePrefetchController
 import com.albunyaan.tube.player.StreamPrefetchService
+import com.albunyaan.tube.ui.detail.ChannelDetailFragment
 import com.albunyaan.tube.ui.detail.ChannelDetailViewModel
 import com.albunyaan.tube.ui.detail.adapters.ChannelShortsAdapter
 import com.albunyaan.tube.ui.detail.adapters.ListFooterAdapter
@@ -62,6 +63,12 @@ class ChannelShortsTabFragment : Fragment(R.layout.fragment_channel_shorts_tab) 
         requireParentFragment().arguments?.getString("channelName") ?: ""
     }
 
+    private val channelAvatarUrl: String? by lazy {
+        requireParentFragment().arguments
+            ?.getString(ChannelDetailFragment.ARG_CHANNEL_AVATAR_URL)
+            ?.takeIf { it.isNotBlank() }
+    }
+
     private val viewModel: ChannelDetailViewModel by viewModels(
         ownerProducer = { requireParentFragment() },
         extrasProducer = {
@@ -73,13 +80,16 @@ class ChannelShortsTabFragment : Fragment(R.layout.fragment_channel_shorts_tab) 
 
     private val adapter by lazy {
         ChannelShortsAdapter { short ->
-            prefetchService.triggerPrefetch(short.id, lifecycleScope)
-            // Navigate to video player for shorts
             findNavController().navigate(
                 R.id.action_global_shortsPlayerFragment,
                 Bundle().apply {
                     putString("initialShortId", short.id)
                     putString("channelId", channelId)
+                    putString("initialShortTitle", short.title)
+                    putString("initialChannelName", channelName)
+                    putString("initialThumbnailUrl", short.thumbnailUrl)
+                    putString("initialChannelAvatarUrl", channelAvatarUrl)
+                    putInt("initialDurationSeconds", short.durationSeconds ?: 0)
                 }
             )
         }
@@ -139,10 +149,25 @@ class ChannelShortsTabFragment : Fragment(R.layout.fragment_channel_shorts_tab) 
                         val lm = recyclerView.layoutManager as GridLayoutManager
                         val lastVisible = lm.findLastVisibleItemPosition()
                         val total = lm.itemCount
-                        viewModel.onListScrolled(ChannelTab.SHORTS, lastVisible, total)
+                        val accepted = viewModel.onListScrolled(ChannelTab.SHORTS, lastVisible, total)
+                        if (!accepted) scheduleDelayedAppendRecheck()
                     }
                 }
             })
+        }
+    }
+
+    private fun scheduleDelayedAppendRecheck() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            delay(AUTOFILL_RECHECK_DELAY_MS)
+            if (binding == null || !isAdded || !isResumed) return@launch
+            val currentState = viewModel.shortsState.value
+            if (currentState is ChannelDetailViewModel.PaginatedState.Loaded &&
+                currentState.nextPage != null &&
+                !currentState.isAppending
+            ) {
+                viewModel.loadNextPage(ChannelTab.SHORTS)
+            }
         }
     }
 

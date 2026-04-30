@@ -26,12 +26,16 @@ import androidx.viewpager2.widget.ViewPager2
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.extractor.AudioLanguageOption
 import com.albunyaan.tube.data.extractor.availableAudioLanguages
+import com.albunyaan.tube.data.report.ReportTargetType
 import com.albunyaan.tube.databinding.FragmentShortsPlayerBinding
 import com.albunyaan.tube.download.DownloadRepository
 import com.albunyaan.tube.download.DownloadRequest
 import androidx.media3.datasource.cache.SimpleCache
 import com.albunyaan.tube.player.PlayerRepository
+import com.albunyaan.tube.share.ShareLinks
+import com.albunyaan.tube.share.ShareMetadataPublisher
 import com.albunyaan.tube.ui.player.DownloadQualityDialog
+import com.albunyaan.tube.ui.report.ContentReportBottomSheet
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -75,7 +79,15 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
             override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
                 val initialShortId = arguments?.getString(ARG_INITIAL_SHORT_ID)
                 val channelId = arguments?.getString(ARG_CHANNEL_ID)
-                return vmFactory.create(initialShortId, channelId) as T
+                return vmFactory.create(
+                    initialShortId = initialShortId,
+                    channelId = channelId,
+                    initialShortTitle = arguments?.getString(ARG_INITIAL_SHORT_TITLE),
+                    initialChannelName = arguments?.getString(ARG_INITIAL_CHANNEL_NAME),
+                    initialThumbnailUrl = arguments?.getString(ARG_INITIAL_THUMBNAIL_URL),
+                    initialChannelAvatarUrl = arguments?.getString(ARG_INITIAL_CHANNEL_AVATAR_URL),
+                    initialDurationSeconds = arguments?.getInt(ARG_INITIAL_DURATION_SECONDS, 0) ?: 0,
+                ) as T
             }
         }
     }
@@ -181,6 +193,7 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
             callbacks = ShortsPagerAdapter.Callbacks(
                 onLike = { idx -> viewModel.toggleLike(idx) },
                 onShare = { idx -> shareShort(idx) },
+                onReport = { idx -> reportShort(idx) },
                 onDownload = { idx -> downloadShort(idx) },
                 onChannelTap = { idx -> openChannel(idx) },
                 onTapVideo = { idx ->
@@ -400,14 +413,39 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
 
     private fun shareShort(idx: Int) {
         val item = viewModel.items.value.getOrNull(idx) ?: return
-        // Use null-safe context — fragment may be detached if the share tap
-        // races with destruction (e.g. system back during pending toast).
-        val ctx = context ?: return
-        ShareCompat.IntentBuilder(ctx)
-            .setType("text/plain")
-            .setText(item.canonicalShareUrl)
-            .setChooserTitle(R.string.shorts_share_cd)
-            .startChooser()
+        val title = item.title.takeIf { it.isNotBlank() } ?: item.id
+        val shareUrl = ShareLinks.video(
+            videoId = item.id,
+            title = title,
+            imageUrl = item.thumbnailUrl,
+            description = null,
+        )
+        viewLifecycleOwner.lifecycleScope.launch {
+            ShareMetadataPublisher.publish(
+                type = "watch",
+                id = item.id,
+                title = title,
+                imageUrl = item.thumbnailUrl,
+                description = null,
+            )
+            if (!isAdded) return@launch
+            val ctx = context ?: return@launch
+            val shareMessage = buildString {
+                append(title)
+                append("\n\n")
+                append(getString(R.string.share_watch_in_app))
+                append("\n")
+                append(shareUrl)
+                append("\n\n")
+                append(getString(R.string.share_app_promo))
+            }
+            ShareCompat.IntentBuilder(ctx)
+                .setType("text/plain")
+                .setSubject(title)
+                .setText(shareMessage)
+                .setChooserTitle(R.string.shorts_share_cd)
+                .startChooser()
+        }
     }
 
     private fun openChannel(idx: Int) {
@@ -416,10 +454,18 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
         findNavController().navigate(
             R.id.action_global_channelDetailFragment,
             Bundle().apply {
-                putString("channelId", item.channelId)
-                putString("channelName", item.channelName)
+                putString(com.albunyaan.tube.ui.detail.ChannelDetailFragment.ARG_CHANNEL_ID, item.channelId)
+                putString(com.albunyaan.tube.ui.detail.ChannelDetailFragment.ARG_CHANNEL_NAME, item.channelName)
+                putString(com.albunyaan.tube.ui.detail.ChannelDetailFragment.ARG_CHANNEL_AVATAR_URL, item.channelAvatarUrl)
             }
         )
+    }
+
+    private fun reportShort(idx: Int) {
+        val item = viewModel.items.value.getOrNull(idx) ?: return
+        if (item.id.isBlank()) return
+        ContentReportBottomSheet.newInstance(ReportTargetType.VIDEO, item.id)
+            .show(childFragmentManager, ContentReportBottomSheet.TAG)
     }
 
     /**
@@ -643,6 +689,11 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
     companion object {
         private const val ARG_INITIAL_SHORT_ID = "initialShortId"
         private const val ARG_CHANNEL_ID = "channelId"
+        private const val ARG_INITIAL_SHORT_TITLE = "initialShortTitle"
+        private const val ARG_INITIAL_CHANNEL_NAME = "initialChannelName"
+        private const val ARG_INITIAL_THUMBNAIL_URL = "initialThumbnailUrl"
+        private const val ARG_INITIAL_CHANNEL_AVATAR_URL = "initialChannelAvatarUrl"
+        private const val ARG_INITIAL_DURATION_SECONDS = "initialDurationSeconds"
         private const val TIME_BAR_UPDATE_MS = 250L
         /** Force a fresh URL resolve after this long stuck in BUFFERING. */
         private const val STALL_RECOVERY_MS = 6_000L

@@ -95,7 +95,12 @@ android {
         buildConfigField("boolean", "ENABLE_CLIENT_ROTATION", "true")
         buildConfigField("boolean", "ENABLE_HLS_PROBATION", "true")
         buildConfigField("boolean", "ENABLE_CRONET", "true")
-        buildConfigField("boolean", "ENABLE_PREDICTIVE_PREFETCH", "true")
+        // Predictive prefetch starts extraction when list cells attach. Keep
+        // this opt-in because channel/Me pagination uses the same YouTube
+        // extraction budget and scroll-triggered prefetch can starve visible
+        // channel tabs on real devices.
+        val enablePredictivePrefetch = localProperties.getProperty("playback.predictive.prefetch.enabled", "false").toBoolean()
+        buildConfigField("boolean", "ENABLE_PREDICTIVE_PREFETCH", "$enablePredictivePrefetch")
         buildConfigField("boolean", "ENABLE_SEGMENT_PRELOAD", "true")
         buildConfigField("boolean", "ENABLE_NEVER_FREEZE_ABR", "true")
         buildConfigField("boolean", "ENABLE_TTL_WATCHER", "true")

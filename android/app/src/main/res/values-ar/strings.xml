@@ -127,7 +127,7 @@
     <string name="nav_channels">القنوات</string>
     <string name="nav_playlists">قوائم التشغيل</string>
     <string name="nav_videos">الفيديوهات</string>
-    <string name="nav_me">أنت</string>
+    <string name="nav_me">أنا</string>
 
     <!-- Me tab -->
     <string name="me_empty_title">اشترك لمشاهدة خلاصتك</string>

@@ -95,7 +95,8 @@ class FeaturedListFragment : Fragment(R.layout.fragment_featured_list) {
                     R.id.action_global_channelDetailFragment,
                     bundleOf(
                         ChannelDetailFragment.ARG_CHANNEL_ID to item.id,
-                        ChannelDetailFragment.ARG_CHANNEL_NAME to item.name
+                        ChannelDetailFragment.ARG_CHANNEL_NAME to item.name,
+                        ChannelDetailFragment.ARG_CHANNEL_AVATAR_URL to item.thumbnailUrl
                     )
                 )
             }

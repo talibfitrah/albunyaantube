@@ -32,6 +32,7 @@ class ShortsPageViewHolder(
         hasMultipleAudioTracks: Boolean,
         onLike: () -> Unit,
         onShare: () -> Unit,
+        onReport: () -> Unit,
         onDownload: () -> Unit,
         onChannelTap: () -> Unit,
         onTapVideo: () -> Unit,
@@ -81,6 +82,7 @@ class ShortsPageViewHolder(
 
         binding.shortLikeBtn.setOnClickListener { onLike() }
         binding.shortShareBtn.setOnClickListener { onShare() }
+        binding.shortReportBtn.setOnClickListener { onReport() }
         binding.shortDownloadBtn.setOnClickListener { onDownload() }
         binding.shortChannelAvatar.setOnClickListener { onChannelTap() }
         binding.shortChannelHandle.setOnClickListener { onChannelTap() }

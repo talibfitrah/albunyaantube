@@ -19,6 +19,7 @@ import coil.ImageLoader
 import com.albunyaan.tube.player.PlaybackFeatureFlags
 import com.albunyaan.tube.player.PredictivePrefetchController
 import com.albunyaan.tube.player.StreamPrefetchService
+import com.albunyaan.tube.ui.detail.ChannelDetailFragment
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -300,8 +301,9 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
                 findNavController().navigate(
                     R.id.action_global_channelDetailFragment,
                     android.os.Bundle().apply {
-                        putString("channelId", item.id)
-                        putString("channelName", item.name)
+                        putString(ChannelDetailFragment.ARG_CHANNEL_ID, item.id)
+                        putString(ChannelDetailFragment.ARG_CHANNEL_NAME, item.name)
+                        putString(ChannelDetailFragment.ARG_CHANNEL_AVATAR_URL, item.thumbnailUrl)
                     }
                 )
             }

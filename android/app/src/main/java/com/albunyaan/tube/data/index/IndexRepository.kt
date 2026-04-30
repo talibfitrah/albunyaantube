@@ -1,5 +1,6 @@
 package com.albunyaan.tube.data.index
 
+import android.util.Log
 import com.albunyaan.tube.data.source.api.IndexApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -17,7 +18,12 @@ class IndexRepository @Inject constructor(
         if (items.isEmpty()) return
         appScope.launch {
             runCatching {
-                api.indexStreams(IndexStreamsRequest("CHANNEL", channelId, items))
+                val response = api.indexStreams(IndexStreamsRequest("CHANNEL", channelId, items))
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "Channel stream indexing failed: channel=$channelId code=${response.code()} items=${items.size}")
+                }
+            }.onFailure { e ->
+                Log.w(TAG, "Channel stream indexing failed: channel=$channelId items=${items.size}", e)
             }
         }
     }
@@ -26,8 +32,17 @@ class IndexRepository @Inject constructor(
         if (items.isEmpty()) return
         appScope.launch {
             runCatching {
-                api.indexStreams(IndexStreamsRequest("PLAYLIST", playlistId, items))
+                val response = api.indexStreams(IndexStreamsRequest("PLAYLIST", playlistId, items))
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "Playlist stream indexing failed: playlist=$playlistId code=${response.code()} items=${items.size}")
+                }
+            }.onFailure { e ->
+                Log.w(TAG, "Playlist stream indexing failed: playlist=$playlistId items=${items.size}", e)
             }
         }
+    }
+
+    companion object {
+        private const val TAG = "IndexRepository"
     }
 }

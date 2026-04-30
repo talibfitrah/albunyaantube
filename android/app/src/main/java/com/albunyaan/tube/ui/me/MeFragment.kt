@@ -336,16 +336,33 @@ class MeFragment : Fragment(R.layout.fragment_me) {
         //     → falls back to placeholder until NewPipe extraction lands.
         //   - "thumbnailUrl" similarly: don't pass empty strings, let null
         //     drive the placeholder.
-        val args = Bundle().apply {
-            putString("videoId", video.videoId)
-            putString("title", video.title)
-            putString("channelName", video.channelName)
-            video.thumbnailUrl?.takeIf { it.isNotBlank() }?.let { putString("thumbnailUrl", it) }
-            putInt("durationSeconds", (video.durationSeconds ?: 0L).toInt())
-            putLong("viewCount", video.viewCount ?: -1L)
-        }
         if (findNavController().currentDestination?.id == R.id.meFragment) {
-            findNavController().navigate(R.id.playerFragment, args)
+            if (video.isShort) {
+                val args = Bundle().apply {
+                    putString("initialShortId", video.videoId)
+                    putString("channelId", video.channelId)
+                    putString("initialShortTitle", video.title)
+                    putString("initialChannelName", video.channelName)
+                    video.thumbnailUrl?.takeIf { it.isNotBlank() }?.let {
+                        putString("initialThumbnailUrl", it)
+                    }
+                    channelMap[video.channelId]?.imageUrl?.takeIf { it.isNotBlank() }?.let {
+                        putString("initialChannelAvatarUrl", it)
+                    }
+                    putInt("initialDurationSeconds", (video.durationSeconds ?: 0L).toInt())
+                }
+                findNavController().navigate(R.id.action_global_shortsPlayerFragment, args)
+            } else {
+                val args = Bundle().apply {
+                    putString("videoId", video.videoId)
+                    putString("title", video.title)
+                    putString("channelName", video.channelName)
+                    video.thumbnailUrl?.takeIf { it.isNotBlank() }?.let { putString("thumbnailUrl", it) }
+                    putInt("durationSeconds", (video.durationSeconds ?: 0L).toInt())
+                    putLong("viewCount", video.viewCount ?: -1L)
+                }
+                findNavController().navigate(R.id.playerFragment, args)
+            }
         }
     }
 
@@ -416,6 +433,7 @@ class MeFragment : Fragment(R.layout.fragment_me) {
         val args = bundleOf(
             ChannelDetailFragment.ARG_CHANNEL_ID to channelId,
             ChannelDetailFragment.ARG_CHANNEL_NAME to chip.label,
+            ChannelDetailFragment.ARG_CHANNEL_AVATAR_URL to chip.imageUrl,
             ChannelDetailFragment.ARG_EXCLUDED to false,
         )
         findNavController().navigate(R.id.action_global_channelDetailFragment, args)

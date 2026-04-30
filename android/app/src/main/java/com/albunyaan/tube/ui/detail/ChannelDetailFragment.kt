@@ -17,6 +17,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.viewpager2.adapter.FragmentStateAdapter
 import coil.load
+import coil.request.CachePolicy
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.channel.ChannelHeader
 import com.albunyaan.tube.data.channel.ChannelTab
@@ -72,6 +73,9 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
 
     private val channelId: String by lazy { arguments?.getString(ARG_CHANNEL_ID).orEmpty() }
     private val channelName: String? by lazy { arguments?.getString(ARG_CHANNEL_NAME) }
+    private val initialChannelAvatarUrl: String? by lazy {
+        arguments?.getString(ARG_CHANNEL_AVATAR_URL)?.takeIf { it.isNotBlank() }
+    }
     private val isExcluded: Boolean by lazy { arguments?.getBoolean(ARG_EXCLUDED, false) ?: false }
 
     private val viewModel: ChannelDetailViewModel by viewModels(
@@ -356,13 +360,7 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
             }
 
             // Load avatar
-            if (!header.avatarUrl.isNullOrBlank()) {
-                channelAvatar.load(header.avatarUrl) {
-                    placeholder(R.drawable.thumbnail_placeholder)
-                    error(R.drawable.thumbnail_placeholder)
-                    crossfade(true)
-                }
-            }
+            loadChannelAvatar(header.avatarUrl, initialChannelAvatarUrl)
 
             // Channel name
             channelNameText.text = header.title
@@ -437,6 +435,41 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
             .show(childFragmentManager, ContentReportBottomSheet.TAG)
     }
 
+    private fun FragmentChannelDetailBinding.loadChannelAvatar(
+        primaryUrl: String?,
+        fallbackUrl: String?,
+    ) {
+        val urls = listOfNotNull(
+            primaryUrl?.takeIf { it.isNotBlank() },
+            fallbackUrl?.takeIf { it.isNotBlank() && it != primaryUrl },
+        )
+        if (urls.isEmpty()) {
+            channelAvatar.setImageResource(R.drawable.thumbnail_placeholder)
+            return
+        }
+        channelAvatar.load(urls.first()) {
+            placeholder(R.drawable.thumbnail_placeholder)
+            error(R.drawable.thumbnail_placeholder)
+            crossfade(true)
+            memoryCachePolicy(CachePolicy.ENABLED)
+            diskCachePolicy(CachePolicy.ENABLED)
+            networkCachePolicy(CachePolicy.ENABLED)
+            listener(
+                onError = { _, _ ->
+                    val fallback = urls.getOrNull(1) ?: return@listener
+                    channelAvatar.load(fallback) {
+                        placeholder(R.drawable.thumbnail_placeholder)
+                        error(R.drawable.thumbnail_placeholder)
+                        crossfade(true)
+                        memoryCachePolicy(CachePolicy.ENABLED)
+                        diskCachePolicy(CachePolicy.ENABLED)
+                        networkCachePolicy(CachePolicy.ENABLED)
+                    }
+                }
+            )
+        }
+    }
+
     private fun tintToolbarActions(color: Int) {
         binding?.toolbar?.overflowIcon?.mutate()?.setTint(color)
     }
@@ -466,6 +499,7 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
         private val CHANNEL_ID_REGEX = Regex("^[A-Za-z0-9_-]{3,64}$")
         const val ARG_CHANNEL_ID = "channelId"
         const val ARG_CHANNEL_NAME = "channelName"
+        const val ARG_CHANNEL_AVATAR_URL = "channelAvatarUrl"
         const val ARG_EXCLUDED = "excluded"
         private const val STATE_SELECTED_TAB = "selectedTab"
         private const val SEARCH_DEBOUNCE_MS = 300L
