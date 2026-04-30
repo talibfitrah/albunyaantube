@@ -516,9 +516,27 @@ class PlayerViewModel @Inject constructor(
      * - the picked track equals the currently-active one
      */
     fun selectAudioTrack(track: AudioTrack) {
+        // Always emit, even when `track == ready.selection.audio`. AudioTrack
+        // is a data class so equality compares URL too — and the player can
+        // drift from the VM (ABR may pick a dubbed track without notifying
+        // the VM, so the user taps "Original" but the equality guard would
+        // silently drop the swap). The fragment picks the right apply path
+        // (trackSelectionParameters for real DASH/HLS, MediaSource rebuild
+        // for synthetic / progressive); both are safe to re-apply.
         val ready = _state.value.streamState as? StreamState.Ready ?: return
-        if (track == ready.selection.audio) return
+        // Drop any cached synthetic MPD for this video so a downstream
+        // rebuild — either AudioTrackSwapReady's handleLiveStreamRefresh
+        // path or maybePrepareStream's cache-miss path — regenerates the
+        // MPD with the chosen audio track. Without this, the multi-rep
+        // factory's per-videoId cache returns the OLD MPD (with the prior
+        // audio track baked in) and the language never changes.
+        // No-op for real DASH/HLS — the registry isn't used there.
+        mpdRegistry.unregisterBoth(ready.streamId)
         val newSelection = ready.selection.copy(audio = track)
+        android.util.Log.d(
+            "PlayerViewModel",
+            "selectAudioTrack: streamId=${ready.streamId} lang=${track.language} trackName=${track.trackName}"
+        )
         updateState { it.copy(streamState = StreamState.Ready(ready.streamId, newSelection)) }
         viewModelScope.launch(dispatcher) {
             _uiEvents.emit(PlayerUiEvent.AudioTrackSwapReady(ready.streamId, newSelection))

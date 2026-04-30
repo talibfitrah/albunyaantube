@@ -19,6 +19,7 @@ import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.exoplayer.source.SingleSampleMediaSource
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import com.albunyaan.tube.data.extractor.ResolvedStreams
@@ -310,7 +311,7 @@ class MultiQualityMediaSourceFactory(
                     android.util.Log.w(TAG, "Quality cap must be applied via DefaultTrackSelector by caller")
                 }
                 return MediaSourceResult(
-                    source = adaptiveResult.source,
+                    source = wrapWithSideLoadSubtitles(adaptiveResult.source, resolved.subtitleTracks),
                     isAdaptive = true,
                     actualSourceUrl = adaptiveResult.url,
                     adaptiveType = adaptiveResult.type
@@ -328,7 +329,7 @@ class MultiQualityMediaSourceFactory(
                         android.util.Log.w(TAG, "Quality cap must be applied via DefaultTrackSelector by caller")
                     }
                     return MediaSourceResult(
-                        source = multiRepResult.source,
+                        source = wrapWithSideLoadSubtitles(multiRepResult.source, resolved.subtitleTracks),
                         isAdaptive = true, // Multi-rep enables ABR quality switching
                         actualSourceUrl = multiRepResult.url,
                         adaptiveType = MediaSourceResult.AdaptiveType.SYNTH_ADAPTIVE
@@ -343,7 +344,7 @@ class MultiQualityMediaSourceFactory(
                 val capInfo = userQualityCapHeight?.let { "${it}p cap" } ?: "no cap"
                 android.util.Log.d(TAG, "Using single-rep synthetic DASH streaming ($capInfo)")
                 return MediaSourceResult(
-                    source = syntheticResult.source,
+                    source = wrapWithSideLoadSubtitles(syntheticResult.source, resolved.subtitleTracks),
                     isAdaptive = false, // Not true ABR - still single bitrate
                     actualSourceUrl = syntheticResult.url,
                     adaptiveType = MediaSourceResult.AdaptiveType.SYNTHETIC_DASH,
@@ -381,7 +382,10 @@ class MultiQualityMediaSourceFactory(
 
         android.util.Log.d(TAG, "Using raw progressive streaming: ${videoTrack.qualityLabel} (${videoTrack.height}p)")
         return MediaSourceResult(
-            source = createVideoMediaSource(videoTrack, resolved),
+            source = wrapWithSideLoadSubtitles(
+                createVideoMediaSource(videoTrack, resolved),
+                resolved.subtitleTracks
+            ),
             isAdaptive = false,
             actualSourceUrl = videoTrack.url,
             adaptiveType = MediaSourceResult.AdaptiveType.NONE,
@@ -402,6 +406,46 @@ class MultiQualityMediaSourceFactory(
      * - srv1/2/3   → null (XML-based; no standard MIME, Media3 will attempt auto-detection)
      * - unknown    → null (Media3 will attempt auto-detection)
      */
+    /**
+     * Wrap the primary [MediaSource] with side-loaded subtitle sources so
+     * ExoPlayer actually sees them. Without this, the
+     * `MediaItem.SubtitleConfiguration` list set on the MediaItem is
+     * silently dropped: `DashMediaSource.Factory.createMediaSource(MediaItem)`
+     * (and the synthetic-DASH / progressive equivalents) only consume the
+     * URI and MIME type — only `DefaultMediaSourceFactory` merges side-load
+     * subtitle sources. We use the specific factories here, so we have to
+     * do the merge ourselves.
+     *
+     * For YouTube this is the only path that makes auto-generated captions
+     * (and any other non-embedded text track) renderable: NewPipe surfaces
+     * them as separate `getSubtitlesDefault()` URLs that aren't part of the
+     * DASH manifest.
+     *
+     * Tracks with an unknown / null MIME (srv1/srv2/srv3) are skipped — the
+     * subtitle pipeline can't auto-detect those without a parser hint, and
+     * Media3 doesn't ship a parser for them.
+     */
+    private fun wrapWithSideLoadSubtitles(
+        primary: MediaSource,
+        subtitleTracks: List<SubtitleTrack>
+    ): MediaSource {
+        if (subtitleTracks.isEmpty()) return primary
+        // Media3 1.10+ disables legacy subtitle decoding by default; the
+        // TextRenderer expects parser-emitted cues
+        // (`application/x-media3-cues`) and rejects raw TTML/VTT samples.
+        // Re-enabling legacy decoding is done renderer-side via
+        // `LegacySubtitleRenderersFactory`; this factory just produces the
+        // SingleSampleMediaSource — the renderer takes care of parsing.
+        val subtitleSources = buildSubtitleConfigurations(subtitleTracks).mapNotNull { config ->
+            val mime = config.mimeType
+            if (mime.isNullOrBlank()) return@mapNotNull null
+            SingleSampleMediaSource.Factory(dataSourceFactory)
+                .createMediaSource(config, C.TIME_UNSET)
+        }
+        return if (subtitleSources.isEmpty()) primary
+        else MergingMediaSource(primary, *subtitleSources.toTypedArray())
+    }
+
     private fun buildSubtitleConfigurations(
         subtitleTracks: List<SubtitleTrack>
     ): List<MediaItem.SubtitleConfiguration> {

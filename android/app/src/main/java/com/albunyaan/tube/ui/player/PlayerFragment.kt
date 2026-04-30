@@ -868,7 +868,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             QualityTrackSelector.createForDiscreteQualities(requireContext())
         }.also { this.trackSelector = it }
 
-        val renderersFactory = DefaultRenderersFactory(requireContext())
+        // LegacySubtitleRenderersFactory re-enables legacy TTML/VTT decoding
+        // on the TextRenderer; required because Media3 1.10 disables it by
+        // default and our side-loaded subtitle pipeline needs it (see the
+        // factory's KDoc).
+        val renderersFactory = com.albunyaan.tube.player.LegacySubtitleRenderersFactory(requireContext())
             .setEnableDecoderFallback(true)
 
         val player = ExoPlayer.Builder(requireContext(), renderersFactory)
@@ -885,6 +889,42 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         binding.playerView.player = player
         player.addListener(viewModel.playerListener)
+
+        // Force captions to render at the bottom of the frame regardless of
+        // the cue's embedded `line` / `lineAnchor`. YouTube TTML — auto-gen
+        // tracks especially — commonly uses `tts:displayAlign="before"`,
+        // which puts cues at the top. SubtitleView faithfully renders them
+        // at that position; there's no public flag to ignore embedded
+        // positioning, and `SubtitleView` is `final` so we can't subclass.
+        // Workaround: post a setCues with the positioning fields cleared
+        // back to defaults — `View.post` lands on the next loop tick, after
+        // PlayerView's internal listener already ran setCues synchronously,
+        // so our rewrite is the last write to win.
+        // Pin every cue to the bottom of the frame: line=0.92 (92% down
+        // from the top) with anchor at the cue's bottom edge — leaves a
+        // small breathing margin above the system bar / nav rail. DIMEN_UNSET
+        // / TYPE_UNSET is NOT equivalent: SubtitleView treats those as
+        // invalid and drops the cue entirely. Explicit fractional placement
+        // keeps the cue valid and overrides whatever line the parser produced
+        // (typically 0 for YouTube TTML's `tts:displayAlign="before"`).
+        //
+        // Listener registration order matters: PlayerView's internal
+        // listener was added by `binding.playerView.player = player` above,
+        // so adding ours afterwards means our `setCues` fires last each
+        // tick. Calling synchronously (no post) keeps the rewrite in the
+        // same frame, so users never see the unmodified top placement.
+        player.addListener(object : Player.Listener {
+            override fun onCues(cueGroup: androidx.media3.common.text.CueGroup) {
+                val subView = binding?.playerView?.subtitleView ?: return
+                val rewritten = cueGroup.cues.map { cue ->
+                    cue.buildUpon()
+                        .setLine(0.92f, androidx.media3.common.text.Cue.LINE_TYPE_FRACTION)
+                        .setLineAnchor(androidx.media3.common.text.Cue.ANCHOR_TYPE_END)
+                        .build()
+                }
+                subView.setCues(rewritten)
+            }
+        })
 
         player.addAnalyticsListener(object : AnalyticsListener {
             override fun onVideoDecoderInitialized(
@@ -1391,10 +1431,31 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         handleLiveStreamRefresh(event)
                     }
                     is PlayerUiEvent.AudioTrackSwapReady -> {
-                        // Reuse the live-refresh seamless swap path with a
-                        // filtered ResolvedStreams so the factory uses only
-                        // the chosen audio track. Same guarantees re: position
-                        // preservation, MediaSession sync, error handling.
+                        // Always rebuild around the chosen audio. We don't
+                        // branch on `resolved.dashUrl` / `hlsUrl` because
+                        // those reflect what NewPipe surfaced, not what the
+                        // factory actually built — HLS is disabled via the
+                        // Media3 1.9.2 crash workaround, so most YouTube
+                        // videos end up as SYNTH_ADAPTIVE even when an HLS
+                        // URL exists. SYNTH_ADAPTIVE bakes a single audio
+                        // track into a synthetic MPD that's cached by
+                        // videoId, so a track-selector hint cannot help —
+                        // the manifest advertises only one audio track and
+                        // no `lang` attribute to match against.
+                        //
+                        // Invalidate the MPD cache so the multi-rep factory
+                        // regenerates the manifest with the chosen audio,
+                        // then drive the seamless MediaSource swap. This is
+                        // the same path used by live URL refresh and is
+                        // also what the original ANDROID-SHORTS-01
+                        // implementation used — it broke when SYNTH_ADAPTIVE
+                        // started caching by videoId without the audio
+                        // track being part of the cache key.
+                        if (BuildConfig.DEBUG) android.util.Log.d(
+                            "PlayerFragment",
+                            "AudioTrackSwapReady: streamId=${event.streamId} lang=${event.newSelection.audio.language}"
+                        )
+                        mpdRegistry.unregisterBoth(event.streamId)
                         val filteredResolved = event.newSelection.resolved.copy(
                             audioTracks = listOf(event.newSelection.audio)
                         )
@@ -2708,9 +2769,21 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         // Create multi-quality MediaSource from resolved streams
         // Apply user quality cap via track selector for adaptive streams, or select specific track for progressive
+        // Pin the user's audio choice into the resolved view we hand to the
+        // factory. The synthetic-DASH MPD generator picks audio by max
+        // bitrate; on an audio-language swap the user-selected track may
+        // not be max-bitrate, so without this filter the rebuilt MPD
+        // serves the wrong language. No-op when selection.audio is the
+        // only / max-bitrate track. Skipped when audio isn't in the list
+        // (defensive — can happen on stale state after a re-resolve).
+        val resolvedForFactory = if (selection.resolved.audioTracks.contains(selection.audio)) {
+            selection.resolved.copy(audioTracks = listOf(selection.audio))
+        } else {
+            selection.resolved
+        }
         val mediaSourceResult = try {
             val result = mediaSourceFactory.createMediaSourceWithType(
-                resolved = selection.resolved,
+                resolved = resolvedForFactory,
                 audioOnly = state.audioOnly,
                 selectedQuality = selection.video,
                 userQualityCapHeight = selection.userQualityCapHeight,

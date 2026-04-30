@@ -154,6 +154,35 @@ class PlayerBinder private constructor(
     private var ttlWatcher: com.albunyaan.tube.player.MpdTtlWatcher? = null
 
     /**
+     * Force captions to land at the bottom of the frame regardless of the
+     * cue's embedded `line` / `lineAnchor`. YouTube TTML — auto-gen tracks
+     * especially — frequently uses `tts:displayAlign="before"` (top), and
+     * `SubtitleView` is `final` so we can't subclass to ignore positioning.
+     *
+     * Listener-order is the load-bearing detail: PlayerView's internal
+     * listener (added when `view.player = player` runs in `attach`) calls
+     * `setCues` synchronously with the original positions. We need our
+     * `setCues` to fire AFTER it so the bottom override wins. Listeners
+     * fire in registration order, so we re-add this listener at the end of
+     * each `bind` to push it to the back of the queue. Synchronous setCues
+     * (no `View.post`) keeps the rewrite in the same frame as PlayerView's
+     * call — without the round trip to the message loop, users never see
+     * the unmodified top placement.
+     */
+    private val cueRewriteListener = object : Player.Listener {
+        override fun onCues(cueGroup: androidx.media3.common.text.CueGroup) {
+            val subView = boundView?.subtitleView ?: return
+            val rewritten = cueGroup.cues.map { cue ->
+                cue.buildUpon()
+                    .setLine(0.92f, androidx.media3.common.text.Cue.LINE_TYPE_FRACTION)
+                    .setLineAnchor(androidx.media3.common.text.Cue.ANCHOR_TYPE_END)
+                    .build()
+            }
+            subView.setCues(rewritten)
+        }
+    }
+
+    /**
      * Monotonically-increasing token identifying the "current" bind request.
      * Every [bind] call increments this; any coroutine that was started by a
      * previous bind compares its captured generation against [generation] and
@@ -228,6 +257,13 @@ class PlayerBinder private constructor(
             boundView?.let { attach.attach(it, attached = false) }
             attach.attach(target, attached = true)
             boundView = target
+            // Re-register cueRewriteListener AFTER PlayerView's internal
+            // listener (which was just added by `attach.attach(target, true)`
+            // → `view.player = player`). Player.Listener#onCues fires in
+            // registration order, so re-adding ours last guarantees our
+            // bottom-anchor setCues is the final write per cue tick.
+            player?.removeListener(cueRewriteListener)
+            player?.addListener(cueRewriteListener)
         }
         playerOps.stop()
         playerOps.clearMediaItems()
@@ -449,6 +485,56 @@ class PlayerBinder private constructor(
         // Refresh cache so a subsequent download picker reflects the active
         // audio choice alongside the existing video tracks.
         synchronized(resolvedCache) { resolvedCache[videoId] = filtered }
+
+        playerOps.setMediaSource(source)
+        playerOps.setRepeatModeOne()
+        playerOps.prepare()
+        playerOps.seekTo(position)
+        playerOps.setPlayWhenReady(wasPlaying)
+    }
+
+    /**
+     * Switch the playback quality cap for the currently-bound video.
+     * `capHeightPx == 0` (or negative) clears the cap (auto / ABR-driven).
+     *
+     * Most YouTube videos on shorts end up as single-rep synthetic DASH
+     * (video tracks have inconsistent containers, so SYNTH_ADAPTIVE
+     * fails). With single-rep the manifest holds exactly one video
+     * track, so a track-selector cap can't pick a different quality —
+     * the manifest itself has to be regenerated with a different track.
+     * This rebuilds the MediaSource via the same factory path used at
+     * initial prep, passing the new cap so the synthetic-DASH builder
+     * picks the appropriate track.
+     *
+     * Preserves position and playWhenReady so the short resumes exactly
+     * where the user was. Safe no-op if there is no cached resolved-
+     * streams entry for [videoId].
+     */
+    fun switchQuality(videoId: String, capHeightPx: Int) {
+        val resolved = resolvedStreamsFor(videoId) ?: return
+        val cap = capHeightPx.takeIf { it > 0 }
+        val origin = if (cap != null) {
+            com.albunyaan.tube.data.extractor.QualitySelectionOrigin.MANUAL
+        } else {
+            com.albunyaan.tube.data.extractor.QualitySelectionOrigin.AUTO
+        }
+        val position = playerOps.getCurrentPosition()
+        val wasPlaying = playerOps.getPlayWhenReady()
+
+        val adaptive = mediaSourceFactory?.let {
+            runCatching {
+                it.createMediaSourceWithType(
+                    resolved = resolved,
+                    audioOnly = false,
+                    selectedQuality = null,
+                    userQualityCapHeight = cap,
+                    selectionOrigin = origin,
+                    forceProgressive = false,
+                    videoId = videoId
+                )
+            }.getOrNull()
+        }
+        val source = adaptive?.source ?: buildProgressiveSource(resolved) ?: return
 
         playerOps.setMediaSource(source)
         playerOps.setRepeatModeOne()
