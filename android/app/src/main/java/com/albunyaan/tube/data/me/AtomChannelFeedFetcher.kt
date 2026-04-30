@@ -1,13 +1,17 @@
 package com.albunyaan.tube.data.me
 
 import androidx.annotation.VisibleForTesting
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 /**
  * Default [ChannelFeedFetcher] for the Me-tab refresh layer (spec §4.1).
@@ -18,11 +22,6 @@ import javax.inject.Singleton
  * Conditional GETs (If-None-Match / If-Modified-Since) keep most refresh
  * ticks at HTTP 304 with zero body — the bandwidth + signal that lets us
  * stay under YouTube's per-IP limits even with 30 subscribed channels.
- *
- * Note on threading: callers (e.g. [MeFeedRepository.refreshOne]) already
- * dispatch this on Dispatchers.IO. The fetcher additionally wraps the
- * blocking `execute()` in `withContext(Dispatchers.IO)` for defence-in-depth
- * against future direct callers — same pattern as [NewPipeChannelFeedFetcher].
  */
 @Singleton
 class AtomChannelFeedFetcher @VisibleForTesting internal constructor(
@@ -48,7 +47,7 @@ class AtomChannelFeedFetcher @VisibleForTesting internal constructor(
         channelUrl: String,
         priorEtag: String?,
         priorLastModified: String?,
-    ): ChannelFeedFetcher.FetchResult = withContext(Dispatchers.IO) {
+    ): ChannelFeedFetcher.FetchResult {
         val channelId = CHANNEL_ID_REGEX.find(channelUrl)?.groupValues?.getOrNull(1)
             ?: throw IllegalArgumentException("Cannot extract channelId from $channelUrl")
 
@@ -61,13 +60,30 @@ class AtomChannelFeedFetcher @VisibleForTesting internal constructor(
         priorEtag?.let { builder.header("If-None-Match", it) }
         priorLastModified?.let { builder.header("If-Modified-Since", it) }
 
-        client.newCall(builder.build()).execute().use { response ->
-            val etag = response.header("ETag")
-            val lastModified = response.header("Last-Modified")
-            when (val code = response.code) {
+        // Use suspendCancellableCoroutine so coroutine cancellation (e.g. from
+        // withTimeout in MeFeedRepository.refreshOne) propagates to OkHttp and
+        // cancels the in-flight TCP connection, preventing zombie threads from
+        // exceeding the MAX_CONCURRENT semaphore bound.
+        val response = suspendCancellableCoroutine<Response> { cont ->
+            val call = client.newCall(builder.build())
+            cont.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : Callback {
+                override fun onResponse(call: Call, response: Response) {
+                    cont.resume(response)
+                }
+                override fun onFailure(call: Call, e: IOException) {
+                    cont.resumeWithException(e)
+                }
+            })
+        }
+
+        return response.use { r ->
+            val etag = r.header("ETag")
+            val lastModified = r.header("Last-Modified")
+            when (val code = r.code) {
                 304 -> ChannelFeedFetcher.FetchResult.NotModified(etag, lastModified)
                 in 200..299 -> {
-                    val body = response.body ?: throw IOException("empty body")
+                    val body = r.body ?: throw IOException("empty body")
                     val parsed = parser.parse(body.byteStream()).take(MAX_ITEMS)
                     ChannelFeedFetcher.FetchResult.Items(parsed, etag, lastModified)
                 }

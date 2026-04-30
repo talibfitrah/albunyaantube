@@ -9,6 +9,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import jakarta.servlet.http.HttpServletRequest;
 import java.net.URL;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -46,7 +47,8 @@ public class IndexController {
     @PostMapping("/index/streams")
     public ResponseEntity<Void> indexStreams(
             @RequestHeader(value = "X-Device-Id", required = false) String deviceId,
-            @RequestBody IndexStreamsRequest request) {
+            @RequestBody IndexStreamsRequest request,
+            HttpServletRequest httpRequest) {
 
         if (!"CHANNEL".equals(request.getSourceType()) && !"PLAYLIST".equals(request.getSourceType())) {
             return ResponseEntity.badRequest().build();
@@ -54,7 +56,8 @@ public class IndexController {
         if (!isValidSourceId(request.getSourceType(), request.getSourceId())) {
             return ResponseEntity.badRequest().build();
         }
-        if (deviceId != null && isRateLimited(request.getSourceType() + ":" + request.getSourceId(), deviceId)) {
+        String effectiveKey = (deviceId != null && !deviceId.isBlank()) ? deviceId : httpRequest.getRemoteAddr();
+        if (isRateLimited(request.getSourceType() + ":" + request.getSourceId(), effectiveKey)) {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).build();
         }
 

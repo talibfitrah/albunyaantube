@@ -42,7 +42,7 @@ public class SearchTokenizer {
             String lower = word.toLowerCase(Locale.ROOT);
             tokens.add(lower);
             String normalized = normalizeArabic(lower);
-            if (!normalized.equals(lower)) {
+            if (!normalized.equals(lower) && !normalized.isEmpty()) {
                 tokens.add(normalized);
             }
         }

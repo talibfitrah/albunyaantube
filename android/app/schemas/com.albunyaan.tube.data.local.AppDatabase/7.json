@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 7,
-    "identityHash": "TO_BE_GENERATED_BY_ROOM_BUILD",
+    "identityHash": "74cf912c8c302561b4baf87dd84846b0",
     "entities": [
       {
         "tableName": "favorite_videos",
@@ -317,8 +317,7 @@
           {
             "fieldPath": "avatarUrl",
             "columnName": "avatarUrl",
-            "affinity": "TEXT",
-            "notNull": false
+            "affinity": "TEXT"
           },
           {
             "fieldPath": "followedAt",
@@ -332,14 +331,12 @@
           "columnNames": [
             "channelId"
           ]
-        },
-        "indices": [],
-        "foreignKeys": []
+        }
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'TO_BE_GENERATED_BY_ROOM_BUILD')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '74cf912c8c302561b4baf87dd84846b0')"
     ]
   }
 }

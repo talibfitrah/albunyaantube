@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import com.albunyaan.tube.BuildConfig
 import javax.inject.Inject
 import javax.inject.Named
 
@@ -32,10 +33,10 @@ class SearchViewModel @Inject constructor(
         viewModelScope.launch {
             _searchResults.value = SearchState.Loading
             try {
-                android.util.Log.d("SearchViewModel", "Searching for: $query")
+                if (BuildConfig.DEBUG) android.util.Log.d("SearchViewModel", "Searching for: $query")
                 val results = contentService.search(query = query, type = null, limit = 50)
 
-                android.util.Log.d("SearchViewModel", "Received ${results.size} search results")
+                if (BuildConfig.DEBUG) android.util.Log.d("SearchViewModel", "Received ${results.size} search results")
 
                 if (results.isEmpty()) {
                     _searchResults.value = SearchState.NoResults(query)
@@ -43,7 +44,7 @@ class SearchViewModel @Inject constructor(
                     _searchResults.value = SearchState.Success(results)
                 }
             } catch (e: Exception) {
-                android.util.Log.e("SearchViewModel", "Search failed", e)
+                if (BuildConfig.DEBUG) android.util.Log.e("SearchViewModel", "Search failed", e)
                 _searchResults.value = SearchState.Error(e.message ?: "Unknown error")
             }
         }
