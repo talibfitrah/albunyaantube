@@ -549,6 +549,7 @@
     <string name="shorts_download_cd">Download</string>
     <string name="shorts_download_preparing">Preparing, tap again in a moment</string>
     <string name="shorts_audio_track_cd">Audio language</string>
+    <string name="subtitle_picker_cd">Subtitles / CC</string>
     <string name="player_action_audio_language">Language</string>
     <string name="shorts_audio_track_title">Audio language</string>
     <string name="shorts_audio_track_original_prefix">Original: %1$s</string>

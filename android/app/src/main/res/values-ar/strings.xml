@@ -561,6 +561,7 @@
     <string name="shorts_download_cd">تنزيل</string>
     <string name="shorts_download_preparing">جاري التحضير، انقر مرة أخرى بعد لحظة</string>
     <string name="shorts_audio_track_cd">اللغة الصوتية</string>
+    <string name="subtitle_picker_cd">الترجمات</string>
     <string name="player_action_audio_language">اللغة</string>
     <string name="shorts_audio_track_title">اللغة الصوتية</string>
     <string name="shorts_audio_track_original_prefix">الأصلية: %1$s</string>
