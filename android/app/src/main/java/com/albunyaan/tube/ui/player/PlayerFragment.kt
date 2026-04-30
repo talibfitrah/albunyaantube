@@ -101,6 +101,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     @Inject lateinit var mpdRegistry: com.albunyaan.tube.player.SyntheticDashMpdRegistry
     @Inject lateinit var probationChecker: com.albunyaan.tube.player.HlsProbationChecker
     @Inject lateinit var bufferPolicy: AdaptiveBufferPolicy
+    @Inject lateinit var cronetDataSourceFactory: com.albunyaan.tube.player.CronetDataSourceFactory
 
     private var binding: FragmentPlayerBinding? = null
     private var player: ExoPlayer? = null
@@ -832,7 +833,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             coldStartQualityChooser,
             featureFlags,
             mpdRegistry,
-            probationChecker
+            probationChecker,
+            cronetDataSourceFactory
         )
     }
 

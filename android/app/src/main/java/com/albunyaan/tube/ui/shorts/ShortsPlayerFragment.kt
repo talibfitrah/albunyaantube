@@ -65,6 +65,7 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
     @Inject lateinit var playbackFeatureFlags: com.albunyaan.tube.player.PlaybackFeatureFlags
     @Inject lateinit var mpdRegistry: com.albunyaan.tube.player.SyntheticDashMpdRegistry
     @Inject lateinit var probationChecker: com.albunyaan.tube.player.HlsProbationChecker
+    @Inject lateinit var cronetDataSourceFactory: com.albunyaan.tube.player.CronetDataSourceFactory
 
     private val viewModel: ShortsPlayerViewModel by viewModels {
         object : ViewModelProvider.Factory {
@@ -151,7 +152,8 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
             coldStartQualityChooser,
             playbackFeatureFlags,
             mpdRegistry,
-            probationChecker
+            probationChecker,
+            cronetDataSourceFactory
         )
         val localBinder = PlayerBinder(viewModel.player, playerRepository, mediaSourceFactory)
 
