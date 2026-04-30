@@ -21,6 +21,7 @@ class MpdTtlWatcher(
     private var job: Job? = null
 
     fun start(scope: CoroutineScope) {
+        job?.cancel()
         job = scope.launch {
             val entry = registry.getEntry(videoId) ?: run {
                 Log.d(TAG, "No entry for $videoId — TTL watcher inactive")

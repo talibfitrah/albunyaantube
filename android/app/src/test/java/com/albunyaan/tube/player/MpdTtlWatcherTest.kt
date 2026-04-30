@@ -56,6 +56,31 @@ class MpdTtlWatcherTest {
     }
 
     @Test
+    fun `fires immediately when clock is already past 90% TTL at start time`() = runTest {
+        // delayMs = (0 + 108_000 - 200_000).coerceAtLeast(0) = 0 → no delay, fires at once.
+        val fakeTime = 200_000L
+        val registeredAt = 0L
+
+        val entry = SyntheticDashMpdRegistry.MpdEntry(
+            videoId = "vid",
+            mpdXml = "<MPD/>",
+            registeredAtMs = registeredAt
+        )
+        whenever(mockRegistry.getEntry("vid")).thenReturn(entry)
+
+        val watcher = MpdTtlWatcher(
+            videoId = "vid",
+            registry = mockRegistry,
+            onRefreshNeeded = { refreshCallCount++ },
+            clock = { fakeTime }
+        )
+
+        watcher.start(this)
+        advanceTimeBy(1L)
+        assertEquals(1, refreshCallCount)
+    }
+
+    @Test
     fun `does not call onRefreshNeeded when cancelled before 90%`() = runTest {
         var fakeTime = 0L
         val registeredAt = 1000L
