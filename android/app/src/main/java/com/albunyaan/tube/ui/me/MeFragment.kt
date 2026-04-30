@@ -41,17 +41,12 @@ class MeFragment : Fragment(R.layout.fragment_me) {
     // an extra round-trip.
     @Inject lateinit var favoritesRepository: FavoritesRepository
 
-    @Inject lateinit var prefetchService: com.albunyaan.tube.player.StreamPrefetchService
-    @Inject lateinit var playbackFeatureFlags: com.albunyaan.tube.player.PlaybackFeatureFlags
-
     private val viewModel: MeViewModel by viewModels()
     private var binding: FragmentMeBinding? = null
 
     private lateinit var chipsAdapter: MeChipsAdapter
     private lateinit var favoritesAdapter: MeFavoritesAdapter
     private lateinit var concatAdapter: ConcatAdapter
-
-    private var prefetchController: com.albunyaan.tube.player.PredictivePrefetchController? = null
 
     // ANDROID-PERSONAL-03 / T6: per-week sub-adapter cache keyed by
     // weekIndex. Looking up here lets us call submit() on existing weeks
@@ -271,7 +266,6 @@ class MeFragment : Fragment(R.layout.fragment_me) {
                     onClick = ::playVideo,
                     getChannelAvatar = { channelId -> channelMap[channelId]?.imageUrl },
                     onChannelClick = ::navigateToChannel,
-                    onItemBind = ::warmPrefetchFor,
                 )
                 weekAdapters[week.weekIndex] = adapter
                 concatAdapter.addAdapter(adapter.sectionAdapter)
@@ -299,18 +293,6 @@ class MeFragment : Fragment(R.layout.fragment_me) {
                 viewModel.loadNextWeek()
             }
         }
-    }
-
-    /**
-     * Trigger a background prefetch for [videoId] when a feed cell binds.
-     * Cheap call — StreamPrefetchService dedupes already-running and already-
-     * resolved fetches and uses BACKGROUND_REFRESH priority so it never
-     * starves channel/Me UI loads. Gated by the predictive-prefetch feature
-     * flag so kill-switching it requires only a flag flip.
-     */
-    private fun warmPrefetchFor(videoId: String) {
-        if (!playbackFeatureFlags.isPredictivePrefetchEnabled) return
-        prefetchService.triggerPrefetch(videoId, viewLifecycleOwner.lifecycleScope)
     }
 
     private fun onChipClicked(chip: ChipItem) {

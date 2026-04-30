@@ -44,18 +44,11 @@ class MeWeekSectionAdapter(
     private val onClick: (MeFeedVideo) -> Unit,
     private val getChannelAvatar: (channelId: String) -> String?,
     private val onChannelClick: (channelId: String) -> Unit,
-    /**
-     * Optional callback fired when a video or short cell is bound — used
-     * by [MeFragment] to warm the stream-prefetch cache so a tap on the
-     * cell starts playback without waiting for NewPipe extraction. Default
-     * is a no-op so existing call sites continue to compile.
-     */
-    private val onItemBind: (videoId: String) -> Unit = {},
 ) {
 
     private val headerAdapter = HeaderAdapter()
-    private val shortsAdapter = ShortsRowAdapter(onClick, onItemBind)
-    private val videosAdapter = VideosAdapter(onClick, getChannelAvatar, onChannelClick, onItemBind)
+    private val shortsAdapter = ShortsRowAdapter(onClick)
+    private val videosAdapter = VideosAdapter(onClick, getChannelAvatar, onChannelClick)
 
     /**
      * The outer adapter [MeFragment] wires into its ConcatAdapter for
@@ -140,9 +133,8 @@ class MeWeekSectionAdapter(
      */
     private class ShortsRowAdapter(
         private val onClick: (MeFeedVideo) -> Unit,
-        private val onItemBind: (videoId: String) -> Unit,
     ) : RecyclerView.Adapter<ShortsRowVH>() {
-        private val inner = InnerShortsAdapter(onClick, onItemBind)
+        private val inner = InnerShortsAdapter(onClick)
 
         fun submit(items: List<MeFeedVideo>) {
             val wasEmpty = inner.itemCount == 0
@@ -182,7 +174,6 @@ class MeWeekSectionAdapter(
 
     private class InnerShortsAdapter(
         private val onClick: (MeFeedVideo) -> Unit,
-        private val onItemBind: (videoId: String) -> Unit,
     ) : ListAdapter<MeFeedVideo, ShortVH>(SHORT_DIFF) {
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ShortVH {
             val binding = ItemMeShortBinding.inflate(
@@ -192,12 +183,7 @@ class MeWeekSectionAdapter(
         }
 
         override fun onBindViewHolder(holder: ShortVH, position: Int) {
-            val item = getItem(position)
-            holder.bind(item)
-            // Warm the prefetch cache for this short so the player has the
-            // resolved streams ready when the user taps it. No-op fallback
-            // is supplied by the constructor default in [MeWeekSectionAdapter].
-            if (item.videoId.isNotBlank()) onItemBind(item.videoId)
+            holder.bind(getItem(position))
         }
     }
 
@@ -228,7 +214,6 @@ class MeWeekSectionAdapter(
         private val onClick: (MeFeedVideo) -> Unit,
         private val getChannelAvatar: (channelId: String) -> String?,
         private val onChannelClick: (channelId: String) -> Unit,
-        private val onItemBind: (videoId: String) -> Unit,
     ) : ListAdapter<MeFeedVideo, VideoVH>(VIDEO_DIFF) {
 
         override fun getItemViewType(position: Int): Int = WEEK_VIDEO_VIEW_TYPE
@@ -241,10 +226,7 @@ class MeWeekSectionAdapter(
         }
 
         override fun onBindViewHolder(holder: VideoVH, position: Int) {
-            val item = getItem(position)
-            holder.bind(item)
-            // Same prefetch warm-up as InnerShortsAdapter — see comment there.
-            if (item.videoId.isNotBlank()) onItemBind(item.videoId)
+            holder.bind(getItem(position))
         }
     }
 
