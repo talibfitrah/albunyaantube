@@ -34,9 +34,15 @@ class CronetDataSourceFactory @Inject constructor(
         create(HttpConstants.YOUTUBE_IOS_USER_AGENT)
 
     private fun create(userAgent: String): DataSource.Factory {
-        val e = engine ?: return DefaultHttpDataSource.Factory().setUserAgent(userAgent)
+        val e = engine ?: return DefaultHttpDataSource.Factory()
+            .setUserAgent(userAgent)
+            .setConnectTimeoutMs(15_000)
+            .setReadTimeoutMs(20_000)
+            .setAllowCrossProtocolRedirects(true)
         return CronetDataSource.Factory(e, Executors.newCachedThreadPool())
             .setUserAgent(userAgent)
+            .setConnectionTimeoutMs(15_000)
+            .setReadTimeoutMs(20_000)
     }
 
     private fun buildEngine(): CronetEngine? {

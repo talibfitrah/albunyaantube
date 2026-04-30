@@ -74,16 +74,22 @@ class MultiQualityMediaSourceFactory(
     private val coldStartQualityChooser: ColdStartQualityChooser? = null,
     private val featureFlags: PlaybackFeatureFlags? = null,
     private val mpdRegistry: SyntheticDashMpdRegistry? = null,
-    private val probationChecker: HlsProbationChecker? = null
+    private val probationChecker: HlsProbationChecker? = null,
+    private val cronetDataSourceFactory: CronetDataSourceFactory? = null
 ) {
 
     // Standard data source for progressive/DASH (Android User-Agent)
-    private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-        .setUserAgent(HttpConstants.YOUTUBE_USER_AGENT)
-        // Timeouts balanced for reliability and responsiveness
-        .setConnectTimeoutMs(15000)  // 15s connect timeout
-        .setReadTimeoutMs(20000)     // 20s read timeout (balances reliability with responsiveness)
-        .setAllowCrossProtocolRedirects(true)  // Allow HTTP -> HTTPS redirects
+    // Uses Cronet (HTTP/2 + QUIC) when available and the flag is enabled.
+    private val httpDataSourceFactory: DataSource.Factory =
+        if (featureFlags?.isCronetEnabled == true && cronetDataSourceFactory != null) {
+            cronetDataSourceFactory.createForAndroidUA()
+        } else {
+            DefaultHttpDataSource.Factory()
+                .setUserAgent(HttpConstants.YOUTUBE_USER_AGENT)
+                .setConnectTimeoutMs(15000)
+                .setReadTimeoutMs(20000)
+                .setAllowCrossProtocolRedirects(true)
+        }
 
     /**
      * HLS-specific data source with iOS User-Agent.
@@ -104,11 +110,16 @@ class MultiQualityMediaSourceFactory(
      * The coupling is intentional: NPE's iOS client fetch returns URLs that expect this UA.
      * See: HttpConstants.YOUTUBE_IOS_USER_AGENT, NewPipeExtractorClient.initializeNewPipe()
      */
-    private val hlsHttpDataSourceFactory = DefaultHttpDataSource.Factory()
-        .setUserAgent(HttpConstants.YOUTUBE_IOS_USER_AGENT)
-        .setConnectTimeoutMs(15000)
-        .setReadTimeoutMs(20000)
-        .setAllowCrossProtocolRedirects(true)
+    private val hlsHttpDataSourceFactory: DataSource.Factory =
+        if (featureFlags?.isCronetEnabled == true && cronetDataSourceFactory != null) {
+            cronetDataSourceFactory.createForIosUA()
+        } else {
+            DefaultHttpDataSource.Factory()
+                .setUserAgent(HttpConstants.YOUTUBE_IOS_USER_AGENT)
+                .setConnectTimeoutMs(15000)
+                .setReadTimeoutMs(20000)
+                .setAllowCrossProtocolRedirects(true)
+        }
 
     private val dataSourceFactory: DataSource.Factory = DefaultDataSource.Factory(
         context,
