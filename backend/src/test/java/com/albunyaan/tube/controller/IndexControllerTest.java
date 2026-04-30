@@ -27,7 +27,7 @@ class IndexControllerTest {
 
     @Test
     void rejectsInvalidSourceType() {
-        IndexStreamsRequest req = req("UNKNOWN", "UCxxxxxxxxxxxxxxxxxxxxxxxxxxx", List.of());
+        IndexStreamsRequest req = req("UNKNOWN", "UCxxxxxxxxxxxxxxxxxxxxxx", List.of());
         assertEquals(HttpStatus.BAD_REQUEST, controller.indexStreams("dev1", req).getStatusCode());
     }
 
@@ -46,7 +46,7 @@ class IndexControllerTest {
 
     @Test
     void acceptsValidChannelRequest() {
-        IndexStreamsRequest req = req("CHANNEL", "UCxxxxxxxxxxxxxxxxxxxxxxxxxxx", List.of());
+        IndexStreamsRequest req = req("CHANNEL", "UCxxxxxxxxxxxxxxxxxxxxxx", List.of());
         assertEquals(HttpStatus.ACCEPTED, controller.indexStreams("dev1", req).getStatusCode());
     }
 
@@ -60,13 +60,13 @@ class IndexControllerTest {
     void filtersItemsWithInvalidStreamId() throws Exception {
         StreamItemDto bad = item("TOOSHORT", "Title", "https://i.ytimg.com/vi/x/hq.jpg");
         StreamItemDto good = item("abc12345678", "Good Title", "https://i.ytimg.com/vi/abc12345678/hq.jpg");
-        IndexStreamsRequest req = req("CHANNEL", "UCxxxxxxxxxxxxxxxxxxxxxxxxxxx", List.of(bad, good));
+        IndexStreamsRequest req = req("CHANNEL", "UCxxxxxxxxxxxxxxxxxxxxxx", List.of(bad, good));
 
         controller.indexStreams("dev1", req);
         Thread.sleep(200); // let async complete
 
         verify(streamIndexService).indexFromChannel(
-            eq("UCxxxxxxxxxxxxxxxxxxxxxxxxxxx"),
+            eq("UCxxxxxxxxxxxxxxxxxxxxxx"),
             argThat(items -> items.size() == 1 && items.get(0).getId().equals("abc12345678"))
         );
     }
@@ -74,20 +74,20 @@ class IndexControllerTest {
     @Test
     void filtersItemsWithDisallowedThumbnailHost() throws Exception {
         StreamItemDto bad = item("abc12345678", "Title", "https://evil.com/img.jpg");
-        IndexStreamsRequest req = req("CHANNEL", "UCxxxxxxxxxxxxxxxxxxxxxxxxxxx", List.of(bad));
+        IndexStreamsRequest req = req("CHANNEL", "UCxxxxxxxxxxxxxxxxxxxxxx", List.of(bad));
 
         controller.indexStreams("dev1", req);
         Thread.sleep(200);
 
         verify(streamIndexService).indexFromChannel(
-            eq("UCxxxxxxxxxxxxxxxxxxxxxxxxxxx"),
+            eq("UCxxxxxxxxxxxxxxxxxxxxxx"),
             argThat(List::isEmpty)
         );
     }
 
     @Test
     void rateLimitsRepeatedRequests() {
-        IndexStreamsRequest req = req("CHANNEL", "UCxxxxxxxxxxxxxxxxxxxxxxxxxxx", List.of());
+        IndexStreamsRequest req = req("CHANNEL", "UCxxxxxxxxxxxxxxxxxxxxxx", List.of());
         controller.indexStreams("dev1", req); // first: 202
         ResponseEntity<Void> second = controller.indexStreams("dev1", req);
         assertEquals(HttpStatus.TOO_MANY_REQUESTS, second.getStatusCode());
