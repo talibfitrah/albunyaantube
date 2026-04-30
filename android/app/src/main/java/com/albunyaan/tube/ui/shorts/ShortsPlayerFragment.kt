@@ -367,7 +367,27 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
             val options = audioLanguageFlowFor(videoId).value
             val chosen = options.firstOrNull { it.language == code } ?: return@setFragmentResultListener
             activeLanguageByVideoId[videoId] = code
-            binder?.switchAudioTrack(videoId, chosen.representative)
+
+            // Adaptive (DASH/HLS) manifests carry every audio track — a
+            // MediaSource rebuild from the same URL is a no-op for language.
+            // Apply via trackSelectionParameters; ExoPlayer re-runs track
+            // selection without tearing the source down. Progressive
+            // sources still go through PlayerBinder so the factory only
+            // sees the chosen track.
+            val resolved = binder?.resolvedStreamsFor(videoId)
+            val isAdaptive = resolved != null &&
+                (resolved.dashUrl != null || resolved.hlsUrl != null)
+            if (isAdaptive) {
+                viewModel.player.trackSelectionParameters =
+                    viewModel.player.trackSelectionParameters
+                        .buildUpon()
+                        .setPreferredAudioLanguage(chosen.representative.language)
+                        .build()
+                // Pin the user's choice so subsequent re-resolves preserve it.
+                binder?.rememberAudioLanguage(videoId, chosen.representative.language)
+            } else {
+                binder?.switchAudioTrack(videoId, chosen.representative)
+            }
         }
 
         // Subtitle dialog result — apply the chosen language (or null = Off)

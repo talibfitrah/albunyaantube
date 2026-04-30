@@ -516,8 +516,14 @@ class PlayerViewModel @Inject constructor(
      * - the picked track equals the currently-active one
      */
     fun selectAudioTrack(track: AudioTrack) {
+        // Always emit, even when `track == ready.selection.audio`. AudioTrack
+        // is a data class so equality compares URL too — and the player can
+        // drift from the VM (ABR may pick a dubbed track without notifying
+        // the VM, so the user taps "Original" but the equality guard would
+        // silently drop the swap). For adaptive sources the fragment routes
+        // through trackSelectionParameters (idempotent); for progressive it
+        // rebuilds the MediaSource. Either way, re-applying is safe.
         val ready = _state.value.streamState as? StreamState.Ready ?: return
-        if (track == ready.selection.audio) return
         val newSelection = ready.selection.copy(audio = track)
         updateState { it.copy(streamState = StreamState.Ready(ready.streamId, newSelection)) }
         viewModelScope.launch(dispatcher) {

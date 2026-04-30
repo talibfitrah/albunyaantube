@@ -1391,17 +1391,35 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         handleLiveStreamRefresh(event)
                     }
                     is PlayerUiEvent.AudioTrackSwapReady -> {
-                        // Reuse the live-refresh seamless swap path with a
-                        // filtered ResolvedStreams so the factory uses only
-                        // the chosen audio track. Same guarantees re: position
-                        // preservation, MediaSession sync, error handling.
-                        val filteredResolved = event.newSelection.resolved.copy(
-                            audioTracks = listOf(event.newSelection.audio)
-                        )
-                        val filteredSelection = event.newSelection.copy(resolved = filteredResolved)
-                        handleLiveStreamRefresh(
-                            PlayerUiEvent.LiveStreamRefreshReady(event.streamId, filteredSelection)
-                        )
+                        // For adaptive sources (DASH/HLS) the manifest carries
+                        // all audio tracks, so a MediaSource rebuild from the
+                        // same manifest URL would be a no-op. Drive the
+                        // language pick through trackSelectionParameters
+                        // instead — ExoPlayer re-runs track selection without
+                        // a teardown.
+                        //
+                        // Progressive sources don't have a manifest with
+                        // multiple audio tracks; we still rebuild the source
+                        // around the chosen track so the factory drops the
+                        // others.
+                        val resolved = event.newSelection.resolved
+                        val isAdaptive = resolved.dashUrl != null || resolved.hlsUrl != null
+                        if (isAdaptive) {
+                            player?.let { p ->
+                                p.trackSelectionParameters = p.trackSelectionParameters
+                                    .buildUpon()
+                                    .setPreferredAudioLanguage(event.newSelection.audio.language)
+                                    .build()
+                            }
+                        } else {
+                            val filteredResolved = resolved.copy(
+                                audioTracks = listOf(event.newSelection.audio)
+                            )
+                            val filteredSelection = event.newSelection.copy(resolved = filteredResolved)
+                            handleLiveStreamRefresh(
+                                PlayerUiEvent.LiveStreamRefreshReady(event.streamId, filteredSelection)
+                            )
+                        }
                     }
                 }
             }
