@@ -145,8 +145,7 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
     private fun setupToolbar() {
         binding?.apply {
             toolbar.navigationIcon = AppCompatResources.getDrawable(requireContext(), R.drawable.ic_arrow_back)
-            toolbar.inflateMenu(R.menu.detail_share_menu)
-            toolbar.inflateMenu(R.menu.menu_report)
+            toolbar.inflateMenu(R.menu.menu_detail_kebab)
             toolbar.setNavigationOnClickListener {
                 findNavController().navigateUp()
             }
@@ -520,8 +519,7 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
     }
 
     private fun tintToolbarActions(color: Int) {
-        binding?.toolbar?.menu?.findItem(R.id.action_share)?.icon?.mutate()?.setTint(color)
-        binding?.toolbar?.menu?.findItem(R.id.action_report)?.icon?.mutate()?.setTint(color)
+        binding?.toolbar?.overflowIcon?.mutate()?.setTint(color)
     }
 
     private fun showErrorState(message: String) {
