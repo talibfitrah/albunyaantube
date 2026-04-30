@@ -4,6 +4,7 @@ import android.content.Context
 import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.data.source.api.ContentApi
 import com.albunyaan.tube.data.source.api.DownloadApi
+import com.albunyaan.tube.data.source.api.IndexApi
 import com.albunyaan.tube.data.source.api.ReportApi
 import com.squareup.moshi.FromJson
 import com.squareup.moshi.Moshi
@@ -134,6 +135,12 @@ object NetworkModule {
     @Singleton
     fun provideReportApi(retrofit: Retrofit): ReportApi {
         return retrofit.create(ReportApi::class.java)
+    }
+
+    @Provides
+    @Singleton
+    fun provideIndexApi(retrofit: Retrofit): IndexApi {
+        return retrofit.create(IndexApi::class.java)
     }
 }
 
