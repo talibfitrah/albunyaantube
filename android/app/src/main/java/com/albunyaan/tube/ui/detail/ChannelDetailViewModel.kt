@@ -781,6 +781,12 @@ class ChannelDetailViewModel @AssistedInject constructor(
         private const val TAG = "ChannelDetailViewModel"
         private const val MIN_APPEND_INTERVAL_MS = 1000L // Rate limit: 1 second between requests
         private const val PAGINATION_THRESHOLD = 5 // Trigger pagination when 5 items from end
-        private const val MAX_EMPTY_PAGE_FETCHES = 5 // Max consecutive empty pages to fetch before giving up
+        // Raised from 5 → 15: channels with shorts-heavy uploads (e.g. Mufti
+        // Menk's Videos tab post-filter) routinely return several empty
+        // continuation pages before the next long-form video lands. With
+        // the prior limit users saw the list cap at 20-30 items because
+        // append silently returned 0 new items, the recycler couldn't grow,
+        // and the scroll listener never fired again.
+        private const val MAX_EMPTY_PAGE_FETCHES = 15
     }
 }
