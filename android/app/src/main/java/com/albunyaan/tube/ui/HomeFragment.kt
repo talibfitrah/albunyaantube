@@ -16,6 +16,8 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.filters.FilterManager
 import com.albunyaan.tube.data.model.ContentItem
+import com.albunyaan.tube.player.PlaybackFeatureFlags
+import com.albunyaan.tube.player.PredictivePrefetchController
 import com.albunyaan.tube.player.StreamPrefetchService
 import dagger.hilt.android.AndroidEntryPoint
 import com.albunyaan.tube.databinding.FragmentHomeNewBinding
@@ -34,9 +36,14 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
     lateinit var prefetchService: StreamPrefetchService
 
     @Inject
+    lateinit var featureFlags: PlaybackFeatureFlags
+
+    @Inject
     lateinit var filterManager: FilterManager
 
     private lateinit var sectionAdapter: HomeSectionAdapter
+
+    private var prefetchController: PredictivePrefetchController? = null
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -44,6 +51,16 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
 
         setupAdapter()
         setupRecyclerView(binding)
+        if (featureFlags.isPredictivePrefetchEnabled) {
+            prefetchController = PredictivePrefetchController(
+                prefetchService,
+                viewLifecycleOwner.lifecycleScope,
+                videoIdResolver = { pos ->
+                    sectionAdapter.currentList.getOrNull(pos)?.items?.filterIsInstance<ContentItem.Video>()?.firstOrNull()?.id
+                }
+            )
+            prefetchController?.attach(binding.homeSectionsRecyclerView)
+        }
         setupClickListeners(binding)
         setupScrollListener(binding)
         setupSwipeRefresh(binding)
@@ -125,8 +142,6 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
     }
 
     private fun navigateToPlayer(video: ContentItem.Video) {
-        prefetchService.triggerPrefetch(video.id, viewLifecycleOwner.lifecycleScope)
-
         findNavController().navigate(
             R.id.action_global_playerFragment,
             bundleOf(
@@ -289,6 +304,8 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
     }
 
     override fun onDestroyView() {
+        prefetchController?.detach()
+        prefetchController = null
         super.onDestroyView()
         binding = null
     }
