@@ -3,11 +3,11 @@
     <item
         android:id="@+id/action_captions"
         android:title="@string/player_action_captions"
-        android:icon="@android:drawable/ic_menu_sort_by_size"
+        android:icon="@drawable/ic_closed_captions"
         android:showAsAction="ifRoom"/>
     <item
         android:id="@+id/action_enter_pip"
         android:title="@string/player_action_enter_pip"
-        android:icon="@android:drawable/ic_menu_view"
+        android:icon="@drawable/ic_pip"
         android:showAsAction="ifRoom"/>
 </menu>
