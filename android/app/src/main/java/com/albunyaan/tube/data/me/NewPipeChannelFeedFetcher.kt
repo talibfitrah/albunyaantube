@@ -101,7 +101,15 @@ class NewPipeChannelFeedFetcher @Inject constructor(
         val uploadedAt: Long? = uploadDate?.offsetDateTime()?.toInstant()?.toEpochMilli()
         val durationSeconds: Long? = if (duration > 0) duration else null
         val views: Long? = if (viewCount >= 0) viewCount else null
-        val shortFlag = forceIsShort || isShortFormContent
+        // Defensive shorts detection: respect tab forcing, NewPipe's flag,
+        // canonical /shorts/ URL form, and the 3-minute duration heuristic.
+        // This keeps shorts categorized correctly when callers supply
+        // mixed feeds (e.g. uploads playlist falling through this code path).
+        val urlIsShortForm = url?.contains("/shorts/") == true
+        val shortFlag = forceIsShort ||
+            isShortFormContent ||
+            urlIsShortForm ||
+            (durationSeconds != null && durationSeconds in 1L..180L)
         return ChannelFeedFetcher.ChannelFeedItem(
             videoId = extractVideoId(url.orEmpty()),
             title = name.orEmpty(),

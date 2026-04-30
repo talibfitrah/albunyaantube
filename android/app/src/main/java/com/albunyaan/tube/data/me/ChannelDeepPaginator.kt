@@ -272,16 +272,18 @@ private fun StreamInfoItem.toFeedItem(): ChannelFeedFetcher.ChannelFeedItem? {
     // the upload was actually a Short. Result: shorts only appeared in
     // the latest weeks (ATOM-covered) and disappeared from older weeks.
     //
-    // Heuristic fallback: anything <= 60 seconds is treated as a Short.
-    // YouTube's official Short cap was 60s for years; the recent 3-min
-    // extension means we'll occasionally misclassify a genuine 1-3 min
-    // long-form video as a Short, but that's far less surprising than
-    // losing all Shorts from older weeks. ATOM remains authoritative
-    // when both ATOM and deep-page reach the same videoId — the cache
-    // upsert preserves whichever came last (typically ATOM, since it
-    // refreshes hourly).
+    // Three-tier detection:
+    //  1. Trust NewPipe's flag when set (`isShortFormContent`).
+    //  2. If the canonical URL is a `/shorts/` URL, it's definitively a
+    //     Short — YouTube returns this URL form for any video uploaded
+    //     as a Short, regardless of duration.
+    //  3. Heuristic fallback: anything <= 180 seconds (the new 3-minute
+    //     Short cap) is treated as a Short. May misclassify a few
+    //     short-form long-form videos but preserves Shorts in older weeks.
+    val urlIsShortForm = url?.contains("/shorts/") == true
     val isShort = isShortFormContent ||
-        (durationSeconds != null && durationSeconds in 1L..60L)
+        urlIsShortForm ||
+        (durationSeconds != null && durationSeconds in 1L..180L)
     return ChannelFeedFetcher.ChannelFeedItem(
         videoId = videoId,
         title = name.orEmpty(),
