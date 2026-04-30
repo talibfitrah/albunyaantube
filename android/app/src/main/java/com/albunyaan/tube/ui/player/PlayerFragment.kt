@@ -1391,35 +1391,38 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         handleLiveStreamRefresh(event)
                     }
                     is PlayerUiEvent.AudioTrackSwapReady -> {
-                        // For adaptive sources (DASH/HLS) the manifest carries
-                        // all audio tracks, so a MediaSource rebuild from the
-                        // same manifest URL would be a no-op. Drive the
-                        // language pick through trackSelectionParameters
-                        // instead — ExoPlayer re-runs track selection without
-                        // a teardown.
+                        // Always rebuild around the chosen audio. We don't
+                        // branch on `resolved.dashUrl` / `hlsUrl` because
+                        // those reflect what NewPipe surfaced, not what the
+                        // factory actually built — HLS is disabled via the
+                        // Media3 1.9.2 crash workaround, so most YouTube
+                        // videos end up as SYNTH_ADAPTIVE even when an HLS
+                        // URL exists. SYNTH_ADAPTIVE bakes a single audio
+                        // track into a synthetic MPD that's cached by
+                        // videoId, so a track-selector hint cannot help —
+                        // the manifest advertises only one audio track and
+                        // no `lang` attribute to match against.
                         //
-                        // Progressive sources don't have a manifest with
-                        // multiple audio tracks; we still rebuild the source
-                        // around the chosen track so the factory drops the
-                        // others.
-                        val resolved = event.newSelection.resolved
-                        val isAdaptive = resolved.dashUrl != null || resolved.hlsUrl != null
-                        if (isAdaptive) {
-                            player?.let { p ->
-                                p.trackSelectionParameters = p.trackSelectionParameters
-                                    .buildUpon()
-                                    .setPreferredAudioLanguage(event.newSelection.audio.language)
-                                    .build()
-                            }
-                        } else {
-                            val filteredResolved = resolved.copy(
-                                audioTracks = listOf(event.newSelection.audio)
-                            )
-                            val filteredSelection = event.newSelection.copy(resolved = filteredResolved)
-                            handleLiveStreamRefresh(
-                                PlayerUiEvent.LiveStreamRefreshReady(event.streamId, filteredSelection)
-                            )
-                        }
+                        // Invalidate the MPD cache so the multi-rep factory
+                        // regenerates the manifest with the chosen audio,
+                        // then drive the seamless MediaSource swap. This is
+                        // the same path used by live URL refresh and is
+                        // also what the original ANDROID-SHORTS-01
+                        // implementation used — it broke when SYNTH_ADAPTIVE
+                        // started caching by videoId without the audio
+                        // track being part of the cache key.
+                        if (BuildConfig.DEBUG) android.util.Log.d(
+                            "PlayerFragment",
+                            "AudioTrackSwapReady: streamId=${event.streamId} lang=${event.newSelection.audio.language}"
+                        )
+                        mpdRegistry.unregisterBoth(event.streamId)
+                        val filteredResolved = event.newSelection.resolved.copy(
+                            audioTracks = listOf(event.newSelection.audio)
+                        )
+                        val filteredSelection = event.newSelection.copy(resolved = filteredResolved)
+                        handleLiveStreamRefresh(
+                            PlayerUiEvent.LiveStreamRefreshReady(event.streamId, filteredSelection)
+                        )
                     }
                 }
             }
@@ -2726,9 +2729,21 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         // Create multi-quality MediaSource from resolved streams
         // Apply user quality cap via track selector for adaptive streams, or select specific track for progressive
+        // Pin the user's audio choice into the resolved view we hand to the
+        // factory. The synthetic-DASH MPD generator picks audio by max
+        // bitrate; on an audio-language swap the user-selected track may
+        // not be max-bitrate, so without this filter the rebuilt MPD
+        // serves the wrong language. No-op when selection.audio is the
+        // only / max-bitrate track. Skipped when audio isn't in the list
+        // (defensive — can happen on stale state after a re-resolve).
+        val resolvedForFactory = if (selection.resolved.audioTracks.contains(selection.audio)) {
+            selection.resolved.copy(audioTracks = listOf(selection.audio))
+        } else {
+            selection.resolved
+        }
         val mediaSourceResult = try {
             val result = mediaSourceFactory.createMediaSourceWithType(
-                resolved = selection.resolved,
+                resolved = resolvedForFactory,
                 audioOnly = state.audioOnly,
                 selectedQuality = selection.video,
                 userQualityCapHeight = selection.userQualityCapHeight,
