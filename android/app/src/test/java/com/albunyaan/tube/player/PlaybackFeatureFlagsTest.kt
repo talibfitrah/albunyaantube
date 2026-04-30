@@ -223,7 +223,11 @@ class PlaybackFeatureFlagsTest {
         assertTrue("Should contain client_rotation", diagnostics.containsKey("client_rotation"))
         assertTrue("Should contain hls_probation", diagnostics.containsKey("hls_probation"))
         assertTrue("Should contain cronet_enabled", diagnostics.containsKey("cronet_enabled"))
-        assertEquals("Should have 8 flags", 8, diagnostics.size)
+        assertTrue("Should contain predictive_prefetch", diagnostics.containsKey("predictive_prefetch"))
+        assertTrue("Should contain segment_preload", diagnostics.containsKey("segment_preload"))
+        assertTrue("Should contain never_freeze_abr", diagnostics.containsKey("never_freeze_abr"))
+        assertTrue("Should contain ttl_watcher", diagnostics.containsKey("ttl_watcher"))
+        assertEquals("Should have 12 flags", 12, diagnostics.size)
     }
 
     // --- Generous Crop Budget Flag Tests ---

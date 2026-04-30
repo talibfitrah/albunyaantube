@@ -88,6 +88,10 @@ android {
         buildConfigField("boolean", "ENABLE_CLIENT_ROTATION", "true")
         buildConfigField("boolean", "ENABLE_HLS_PROBATION", "true")
         buildConfigField("boolean", "ENABLE_CRONET", "true")
+        buildConfigField("boolean", "ENABLE_PREDICTIVE_PREFETCH", "true")
+        buildConfigField("boolean", "ENABLE_SEGMENT_PRELOAD", "true")
+        buildConfigField("boolean", "ENABLE_NEVER_FREEZE_ABR", "true")
+        buildConfigField("boolean", "ENABLE_TTL_WATCHER", "true")
     }
 
     signingConfigs {
