@@ -549,7 +549,7 @@ class NewPipeExtractorClient(
         val subtitleTracks = subtitles.mapNotNull { sub ->
             val code = sub.languageTag?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
             SubtitleTrack(
-                url = sub.content,
+                url = if (sub.isUrl) sub.content else return@mapNotNull null,
                 languageCode = code,
                 languageName = sub.displayLanguageName?.takeIf { it.isNotBlank() } ?: code,
                 format = sub.extension?.takeIf { it.isNotBlank() },
