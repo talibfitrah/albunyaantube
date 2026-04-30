@@ -1,11 +1,15 @@
 package com.albunyaan.tube.dto;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Size;
 import java.util.List;
 
 public class IndexStreamsRequest {
 
     private String sourceType;  // "CHANNEL" or "PLAYLIST"
     private String sourceId;    // YouTube channel/playlist ID
+    @Valid
+    @Size(max = 60)
     private List<StreamItemDto> items;
 
     public IndexStreamsRequest() {}

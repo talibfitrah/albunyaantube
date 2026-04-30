@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.*;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import java.net.URL;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -52,7 +53,7 @@ public class IndexController {
     @PostMapping("/index/streams")
     public ResponseEntity<Void> indexStreams(
             @RequestHeader(value = "X-Device-Id", required = false) String deviceId,
-            @RequestBody IndexStreamsRequest request,
+            @Valid @RequestBody IndexStreamsRequest request,
             HttpServletRequest httpRequest) {
 
         if (!"CHANNEL".equals(request.getSourceType()) && !"PLAYLIST".equals(request.getSourceType())) {

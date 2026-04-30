@@ -19,6 +19,7 @@ public class StreamIndexService {
 
     private static final Logger log = LoggerFactory.getLogger(StreamIndexService.class);
     private static final Pattern CHANNEL_ID_PATTERN = Pattern.compile("^UC[A-Za-z0-9_-]{22}$");
+    private static final Set<String> VALID_STREAM_TYPES = Set.of("VIDEO", "SHORT", "LIVESTREAM", "LIVE", "PAST_LIVE");
 
     private final SearchableStreamRepository streamRepository;
     private final ChannelRepository channelRepository;
@@ -86,7 +87,9 @@ public class StreamIndexService {
                     log.warn("Could not resolve channelId for stream {}, skipping", item.getId());
                     continue;
                 }
-                upsert(item, channelId, item.getUploaderName(), sourceKey);
+                String uploaderName = item.getUploaderName();
+                if (uploaderName != null && uploaderName.length() > 200) uploaderName = uploaderName.substring(0, 200);
+                upsert(item, channelId, uploaderName, sourceKey);
             }
         } catch (Exception e) {
             log.warn("indexFromPlaylist failed for {}: {}", playlistYoutubeId, e.getMessage());
@@ -130,7 +133,8 @@ public class StreamIndexService {
             stream.setThumbnailUrl(item.getThumbnailUrl());
             stream.setChannelId(channelId);
             stream.setChannelName(channelName);
-            stream.setStreamType(item.getStreamType());
+            String streamType = item.getStreamType();
+            stream.setStreamType(streamType != null && VALID_STREAM_TYPES.contains(streamType.toUpperCase()) ? streamType : null);
             stream.setDurationSeconds(item.getDuration());
             stream.setViewCount(item.getViewCount());
             stream.setSearchTokens(tokens);

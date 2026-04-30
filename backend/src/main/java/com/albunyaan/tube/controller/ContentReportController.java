@@ -46,7 +46,8 @@ public class ContentReportController {
             ContentReport saved = reportService.submitReport(
                     body.targetType(), body.targetId(),
                     body.reasons(), body.otherDescription(), deviceKey);
-            return ResponseEntity.status(HttpStatus.CREATED).body(saved);
+            return ResponseEntity.status(HttpStatus.CREATED)
+                    .body(Map.of("id", saved.getId(), "status", saved.getStatus()));
         } catch (ContentReportService.RateLimitExceededException e) {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                     .body(Map.of("error", "Rate limit exceeded. Please try again later."));
@@ -94,7 +95,7 @@ public class ContentReportController {
     public record SubmitReportRequest(
             @NotNull ReportTargetType targetType,
             @NotBlank @Size(max = 128) String targetId,
-            @NotEmpty List<ReportReason> reasons,
+            @NotEmpty @Size(max = 10) List<ReportReason> reasons,
             @Size(max = 500) String otherDescription) {}
 
     public record ResolveReportRequest(@NotNull ReportStatus status, @Size(max = 1000) String note) {}
