@@ -10,6 +10,7 @@ import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.CategoryRepository;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
+import com.albunyaan.tube.repository.SearchableStreamRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import com.albunyaan.tube.util.CursorUtils;
 import com.google.cloud.Timestamp;
@@ -48,6 +49,12 @@ class PublicContentServicePaginationTest {
     @Mock
     private com.albunyaan.tube.repository.CategoryContentOrderRepository orderRepository;
 
+    @Mock
+    private SearchableStreamRepository searchableStreamRepository;
+
+    @Mock
+    private SearchTokenizer searchTokenizer;
+
     private PublicContentService publicContentService;
 
     @BeforeEach
@@ -58,7 +65,9 @@ class PublicContentServicePaginationTest {
                 videoRepository,
                 categoryRepository,
                 orderRepository,
-                Runnable::run  // Direct executor for synchronous test execution
+                Runnable::run,  // Direct executor for synchronous test execution
+                searchableStreamRepository,
+                searchTokenizer
         );
     }
 

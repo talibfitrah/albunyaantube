@@ -13,6 +13,7 @@ import com.albunyaan.tube.repository.CategoryRepository;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
+import com.albunyaan.tube.service.StreamIndexService;
 import com.albunyaan.tube.util.CursorUtils;
 import com.google.cloud.Timestamp;
 import org.junit.jupiter.api.BeforeEach;
@@ -56,6 +57,9 @@ class ApprovalServicePaginationTest {
     @Mock
     private SortOrderService sortOrderService;
 
+    @Mock
+    private StreamIndexService streamIndexService;
+
     private ApprovalService approvalService;
 
     @BeforeEach
@@ -67,7 +71,8 @@ class ApprovalServicePaginationTest {
                 categoryRepository,
                 approvalRepository,
                 auditLogService,
-                sortOrderService
+                sortOrderService,
+                streamIndexService
         );
     }
 

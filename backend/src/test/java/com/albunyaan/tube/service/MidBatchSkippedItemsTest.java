@@ -57,6 +57,9 @@ class MidBatchSkippedItemsTest {
     @Mock
     private AuditLogService auditLogService;
 
+    @Mock
+    private PublicContentCacheService publicContentCacheService;
+
     private ValidationProperties validationProperties;
 
     private ContentValidationService service;
@@ -73,7 +76,8 @@ class MidBatchSkippedItemsTest {
                 youtubeService,
                 auditLogService,
                 validationRunRepository,
-                validationProperties
+                validationProperties,
+                publicContentCacheService
         );
     }
 

@@ -14,9 +14,9 @@ class PublicContentServiceSearchTest {
         PublicContentService.TextFilter filter = new PublicContentService.TextFilter("islam");
 
         ContentItemDto matching = ContentItemDto.video("v1", "Introduction to Islam", null,
-                null, null, "Basic beliefs", null, null);
+                null, null, "Basic beliefs", null, null, null, null);
         ContentItemDto nonMatching = ContentItemDto.video("v2", "Arabic Grammar", null,
-                null, null, "Language study", null, null);
+                null, null, "Language study", null, null, null, null);
 
         List<ContentItemDto> result = filter.apply(List.of(matching, nonMatching));
 
@@ -29,9 +29,9 @@ class PublicContentServiceSearchTest {
         PublicContentService.TextFilter filter = new PublicContentService.TextFilter("quran");
 
         ContentItemDto byDescription = ContentItemDto.video("v1", "Lecture 5", null,
-                null, null, "Quran recitation techniques", null, null);
+                null, null, "Quran recitation techniques", null, null, null, null);
         ContentItemDto noMatch = ContentItemDto.video("v2", "Episode 1", null,
-                null, null, "Something else entirely", null, null);
+                null, null, "Something else entirely", null, null, null, null);
 
         List<ContentItemDto> result = filter.apply(List.of(byDescription, noMatch));
 
@@ -44,9 +44,9 @@ class PublicContentServiceSearchTest {
         PublicContentService.TextFilter filter = new PublicContentService.TextFilter("fiqh");
 
         ContentItemDto channelMatch = ContentItemDto.channel("c1", "Fiqh Academy", null,
-                null, "Islamic jurisprudence", null, null);
+                null, "Islamic jurisprudence", null, null, null);
         ContentItemDto noMatch = ContentItemDto.channel("c2", "Other Channel", null,
-                null, "Nothing relevant", null, null);
+                null, "Nothing relevant", null, null, null);
 
         List<ContentItemDto> result = filter.apply(List.of(channelMatch, noMatch));
 
@@ -58,8 +58,8 @@ class PublicContentServiceSearchTest {
     void textFilter_nullQueryReturnsAll() {
         PublicContentService.TextFilter filter = new PublicContentService.TextFilter(null);
 
-        ContentItemDto item1 = ContentItemDto.video("v1", "Title A", null, null, null, null, null, null);
-        ContentItemDto item2 = ContentItemDto.video("v2", "Title B", null, null, null, null, null, null);
+        ContentItemDto item1 = ContentItemDto.video("v1", "Title A", null, null, null, null, null, null, null, null);
+        ContentItemDto item2 = ContentItemDto.video("v2", "Title B", null, null, null, null, null, null, null, null);
 
         List<ContentItemDto> result = filter.apply(List.of(item1, item2));
 
@@ -71,7 +71,7 @@ class PublicContentServiceSearchTest {
     void textFilter_emptyQueryReturnsAll() {
         PublicContentService.TextFilter filter = new PublicContentService.TextFilter("  ");
 
-        ContentItemDto item = ContentItemDto.video("v1", "Title", null, null, null, null, null, null);
+        ContentItemDto item = ContentItemDto.video("v1", "Title", null, null, null, null, null, null, null, null);
 
         List<ContentItemDto> result = filter.apply(List.of(item));
 

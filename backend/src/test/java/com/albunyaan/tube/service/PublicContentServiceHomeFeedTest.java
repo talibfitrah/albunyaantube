@@ -10,6 +10,7 @@ import com.albunyaan.tube.repository.CategoryContentOrderRepository;
 import com.albunyaan.tube.repository.CategoryRepository;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
+import com.albunyaan.tube.repository.SearchableStreamRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,6 +39,8 @@ class PublicContentServiceHomeFeedTest {
     @Mock private VideoRepository videoRepository;
     @Mock private CategoryRepository categoryRepository;
     @Mock private CategoryContentOrderRepository orderRepository;
+    @Mock private SearchableStreamRepository searchableStreamRepository;
+    @Mock private SearchTokenizer searchTokenizer;
 
     private PublicContentService service;
 
@@ -46,7 +49,9 @@ class PublicContentServiceHomeFeedTest {
         service = new PublicContentService(
                 channelRepository, playlistRepository, videoRepository,
                 categoryRepository, orderRepository,
-                Runnable::run  // Direct executor for synchronous test execution
+                Runnable::run,  // Direct executor for synchronous test execution
+                searchableStreamRepository,
+                searchTokenizer
         );
     }
 

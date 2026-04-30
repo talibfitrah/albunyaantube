@@ -10,6 +10,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.mock.web.MockHttpServletRequest;
 
 import java.util.List;
 
@@ -21,39 +22,44 @@ class IndexControllerTest {
 
     @Mock private StreamIndexService streamIndexService;
     private IndexController controller;
+    private MockHttpServletRequest mockRequest;
 
     @BeforeEach
-    void setUp() { controller = new IndexController(streamIndexService); }
+    void setUp() {
+        controller = new IndexController(streamIndexService);
+        mockRequest = new MockHttpServletRequest();
+        mockRequest.setRemoteAddr("127.0.0.1");
+    }
 
     @Test
     void rejectsInvalidSourceType() {
         IndexStreamsRequest req = req("UNKNOWN", "UCxxxxxxxxxxxxxxxxxxxxxx", List.of());
-        assertEquals(HttpStatus.BAD_REQUEST, controller.indexStreams("dev1", req).getStatusCode());
+        assertEquals(HttpStatus.BAD_REQUEST, controller.indexStreams("dev1", req, mockRequest).getStatusCode());
     }
 
     @Test
     void rejectsInvalidChannelId() {
         // Channel ID too short
         IndexStreamsRequest req = req("CHANNEL", "UC123", List.of());
-        assertEquals(HttpStatus.BAD_REQUEST, controller.indexStreams("dev1", req).getStatusCode());
+        assertEquals(HttpStatus.BAD_REQUEST, controller.indexStreams("dev1", req, mockRequest).getStatusCode());
     }
 
     @Test
     void rejectsInvalidPlaylistId() {
         IndexStreamsRequest req = req("PLAYLIST", "X", List.of());
-        assertEquals(HttpStatus.BAD_REQUEST, controller.indexStreams("dev1", req).getStatusCode());
+        assertEquals(HttpStatus.BAD_REQUEST, controller.indexStreams("dev1", req, mockRequest).getStatusCode());
     }
 
     @Test
     void acceptsValidChannelRequest() {
         IndexStreamsRequest req = req("CHANNEL", "UCxxxxxxxxxxxxxxxxxxxxxx", List.of());
-        assertEquals(HttpStatus.ACCEPTED, controller.indexStreams("dev1", req).getStatusCode());
+        assertEquals(HttpStatus.ACCEPTED, controller.indexStreams("dev1", req, mockRequest).getStatusCode());
     }
 
     @Test
     void acceptsValidPlaylistRequest() {
         IndexStreamsRequest req = req("PLAYLIST", "PLxxxxxxxxxxxxxxxxxxxxxxxxxx", List.of());
-        assertEquals(HttpStatus.ACCEPTED, controller.indexStreams("dev1", req).getStatusCode());
+        assertEquals(HttpStatus.ACCEPTED, controller.indexStreams("dev1", req, mockRequest).getStatusCode());
     }
 
     @Test
@@ -62,7 +68,7 @@ class IndexControllerTest {
         StreamItemDto good = item("abc12345678", "Good Title", "https://i.ytimg.com/vi/abc12345678/hq.jpg");
         IndexStreamsRequest req = req("CHANNEL", "UCxxxxxxxxxxxxxxxxxxxxxx", List.of(bad, good));
 
-        controller.indexStreams("dev1", req);
+        controller.indexStreams("dev1", req, mockRequest);
         Thread.sleep(200); // let async complete
 
         verify(streamIndexService).indexFromChannel(
@@ -76,7 +82,7 @@ class IndexControllerTest {
         StreamItemDto bad = item("abc12345678", "Title", "https://evil.com/img.jpg");
         IndexStreamsRequest req = req("CHANNEL", "UCxxxxxxxxxxxxxxxxxxxxxx", List.of(bad));
 
-        controller.indexStreams("dev1", req);
+        controller.indexStreams("dev1", req, mockRequest);
         Thread.sleep(200);
 
         verify(streamIndexService).indexFromChannel(
@@ -88,8 +94,8 @@ class IndexControllerTest {
     @Test
     void rateLimitsRepeatedRequests() {
         IndexStreamsRequest req = req("CHANNEL", "UCxxxxxxxxxxxxxxxxxxxxxx", List.of());
-        controller.indexStreams("dev1", req); // first: 202
-        ResponseEntity<Void> second = controller.indexStreams("dev1", req);
+        controller.indexStreams("dev1", req, mockRequest); // first: 202
+        ResponseEntity<Void> second = controller.indexStreams("dev1", req, mockRequest);
         assertEquals(HttpStatus.TOO_MANY_REQUESTS, second.getStatusCode());
     }
 
