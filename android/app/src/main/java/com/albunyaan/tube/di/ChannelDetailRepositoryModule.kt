@@ -3,6 +3,7 @@ package com.albunyaan.tube.di
 import com.albunyaan.tube.data.channel.ChannelDetailRepository
 import com.albunyaan.tube.data.channel.NewPipeChannelDetailRepository
 import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
+import com.albunyaan.tube.data.index.IndexRepository
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -22,8 +23,9 @@ object ChannelDetailRepositoryModule {
     @Provides
     @Singleton
     fun provideChannelDetailRepository(
-        extractorClient: NewPipeExtractorClient
+        extractorClient: NewPipeExtractorClient,
+        indexRepository: IndexRepository
     ): ChannelDetailRepository {
-        return NewPipeChannelDetailRepository(extractorClient)
+        return NewPipeChannelDetailRepository(extractorClient, indexRepository)
     }
 }
