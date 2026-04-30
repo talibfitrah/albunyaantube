@@ -2,7 +2,6 @@ package com.albunyaan.tube.di
 
 import android.content.Context
 import androidx.room.Room
-import androidx.room.RoomDatabase
 import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.data.local.AppDatabase
 import com.albunyaan.tube.data.local.ChannelFeedRefreshStateDao
@@ -10,11 +9,15 @@ import com.albunyaan.tube.data.local.ChannelVideoCacheDao
 import com.albunyaan.tube.data.local.FavoriteVideoDao
 import com.albunyaan.tube.data.local.FavoritesRepository
 import com.albunyaan.tube.data.local.FavoritesRepositoryImpl
+import com.albunyaan.tube.data.local.FollowedChannelDao
+import com.albunyaan.tube.data.local.FollowedChannelsRepository
+import com.albunyaan.tube.data.local.FollowedChannelsRepositoryImpl
 import com.albunyaan.tube.data.local.MIGRATION_1_2
 import com.albunyaan.tube.data.local.MIGRATION_2_3
 import com.albunyaan.tube.data.local.MIGRATION_3_4
 import com.albunyaan.tube.data.local.MIGRATION_4_5
 import com.albunyaan.tube.data.local.MIGRATION_5_6
+import com.albunyaan.tube.data.local.MIGRATION_6_7
 import com.albunyaan.tube.data.local.SavedPlaylistDao
 import com.albunyaan.tube.data.local.SubscribedChannelDao
 import dagger.Module
@@ -41,16 +44,17 @@ object DatabaseModule {
             AppDatabase::class.java,
             AppDatabase.DATABASE_NAME
         )
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+            .addMigrations(
+                MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
+                MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7
+            )
 
-        // SAFETY: Only allow destructive migration in debug builds.
-        // Release builds will crash on schema mismatch, forcing proper migration implementation.
-        // This prevents silent data loss in production.
+        // SAFETY: Only allow destructive migration in debug builds as a
+        // developer convenience when schemas are in flux. Release builds
+        // MUST rely on the registered migrations above — never destructive.
         if (BuildConfig.DEBUG) {
             builder.fallbackToDestructiveMigration(dropAllTables = true)
         }
-        // TODO: Before first production release, implement proper Room migrations
-        // to handle schema changes without losing user favorites data.
 
         return builder.build()
     }
@@ -88,4 +92,18 @@ object DatabaseModule {
     @Singleton
     fun provideChannelFeedRefreshStateDao(database: AppDatabase): ChannelFeedRefreshStateDao =
         database.channelFeedRefreshStateDao()
+
+    @Provides
+    @Singleton
+    fun provideFollowedChannelDao(database: AppDatabase): FollowedChannelDao {
+        return database.followedChannelDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideFollowedChannelsRepository(
+        followedChannelDao: FollowedChannelDao
+    ): FollowedChannelsRepository {
+        return FollowedChannelsRepositoryImpl(followedChannelDao)
+    }
 }

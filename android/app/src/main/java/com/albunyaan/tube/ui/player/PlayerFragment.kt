@@ -33,6 +33,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.HttpDataSource
+import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
@@ -61,6 +62,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import com.albunyaan.tube.data.extractor.PlaybackSelection
 import com.albunyaan.tube.data.extractor.QualitySelectionOrigin
 import com.albunyaan.tube.data.extractor.ResolvedStreams
+import com.albunyaan.tube.data.extractor.availableAudioLanguages
 import com.albunyaan.tube.data.extractor.SubtitleTrack
 import com.albunyaan.tube.data.extractor.VideoTrack
 import com.albunyaan.tube.download.DownloadEntry
@@ -102,7 +104,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     @Inject lateinit var degradationManager: com.albunyaan.tube.player.PlaybackDegradationManager
     @Inject lateinit var featureFlags: com.albunyaan.tube.player.PlaybackFeatureFlags
     @Inject lateinit var mpdRegistry: com.albunyaan.tube.player.SyntheticDashMpdRegistry
+    @Inject lateinit var probationChecker: com.albunyaan.tube.player.HlsProbationChecker
     @Inject lateinit var bufferPolicy: AdaptiveBufferPolicy
+    @Inject lateinit var cronetDataSourceFactory: com.albunyaan.tube.player.CronetDataSourceFactory
+    @Inject lateinit var simpleCache: SimpleCache
+    @Inject lateinit var neverFreezeTrackSelectionFactory: com.albunyaan.tube.player.NeverFreezeTrackSelectionFactory
 
     private var binding: FragmentPlayerBinding? = null
     private var player: ExoPlayer? = null
@@ -135,6 +141,13 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private var lastVideoWidth = 0
     private var lastVideoHeight = 0
     private var lastPixelRatio = 1f
+    /**
+     * True when the displayed video is portrait (height > width after applying
+     * any encoded rotation). Computed in onVideoSizeChanged so callers don't
+     * have to think about VideoSize.unappliedRotationDegrees — many 9:16
+     * sources are encoded landscape with a 90° rotation tag.
+     */
+    private var lastVideoIsPortrait = false
     /** Crop budget for AspectPolicy — resolved from PlaybackFeatureFlags for feature-flaggable control. */
     private val cropBudget: Float by lazy {
         if (featureFlags.isGenerousCropBudgetEnabled)
@@ -466,6 +479,50 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             showDownloadQualityPicker()
         }
 
+        // Audio-language picker: button is hidden until the currently-playing
+        // video exposes ≥2 audio-language tracks (NewPipe-surfaced dub locales).
+        binding.audioLanguageButton.setOnClickListener {
+            showAudioLanguagePicker()
+        }
+
+        binding.subtitleButton.setOnClickListener {
+            showSubtitlePicker()
+        }
+
+        // Audio-language dialog result — apply the user's pick via the ViewModel,
+        // which emits AudioTrackSwapReady that the main event handler catches
+        // and rebuilds the MediaSource around.
+        childFragmentManager.setFragmentResultListener(
+            com.albunyaan.tube.ui.shorts.AudioLanguageDialog.REQUEST_KEY,
+            viewLifecycleOwner
+        ) { _, result ->
+            val code = result.getString(
+                com.albunyaan.tube.ui.shorts.AudioLanguageDialog.RESULT_SELECTED_LANGUAGE
+            ) ?: return@setFragmentResultListener
+            val streamState = viewModel.state.value.streamState
+            if (streamState !is StreamState.Ready) return@setFragmentResultListener
+            val options = streamState.selection.resolved.availableAudioLanguages()
+            val chosen = options.firstOrNull { it.language == code } ?: return@setFragmentResultListener
+            viewModel.selectAudioTrack(chosen.representative)
+        }
+
+        childFragmentManager.setFragmentResultListener(
+            com.albunyaan.tube.ui.shared.SubtitlePickerDialog.REQUEST_KEY,
+            viewLifecycleOwner
+        ) { _, result ->
+            val code = result.getString(com.albunyaan.tube.ui.shared.SubtitlePickerDialog.RESULT_SELECTED_CODE)
+            player?.let { p ->
+                p.trackSelectionParameters = p.trackSelectionParameters
+                    .buildUpon()
+                    .setPreferredTextLanguage(code)
+                    .build()
+            }
+            val track = if (code != null) {
+                viewModel.getAvailableSubtitles().firstOrNull { it.languageCode == code }
+            } else null
+            viewModel.selectSubtitle(track)
+        }
+
         // Register Fragment Result listener for download quality selection (survives process death)
         childFragmentManager.setFragmentResultListener(
             DownloadQualityDialog.REQUEST_KEY,
@@ -507,7 +564,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // rate-limited, so the next allowed refresh uses fresh URLs. Different from
             // auto-recovery path (line ~1475) where invalidation is conditional.
             viewModel.state.value.currentItem?.streamId?.let { videoId ->
-                mpdRegistry.unregister(videoId)
+                mpdRegistry.unregisterBoth(videoId)
             }
             // PR5: Show feedback if rate-limited
             if (!viewModel.forceRefreshCurrentStream()) {
@@ -525,7 +582,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // Manual retry: ALWAYS invalidate MPD first, regardless of rate limit.
             // Same reasoning as refresh button - user action clears stale URLs.
             viewModel.state.value.currentItem?.streamId?.let { videoId ->
-                mpdRegistry.unregister(videoId)
+                mpdRegistry.unregisterBoth(videoId)
             }
             // PR5: Show feedback if rate-limited
             if (!viewModel.forceRefreshCurrentStream()) {
@@ -591,14 +648,22 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             userDismissedFullscreen = false
         }
 
+        val isPortraitVideo = lastVideoIsPortrait
+
         if (pendingFullscreenExit && !isLandscape) {
             // Deferred fullscreen exit: toggleFullscreen() deferred exit restoration because
             // it was still in landscape. Now portrait has arrived — run exit UI after
             // orientation unlock is processed (below), then return.
         } else if (orientationChanged) {
-            // Don't auto-enter fullscreen if user explicitly exited via button while in landscape.
-            // This prevents the "exit → orientation unlock → re-enter" loop.
-            if (isLandscape && userDismissedFullscreen) {
+            // Portrait videos fullscreen in portrait, so auto-toggling on orientation
+            // would either yank the user out of fullscreen on entry (landscape→portrait
+            // rotation we requested ourselves) or auto-enter landscape fullscreen for a
+            // 9:16 source. Skip the auto-toggle and let the explicit button drive it.
+            if (isPortraitVideo) {
+                if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onConfigurationChanged: portrait video, skipping auto-toggle")
+            } else if (isLandscape && userDismissedFullscreen) {
+                // Don't auto-enter fullscreen if user explicitly exited via button while in landscape.
+                // This prevents the "exit → orientation unlock → re-enter" loop.
                 if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onConfigurationChanged: skipping auto-fullscreen (user dismissed)")
             } else {
                 isFullscreen = isLandscape
@@ -620,18 +685,19 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                                (targetOrientationIsLandscape == false && !isLandscape)
             if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onConfigurationChanged: weLockedOrientation=true, target=${if (targetOrientationIsLandscape == true) "LANDSCAPE" else "PORTRAIT"}, reachedTarget=$reachedTarget")
             if (reachedTarget) {
-                // Only schedule unlock when exiting fullscreen (target=PORTRAIT)
-                // When entering fullscreen (target=LANDSCAPE), keep the lock active
-                if (targetOrientationIsLandscape == false) {
-                    // Cancel fallback timeout since config change fired successfully
-                    // Reschedule with shorter delay to allow orientation to stabilize
-                    scheduleOrientationUnlock(ORIENTATION_UNLOCK_DELAY_MS)
-                } else {
-                    // Entering fullscreen - reached landscape, clear flags but keep locked
-                    if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onConfigurationChanged: reached fullscreen landscape, keeping lock active")
+                // Decide enter-vs-exit by isFullscreen, not by target orientation —
+                // portrait fullscreen for 9:16 videos has target=PORTRAIT but is an
+                // ENTRY, and must keep the lock active just like landscape entry.
+                if (isFullscreen) {
+                    // Reached fullscreen target — clear flags but keep orientation locked
+                    if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onConfigurationChanged: reached fullscreen target, keeping lock active")
                     weLockedOrientation = false
                     targetOrientationIsLandscape = null
-                    // Note: requestedOrientation remains SENSOR_LANDSCAPE
+                } else {
+                    // Exiting fullscreen — schedule unlock so device can rotate freely again.
+                    // Cancel fallback timeout since config change fired successfully;
+                    // reschedule with shorter delay to allow orientation to stabilize.
+                    scheduleOrientationUnlock(ORIENTATION_UNLOCK_DELAY_MS)
                 }
             }
         }
@@ -717,6 +783,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             viewModel.metrics.onSessionEnded(streamId)
         }
 
+        // Telemetry: flush the active PlaybackSession log line
+        streamTelemetry.endSession()
+
         // Clean up player resources - ExoPlayer handles its own callback cleanup during release
         binding?.playerView?.player = null
         preparedStreamKey = null
@@ -777,7 +846,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             hlsPoisonRegistry,
             multiRepFactory,
             coldStartQualityChooser,
-            featureFlags
+            featureFlags,
+            mpdRegistry,
+            probationChecker,
+            cronetDataSourceFactory,
+            simpleCache = simpleCache
         )
     }
 
@@ -789,9 +862,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         // Configure track selector for adaptive streaming quality constraints
         // Phase 3: Use QualityTrackSelector for CAP/LOCK mode support
-        val trackSelector = QualityTrackSelector.createForDiscreteQualities(requireContext()).also {
-            this.trackSelector = it
-        }
+        val trackSelector = if (featureFlags.isNeverFreezeAbrEnabled) {
+            QualityTrackSelector(requireContext(), neverFreezeTrackSelectionFactory.create())
+        } else {
+            QualityTrackSelector.createForDiscreteQualities(requireContext())
+        }.also { this.trackSelector = it }
 
         val renderersFactory = DefaultRenderersFactory(requireContext())
             .setEnableDecoderFallback(true)
@@ -997,6 +1072,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     viewModel.state.value.currentItem?.streamId?.let { streamId ->
                         viewModel.metrics.onRebufferingStarted(streamId)
                     }
+                    // Telemetry: only count mid-play rebuffers (not initial buffering before first frame)
+                    if (videoFrameRendered) {
+                        streamTelemetry.recordRebuffer()
+                    }
                 }
 
                 // Delegate to recovery manager for freeze detection
@@ -1057,6 +1136,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 viewModel.state.value.currentItem?.streamId?.let { streamId ->
                     viewModel.metrics.onFirstFrameRendered(streamId)
                 }
+
+                // Telemetry: record time-to-first-frame in the active session
+                streamTelemetry.recordFirstFrame()
             }
 
             override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
@@ -1065,11 +1147,25 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     "playerViewResizeMode=${binding?.playerView?.resizeMode}")
 
                 if (videoSize.width > 0 && videoSize.height > 0) {
-                    lastVideoWidth = videoSize.width
-                    lastVideoHeight = videoSize.height
-                    lastPixelRatio = videoSize.pixelWidthHeightRatio
+                    val rotated = videoSize.unappliedRotationDegrees == 90 || videoSize.unappliedRotationDegrees == 270
+                    // Cache post-rotation (displayed) dimensions so AspectPolicy and the
+                    // portrait-fullscreen detector both see what the user will actually
+                    // see on screen — many 9:16 sources are encoded landscape with a 90°
+                    // rotation tag and would otherwise be mis-computed as landscape.
+                    // Pixel aspect ratio inverts with the swap: PAR is defined relative
+                    // to the encoded width/height, so swapping demands 1/PAR. Square
+                    // pixels (PAR=1) are unaffected; anamorphic sources need this.
+                    lastVideoWidth = if (rotated) videoSize.height else videoSize.width
+                    lastVideoHeight = if (rotated) videoSize.width else videoSize.height
+                    val rawPar = videoSize.pixelWidthHeightRatio
+                    val safePar = if (rawPar.isFinite() && rawPar > 0f) rawPar else 1f
+                    lastPixelRatio = if (rotated) 1f / safePar else safePar
+                    lastVideoIsPortrait = lastVideoHeight > lastVideoWidth
 
-                    val videoAspect = (videoSize.width.toFloat() * videoSize.pixelWidthHeightRatio) / videoSize.height.toFloat()
+                    // Telemetry uses the cached (rotation-aware) values so the
+                    // mismatch metric reflects what the user actually sees on
+                    // screen, not the encoded frame.
+                    val videoAspect = (lastVideoWidth.toFloat() * lastPixelRatio) / lastVideoHeight.toFloat()
                     val dm = resources.displayMetrics
                     val screenAspect = maxOf(dm.widthPixels, dm.heightPixels).toFloat() / minOf(dm.widthPixels, dm.heightPixels).toFloat()
                     viewModel.state.value.currentItem?.streamId?.let { streamId ->
@@ -1080,9 +1176,12 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         val pv = binding?.playerView ?: return
                         val screenW = pv.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
                         val screenH = pv.height.takeIf { it > 0 } ?: resources.displayMetrics.heightPixels
+                        // Use the cached (rotation-aware) PAR alongside the cached
+                        // displayed dims — passing the raw videoSize.pixelWidthHeightRatio
+                        // here would mismatch when the cached dims were swapped above.
                         fullscreenResizeMode = AspectPolicy.computeResizeMode(
-                            screenW, screenH, videoSize.width, videoSize.height,
-                            videoSize.pixelWidthHeightRatio, cropBudget
+                            screenW, screenH, lastVideoWidth, lastVideoHeight,
+                            lastPixelRatio, cropBudget
                         )
                         pv.resizeMode = fullscreenResizeMode
                     }
@@ -1239,6 +1338,20 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             } ?: getString(R.string.player_no_current_item)
             binding.completeButton.isEnabled = state.streamState is StreamState.Ready
             updateDownloadControls(binding, state)
+            // Show audio-language button only when the current video exposes
+            // multiple language tracks (NewPipe-surfaced dub locales). For
+            // single-track videos we hide the control entirely.
+            val ready = state.streamState as? StreamState.Ready
+            val langCount = ready?.selection?.resolved?.availableAudioLanguages()?.size ?: 0
+            binding.audioLanguageButton.isVisible = langCount >= 2
+            val hasSubtitles = ready?.selection?.resolved?.subtitleTracks?.isNotEmpty() == true
+            binding.subtitleButton.isVisible = hasSubtitles
+            if (BuildConfig.DEBUG) {
+                android.util.Log.d(
+                    "PlayerAudioLangBtn",
+                    "streamId=${ready?.streamId} langCount=$langCount visible=${binding.audioLanguageButton.isVisible}"
+                )
+            }
             upNextAdapter.submitList(state.upNext)
             binding.upNextList.isVisible = state.upNext.isNotEmpty()
             binding.upNextEmpty.isVisible = state.upNext.isEmpty()
@@ -1276,6 +1389,19 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     }
                     is PlayerUiEvent.LiveStreamRefreshReady -> {
                         handleLiveStreamRefresh(event)
+                    }
+                    is PlayerUiEvent.AudioTrackSwapReady -> {
+                        // Reuse the live-refresh seamless swap path with a
+                        // filtered ResolvedStreams so the factory uses only
+                        // the chosen audio track. Same guarantees re: position
+                        // preservation, MediaSession sync, error handling.
+                        val filteredResolved = event.newSelection.resolved.copy(
+                            audioTracks = listOf(event.newSelection.audio)
+                        )
+                        val filteredSelection = event.newSelection.copy(resolved = filteredResolved)
+                        handleLiveStreamRefresh(
+                            PlayerUiEvent.LiveStreamRefreshReady(event.streamId, filteredSelection)
+                        )
                     }
                 }
             }
@@ -1366,7 +1492,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         override fun onMenuItemSelected(menuItem: MenuItem): Boolean {
             return when (menuItem.itemId) {
                 R.id.action_captions -> {
-                    showCaptionSelector()
+                    showSubtitlePicker()
                     true
                 }
                 R.id.action_enter_pip -> {
@@ -1476,6 +1602,28 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
      * Uses Fragment Result API for process-death safety. The listener is registered
      * in onViewCreated() so it survives configuration changes and process death.
      */
+    /**
+     * Show the audio-language picker. No-op if the current stream has fewer
+     * than two selectable languages — the rail button is already hidden in
+     * that case, but we guard against rare races where state changed between
+     * the tap and the menu open.
+     */
+    private fun showAudioLanguagePicker() {
+        val streamState = viewModel.state.value.streamState
+        if (streamState !is StreamState.Ready) return
+        val options = streamState.selection.resolved.availableAudioLanguages()
+        if (options.size < 2) return
+        val triples = options.map { opt ->
+            val label = if (opt.isOriginal) {
+                getString(R.string.shorts_audio_track_original_prefix, opt.displayName)
+            } else opt.displayName
+            Triple(opt.language, label, opt.isOriginal)
+        }
+        com.albunyaan.tube.ui.shorts.AudioLanguageDialog
+            .newInstance(triples, streamState.selection.audio.language)
+            .show(childFragmentManager, com.albunyaan.tube.ui.shorts.AudioLanguageDialog.TAG)
+    }
+
     private fun showDownloadQualityPicker() {
         val streamState = viewModel.state.value.streamState
 
@@ -1489,43 +1637,13 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         ).show(childFragmentManager, DownloadQualityDialog.TAG)
     }
 
-    // Overlay controls are now always visible - removed toggle functionality
-    // This provides better UX as users always have access to quality/cast/minimize buttons
-
-    private fun showCaptionSelector() {
+    private fun showSubtitlePicker() {
         val subtitles = viewModel.getAvailableSubtitles()
-
-        // Add "Off" option at the beginning
-        val options = mutableListOf(getString(R.string.player_captions_off))
-        options.addAll(subtitles.map { track: SubtitleTrack ->
-            if (track.isAutoGenerated) {
-                getString(R.string.player_captions_auto_generated, track.languageName)
-            } else {
-                track.languageName
-            }
-        })
-
-        val currentSubtitle = viewModel.getSelectedSubtitle()
-        val currentIndex = if (currentSubtitle == null) {
-            0 // "Off" is selected
-        } else {
-            subtitles.indexOfFirst { it.languageCode == currentSubtitle.languageCode } + 1
-        }
-
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(R.string.player_captions_dialog_title)
-            .setSingleChoiceItems(options.toTypedArray(), currentIndex) { dialog, which ->
-                if (which == 0) {
-                    // "Off" selected
-                    viewModel.selectSubtitle(null)
-                } else {
-                    // Subtitle track selected (adjust index by -1 for "Off")
-                    viewModel.selectSubtitle(subtitles[which - 1])
-                }
-                dialog.dismiss()
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+        if (subtitles.isEmpty()) return
+        val tracks = subtitles.map { Triple(it.languageCode, it.languageName, it.isAutoGenerated) }
+        val currentCode = player?.trackSelectionParameters?.preferredTextLanguages?.firstOrNull()
+        com.albunyaan.tube.ui.shared.SubtitlePickerDialog.newInstance(tracks, currentCode)
+            .show(childFragmentManager, com.albunyaan.tube.ui.shared.SubtitlePickerDialog.TAG)
     }
 
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean) {
@@ -1737,7 +1855,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         // Without this, a refresh within TTL (2 min) can hit the MPD cache and reuse the same
         // failing URLs, causing 403 loops. This ensures the next media source build regenerates
         // the MPD with fresh URLs from the new extraction.
-        mpdRegistry.unregister(currentItem.streamId)
+        mpdRegistry.unregisterBoth(currentItem.streamId)
         if (BuildConfig.DEBUG) {
             android.util.Log.d("PlayerFragment", "Invalidated cached MPD for ${currentItem.streamId} before refresh")
         }
@@ -1842,7 +1960,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 }
 
                 // Invalidate cached MPD to force fresh extraction with potentially different URLs
-                mpdRegistry.unregister(videoId)
+                mpdRegistry.unregisterBoth(videoId)
                 android.util.Log.d("PlayerFragment", "Invalidated cached MPD for $videoId during fallback")
 
                 degradationManager.onDegradationApplied(videoId, action)
@@ -1950,6 +2068,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 responseBody = responseBody,
                 playbackPositionMs = player.currentPosition
             )
+
+            // Telemetry: count this 403 in the active session
+            streamTelemetry.record403()
 
             android.util.Log.w(
                 "PlayerFragment",
@@ -2490,6 +2611,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         // Reset state when switching to a different stream (not quality switch)
         if (!isSameStream) {
+            // Telemetry: end the previous session (if any) and start a fresh one
+            streamTelemetry.endSession()
+            streamTelemetry.startSession(streamState.streamId)
+
             // Phase 1B: Reset playback start time for HLS early 403 detection
             streamPlaybackStartTimeMs = 0L
 
@@ -2506,6 +2631,15 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     binding?.playerView?.resizeMode = fullscreenResizeMode
                 }
             }
+            // Drop the cached video dimensions/orientation. onVideoSizeChanged for
+            // the next stream will repopulate. Without this, a quick fullscreen tap
+            // between stream prepare and the first onVideoSizeChanged callback would
+            // read the previous video's orientation — e.g. a portrait short followed
+            // by a landscape video would briefly route the next tap to portrait.
+            lastVideoWidth = 0
+            lastVideoHeight = 0
+            lastPixelRatio = 1f
+            lastVideoIsPortrait = false
         }
 
         val hasPendingResume = pendingResumeStreamId == streamState.streamId && pendingResumePositionMs != null
@@ -2739,6 +2873,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         return object : PlaybackRecoveryManager.RecoveryCallbacks {
             override fun onRecoveryStarted(step: PlaybackRecoveryManager.RecoveryStep, attempt: Int) {
                 android.util.Log.i("PlayerFragment", "Recovery started: step=$step, attempt=$attempt")
+                streamTelemetry.recordRecoveryStep()
                 val state = viewModel.state.value
                 val streamState = state.streamState
 
@@ -3046,13 +3181,29 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         if (isFullscreen) {
             // Entering fullscreen via button — clear dismiss flag so auto-fullscreen works
             userDismissedFullscreen = false
-            // Request landscape orientation - will trigger onConfigurationChanged
-            // Mark that WE locked orientation - but DON'T schedule unlock for fullscreen entry.
-            // We keep it locked to SENSOR_LANDSCAPE until user exits fullscreen.
+            // Source-aware orientation: portrait-shot videos (e.g. 9:16 vertical
+            // recordings that aren't routed to the Shorts player) should fullscreen
+            // in portrait; standard 16:9 stays landscape.
+            val isPortraitVideo = lastVideoIsPortrait
+            // Request orientation - will trigger onConfigurationChanged when rotation needed.
+            // Keep the device locked to the chosen orientation until the user exits fullscreen.
             weLockedOrientation = true
-            targetOrientationIsLandscape = true
-            if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "toggleFullscreen: lock set, target=LANDSCAPE, current=${if (isCurrentlyLandscape) "LANDSCAPE" else "PORTRAIT"} (no unlock scheduled)")
-            requireActivity().requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            targetOrientationIsLandscape = !isPortraitVideo
+            val targetIsLandscape = !isPortraitVideo
+            if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "toggleFullscreen: lock set, target=${if (isPortraitVideo) "PORTRAIT" else "LANDSCAPE"}, current=${if (isCurrentlyLandscape) "LANDSCAPE" else "PORTRAIT"} (no unlock scheduled)")
+            requireActivity().requestedOrientation = if (isPortraitVideo)
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+            else
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            // If the current orientation already matches the target (no rotation
+            // needed, e.g. portrait video on a portrait phone), onConfigurationChanged
+            // will never fire to clear the lock-pending flags. Clear them now so a
+            // later non-orientation config change (font scale, locale, theme) can't
+            // accidentally take the reached-target branch with stale state.
+            if (targetIsLandscape == isCurrentlyLandscape) {
+                weLockedOrientation = false
+                targetOrientationIsLandscape = null
+            }
             // NO scheduleOrientationUnlock() - lock stays until user exits fullscreen
         } else {
             // Exiting fullscreen via button — if currently landscape, mark that user
@@ -3322,10 +3473,17 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 binding.playerView.layoutParams = playerParams
             }
 
-            // Compute resize mode via AspectPolicy using known video dimensions
+            // Compute resize mode via AspectPolicy using known video dimensions.
+            // Use the screen's actual portrait/landscape orientation rather than
+            // assuming landscape — for a 9:16 video on a tall portrait panel
+            // (e.g. S25 Ultra ~19.5:9) feeding swapped dims tricks the policy
+            // into FIT and leaves top/bottom letterbox instead of filling.
             if (!userToggledResizeMode && lastVideoWidth > 0 && lastVideoHeight > 0) {
-                val screenW = resources.displayMetrics.let { maxOf(it.widthPixels, it.heightPixels) }
-                val screenH = resources.displayMetrics.let { minOf(it.widthPixels, it.heightPixels) }
+                val dm = resources.displayMetrics
+                val screenIsPortrait = resources.configuration.orientation ==
+                    android.content.res.Configuration.ORIENTATION_PORTRAIT
+                val screenW = if (screenIsPortrait) minOf(dm.widthPixels, dm.heightPixels) else maxOf(dm.widthPixels, dm.heightPixels)
+                val screenH = if (screenIsPortrait) maxOf(dm.widthPixels, dm.heightPixels) else minOf(dm.widthPixels, dm.heightPixels)
                 fullscreenResizeMode = AspectPolicy.computeResizeMode(
                     screenW, screenH, lastVideoWidth, lastVideoHeight, lastPixelRatio, cropBudget
                 )

@@ -32,7 +32,7 @@ import javax.inject.Singleton
  * 1. Register MPD content: `SyntheticDashMpdRegistry.register(videoId, mpdXml)`
  * 2. Create MediaItem with URI: `syntheticdash://{videoId}`
  * 3. Use SyntheticDashDataSource.Factory with DashMediaSource
- * 4. Clean up: `SyntheticDashMpdRegistry.unregister(videoId)` after playback
+ * 4. Clean up: `SyntheticDashMpdRegistry.unregisterBoth(videoId)` after playback
  */
 @OptIn(UnstableApi::class)
 class SyntheticDashDataSource(
@@ -354,6 +354,16 @@ class SyntheticDashMpdRegistry @Inject constructor() {
                 Log.d(TAG, "Unregistered MPD for $videoId (total=${mpdStore.size})")
             }
         }
+    }
+
+    /**
+     * Unregister both the video MPD and the companion audio MPD for a videoId.
+     * Use this at all cleanup sites instead of [unregister] to avoid leaking the
+     * "${videoId}_audio" entry that [tryCreateSyntheticDashSource] registers.
+     */
+    fun unregisterBoth(videoId: String) {
+        unregister(videoId)
+        unregister("${videoId}_audio")
     }
 
     /**

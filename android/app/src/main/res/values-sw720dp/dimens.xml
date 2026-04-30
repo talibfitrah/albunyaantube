@@ -5,6 +5,9 @@
     <!-- Navigation (TV/Large Tablets - optimized for 10-foot viewing) -->
     <dimen name="bottom_nav_height">0dp</dimen>
     <dimen name="navigation_rail_width">96dp</dimen>  <!-- Wider rail for TV D-pad navigation -->
+
+    <!-- Shorts action rail: no bottom nav, but overlay needs clearance. -->
+    <dimen name="shorts_action_rail_bottom_margin">128dp</dimen>
     <dimen name="navigation_rail_icon_size">32dp</dimen>  <!-- Larger icons for 10-foot viewing -->
     <dimen name="navigation_rail_label_size">14sp</dimen>  <!-- Larger labels for TV readability -->
 

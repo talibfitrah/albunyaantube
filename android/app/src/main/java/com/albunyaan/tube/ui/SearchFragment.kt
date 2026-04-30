@@ -16,6 +16,8 @@ import com.albunyaan.tube.R
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.databinding.FragmentSearchBinding
 import coil.ImageLoader
+import com.albunyaan.tube.player.PlaybackFeatureFlags
+import com.albunyaan.tube.player.PredictivePrefetchController
 import com.albunyaan.tube.player.StreamPrefetchService
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Job
@@ -40,6 +42,11 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
     @Inject
     lateinit var prefetchService: StreamPrefetchService
 
+    @Inject
+    lateinit var featureFlags: PlaybackFeatureFlags
+
+    private var prefetchController: PredictivePrefetchController? = null
+
     private val viewModel: SearchViewModel by viewModels()
 
     private var searchJob: Job? = null
@@ -57,6 +64,16 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
         setupSearchView()
         setupSearchHistory()
         setupResultsList()
+        if (featureFlags.isPredictivePrefetchEnabled) {
+            prefetchController = PredictivePrefetchController(
+                prefetchService,
+                viewLifecycleOwner.lifecycleScope,
+                videoIdResolver = { pos ->
+                    searchResultsAdapter.currentList.getOrNull(pos)?.let { if (it is ContentItem.Video) it.id else null }
+                }
+            )
+            binding?.searchResultsList?.let { prefetchController?.attach(it) }
+        }
         loadSearchHistory()
         observeSearchResults()
     }
@@ -265,7 +282,6 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
     private fun handleItemClick(item: ContentItem) {
         when (item) {
             is ContentItem.Video -> {
-                // Start prefetch immediately when user taps - hides latency behind navigation animation
                 prefetchService.triggerPrefetch(item.id, viewLifecycleOwner.lifecycleScope)
                 findNavController().navigate(
                     R.id.action_global_playerFragment,
@@ -304,6 +320,8 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
     }
 
     override fun onDestroyView() {
+        prefetchController?.detach()
+        prefetchController = null
         searchJob?.cancel()
         binding = null
         super.onDestroyView()

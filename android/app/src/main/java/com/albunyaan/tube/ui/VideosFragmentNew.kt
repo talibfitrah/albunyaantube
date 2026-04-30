@@ -25,6 +25,8 @@ import com.albunyaan.tube.ui.adapters.VideoGridAdapter
 import com.albunyaan.tube.ui.utils.AutofillPaginationHelper
 import com.albunyaan.tube.ui.utils.calculateGridSpanCount
 import com.albunyaan.tube.ui.utils.updateCategoryFilter
+import com.albunyaan.tube.player.PlaybackFeatureFlags
+import com.albunyaan.tube.player.PredictivePrefetchController
 import com.albunyaan.tube.player.StreamPrefetchService
 import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
@@ -47,7 +49,12 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
     lateinit var prefetchService: StreamPrefetchService
 
     @Inject
+    lateinit var featureFlags: PlaybackFeatureFlags
+
+    @Inject
     lateinit var filterManager: FilterManager
+
+    private var prefetchController: PredictivePrefetchController? = null
 
     private val viewModel: ContentListViewModel by viewModels {
         ContentListViewModel.Factory(
@@ -64,6 +71,14 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
         binding = FragmentSimpleListBinding.bind(view)
 
         setupRecyclerView()
+        if (featureFlags.isPredictivePrefetchEnabled) {
+            prefetchController = PredictivePrefetchController(
+                prefetchService,
+                viewLifecycleOwner.lifecycleScope,
+                videoIdResolver = { pos -> adapter.currentList.getOrNull(pos)?.id }
+            )
+            binding?.recyclerView?.let { prefetchController?.attach(it) }
+        }
         setupSwipeRefresh()
         setupSearch()
         observeFilters()
@@ -162,9 +177,7 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
     }
 
     private fun navigateToPlayer(video: ContentItem.Video) {
-        // Start prefetch immediately when user taps - hides latency behind navigation animation
         prefetchService.triggerPrefetch(video.id, viewLifecycleOwner.lifecycleScope)
-
         val bundle = bundleOf(
             "videoId" to video.id,
             "title" to video.title,
@@ -298,6 +311,8 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
 
     override fun onDestroyView() {
         searchHandler.removeCallbacksAndMessages(null)
+        prefetchController?.detach()
+        prefetchController = null
         autofillHelper.reset()
         binding = null
         super.onDestroyView()

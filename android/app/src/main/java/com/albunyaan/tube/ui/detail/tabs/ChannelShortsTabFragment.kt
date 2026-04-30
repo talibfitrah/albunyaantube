@@ -17,6 +17,8 @@ import com.albunyaan.tube.data.channel.ChannelShort
 import com.albunyaan.tube.data.channel.ChannelTab
 import com.albunyaan.tube.data.channel.Page
 import com.albunyaan.tube.databinding.FragmentChannelShortsTabBinding
+import com.albunyaan.tube.player.PlaybackFeatureFlags
+import com.albunyaan.tube.player.PredictivePrefetchController
 import com.albunyaan.tube.player.StreamPrefetchService
 import com.albunyaan.tube.ui.detail.ChannelDetailViewModel
 import com.albunyaan.tube.ui.detail.adapters.ChannelShortsAdapter
@@ -36,6 +38,11 @@ class ChannelShortsTabFragment : Fragment(R.layout.fragment_channel_shorts_tab) 
 
     @Inject
     lateinit var prefetchService: StreamPrefetchService
+
+    @Inject
+    lateinit var featureFlags: PlaybackFeatureFlags
+
+    private var prefetchController: PredictivePrefetchController? = null
 
     private var binding: FragmentChannelShortsTabBinding? = null
 
@@ -66,20 +73,13 @@ class ChannelShortsTabFragment : Fragment(R.layout.fragment_channel_shorts_tab) 
 
     private val adapter by lazy {
         ChannelShortsAdapter { short ->
-            // Trigger prefetch before navigation (hides 2-5s extraction latency)
-            // Use lifecycleScope (not viewLifecycleOwner) so prefetch survives navigation
             prefetchService.triggerPrefetch(short.id, lifecycleScope)
-
             // Navigate to video player for shorts
             findNavController().navigate(
-                R.id.action_global_playerFragment,
+                R.id.action_global_shortsPlayerFragment,
                 Bundle().apply {
-                    putString("videoId", short.id)
-                    putString("title", short.title)
-                    putString("channelName", channelName)
-                    putString("thumbnailUrl", short.thumbnailUrl ?: "")
-                    putInt("durationSeconds", short.durationSeconds ?: 0)
-                    putLong("viewCount", short.viewCount ?: -1L)
+                    putString("initialShortId", short.id)
+                    putString("channelId", channelId)
                 }
             )
         }
@@ -93,6 +93,14 @@ class ChannelShortsTabFragment : Fragment(R.layout.fragment_channel_shorts_tab) 
         setupSwipeRefresh()
         setupErrorRetry()
         observeState()
+        if (featureFlags.isPredictivePrefetchEnabled) {
+            prefetchController = PredictivePrefetchController(
+                prefetchService,
+                viewLifecycleOwner.lifecycleScope,
+                videoIdResolver = { pos -> adapter.currentList.getOrNull(pos)?.id }
+            )
+            binding?.shortsRecycler?.let { prefetchController?.attach(it) }
+        }
     }
 
     private fun setupRecyclerView() {
@@ -338,6 +346,8 @@ class ChannelShortsTabFragment : Fragment(R.layout.fragment_channel_shorts_tab) 
     }
 
     override fun onDestroyView() {
+        prefetchController?.detach()
+        prefetchController = null
         footerAdapter = null
         binding = null
         super.onDestroyView()

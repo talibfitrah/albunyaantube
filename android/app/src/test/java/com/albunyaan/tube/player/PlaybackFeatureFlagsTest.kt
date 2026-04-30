@@ -220,7 +220,14 @@ class PlaybackFeatureFlagsTest {
         assertTrue("Should contain degradation_manager", diagnostics.containsKey("degradation_manager"))
         assertTrue("Should contain ios_fetch", diagnostics.containsKey("ios_fetch"))
         assertTrue("Should contain generous_crop_budget", diagnostics.containsKey("generous_crop_budget"))
-        assertEquals("Should have 5 flags", 5, diagnostics.size)
+        assertTrue("Should contain client_rotation", diagnostics.containsKey("client_rotation"))
+        assertTrue("Should contain hls_probation", diagnostics.containsKey("hls_probation"))
+        assertTrue("Should contain cronet_enabled", diagnostics.containsKey("cronet_enabled"))
+        assertTrue("Should contain predictive_prefetch", diagnostics.containsKey("predictive_prefetch"))
+        assertTrue("Should contain segment_preload", diagnostics.containsKey("segment_preload"))
+        assertTrue("Should contain never_freeze_abr", diagnostics.containsKey("never_freeze_abr"))
+        assertTrue("Should contain ttl_watcher", diagnostics.containsKey("ttl_watcher"))
+        assertEquals("Should have 12 flags", 12, diagnostics.size)
     }
 
     // --- Generous Crop Budget Flag Tests ---

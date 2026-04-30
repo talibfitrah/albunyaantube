@@ -37,6 +37,7 @@ class NewPipeExtractorClient(
     private val cache: MetadataCache,
     private val metrics: ExtractorMetricsReporter,
     private val featureFlags: PlaybackFeatureFlags,
+    private val clientRotator: YoutubeClientRotator = YoutubeClientRotator(),
     /**
      * Clock provider for timestamps. Uses SystemClock.elapsedRealtime() by default
      * to match StreamModels.areUrlsExpired() which also uses elapsedRealtime().
@@ -102,20 +103,51 @@ class NewPipeExtractorClient(
         try {
             val handler = streamLinkHandlerFactory.fromId(videoId)
             val extractor = youtubeService.getStreamExtractor(handler)
-            // Apply runtime iOS fetch setting before extraction (enables toggle without restart).
+            // Apply client setting before extraction. On initial attempt, derive client from
+            // feature flags (IOS when isIosFetchEnabled, ANDROID otherwise). When forceRefresh=true
+            // and client rotation is enabled, advance to the next fallback client instead.
             // NOTE: Synchronization only ensures atomic apply of the setting to NewPipe's global state.
             // It does NOT guarantee that concurrent extractions (in fetchPage()) observe the same
             // value throughout their execution. Full serialization would be too costly. This is
             // acceptable since toggles are rare (ops/debug only) and not toggled during playback.
-            synchronized(NewPipeExtractorClient::class.java) {
-                applyIosFetchSetting()
+            if (forceRefresh && featureFlags.isClientRotationEnabled) {
+                val nextClient = clientRotator.nextClient(videoId)
+                if (nextClient != null) {
+                    synchronized(NewPipeExtractorClient::class.java) {
+                        applyClientSetting(nextClient)
+                    }
+                } else {
+                    // All clients exhausted — restore initial setting and report failure
+                    synchronized(NewPipeExtractorClient::class.java) {
+                        applyClientSetting(clientRotator.initialClient(featureFlags.isIosFetchEnabled))
+                    }
+                    metrics.onStreamResolveFailure(videoId, ExtractionException("All YouTube clients exhausted for $videoId"))
+                    return@withContext null
+                }
+            } else {
+                synchronized(NewPipeExtractorClient::class.java) {
+                    if (forceRefresh || !featureFlags.isClientRotationEnabled) {
+                        applyIosFetchSetting()
+                    } else {
+                        applyClientSetting(clientRotator.initialClient(featureFlags.isIosFetchEnabled))
+                    }
+                }
             }
             // CRITICAL: Must call fetchPage() before getInfo() to get ALL video formats!
             extractor.fetchPage()
             val info = StreamInfo.getInfo(extractor)
             val urlGeneratedAt = clock()
-            val resolved = info.toResolvedStreams(videoId, urlGeneratedAt) ?: return@withContext null
+            val resolved = info.toResolvedStreams(videoId, urlGeneratedAt)
+            if (resolved == null) {
+                // Client responded but stream mapping failed — reset rotator so the next
+                // retry starts fresh rather than advancing to the next rotation slot on a
+                // non-transport failure.
+                clientRotator.reset(videoId)
+                return@withContext null
+            }
             synchronized(streamCacheLock) { streamCache[videoId] = CacheEntry(resolved, urlGeneratedAt) }
+            // Reset per-video rotation state — safe no-op if rotator was never advanced for this video
+            clientRotator.reset(videoId)
             metrics.onStreamResolveSuccess(videoId, clock() - start)
             resolved
         } catch (c: CancellationException) {
@@ -426,12 +458,52 @@ class NewPipeExtractorClient(
                     } else null
                 }
 
+                // Defensive reads: NewPipe 0.26.0 exposes audioLocale / audioTrackName /
+                // audioTrackType on AudioStream, but older YouTube pages or extractor
+                // versions may not populate them. Wrap each in try/catch so a missing
+                // field silently falls back to null instead of failing the whole
+                // resolution.
+                val language: String? = try {
+                    stream.audioLocale?.toLanguageTag()
+                } catch (t: Throwable) {
+                    if (BuildConfig.DEBUG) {
+                        android.util.Log.d("NewPipeExtractor", "audioLocale unavailable: ${t.message}")
+                    }
+                    null
+                }
+                val trackName: String? = try {
+                    stream.audioTrackName
+                } catch (t: Throwable) {
+                    if (BuildConfig.DEBUG) {
+                        android.util.Log.d("NewPipeExtractor", "audioTrackName unavailable: ${t.message}")
+                    }
+                    null
+                }
+                val trackKind: AudioTrackKind? = try {
+                    when (stream.audioTrackType?.name) {
+                        "ORIGINAL" -> AudioTrackKind.ORIGINAL
+                        "DUBBED" -> AudioTrackKind.DUBBED
+                        "DESCRIPTIVE" -> AudioTrackKind.DESCRIPTIVE
+                        "DUBBED_AUTO" -> AudioTrackKind.DUBBED_AUTO
+                        null -> null
+                        else -> AudioTrackKind.UNKNOWN
+                    }
+                } catch (t: Throwable) {
+                    if (BuildConfig.DEBUG) {
+                        android.util.Log.d("NewPipeExtractor", "audioTrackType unavailable: ${t.message}")
+                    }
+                    null
+                }
+
                 AudioTrack(
                     url = stream.content,
                     mimeType = stream.format?.mimeType,
                     bitrate = stream.averageBitrate.takeIf { it > 0 },
                     codec = stream.codec,
-                    syntheticDashMetadata = syntheticDashMeta
+                    syntheticDashMetadata = syntheticDashMeta,
+                    language = language,
+                    trackName = trackName,
+                    trackType = trackKind
                 )
             }
 
@@ -479,12 +551,22 @@ class NewPipeExtractorClient(
         val isLiveStream = streamType == StreamType.LIVE_STREAM ||
             streamType == StreamType.AUDIO_LIVE_STREAM
 
-        // TODO: Extract subtitle tracks from StreamInfo when NewPipe adds support
+        val subtitleTracks = subtitles.mapNotNull { sub ->
+            val code = sub.languageTag?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            SubtitleTrack(
+                url = if (sub.isUrl) sub.content else return@mapNotNull null,
+                languageCode = code,
+                languageName = sub.displayLanguageName?.takeIf { it.isNotBlank() } ?: code,
+                format = sub.extension?.takeIf { it.isNotBlank() },
+                isAutoGenerated = sub.isAutoGenerated
+            )
+        }
+
         return ResolvedStreams(
             streamId = streamId,
             videoTracks = videoTracks,
             audioTracks = audioTracks,
-            subtitleTracks = emptyList(),
+            subtitleTracks = subtitleTracks,
             durationSeconds = durationSeconds,
             hlsUrl = hlsStreamUrl,
             dashUrl = dashStreamUrl,
@@ -789,6 +871,13 @@ class NewPipeExtractorClient(
         YoutubeStreamExtractor.setFetchIosClient(iosFetchEnabled)
         if (BuildConfig.DEBUG) {
             android.util.Log.d(ADAPTIVE_PROBE_TAG, "applyIosFetchSetting: fetchIosClient=$iosFetchEnabled")
+        }
+    }
+
+    private fun applyClientSetting(client: YoutubeClientRotator.Client) {
+        YoutubeStreamExtractor.setFetchIosClient(client == YoutubeClientRotator.Client.IOS)
+        if (BuildConfig.DEBUG) {
+            android.util.Log.d(ADAPTIVE_PROBE_TAG, "applyClientSetting: client=$client")
         }
     }
 

@@ -248,3 +248,27 @@ val MIGRATION_5_6 = object : Migration(5, 6) {
         }
     }
 }
+
+/**
+ * v6 → v7: adds the `followed_channels` table for the Shorts player feed.
+ *
+ * ANDROID-SHORTS-01: the Shorts player needs a local list of channels the
+ * user follows to build the shorts feed without a round-trip to the backend.
+ * This table was originally the shorts branch's MIGRATION_1_2, renumbered
+ * to 6→7 when merging with the me-tab branch (which occupies versions 2–6).
+ *
+ * Note: earlier migrations (MIGRATION_1_2, MIGRATION_2_3) drop any legacy
+ * `followed_channels` table that may exist from a pre-v2 install, so by the
+ * time this migration runs the table is guaranteed absent and the
+ * CREATE TABLE IF NOT EXISTS is safe.
+ */
+val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `followed_channels` " +
+                "(`channelId` TEXT NOT NULL, `title` TEXT NOT NULL, " +
+                "`avatarUrl` TEXT, `followedAt` INTEGER NOT NULL, " +
+                "PRIMARY KEY(`channelId`))"
+        )
+    }
+}

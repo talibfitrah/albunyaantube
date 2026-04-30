@@ -27,7 +27,7 @@ if (localPropertiesFile.exists()) {
 
 android {
     namespace = "com.albunyaan.tube"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.albunyaan.tube"
@@ -91,6 +91,14 @@ android {
         // Default ON - disable in local.properties: playback.degradation.enabled=false
         val enableDegradation = localProperties.getProperty("playback.degradation.enabled", "true").toBoolean()
         buildConfigField("boolean", "ENABLE_DEGRADATION_MANAGER", "$enableDegradation")
+
+        buildConfigField("boolean", "ENABLE_CLIENT_ROTATION", "true")
+        buildConfigField("boolean", "ENABLE_HLS_PROBATION", "true")
+        buildConfigField("boolean", "ENABLE_CRONET", "true")
+        buildConfigField("boolean", "ENABLE_PREDICTIVE_PREFETCH", "true")
+        buildConfigField("boolean", "ENABLE_SEGMENT_PRELOAD", "true")
+        buildConfigField("boolean", "ENABLE_NEVER_FREEZE_ABR", "true")
+        buildConfigField("boolean", "ENABLE_TTL_WATCHER", "true")
     }
 
     signingConfigs {
@@ -220,22 +228,22 @@ dependencies {
     implementation("androidx.viewpager2:viewpager2:1.1.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     // AndroidX Media3 (replaces ExoPlayer 2.x)
-    val media3Version = "1.9.0"
+    val media3Version = "1.10.0"
     implementation("androidx.media3:media3-exoplayer:$media3Version")
     implementation("androidx.media3:media3-exoplayer-hls:$media3Version")
     implementation("androidx.media3:media3-exoplayer-dash:$media3Version")
     implementation("androidx.media3:media3-ui:$media3Version")
     implementation("androidx.media3:media3-session:$media3Version")
+    implementation("androidx.media3:media3-datasource-cronet:$media3Version")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-moshi:2.11.0")
     implementation("com.squareup.moshi:moshi:1.15.2")
     implementation("com.squareup.moshi:moshi-kotlin:1.15.2")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
-    // NewPipeExtractor v0.26.0 (2026-02-22): Adds AccountTerminatedException, minor fixes
-    // Only breaking change: Service.getMediaCapabilities() returns Set instead of List (we don't use this API)
-    // Release notes: https://github.com/TeamNewPipe/NewPipeExtractor/releases/tag/v0.26.0
-    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.0")
+    // NewPipeExtractor v0.26.1: patch release on top of v0.26.0
+    // Release notes: https://github.com/TeamNewPipe/NewPipeExtractor/releases/tag/v0.26.1
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.1")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     implementation("io.coil-kt:coil:2.7.0")
@@ -279,6 +287,7 @@ dependencies {
     testImplementation("org.mockito:mockito-core:5.15.2")
     testImplementation("androidx.work:work-testing:2.10.0")
     testImplementation("androidx.test:core:1.6.1")
+    testImplementation("androidx.test.ext:junit:1.2.1")
     testImplementation("org.robolectric:robolectric:4.14.1")
     // ATOM fetcher unit tests use MockWebServer to drive 200/304/429/5xx
     // responses without touching YouTube. The androidTest classpath already

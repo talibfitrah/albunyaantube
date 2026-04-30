@@ -1,7 +1,9 @@
 package com.albunyaan.tube.player
 
 import android.content.Context
+import android.net.Uri
 import androidx.annotation.OptIn
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
@@ -18,6 +20,7 @@ import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.albunyaan.tube.data.extractor.ResolvedStreams
+import com.albunyaan.tube.data.extractor.SubtitleTrack
 import com.albunyaan.tube.data.extractor.VideoTrack
 import com.albunyaan.tube.data.extractor.QualitySelectionOrigin
 import com.albunyaan.tube.util.HttpConstants
@@ -69,16 +72,25 @@ class MultiQualityMediaSourceFactory(
     private val hlsPoisonRegistry: HlsPoisonRegistry? = null,
     private val multiRepFactory: MultiRepSyntheticDashMediaSourceFactory? = null,
     private val coldStartQualityChooser: ColdStartQualityChooser? = null,
-    private val featureFlags: PlaybackFeatureFlags? = null
+    private val featureFlags: PlaybackFeatureFlags? = null,
+    private val mpdRegistry: SyntheticDashMpdRegistry? = null,
+    private val probationChecker: HlsProbationChecker? = null,
+    private val cronetDataSourceFactory: CronetDataSourceFactory? = null,
+    private val simpleCache: SimpleCache? = null
 ) {
 
     // Standard data source for progressive/DASH (Android User-Agent)
-    private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-        .setUserAgent(HttpConstants.YOUTUBE_USER_AGENT)
-        // Timeouts balanced for reliability and responsiveness
-        .setConnectTimeoutMs(15000)  // 15s connect timeout
-        .setReadTimeoutMs(20000)     // 20s read timeout (balances reliability with responsiveness)
-        .setAllowCrossProtocolRedirects(true)  // Allow HTTP -> HTTPS redirects
+    // Uses Cronet (HTTP/2 + QUIC) when available and the flag is enabled.
+    private val httpDataSourceFactory: DataSource.Factory =
+        if (featureFlags?.isCronetEnabled == true && cronetDataSourceFactory != null) {
+            cronetDataSourceFactory.createForAndroidUA()
+        } else {
+            DefaultHttpDataSource.Factory()
+                .setUserAgent(HttpConstants.YOUTUBE_USER_AGENT)
+                .setConnectTimeoutMs(15000)
+                .setReadTimeoutMs(20000)
+                .setAllowCrossProtocolRedirects(true)
+        }
 
     /**
      * HLS-specific data source with iOS User-Agent.
@@ -99,11 +111,16 @@ class MultiQualityMediaSourceFactory(
      * The coupling is intentional: NPE's iOS client fetch returns URLs that expect this UA.
      * See: HttpConstants.YOUTUBE_IOS_USER_AGENT, NewPipeExtractorClient.initializeNewPipe()
      */
-    private val hlsHttpDataSourceFactory = DefaultHttpDataSource.Factory()
-        .setUserAgent(HttpConstants.YOUTUBE_IOS_USER_AGENT)
-        .setConnectTimeoutMs(15000)
-        .setReadTimeoutMs(20000)
-        .setAllowCrossProtocolRedirects(true)
+    private val hlsHttpDataSourceFactory: DataSource.Factory =
+        if (featureFlags?.isCronetEnabled == true && cronetDataSourceFactory != null) {
+            cronetDataSourceFactory.createForIosUA()
+        } else {
+            DefaultHttpDataSource.Factory()
+                .setUserAgent(HttpConstants.YOUTUBE_IOS_USER_AGENT)
+                .setConnectTimeoutMs(15000)
+                .setReadTimeoutMs(20000)
+                .setAllowCrossProtocolRedirects(true)
+        }
 
     private val dataSourceFactory: DataSource.Factory = DefaultDataSource.Factory(
         context,
@@ -117,19 +134,19 @@ class MultiQualityMediaSourceFactory(
 
     // Cache factory to enable HTTP response caching for faster subsequent loads
     private val cacheDataSourceFactory: DataSource.Factory = CacheDataSource.Factory()
-        .setCache(getOrCreateCache(context))
+        .setCache(simpleCache ?: getOrCreateCache(context))
         .setUpstreamDataSourceFactory(dataSourceFactory)
         .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
     // HLS-specific cache factory with iOS User-Agent
     private val hlsCacheDataSourceFactory: DataSource.Factory = CacheDataSource.Factory()
-        .setCache(getOrCreateCache(context))
+        .setCache(simpleCache ?: getOrCreateCache(context))
         .setUpstreamDataSourceFactory(hlsDataSourceFactory)
         .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
     // PR6.1: Synthetic DASH factory for progressive stream wrapping
     private val syntheticDashFactory by lazy {
-        SyntheticDashMediaSourceFactory(cacheDataSourceFactory)
+        SyntheticDashMediaSourceFactory(cacheDataSourceFactory, mpdRegistry)
     }
 
     companion object {
@@ -319,7 +336,7 @@ class MultiQualityMediaSourceFactory(
             android.util.Log.d(TAG, "SYNTH_ADAPTIVE not available, trying single-rep synthetic DASH")
 
             // PR6.1: Try single-rep synthetic DASH for video-only + audio progressive streams
-            val syntheticResult = tryCreateSyntheticDashSource(resolved, userQualityCapHeight, selectedQuality, selectionOrigin)
+            val syntheticResult = tryCreateSyntheticDashSource(resolved, userQualityCapHeight, selectedQuality, selectionOrigin, videoId)
             if (syntheticResult != null) {
                 val capInfo = userQualityCapHeight?.let { "${it}p cap" } ?: "no cap"
                 android.util.Log.d(TAG, "Using single-rep synthetic DASH streaming ($capInfo)")
@@ -368,6 +385,43 @@ class MultiQualityMediaSourceFactory(
             adaptiveType = MediaSourceResult.AdaptiveType.NONE,
             selectedVideoTrack = videoTrack
         )
+    }
+
+    /**
+     * Converts subtitle tracks from ResolvedStreams into Media3 SubtitleConfiguration objects.
+     *
+     * Role flags:
+     * - Human-authored: ROLE_FLAG_SUBTITLE
+     * - Auto-generated: ROLE_FLAG_SUBTITLE | ROLE_FLAG_DESCRIBES_VIDEO
+     *
+     * MIME type mapping covers the YouTube formats returned by NewPipe:
+     * - vtt/webvtt → TEXT_VTT
+     * - ttml       → APPLICATION_TTML
+     * - srv1/2/3   → null (XML-based; no standard MIME, Media3 will attempt auto-detection)
+     * - unknown    → null (Media3 will attempt auto-detection)
+     */
+    private fun buildSubtitleConfigurations(
+        subtitleTracks: List<SubtitleTrack>
+    ): List<MediaItem.SubtitleConfiguration> {
+        return subtitleTracks.map { track ->
+            val mimeType = when (track.format?.lowercase()) {
+                "vtt", "webvtt" -> MimeTypes.TEXT_VTT
+                "ttml" -> MimeTypes.APPLICATION_TTML
+                "srv1", "srv2", "srv3" -> null  // XML-based; no standard MIME, let Media3 auto-detect
+                else -> null
+            }
+            val roleFlags = if (track.isAutoGenerated) {
+                C.ROLE_FLAG_SUBTITLE or C.ROLE_FLAG_DESCRIBES_VIDEO
+            } else {
+                C.ROLE_FLAG_SUBTITLE
+            }
+            MediaItem.SubtitleConfiguration.Builder(Uri.parse(track.url))
+                .setMimeType(mimeType)
+                .setLanguage(track.languageCode)
+                .setLabel(track.languageName)
+                .setRoleFlags(roleFlags)
+                .build()
+        }
     }
 
     /**
@@ -503,10 +557,22 @@ class MultiQualityMediaSourceFactory(
         // Try HLS first (better compatibility) unless poisoned
         val hlsResult = if (!hlsPoisoned) {
             resolved.hlsUrl?.let { hlsUrl ->
+                // Phase 6 probation: HEAD-probe the manifest before committing to HLS.
+                // A non-2xx response or timeout means the URL is already invalid (e.g. 403
+                // from an expired iOS token). Poisoning now lets the factory fall through to
+                // DASH / SYNTH_ADAPTIVE immediately, avoiding a stall on the main thread.
+                if (featureFlags?.isHlsProbationEnabled == true && probationChecker != null && videoId != null) {
+                    if (!probationChecker.probe(hlsUrl)) {
+                        android.util.Log.w(TAG, "HLS probation failed for $videoId — poisoning and skipping HLS")
+                        hlsPoisonRegistry?.poisonHls(videoId, reason = "PROBATION_FAIL")
+                        return@let null
+                    }
+                }
                 try {
                     val mediaItem = MediaItem.Builder()
                         .setUri(hlsUrl)
                         .setMimeType(MimeTypes.APPLICATION_M3U8)
+                        .setSubtitleConfigurations(buildSubtitleConfigurations(resolved.subtitleTracks))
                         .build()
                     // Use iOS User-Agent for HLS to match the client that fetched the manifest
                     val source = HlsMediaSource.Factory(hlsSourceFactory)
@@ -532,6 +598,7 @@ class MultiQualityMediaSourceFactory(
                 val mediaItem = MediaItem.Builder()
                     .setUri(dashUrl)
                     .setMimeType(MimeTypes.APPLICATION_MPD)
+                    .setSubtitleConfigurations(buildSubtitleConfigurations(resolved.subtitleTracks))
                     .build()
                 val source = DashMediaSource.Factory(dashDataSourceFactory)
                     .createMediaSource(mediaItem)
@@ -566,7 +633,8 @@ class MultiQualityMediaSourceFactory(
         resolved: ResolvedStreams,
         userQualityCapHeight: Int?,
         selectedQuality: VideoTrack?,
-        selectionOrigin: QualitySelectionOrigin
+        selectionOrigin: QualitySelectionOrigin,
+        videoId: String? = null
     ): AdaptiveSourceResult? {
         // Select video track using same logic as progressive fallback
         val videoTrack = when {
@@ -623,15 +691,16 @@ class MultiQualityMediaSourceFactory(
         val durationSeconds = resolved.durationSeconds?.toLong()
 
         // Create synthetic DASH video source
-        val videoResult = syntheticDashFactory.createVideoSource(videoTrack, durationSeconds)
+        val videoResult = syntheticDashFactory.createVideoSource(videoTrack, durationSeconds, videoId)
         if (videoResult is SyntheticDashMediaSourceFactory.Result.Failure) {
             android.util.Log.d(TAG, "Synthetic DASH video failed: ${videoResult.reason}")
             return null
         }
         val videoSource = (videoResult as SyntheticDashMediaSourceFactory.Result.Success).source
 
-        // Create synthetic DASH audio source
-        val audioResult = syntheticDashFactory.createAudioSource(audioTrack, durationSeconds)
+        // Create synthetic DASH audio source (use a distinct key so video/audio MPDs don't collide)
+        val audioVideoId = if (videoId != null) "${videoId}_audio" else null
+        val audioResult = syntheticDashFactory.createAudioSource(audioTrack, durationSeconds, audioVideoId)
         if (audioResult is SyntheticDashMediaSourceFactory.Result.Failure) {
             android.util.Log.d(TAG, "Synthetic DASH audio failed: ${audioResult.reason}")
             return null
@@ -659,6 +728,7 @@ class MultiQualityMediaSourceFactory(
         val videoMediaItem = MediaItem.Builder()
             .setUri(videoTrack.url)
             .setMimeType(videoTrack.mimeType ?: "video/mp4")
+            .setSubtitleConfigurations(buildSubtitleConfigurations(resolved.subtitleTracks))
             .build()
 
         // Use cached data source for faster subsequent loads
@@ -695,6 +765,7 @@ class MultiQualityMediaSourceFactory(
         val mediaItem = MediaItem.Builder()
             .setUri(audioTrack.url)
             .setMimeType(audioTrack.mimeType ?: "audio/mp4")
+            .setSubtitleConfigurations(buildSubtitleConfigurations(resolved.subtitleTracks))
             .build()
 
         return ProgressiveMediaSource.Factory(cacheDataSourceFactory)

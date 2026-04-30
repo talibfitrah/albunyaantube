@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black"
+    android:layoutDirection="locale">
+
+    <androidx.media3.ui.PlayerView
+        android:id="@+id/shortPlayerView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:resize_mode="zoom"
+        app:use_controller="false"
+        app:surface_type="texture_view"/>
+
+    <View
+        android:id="@+id/shortTapTarget"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"/>
+
+    <ImageView
+        android:id="@+id/shortPlayPauseIndicator"
+        android:layout_width="112dp"
+        android:layout_height="112dp"
+        android:layout_gravity="center"
+        android:background="@drawable/bg_shorts_play_pause_indicator"
+        android:padding="@dimen/spacing_md"
+        android:contentDescription="@null"
+        android:src="@drawable/ic_shorts_play_indicator"
+        android:scaleType="centerInside"
+        android:visibility="gone"
+        android:alpha="0"/>
+
+    <LinearLayout
+        android:id="@+id/shortActionRail"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end|bottom"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:paddingEnd="@dimen/spacing_sm"
+        android:paddingBottom="@dimen/spacing_md"
+        android:layout_marginBottom="@dimen/shorts_action_rail_bottom_margin">
+
+        <ImageButton
+            android:id="@+id/shortLikeBtn"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/shorts_like_cd"
+            android:src="@drawable/ic_shorts_like"
+            android:scaleType="center"
+            app:tint="#FFFFFFFF"/>
+
+        <ImageButton
+            android:id="@+id/shortShareBtn"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_marginTop="@dimen/spacing_md"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/shorts_share_cd"
+            android:src="@drawable/ic_shorts_share"
+            android:scaleType="center"
+            app:tint="#FFFFFFFF"/>
+
+        <ImageButton
+            android:id="@+id/shortAudioTrackBtn"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_marginTop="@dimen/spacing_md"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/shorts_audio_track_cd"
+            android:src="@drawable/ic_shorts_audio_track"
+            android:scaleType="center"
+            android:visibility="gone"
+            app:tint="#FFFFFFFF"/>
+
+        <ImageButton
+            android:id="@+id/shortSubtitleBtn"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_marginTop="@dimen/spacing_md"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/subtitle_picker_cd"
+            android:src="@drawable/ic_closed_captions"
+            android:scaleType="center"
+            android:visibility="gone"
+            app:tint="#FFFFFFFF"/>
+
+        <ImageButton
+            android:id="@+id/shortDownloadBtn"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_marginTop="@dimen/spacing_md"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/shorts_download_cd"
+            android:src="@drawable/ic_shorts_download"
+            android:scaleType="center"
+            app:tint="#FFFFFFFF"/>
+    </LinearLayout>
+
+    <androidx.media3.ui.DefaultTimeBar
+        android:id="@+id/shortTimeBar"
+        android:layout_width="match_parent"
+        android:layout_height="24dp"
+        android:layout_gravity="bottom"
+        android:layout_marginBottom="@dimen/bottom_nav_height"
+        app:bar_height="3dp"
+        app:bar_gravity="bottom"
+        app:scrubber_enabled_size="0dp"
+        app:scrubber_disabled_size="0dp"
+        app:scrubber_dragged_size="16dp"
+        app:played_color="@color/primary_green"
+        app:scrubber_color="@color/primary_green"
+        app:unplayed_color="#4DFFFFFF"
+        app:buffered_color="#80FFFFFF"/>
+
+    <LinearLayout
+        android:id="@+id/shortBottomOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:orientation="vertical"
+        android:padding="@dimen/spacing_md"
+        android:layout_marginBottom="@dimen/bottom_nav_height"
+        android:background="@drawable/scrim_bottom_gradient">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <com.google.android.material.imageview.ShapeableImageView
+                android:id="@+id/shortChannelAvatar"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                app:shapeAppearanceOverlay="@style/CircleImageView"
+                android:scaleType="centerCrop"
+                android:contentDescription="@null"/>
+
+            <TextView
+                android:id="@+id/shortChannelHandle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="@dimen/spacing_sm"
+                android:textAlignment="viewStart"
+                android:textColor="#FFFFFFFF"
+                android:textStyle="bold"
+                tools:text="@SHNEAKO"/>
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/shortTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_sm"
+            android:maxLines="2"
+            android:ellipsize="end"
+            android:textAlignment="viewStart"
+            android:textColor="#FFFFFFFF"
+            android:shadowColor="#CC000000"
+            android:shadowDx="0"
+            android:shadowDy="1"
+            android:shadowRadius="3"
+            tools:text="He Offered SNEAKO $3k To Do This"/>
+    </LinearLayout>
+</FrameLayout>

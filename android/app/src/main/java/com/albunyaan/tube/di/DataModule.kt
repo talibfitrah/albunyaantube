@@ -18,6 +18,7 @@ import com.albunyaan.tube.data.extractor.MetadataHydrator
 import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
 import com.albunyaan.tube.data.extractor.NoOpMetadataHydrator
 import com.albunyaan.tube.data.extractor.OkHttpDownloader
+import com.albunyaan.tube.data.extractor.YoutubeClientRotator
 import com.albunyaan.tube.data.extractor.cache.MetadataCache
 import com.albunyaan.tube.data.filters.FilterManager
 import com.albunyaan.tube.data.paging.ContentPagingRepository
@@ -30,7 +31,11 @@ import com.albunyaan.tube.data.source.RetrofitContentService
 import com.albunyaan.tube.data.source.RetrofitDownloadService
 import com.albunyaan.tube.data.source.api.ContentApi
 import com.albunyaan.tube.data.source.api.DownloadApi
+import androidx.media3.database.StandaloneDatabaseProvider
+import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
+import androidx.media3.datasource.cache.SimpleCache
 import com.albunyaan.tube.data.source.api.ReportApi
+import com.albunyaan.tube.player.CronetDataSourceFactory
 import com.albunyaan.tube.player.DefaultPlayerRepository
 import com.albunyaan.tube.player.ExtractionRateLimiter
 import com.albunyaan.tube.player.GlobalStreamResolver
@@ -38,10 +43,13 @@ import com.albunyaan.tube.player.PlaybackFeatureFlags
 import com.albunyaan.tube.player.PlayerRepository
 import com.albunyaan.tube.player.DefaultStreamPrefetchService
 import com.albunyaan.tube.player.MultiRepresentationMpdGenerator
+import com.albunyaan.tube.player.SegmentPreBuffer
 import com.albunyaan.tube.player.StreamPrefetchService
 import com.albunyaan.tube.player.SyntheticDashMpdRegistry
 import com.albunyaan.tube.telemetry.LogTelemetryClient
 import com.albunyaan.tube.telemetry.TelemetryClient
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -180,9 +188,10 @@ object DataModule {
         downloader: com.albunyaan.tube.data.extractor.RateLimitedDownloader,
         cache: MetadataCache,
         metrics: ExtractorMetricsReporter,
-        featureFlags: PlaybackFeatureFlags
+        featureFlags: PlaybackFeatureFlags,
+        clientRotator: YoutubeClientRotator
     ): NewPipeExtractorClient {
-        return NewPipeExtractorClient(downloader, cache, metrics, featureFlags)
+        return NewPipeExtractorClient(downloader, cache, metrics, featureFlags, clientRotator)
     }
 
     @Provides
@@ -247,6 +256,27 @@ object DataModule {
         return DefaultPlayerRepository(globalResolver)
     }
 
+    @OptIn(UnstableApi::class)
+    @Provides
+    @Singleton
+    fun provideSimpleCache(@ApplicationContext context: Context): SimpleCache {
+        val cacheDir = java.io.File(context.cacheDir, "media3")
+        val dbProvider = StandaloneDatabaseProvider(context)
+        val evictor = LeastRecentlyUsedCacheEvictor(100 * 1024 * 1024L)
+        return SimpleCache(cacheDir, evictor, dbProvider)
+    }
+
+    @OptIn(UnstableApi::class)
+    @Provides
+    @Singleton
+    fun provideSegmentPreBuffer(
+        @ApplicationContext context: Context,
+        cache: SimpleCache,
+        cronetDataSourceFactory: CronetDataSourceFactory
+    ): SegmentPreBuffer {
+        return SegmentPreBuffer(context, cache, cronetDataSourceFactory.createForAndroidUA())
+    }
+
     /**
      * Phase 1A: StreamPrefetchService now uses GlobalStreamResolver for single-flight semantics.
      * Phase 5: Also pre-generates synthetic DASH MPD during prefetch for faster playback start.
@@ -258,9 +288,10 @@ object DataModule {
         rateLimiter: ExtractionRateLimiter,
         mpdGenerator: MultiRepresentationMpdGenerator,
         mpdRegistry: SyntheticDashMpdRegistry,
-        featureFlags: PlaybackFeatureFlags
+        featureFlags: PlaybackFeatureFlags,
+        segmentPreBuffer: SegmentPreBuffer
     ): StreamPrefetchService {
-        return DefaultStreamPrefetchService(globalResolver, rateLimiter, mpdGenerator, mpdRegistry, featureFlags)
+        return DefaultStreamPrefetchService(globalResolver, rateLimiter, mpdGenerator, mpdRegistry, featureFlags, segmentPreBuffer)
     }
 
     @Provides

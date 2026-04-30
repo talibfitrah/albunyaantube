@@ -629,4 +629,24 @@
     <string name="report_rate_limited">You\'ve sent too many reports recently. Please try again later.</string>
     <string name="report_error">Failed to submit report. Please try again.</string>
     <string name="report_select_reason">Please select at least one reason</string>
+
+    <!-- Shorts player -->
+    <string name="shorts_like_cd">Like</string>
+    <string name="shorts_share_cd">Share</string>
+    <string name="shorts_subscribe">Subscribe</string>
+    <string name="shorts_subscribed">Subscribed</string>
+    <string name="shorts_error_unavailable">Couldn\'t play this short. Skipping…</string>
+    <string name="shorts_error_feed_empty">No shorts available</string>
+    <string name="shorts_download_cd">Download</string>
+    <string name="shorts_download_preparing">Preparing, tap again in a moment</string>
+    <string name="shorts_audio_track_cd">Audio language</string>
+    <string name="subtitle_picker_cd">Subtitles / CC</string>
+    <string name="player_action_audio_language">Language</string>
+    <string name="shorts_audio_track_title">Audio language</string>
+    <string name="shorts_audio_track_original_prefix">Original: %1$s</string>
+    <!-- Channel handle shown as "@name" on the shorts page. Kept in resources so
+         RTL locales can inject a bidi control (LRM, \u200E) to keep the "@" on the
+         visual left of an LTR handle inside an RTL paragraph. -->
+    <string name="shorts_channel_handle">\@%1$s</string>
+    <string name="back">Back</string>
 </resources>

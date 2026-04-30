@@ -236,6 +236,28 @@
                         android:layout_height="1dp"
                         android:layout_weight="1" />
 
+                    <!-- Audio Language Button (hidden until video exposes multiple language tracks) -->
+                    <ImageButton
+                        android:id="@+id/audioLanguageButton"
+                        android:layout_width="@dimen/touch_target_min"
+                        android:layout_height="@dimen/touch_target_min"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:src="@drawable/ic_shorts_audio_track"
+                        android:contentDescription="@string/shorts_audio_track_cd"
+                        android:visibility="gone"
+                        app:tint="@android:color/white" />
+
+                    <!-- CC/Subtitle Button (hidden until video has subtitle tracks) -->
+                    <ImageButton
+                        android:id="@+id/subtitleButton"
+                        android:layout_width="@dimen/touch_target_min"
+                        android:layout_height="@dimen/touch_target_min"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:src="@drawable/ic_closed_captions"
+                        android:contentDescription="@string/subtitle_picker_cd"
+                        android:visibility="gone"
+                        app:tint="@android:color/white" />
+
                     <!-- Quality Button -->
                     <ImageButton
                         android:id="@+id/qualityButton"

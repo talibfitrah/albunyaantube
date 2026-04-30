@@ -32,6 +32,8 @@ import com.albunyaan.tube.download.DownloadPolicy
 import com.albunyaan.tube.download.DownloadRepository
 import com.albunyaan.tube.download.DownloadStatus
 import com.albunyaan.tube.download.PlaylistDownloadItem
+import com.albunyaan.tube.player.PlaybackFeatureFlags
+import com.albunyaan.tube.player.PredictivePrefetchController
 import com.albunyaan.tube.player.StreamPrefetchService
 import com.albunyaan.tube.data.report.ReportTargetType
 import com.albunyaan.tube.share.ShareLinks
@@ -68,8 +70,12 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
     @Inject
     lateinit var subscriptions: com.albunyaan.tube.data.subscriptions.SubscriptionRepository
 
+    @Inject
+    lateinit var featureFlags: PlaybackFeatureFlags
+
     private var latestPlaylistHeader: com.albunyaan.tube.data.playlist.PlaylistHeader? = null
     private var isPlaylistSavedNow: Boolean = false
+    private var prefetchController: PredictivePrefetchController? = null
 
     // Navigation arguments
     private val playlistId: String by lazy { arguments?.getString(ARG_PLAYLIST_ID).orEmpty() }
@@ -116,6 +122,14 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
         setupToolbar()
         setupRecyclerView()
         setupSearch()
+        if (featureFlags.isPredictivePrefetchEnabled) {
+            prefetchController = PredictivePrefetchController(
+                prefetchService,
+                viewLifecycleOwner.lifecycleScope,
+                videoIdResolver = { pos -> videosAdapter.currentList.getOrNull(pos)?.item?.videoId }
+            )
+            binding?.videosRecyclerView?.let { prefetchController?.attach(it) }
+        }
         setupActionButtons()
         observeViewModel()
         observeDownloads()
@@ -247,8 +261,6 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
     private fun setupRecyclerView() {
         videosAdapter = PlaylistVideosAdapter { item, position ->
             Log.d(TAG, "Video clicked: ${item.title} at position $position")
-            // Trigger prefetch before navigation (hides 2-5s extraction latency)
-            // Use lifecycleScope (not viewLifecycleOwner) so prefetch survives navigation
             prefetchService.triggerPrefetch(item.videoId, lifecycleScope)
             navigateToPlayer(item.videoId, position)
         }
@@ -694,7 +706,6 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
         val state = viewModel.itemsState.value
         if (state is PlaylistDetailViewModel.PaginatedState.Loaded && state.items.isNotEmpty()) {
             val firstItem = state.items.first()
-            // Use lifecycleScope (not viewLifecycleOwner) so prefetch survives navigation
             prefetchService.triggerPrefetch(firstItem.videoId, lifecycleScope)
         }
     }
@@ -729,6 +740,8 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
 
     override fun onDestroyView() {
         searchHandler.removeCallbacksAndMessages(null)
+        prefetchController?.detach()
+        prefetchController = null
         binding?.appBarLayout?.removeOnOffsetChangedListener(appBarOffsetListener)
         appBarOffsetListener = null
         currentHeader = null

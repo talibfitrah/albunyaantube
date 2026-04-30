@@ -15,6 +15,11 @@ import androidx.room.RoomDatabase
  * v6: data wipe of DEEP_PAGE_EOF_SENTINEL rows falsely marked exhausted by
  *     the now-fixed ATOM refresh path that wiped deep-page state — see
  *     [MIGRATION_5_6]. No schema changes in v5 or v6.
+ * v7: followed_channels table added for the Shorts player feed (ANDROID-SHORTS-01).
+ *     Note: legacy pre-v2 databases had a `followed_channels` table with a
+ *     different schema — [MIGRATION_1_2] drops it before creating the v2
+ *     subscribed_channels table, so by the time MIGRATION_6_7 runs the
+ *     table is gone and can be safely re-created with the new schema.
  */
 @Database(
     entities = [
@@ -23,8 +28,9 @@ import androidx.room.RoomDatabase
         SavedPlaylist::class,
         ChannelVideoCache::class,
         ChannelFeedRefreshState::class,
+        FollowedChannel::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -33,6 +39,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun savedPlaylistDao(): SavedPlaylistDao
     abstract fun channelVideoCacheDao(): ChannelVideoCacheDao
     abstract fun channelFeedRefreshStateDao(): ChannelFeedRefreshStateDao
+    abstract fun followedChannelDao(): FollowedChannelDao
 
     companion object {
         const val DATABASE_NAME = "albunyaan_tube_db"
