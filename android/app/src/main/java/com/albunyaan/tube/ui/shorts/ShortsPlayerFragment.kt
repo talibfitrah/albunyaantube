@@ -29,6 +29,7 @@ import com.albunyaan.tube.data.extractor.availableAudioLanguages
 import com.albunyaan.tube.databinding.FragmentShortsPlayerBinding
 import com.albunyaan.tube.download.DownloadRepository
 import com.albunyaan.tube.download.DownloadRequest
+import androidx.media3.datasource.cache.SimpleCache
 import com.albunyaan.tube.player.PlayerRepository
 import com.albunyaan.tube.ui.player.DownloadQualityDialog
 import dagger.hilt.android.AndroidEntryPoint
@@ -66,6 +67,7 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
     @Inject lateinit var mpdRegistry: com.albunyaan.tube.player.SyntheticDashMpdRegistry
     @Inject lateinit var probationChecker: com.albunyaan.tube.player.HlsProbationChecker
     @Inject lateinit var cronetDataSourceFactory: com.albunyaan.tube.player.CronetDataSourceFactory
+    @Inject lateinit var simpleCache: SimpleCache
 
     private val viewModel: ShortsPlayerViewModel by viewModels {
         object : ViewModelProvider.Factory {
@@ -153,7 +155,8 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
             playbackFeatureFlags,
             mpdRegistry,
             probationChecker,
-            cronetDataSourceFactory
+            cronetDataSourceFactory,
+            simpleCache = simpleCache
         )
         val localBinder = PlayerBinder(viewModel.player, playerRepository, mediaSourceFactory)
 

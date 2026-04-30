@@ -33,6 +33,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.HttpDataSource
+import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
@@ -102,6 +103,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     @Inject lateinit var probationChecker: com.albunyaan.tube.player.HlsProbationChecker
     @Inject lateinit var bufferPolicy: AdaptiveBufferPolicy
     @Inject lateinit var cronetDataSourceFactory: com.albunyaan.tube.player.CronetDataSourceFactory
+    @Inject lateinit var simpleCache: SimpleCache
 
     private var binding: FragmentPlayerBinding? = null
     private var player: ExoPlayer? = null
@@ -834,7 +836,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             featureFlags,
             mpdRegistry,
             probationChecker,
-            cronetDataSourceFactory
+            cronetDataSourceFactory,
+            simpleCache = simpleCache
         )
     }
 

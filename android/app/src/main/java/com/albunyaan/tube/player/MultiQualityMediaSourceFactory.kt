@@ -75,7 +75,8 @@ class MultiQualityMediaSourceFactory(
     private val featureFlags: PlaybackFeatureFlags? = null,
     private val mpdRegistry: SyntheticDashMpdRegistry? = null,
     private val probationChecker: HlsProbationChecker? = null,
-    private val cronetDataSourceFactory: CronetDataSourceFactory? = null
+    private val cronetDataSourceFactory: CronetDataSourceFactory? = null,
+    private val simpleCache: SimpleCache? = null
 ) {
 
     // Standard data source for progressive/DASH (Android User-Agent)
@@ -133,13 +134,13 @@ class MultiQualityMediaSourceFactory(
 
     // Cache factory to enable HTTP response caching for faster subsequent loads
     private val cacheDataSourceFactory: DataSource.Factory = CacheDataSource.Factory()
-        .setCache(getOrCreateCache(context))
+        .setCache(simpleCache ?: getOrCreateCache(context))
         .setUpstreamDataSourceFactory(dataSourceFactory)
         .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
     // HLS-specific cache factory with iOS User-Agent
     private val hlsCacheDataSourceFactory: DataSource.Factory = CacheDataSource.Factory()
-        .setCache(getOrCreateCache(context))
+        .setCache(simpleCache ?: getOrCreateCache(context))
         .setUpstreamDataSourceFactory(hlsDataSourceFactory)
         .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
