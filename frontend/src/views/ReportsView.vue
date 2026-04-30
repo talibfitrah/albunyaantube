@@ -314,18 +314,29 @@ async function fetchContentMeta(items: ContentReport[]) {
     else if (r.targetType === 'CHANNEL') url = `/api/v1/channels/${r.targetId}`;
     else if (r.targetType === 'PLAYLIST') url = `/api/v1/playlists/${r.targetId}`;
     if (!url) return;
+    // YouTube video thumbnail URL pattern works for any video ID (regular
+    // videos, shorts, livestreams). Used as both a fill-in when the API
+    // returns no thumbnailUrl AND as the fallback when the API call itself
+    // fails — reported content is often unapproved (not in our DB) and
+    // returns 404, but the underlying video still has a public YT thumbnail.
+    const ytVideoThumb = r.targetType === 'VIDEO'
+      ? `https://img.youtube.com/vi/${r.targetId}/mqdefault.jpg`
+      : undefined;
     try {
       const res = await apiClient.get<{ title?: string; name?: string; thumbnailUrl?: string }>(url);
       const d = res.data;
-      const fallbackThumb = r.targetType === 'VIDEO'
-        ? `https://img.youtube.com/vi/${r.targetId}/mqdefault.jpg`
-        : undefined;
       contentMeta.value[key] = {
-        thumbnailUrl: d.thumbnailUrl ?? fallbackThumb,
+        thumbnailUrl: d.thumbnailUrl ?? ytVideoThumb,
         title: d.title ?? d.name ?? r.targetId,
       };
     } catch {
-      contentMeta.value[key] = { title: r.targetId };
+      // 404 (content not in DB) is the common case for reported content.
+      // Still surface the YT thumbnail so admins can see WHAT they're
+      // resolving, not just an opaque ID.
+      contentMeta.value[key] = {
+        thumbnailUrl: ytVideoThumb,
+        title: r.targetId,
+      };
     }
   }));
 }
