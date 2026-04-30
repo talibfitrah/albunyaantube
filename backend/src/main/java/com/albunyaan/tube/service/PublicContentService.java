@@ -52,6 +52,12 @@ public class PublicContentService {
 
     private static final Logger log = LoggerFactory.getLogger(PublicContentService.class);
 
+    // Bound for the legacy in-memory channel/playlist scan when the indexed
+    // (nameLower / name / keyword) prefix queries return zero matches.
+    // Keeps the cost bounded on a large library while still recovering
+    // search results for legacy documents missing the nameLower field.
+    private static final int LEGACY_SEARCH_SCAN_LIMIT = 500;
+
     private final ChannelRepository channelRepository;
     private final PlaylistRepository playlistRepository;
     private final VideoRepository videoRepository;
@@ -1067,8 +1073,13 @@ public class PublicContentService {
         // Over-fetch factor to account for filtering and improve result quality
         int overFetchLimit = Math.min(limit * 3, 100);
 
-        if (type == null) {
-            // When searching all types, distribute limit evenly
+        if (type == null || type.equalsIgnoreCase("ALL")) {
+            // When searching all types, distribute limit evenly.
+            // Both `null` and the explicit "ALL" string select this branch —
+            // the Android client and the dashboard frontend both pass "ALL"
+            // for the global search bar, but the prior code only matched
+            // null, returning an empty list for any caller that explicitly
+            // asked for everything.
             int limitPerType = Math.max(1, limit / 3);
             int overFetchPerType = Math.min(limitPerType * 3, 50);
 
@@ -1154,7 +1165,7 @@ public class PublicContentService {
         }
 
         // Filter and return
-        return channels.stream()
+        List<ContentItemDto> filtered = channels.stream()
                 .filter(this::isApproved)
                 .filter(this::isAvailable)
                 // Case-insensitive contains matching on name or keywords
@@ -1162,6 +1173,30 @@ public class PublicContentService {
                 .limit(limit)
                 .map(this::toDto)
                 .collect(Collectors.toList());
+
+        // Legacy-doc fallback: if all three indexed queries (nameLower / name /
+        // keyword) returned nothing useful, scan the library and filter in
+        // memory. Required because legacy channels created before nameLower
+        // existed never get returned by the prefix queries (lowercased query
+        // can't match case-sensitive `name`, and nameLower is missing).
+        // Use findAll() to avoid composite-index requirements; bounded scan.
+        if (filtered.isEmpty()) {
+            try {
+                List<Channel> scanned = channelRepository.findAll(LEGACY_SEARCH_SCAN_LIMIT);
+                log.info("Legacy channel search fallback: scanned {} for query '{}'", scanned.size(), normalizedQuery);
+                filtered = scanned.stream()
+                        .filter(this::isApproved)
+                        .filter(this::isAvailable)
+                        .filter(c -> matchesSearchQuery(c.getName(), c.getKeywords(), normalizedQuery))
+                        .limit(limit)
+                        .map(this::toDto)
+                        .collect(Collectors.toList());
+                log.info("Legacy channel search fallback: matched {} for query '{}'", filtered.size(), normalizedQuery);
+            } catch (Exception e) {
+                log.warn("Legacy in-memory channel search fallback failed: {}", e.getMessage());
+            }
+        }
+        return filtered;
     }
 
     private List<ContentItemDto> searchPlaylistsByText(String normalizedQuery, int limit, int fetchLimit)
