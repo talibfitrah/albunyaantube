@@ -2,6 +2,7 @@
 <!-- Large tablet/TV layout (10"+ devices, 1080p TV boxes) with NavigationRail -->
 <androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fitsSystemWindows="true"
@@ -36,5 +37,43 @@
         android:layout_marginStart="@dimen/navigation_rail_width"
         app:navGraph="@navigation/main_tabs_nav"
         app:defaultNavHost="false" />
+
+    <!-- Non-blocking offline banner — shown when NetworkMonitor reports no connectivity.
+         Offset by NavigationRail width so it does not overlap the rail. -->
+    <LinearLayout
+        android:id="@+id/offlineBanner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:layout_marginStart="@dimen/navigation_rail_width"
+        android:background="?attr/colorErrorContainer"
+        android:elevation="@dimen/elevation_lg"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/spacing_md"
+        android:paddingEnd="@dimen/spacing_md"
+        android:paddingTop="@dimen/spacing_sm"
+        android:paddingBottom="@dimen/spacing_sm"
+        android:visibility="gone"
+        tools:visibility="visible">
+
+        <ImageView
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:src="@drawable/ic_cloud_off"
+            app:tint="?attr/colorOnErrorContainer"
+            android:importantForAccessibility="no" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="@dimen/spacing_sm"
+            android:text="@string/connectivity_offline_banner"
+            android:textAppearance="?attr/textAppearanceLabelLarge"
+            android:textColor="?attr/colorOnErrorContainer"
+            android:textAlignment="viewStart" />
+
+    </LinearLayout>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

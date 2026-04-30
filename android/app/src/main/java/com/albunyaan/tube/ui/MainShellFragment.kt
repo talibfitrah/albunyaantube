@@ -4,16 +4,28 @@ import android.os.Bundle
 import android.view.View
 import androidx.core.view.ViewCompat
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.setupWithNavController
 import com.albunyaan.tube.R
+import com.albunyaan.tube.util.NetworkMonitor
 import com.google.android.material.navigation.NavigationBarView
 import androidx.coordinatorlayout.widget.CoordinatorLayout
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class MainShellFragment : Fragment(R.layout.fragment_main_shell) {
+
+    @Inject
+    lateinit var networkMonitor: NetworkMonitor
 
     private var navigationView: NavigationBarView? = null
     private var navHostFragment: View? = null
+    private var offlineBanner: View? = null
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -21,6 +33,31 @@ class MainShellFragment : Fragment(R.layout.fragment_main_shell) {
         // Find navigation view by ID (works for both BottomNavigationView and NavigationRailView)
         navigationView = view.findViewById(R.id.mainBottomNav)
         navHostFragment = view.findViewById(R.id.main_shell_nav_host)
+        offlineBanner = view.findViewById(R.id.offlineBanner)
+
+        // Defensive inset listener on the banner itself: the parent CoordinatorLayout's
+        // `fitsSystemWindows=true` should dispatch insets here, but if a sibling
+        // NavigationBarView's inset listener ever consumes them (Material3 upstream
+        // behavior has churned), we would draw the banner under the status bar on
+        // Android 15 edge-to-edge. Explicit top-inset padding on the banner itself
+        // survives any future dispatch change. Flagged by code-reviewer (I5).
+        offlineBanner?.let { banner ->
+            ViewCompat.setOnApplyWindowInsetsListener(banner) { v, insets ->
+                val sysBars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                v.setPadding(v.paddingLeft, sysBars.top, v.paddingRight, v.paddingBottom)
+                insets
+            }
+        }
+
+        // Observe connectivity and toggle the offline banner. Non-blocking — the banner
+        // overlays the top edge so the user can still interact with any content below.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                networkMonitor.isOnline.collect { online ->
+                    offlineBanner?.visibility = if (online) View.GONE else View.VISIBLE
+                }
+            }
+        }
 
         // Prevent Material3's internal WindowInsets listener from adding bottom padding.
         // The parent CoordinatorLayout's fitsSystemWindows="true" already positions the nav
@@ -90,6 +127,7 @@ class MainShellFragment : Fragment(R.layout.fragment_main_shell) {
     override fun onDestroyView() {
         navigationView = null
         navHostFragment = null
+        offlineBanner = null
         super.onDestroyView()
     }
 

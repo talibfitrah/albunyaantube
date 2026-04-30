@@ -54,6 +54,8 @@ import com.albunyaan.tube.ui.utils.isTablet
 import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.R
 import com.albunyaan.tube.databinding.FragmentPlayerBinding
+import com.albunyaan.tube.share.ShareLinks
+import com.albunyaan.tube.share.ShareMetadataPublisher
 import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
 import com.albunyaan.tube.data.extractor.PlaybackSelection
@@ -2965,28 +2967,50 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             currentItem.title
         }
 
-        // Use app deep link - directs users to install/open our app
-        val videoDeepLink = "albunyaantube://video/${currentItem.streamId}"
+        // ANDROID-MULTI-01 Issue 4: prefer the canonical https watch URL for link
+        // unfurlers (WhatsApp / Telegram / Slack / Skype) — they cannot preview a
+        // custom scheme like albunyaantube://. The backend's WatchPageController
+        // serves an OpenGraph-tagged HTML page at /api/watch/{id}; this keeps the
+        // default production reverse proxy on the backend path instead of falling
+        // through to the SPA index.html. If no SHARE_BASE_URL is configured (dev
+        // builds or not-yet-deployed backend), we fall back to the raw deep link.
+        val videoDeepLink = ShareLinks.video(
+            videoId = currentItem.streamId,
+            title = title,
+            imageUrl = currentItem.thumbnailUrl,
+            description = currentItem.description
+        )
+        viewLifecycleOwner.lifecycleScope.launch {
+            ShareMetadataPublisher.publish(
+                type = "watch",
+                id = currentItem.streamId,
+                title = title,
+                imageUrl = currentItem.thumbnailUrl,
+                description = currentItem.description
+            )
+            if (!isAdded) return@launch
 
-        // Simple, clean share message - title, deep link, and app promo
-        // Skip description as it often contains HTML tags (<br>, etc.)
-        val shareMessage = buildString {
-            append(title)
-            append("\n\n")
-            append(getString(R.string.share_watch_in_app))
-            append("\n")
-            append(videoDeepLink)
-            append("\n\n")
-            append(getString(R.string.share_app_promo))
+            // Simple, clean share message - title, link, and app promo
+            // Skip description as it often contains HTML tags (<br>, etc.)
+            val shareMessage = buildString {
+                append(title)
+                append("\n\n")
+                append(getString(R.string.share_watch_in_app))
+                append("\n")
+                append(videoDeepLink)
+                append("\n\n")
+                append(getString(R.string.share_app_promo))
+            }
+
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_SUBJECT, title)
+                putExtra(Intent.EXTRA_TITLE, title)
+                putExtra(Intent.EXTRA_TEXT, shareMessage)
+            }
+
+            startActivity(Intent.createChooser(shareIntent, getString(R.string.share_video_chooser)))
         }
-
-        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_SUBJECT, title)
-            putExtra(Intent.EXTRA_TEXT, shareMessage)
-        }
-
-        startActivity(Intent.createChooser(shareIntent, getString(R.string.share_video_chooser)))
     }
 
     /**
@@ -3254,6 +3278,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             binding.collapsingToolbar.layoutParams?.let { params ->
                 if (params is com.google.android.material.appbar.AppBarLayout.LayoutParams) {
                     params.height = ViewGroup.LayoutParams.MATCH_PARENT
+                    // Disable scroll-to-collapse in fullscreen so a swipe-up gesture cannot
+                    // collapse the player to toolbar height — that would leave the audio
+                    // playing over a black screen (Issue ANDROID-MULTI-01).
+                    params.scrollFlags = 0
                 }
                 binding.collapsingToolbar.layoutParams = params
             }
@@ -3363,6 +3391,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             binding.collapsingToolbar.layoutParams?.let { params ->
                 if (params is com.google.android.material.appbar.AppBarLayout.LayoutParams) {
                     params.height = ViewGroup.LayoutParams.WRAP_CONTENT
+                    // Restore YouTube-style mini-player collapse behavior in portrait.
+                    params.scrollFlags =
+                        com.google.android.material.appbar.AppBarLayout.LayoutParams.SCROLL_FLAG_SCROLL or
+                            com.google.android.material.appbar.AppBarLayout.LayoutParams.SCROLL_FLAG_EXIT_UNTIL_COLLAPSED or
+                            com.google.android.material.appbar.AppBarLayout.LayoutParams.SCROLL_FLAG_SNAP
                 }
                 binding.collapsingToolbar.layoutParams = params
             }

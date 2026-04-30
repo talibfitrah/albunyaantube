@@ -189,6 +189,26 @@ class DeepLinkNavigationTest {
         waitForDestination(R.id.playerFragment, "playerFragment")
     }
 
+    @Test
+    fun coldStart_httpsWatchDeepLink_navigatesToPlayer() {
+        val videoId = "test_video_https"
+        val intent = createDeepLinkIntent("https://app.fitrahtube.com/watch/$videoId")
+
+        scenario = ActivityScenario.launch(intent)
+
+        waitForDestination(R.id.playerFragment, "playerFragment")
+    }
+
+    @Test
+    fun coldStart_httpsApiWatchDeepLink_navigatesToPlayer() {
+        val videoId = "test_video_api_https"
+        val intent = createDeepLinkIntent("https://app.fitrahtube.com/api/watch/$videoId")
+
+        scenario = ActivityScenario.launch(intent)
+
+        waitForDestination(R.id.playerFragment, "playerFragment")
+    }
+
     /**
      * Test cold start with channel deep-link.
      */

@@ -1,5 +1,6 @@
 package com.albunyaan.tube.ui.detail
 
+import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import android.view.View
@@ -27,6 +28,8 @@ import com.albunyaan.tube.download.DownloadRepository
 import com.albunyaan.tube.download.DownloadStatus
 import com.albunyaan.tube.download.PlaylistDownloadItem
 import com.albunyaan.tube.player.StreamPrefetchService
+import com.albunyaan.tube.share.ShareLinks
+import com.albunyaan.tube.share.ShareMetadataPublisher
 import com.albunyaan.tube.ui.detail.adapters.PlaylistVideosAdapter
 import com.google.android.material.chip.Chip
 import dagger.hilt.android.AndroidEntryPoint
@@ -84,6 +87,7 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
     // Track download states for items
     private var downloadStates: Map<String, Pair<DownloadStatus, Int>> = emptyMap()
     private var appBarOffsetListener: AppBarLayout.OnOffsetChangedListener? = null
+    private var currentHeader: PlaylistHeader? = null
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -99,8 +103,18 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
     private fun setupToolbar() {
         binding?.apply {
             toolbar.navigationIcon = AppCompatResources.getDrawable(requireContext(), R.drawable.ic_arrow_back)
+            toolbar.inflateMenu(R.menu.detail_share_menu)
             toolbar.setNavigationOnClickListener {
                 findNavController().navigateUp()
+            }
+            toolbar.setOnMenuItemClickListener { item ->
+                when (item.itemId) {
+                    R.id.action_share -> {
+                        sharePlaylist()
+                        true
+                    }
+                    else -> false
+                }
             }
             toolbar.title = playlistTitleArg ?: getString(R.string.app_name)
 
@@ -108,11 +122,14 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
                 val collapsed = appBarLayout.totalScrollRange + verticalOffset <= 0
                 val expandedColor = ContextCompat.getColor(requireContext(), android.R.color.white)
                 val collapsedColor = MaterialColors.getColor(toolbar, com.google.android.material.R.attr.colorOnSurface)
-                toolbar.navigationIcon?.mutate()?.setTint(if (collapsed) collapsedColor else expandedColor)
-                toolbar.setTitleTextColor(if (collapsed) collapsedColor else expandedColor)
+                val toolbarColor = if (collapsed) collapsedColor else expandedColor
+                toolbar.navigationIcon?.mutate()?.setTint(toolbarColor)
+                toolbar.setTitleTextColor(toolbarColor)
+                tintToolbarActions(toolbarColor)
             }
             appBarLayout.addOnOffsetChangedListener(listener)
             appBarOffsetListener = listener
+            tintToolbarActions(ContextCompat.getColor(requireContext(), android.R.color.white))
         }
     }
 
@@ -310,6 +327,7 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
     }
 
     private fun bindHeader(header: PlaylistHeader) {
+        currentHeader = header
         binding?.apply {
             // Keep the collapsed toolbar populated on all devices.
             toolbar.title = header.title
@@ -386,6 +404,49 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
             // Exclusion banner
             exclusionBanner.isVisible = header.excluded
         }
+    }
+
+    private fun sharePlaylist() {
+        if (playlistId.isBlank()) return
+
+        val header = currentHeader
+        val title = header?.title?.takeIf { it.isNotBlank() }
+            ?: playlistTitleArg?.takeIf { it.isNotBlank() }
+            ?: playlistId
+        val imageUrl = header?.thumbnailUrl ?: header?.bannerUrl
+        val description = header?.description
+        val shareUrl = ShareLinks.playlist(
+            playlistId = playlistId,
+            title = title,
+            imageUrl = imageUrl,
+            description = description
+        )
+        viewLifecycleOwner.lifecycleScope.launch {
+            ShareMetadataPublisher.publish("playlist", playlistId, title, imageUrl, description)
+            if (!isAdded) return@launch
+
+            val shareMessage = buildString {
+                append(title)
+                append("\n\n")
+                append(getString(R.string.share_playlist_in_app))
+                append("\n")
+                append(shareUrl)
+                append("\n\n")
+                append(getString(R.string.share_app_promo))
+            }
+
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_SUBJECT, title)
+                putExtra(Intent.EXTRA_TITLE, title)
+                putExtra(Intent.EXTRA_TEXT, shareMessage)
+            }
+            startActivity(Intent.createChooser(shareIntent, getString(R.string.share_playlist_chooser)))
+        }
+    }
+
+    private fun tintToolbarActions(color: Int) {
+        binding?.toolbar?.menu?.findItem(R.id.action_share)?.icon?.mutate()?.setTint(color)
     }
 
     private fun showErrorState(message: String) {
@@ -530,6 +591,7 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
     override fun onDestroyView() {
         binding?.appBarLayout?.removeOnOffsetChangedListener(appBarOffsetListener)
         appBarOffsetListener = null
+        currentHeader = null
         binding = null
         super.onDestroyView()
     }

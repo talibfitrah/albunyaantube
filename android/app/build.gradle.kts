@@ -48,6 +48,13 @@ android {
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
         buildConfigField("boolean", "ENABLE_THUMBNAIL_IMAGES", "true")
 
+        // ANDROID-MULTI-01 Issue 4: public watch-page base URL. shareCurrentVideo()
+        // emits https://host/api/watch/{id} so link unfurlers (WhatsApp / Telegram /
+        // Slack / Skype) render the OpenGraph preview served by WatchPageController.
+        // Set local.properties share.base.url= to force the in-app deep-link fallback.
+        val shareBaseUrl = localProperties.getProperty("share.base.url", "https://app.fitrahtube.com")
+        buildConfigField("String", "SHARE_BASE_URL", "\"$shareBaseUrl\"")
+
         // PR6.2: iOS client fetch feature flag
         // Enables NewPipeExtractor iOS client fetch for better HLS manifest availability.
         // Default OFF - enable in local.properties: npe.ios.fetch.enabled=true

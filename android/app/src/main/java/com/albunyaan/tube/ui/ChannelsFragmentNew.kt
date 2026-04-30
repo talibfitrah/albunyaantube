@@ -142,20 +142,25 @@ class ChannelsFragmentNew : Fragment(R.layout.fragment_channels_new) {
                     is ContentListViewModel.ContentState.Loading -> {
                         Log.d(TAG, "Loading channels (type=${state.type})...")
                         when (state.type) {
-                            ContentListViewModel.LoadingType.INITIAL,
+                            ContentListViewModel.LoadingType.INITIAL -> {
+                                binding?.swipeRefresh?.isRefreshing = false
+                                binding?.swipeRefresh?.visibility = View.GONE
+                                binding?.listSkeleton?.root?.visibility = View.VISIBLE
+                                binding?.loadingMore?.visibility = View.GONE
+                            }
                             ContentListViewModel.LoadingType.REFRESH -> {
-                                // Initial load or pull-to-refresh: show top swipeRefresh indicator
                                 binding?.swipeRefresh?.isRefreshing = true
                                 binding?.loadingMore?.visibility = View.GONE
                             }
                             ContentListViewModel.LoadingType.PAGINATION -> {
-                                // Infinite scroll: show bottom loadingMore indicator only
                                 binding?.swipeRefresh?.isRefreshing = false
                                 binding?.loadingMore?.visibility = View.VISIBLE
                             }
                         }
                     }
                     is ContentListViewModel.ContentState.Success -> {
+                        binding?.listSkeleton?.root?.visibility = View.GONE
+                        binding?.swipeRefresh?.visibility = View.VISIBLE
                         binding?.swipeRefresh?.isRefreshing = false
                         binding?.loadingMore?.visibility = View.GONE
                         val channels = state.items.filterIsInstance<ContentItem.Channel>()
@@ -178,6 +183,13 @@ class ChannelsFragmentNew : Fragment(R.layout.fragment_channels_new) {
                     is ContentListViewModel.ContentState.Error -> {
                         binding?.swipeRefresh?.isRefreshing = false
                         binding?.loadingMore?.visibility = View.GONE
+                        if (adapter.currentList.isEmpty()) {
+                            binding?.listSkeleton?.root?.visibility = View.VISIBLE
+                            binding?.swipeRefresh?.visibility = View.GONE
+                        } else {
+                            binding?.listSkeleton?.root?.visibility = View.GONE
+                            binding?.swipeRefresh?.visibility = View.VISIBLE
+                        }
                         Log.e(TAG, "Error loading channels: ${state.message}")
                     }
                 }

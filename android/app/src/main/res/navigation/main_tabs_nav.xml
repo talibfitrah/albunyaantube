@@ -78,6 +78,10 @@
             android:defaultValue="false" />
         <deepLink
             app:uri="albunyaantube://channel/{channelId}" />
+        <deepLink
+            app:uri="https://app.fitrahtube.com/channel/{channelId}" />
+        <deepLink
+            app:uri="https://app.fitrahtube.com/api/channel/{channelId}" />
     </fragment>
 
     <fragment
@@ -109,6 +113,10 @@
             android:defaultValue="false" />
         <deepLink
             app:uri="albunyaantube://playlist/{playlistId}" />
+        <deepLink
+            app:uri="https://app.fitrahtube.com/playlist/{playlistId}" />
+        <deepLink
+            app:uri="https://app.fitrahtube.com/api/playlist/{playlistId}" />
     </fragment>
 
     <fragment
@@ -180,6 +188,10 @@
             android:defaultValue="@null" />
         <deepLink
             app:uri="albunyaantube://video/{videoId}" />
+        <deepLink
+            app:uri="https://app.fitrahtube.com/watch/{videoId}" />
+        <deepLink
+            app:uri="https://app.fitrahtube.com/api/watch/{videoId}" />
     </fragment>
 
     <!-- Global actions for navigation from anywhere -->

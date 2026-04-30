@@ -212,6 +212,7 @@ class NewPipeExtractorClient(
             if (info.streamType == StreamType.NONE) return@map null
             VideoMetadata(
                 title = info.name,
+                channelName = info.uploaderName?.takeIf { it.isNotBlank() },
                 description = info.description?.content?.takeIf { it.isNotBlank() },
                 thumbnailUrl = info.thumbnails.chooseBestUrl(),
                 durationSeconds = info.duration.takeIf { it > 0 }?.toInt(),

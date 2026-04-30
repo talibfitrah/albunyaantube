@@ -13,6 +13,7 @@ import com.albunyaan.tube.analytics.ListMetricsReporter
 import com.albunyaan.tube.analytics.LogExtractorMetricsReporter
 import com.albunyaan.tube.analytics.LogListMetricsReporter
 import com.albunyaan.tube.analytics.TelemetryExtractorMetricsReporter
+import com.albunyaan.tube.data.extractor.ExtractorClient
 import com.albunyaan.tube.data.extractor.MetadataHydrator
 import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
 import com.albunyaan.tube.data.extractor.NoOpMetadataHydrator
@@ -23,7 +24,6 @@ import com.albunyaan.tube.data.paging.ContentPagingRepository
 import com.albunyaan.tube.data.paging.DefaultContentPagingRepository
 import com.albunyaan.tube.data.source.ContentService
 import com.albunyaan.tube.data.source.FakeContentService
-import com.albunyaan.tube.data.source.FallbackContentService
 import com.albunyaan.tube.data.source.RetrofitContentService
 import com.albunyaan.tube.data.source.RetrofitDownloadService
 import com.albunyaan.tube.data.source.api.ContentApi
@@ -152,6 +152,10 @@ object DataModule {
 
     @Provides
     @Singleton
+    fun provideExtractorClient(client: NewPipeExtractorClient): ExtractorClient = client
+
+    @Provides
+    @Singleton
     fun provideMetadataHydrator(): MetadataHydrator {
         // Use NoOpMetadataHydrator since backend provides complete data (fast loading)
         return NoOpMetadataHydrator()
@@ -178,10 +182,13 @@ object DataModule {
     @Singleton
     @Named("real")
     fun provideContentService(
-        @Named("retrofitContentService") retrofitService: ContentService,
-        @Named("fakeContentService") fakeService: ContentService
+        @Named("retrofitContentService") retrofitService: ContentService
     ): ContentService {
-        return FallbackContentService(retrofitService, fakeService)
+        // The app must never silently fall back to fake/mock data — even in debug builds.
+        // When the device is offline (or the backend is unreachable) the real network
+        // failure must propagate so each list screen can render skeleton placeholders
+        // and the global offline banner. ANDROID-MULTI-01 #2.
+        return retrofitService
     }
 
     @Provides
@@ -246,6 +253,14 @@ object DataModule {
             .allowHardware(false)
             .respectCacheHeaders(false)
             .build()
+    }
+
+    @Provides
+    @Singleton
+    fun provideNetworkMonitor(
+        @ApplicationContext context: Context
+    ): com.albunyaan.tube.util.NetworkMonitor {
+        return com.albunyaan.tube.util.NetworkMonitor(context)
     }
 
     @Provides

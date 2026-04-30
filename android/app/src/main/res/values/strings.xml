@@ -178,6 +178,22 @@
     <string name="error_parse_title">Data Error</string>
     <string name="error_unknown">An unexpected error occurred.</string>
     <string name="offline_mode">You\'re offline. Showing cached content.</string>
+    <string name="connectivity_offline_banner">You\'re offline. Check your connection.</string>
+    <!-- ANDROID-MULTI-01 Issue 3: update checker / installer strings -->
+    <string name="settings_check_for_updates">Check for updates</string>
+    <string name="update_available_title">New version available</string>
+    <string name="update_available_message">%1$s is ready to download.\n\n%2$s</string>
+    <string name="update_version_ready">Version %1$s is ready to download.</string>
+    <string name="update_no_release_notes">No release notes.</string>
+    <string name="update_download_and_install">Update now</string>
+    <string name="update_check_up_to_date">FitrahTube is up to date.</string>
+    <string name="update_check_failed">Couldn\'t check for updates. Please try again.</string>
+    <string name="update_downloading">Downloading update…</string>
+    <string name="update_download_failed">Download failed. Please try again.</string>
+    <string name="update_permission_title">Permission needed</string>
+    <string name="update_permission_message">To install the update, allow %1$s to install apps. Tap Open settings, enable the permission, then tap Check for updates again.</string>
+    <string name="update_grant_permission">Open settings</string>
+    <string name="update_progress_percent">%1$d%%</string>
     <string name="offline_mode_limited">Some features are unavailable offline.</string>
 
     <!-- Home Screen Sections -->
@@ -216,9 +232,14 @@
     <string name="player_removed_from_favorites">Removed from favorites</string>
     <string name="player_favorite_toggle_error">Failed to update favorites. Please try again.</string>
     <string name="player_action_share">Share video</string>
+    <string name="action_share">Share</string>
     <string name="share_watch_in_app">Watch in FitrahTube:</string>
+    <string name="share_channel_in_app">Open this channel in FitrahTube:</string>
+    <string name="share_playlist_in_app">Open this playlist in FitrahTube:</string>
     <string name="share_app_promo">Get FitrahTube for ad-free Islamic content!</string>
     <string name="share_video_chooser">Share video</string>
+    <string name="share_channel_chooser">Share channel</string>
+    <string name="share_playlist_chooser">Share playlist</string>
     <string name="player_action_download">Download video</string>
     <string name="player_button_download">Download</string>
     <string name="player_action_minimize">Minimize player</string>

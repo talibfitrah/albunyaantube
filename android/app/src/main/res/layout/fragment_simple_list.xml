@@ -41,6 +41,12 @@
 
         </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 
+        <!-- Skeleton placeholder shown during initial load and when offline with no cached data -->
+        <include
+            android:id="@+id/listSkeleton"
+            layout="@layout/view_list_skeleton"
+            android:visibility="gone" />
+
         <!-- Empty state view -->
         <LinearLayout
             android:id="@+id/emptyState"

@@ -3,9 +3,11 @@ package com.albunyaan.tube.ui
 import android.animation.Animator
 import android.animation.AnimatorSet
 import android.animation.ObjectAnimator
+import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.view.animation.DecelerateInterpolator
+import android.widget.ImageView
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.core.view.isInvisible
@@ -52,6 +54,7 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
         val appName = view.requireViewById<TextView>(R.id.appName)
         val tagline = view.requireViewById<TextView>(R.id.tagline)
         val loadingSpinner = view.requireViewById<ProgressBar>(R.id.loadingSpinner)
+        val splashIcon = view.requireViewById<ImageView>(R.id.splashIcon)
 
         // Get slide distance from design token (already in pixels)
         val slideDistance = resources.getDimension(R.dimen.splash_slide_distance)
@@ -63,8 +66,22 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
                 settingsPreferences.onboardingCompleted.first()
             }
 
+            // Check if this is a deep link launch - if so, skip splash entirely
+            if (isDeepLinkLaunch()) {
+                if (onboardingDeferred.await()) {
+                    navigateToMainIfCurrent()
+                } else {
+                    navigateToOnboardingIfCurrent()
+                }
+                return@launch
+            }
+
             // Phase 1: Show logo alone
             delay(LOGO_DISPLAY_DURATION)
+
+            // Make logo visible for the animation
+            splashIcon.isInvisible = false
+            splashIcon.alpha = 1f
 
             // Phase 2: Animate app name (fade in + slide up)
             // Set visibility to visible just before animating (accessibility-safe)
@@ -117,13 +134,28 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
             // Await the onboarding preference (should already be available from parallel fetch)
             val onboardingCompleted = onboardingDeferred.await()
 
-            if (findNavController().currentDestination?.id == R.id.splashFragment) {
-                if (onboardingCompleted) {
-                    findNavController().navigate(R.id.action_splash_to_main)
-                } else {
-                    findNavController().navigate(R.id.action_splash_to_onboarding)
-                }
+            if (onboardingCompleted) {
+                navigateToMainIfCurrent()
+            } else if (findNavController().currentDestination?.id == R.id.splashFragment) {
+                findNavController().navigate(R.id.action_splash_to_onboarding)
             }
+        }
+    }
+
+    private fun isDeepLinkLaunch(): Boolean {
+        val intent = activity?.intent ?: return false
+        return intent.action == Intent.ACTION_VIEW && intent.data != null
+    }
+
+    private fun navigateToMainIfCurrent() {
+        if (findNavController().currentDestination?.id == R.id.splashFragment) {
+            findNavController().navigate(R.id.action_splash_to_main)
+        }
+    }
+
+    private fun navigateToOnboardingIfCurrent() {
+        if (findNavController().currentDestination?.id == R.id.splashFragment) {
+            findNavController().navigate(R.id.action_splash_to_onboarding)
         }
     }
 

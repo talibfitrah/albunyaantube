@@ -142,9 +142,16 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
                     is ContentListViewModel.ContentState.Loading -> {
                         Log.d(TAG, "Loading videos (type=${state.type})...")
                         when (state.type) {
-                            ContentListViewModel.LoadingType.INITIAL,
+                            ContentListViewModel.LoadingType.INITIAL -> {
+                                // Initial load: show skeleton placeholders, hide list/empty/spinner
+                                binding?.swipeRefresh?.isRefreshing = false
+                                binding?.swipeRefresh?.visibility = View.GONE
+                                binding?.listSkeleton?.root?.visibility = View.VISIBLE
+                                binding?.loadingMore?.visibility = View.GONE
+                                binding?.emptyState?.visibility = View.GONE
+                            }
                             ContentListViewModel.LoadingType.REFRESH -> {
-                                // Initial load or pull-to-refresh: show top swipeRefresh indicator
+                                // Pull-to-refresh: keep existing list visible with the spinner overlay
                                 binding?.swipeRefresh?.isRefreshing = true
                                 binding?.loadingMore?.visibility = View.GONE
                                 binding?.emptyState?.visibility = View.GONE
@@ -160,6 +167,8 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
                         val videos = state.items.filterIsInstance<ContentItem.Video>()
                         Log.d(TAG, "Videos loaded: ${videos.size} items, hasMore=${state.hasMoreData}")
                         binding?.let { binding ->
+                            binding.listSkeleton.root.visibility = View.GONE
+                            binding.swipeRefresh.visibility = View.VISIBLE
                             binding.swipeRefresh.isRefreshing = false
                             binding.loadingMore.visibility = View.GONE
 
@@ -205,24 +214,23 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
                             binding.swipeRefresh.isRefreshing = false
                             binding.loadingMore.visibility = View.GONE
 
-                            val message = if (state.message.isBlank()) {
-                                getString(R.string.list_error_title)
-                            } else {
-                                state.message
-                            }
-                            Snackbar.make(binding.root, message, Snackbar.LENGTH_SHORT).show()
-
                             if (adapter.currentList.isEmpty()) {
-                                // Initial load/refresh failure with no data - show error empty state
-                                binding.emptyState.visibility = View.VISIBLE
-                                binding.recyclerView.visibility = View.GONE
-                                binding.emptyIcon.setImageResource(R.drawable.ic_error)
-                                binding.emptyTitle.text = getString(R.string.list_error_title)
-                                binding.emptySubtitle.text = getString(R.string.list_error_description)
-                            } else {
-                                // Existing content present - keep list visible and rely on Snackbar for feedback
+                                // Initial load failure (typically offline): keep skeleton placeholders.
+                                // The global offline banner from MainShellFragment communicates the cause.
+                                binding.listSkeleton.root.visibility = View.VISIBLE
+                                binding.swipeRefresh.visibility = View.GONE
                                 binding.emptyState.visibility = View.GONE
-                                binding.recyclerView.visibility = View.VISIBLE
+                            } else {
+                                // Existing content present - keep list visible and surface a toast.
+                                binding.listSkeleton.root.visibility = View.GONE
+                                binding.swipeRefresh.visibility = View.VISIBLE
+                                binding.emptyState.visibility = View.GONE
+                                val message = if (state.message.isBlank()) {
+                                    getString(R.string.list_error_title)
+                                } else {
+                                    state.message
+                                }
+                                Snackbar.make(binding.root, message, Snackbar.LENGTH_SHORT).show()
                             }
                         }
                         Log.e(TAG, "Error loading videos: ${state.message}")

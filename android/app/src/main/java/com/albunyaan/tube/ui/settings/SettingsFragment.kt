@@ -30,6 +30,9 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
     @Inject
     lateinit var downloadStorage: DownloadStorage
 
+    @Inject
+    lateinit var updatePromptFlow: com.albunyaan.tube.update.UpdatePromptFlow
+
     private var binding: FragmentSettingsBinding? = null
     private lateinit var preferences: SettingsPreferences
 
@@ -260,6 +263,12 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
                 if (findNavController().currentDestination?.id == R.id.settingsFragment) {
                     findNavController().navigate(R.id.action_settingsFragment_to_aboutFragment)
                 }
+            }
+
+            // ANDROID-MULTI-01 Issue 3: manual update check
+            view.findViewById<View>(R.id.updateCheckItem)?.setOnClickListener {
+                val activity = activity ?: return@setOnClickListener
+                updatePromptFlow.runCheck(activity, viewLifecycleOwner, manual = true)
             }
 
             // Toggle switches - handle state changes

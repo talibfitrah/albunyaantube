@@ -345,11 +345,45 @@ class PlaybackService : MediaSessionService() {
                 if (BuildConfig.DEBUG) Log.d(TAG, "Session already initialized with same player")
                 return
             }
-            // Different player - release old session first
-            if (BuildConfig.DEBUG) Log.d(TAG, "Releasing old session for new player")
+            // Different player — stop old player FIRST, then release old session. Order
+            // matters: if we released the session before stopping and stop() then threw
+            // (Media3 thread-affinity violation, player in a bad state, etc.), we would be
+            // left with a running player and no session attached, so audio would keep
+            // playing with no way to observe it via the MediaController. By stopping
+            // first, a failure there leaves the old session still holding the player
+            // reference, which the next updateForegroundState() call can observe and
+            // surface in the notification. The old fragment still owns the player's
+            // lifecycle and will release() it on its own teardown.
+            // Issue ANDROID-MULTI-01 — single-audio invariant; silent-failure gap
+            // flagged by codex adversarial review.
+            if (BuildConfig.DEBUG) Log.d(TAG, "Stopping old player and releasing old session for new player")
+            val oldPlayer = mediaSession?.player
+            val wasPlaying = oldPlayer?.isPlaying == true
+            var stopSucceeded = true
+            try {
+                oldPlayer?.stop()
+                oldPlayer?.clearMediaItems()
+            } catch (e: Exception) {
+                stopSucceeded = false
+                // Escalated to ERROR when audio was actually playing — that is the
+                // case where the user will hear the invariant break.
+                if (wasPlaying) {
+                    Log.e(TAG, "FAILED to stop old player while it was playing — single-audio invariant at risk", e)
+                } else {
+                    Log.w(TAG, "Failed to stop old player (was not playing)", e)
+                }
+            }
             removePlayerListener()
             mediaSession?.release()
             mediaSession = null
+            if (!stopSucceeded && wasPlaying) {
+                // Best-effort second attempt — if the first stop failed and audio was
+                // flowing, try once more now that the session is gone. Swallowed on
+                // failure; the error log above already recorded the original cause.
+                try {
+                    oldPlayer?.stop()
+                } catch (ignored: Exception) { }
+            }
         }
 
         if (BuildConfig.DEBUG) Log.d(TAG, "Initializing MediaSession with player (playWhenReady=${player.playWhenReady}, state=${player.playbackState})")
