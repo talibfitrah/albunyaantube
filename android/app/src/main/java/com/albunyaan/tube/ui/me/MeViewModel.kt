@@ -356,6 +356,22 @@ class MeViewModel @Inject constructor(
     // the Room cache window, the worker mutates it on its own cadence.
 
     fun setFilter(channelId: String?) {
+        // Skip when nothing changes — a no-op click should not blank the
+        // feed or fire a new deep-page round.
+        if (filter.value == channelId) return
+
+        // Clear loadedWeekIndices SYNCHRONOUSLY before flipping the filter.
+        // Without this there is a brief window where the `weeks` combine
+        // re-runs the still-loaded indices against the new filter; if the
+        // newly filtered channel has no content in those weeks the UI
+        // emits an empty list — visually identical to "no results", which
+        // made users tap the chip a second time before the deep-page
+        // round triggered by [resetLoadedWeeksAndRestart] could repopulate
+        // the indices. Clearing first makes the empty render explicitly a
+        // loading state, then the filter.drop(1) collector kicks off the
+        // fresh load via [resetLoadedWeeksAndRestart].
+        loadedWeekIndices.value = emptyList()
+        reachedEndState.value = false
         filter.value = channelId
     }
 
