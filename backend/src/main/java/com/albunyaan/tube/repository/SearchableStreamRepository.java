@@ -2,7 +2,6 @@ package com.albunyaan.tube.repository;
 
 import com.albunyaan.tube.config.FirestoreTimeoutProperties;
 import com.albunyaan.tube.model.SearchableStream;
-import com.google.api.core.ApiFuture;
 import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.*;
 import org.slf4j.Logger;
@@ -50,6 +49,7 @@ public class SearchableStreamRepository {
         data.put("searchTokens", stream.getSearchTokens());
         data.put("sourceKeys", FieldValue.arrayUnion(sourceKey));
         data.put("visible", true);
+        data.put("indexedAt", Timestamp.now());
         data.put("lastSeenAt", Timestamp.now());
 
         getCollection().document(stream.getStreamId())
@@ -94,8 +94,10 @@ public class SearchableStreamRepository {
             DocumentSnapshot snap = transaction.get(docRef)
                     .get(timeoutProperties.getRead(), TimeUnit.SECONDS);
             if (!snap.exists()) return null;
-            List<String> keys = new ArrayList<>((List<String>) Objects.requireNonNullElse(
-                    snap.get("sourceKeys"), new ArrayList<>()));
+            SearchableStream existing = snap.toObject(SearchableStream.class);
+            List<String> keys = existing != null
+                    ? new ArrayList<>(existing.getSourceKeys())
+                    : new ArrayList<>();
             keys.remove(sourceKey);
             Map<String, Object> updates = new HashMap<>();
             updates.put("sourceKeys", keys);
