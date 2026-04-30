@@ -868,7 +868,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             QualityTrackSelector.createForDiscreteQualities(requireContext())
         }.also { this.trackSelector = it }
 
-        val renderersFactory = DefaultRenderersFactory(requireContext())
+        // LegacySubtitleRenderersFactory re-enables legacy TTML/VTT decoding
+        // on the TextRenderer; required because Media3 1.10 disables it by
+        // default and our side-loaded subtitle pipeline needs it (see the
+        // factory's KDoc).
+        val renderersFactory = com.albunyaan.tube.player.LegacySubtitleRenderersFactory(requireContext())
             .setEnableDecoderFallback(true)
 
         val player = ExoPlayer.Builder(requireContext(), renderersFactory)

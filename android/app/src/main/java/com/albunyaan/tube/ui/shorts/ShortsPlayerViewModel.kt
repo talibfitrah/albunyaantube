@@ -81,7 +81,11 @@ class ShortsPlayerViewModel @AssistedInject constructor(
     private var userQualityCapHeight: Int = 0
 
     val player: ExoPlayer by lazy {
-        val renderersFactory = androidx.media3.exoplayer.DefaultRenderersFactory(context)
+        // LegacySubtitleRenderersFactory re-enables legacy TTML/VTT decoding
+        // on the TextRenderer; required because Media3 1.10 disables it by
+        // default and our side-loaded subtitle pipeline needs it (see the
+        // factory's KDoc).
+        val renderersFactory = com.albunyaan.tube.player.LegacySubtitleRenderersFactory(context)
             .setEnableDecoderFallback(true)
         val selector = if (featureFlags.isNeverFreezeAbrEnabled) {
             QualityTrackSelector(context, neverFreezeTrackSelectionFactory.create())
