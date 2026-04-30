@@ -69,7 +69,8 @@ class DefaultStreamPrefetchService @Inject constructor(
     private val rateLimiter: ExtractionRateLimiter,
     private val mpdGenerator: MultiRepresentationMpdGenerator,
     private val mpdRegistry: SyntheticDashMpdRegistry,
-    private val featureFlags: PlaybackFeatureFlags
+    private val featureFlags: PlaybackFeatureFlags,
+    private val segmentPreBuffer: SegmentPreBuffer
 ) : StreamPrefetchService {
     companion object {
         private const val TAG = "StreamPrefetch"
@@ -287,7 +288,7 @@ class DefaultStreamPrefetchService @Inject constructor(
      * @param videoId The video ID (used as registry key)
      * @param resolved The resolved streams to generate MPD from
      */
-    private fun tryPreGenerateMpd(videoId: String, resolved: ResolvedStreams) {
+    private suspend fun tryPreGenerateMpd(videoId: String, resolved: ResolvedStreams) {
         // Phase 6: Runtime feature flag for MPD pre-generation
         if (!featureFlags.isMpdPrefetchEnabled) {
             Log.d(TAG, "MPD pre-gen disabled via feature flag")
@@ -317,6 +318,14 @@ class DefaultStreamPrefetchService @Inject constructor(
                         codecFamily = mpdResult.codecFamily
                     )
                     Log.d(TAG, "MPD pre-generated for $videoId: ${mpdResult.videoTracks.size} reps (${mpdResult.codecFamily})")
+                    if (featureFlags.isSegmentPreloadEnabled) {
+                        val lowestTrackUrl = mpdResult.videoTracks
+                            .minByOrNull { it.bitrate ?: Int.MAX_VALUE }
+                            ?.url
+                        if (!lowestTrackUrl.isNullOrBlank()) {
+                            serviceScope.launch { segmentPreBuffer.preBuffer(lowestTrackUrl) }
+                        }
+                    }
                 }
                 is MultiRepresentationMpdGenerator.Result.Failure -> {
                     Log.d(TAG, "MPD pre-gen failed for $videoId: ${mpdResult.reason}")
