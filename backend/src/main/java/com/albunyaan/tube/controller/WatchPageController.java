@@ -18,9 +18,11 @@ import org.springframework.web.bind.annotation.ResponseBody;
 
 import jakarta.servlet.http.HttpServletRequest;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -64,7 +66,10 @@ public class WatchPageController {
     private static final Pattern SAFE_HOST_PATTERN = Pattern.compile("^[A-Za-z0-9.-]+(?::[0-9]{1,5})?$");
 
     private final PublicContentService contentService;
-    private final Map<String, CachedShareMetadata> shareMetadataCache = new ConcurrentHashMap<>();
+    private final Cache<String, CachedShareMetadata> shareMetadataCache = Caffeine.newBuilder()
+            .maximumSize(5_000)
+            .expireAfterWrite(SHARE_METADATA_TTL_MILLIS, TimeUnit.MILLISECONDS)
+            .build();
 
     public WatchPageController(PublicContentService contentService) {
         this.contentService = contentService;
@@ -93,8 +98,7 @@ public class WatchPageController {
             return ResponseEntity.badRequest().build();
         }
 
-        cleanupExpiredShareMetadata();
-        shareMetadataCache.put(cacheKey(type, id), new CachedShareMetadata(title, description, image, System.currentTimeMillis()));
+        shareMetadataCache.put(cacheKey(type, id), new CachedShareMetadata(title, description, image));
         return ResponseEntity.noContent().build();
     }
 
@@ -605,22 +609,9 @@ public class WatchPageController {
     }
 
     private ShareMetadata getShareMetadata(String type, String id) {
-        CachedShareMetadata cached = shareMetadataCache.get(cacheKey(type, id));
-        if (cached == null) {
-            return ShareMetadata.EMPTY;
-        }
-        if (System.currentTimeMillis() - cached.createdAtMillis() > SHARE_METADATA_TTL_MILLIS) {
-            shareMetadataCache.remove(cacheKey(type, id));
-            return ShareMetadata.EMPTY;
-        }
+        CachedShareMetadata cached = shareMetadataCache.getIfPresent(cacheKey(type, id));
+        if (cached == null) return ShareMetadata.EMPTY;
         return new ShareMetadata(cached.title(), cached.description(), cached.image());
-    }
-
-    private void cleanupExpiredShareMetadata() {
-        long now = System.currentTimeMillis();
-        shareMetadataCache.entrySet().removeIf(entry ->
-                now - entry.getValue().createdAtMillis() > SHARE_METADATA_TTL_MILLIS
-        );
     }
 
     private static String cacheKey(String type, String id) {
@@ -650,7 +641,7 @@ public class WatchPageController {
     private record ShareMetadataRequest(String title, String description, String image) {
     }
 
-    private record CachedShareMetadata(String title, String description, String image, long createdAtMillis) {
+    private record CachedShareMetadata(String title, String description, String image) {
     }
 
     private record ShareMetadata(String title, String description, String image) {

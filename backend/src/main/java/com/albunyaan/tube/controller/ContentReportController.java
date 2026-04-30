@@ -76,7 +76,7 @@ public class ContentReportController {
     @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
     public ResponseEntity<ContentReport> resolveReport(
             @PathVariable String id,
-            @RequestBody ResolveReportRequest body,
+            @Valid @RequestBody ResolveReportRequest body,
             @AuthenticationPrincipal FirebaseUserDetails user)
             throws ExecutionException, InterruptedException, TimeoutException {
         String resolvedBy = user != null ? user.getEmail() : "unknown";
@@ -97,5 +97,5 @@ public class ContentReportController {
             @NotEmpty List<ReportReason> reasons,
             @Size(max = 500) String otherDescription) {}
 
-    public record ResolveReportRequest(ReportStatus status, String note) {}
+    public record ResolveReportRequest(@NotNull ReportStatus status, @Size(max = 1000) String note) {}
 }

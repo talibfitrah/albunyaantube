@@ -12,11 +12,13 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.regex.Pattern;
 
 @Service
 public class StreamIndexService {
 
     private static final Logger log = LoggerFactory.getLogger(StreamIndexService.class);
+    private static final Pattern CHANNEL_ID_PATTERN = Pattern.compile("^UC[A-Za-z0-9_-]{22}$");
 
     private final SearchableStreamRepository streamRepository;
     private final ChannelRepository channelRepository;
@@ -73,9 +75,13 @@ public class StreamIndexService {
 
             for (StreamItemDto item : items) {
                 if (excluded.contains(item.getId())) continue;
-                String channelId = item.getChannelId() != null
-                        ? item.getChannelId()
-                        : extractChannelId(item.getUploaderUrl());
+                String rawChannelId = item.getChannelId();
+                String channelId;
+                if (rawChannelId != null && CHANNEL_ID_PATTERN.matcher(rawChannelId).matches()) {
+                    channelId = rawChannelId;
+                } else {
+                    channelId = extractChannelId(item.getUploaderUrl());
+                }
                 if (channelId == null) {
                     log.warn("Could not resolve channelId for stream {}, skipping", item.getId());
                     continue;
@@ -152,6 +158,7 @@ public class StreamIndexService {
         if (idx < 0) return null;
         String rest = uploaderUrl.substring(idx + 1);
         int slash = rest.indexOf('/');
-        return slash > 0 ? rest.substring(0, slash) : rest;
+        String candidate = slash > 0 ? rest.substring(0, slash) : rest;
+        return CHANNEL_ID_PATTERN.matcher(candidate).matches() ? candidate : null;
     }
 }

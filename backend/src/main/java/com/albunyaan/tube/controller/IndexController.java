@@ -9,11 +9,13 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.URL;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -35,8 +37,11 @@ public class IndexController {
     private static final int MAX_ITEMS = 50;
     private static final long RATE_LIMIT_MS = 30_000L; // 30 seconds per device per source
 
-    // sourceKey → (deviceId → lastRequestTime). Intentionally unbounded for simplicity.
-    private final Map<String, Map<String, Long>> rateLimitMap = new ConcurrentHashMap<>();
+    // Compound key: sourceKey + ":" + deviceId → last allowed timestamp. Bounded and auto-evicting.
+    private final Cache<String, Long> rateLimitCache = Caffeine.newBuilder()
+            .maximumSize(10_000)
+            .expireAfterWrite(RATE_LIMIT_MS, TimeUnit.MILLISECONDS)
+            .build();
 
     private final StreamIndexService streamIndexService;
 
@@ -106,11 +111,15 @@ public class IndexController {
     }
 
     private boolean isRateLimited(String sourceKey, String deviceId) {
-        Map<String, Long> byDevice = rateLimitMap.computeIfAbsent(sourceKey, k -> new ConcurrentHashMap<>());
-        long now = System.currentTimeMillis();
-        Long last = byDevice.get(deviceId);
-        if (last != null && now - last < RATE_LIMIT_MS) return true;
-        byDevice.put(deviceId, now);
-        return false;
+        String key = sourceKey + ":" + deviceId;
+        boolean[] limited = {false};
+        rateLimitCache.asMap().compute(key, (k, last) -> {
+            if (last != null) {
+                limited[0] = true;
+                return last;
+            }
+            return System.currentTimeMillis();
+        });
+        return limited[0];
     }
 }
