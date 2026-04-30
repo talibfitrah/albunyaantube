@@ -44,6 +44,7 @@
     <string name="detail_excluded_banner">This item is currently unavailable due to policy restrictions.</string>
     <string name="player_audio_only_label">Audio only</string>
     <string name="player_action_audio">Audio</string>
+    <string name="player_action_report">Report</string>
     <string name="player_status_audio_only">Playing audio-only stream.</string>
     <string name="player_status_video_playing">Playing video stream.</string>
     <string name="player_status_initializing">Initializing player…</string>

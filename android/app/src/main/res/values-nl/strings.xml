@@ -471,6 +471,7 @@
     <string name="player_added_to_favorites">Toegevoegd aan favorieten</string>
     <string name="player_removed_from_favorites">Verwijderd uit favorieten</string>
     <string name="player_action_audio">Audio</string>
+    <string name="player_action_report">Melden</string>
     <string name="player_favorite_toggle_error">Favorieten bijwerken mislukt. Probeer het opnieuw.</string>
 
     <!-- Share -->
