@@ -10,6 +10,7 @@ import com.albunyaan.tube.data.local.FavoritesRepository
 import com.albunyaan.tube.data.local.FollowedChannelsRepository
 import com.albunyaan.tube.data.shorts.ShortsFeedRepository
 import com.albunyaan.tube.data.shorts.ShortsItem
+import com.albunyaan.tube.player.QualityTrackSelector
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
@@ -48,6 +49,8 @@ class ShortsPlayerViewModel @AssistedInject constructor(
     private val follows: FollowedChannelsRepository,
     private val channelDetailRepo: ChannelDetailRepository,
     private val bufferPolicy: com.albunyaan.tube.player.AdaptiveBufferPolicy,
+    private val featureFlags: com.albunyaan.tube.player.PlaybackFeatureFlags,
+    private val neverFreezeTrackSelectionFactory: com.albunyaan.tube.player.NeverFreezeTrackSelectionFactory,
     @Assisted("initialShortId") private val initialShortId: String?,
     @Assisted("channelId") private val channelId: String?
 ) : ViewModel() {
@@ -66,8 +69,14 @@ class ShortsPlayerViewModel @AssistedInject constructor(
     val player: ExoPlayer by lazy {
         val renderersFactory = androidx.media3.exoplayer.DefaultRenderersFactory(context)
             .setEnableDecoderFallback(true)
+        val trackSelector = if (featureFlags.isNeverFreezeAbrEnabled) {
+            QualityTrackSelector(context, neverFreezeTrackSelectionFactory.create())
+        } else {
+            QualityTrackSelector.createForDiscreteQualities(context)
+        }
         ExoPlayer.Builder(context, renderersFactory)
             .setLoadControl(bufferPolicy.buildLoadControl())
+            .setTrackSelector(trackSelector)
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(androidx.media3.common.C.WAKE_MODE_NETWORK)
             .build()

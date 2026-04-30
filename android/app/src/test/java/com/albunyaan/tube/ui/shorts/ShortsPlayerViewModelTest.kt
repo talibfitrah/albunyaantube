@@ -9,6 +9,8 @@ import com.albunyaan.tube.data.shorts.ShortsFeedRepository
 import com.albunyaan.tube.data.shorts.ShortsItem
 import com.albunyaan.tube.data.shorts.ShortsPage
 import com.albunyaan.tube.player.AdaptiveBufferPolicy
+import com.albunyaan.tube.player.NeverFreezeTrackSelectionFactory
+import com.albunyaan.tube.player.PlaybackFeatureFlags
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -54,6 +56,8 @@ class ShortsPlayerViewModelTest {
     private val follows: FollowedChannelsRepository = mock()
     private val channelDetailRepo: ChannelDetailRepository = mock()
     private val bufferPolicy: AdaptiveBufferPolicy = mock()
+    private val featureFlags: PlaybackFeatureFlags = mock()
+    private val neverFreezeFactory: NeverFreezeTrackSelectionFactory = mock()
 
     @Before
     fun setup() {
@@ -135,6 +139,8 @@ class ShortsPlayerViewModelTest {
             follows = follows,
             channelDetailRepo = channelDetailRepo,
             bufferPolicy = bufferPolicy,
+            featureFlags = featureFlags,
+            neverFreezeTrackSelectionFactory = neverFreezeFactory,
             initialShortId = null,
             channelId = null
         )
@@ -158,6 +164,8 @@ class ShortsPlayerViewModelTest {
             follows = follows,
             channelDetailRepo = channelDetailRepo,
             bufferPolicy = bufferPolicy,
+            featureFlags = featureFlags,
+            neverFreezeTrackSelectionFactory = neverFreezeFactory,
             initialShortId = null,
             channelId = null
         )
@@ -191,6 +199,8 @@ class ShortsPlayerViewModelTest {
             follows = follows,
             channelDetailRepo = channelDetailRepo,
             bufferPolicy = bufferPolicy,
+            featureFlags = featureFlags,
+            neverFreezeTrackSelectionFactory = neverFreezeFactory,
             initialShortId = null,
             channelId = null
         )
@@ -222,6 +232,8 @@ class ShortsPlayerViewModelTest {
             follows = follows,
             channelDetailRepo = channelDetailRepo,
             bufferPolicy = bufferPolicy,
+            featureFlags = featureFlags,
+            neverFreezeTrackSelectionFactory = neverFreezeFactory,
             initialShortId = null,
             channelId = null
         )
@@ -250,6 +262,8 @@ class ShortsPlayerViewModelTest {
             follows = follows,
             channelDetailRepo = channelDetailRepo,
             bufferPolicy = bufferPolicy,
+            featureFlags = featureFlags,
+            neverFreezeTrackSelectionFactory = neverFreezeFactory,
             initialShortId = null,
             channelId = "UC1"
         )
@@ -274,6 +288,8 @@ class ShortsPlayerViewModelTest {
             follows = follows,
             channelDetailRepo = channelDetailRepo,
             bufferPolicy = bufferPolicy,
+            featureFlags = featureFlags,
+            neverFreezeTrackSelectionFactory = neverFreezeFactory,
             initialShortId = null,
             channelId = "UC1"
         )
@@ -321,6 +337,8 @@ class ShortsPlayerViewModelTest {
             follows = follows,
             channelDetailRepo = channelDetailRepo,
             bufferPolicy = bufferPolicy,
+            featureFlags = featureFlags,
+            neverFreezeTrackSelectionFactory = neverFreezeFactory,
             initialShortId = null,
             channelId = "UC1"
         )
@@ -356,6 +374,8 @@ class ShortsPlayerViewModelTest {
             follows = follows,
             channelDetailRepo = channelDetailRepo,
             bufferPolicy = bufferPolicy,
+            featureFlags = featureFlags,
+            neverFreezeTrackSelectionFactory = neverFreezeFactory,
             initialShortId = null,
             channelId = null
         )
@@ -378,6 +398,8 @@ class ShortsPlayerViewModelTest {
             follows = follows,
             channelDetailRepo = channelDetailRepo,
             bufferPolicy = bufferPolicy,
+            featureFlags = featureFlags,
+            neverFreezeTrackSelectionFactory = neverFreezeFactory,
             initialShortId = null,
             channelId = null
         )
@@ -416,6 +438,8 @@ class ShortsPlayerViewModelTest {
             follows = follows,
             channelDetailRepo = channelDetailRepo,
             bufferPolicy = bufferPolicy,
+            featureFlags = featureFlags,
+            neverFreezeTrackSelectionFactory = neverFreezeFactory,
             initialShortId = "v3",
             channelId = null
         )
@@ -460,6 +484,8 @@ class ShortsPlayerViewModelTest {
             follows = follows,
             channelDetailRepo = channelDetailRepo,
             bufferPolicy = bufferPolicy,
+            featureFlags = featureFlags,
+            neverFreezeTrackSelectionFactory = neverFreezeFactory,
             initialShortId = null,
             channelId = null
         )
@@ -492,6 +518,8 @@ class ShortsPlayerViewModelTest {
             follows = follows,
             channelDetailRepo = channelDetailRepo,
             bufferPolicy = bufferPolicy,
+            featureFlags = featureFlags,
+            neverFreezeTrackSelectionFactory = neverFreezeFactory,
             initialShortId = null,
             channelId = null
         )
@@ -512,6 +540,8 @@ class ShortsPlayerViewModelTest {
             follows = follows,
             channelDetailRepo = channelDetailRepo,
             bufferPolicy = bufferPolicy,
+            featureFlags = featureFlags,
+            neverFreezeTrackSelectionFactory = neverFreezeFactory,
             initialShortId = null,
             channelId = null
         )
