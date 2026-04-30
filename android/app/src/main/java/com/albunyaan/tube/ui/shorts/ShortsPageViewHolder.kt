@@ -35,7 +35,9 @@ class ShortsPageViewHolder(
         onDownload: () -> Unit,
         onChannelTap: () -> Unit,
         onTapVideo: () -> Unit,
-        onAudioTrackTap: () -> Unit
+        onAudioTrackTap: () -> Unit,
+        hasSubtitles: Boolean = false,
+        onSubtitleTap: () -> Unit = {}
     ) {
         binding.shortTitle.text = item.title
 
@@ -90,6 +92,9 @@ class ShortsPageViewHolder(
         binding.shortAudioTrackBtn.visibility =
             if (hasMultipleAudioTracks) View.VISIBLE else View.GONE
         binding.shortAudioTrackBtn.setOnClickListener { onAudioTrackTap() }
+
+        binding.shortSubtitleBtn.visibility = if (hasSubtitles) View.VISIBLE else View.GONE
+        binding.shortSubtitleBtn.setOnClickListener { onSubtitleTap() }
     }
 
     /**
@@ -99,6 +104,14 @@ class ShortsPageViewHolder(
      */
     fun setAudioTrackButtonVisible(visible: Boolean) {
         binding.shortAudioTrackBtn.visibility = if (visible) View.VISIBLE else View.GONE
+    }
+
+    /**
+     * Update only the subtitle button visibility without rebinding the whole
+     * page. Called reactively when stream resolution populates subtitle tracks.
+     */
+    fun setSubtitleButtonVisible(visible: Boolean) {
+        binding.shortSubtitleBtn.visibility = if (visible) View.VISIBLE else View.GONE
     }
 
     /**

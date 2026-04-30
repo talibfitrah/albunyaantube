@@ -51,6 +51,7 @@ class ShortsPagerAdapter(
         val onChannelTap: (Int) -> Unit,
         val onTapVideo: (Int) -> Unit,
         val onAudioTrackTap: (Int) -> Unit,
+        val onSubtitleTap: (Int) -> Unit,
         val onLikedFlow: (videoId: String) -> Flow<Boolean>,
         /**
          * Emits the number of selectable audio-language options for the
@@ -58,7 +59,13 @@ class ShortsPagerAdapter(
          * the count is ≥ 2. MUST NOT block: expected to be backed by a
          * MutableStateFlow the fragment populates on PlayerBinder.resolvedEvents.
          */
-        val onAudioLanguageCountFlow: (videoId: String) -> Flow<Int>
+        val onAudioLanguageCountFlow: (videoId: String) -> Flow<Int>,
+        /**
+         * Emits the number of subtitle tracks available for the given video id.
+         * The adapter flips the CC button visible when the count is > 0. MUST
+         * NOT block: backed by a MutableStateFlow populated on resolvedEvents.
+         */
+        val onSubtitleCountFlow: (videoId: String) -> Flow<Int>
     )
 
     // Tracks the active Flow-collection job per ViewHolder so it can be cancelled
@@ -108,6 +115,15 @@ class ShortsPagerAdapter(
                         holder.setAudioTrackButtonVisible(count >= 2)
                     }
                 }
+                launch {
+                    callbacks.onSubtitleCountFlow(item.id).collect { count ->
+                        val currentPos = holder.bindingAdapterPosition
+                        if (currentPos == androidx.recyclerview.widget.RecyclerView.NO_POSITION) {
+                            return@collect
+                        }
+                        holder.setSubtitleButtonVisible(count > 0)
+                    }
+                }
             }
         }
         collectJobs[holder] = job
@@ -150,6 +166,10 @@ class ShortsPagerAdapter(
             onAudioTrackTap = {
                 val pos = bindingAdapterPosition
                 if (pos != androidx.recyclerview.widget.RecyclerView.NO_POSITION) callbacks.onAudioTrackTap(pos)
+            },
+            onSubtitleTap = {
+                val pos = bindingAdapterPosition
+                if (pos != androidx.recyclerview.widget.RecyclerView.NO_POSITION) callbacks.onSubtitleTap(pos)
             }
         )
     }

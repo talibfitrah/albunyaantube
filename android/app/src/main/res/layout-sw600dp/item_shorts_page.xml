@@ -78,6 +78,18 @@
             app:tint="#FFFFFFFF"/>
 
         <ImageButton
+            android:id="@+id/shortSubtitleBtn"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_marginTop="@dimen/spacing_md"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/subtitle_picker_cd"
+            android:src="@drawable/ic_closed_captions"
+            android:scaleType="center"
+            android:visibility="gone"
+            app:tint="#FFFFFFFF"/>
+
+        <ImageButton
             android:id="@+id/shortDownloadBtn"
             android:layout_width="56dp"
             android:layout_height="56dp"
