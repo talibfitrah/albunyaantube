@@ -433,6 +433,14 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         }
 
         // Setup action buttons
+        binding.reportButton.setOnClickListener {
+            val videoId = viewModel.state.value.currentItem?.streamId
+            if (!videoId.isNullOrBlank()) {
+                ContentReportBottomSheet.newInstance(ReportTargetType.VIDEO, videoId)
+                    .show(childFragmentManager, ContentReportBottomSheet.TAG)
+            }
+        }
+
         binding.favoriteButton.setOnClickListener {
             val wasFavorite = viewModel.state.value.isFavorite
             viewModel.toggleFavorite()
