@@ -26,11 +26,52 @@
         <!-- Popup Menu Style -->
         <item name="popupMenuStyle">@style/Widget.Albunyaan.PopupMenu</item>
         <item name="android:popupMenuStyle">@style/Widget.Albunyaan.PopupMenu</item>
+
+        <!-- MaterialAlertDialog Theme (kebab pickers: quality, audio, subtitles,
+             theme, language, and any other Material dialogs). Without this, the
+             dialogs render with Material3's stock 4 dp corner radius and the
+             default purple accent — visually out of place against the app's
+             20 dp surfaces and primary-green buttons. -->
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.Albunyaan.MaterialAlertDialog</item>
     </style>
 
-    <!-- Popup Menu Style (consistent with app design) -->
-    <!-- Inherits Material3 defaults for surface colors (adapts to dark mode automatically) -->
-    <style name="Widget.Albunyaan.PopupMenu" parent="Widget.Material3.PopupMenu" />
+    <!-- Popup Menu Style (consistent with app design)
+         Material3.PopupMenu defaults to a 4 dp corner radius via the framework
+         popup background. Override with bg_popup_menu so the menu surface
+         matches the app's 20 dp corner-radius design tokens. -->
+    <style name="Widget.Albunyaan.PopupMenu" parent="Widget.Material3.PopupMenu">
+        <item name="android:popupBackground">@drawable/bg_popup_menu</item>
+        <item name="android:overlapAnchor">false</item>
+    </style>
+
+    <!-- Branded MaterialAlertDialog overlay applied via materialAlertDialogTheme.
+         Picks up the app's 20 dp shape and primary-green accent so the
+         "Quality" kebab picker on Shorts, the language/theme dialogs in
+         Settings, and the various confirmation dialogs all look like the
+         same family. -->
+    <style name="ThemeOverlay.Albunyaan.MaterialAlertDialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="shapeAppearance">@style/ShapeAppearance.Albunyaan.LargeComponent</item>
+        <item name="shapeAppearanceOverlay">@null</item>
+        <item name="colorPrimary">@color/primary_green</item>
+        <item name="colorAccent">@color/primary_green</item>
+        <item name="materialAlertDialogTitleTextStyle">@style/TextAppearance.Albunyaan.AlertDialog.Title</item>
+        <item name="materialAlertDialogBodyTextStyle">@style/TextAppearance.Albunyaan.AlertDialog.Body</item>
+        <item name="buttonBarPositiveButtonStyle">@style/Widget.Albunyaan.AlertDialog.Button</item>
+        <item name="buttonBarNegativeButtonStyle">@style/Widget.Albunyaan.AlertDialog.Button</item>
+        <item name="buttonBarNeutralButtonStyle">@style/Widget.Albunyaan.AlertDialog.Button</item>
+    </style>
+
+    <style name="TextAppearance.Albunyaan.AlertDialog.Title" parent="MaterialAlertDialog.Material3.Title.Text">
+        <item name="android:textColor">?attr/colorOnSurface</item>
+    </style>
+
+    <style name="TextAppearance.Albunyaan.AlertDialog.Body" parent="MaterialAlertDialog.Material3.Body.Text">
+        <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
+    </style>
+
+    <style name="Widget.Albunyaan.AlertDialog.Button" parent="Widget.Material3.Button.TextButton.Dialog">
+        <item name="android:textColor">@color/primary_green</item>
+    </style>
 
     <!-- Shape Appearances (Design Spec: 20dp radius) -->
     <style name="ShapeAppearance.Albunyaan.SmallComponent" parent="ShapeAppearance.Material3.SmallComponent">

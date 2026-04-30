@@ -26,5 +26,10 @@
         <!-- Popup Menu Style -->
         <item name="popupMenuStyle">@style/Widget.Albunyaan.PopupMenu</item>
         <item name="android:popupMenuStyle">@style/Widget.Albunyaan.PopupMenu</item>
+
+        <!-- MaterialAlertDialog Theme — same overlay as light. The overlay
+             references ?attr/colorSurface / ?attr/colorOnSurface which are
+             already dark-aware. -->
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.Albunyaan.MaterialAlertDialog</item>
     </style>
 </resources>
