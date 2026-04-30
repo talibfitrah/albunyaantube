@@ -17,6 +17,7 @@ import org.schabi.newpipe.extractor.channel.tabs.ChannelTabInfo
 import org.schabi.newpipe.extractor.channel.tabs.ChannelTabs
 import org.schabi.newpipe.extractor.exceptions.ExtractionException
 import org.schabi.newpipe.extractor.linkhandler.ListLinkHandler
+import org.schabi.newpipe.extractor.playlist.PlaylistInfo
 import org.schabi.newpipe.extractor.playlist.PlaylistInfoItem
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeChannelLinkHandlerFactory
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeStreamLinkHandlerFactory
@@ -68,8 +69,61 @@ class NewPipeChannelDetailRepository @Inject constructor(
     }
 
     override suspend fun getVideos(channelId: String, page: Page?): ChannelPage<ChannelVideo> {
-        val result = fetchTabContent(channelId, ChannelTabs.VIDEOS, page) { item ->
-            (item as? StreamInfoItem)?.takeIf { !it.isShortFormContent }?.toChannelVideo()
+        // Page the uploads playlist (UU<channelId>) instead of the channel
+        // videos tab. NewPipe v0.26's YoutubeChannelTabExtractor terminates
+        // pagination prematurely on some channels (returns nextPage=null after
+        // 1-2 batches), capping user scroll at ~20-30 items. The uploads
+        // playlist exposes the same long-form content via YoutubePlaylistExtractor
+        // with reliable pagination (~100 items per page). Same workaround as
+        // ChannelDeepPaginator.RealPageProvider for the Me-tab feed.
+        //
+        // Side effect: the uploads playlist intermixes Shorts and long-form,
+        // and YouTube's UU API does not reliably set isShortFormContent on
+        // playlist items. Use 3-tier detection (NewPipe flag OR /shorts/ URL
+        // OR <=180s duration) to filter shorts client-side.
+        val result = withContext(Dispatchers.IO) {
+            try {
+                val channelInfo = getChannelInfo(channelId, forceRefresh = false)
+                val playlistUrl = uploadsPlaylistUrlFor(channelInfo)
+                if (playlistUrl == null) {
+                    // Channel doesn't expose a UC-style ID we can derive UU
+                    // from (rare: legacy /c/handle or /@handle channels).
+                    // Fall back to the channel-tab path with the original
+                    // single-tier shorts filter (matches pre-fix behaviour).
+                    return@withContext fetchTabContent(channelId, ChannelTabs.VIDEOS, page) { item ->
+                        (item as? StreamInfoItem)?.takeIf { !it.isShortFormContent }?.toChannelVideo()
+                    }
+                }
+                retryNewPipeRateLimiterTimeout("uploads playlist for $channelId") {
+                    NewPipePriorityContext.with(Priority.USER_FOREGROUND) {
+                        val items: List<ChannelVideo>
+                        val nextPage: Page?
+                        if (page == null) {
+                            val info = PlaylistInfo.getInfo(youtubeService, playlistUrl)
+                            val raw = (info.relatedItems ?: emptyList()).filterIsInstance<StreamInfoItem>()
+                            items = raw.filter { !it.isLikelyShortByThreeTierDetection() }.map { it.toChannelVideo() }
+                            nextPage = Page.fromNewPipePage(info.nextPage)
+                            Log.d(TAG, "Fetched videos via UU playlist (initial): raw=${raw.size} kept=${items.size} hasMore=${nextPage != null}")
+                        } else {
+                            val more = PlaylistInfo.getMoreItems(youtubeService, playlistUrl, page.toNewPipePage())
+                            val raw = (more.items ?: emptyList()).filterIsInstance<StreamInfoItem>()
+                            items = raw.filter { !it.isLikelyShortByThreeTierDetection() }.map { it.toChannelVideo() }
+                            nextPage = Page.fromNewPipePage(more.nextPage)
+                            Log.d(TAG, "Fetched videos via UU playlist (more): raw=${raw.size} kept=${items.size} hasMore=${nextPage != null}")
+                        }
+                        ChannelPage(items = items, nextPage = nextPage)
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Uploads-playlist path failed (extraction error, network, etc).
+                // Fall back to channel-tab path so the user sees something.
+                Log.w(TAG, "Uploads playlist fetch failed for $channelId, falling back to channel-tab: ${e.message}")
+                fetchTabContent(channelId, ChannelTabs.VIDEOS, page) { item ->
+                    (item as? StreamInfoItem)?.takeIf { !it.isShortFormContent }?.toChannelVideo()
+                }
+            }
         }
         // Graceful indexing: don't block video loading on index errors (429, etc)
         try {
@@ -78,6 +132,30 @@ class NewPipeChannelDetailRepository @Inject constructor(
             Log.w(TAG, "Indexing failed for channel $channelId videos (continuing anyway): ${e.message}")
         }
         return result
+    }
+
+    /**
+     * Derives the uploads playlist URL (UU<id>) from a [ChannelInfo].
+     * Returns null if no UC-prefixed ID can be resolved.
+     */
+    private fun uploadsPlaylistUrlFor(info: ChannelInfo): String? {
+        val ucid = UCID_REGEX.find(info.url ?: "")?.groupValues?.getOrNull(1)
+            ?: info.id?.takeIf { it.startsWith("UC") }
+            ?: return null
+        return "https://www.youtube.com/playlist?list=UU" + ucid.removePrefix("UC")
+    }
+
+    /**
+     * 3-tier shorts detection for items returned by the uploads playlist API,
+     * which doesn't reliably set [StreamInfoItem.isShortFormContent].
+     * Mirrors ChannelDeepPaginator.toFeedItem.
+     */
+    private fun StreamInfoItem.isLikelyShortByThreeTierDetection(): Boolean {
+        if (isShortFormContent) return true
+        val itemUrl = url ?: return false
+        if (itemUrl.contains("/shorts/")) return true
+        val durationSeconds = if (duration > 0) duration else null
+        return durationSeconds != null && durationSeconds in 1L..180L
     }
 
     override suspend fun getLiveStreams(channelId: String, page: Page?): ChannelPage<ChannelLiveStream> {
@@ -522,5 +600,6 @@ class NewPipeChannelDetailRepository @Inject constructor(
         private const val CACHE_TTL_MILLIS = 30 * 60 * 1000L // 30 minutes
         private const val RATE_LIMIT_RETRY_ATTEMPTS = 2
         private const val RATE_LIMIT_RETRY_DELAY_MS = 1_000L
+        private val UCID_REGEX = Regex("/channel/(UC[A-Za-z0-9_-]+)")
     }
 }
