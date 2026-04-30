@@ -21,6 +21,19 @@ public class ContentReport {
     private String resolvedBy;
     private String resolutionNote;
 
+    // Parent context — set when the user reports an item from inside a
+    // channel- or playlist-detail screen. Null for standalone reports
+    // (top-level video/short/channel/playlist on the home feed, search,
+    // etc). When status flips to RESOLVED, the resolve flow uses these
+    // fields to add targetId to the parent's exclusion list.
+    private ReportTargetType parentType;   // CHANNEL or PLAYLIST
+    private String parentId;               // YouTube ID of the parent
+    // Content sub-type for VIDEO target reports — distinguishes a regular
+    // video from a Short or a Livestream so the exclusion lands in the
+    // correct bucket of Channel.ExcludedItems. Values: SHORT, LIVESTREAM,
+    // POST, or null (regular video).
+    private String contentSubType;
+
     public ContentReport() {}
 
     public String getId() { return id; }
@@ -55,4 +68,13 @@ public class ContentReport {
 
     public String getResolutionNote() { return resolutionNote; }
     public void setResolutionNote(String resolutionNote) { this.resolutionNote = resolutionNote; }
+
+    public ReportTargetType getParentType() { return parentType; }
+    public void setParentType(ReportTargetType parentType) { this.parentType = parentType; }
+
+    public String getParentId() { return parentId; }
+    public void setParentId(String parentId) { this.parentId = parentId; }
+
+    public String getContentSubType() { return contentSubType; }
+    public void setContentSubType(String contentSubType) { this.contentSubType = contentSubType; }
 }

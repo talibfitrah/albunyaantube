@@ -45,7 +45,8 @@ public class ContentReportController {
         try {
             ContentReport saved = reportService.submitReport(
                     body.targetType(), body.targetId(),
-                    body.reasons(), body.otherDescription(), deviceKey);
+                    body.reasons(), body.otherDescription(), deviceKey,
+                    body.parentType(), body.parentId(), body.contentSubType());
             return ResponseEntity.status(HttpStatus.CREATED)
                     .body(Map.of("id", saved.getId(), "status", saved.getStatus()));
         } catch (ContentReportService.RateLimitExceededException e) {
@@ -96,7 +97,15 @@ public class ContentReportController {
             @NotNull ReportTargetType targetType,
             @NotBlank @Size(max = 128) String targetId,
             @NotEmpty @Size(max = 10) List<ReportReason> reasons,
-            @Size(max = 500) String otherDescription) {}
+            @Size(max = 500) String otherDescription,
+            // Optional parent context: set when reporting an item from a
+            // channel- or playlist-detail screen. parentType is CHANNEL or
+            // PLAYLIST; parentId is the parent's YouTube ID. contentSubType
+            // narrows VIDEO target into SHORT / LIVESTREAM / POST so the
+            // resolve flow puts the exclusion in the correct bucket.
+            ReportTargetType parentType,
+            @Size(max = 128) String parentId,
+            @Size(max = 16) String contentSubType) {}
 
     public record ResolveReportRequest(@NotNull ReportStatus status, @Size(max = 1000) String note) {}
 }

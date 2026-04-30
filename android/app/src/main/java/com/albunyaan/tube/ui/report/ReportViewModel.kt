@@ -2,6 +2,7 @@ package com.albunyaan.tube.ui.report
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.albunyaan.tube.data.report.ReportContentSubType
 import com.albunyaan.tube.data.report.ReportReason
 import com.albunyaan.tube.data.report.ReportRepository
 import com.albunyaan.tube.data.report.ReportTargetType
@@ -25,7 +26,10 @@ class ReportViewModel @Inject constructor(
         targetType: ReportTargetType,
         targetId: String,
         reasons: List<ReportReason>,
-        otherDescription: String?
+        otherDescription: String?,
+        parentType: ReportTargetType? = null,
+        parentId: String? = null,
+        contentSubType: ReportContentSubType? = null,
     ) {
         if (reasons.isEmpty()) {
             _uiState.value = ReportUiState.Error("Please select at least one reason.")
@@ -33,7 +37,10 @@ class ReportViewModel @Inject constructor(
         }
         viewModelScope.launch {
             _uiState.value = ReportUiState.Loading
-            val result = reportRepository.submitReport(targetType, targetId, reasons, otherDescription)
+            val result = reportRepository.submitReport(
+                targetType, targetId, reasons, otherDescription,
+                parentType, parentId, contentSubType,
+            )
             _uiState.value = result.fold(
                 onSuccess = { ReportUiState.Success },
                 onFailure = { e ->

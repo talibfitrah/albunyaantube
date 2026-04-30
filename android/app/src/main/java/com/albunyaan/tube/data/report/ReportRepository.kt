@@ -10,7 +10,10 @@ interface ReportRepository {
         targetType: ReportTargetType,
         targetId: String,
         reasons: List<ReportReason>,
-        otherDescription: String?
+        otherDescription: String?,
+        parentType: ReportTargetType? = null,
+        parentId: String? = null,
+        contentSubType: ReportContentSubType? = null,
     ): Result<Unit>
 }
 
@@ -22,7 +25,10 @@ class RetrofitReportRepository @Inject constructor(
         targetType: ReportTargetType,
         targetId: String,
         reasons: List<ReportReason>,
-        otherDescription: String?
+        otherDescription: String?,
+        parentType: ReportTargetType?,
+        parentId: String?,
+        contentSubType: ReportContentSubType?,
     ): Result<Unit> {
         return try {
             val response = api.submitReport(
@@ -30,7 +36,10 @@ class RetrofitReportRepository @Inject constructor(
                     targetType = targetType.name,
                     targetId = targetId,
                     reasons = reasons.map { it.name },
-                    otherDescription = otherDescription
+                    otherDescription = otherDescription,
+                    parentType = parentType?.name,
+                    parentId = parentId?.takeIf { it.isNotBlank() },
+                    contentSubType = contentSubType?.name,
                 )
             )
             when {

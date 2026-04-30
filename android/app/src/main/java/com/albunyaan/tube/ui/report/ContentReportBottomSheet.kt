@@ -12,6 +12,7 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import com.albunyaan.tube.data.report.ReportContentSubType
 import com.albunyaan.tube.data.report.ReportReason
 import com.albunyaan.tube.data.report.ReportTargetType
 import com.albunyaan.tube.databinding.BottomSheetContentReportBinding
@@ -34,6 +35,19 @@ class ContentReportBottomSheet : BottomSheetDialogFragment() {
     }
     private val targetId: String by lazy {
         arguments?.getString(ARG_TARGET_ID).orEmpty()
+    }
+    private val parentType: ReportTargetType? by lazy {
+        arguments?.getString(ARG_PARENT_TYPE)?.let {
+            runCatching { ReportTargetType.valueOf(it) }.getOrNull()
+        }
+    }
+    private val parentId: String? by lazy {
+        arguments?.getString(ARG_PARENT_ID)?.takeIf { it.isNotBlank() }
+    }
+    private val contentSubType: ReportContentSubType? by lazy {
+        arguments?.getString(ARG_CONTENT_SUBTYPE)?.let {
+            runCatching { ReportContentSubType.valueOf(it) }.getOrNull()
+        }
     }
 
     override fun onCreateView(
@@ -69,7 +83,15 @@ class ContentReportBottomSheet : BottomSheetDialogFragment() {
         binding?.submitButton?.setOnClickListener {
             val reasons = collectCheckedReasons()
             val otherText = binding?.otherEditText?.text?.toString()?.takeIf { it.isNotBlank() }
-            viewModel.submitReport(targetType, targetId, reasons, otherText)
+            viewModel.submitReport(
+                targetType = targetType,
+                targetId = targetId,
+                reasons = reasons,
+                otherDescription = otherText,
+                parentType = parentType,
+                parentId = parentId,
+                contentSubType = contentSubType,
+            )
         }
     }
 
@@ -137,12 +159,36 @@ class ContentReportBottomSheet : BottomSheetDialogFragment() {
         const val TAG = "ContentReportBottomSheet"
         private const val ARG_TARGET_TYPE = "targetType"
         private const val ARG_TARGET_ID = "targetId"
+        private const val ARG_PARENT_TYPE = "parentType"
+        private const val ARG_PARENT_ID = "parentId"
+        private const val ARG_CONTENT_SUBTYPE = "contentSubType"
 
-        fun newInstance(targetType: ReportTargetType, targetId: String): ContentReportBottomSheet {
+        fun newInstance(targetType: ReportTargetType, targetId: String): ContentReportBottomSheet =
+            newInstance(targetType, targetId, null, null, null)
+
+        /**
+         * Construct a report sheet that carries parent context to the
+         * backend. When [parentType] + [parentId] are set, resolving the
+         * report on the admin side adds [targetId] to that parent's
+         * exclusion list (rather than archiving the content app-wide).
+         * [contentSubType] narrows VIDEO targets into SHORT / LIVESTREAM
+         * / POST so the exclusion lands in the correct bucket on the
+         * channel.
+         */
+        fun newInstance(
+            targetType: ReportTargetType,
+            targetId: String,
+            parentType: ReportTargetType?,
+            parentId: String?,
+            contentSubType: ReportContentSubType?,
+        ): ContentReportBottomSheet {
             return ContentReportBottomSheet().apply {
                 arguments = bundleOf(
                     ARG_TARGET_TYPE to targetType.name,
-                    ARG_TARGET_ID to targetId
+                    ARG_TARGET_ID to targetId,
+                    ARG_PARENT_TYPE to parentType?.name,
+                    ARG_PARENT_ID to parentId,
+                    ARG_CONTENT_SUBTYPE to contentSubType?.name,
                 )
             }
         }

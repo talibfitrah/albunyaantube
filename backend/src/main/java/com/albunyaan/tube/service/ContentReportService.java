@@ -56,6 +56,15 @@ public class ContentReportService {
             ReportTargetType targetType, String targetId,
             List<ReportReason> reasons, String otherDescription, String deviceKey)
             throws ExecutionException, InterruptedException, TimeoutException {
+        return submitReport(targetType, targetId, reasons, otherDescription, deviceKey,
+                null, null, null);
+    }
+
+    public ContentReport submitReport(
+            ReportTargetType targetType, String targetId,
+            List<ReportReason> reasons, String otherDescription, String deviceKey,
+            ReportTargetType parentType, String parentId, String contentSubType)
+            throws ExecutionException, InterruptedException, TimeoutException {
 
         checkRateLimit(deviceKey);
 
@@ -67,6 +76,25 @@ public class ContentReportService {
         report.setDeviceId(deviceKey);
         report.setStatus(ReportStatus.PENDING);
         report.setCreatedAt(Timestamp.now());
+
+        // Parent context is only meaningful when (a) targetType is the
+        // child shape (VIDEO or PLAYLIST) AND (b) parentType is a
+        // container (CHANNEL or PLAYLIST). Drop bogus combinations
+        // silently — the report is still useful, just without the
+        // resolve→exclude side-effect.
+        if (parentType == ReportTargetType.CHANNEL || parentType == ReportTargetType.PLAYLIST) {
+            if (parentId != null && !parentId.isBlank()) {
+                report.setParentType(parentType);
+                report.setParentId(parentId);
+            }
+        }
+        if (contentSubType != null && !contentSubType.isBlank()) {
+            // Normalize to upper-case and only accept the documented values.
+            String normalized = contentSubType.toUpperCase();
+            if ("SHORT".equals(normalized) || "LIVESTREAM".equals(normalized) || "POST".equals(normalized)) {
+                report.setContentSubType(normalized);
+            }
+        }
 
         ContentReport saved = reportRepository.save(report);
 
@@ -101,9 +129,149 @@ public class ContentReportService {
         report.setResolutionNote(note);
         ContentReport saved = reportRepository.update(report);
         if (newStatus == ReportStatus.RESOLVED) {
-            archiveReportedContent(report.getTargetType(), report.getTargetId());
+            // When the report carries parent context, prefer adding the
+            // target to the parent's exclusion list — that's the
+            // user-visible side-effect the admin cares about and it does
+            // not destroy the underlying content (vs. archiveReportedContent
+            // which flips ValidationStatus to ARCHIVED app-wide). When
+            // there's no parent context, fall back to the legacy
+            // archive-everywhere behaviour so existing reports keep
+            // working.
+            boolean excluded = false;
+            if (report.getParentType() != null && report.getParentId() != null) {
+                excluded = addReportTargetToParentExclusionList(report);
+            }
+            if (!excluded) {
+                archiveReportedContent(report.getTargetType(), report.getTargetId());
+            } else {
+                // Exclusion changes affect public listings — bust the
+                // public-content cache so users see the change immediately.
+                publicContentCacheService.evictPublicContentCaches();
+            }
         }
         return saved;
+    }
+
+    /**
+     * Add the report's target to its parent's exclusion list.
+     * Returns true if the exclusion was applied (parent existed and add
+     * succeeded), false otherwise (caller should fall back to archive).
+     */
+    private boolean addReportTargetToParentExclusionList(ContentReport report) {
+        ReportTargetType parentType = report.getParentType();
+        String parentId = report.getParentId();
+        ReportTargetType targetType = report.getTargetType();
+        String targetId = report.getTargetId();
+        String contentSubType = report.getContentSubType();
+        if (parentType == null || parentId == null || targetId == null || targetType == null) return false;
+
+        try {
+            switch (parentType) {
+                case CHANNEL -> {
+                    var opt = channelRepository.findByYoutubeId(parentId);
+                    if (opt.isEmpty()) {
+                        log.warn("Cannot exclude target {}: parent channel {} not found", targetId, parentId);
+                        return false;
+                    }
+                    var channel = opt.get();
+                    var excluded = channel.getExcludedItems();
+                    if (excluded == null) excluded = new com.albunyaan.tube.model.Channel.ExcludedItems();
+                    String storageType = resolveChannelStorageType(targetType, contentSubType);
+                    if (storageType == null) {
+                        log.warn("Cannot map report target ({}, sub={}) to a channel exclusion bucket", targetType, contentSubType);
+                        return false;
+                    }
+                    boolean added = addToChannelExclusions(excluded, storageType, targetId);
+                    if (added) {
+                        channel.setExcludedItems(excluded);
+                        channelRepository.save(channel);
+                    }
+                    return true; // even no-op (already excluded) counts — don't fall back to archive
+                }
+                case PLAYLIST -> {
+                    if (targetType != ReportTargetType.VIDEO) {
+                        log.warn("Playlist parent only supports VIDEO target, got {}", targetType);
+                        return false;
+                    }
+                    var opt = playlistRepository.findByYoutubeId(parentId);
+                    if (opt.isEmpty()) {
+                        log.warn("Cannot exclude target {}: parent playlist {} not found", targetId, parentId);
+                        return false;
+                    }
+                    var playlist = opt.get();
+                    var ids = playlist.getExcludedVideoIds();
+                    if (ids == null) ids = new java.util.ArrayList<>();
+                    if (!ids.contains(targetId)) {
+                        ids.add(targetId);
+                        playlist.setExcludedVideoIds(ids);
+                        playlistRepository.save(playlist);
+                    }
+                    return true;
+                }
+                default -> {
+                    return false;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to add target {} to parent {} exclusion list: {}", targetId, parentId, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Map a report target+sub-type pair to the Channel.ExcludedItems
+     * bucket name. Mirrors the resolveStorageType helper in
+     * ExclusionsWorkspaceController so the two flows produce identical
+     * exclusion records.
+     */
+    private static String resolveChannelStorageType(ReportTargetType targetType, String contentSubType) {
+        if (targetType == ReportTargetType.PLAYLIST) return "PLAYLIST";
+        if (targetType == ReportTargetType.VIDEO) {
+            if (contentSubType == null) return "VIDEO";
+            return switch (contentSubType) {
+                case "SHORT" -> "SHORT";
+                case "LIVESTREAM" -> "LIVESTREAM";
+                case "POST" -> "POST";
+                default -> "VIDEO";
+            };
+        }
+        return null; // CHANNEL target inside CHANNEL parent makes no sense
+    }
+
+    /**
+     * Append [excludeId] to the right Channel.ExcludedItems bucket.
+     * Returns true when the list grew; false if the id was already there
+     * or the bucket name was unrecognised. Mirrors the helper in
+     * ExclusionsWorkspaceController; intentionally duplicated to keep
+     * each controller/service free of the other's concerns.
+     */
+    private static boolean addToChannelExclusions(
+            com.albunyaan.tube.model.Channel.ExcludedItems excluded,
+            String storageType, String excludeId) {
+        java.util.List<String> list;
+        switch (storageType) {
+            case "VIDEO": list = excluded.getVideos(); break;
+            case "PLAYLIST": list = excluded.getPlaylists(); break;
+            case "LIVESTREAM": list = excluded.getLiveStreams(); break;
+            case "SHORT": list = excluded.getShorts(); break;
+            case "POST": list = excluded.getPosts(); break;
+            default: return false;
+        }
+        if (list == null) {
+            list = new java.util.ArrayList<>();
+            switch (storageType) {
+                case "VIDEO": excluded.setVideos(list); break;
+                case "PLAYLIST": excluded.setPlaylists(list); break;
+                case "LIVESTREAM": excluded.setLiveStreams(list); break;
+                case "SHORT": excluded.setShorts(list); break;
+                case "POST": excluded.setPosts(list); break;
+            }
+        }
+        if (!list.contains(excludeId)) {
+            list.add(excludeId);
+            return true;
+        }
+        return false;
     }
 
     private void archiveReportedContent(ReportTargetType targetType, String targetId) {
