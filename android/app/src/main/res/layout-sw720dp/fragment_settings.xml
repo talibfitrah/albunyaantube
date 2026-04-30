@@ -85,7 +85,47 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Playback Section -->
+            <!-- Library Section -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_library_header"
+                android:textSize="@dimen/text_section_title"
+                android:textStyle="bold"
+                android:textColor="?attr/colorOnSurface"
+                android:textAlignment="viewStart"
+                android:layout_marginBottom="@dimen/spacing_sm"/>
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/spacing_lg"
+                app:cardBackgroundColor="?attr/colorSurface"
+                app:cardCornerRadius="@dimen/corner_radius_medium"
+                app:cardElevation="0dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <include
+                        android:id="@+id/libraryDownloadsRow"
+                        layout="@layout/settings_item_downloads_library"/>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="@dimen/divider_thickness"
+                        android:background="@color/background_gray"
+                        android:layout_marginStart="@dimen/spacing_lg"/>
+
+                    <include
+                        android:id="@+id/libraryFavoritesRow"
+                        layout="@layout/settings_item_favorites"/>
+
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

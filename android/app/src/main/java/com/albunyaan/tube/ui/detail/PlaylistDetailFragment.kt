@@ -41,8 +41,13 @@ import com.albunyaan.tube.ui.detail.adapters.PlaylistVideosAdapter
 import com.google.android.material.chip.Chip
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.lifecycle.withCreationCallback
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
@@ -59,6 +64,12 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
 
     @Inject
     lateinit var prefetchService: StreamPrefetchService
+
+    @Inject
+    lateinit var subscriptions: com.albunyaan.tube.data.subscriptions.SubscriptionRepository
+
+    private var latestPlaylistHeader: com.albunyaan.tube.data.playlist.PlaylistHeader? = null
+    private var isPlaylistSavedNow: Boolean = false
 
     // Navigation arguments
     private val playlistId: String by lazy { arguments?.getString(ARG_PLAYLIST_ID).orEmpty() }
@@ -108,6 +119,60 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
         setupActionButtons()
         observeViewModel()
         observeDownloads()
+        observeSavedState()
+    }
+
+    private fun observeSavedState() {
+        subscriptions.isPlaylistSaved(playlistId)
+            .distinctUntilChanged()
+            .onEach { saved ->
+                isPlaylistSavedNow = saved
+                binding?.savePlaylistButton?.apply {
+                    setText(if (saved) R.string.playlist_unsave else R.string.playlist_save)
+                    setIconResource(if (saved) R.drawable.ic_favorite else R.drawable.ic_favorite_border)
+                    isSelected = saved
+                    setOnClickListener { togglePlaylistSaved() }
+                }
+            }
+            .launchIn(viewLifecycleOwner.lifecycleScope)
+    }
+
+    private fun togglePlaylistSaved() {
+        val header = latestPlaylistHeader ?: return
+        // F11: reject malformed ids that would break the later NewPipe lookup.
+        if (!PLAYLIST_ID_REGEX.matches(header.id)) {
+            android.util.Log.w("PlaylistDetailFragment", "Refusing save: malformed playlistId='${header.id}'")
+            return
+        }
+        // F-CR7 (CodeRabbit): capture the toggle direction at click time so
+        // a fast double-tap can't read a stale isPlaylistSavedNow, disable
+        // the button while the IO is in flight, and catch failures so the
+        // UI doesn't sit in a half-flipped state on a transient Room error.
+        val shouldUnsave = isPlaylistSavedNow
+        binding?.savePlaylistButton?.isEnabled = false
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    if (shouldUnsave) {
+                        subscriptions.unsavePlaylist(header.id)
+                    } else {
+                        subscriptions.savePlaylist(
+                            com.albunyaan.tube.data.local.SavedPlaylist(
+                                playlistId = header.id,
+                                playlistUrl = "https://www.youtube.com/playlist?list=${header.id}",
+                                name = header.title,
+                                thumbnailUrl = header.thumbnailUrl,
+                                uploaderName = header.channelName,
+                            )
+                        )
+                    }
+                }
+            } catch (t: Throwable) {
+                android.util.Log.e("PlaylistDetailFragment", "Failed to toggle save for ${header.id}", t)
+            } finally {
+                binding?.savePlaylistButton?.isEnabled = true
+            }
+        }
     }
 
     private fun setupSearch() {
@@ -395,6 +460,7 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
 
     private fun bindHeader(header: PlaylistHeader) {
         currentHeader = header
+        latestPlaylistHeader = header
         binding?.apply {
             // Keep the collapsed toolbar populated on all devices.
             toolbar.title = header.title
@@ -673,6 +739,7 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
     companion object {
         private const val TAG = "PlaylistDetailFragment"
         private const val SEARCH_DEBOUNCE_MS = 300L
+        private val PLAYLIST_ID_REGEX = Regex("^[A-Za-z0-9_-]{3,128}$")
         const val ARG_PLAYLIST_ID = "playlistId"
         const val ARG_PLAYLIST_TITLE = "playlistTitle"
         const val ARG_PLAYLIST_CATEGORY = "playlistCategory"

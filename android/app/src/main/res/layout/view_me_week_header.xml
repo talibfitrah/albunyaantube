@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ANDROID-PERSONAL-03 / T6: per-week header for the Me-tab feed. Renders
+  the localised week label ("This week" / "Last week" / "N weeks ago")
+  full-width above each week's shorts row + videos grid. Same horizontal
+  padding as the week's video tiles so the title aligns with the body.
+-->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/meWeekHeader"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:paddingHorizontal="@dimen/spacing_md"
+    android:paddingTop="@dimen/spacing_lg"
+    android:paddingBottom="@dimen/spacing_sm"
+    android:textAlignment="viewStart"
+    android:textAppearance="?attr/textAppearanceTitleLarge"
+    android:textColor="?attr/colorOnSurface" />

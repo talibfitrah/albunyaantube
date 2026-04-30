@@ -2,6 +2,8 @@ package com.albunyaan.tube.data.channel
 
 import android.util.Log
 import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
+import com.albunyaan.tube.data.extractor.NewPipePriorityContext
+import com.albunyaan.tube.data.extractor.Priority
 import com.albunyaan.tube.data.index.IndexRepository
 import com.albunyaan.tube.data.index.StreamIndexItem
 import kotlinx.coroutines.CancellationException
@@ -118,18 +120,25 @@ class NewPipeChannelDetailRepository @Inject constructor(
 
             Log.d(TAG, "Fetching channel info for: $channelId")
             try {
-                val handler = createChannelLinkHandler(channelId)
-                    ?: throw ExtractionException("Invalid channel ID: $channelId")
+                // Mark this NewPipe path as USER_FOREGROUND so
+                // [com.albunyaan.tube.data.extractor.RateLimitedDownloader]
+                // routes the HTTP call through the foreground rate-limit lane
+                // (spec §4.4 / §4.5). Set inside withContext(Dispatchers.IO)
+                // so the ThreadLocal is observed on the actual NewPipe call thread.
+                NewPipePriorityContext.with(Priority.USER_FOREGROUND) {
+                    val handler = createChannelLinkHandler(channelId)
+                        ?: throw ExtractionException("Invalid channel ID: $channelId")
 
-                val extractor = youtubeService.getChannelExtractor(handler)
-                extractor.fetchPage()
-                val info = ChannelInfo.getInfo(extractor)
+                    val extractor = youtubeService.getChannelExtractor(handler)
+                    extractor.fetchPage()
+                    val info = ChannelInfo.getInfo(extractor)
 
-                // Cache the result
-                channelInfoCache[channelId] = CacheEntry(info, now)
-                Log.d(TAG, "Cached channel info for: $channelId with ${info.tabs.size} tabs")
+                    // Cache the result
+                    channelInfoCache[channelId] = CacheEntry(info, now)
+                    Log.d(TAG, "Cached channel info for: $channelId with ${info.tabs.size} tabs")
 
-                info
+                    info
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -162,30 +171,36 @@ class NewPipeChannelDetailRepository @Inject constructor(
                 return@withContext ChannelPage(items = emptyList(), nextPage = null)
             }
 
-            val items: List<T>
-            val nextPage: Page?
+            // Mark the NewPipe pagination calls as USER_FOREGROUND for the
+            // rate-limit + cooldown gates (spec §4.4 / §4.5). [getChannelInfo]
+            // sets its own priority above; this scope covers the additional
+            // tab-content HTTP calls.
+            NewPipePriorityContext.with(Priority.USER_FOREGROUND) {
+                val items: List<T>
+                val nextPage: Page?
 
-            if (page == null) {
-                // Initial page
-                val tabInfo = ChannelTabInfo.getInfo(youtubeService, tabHandler)
-                items = tabInfo.relatedItems.mapNotNull(mapper)
-                nextPage = Page.fromNewPipePage(tabInfo.nextPage)
-                Log.d(TAG, "Fetched initial $tabName page: ${items.size} items, hasMore=${nextPage != null}")
+                if (page == null) {
+                    // Initial page
+                    val tabInfo = ChannelTabInfo.getInfo(youtubeService, tabHandler)
+                    items = tabInfo.relatedItems.mapNotNull(mapper)
+                    nextPage = Page.fromNewPipePage(tabInfo.nextPage)
+                    Log.d(TAG, "Fetched initial $tabName page: ${items.size} items, hasMore=${nextPage != null}")
 
-                // If items are empty but nextPage exists, content may exist on subsequent pages
-                // This can happen with some channels due to slow loading or extraction issues
-                if (items.isEmpty() && nextPage != null) {
-                    Log.d(TAG, "$tabName: Initial page empty but pagination available - content may exist on subsequent pages")
+                    // If items are empty but nextPage exists, content may exist on subsequent pages
+                    // This can happen with some channels due to slow loading or extraction issues
+                    if (items.isEmpty() && nextPage != null) {
+                        Log.d(TAG, "$tabName: Initial page empty but pagination available - content may exist on subsequent pages")
+                    }
+                } else {
+                    // Subsequent page
+                    val morePage = ChannelTabInfo.getMoreItems(youtubeService, tabHandler, page.toNewPipePage())
+                    items = morePage.items.mapNotNull(mapper)
+                    nextPage = Page.fromNewPipePage(morePage.nextPage)
+                    Log.d(TAG, "Fetched more $tabName: ${items.size} items, hasMore=${nextPage != null}")
                 }
-            } else {
-                // Subsequent page
-                val morePage = ChannelTabInfo.getMoreItems(youtubeService, tabHandler, page.toNewPipePage())
-                items = morePage.items.mapNotNull(mapper)
-                nextPage = Page.fromNewPipePage(morePage.nextPage)
-                Log.d(TAG, "Fetched more $tabName: ${items.size} items, hasMore=${nextPage != null}")
-            }
 
-            ChannelPage(items = items, nextPage = nextPage)
+                ChannelPage(items = items, nextPage = nextPage)
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

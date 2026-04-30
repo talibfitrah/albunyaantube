@@ -1,6 +1,7 @@
 package com.albunyaan.tube.player
 
 import android.util.Log
+import com.albunyaan.tube.data.extractor.Priority
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -124,11 +125,15 @@ class DefaultStreamPrefetchService @Inject constructor(
         // Phase 1A: Use global resolver - player can join this same job
         serviceScope.launch {
             try {
+                // ANDROID-PERSONAL-02 [Bug 1]: prefetch is NOT real-time playback
+                // — it must respect the rate-limit + cooldown gates so a tripped
+                // cooldown actually halts background work (spec D1).
                 val resolved = globalResolver.resolveStreams(
                     videoId = videoId,
                     forceRefresh = false,
                     timeoutMs = PREFETCH_TIMEOUT_MS,
-                    caller = "prefetch"
+                    caller = "prefetch",
+                    priority = Priority.USER_FOREGROUND,
                 )
                 if (resolved != null) {
                     // Evict oldest results if cache is full (FIFO order)
@@ -186,11 +191,23 @@ class DefaultStreamPrefetchService @Inject constructor(
             Log.d(TAG, "Awaiting in-flight prefetch via GlobalResolver for $videoId")
             val result = withTimeoutOrNull(AWAIT_TIMEOUT_MS) {
                 // Join the in-flight job via global resolver
+                // ANDROID-PERSONAL-02 [Bug 1]: prefetch await path must declare
+                // its own priority. ANDROID-PERSONAL-02 round 3 [Bug F]:
+                // this method is called from the PLAYER path
+                // (PlayerViewModel.resolveWithRetry awaits the in-flight
+                // prefetch BEFORE falling back to PlayerRepository), so we
+                // declare PLAYER priority. Without this, a stalled
+                // USER_FOREGROUND prefetch would hold playback for
+                // AWAIT_TIMEOUT_MS before the player's own resolve trips
+                // Bug-B priority escalation. PLAYER here lets the existing
+                // prefetch be cancelled-and-replaced with a PLAYER-priority
+                // resolve immediately on join.
                 globalResolver.resolveStreams(
                     videoId = videoId,
                     forceRefresh = false,
                     timeoutMs = AWAIT_TIMEOUT_MS,
-                    caller = "prefetch_await"
+                    caller = "prefetch_await",
+                    priority = Priority.PLAYER,
                 )
             }
             // Result may have been stored in prefetchResults by the job, consume it

@@ -8,14 +8,18 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.fragment.app.DialogFragment
 import android.widget.Toast
+import androidx.lifecycle.lifecycleScope
 import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.R
+import com.albunyaan.tube.data.extractor.CooldownState
 import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
 import com.albunyaan.tube.player.PlaybackFeatureFlags
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.switchmaterial.SwitchMaterial
 import dagger.hilt.android.AndroidEntryPoint
+import java.io.IOException
 import javax.inject.Inject
+import kotlinx.coroutines.launch
 
 /**
  * Hidden developer settings dialog for runtime feature flag control.
@@ -52,6 +56,14 @@ class DeveloperSettingsDialog : DialogFragment() {
 
     @Inject
     lateinit var extractorClient: NewPipeExtractorClient
+
+    // T12 (spec §10 P10): operator-only kill switch for the Me-feed
+    // refresh path. Trip/reset cooldown to exercise the rate-limit ladder
+    // without waiting for an actual 429 storm. The telemetry log itself
+    // lives in [MeTelemetryLogDialog] which injects its own
+    // [MeRefreshTelemetry] singleton — no need to inject it here too.
+    @Inject
+    lateinit var cooldownState: CooldownState
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val context = requireContext()
@@ -191,6 +203,74 @@ class DeveloperSettingsDialog : DialogFragment() {
             }
         }
         contentView.addView(resetButton)
+
+        // T12: Me-feed cooldown + telemetry affordances. These don't toggle
+        // a flag — they call straight through to the persisted cooldown
+        // state and the in-process telemetry ring. Toasts run on the main
+        // thread because the click listener already runs there.
+        val tripCooldownButton = TextView(context).apply {
+            text = getString(R.string.dev_settings_trip_cooldown)
+            setTextColor(context.getColor(R.color.primary_variant))
+            setTextSize(TypedValue.COMPLEX_UNIT_PX, resources.getDimension(R.dimen.text_body))
+            setPadding(
+                0,
+                resources.getDimensionPixelSize(R.dimen.spacing_lg),
+                0,
+                resources.getDimensionPixelSize(R.dimen.spacing_sm)
+            )
+            setOnClickListener {
+                lifecycleScope.launch {
+                    cooldownState.trip(IOException("dev-settings"))
+                    val until = cooldownState.untilMs() ?: 0L
+                    Toast.makeText(
+                        context,
+                        getString(R.string.dev_settings_cooldown_tripped, until),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        }
+        contentView.addView(tripCooldownButton)
+
+        val resetCooldownButton = TextView(context).apply {
+            text = getString(R.string.dev_settings_reset_cooldown)
+            setTextColor(context.getColor(R.color.primary_variant))
+            setTextSize(TypedValue.COMPLEX_UNIT_PX, resources.getDimension(R.dimen.text_body))
+            setPadding(
+                0,
+                resources.getDimensionPixelSize(R.dimen.spacing_md),
+                0,
+                resources.getDimensionPixelSize(R.dimen.spacing_sm)
+            )
+            setOnClickListener {
+                lifecycleScope.launch {
+                    cooldownState.clearAll()
+                    Toast.makeText(
+                        context,
+                        getString(R.string.dev_settings_cooldown_reset),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        }
+        contentView.addView(resetCooldownButton)
+
+        val telemetryButton = TextView(context).apply {
+            text = getString(R.string.dev_settings_show_telemetry)
+            setTextColor(context.getColor(R.color.primary_variant))
+            setTextSize(TypedValue.COMPLEX_UNIT_PX, resources.getDimension(R.dimen.text_body))
+            setPadding(
+                0,
+                resources.getDimensionPixelSize(R.dimen.spacing_md),
+                0,
+                resources.getDimensionPixelSize(R.dimen.spacing_sm)
+            )
+            setOnClickListener {
+                MeTelemetryLogDialog.newInstance()
+                    .show(parentFragmentManager, MeTelemetryLogDialog.TAG)
+            }
+        }
+        contentView.addView(telemetryButton)
 
         return MaterialAlertDialogBuilder(context)
             .setTitle(R.string.dev_settings_title)

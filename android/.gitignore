@@ -22,3 +22,4 @@ app/src/main/java/com/albunyaan/tube/data/model/api/
 # Dependency report (generated on-demand)
 # Regenerate with: ./gradlew :app:dependencies > app/deps.txt
 app/deps.txt
+.claude/scheduled_tasks.lock

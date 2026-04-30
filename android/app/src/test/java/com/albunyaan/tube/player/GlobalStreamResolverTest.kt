@@ -1,5 +1,6 @@
 package com.albunyaan.tube.player
 
+import com.albunyaan.tube.data.extractor.Priority
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
@@ -10,6 +11,7 @@ import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Unit tests for GlobalStreamResolver.
@@ -393,6 +395,257 @@ class GlobalStreamResolverTest {
         gate.complete(Unit)
     }
 
+    // --- Priority Propagation Tests (ANDROID-PERSONAL-02 [Bug 1]) ---
+
+    /**
+     * Verifies that the [Priority.PLAYER] passed by [DefaultPlayerRepository]
+     * actually reaches the [StreamResolutionProvider] — not the prior
+     * hardcoded value. This is the live-playback bypass path: PLAYER
+     * skips the rate-limit + cooldown gates per spec D1.
+     */
+    @Test
+    fun `PLAYER priority is forwarded to the provider`() = runTest {
+        fakeProvider.setResult("video1", createMockStreams("video1"))
+
+        resolver.resolveStreams(
+            videoId = "video1",
+            caller = "player",
+            priority = Priority.PLAYER,
+        )
+
+        assertEquals(
+            "Provider must observe Priority.PLAYER when caller declared PLAYER",
+            Priority.PLAYER,
+            fakeProvider.getObservedPriority("video1"),
+        )
+    }
+
+    /**
+     * Verifies that the [Priority.USER_FOREGROUND] passed by
+     * [com.albunyaan.tube.player.StreamPrefetchService] (and the default
+     * for any forgotten caller) reaches the provider — closing the bug
+     * where prefetch silently rode the PLAYER bypass.
+     */
+    @Test
+    fun `USER_FOREGROUND priority is forwarded to the provider`() = runTest {
+        fakeProvider.setResult("video2", createMockStreams("video2"))
+
+        resolver.resolveStreams(
+            videoId = "video2",
+            caller = "prefetch",
+            priority = Priority.USER_FOREGROUND,
+        )
+
+        assertEquals(
+            "Provider must observe Priority.USER_FOREGROUND when caller declared USER_FOREGROUND",
+            Priority.USER_FOREGROUND,
+            fakeProvider.getObservedPriority("video2"),
+        )
+    }
+
+    /**
+     * Default priority is fail-closed — a caller who forgets to pass
+     * `priority = ...` goes through the gates rather than silently
+     * bypassing them. Documents the API contract.
+     */
+    @Test
+    fun `default priority is USER_FOREGROUND`() = runTest {
+        fakeProvider.setResult("video3", createMockStreams("video3"))
+
+        // Note: NO `priority = ...` argument supplied.
+        resolver.resolveStreams(
+            videoId = "video3",
+            caller = "forgot-to-set",
+        )
+
+        assertEquals(
+            "Default priority must be USER_FOREGROUND (fail-closed)",
+            Priority.USER_FOREGROUND,
+            fakeProvider.getObservedPriority("video3"),
+        )
+    }
+
+    // --- Priority Escalation Tests (ANDROID-PERSONAL-02 round 2 [Bug B]) ---
+
+    /**
+     * A higher-priority caller arriving while a lower-priority resolve is
+     * in-flight must NOT join — it must cancel the existing job and start a
+     * new resolve at the higher priority. Without this, the late-arriving
+     * PLAYER caller gets trapped behind the prefetch's USER_FOREGROUND lane
+     * (rate-limit + cooldown gates), violating spec D1.
+     */
+    @Test
+    fun `higher priority caller cancels and restarts lower priority in-flight job`() = runTest {
+        val gate1 = CompletableDeferred<Unit>()
+        val gate2 = CompletableDeferred<Unit>()
+
+        // First (lower-priority) call uses gate1, then we re-arm with gate2
+        // for the second (escalated PLAYER) call so we can wait for both
+        // extractions deterministically.
+        fakeProvider.setGate("videoEsc", gate1)
+        fakeProvider.setResult("videoEsc", createMockStreams("videoEsc"))
+
+        // Lower-priority caller arrives first and stalls inside the provider.
+        var prefetchResult: ResolvedStreams? = createMockStreams("not-yet")
+        val prefetchJob = launch {
+            prefetchResult = resolver.resolveStreams(
+                videoId = "videoEsc",
+                caller = "prefetch",
+                priority = Priority.USER_FOREGROUND,
+            )
+        }
+
+        // Wait for the first extraction to actually start.
+        fakeProvider.waitForExtractionStart("videoEsc")
+        assertEquals(
+            "First extraction should run at USER_FOREGROUND",
+            Priority.USER_FOREGROUND,
+            fakeProvider.getObservedPriority("videoEsc"),
+        )
+
+        // Re-arm the provider for the escalated second call (creates a
+        // fresh `extractionStarted` deferred so waitForExtractionStart
+        // can fire again) BEFORE the PLAYER caller arrives.
+        fakeProvider.setGate("videoEsc", gate2)
+        fakeProvider.setResult("videoEsc", createMockStreams("videoEsc"))
+
+        // Higher-priority PLAYER arrives. Must escalate (cancel + restart),
+        // not join the in-flight USER_FOREGROUND job.
+        val playerJob = launch {
+            resolver.resolveStreams(
+                videoId = "videoEsc",
+                caller = "player",
+                priority = Priority.PLAYER,
+            )
+        }
+
+        // Wait for the second (PLAYER) extraction to start. If escalation
+        // fired correctly, the FakeProvider gets a second call and the
+        // observed priority flips to PLAYER.
+        fakeProvider.waitForExtractionStart("videoEsc")
+
+        // Release both gates so the cancelled prefetch (gate1) and the
+        // PLAYER restart (gate2) both unblock.
+        gate1.complete(Unit)
+        gate2.complete(Unit)
+        prefetchJob.join()
+        playerJob.join()
+
+        assertEquals(
+            "Provider must observe PLAYER after escalation",
+            Priority.PLAYER,
+            fakeProvider.getObservedPriority("videoEsc"),
+        )
+        assertEquals(
+            "Provider should be invoked twice (lower-priority cancel + higher-priority restart)",
+            2,
+            fakeProvider.getCallCount("videoEsc"),
+        )
+        // The lower-priority caller's await() must return null gracefully —
+        // not throw — when the shared job is cancelled by escalation.
+        assertNull(
+            "Lower-priority caller should receive null when its shared job is cancelled by escalation",
+            prefetchResult,
+        )
+    }
+
+    /**
+     * Same-priority arrivals continue to join the in-flight job — the
+     * escalation logic must not regress the de-duplication contract.
+     */
+    @Test
+    fun `same priority arrivals join existing in-flight job`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val expected = createMockStreams("videoSame")
+        fakeProvider.setGate("videoSame", gate)
+        fakeProvider.setResult("videoSame", expected)
+
+        // First USER_FOREGROUND caller starts a new job.
+        val first = launch {
+            resolver.resolveStreams(
+                videoId = "videoSame",
+                caller = "first",
+                priority = Priority.USER_FOREGROUND,
+            )
+        }
+        fakeProvider.waitForExtractionStart("videoSame")
+
+        // Second USER_FOREGROUND caller must join, not escalate.
+        val second = launch {
+            resolver.resolveStreams(
+                videoId = "videoSame",
+                caller = "second",
+                priority = Priority.USER_FOREGROUND,
+            )
+        }
+
+        kotlinx.coroutines.yield()
+        gate.complete(Unit)
+        first.join()
+        second.join()
+
+        assertEquals(
+            "Single shared extraction for same-priority callers",
+            1,
+            fakeProvider.getCallCount("videoSame"),
+        )
+    }
+
+    /**
+     * Lower-priority callers that arrive while a higher-priority resolve
+     * is in-flight must JOIN, not escalate (escalation only applies to
+     * strictly-higher priority arrivals). A USER_FOREGROUND prefetch
+     * arriving while a PLAYER resolve is in-flight has no business
+     * spawning a parallel extraction at lower priority.
+     */
+    @Test
+    fun `lower priority arrival joins higher priority in-flight job`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val expected = createMockStreams("videoLow")
+        fakeProvider.setGate("videoLow", gate)
+        fakeProvider.setResult("videoLow", expected)
+
+        // PLAYER caller starts the in-flight job.
+        val player = launch {
+            resolver.resolveStreams(
+                videoId = "videoLow",
+                caller = "player",
+                priority = Priority.PLAYER,
+            )
+        }
+        fakeProvider.waitForExtractionStart("videoLow")
+        assertEquals(
+            "First extraction runs at PLAYER",
+            Priority.PLAYER,
+            fakeProvider.getObservedPriority("videoLow"),
+        )
+
+        // USER_FOREGROUND prefetch arrives — must JOIN (no second extraction).
+        val prefetch = launch {
+            resolver.resolveStreams(
+                videoId = "videoLow",
+                caller = "prefetch",
+                priority = Priority.USER_FOREGROUND,
+            )
+        }
+        kotlinx.coroutines.yield()
+
+        gate.complete(Unit)
+        player.join()
+        prefetch.join()
+
+        assertEquals(
+            "Lower-priority arrival must join, not spawn a parallel extraction",
+            1,
+            fakeProvider.getCallCount("videoLow"),
+        )
+        assertEquals(
+            "Provider's observed priority remains PLAYER (not overridden by joiner)",
+            Priority.PLAYER,
+            fakeProvider.getObservedPriority("videoLow"),
+        )
+    }
+
     // --- Test Helpers ---
 
     private fun createMockStreams(id: String): ResolvedStreams {
@@ -407,13 +660,19 @@ class GlobalStreamResolverTest {
 
     /**
      * Fake resolution provider for testing.
-     * Allows controlling when extractions complete using gates.
+     * Allows controlling when extractions complete using gates and
+     * captures the [Priority] handed to the provider on each call so
+     * tests can assert priority propagation (ANDROID-PERSONAL-02 [Bug 1]).
      */
     private class FakeResolutionProvider : StreamResolutionProvider {
         private val gates = mutableMapOf<String, CompletableDeferred<Unit>>()
         private val results = mutableMapOf<String, ResolvedStreams?>()
         private val callCounts = mutableMapOf<String, AtomicInteger>()
         private val extractionStarted = mutableMapOf<String, CompletableDeferred<Unit>>()
+        // Last priority observed by the provider for each videoId.
+        // AtomicReference is overkill for the in-test single-thread case
+        // but cheap and correct under StandardTestDispatcher.
+        private val observedPriorities = mutableMapOf<String, AtomicReference<Priority?>>()
 
         fun setGate(videoId: String, gate: CompletableDeferred<Unit>) {
             gates[videoId] = gate
@@ -435,8 +694,17 @@ class GlobalStreamResolverTest {
             return callCounts[videoId]?.get() ?: 0
         }
 
-        override suspend fun resolveStreams(videoId: String, forceRefresh: Boolean): ResolvedStreams? {
+        fun getObservedPriority(videoId: String): Priority? {
+            return observedPriorities[videoId]?.get()
+        }
+
+        override suspend fun resolveStreams(
+            videoId: String,
+            forceRefresh: Boolean,
+            priority: Priority,
+        ): ResolvedStreams? {
             callCounts.getOrPut(videoId) { AtomicInteger(0) }.incrementAndGet()
+            observedPriorities.getOrPut(videoId) { AtomicReference<Priority?>(null) }.set(priority)
             extractionStarted[videoId]?.complete(Unit)
             gates[videoId]?.await()
             return results[videoId]

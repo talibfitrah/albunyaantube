@@ -136,6 +136,39 @@
     <string name="nav_channels">Kanalen</string>
     <string name="nav_playlists">Afspeellijsten</string>
     <string name="nav_videos">Video\'s</string>
+    <string name="nav_me">Ik</string>
+
+    <!-- Me tab -->
+    <string name="me_empty_title">Abonneer je om je feed te zien</string>
+    <string name="me_empty_subtitle">Kanalen en afspeellijsten die je opslaat verschijnen hier met hun nieuwste video\'s en shorts.</string>
+    <string name="me_empty_cta">Kanalen bekijken</string>
+    <string name="me_favorites">Favorieten</string>
+    <string name="me_see_all">Alles bekijken</string>
+    <string name="me_remove_from_favorites">Verwijderen uit favorieten</string>
+    <string name="cd_remove_from_favorites">Verwijderen uit favorieten</string>
+    <string name="me_channel_avatar_content_description">Kanaal openen</string>
+    <string name="me_section_shorts">Shorts</string>
+    <string name="me_section_videos">Nieuwste video\'s</string>
+    <string name="me_refresh_error">Kon je feed niet vernieuwen. Trek omlaag om het opnieuw te proberen.</string>
+    <string name="me_filter_clear">Alle abonnementen</string>
+
+    <!-- ANDROID-PERSONAL-03: weekly grouping headers in the Me feed. -->
+    <string name="me_week_this">Deze week</string>
+    <string name="me_week_last">Vorige week</string>
+    <string name="me_week_n_ago">%1$d weken geleden</string>
+
+    <!-- Subscribe / Save -->
+    <string name="channel_subscribe">Abonneren</string>
+    <string name="channel_unsubscribe">Geabonneerd</string>
+    <string name="playlist_save">Opslaan</string>
+    <string name="playlist_unsave">Opgeslagen</string>
+    <string name="cd_save_playlist_button">Sla deze afspeellijst op in je bibliotheek</string>
+    <string name="me_subscription_cap_reached">Je volgt 30 kanalen (het maximum). Hef het abonnement op een ander kanaal op om dit kanaal te volgen.</string>
+
+    <!-- Settings library -->
+    <string name="settings_library_header">Bibliotheek</string>
+    <string name="settings_downloads_library">Downloads-bibliotheek</string>
+    <string name="settings_favorites_title">Favorieten</string>
 
     <!-- Empty/Error/Loading States -->
     <string name="loading">Laden…</string>

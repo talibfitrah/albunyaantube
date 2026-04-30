@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
+ <link rel="self" href="http://www.youtube.com/feeds/videos.xml?channel_id=UCmalformedChan0123456789"/>
+ <id>yt:channel:malformedChan0123456789</id>
+ <yt:channelId>malformedChan0123456789</yt:channelId>
+ <title>Malformed Channel</title>
+ <link rel="alternate" href="https://www.youtube.com/channel/UCmalformedChan0123456789"/>
+ <author>
+  <name>Malformed Channel</name>
+  <uri>https://www.youtube.com/channel/UCmalformedChan0123456789</uri>
+ </author>
+ <published>2024-01-01T00:00:00+00:00</published>
+ <entry>
+  <id>yt:video:firstGood01</id>
+  <yt:videoId>firstGood01</yt:videoId>
+  <yt:channelId>UCmalformedChan0123456789</yt:channelId>
+  <title>First Good Entry</title>
+  <link rel="alternate" href="https://www.youtube.com/watch?v=firstGood01"/>
+  <author>
+   <name>Malformed Channel</name>
+   <uri>https://www.youtube.com/channel/UCmalformedChan0123456789</uri>
+  </author>
+  <published>2026-04-26T10:00:00+00:00</published>
+  <updated>2026-04-26T10:00:00+00:00</updated>
+  <media:group>
+   <media:title>First Good Entry</media:title>
+   <media:thumbnail url="https://i1.ytimg.com/vi/firstGood01/hqdefault.jpg" width="480" height="360"/>
+   <media:description>An entry that parses cleanly.</media:description>
+  </media:group>
+ </entry>
+ <entry>
+  <id>yt:video:truncated</id>
+  <yt:videoId>truncated</yt:videoId>
+  <title>Truncated Entry &amp; Bad XM

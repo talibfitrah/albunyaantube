@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <navigation xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/main_tabs_nav"
     app:startDestination="@id/homeFragment">
 
@@ -46,6 +47,12 @@
         android:id="@+id/videosFragment"
         android:name="com.albunyaan.tube.ui.VideosFragmentNew"
         android:label="Videos" />
+
+    <fragment
+        android:id="@+id/meFragment"
+        android:name="com.albunyaan.tube.ui.me.MeFragment"
+        android:label="@string/nav_me"
+        tools:layout="@layout/fragment_me" />
 
     <fragment
         android:id="@+id/downloadsFragment"
@@ -147,6 +154,16 @@
         <action
             android:id="@+id/action_settingsFragment_to_aboutFragment"
             app:destination="@id/aboutFragment"/>
+        <action
+            android:id="@+id/action_settingsFragment_to_downloadsFragment"
+            app:destination="@id/downloadsFragment"
+            app:launchSingleTop="true"
+            app:popUpTo="@id/settingsFragment" />
+        <action
+            android:id="@+id/action_settingsFragment_to_favoritesFragment"
+            app:destination="@id/favoritesFragment"
+            app:launchSingleTop="true"
+            app:popUpTo="@id/settingsFragment" />
     </fragment>
 
     <fragment

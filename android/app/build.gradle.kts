@@ -153,6 +153,14 @@ android {
         arg("room.schemaLocation", "$projectDir/schemas")
     }
 
+    // Schemas live in the debug source set only — Robolectric MigrationTestHelper
+    // (testDebugUnitTest) reads them via the merged debug assets, and they don't
+    // ship in release APKs.
+    sourceSets {
+        getByName("androidTest").assets.srcDirs("$projectDir/schemas")
+        getByName("debug").assets.srcDirs("$projectDir/schemas")
+    }
+
     java {
         toolchain {
             languageVersion.set(JavaLanguageVersion.of(17))
@@ -181,6 +189,11 @@ android {
         // Return default values for unmocked Android framework calls (e.g., Log.d returns 0)
         // Required for unit tests that use classes containing android.util.Log calls
         unitTests.isReturnDefaultValues = true
+
+        // Surface Android resources/assets to JVM unit tests. Required so
+        // Robolectric's MigrationTestHelper can read exported Room schemas
+        // from the assets folder (see AppDatabaseMigration2to3Test).
+        unitTests.isIncludeAndroidResources = true
 
         unitTests.all {
             // Enforce 300s (5-minute) global test timeout per AGENTS.md policy
@@ -247,6 +260,12 @@ dependencies {
     // Note: room-ktx merged into room-runtime in 2.7.0
     val roomVersion = "2.7.0"
     implementation("androidx.room:room-runtime:$roomVersion")
+    // ANDROID-PERSONAL-03 / T7: room-paging removed. The Me-feed grid no
+    // longer uses Room's PagingSource<Int, T> return type — it observes
+    // per-week ranges via Flow<List<ChannelVideoCache>> and renders one
+    // sub-adapter per week. paging-runtime-ktx is still on the classpath
+    // (line 212) for the unrelated content-paging path
+    // (data.paging.CursorPagingSource).
     ksp("androidx.room:room-compiler:$roomVersion")
     testImplementation("androidx.room:room-testing:$roomVersion")
 
@@ -261,6 +280,11 @@ dependencies {
     testImplementation("androidx.work:work-testing:2.10.0")
     testImplementation("androidx.test:core:1.6.1")
     testImplementation("org.robolectric:robolectric:4.14.1")
+    // ATOM fetcher unit tests use MockWebServer to drive 200/304/429/5xx
+    // responses without touching YouTube. The androidTest classpath already
+    // pulls this in; adding it to testImplementation makes it available to
+    // the JVM/Robolectric source set as well. (ANDROID-PERSONAL-02 / T2)
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     androidTestImplementation("androidx.test:core:1.6.1")
     androidTestImplementation("androidx.test:core-ktx:1.6.1")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

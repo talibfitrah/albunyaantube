@@ -8,6 +8,7 @@ import com.albunyaan.tube.analytics.ExtractorMetricsReporter
 import com.albunyaan.tube.analytics.PlaybackMetricsCollector
 import com.albunyaan.tube.data.extractor.AudioTrack
 import com.albunyaan.tube.data.extractor.PlaybackSelection
+import com.albunyaan.tube.data.extractor.Priority
 import com.albunyaan.tube.data.extractor.QualitySelectionOrigin
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.SubtitleTrack
@@ -1353,7 +1354,14 @@ class PlayerViewModel @Inject constructor(
 
                 try {
                     android.util.Log.d("PlayerViewModel", "Prefetch: Starting for ${item.streamId}")
-                    val resolved = repository.resolveStreams(item.streamId)
+                    // ANDROID-PERSONAL-02 round 2 [Bug A]: prefetch is background-ish work
+                    // (the user is currently watching a different video). Declare
+                    // USER_FOREGROUND so the resolve goes through the rate-limit and
+                    // cooldown gates instead of riding the player bypass (spec D1).
+                    val resolved = repository.resolveStreams(
+                        item.streamId,
+                        priority = Priority.USER_FOREGROUND,
+                    )
                     if (resolved != null) {
                         // PR5: Signal success to reset backoff state
                         rateLimiter.onExtractionSuccess(item.streamId)

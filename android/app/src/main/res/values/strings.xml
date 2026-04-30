@@ -157,6 +157,39 @@
     <string name="nav_channels">Channels</string>
     <string name="nav_playlists">Playlists</string>
     <string name="nav_videos">Videos</string>
+    <string name="nav_me">Me</string>
+
+    <!-- Me tab -->
+    <string name="me_empty_title">Subscribe to see your feed</string>
+    <string name="me_empty_subtitle">Channels and playlists you save will appear here with their latest videos and shorts.</string>
+    <string name="me_empty_cta">Browse channels</string>
+    <string name="me_favorites">Favorites</string>
+    <string name="me_see_all">See all</string>
+    <string name="me_remove_from_favorites">Remove from favorites</string>
+    <string name="cd_remove_from_favorites">Remove from favorites</string>
+    <string name="me_channel_avatar_content_description">Open channel</string>
+    <string name="me_section_shorts">Shorts</string>
+    <string name="me_section_videos">Latest videos</string>
+    <string name="me_refresh_error">Couldn\'t refresh your feed. Pull down to try again.</string>
+    <string name="me_filter_clear">All subscriptions</string>
+
+    <!-- ANDROID-PERSONAL-03: weekly grouping headers in the Me feed. -->
+    <string name="me_week_this">This week</string>
+    <string name="me_week_last">Last week</string>
+    <string name="me_week_n_ago">%1$d weeks ago</string>
+
+    <!-- Subscribe / Save -->
+    <string name="channel_subscribe">Subscribe</string>
+    <string name="channel_unsubscribe">Subscribed</string>
+    <string name="playlist_save">Save</string>
+    <string name="playlist_unsave">Saved</string>
+    <string name="cd_save_playlist_button">Save this playlist to your library</string>
+    <string name="me_subscription_cap_reached">You\'re following 30 channels (the limit). Unsubscribe one to follow this channel.</string>
+
+    <!-- Settings library -->
+    <string name="settings_library_header">Library</string>
+    <string name="settings_downloads_library">Downloads library</string>
+    <string name="settings_favorites_title">Favorites</string>
 
     <!-- Empty/Error/Loading States -->
     <string name="loading">Loading…</string>
@@ -561,6 +594,15 @@
     <string name="dev_settings_clear_cache">Clear Stream Cache</string>
     <string name="dev_settings_cache_cleared">Cleared %d cached entries</string>
     <string name="dev_settings_cache_clear_failed">Failed to clear cache: %1$s</string>
+    <!-- T12: Me-feed cooldown + telemetry developer affordances. ar/nl translations TODO. -->
+    <string name="dev_settings_trip_cooldown">Trip Cooldown (1h)</string>
+    <string name="dev_settings_cooldown_tripped">Cooldown tripped — until %1$d</string>
+    <string name="dev_settings_reset_cooldown">Reset Cooldown</string>
+    <string name="dev_settings_cooldown_reset">Cooldown state cleared</string>
+    <string name="dev_settings_show_telemetry">Show Telemetry Log</string>
+    <string name="dev_settings_telemetry_title">Me-feed Telemetry Log</string>
+    <string name="dev_settings_telemetry_empty">(no events yet)</string>
+    <string name="dev_settings_close">Close</string>
     <plurals name="dev_settings_steps_away">
         <item quantity="one">You are %d step away from being a developer</item>
         <item quantity="other">You are %d steps away from being a developer</item>

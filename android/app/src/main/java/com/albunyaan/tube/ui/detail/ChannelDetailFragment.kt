@@ -20,6 +20,10 @@ import coil.load
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.channel.ChannelHeader
 import com.albunyaan.tube.data.channel.ChannelTab
+import com.albunyaan.tube.data.local.SubscribedChannel
+import com.albunyaan.tube.data.subscriptions.SubscribeResult
+import com.albunyaan.tube.data.subscriptions.SubscriptionLimitGuard
+import com.albunyaan.tube.data.subscriptions.SubscriptionRepository
 import com.albunyaan.tube.databinding.FragmentChannelDetailBinding
 import com.albunyaan.tube.data.report.ReportTargetType
 import com.albunyaan.tube.share.ShareLinks
@@ -32,11 +36,18 @@ import com.albunyaan.tube.ui.detail.tabs.ChannelShortsTabFragment
 import com.albunyaan.tube.ui.detail.tabs.ChannelVideosTabFragment
 import com.google.android.material.appbar.AppBarLayout
 import com.google.android.material.color.MaterialColors
+import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.tabs.TabLayoutMediator
 import dagger.hilt.android.AndroidEntryPoint
 import com.albunyaan.tube.locale.LocaleManager
 import dagger.hilt.android.lifecycle.withCreationCallback
+import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.NumberFormat
 
 /**
@@ -49,7 +60,15 @@ import java.text.NumberFormat
 @AndroidEntryPoint
 class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
 
+    @Inject
+    lateinit var subscriptions: SubscriptionRepository
+
+    @Inject
+    lateinit var limitGuard: SubscriptionLimitGuard
+
     private var binding: FragmentChannelDetailBinding? = null
+    private var latestHeader: ChannelHeader? = null
+    private var isSubscribedNow: Boolean = false
 
     private val channelId: String by lazy { arguments?.getString(ARG_CHANNEL_ID).orEmpty() }
     private val channelName: String? by lazy { arguments?.getString(ARG_CHANNEL_NAME) }
@@ -77,6 +96,7 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
         setupTabs()
         setupSearch()
         observeHeaderState()
+        observeSubscriptionState()
 
         // Restore selected tab
         savedInstanceState?.getInt(STATE_SELECTED_TAB)?.let { position ->
@@ -245,8 +265,79 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
         }
     }
 
+    private fun observeSubscriptionState() {
+        subscriptions.isChannelSubscribed(channelId)
+            .distinctUntilChanged()
+            .onEach { subscribed ->
+                isSubscribedNow = subscribed
+                binding?.subscribeButton?.apply {
+                    setText(if (subscribed) R.string.channel_unsubscribe else R.string.channel_subscribe)
+                    isSelected = subscribed
+                    setOnClickListener { toggleSubscription() }
+                }
+            }
+            .launchIn(viewLifecycleOwner.lifecycleScope)
+    }
+
+    private fun toggleSubscription() {
+        val header = latestHeader ?: return
+        // F11: guard against a malformed channel id slipping through. YouTube
+        // channel ids are opaque alphanumeric + `_-`. Refuse to build a URL
+        // if the extractor handed us something with a slash / query / space
+        // that would break the later ChannelInfo.getInfo(url) lookup.
+        if (!CHANNEL_ID_REGEX.matches(header.id)) {
+            Log.w(TAG, "Refusing subscribe: malformed channelId='${header.id}'")
+            return
+        }
+        // F-CR7 (CodeRabbit): capture the toggle direction at click time
+        // so a fast double-tap doesn't observe a stale isSubscribedNow that
+        // an in-flight emission has not flipped yet, and disable the button
+        // for the duration of the IO call so a second tap can't queue a
+        // second mutation. Wrap the IO in try/catch so a transient Room
+        // failure surfaces in logs instead of silently leaving the UI in a
+        // wrong state.
+        val shouldUnsubscribe = isSubscribedNow
+        binding?.subscribeButton?.isEnabled = false
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    if (shouldUnsubscribe) {
+                        subscriptions.unsubscribe(header.id)
+                        SubscribeResult.Success
+                    } else {
+                        // Route subscribe through the guard so the 30-channel
+                        // cap (§4.2) is enforced on every entry. Playlists do
+                        // NOT go through the guard — they are unlimited.
+                        limitGuard.trySubscribe(
+                            SubscribedChannel(
+                                channelId = header.id,
+                                channelUrl = "https://www.youtube.com/channel/${header.id}",
+                                name = header.title,
+                                avatarUrl = header.avatarUrl,
+                            )
+                        )
+                    }
+                }
+                if (result is SubscribeResult.LimitReached) {
+                    binding?.root?.let { rootView ->
+                        Snackbar.make(
+                            rootView,
+                            R.string.me_subscription_cap_reached,
+                            Snackbar.LENGTH_LONG,
+                        ).show()
+                    }
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "Failed to toggle subscription for ${header.id}", t)
+            } finally {
+                binding?.subscribeButton?.isEnabled = true
+            }
+        }
+    }
+
     private fun bindHeader(header: ChannelHeader) {
         currentHeader = header
+        latestHeader = header
         binding?.apply {
             // Update toolbar title
             toolbar.title = header.title
@@ -372,6 +463,7 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
 
     companion object {
         private const val TAG = "ChannelDetailFragment"
+        private val CHANNEL_ID_REGEX = Regex("^[A-Za-z0-9_-]{3,64}$")
         const val ARG_CHANNEL_ID = "channelId"
         const val ARG_CHANNEL_NAME = "channelName"
         const val ARG_EXCLUDED = "excluded"

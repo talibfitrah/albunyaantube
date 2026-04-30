@@ -4,7 +4,9 @@ import android.app.Application
 import android.util.Log
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import com.albunyaan.tube.app.AppLifecycleTracker
 import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
+import com.albunyaan.tube.data.me.work.RefreshScheduler
 import com.albunyaan.tube.download.DownloadScheduler
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
@@ -27,9 +29,23 @@ class AlBunyaanApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var extractorClient: NewPipeExtractorClient
 
+    @Inject
+    lateinit var lifecycleTracker: AppLifecycleTracker
+
+    @Inject
+    lateinit var refreshScheduler: RefreshScheduler
+
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "Application initialized with Hilt DI")
+
+        // Register process-level foreground tracker (ANDROID-PERSONAL-02 T8)
+        lifecycleTracker.register()
+
+        // ANDROID-PERSONAL-02 / T9: arm hourly Me-feed refresh worker.
+        // KEEP semantics — safe to call on every cold start.
+        refreshScheduler.enqueuePeriodic()
+        Log.d(TAG, "Me-feed periodic refresh scheduled")
 
         // Schedule periodic download expiry cleanup (P4-T3)
         downloadScheduler.scheduleExpiryCleanup()

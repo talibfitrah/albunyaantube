@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
+ <link rel="self" href="http://www.youtube.com/feeds/videos.xml?channel_id=UCshortsChannel0123456789"/>
+ <id>yt:channel:shortsChannel0123456789</id>
+ <yt:channelId>shortsChannel0123456789</yt:channelId>
+ <title>Channel With Shorts</title>
+ <link rel="alternate" href="https://www.youtube.com/channel/UCshortsChannel0123456789"/>
+ <author>
+  <name>Channel With Shorts</name>
+  <uri>https://www.youtube.com/channel/UCshortsChannel0123456789</uri>
+ </author>
+ <published>2024-01-01T00:00:00+00:00</published>
+ <entry>
+  <id>yt:video:shortVid0001</id>
+  <yt:videoId>shortVid0001</yt:videoId>
+  <yt:channelId>UCshortsChannel0123456789</yt:channelId>
+  <title>Quick Tip Short</title>
+  <link rel="alternate" href="https://www.youtube.com/shorts/shortVid0001"/>
+  <author>
+   <name>Channel With Shorts</name>
+   <uri>https://www.youtube.com/channel/UCshortsChannel0123456789</uri>
+  </author>
+  <published>2026-04-26T18:00:00+00:00</published>
+  <updated>2026-04-26T18:00:00+00:00</updated>
+  <media:group>
+   <media:title>Quick Tip Short</media:title>
+   <media:thumbnail url="https://i1.ytimg.com/vi/shortVid0001/hqdefault.jpg" width="480" height="360"/>
+   <media:description>A quick 30-second tip.</media:description>
+  </media:group>
+ </entry>
+ <entry>
+  <id>yt:video:longVideo002</id>
+  <yt:videoId>longVideo002</yt:videoId>
+  <yt:channelId>UCshortsChannel0123456789</yt:channelId>
+  <title>Full Length Tutorial</title>
+  <link rel="alternate" href="https://www.youtube.com/watch?v=longVideo002"/>
+  <author>
+   <name>Channel With Shorts</name>
+   <uri>https://www.youtube.com/channel/UCshortsChannel0123456789</uri>
+  </author>
+  <published>2026-04-25T12:00:00+00:00</published>
+  <updated>2026-04-25T12:00:00+00:00</updated>
+  <media:group>
+   <media:title>Full Length Tutorial</media:title>
+   <media:thumbnail url="https://i1.ytimg.com/vi/longVideo002/hqdefault.jpg" width="480" height="360"/>
+   <media:description>A 20-minute deep dive.</media:description>
+  </media:group>
+ </entry>
+ <entry>
+  <id>yt:video:shortVid0003</id>
+  <yt:videoId>shortVid0003</yt:videoId>
+  <yt:channelId>UCshortsChannel0123456789</yt:channelId>
+  <title>Another Short</title>
+  <link rel="alternate" href="https://www.youtube.com/shorts/shortVid0003"/>
+  <author>
+   <name>Channel With Shorts</name>
+   <uri>https://www.youtube.com/channel/UCshortsChannel0123456789</uri>
+  </author>
+  <published>2026-04-24T08:30:00+00:00</published>
+  <updated>2026-04-24T08:30:00+00:00</updated>
+  <media:group>
+   <media:title>Another Short</media:title>
+   <media:thumbnail url="https://i1.ytimg.com/vi/shortVid0003/hqdefault.jpg" width="480" height="360"/>
+   <media:description>Another short.</media:description>
+  </media:group>
+ </entry>
+</feed>
