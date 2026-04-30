@@ -185,8 +185,30 @@ class MultiRepresentationMpdGenerator @Inject constructor() {
         val bestFamily = selectBestCodecFamily(codecGroups)
             ?: return Result.Failure("NO_CODEC_FAMILY_AFTER_CAP")
 
-        val videoTracksForMpd = codecGroups[bestFamily]!!
+        // Within the chosen codec family, pick the container that has the
+        // most tracks (and the highest top-end height as tiebreaker). This
+        // avoids INCONSISTENT_CONTAINERS failures when AV1/VP9 are emitted
+        // across both webm and mp4 wrappers — we keep one wrapper so the
+        // MPD validates and ABR can switch between qualities.
+        val familyTracks = codecGroups[bestFamily]!!
+        val byContainer = familyTracks.groupBy { track ->
+            track.mimeType?.let { normalizeContainerMimeType(it) }
+                ?: inferVideoContainerFromCodec(track.codec ?: track.syntheticDashMetadata?.codec)
+                ?: "unknown"
+        }
+        val bestContainer = byContainer.entries.maxWithOrNull(
+            compareBy<Map.Entry<String, List<VideoTrack>>> { it.value.size }
+                .thenBy { entry -> entry.value.maxOfOrNull { it.height ?: 0 } ?: 0 }
+        )?.key ?: return Result.Failure("NO_CONTAINER_FAMILY")
+
+        val videoTracksForMpd = byContainer[bestContainer]!!
             .sortedByDescending { it.height ?: 0 } // Highest quality first
+
+        // If the container filtering left us below the min-rep threshold,
+        // try the largest cross-container group as a secondary fallback.
+        if (videoTracksForMpd.size < MIN_REPRESENTATIONS) {
+            return Result.Failure("INSUFFICIENT_AFTER_CONTAINER_FILTER:${videoTracksForMpd.size}/${familyTracks.size}")
+        }
 
         // Get best audio track
         val audioTrack = resolved.audioTracks

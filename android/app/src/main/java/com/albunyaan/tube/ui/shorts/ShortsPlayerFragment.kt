@@ -218,6 +218,14 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
         adapter = pagerAdapter
         bnd.shortsPager.adapter = pagerAdapter
         bnd.shortsPager.offscreenPageLimit = 1
+        // Disable swipe-to-next: product decision to NOT contribute to
+        // doom-scrolling. Users tap a Short to watch, press back to return
+        // to the source list, then tap another. Removing the vertical
+        // swipe gesture makes this intent explicit. The pager is kept
+        // (instead of being replaced with a single fragment) so that
+        // future programmatic transitions — e.g. play-next-from-channel —
+        // can still use setCurrentItem if we ever opt back in.
+        bnd.shortsPager.isUserInputEnabled = false
 
         val callback = object : ViewPager2.OnPageChangeCallback() {
             override fun onPageSelected(position: Int) {
