@@ -267,21 +267,35 @@ class MultiRepresentationMpdGenerator @Inject constructor() {
 
     /**
      * Select the best codec family from available groups.
-     * Prefers H264 > VP9 > AV1 based on device compatibility.
-     * Returns null if no valid family has enough tracks.
+     *
+     * Strategy:
+     *  1. Pick the family with the highest top-end resolution among families
+     *     that have at least [MIN_REPRESENTATIONS] tracks. YouTube typically
+     *     publishes 1080p+ only in VP9 or AV1; H.264 caps at 720p for most
+     *     videos. Picking H.264 first (the old behaviour) silently capped
+     *     adaptive playback at 720p even on devices that decode VP9/AV1
+     *     in hardware.
+     *  2. Tie-break by [CODEC_PREFERENCE] so H.264 still wins when families
+     *     reach the same height — preserves device-compat fallbacks.
      */
     private fun selectBestCodecFamily(codecGroups: Map<String, List<VideoTrack>>): String? {
-        for (family in CODEC_PREFERENCE) {
-            val tracks = codecGroups[family]
-            if (tracks != null && tracks.size >= MIN_REPRESENTATIONS) {
-                return family
-            }
-        }
-        // Fall back to any family with enough tracks
-        return codecGroups.entries
+        val candidates = codecGroups.entries
             .filter { it.value.size >= MIN_REPRESENTATIONS }
-            .maxByOrNull { it.value.size }
-            ?.key
+        if (candidates.isEmpty()) return null
+
+        val familyRank: (String) -> Int = { name ->
+            val idx = CODEC_PREFERENCE.indexOf(name)
+            if (idx < 0) Int.MAX_VALUE else idx
+        }
+
+        return candidates.maxWithOrNull(
+            // Higher top-end first; lower rank (more preferred) wins ties.
+            compareBy<Map.Entry<String, List<VideoTrack>>> { entry ->
+                entry.value.maxOfOrNull { it.height ?: 0 } ?: 0
+            }.thenComparing(
+                compareByDescending { entry -> familyRank(entry.key) }
+            )
+        )?.key
     }
 
     /**
