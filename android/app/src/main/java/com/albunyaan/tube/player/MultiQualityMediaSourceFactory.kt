@@ -69,7 +69,8 @@ class MultiQualityMediaSourceFactory(
     private val hlsPoisonRegistry: HlsPoisonRegistry? = null,
     private val multiRepFactory: MultiRepSyntheticDashMediaSourceFactory? = null,
     private val coldStartQualityChooser: ColdStartQualityChooser? = null,
-    private val featureFlags: PlaybackFeatureFlags? = null
+    private val featureFlags: PlaybackFeatureFlags? = null,
+    private val mpdRegistry: SyntheticDashMpdRegistry? = null
 ) {
 
     // Standard data source for progressive/DASH (Android User-Agent)
@@ -129,7 +130,7 @@ class MultiQualityMediaSourceFactory(
 
     // PR6.1: Synthetic DASH factory for progressive stream wrapping
     private val syntheticDashFactory by lazy {
-        SyntheticDashMediaSourceFactory(cacheDataSourceFactory)
+        SyntheticDashMediaSourceFactory(cacheDataSourceFactory, mpdRegistry)
     }
 
     companion object {
@@ -319,7 +320,7 @@ class MultiQualityMediaSourceFactory(
             android.util.Log.d(TAG, "SYNTH_ADAPTIVE not available, trying single-rep synthetic DASH")
 
             // PR6.1: Try single-rep synthetic DASH for video-only + audio progressive streams
-            val syntheticResult = tryCreateSyntheticDashSource(resolved, userQualityCapHeight, selectedQuality, selectionOrigin)
+            val syntheticResult = tryCreateSyntheticDashSource(resolved, userQualityCapHeight, selectedQuality, selectionOrigin, videoId)
             if (syntheticResult != null) {
                 val capInfo = userQualityCapHeight?.let { "${it}p cap" } ?: "no cap"
                 android.util.Log.d(TAG, "Using single-rep synthetic DASH streaming ($capInfo)")
@@ -566,7 +567,8 @@ class MultiQualityMediaSourceFactory(
         resolved: ResolvedStreams,
         userQualityCapHeight: Int?,
         selectedQuality: VideoTrack?,
-        selectionOrigin: QualitySelectionOrigin
+        selectionOrigin: QualitySelectionOrigin,
+        videoId: String? = null
     ): AdaptiveSourceResult? {
         // Select video track using same logic as progressive fallback
         val videoTrack = when {
@@ -623,15 +625,16 @@ class MultiQualityMediaSourceFactory(
         val durationSeconds = resolved.durationSeconds?.toLong()
 
         // Create synthetic DASH video source
-        val videoResult = syntheticDashFactory.createVideoSource(videoTrack, durationSeconds)
+        val videoResult = syntheticDashFactory.createVideoSource(videoTrack, durationSeconds, videoId)
         if (videoResult is SyntheticDashMediaSourceFactory.Result.Failure) {
             android.util.Log.d(TAG, "Synthetic DASH video failed: ${videoResult.reason}")
             return null
         }
         val videoSource = (videoResult as SyntheticDashMediaSourceFactory.Result.Success).source
 
-        // Create synthetic DASH audio source
-        val audioResult = syntheticDashFactory.createAudioSource(audioTrack, durationSeconds)
+        // Create synthetic DASH audio source (use a distinct key so video/audio MPDs don't collide)
+        val audioVideoId = if (videoId != null) "${videoId}_audio" else null
+        val audioResult = syntheticDashFactory.createAudioSource(audioTrack, durationSeconds, audioVideoId)
         if (audioResult is SyntheticDashMediaSourceFactory.Result.Failure) {
             android.util.Log.d(TAG, "Synthetic DASH audio failed: ${audioResult.reason}")
             return null

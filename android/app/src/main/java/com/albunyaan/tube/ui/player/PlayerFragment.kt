@@ -805,7 +805,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             hlsPoisonRegistry,
             multiRepFactory,
             coldStartQualityChooser,
-            featureFlags
+            featureFlags,
+            mpdRegistry
         )
     }
 

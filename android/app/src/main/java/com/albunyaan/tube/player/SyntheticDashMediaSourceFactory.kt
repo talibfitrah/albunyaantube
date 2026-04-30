@@ -1,5 +1,6 @@
 package com.albunyaan.tube.player
 
+import android.net.Uri
 import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
@@ -7,6 +8,7 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.exoplayer.dash.DashMediaSource
+import androidx.media3.exoplayer.dash.DefaultDashChunkSource
 import androidx.media3.exoplayer.source.MediaSource
 import com.albunyaan.tube.data.extractor.AudioTrack
 import com.albunyaan.tube.data.extractor.SyntheticDashMetadata
@@ -38,7 +40,8 @@ import org.schabi.newpipe.extractor.services.youtube.dashmanifestcreators.Youtub
  */
 @OptIn(UnstableApi::class)
 class SyntheticDashMediaSourceFactory(
-    private val dataSourceFactory: DataSource.Factory
+    private val dataSourceFactory: DataSource.Factory,
+    private val mpdRegistry: SyntheticDashMpdRegistry? = null
 ) {
     companion object {
         private const val TAG = "SyntheticDashFactory"
@@ -57,9 +60,10 @@ class SyntheticDashMediaSourceFactory(
      *
      * @param track The video track (must be video-only with valid SyntheticDashMetadata)
      * @param durationSeconds Fallback duration in seconds (from StreamInfo)
+     * @param videoId The video ID used to register the MPD in the registry (when registry is set)
      * @return Result.Success with MediaSource, or Result.Failure with reason
      */
-    fun createVideoSource(track: VideoTrack, durationSeconds: Long?): Result {
+    fun createVideoSource(track: VideoTrack, durationSeconds: Long?, videoId: String? = null): Result {
         // Validate preconditions
         if (!track.isVideoOnly) {
             return Result.Failure("NOT_VIDEO_ONLY")
@@ -82,7 +86,7 @@ class SyntheticDashMediaSourceFactory(
             return Result.Failure("NO_DURATION")
         }
 
-        return generateDashSource(track.url, itagItem, duration, "video")
+        return generateDashSource(track.url, itagItem, duration, "video", videoId)
     }
 
     /**
@@ -90,9 +94,10 @@ class SyntheticDashMediaSourceFactory(
      *
      * @param track The audio track (must have valid SyntheticDashMetadata)
      * @param durationSeconds Fallback duration in seconds (from StreamInfo)
+     * @param videoId The video ID used to register the MPD in the registry (when registry is set)
      * @return Result.Success with MediaSource, or Result.Failure with reason
      */
-    fun createAudioSource(track: AudioTrack, durationSeconds: Long?): Result {
+    fun createAudioSource(track: AudioTrack, durationSeconds: Long?, videoId: String? = null): Result {
         val metadata = track.syntheticDashMetadata
             ?: return Result.Failure("NO_METADATA")
 
@@ -110,7 +115,7 @@ class SyntheticDashMediaSourceFactory(
             return Result.Failure("NO_DURATION")
         }
 
-        return generateDashSource(track.url, itagItem, duration, "audio")
+        return generateDashSource(track.url, itagItem, duration, "audio", videoId)
     }
 
     /**
@@ -149,12 +154,17 @@ class SyntheticDashMediaSourceFactory(
 
     /**
      * Generate DASH MediaSource using NewPipe's manifest creator.
+     *
+     * When [mpdRegistry] and [videoId] are both available, registers the MPD content
+     * under [videoId] and uses a `syntheticdash://<videoId>` URI served by
+     * [SyntheticDashDataSource]. Otherwise falls back to the legacy `data:` URI approach.
      */
     private fun generateDashSource(
         streamUrl: String,
         itagItem: ItagItem,
         durationSeconds: Long,
-        streamType: String
+        streamType: String,
+        videoId: String? = null
     ): Result {
         return try {
             // Generate MPD manifest (no network call - purely local XML generation)
@@ -168,20 +178,44 @@ class SyntheticDashMediaSourceFactory(
                 return Result.Failure("EMPTY_MPD")
             }
 
-            // Create data: URI from MPD content for Media3
-            val mpdDataUri = "data:application/dash+xml;charset=utf-8," +
-                java.net.URLEncoder.encode(mpdManifest, "UTF-8")
+            // Use registry-based syntheticdash:// URI when registry and videoId are available,
+            // otherwise fall back to legacy data: URI to preserve backward compatibility.
+            val registry = mpdRegistry
+            if (registry != null && videoId != null) {
+                // Register MPD in the registry so SyntheticDashDataSource can serve it
+                registry.register(videoId, mpdManifest)
 
-            val mediaItem = MediaItem.Builder()
-                .setUri(mpdDataUri)
-                .setMimeType(MimeTypes.APPLICATION_MPD)
-                .build()
+                val mpdUri = Uri.parse("syntheticdash://$videoId")
+                val mediaItem = MediaItem.Builder()
+                    .setUri(mpdUri)
+                    .setMimeType(MimeTypes.APPLICATION_MPD)
+                    .build()
 
-            val source = DashMediaSource.Factory(dataSourceFactory)
-                .createMediaSource(mediaItem)
+                // Use SyntheticDashDataSource.Factory for manifest delivery;
+                // segment fetching uses the regular dataSourceFactory via DefaultDashChunkSource.
+                val source = DashMediaSource.Factory(
+                    DefaultDashChunkSource.Factory(dataSourceFactory), // segment data source
+                    SyntheticDashDataSource.Factory(registry)          // manifest data source
+                ).createMediaSource(mediaItem)
 
-            Log.d(TAG, "Created synthetic DASH $streamType source (itag=${itagItem.id}, dur=${durationSeconds}s)")
-            Result.Success(source, mpdDataUri)
+                Log.d(TAG, "Created synthetic DASH $streamType source via registry (videoId=$videoId, itag=${itagItem.id}, dur=${durationSeconds}s)")
+                Result.Success(source, mpdUri.toString())
+            } else {
+                // Legacy path: embed MPD in a data: URI
+                val mpdDataUri = "data:application/dash+xml;charset=utf-8," +
+                    java.net.URLEncoder.encode(mpdManifest, "UTF-8")
+
+                val mediaItem = MediaItem.Builder()
+                    .setUri(mpdDataUri)
+                    .setMimeType(MimeTypes.APPLICATION_MPD)
+                    .build()
+
+                val source = DashMediaSource.Factory(dataSourceFactory)
+                    .createMediaSource(mediaItem)
+
+                Log.d(TAG, "Created synthetic DASH $streamType source via data: URI (itag=${itagItem.id}, dur=${durationSeconds}s)")
+                Result.Success(source, mpdDataUri)
+            }
 
         } catch (e: CreationException) {
             Log.w(TAG, "Synthetic DASH creation failed for $streamType: CreationException")
