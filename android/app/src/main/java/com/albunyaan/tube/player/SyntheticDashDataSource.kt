@@ -32,7 +32,7 @@ import javax.inject.Singleton
  * 1. Register MPD content: `SyntheticDashMpdRegistry.register(videoId, mpdXml)`
  * 2. Create MediaItem with URI: `syntheticdash://{videoId}`
  * 3. Use SyntheticDashDataSource.Factory with DashMediaSource
- * 4. Clean up: `SyntheticDashMpdRegistry.unregister(videoId)` after playback
+ * 4. Clean up: `SyntheticDashMpdRegistry.unregisterBoth(videoId)` after playback
  */
 @OptIn(UnstableApi::class)
 class SyntheticDashDataSource(
