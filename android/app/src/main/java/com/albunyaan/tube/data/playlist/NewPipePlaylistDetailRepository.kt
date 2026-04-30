@@ -92,13 +92,42 @@ class NewPipePlaylistDetailRepository @Inject constructor(
                     // Initial page - get info which includes first page of items
                     // [getPlaylistInfo] sets its own USER_FOREGROUND priority.
                     val info = getPlaylistInfo(playlistId, forceRefresh = false)
-                    items = info.relatedItems
+                    var rawItems: List<InfoItem> = info.relatedItems
+                    var rawNextPage = info.nextPage
+
+                    // NewPipe's PlaylistInfo.getInfo() pipes the initial page
+                    // through ExtractorHelper.getItemsPageOrLogError(), which
+                    // SWALLOWS extraction errors and returns an empty list.
+                    // Result: header metadata says "42 items" (streamCount) but
+                    // relatedItems is empty, and we render the misleading
+                    // "Clear filters" empty state. Detect that case and
+                    // re-extract directly so any real failure surfaces and
+                    // any successful re-parse populates the list.
+                    if (rawItems.isEmpty() && info.streamCount > 0) {
+                        Log.w(
+                            TAG,
+                            "Empty relatedItems despite streamCount=${info.streamCount} for $playlistId — " +
+                                    "PlaylistInfo silent-swallow; re-extracting initial page directly"
+                        )
+                        val handler = createPlaylistLinkHandler(playlistId)
+                            ?: throw ExtractionException("Invalid playlist ID: $playlistId")
+                        val rescued = NewPipePriorityContext.with(Priority.USER_FOREGROUND) {
+                            val extractor = youtubeService.getPlaylistExtractor(handler)
+                            extractor.fetchPage()
+                            extractor.initialPage
+                        }
+                        rawItems = rescued.items
+                        rawNextPage = rescued.nextPage
+                        Log.d(TAG, "Direct re-extraction yielded ${rawItems.size} items for $playlistId")
+                    }
+
+                    items = rawItems
                         .filterIsInstance<StreamInfoItem>()
                         .mapIndexedNotNull { index, item ->
                             item.toPlaylistItem(itemOffset + index)
                         }
                     // Preserve NewPipe's page token exactly as-is
-                    nextPage = Page.fromNewPipePage(info.nextPage)
+                    nextPage = Page.fromNewPipePage(rawNextPage)
                     Log.d(TAG, "Fetched initial page: ${items.size} items starting at $itemOffset, hasMore=${nextPage != null}")
                 } else {
                     // Subsequent pages - getMoreItems expects a URL string.
