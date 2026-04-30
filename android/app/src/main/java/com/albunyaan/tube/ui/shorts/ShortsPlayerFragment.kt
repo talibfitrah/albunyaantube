@@ -241,8 +241,8 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
             findNavController().popBackStack()
         }
 
-        bnd.shortsMenuBtn.setOnClickListener {
-            showQualityPicker()
+        bnd.shortsMenuBtn.setOnClickListener { anchor ->
+            showShortsKebabMenu(anchor)
         }
 
         // Quality picker result: apply the selected cap (or clear if AUTO/0).
@@ -560,6 +560,65 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
 
     private fun showToast(resId: Int) {
         Toast.makeText(requireContext(), resId, Toast.LENGTH_SHORT).show()
+    }
+
+    /**
+     * Kebab popup for the Shorts player. Quality picker for everyone, plus
+     * a Report action that scopes the report to the channel parent the
+     * Shorts player was launched with (passed via Bundle by the originating
+     * channel Shorts tab — no long-press required at the list level).
+     */
+    private fun showShortsKebabMenu(anchor: android.view.View) {
+        val popup = androidx.appcompat.widget.PopupMenu(
+            requireContext(),
+            anchor,
+            android.view.Gravity.END,
+        )
+        popup.menuInflater.inflate(R.menu.menu_shorts_kebab, popup.menu)
+        popup.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.action_quality -> {
+                    showQualityPicker()
+                    true
+                }
+                R.id.action_report -> {
+                    showReportSheetForCurrentShort()
+                    true
+                }
+                else -> false
+            }
+        }
+        popup.show()
+    }
+
+    /**
+     * Open the report bottom sheet for the currently visible Short. Parent
+     * defaults to CHANNEL with parentId=channelId from the navigation Bundle
+     * (Shorts always live under a channel). contentSubType is forced to SHORT
+     * so the resolution path puts exclusions in the channel's shorts bucket.
+     */
+    private fun showReportSheetForCurrentShort() {
+        val bnd = binding ?: return
+        val currentIndex = bnd.shortsPager.currentItem
+        val videoId = viewModel.items.value.getOrNull(currentIndex)?.id
+            ?: arguments?.getString("initialShortId")
+        if (videoId.isNullOrBlank()) {
+            Toast.makeText(requireContext(), R.string.player_video_not_ready, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val channelId = arguments?.getString("channelId")?.takeIf { it.isNotBlank() }
+        val parentType = if (channelId != null) {
+            com.albunyaan.tube.data.report.ReportTargetType.CHANNEL
+        } else null
+        com.albunyaan.tube.ui.report.ContentReportBottomSheet
+            .newInstance(
+                targetType = com.albunyaan.tube.data.report.ReportTargetType.VIDEO,
+                targetId = videoId,
+                parentType = parentType,
+                parentId = channelId,
+                contentSubType = com.albunyaan.tube.data.report.ReportContentSubType.SHORT,
+            )
+            .show(parentFragmentManager, com.albunyaan.tube.ui.report.ContentReportBottomSheet.TAG)
     }
 
     /**

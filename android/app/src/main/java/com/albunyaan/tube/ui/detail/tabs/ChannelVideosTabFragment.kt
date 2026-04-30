@@ -54,36 +54,23 @@ class ChannelVideosTabFragment : BaseChannelListTabFragment<ChannelVideo>() {
     )
 
     private val adapter by lazy {
-        ChannelVideoAdapter(
-            onVideoClick = { video ->
-                prefetchService.triggerPrefetch(video.id, lifecycleScope)
-                // Navigate to video player
-                findNavController().navigate(
-                    R.id.action_global_playerFragment,
-                    android.os.Bundle().apply {
-                        putString("videoId", video.id)
-                        putString("title", video.title)
-                        putString("channelName", video.uploaderName ?: "")
-                        putString("thumbnailUrl", video.thumbnailUrl ?: "")
-                        putInt("durationSeconds", video.durationSeconds ?: 0)
-                        putLong("viewCount", video.viewCount ?: -1L)
-                    }
-                )
-            },
-            onVideoLongPress = { video ->
-                // Per-item report flow: long-press a channel video to open
-                // the report sheet with parent=CHANNEL/channelId so the
-                // admin's resolve action adds the video to this channel's
-                // exclude list rather than archiving it app-wide.
-                com.albunyaan.tube.ui.report.ContentReportBottomSheet.newInstance(
-                    targetType = com.albunyaan.tube.data.report.ReportTargetType.VIDEO,
-                    targetId = video.id,
-                    parentType = com.albunyaan.tube.data.report.ReportTargetType.CHANNEL,
-                    parentId = channelId,
-                    contentSubType = null,
-                ).show(parentFragmentManager, com.albunyaan.tube.ui.report.ContentReportBottomSheet.TAG)
-            },
-        )
+        ChannelVideoAdapter { video ->
+            prefetchService.triggerPrefetch(video.id, lifecycleScope)
+            // Navigate to video player. Pass channelId so the player kebab's
+            // Report action can scope the report to this channel as parent.
+            findNavController().navigate(
+                R.id.action_global_playerFragment,
+                android.os.Bundle().apply {
+                    putString("videoId", video.id)
+                    putString("title", video.title)
+                    putString("channelId", channelId)
+                    putString("channelName", video.uploaderName ?: "")
+                    putString("thumbnailUrl", video.thumbnailUrl ?: "")
+                    putInt("durationSeconds", video.durationSeconds ?: 0)
+                    putLong("viewCount", video.viewCount ?: -1L)
+                }
+            )
+        }
     }
 
     override fun getState(): StateFlow<ChannelDetailViewModel.PaginatedState<ChannelVideo>> = viewModel.videosState

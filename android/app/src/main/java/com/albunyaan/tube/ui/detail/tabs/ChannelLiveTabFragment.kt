@@ -53,33 +53,24 @@ class ChannelLiveTabFragment : BaseChannelListTabFragment<ChannelLiveStream>() {
     )
 
     private val adapter by lazy {
-        ChannelLiveAdapter(
-            onStreamClick = { stream ->
-                prefetchService.triggerPrefetch(stream.id, lifecycleScope)
-                // Navigate to video player for live streams
-                findNavController().navigate(
-                    R.id.action_global_playerFragment,
-                    android.os.Bundle().apply {
-                        putString("videoId", stream.id)
-                        putString("title", stream.title)
-                        putString("channelName", stream.uploaderName ?: "")
-                        putString("thumbnailUrl", stream.thumbnailUrl ?: "")
-                        putLong("viewCount", stream.viewCount ?: -1L)
-                    }
-                )
-            },
-            onStreamLongPress = { stream ->
-                // Long-press a livestream → report with contentSubType=LIVESTREAM
-                // so admin resolve lands it in the channel's livestreams bucket.
-                com.albunyaan.tube.ui.report.ContentReportBottomSheet.newInstance(
-                    targetType = com.albunyaan.tube.data.report.ReportTargetType.VIDEO,
-                    targetId = stream.id,
-                    parentType = com.albunyaan.tube.data.report.ReportTargetType.CHANNEL,
-                    parentId = channelId,
-                    contentSubType = com.albunyaan.tube.data.report.ReportContentSubType.LIVESTREAM,
-                ).show(parentFragmentManager, com.albunyaan.tube.ui.report.ContentReportBottomSheet.TAG)
-            },
-        )
+        ChannelLiveAdapter { stream ->
+            prefetchService.triggerPrefetch(stream.id, lifecycleScope)
+            // Navigate to video player for live streams. Pass channelId +
+            // contentSubType=LIVESTREAM so the player kebab's Report action
+            // can target the channel's livestream exclusion bucket.
+            findNavController().navigate(
+                R.id.action_global_playerFragment,
+                android.os.Bundle().apply {
+                    putString("videoId", stream.id)
+                    putString("title", stream.title)
+                    putString("channelId", channelId)
+                    putString("channelName", stream.uploaderName ?: "")
+                    putString("thumbnailUrl", stream.thumbnailUrl ?: "")
+                    putString("contentSubType", "LIVESTREAM")
+                    putLong("viewCount", stream.viewCount ?: -1L)
+                }
+            )
+        }
     }
 
     override fun getState(): StateFlow<ChannelDetailViewModel.PaginatedState<ChannelLiveStream>> = viewModel.liveState

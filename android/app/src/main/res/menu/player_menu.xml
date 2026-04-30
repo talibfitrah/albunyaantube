@@ -10,4 +10,8 @@
         android:title="@string/player_action_enter_pip"
         android:icon="@drawable/ic_pip"
         android:showAsAction="ifRoom"/>
+    <item
+        android:id="@+id/action_report"
+        android:title="@string/player_action_report"
+        android:showAsAction="never"/>
 </menu>

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/action_quality"
+        android:title="@string/player_action_quality"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_report"
+        android:title="@string/report_content"
+        app:showAsAction="never" />
+
+</menu>

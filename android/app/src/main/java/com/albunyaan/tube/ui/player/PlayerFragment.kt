@@ -1499,9 +1499,50 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     enterPictureInPicture()
                     true
                 }
+                R.id.action_report -> {
+                    showReportSheet()
+                    true
+                }
                 else -> false
             }
         }
+    }
+
+    /**
+     * Open the content report bottom sheet for the currently playing video.
+     * Parent context (channelId / playlistId / contentSubType) flows in via
+     * the navigation arguments — the originating list (channel videos tab,
+     * playlist detail, etc.) puts them on the Bundle so the resolved report
+     * targets the correct exclusion bucket without the user having had to
+     * long-press in the list.
+     */
+    private fun showReportSheet() {
+        val videoId = viewModel.state.value.currentItem?.streamId
+            ?: arguments?.getString("videoId")
+        if (videoId.isNullOrBlank()) {
+            Toast.makeText(requireContext(), R.string.player_video_not_ready, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val playlistId = arguments?.getString("playlistId")?.takeIf { it.isNotBlank() }
+        val channelId = arguments?.getString("channelId")?.takeIf { it.isNotBlank() }
+        val parentType = when {
+            playlistId != null -> com.albunyaan.tube.data.report.ReportTargetType.PLAYLIST
+            channelId != null -> com.albunyaan.tube.data.report.ReportTargetType.CHANNEL
+            else -> null
+        }
+        val parentId = playlistId ?: channelId
+        val contentSubType = arguments?.getString("contentSubType")?.let {
+            runCatching { com.albunyaan.tube.data.report.ReportContentSubType.valueOf(it) }.getOrNull()
+        }
+        com.albunyaan.tube.ui.report.ContentReportBottomSheet
+            .newInstance(
+                targetType = com.albunyaan.tube.data.report.ReportTargetType.VIDEO,
+                targetId = videoId,
+                parentType = parentType,
+                parentId = parentId,
+                contentSubType = contentSubType,
+            )
+            .show(parentFragmentManager, com.albunyaan.tube.ui.report.ContentReportBottomSheet.TAG)
     }
 
     /**
