@@ -113,6 +113,15 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
         // Only trigger if the player is still buffering (state may have changed
         // between scheduling and firing).
         if (viewModel.player.playbackState == androidx.media3.common.Player.STATE_BUFFERING) {
+            // Invalidate any cached MPD for the current video before forcing a
+            // fresh re-resolve, so the new resolution doesn't hit a stale entry.
+            val currentPos = binding?.shortsPager?.currentItem
+            if (currentPos != null) {
+                val currentVideoId = viewModel.items.value.getOrNull(currentPos)?.id
+                if (currentVideoId != null) {
+                    mpdRegistry.unregister(currentVideoId)
+                }
+            }
             binder?.forceRefreshCurrent()
         }
     }
@@ -545,6 +554,15 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
     }
 
     override fun onDestroyView() {
+        // Unregister any cached synthetic DASH MPD for the currently-visible
+        // short so stale syntheticdash://<videoId> entries don't accumulate.
+        val currentPos = binding?.shortsPager?.currentItem
+        if (currentPos != null) {
+            val currentVideoId = viewModel.items.value.getOrNull(currentPos)?.id
+            if (currentVideoId != null) {
+                mpdRegistry.unregister(currentVideoId)
+            }
+        }
         // Restore system bars here (not in onPause) to prevent flicker on transient
         // pauses (e.g. permission dialog, bottom sheet) while the shorts UI is still alive.
         restoreSystemBarsIfImmersive()
