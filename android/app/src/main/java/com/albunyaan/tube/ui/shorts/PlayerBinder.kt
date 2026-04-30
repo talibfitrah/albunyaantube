@@ -79,14 +79,18 @@ class PlayerBinder private constructor(
      * supplied [PlayerView]. Tests inject a no-op so PlayerView's Android
      * superclass chain doesn't need to be loaded.
      */
-    private val attach: PlayerViewAttach
+    private val attach: PlayerViewAttach,
+    private val mpdRegistry: com.albunyaan.tube.player.SyntheticDashMpdRegistry? = null,
+    private val featureFlags: com.albunyaan.tube.player.PlaybackFeatureFlags? = null
 ) {
 
     /** Production constructor — wires the real ExoPlayer-backed ops. */
     constructor(
         player: ExoPlayer,
         playerRepository: PlayerRepository,
-        mediaSourceFactory: com.albunyaan.tube.player.MultiQualityMediaSourceFactory
+        mediaSourceFactory: com.albunyaan.tube.player.MultiQualityMediaSourceFactory,
+        mpdRegistry: com.albunyaan.tube.player.SyntheticDashMpdRegistry? = null,
+        featureFlags: com.albunyaan.tube.player.PlaybackFeatureFlags? = null
     ) : this(
         player = player,
         playerRepository = playerRepository,
@@ -94,7 +98,9 @@ class PlayerBinder private constructor(
         playerOps = ExoPlayerOps(player),
         attach = PlayerViewAttach { view, attached ->
             if (attached) view.player = player else view.player = null
-        }
+        },
+        mpdRegistry = mpdRegistry,
+        featureFlags = featureFlags
     )
 
     /** Test-only constructor — fully decoupled from ExoPlayer / PlayerView. */
@@ -145,6 +151,7 @@ class PlayerBinder private constructor(
     }
 
     private var boundView: PlayerView? = null
+    private var ttlWatcher: com.albunyaan.tube.player.MpdTtlWatcher? = null
 
     /**
      * Monotonically-increasing token identifying the "current" bind request.
@@ -352,6 +359,17 @@ class PlayerBinder private constructor(
         playerOps.setRepeatModeOne()
         playerOps.prepare()
         playerOps.setPlayWhenReady(true)
+        ttlWatcher?.cancel()
+        ttlWatcher = null
+        if (featureFlags?.isTtlWatcherEnabled == true &&
+            mpdRegistry != null &&
+            adaptive?.adaptiveType == com.albunyaan.tube.player.MediaSourceResult.AdaptiveType.SYNTH_ADAPTIVE) {
+            ttlWatcher = com.albunyaan.tube.player.MpdTtlWatcher(
+                videoId = videoId,
+                registry = mpdRegistry,
+                onRefreshNeeded = { forceRefreshCurrent() }
+            ).also { it.start(scope) }
+        }
     }
 
     private fun buildProgressiveSource(resolved: ResolvedStreams): MediaSource? {
@@ -476,6 +494,8 @@ class PlayerBinder private constructor(
      * Distinct from [release] — this does NOT touch [playerOps.release].
      */
     fun cancelScope() {
+        ttlWatcher?.cancel()
+        ttlWatcher = null
         scope.cancel()
         bindJob = null
         scopeCancelled = true
@@ -489,6 +509,8 @@ class PlayerBinder private constructor(
      * escape hatch for future refactors where the binder owns the player.
      */
     fun release() {
+        ttlWatcher?.cancel()
+        ttlWatcher = null
         scope.cancel()
         bindJob = null
         scopeCancelled = true
