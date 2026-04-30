@@ -10,11 +10,13 @@ import com.albunyaan.tube.model.Category;
 import com.albunyaan.tube.model.CategoryContentOrder;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
+import com.albunyaan.tube.model.SearchableStream;
 import com.albunyaan.tube.model.ValidationStatus;
 import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.CategoryContentOrderRepository;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
+import com.albunyaan.tube.repository.SearchableStreamRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import com.albunyaan.tube.repository.CategoryRepository;
 import org.slf4j.Logger;
@@ -56,6 +58,8 @@ public class PublicContentService {
     private final CategoryRepository categoryRepository;
     private final CategoryContentOrderRepository orderRepository;
     private final Executor contentExecutor;
+    private final SearchableStreamRepository searchableStreamRepository;
+    private final SearchTokenizer searchTokenizer;
 
     public PublicContentService(
             ChannelRepository channelRepository,
@@ -63,7 +67,9 @@ public class PublicContentService {
             VideoRepository videoRepository,
             CategoryRepository categoryRepository,
             CategoryContentOrderRepository orderRepository,
-            @org.springframework.beans.factory.annotation.Qualifier("publicContentExecutor") Executor contentExecutor
+            @org.springframework.beans.factory.annotation.Qualifier("publicContentExecutor") Executor contentExecutor,
+            SearchableStreamRepository searchableStreamRepository,
+            SearchTokenizer searchTokenizer
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
@@ -71,6 +77,8 @@ public class PublicContentService {
         this.categoryRepository = categoryRepository;
         this.orderRepository = orderRepository;
         this.contentExecutor = contentExecutor;
+        this.searchableStreamRepository = searchableStreamRepository;
+        this.searchTokenizer = searchTokenizer;
     }
 
     /**
@@ -1072,6 +1080,16 @@ public class PublicContentService {
                 results.addAll(searchVideosByText(normalizedQuery, remaining, Math.min(remaining * 3, 50)));
             }
 
+            // Add stream results from searchable_streams index
+            try {
+                int streamLimit = Math.max(1, limit / 2);
+                List<ContentItemDto> streamResults = searchStreams(normalizedQuery, streamLimit);
+                Set<String> existingIds = results.stream().map(ContentItemDto::getId).collect(java.util.stream.Collectors.toSet());
+                streamResults.stream().filter(r -> !existingIds.contains(r.getId())).forEach(results::add);
+            } catch (Exception e) {
+                log.warn("Stream search failed, continuing without stream results: {}", e.getMessage());
+            }
+
             // Cap at requested limit in case distributed fetches returned more
             if (results.size() > limit) {
                 results = new ArrayList<>(results.subList(0, limit));
@@ -1081,7 +1099,8 @@ public class PublicContentService {
         } else if (type.equalsIgnoreCase("PLAYLISTS")) {
             results.addAll(searchPlaylistsByText(normalizedQuery, limit, overFetchLimit));
         } else if (type.equalsIgnoreCase("VIDEOS")) {
-            results.addAll(searchVideosByText(normalizedQuery, limit, overFetchLimit));
+            results.addAll(searchVideosByText(normalizedQuery, limit / 2, overFetchLimit));
+            results.addAll(searchStreams(normalizedQuery, limit / 2));
         }
 
         return results;
@@ -1662,5 +1681,55 @@ public class PublicContentService {
                 sb.append(' ').append(field);
             }
         }
+    }
+
+    private List<ContentItemDto> searchStreams(String normalizedQuery, int limit)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        List<String> queryTokens = searchTokenizer.tokenize(normalizedQuery, null);
+        if (queryTokens.isEmpty()) return java.util.Collections.emptyList();
+
+        String primaryToken = queryTokens.get(0);
+        List<SearchableStream> candidates =
+                searchableStreamRepository.searchByToken(primaryToken, limit * 4);
+
+        if (queryTokens.size() > 1) {
+            List<String> rest = queryTokens.subList(1, queryTokens.size());
+            candidates = candidates.stream()
+                    .filter(s -> {
+                        Set<String> tSet = new HashSet<>(s.getSearchTokens());
+                        return rest.stream().allMatch(tSet::contains);
+                    })
+                    .collect(java.util.stream.Collectors.toList());
+        }
+
+        candidates.sort((a, b) -> scoreStream(b, normalizedQuery) - scoreStream(a, normalizedQuery));
+
+        return candidates.stream()
+                .limit(limit)
+                .map(this::streamToDto)
+                .collect(java.util.stream.Collectors.toList());
+    }
+
+    private int scoreStream(SearchableStream s, String query) {
+        String norm = s.getTitleNorm() != null ? s.getTitleNorm() : "";
+        if (norm.equals(query)) return 10;
+        if (norm.startsWith(query)) return 7;
+        if (norm.contains(query)) return 5;
+        return 1;
+    }
+
+    private ContentItemDto streamToDto(SearchableStream s) {
+        return ContentItemDto.video(
+                s.getStreamId(),
+                s.getTitle(),
+                null,
+                s.getDurationSeconds() != null ? s.getDurationSeconds().intValue() : 0,
+                0,
+                null,
+                s.getThumbnailUrl(),
+                s.getViewCount(),
+                s.getChannelName(),
+                null
+        );
     }
 }
