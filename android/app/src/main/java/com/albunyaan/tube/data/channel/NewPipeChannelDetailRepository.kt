@@ -146,16 +146,25 @@ class NewPipeChannelDetailRepository @Inject constructor(
     }
 
     /**
-     * 3-tier shorts detection for items returned by the uploads playlist API,
-     * which doesn't reliably set [StreamInfoItem.isShortFormContent].
-     * Mirrors ChannelDeepPaginator.toFeedItem.
+     * Conservative shorts detection for the channel-detail Videos tab.
+     *
+     * The Me-tab uses a 3-tier rule (NewPipe flag OR /shorts/ URL OR
+     * duration ≤ 180s) and accepts that some short-form long-form videos
+     * get misclassified as Shorts — both buckets feed the same user
+     * surface, so it's a wash. The Videos tab is different: a false
+     * positive HIDES a legitimate video the user expects to see (e.g.
+     * Mufti Menk's 1–3 minute reminders, Sheikh Kishk's Quran
+     * recitations under 3 minutes). Dropping the duration heuristic
+     * means we may leak a few actual Shorts into the Videos tab when
+     * NewPipe's playlist parser doesn't surface isShortFormContent and
+     * the URL is /watch?v= — that's the lesser evil. Users with the
+     * Shorts sub-tab open will still see Shorts there via the
+     * dedicated channel-tab path.
      */
     private fun StreamInfoItem.isLikelyShortByThreeTierDetection(): Boolean {
         if (isShortFormContent) return true
         val itemUrl = url ?: return false
-        if (itemUrl.contains("/shorts/")) return true
-        val durationSeconds = if (duration > 0) duration else null
-        return durationSeconds != null && durationSeconds in 1L..180L
+        return itemUrl.contains("/shorts/")
     }
 
     override suspend fun getLiveStreams(channelId: String, page: Page?): ChannelPage<ChannelLiveStream> {
