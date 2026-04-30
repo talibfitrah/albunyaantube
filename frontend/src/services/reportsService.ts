@@ -32,6 +32,14 @@ export interface ContentReport {
   resolvedAt?: FirestoreTimestamp;
   resolvedBy?: string;
   resolutionNote?: string;
+  // Optional parent context populated when the user reported an item
+  // from inside a channel or playlist — drives correct exclusion bucket
+  // on resolve and lets the admin table show "from [parent title]".
+  parentType?: ReportTargetType;
+  parentId?: string;
+  // VIDEO sub-type. SHORT or LIVESTREAM narrows which exclusion bucket
+  // a CHANNEL parent's resolution targets.
+  contentSubType?: 'SHORT' | 'LIVESTREAM' | 'POST';
 }
 
 export interface ReportStats {

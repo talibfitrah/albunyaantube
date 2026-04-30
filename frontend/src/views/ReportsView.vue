@@ -91,7 +91,14 @@
             <td :colspan="6" class="empty-state">{{ t('reports.table.empty') }}</td>
           </tr>
           <tr v-for="report in reports" :key="report.id">
-            <td><span class="type-badge" :class="report.targetType.toLowerCase()">{{ report.targetType }}</span></td>
+            <td>
+              <span class="type-badge" :class="report.targetType.toLowerCase()">{{ report.targetType }}</span>
+              <span
+                v-if="report.contentSubType"
+                class="subtype-badge"
+                :class="report.contentSubType.toLowerCase()"
+              >{{ report.contentSubType }}</span>
+            </td>
             <td class="content-cell">
               <div class="content-info">
                 <img
@@ -106,6 +113,14 @@
                 <div class="content-details">
                   <span class="content-title">{{ getContentMeta(report)?.title ?? '…' }}</span>
                   <span class="content-id" :title="report.targetId">{{ report.targetId }}</span>
+                  <span
+                    v-if="report.parentType && report.parentId"
+                    class="parent-context"
+                    :title="`${report.parentType}: ${report.parentId}`"
+                  >
+                    from {{ report.parentType.toLowerCase() }}
+                    <strong>{{ getParentMeta(report)?.title ?? report.parentId }}</strong>
+                  </span>
                 </div>
               </div>
             </td>
@@ -298,44 +313,55 @@ function getContentMeta(report: ContentReport): ContentMeta | null {
   return contentMeta.value[`${report.targetType}:${report.targetId}`] ?? null;
 }
 
+function getParentMeta(report: ContentReport): ContentMeta | null {
+  if (!report.parentType || !report.parentId) return null;
+  return contentMeta.value[`${report.parentType}:${report.parentId}`] ?? null;
+}
+
 async function fetchContentMeta(items: ContentReport[]) {
   const seen = new Set<string>();
-  const unique = items.filter(r => {
-    const key = `${r.targetType}:${r.targetId}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-  await Promise.allSettled(unique.map(async (r) => {
-    const key = `${r.targetType}:${r.targetId}`;
+  // Each report contributes both its target and (optionally) its parent
+  // to the lookup queue — admins need to see "Reported video [Title] from
+  // playlist [Parent Title]" together.
+  type LookupKey = { type: ReportTargetType | string; id: string };
+  const queue: LookupKey[] = [];
+  for (const r of items) {
+    const tk = `${r.targetType}:${r.targetId}`;
+    if (!seen.has(tk)) { seen.add(tk); queue.push({ type: r.targetType, id: r.targetId }); }
+    if (r.parentType && r.parentId) {
+      const pk = `${r.parentType}:${r.parentId}`;
+      if (!seen.has(pk)) { seen.add(pk); queue.push({ type: r.parentType, id: r.parentId }); }
+    }
+  }
+  await Promise.allSettled(queue.map(async (r) => {
+    const key = `${r.type}:${r.id}`;
     if (contentMeta.value[key]) return;
-    let url = '';
-    if (r.targetType === 'VIDEO') url = `/api/v1/videos/${r.targetId}`;
-    else if (r.targetType === 'CHANNEL') url = `/api/v1/channels/${r.targetId}`;
-    else if (r.targetType === 'PLAYLIST') url = `/api/v1/playlists/${r.targetId}`;
-    if (!url) return;
     // YouTube video thumbnail URL pattern works for any video ID (regular
-    // videos, shorts, livestreams). Used as both a fill-in when the API
-    // returns no thumbnailUrl AND as the fallback when the API call itself
-    // fails — reported content is often unapproved (not in our DB) and
-    // returns 404, but the underlying video still has a public YT thumbnail.
-    const ytVideoThumb = r.targetType === 'VIDEO'
-      ? `https://img.youtube.com/vi/${r.targetId}/mqdefault.jpg`
+    // videos, shorts, livestreams) without an API key — keep it as the
+    // last-resort fallback when both registry and NewPipe fail.
+    const ytVideoThumb = r.type === 'VIDEO'
+      ? `https://img.youtube.com/vi/${r.id}/mqdefault.jpg`
       : undefined;
+    // Admin-only lookup — goes straight to NewPipe so unregistered videos
+    // and playlists (loose items, child videos inside approved parents)
+    // still render with real title + thumbnail. The public /api/v1
+    // endpoints 404 on anything not in the approval registry, which left
+    // the admin table showing opaque IDs and missing artwork.
+    const lookupUrl = `/api/admin/reports/lookup?type=${r.type}&id=${encodeURIComponent(r.id)}`;
     try {
-      const res = await apiClient.get<{ title?: string; name?: string; thumbnailUrl?: string }>(url);
+      const res = await apiClient.get<{ title?: string; name?: string; thumbnailUrl?: string }>(lookupUrl);
       const d = res.data;
       contentMeta.value[key] = {
         thumbnailUrl: d.thumbnailUrl ?? ytVideoThumb,
-        title: d.title ?? d.name ?? r.targetId,
+        title: d.title ?? d.name ?? r.id,
       };
     } catch {
-      // 404 (content not in DB) is the common case for reported content.
-      // Still surface the YT thumbnail so admins can see WHAT they're
-      // resolving, not just an opaque ID.
+      // NewPipe extraction failed (rate-limited, deleted content, etc.).
+      // Surface the YT thumbnail when we can so admins see *something*
+      // instead of an opaque ID.
       contentMeta.value[key] = {
         thumbnailUrl: ytVideoThumb,
-        title: r.targetId,
+        title: r.id,
       };
     }
   }));
@@ -628,6 +654,38 @@ onMounted(() => {
   text-overflow: ellipsis;
   max-width: 160px;
 }
+
+.parent-context {
+  font-size: 0.72rem;
+  color: var(--color-text-secondary, #4f665c);
+  margin-top: 0.15rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+
+.parent-context strong {
+  color: var(--color-text-primary, #111827);
+  font-weight: 600;
+}
+
+.subtype-badge {
+  display: inline-block;
+  padding: 0.05rem 0.45rem;
+  margin-left: 0.35rem;
+  border-radius: 9999px;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: #f3e8ff;
+  color: #6d28d9;
+}
+
+.subtype-badge.short { background: #fce7f3; color: #be185d; }
+.subtype-badge.livestream { background: #fee2e2; color: #b91c1c; }
+.subtype-badge.post { background: #e0e7ff; color: #4338ca; }
 
 .reason-list {
   margin: 0;

@@ -1,11 +1,15 @@
 package com.albunyaan.tube.controller;
 
+import com.albunyaan.tube.dto.ChannelDetailsDto;
+import com.albunyaan.tube.dto.PlaylistDetailsDto;
+import com.albunyaan.tube.dto.StreamDetailsDto;
 import com.albunyaan.tube.model.ContentReport;
 import com.albunyaan.tube.model.ReportReason;
 import com.albunyaan.tube.model.ReportStatus;
 import com.albunyaan.tube.model.ReportTargetType;
 import com.albunyaan.tube.security.FirebaseUserDetails;
 import com.albunyaan.tube.service.ContentReportService;
+import com.albunyaan.tube.service.YouTubeService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -18,6 +22,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
@@ -29,9 +34,11 @@ public class ContentReportController {
     private static final String HEADER_DEVICE_ID = "X-Device-Id";
 
     private final ContentReportService reportService;
+    private final YouTubeService youTubeService;
 
-    public ContentReportController(ContentReportService reportService) {
+    public ContentReportController(ContentReportService reportService, YouTubeService youTubeService) {
         this.reportService = reportService;
+        this.youTubeService = youTubeService;
     }
 
     @PostMapping("/api/v1/reports")
@@ -91,6 +98,55 @@ public class ContentReportController {
     public ResponseEntity<ContentReportService.ReportStats> getStats()
             throws ExecutionException, InterruptedException, TimeoutException {
         return ResponseEntity.ok(reportService.getStats());
+    }
+
+    /**
+     * Admin-only metadata lookup for any YouTube video/playlist/channel ID,
+     * regardless of approval status. The reports table needs to render a
+     * title and thumbnail even when the reported item isn't in the registry
+     * (loose videos, child playlists/videos under approved parents) — the
+     * public /api/v1/{type}/{id} endpoints 404 on unapproved IDs, leaving
+     * the admin staring at an opaque YouTube ID. This goes straight to
+     * NewPipe so unregistered items always render with real metadata.
+     */
+    @GetMapping("/api/admin/reports/lookup")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MODERATOR')")
+    public ResponseEntity<Map<String, String>> lookupMetadata(
+            @RequestParam ReportTargetType type,
+            @RequestParam @NotBlank @Size(max = 128) String id) {
+        try {
+            switch (type) {
+                case VIDEO -> {
+                    StreamDetailsDto video = youTubeService.getVideoDetailsDto(id);
+                    Map<String, String> body = new java.util.HashMap<>();
+                    body.put("title", video.getName());
+                    body.put("name", video.getName());
+                    body.put("thumbnailUrl", video.getThumbnailUrl());
+                    return ResponseEntity.ok(body);
+                }
+                case PLAYLIST -> {
+                    PlaylistDetailsDto playlist = youTubeService.getPlaylistDetailsDto(id);
+                    Map<String, String> body = new java.util.HashMap<>();
+                    body.put("title", playlist.getName());
+                    body.put("name", playlist.getName());
+                    body.put("thumbnailUrl", playlist.getThumbnailUrl());
+                    return ResponseEntity.ok(body);
+                }
+                case CHANNEL -> {
+                    ChannelDetailsDto channel = youTubeService.getChannelDetailsDto(id);
+                    Map<String, String> body = new java.util.HashMap<>();
+                    body.put("title", channel.getName());
+                    body.put("name", channel.getName());
+                    body.put("thumbnailUrl", channel.getThumbnailUrl());
+                    return ResponseEntity.ok(body);
+                }
+                default -> {
+                    return ResponseEntity.badRequest().build();
+                }
+            }
+        } catch (IOException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        }
     }
 
     public record SubmitReportRequest(
