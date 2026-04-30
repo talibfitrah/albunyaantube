@@ -66,17 +66,6 @@
             app:tint="#FFFFFFFF"/>
 
         <ImageButton
-            android:id="@+id/shortReportBtn"
-            android:layout_width="56dp"
-            android:layout_height="56dp"
-            android:layout_marginTop="@dimen/spacing_md"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/player_action_report"
-            android:src="@drawable/ic_flag"
-            android:scaleType="center"
-            app:tint="#FFFFFFFF"/>
-
-        <ImageButton
             android:id="@+id/shortAudioTrackBtn"
             android:layout_width="56dp"
             android:layout_height="56dp"

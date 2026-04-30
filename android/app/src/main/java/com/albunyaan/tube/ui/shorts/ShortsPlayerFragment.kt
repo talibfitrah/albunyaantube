@@ -193,7 +193,6 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
             callbacks = ShortsPagerAdapter.Callbacks(
                 onLike = { idx -> viewModel.toggleLike(idx) },
                 onShare = { idx -> shareShort(idx) },
-                onReport = { idx -> reportShort(idx) },
                 onDownload = { idx -> downloadShort(idx) },
                 onChannelTap = { idx -> openChannel(idx) },
                 onTapVideo = { idx ->
@@ -246,6 +245,17 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
         }
 
         // Quality picker result: apply the selected cap (or clear if AUTO/0).
+        // Two steps:
+        //   1) viewModel.applyQualityCap(height) — sets the trackSelector
+        //      cap. Effective for multi-rep DASH (track selector picks a
+        //      track ≤ cap), but a no-op for single-rep synthetic DASH
+        //      (the manifest only has one video track).
+        //   2) binder.switchQuality(videoId, height) — rebuilds the
+        //      MediaSource so the synthetic-DASH builder regenerates the
+        //      manifest with a track that matches the new cap. Most
+        //      shorts hit this path because their progressive video
+        //      tracks have inconsistent containers, which makes
+        //      SYNTH_ADAPTIVE ineligible and forces single-rep.
         childFragmentManager.setFragmentResultListener(
             com.albunyaan.tube.ui.shared.QualityPickerDialog.REQUEST_KEY,
             viewLifecycleOwner,
@@ -255,6 +265,15 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
                 com.albunyaan.tube.ui.shared.QualityPickerDialog.AUTO,
             )
             viewModel.applyQualityCap(height)
+            val pos = binding?.shortsPager?.currentItem
+            val videoId = pos?.let { viewModel.items.value.getOrNull(it)?.id }
+            if (videoId != null) {
+                // Drop any cached synthetic MPD for this video so the
+                // factory regenerates with the new quality. Safe no-op
+                // for raw progressive (registry lookup misses).
+                mpdRegistry.unregisterBoth(videoId)
+                binder?.switchQuality(videoId, height)
+            }
         }
 
         // Listen for the DownloadQualityDialog's selection result and
@@ -500,12 +519,6 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
         )
     }
 
-    private fun reportShort(idx: Int) {
-        val item = viewModel.items.value.getOrNull(idx) ?: return
-        if (item.id.isBlank()) return
-        ContentReportBottomSheet.newInstance(ReportTargetType.VIDEO, item.id)
-            .show(childFragmentManager, ContentReportBottomSheet.TAG)
-    }
 
     /**
      * Open the same quality picker the main [PlayerFragment][com.albunyaan.tube.ui.player.PlayerFragment]

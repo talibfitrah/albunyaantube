@@ -457,6 +457,56 @@ class PlayerBinder private constructor(
         playerOps.setPlayWhenReady(wasPlaying)
     }
 
+    /**
+     * Switch the playback quality cap for the currently-bound video.
+     * `capHeightPx == 0` (or negative) clears the cap (auto / ABR-driven).
+     *
+     * Most YouTube videos on shorts end up as single-rep synthetic DASH
+     * (video tracks have inconsistent containers, so SYNTH_ADAPTIVE
+     * fails). With single-rep the manifest holds exactly one video
+     * track, so a track-selector cap can't pick a different quality —
+     * the manifest itself has to be regenerated with a different track.
+     * This rebuilds the MediaSource via the same factory path used at
+     * initial prep, passing the new cap so the synthetic-DASH builder
+     * picks the appropriate track.
+     *
+     * Preserves position and playWhenReady so the short resumes exactly
+     * where the user was. Safe no-op if there is no cached resolved-
+     * streams entry for [videoId].
+     */
+    fun switchQuality(videoId: String, capHeightPx: Int) {
+        val resolved = resolvedStreamsFor(videoId) ?: return
+        val cap = capHeightPx.takeIf { it > 0 }
+        val origin = if (cap != null) {
+            com.albunyaan.tube.data.extractor.QualitySelectionOrigin.MANUAL
+        } else {
+            com.albunyaan.tube.data.extractor.QualitySelectionOrigin.AUTO
+        }
+        val position = playerOps.getCurrentPosition()
+        val wasPlaying = playerOps.getPlayWhenReady()
+
+        val adaptive = mediaSourceFactory?.let {
+            runCatching {
+                it.createMediaSourceWithType(
+                    resolved = resolved,
+                    audioOnly = false,
+                    selectedQuality = null,
+                    userQualityCapHeight = cap,
+                    selectionOrigin = origin,
+                    forceProgressive = false,
+                    videoId = videoId
+                )
+            }.getOrNull()
+        }
+        val source = adaptive?.source ?: buildProgressiveSource(resolved) ?: return
+
+        playerOps.setMediaSource(source)
+        playerOps.setRepeatModeOne()
+        playerOps.prepare()
+        playerOps.seekTo(position)
+        playerOps.setPlayWhenReady(wasPlaying)
+    }
+
     /** Flip between play and pause on a tap. */
     fun togglePlayPause() {
         playerOps.setPlayWhenReady(!playerOps.getPlayWhenReady())
