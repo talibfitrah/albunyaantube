@@ -531,6 +531,7 @@
     <string name="player_removed_from_favorites">تمت الإزالة من المفضلة</string>
     <string name="player_action_audio">صوت</string>
     <string name="player_action_report">إبلاغ</string>
+    <string name="report_content">إبلاغ عن المحتوى</string>
     <string name="player_favorite_toggle_error">فشل تحديث المفضلة. يرجى المحاولة مرة أخرى.</string>
 
     <!-- Share -->

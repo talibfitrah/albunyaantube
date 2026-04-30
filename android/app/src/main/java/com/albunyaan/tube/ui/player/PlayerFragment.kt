@@ -1361,7 +1361,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private val menuProvider = object : MenuProvider {
         override fun onCreateMenu(menu: Menu, menuInflater: MenuInflater) {
             menuInflater.inflate(R.menu.player_menu, menu)
-            menuInflater.inflate(R.menu.menu_report, menu)
         }
 
         override fun onMenuItemSelected(menuItem: MenuItem): Boolean {
@@ -1372,14 +1371,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 }
                 R.id.action_enter_pip -> {
                     enterPictureInPicture()
-                    true
-                }
-                R.id.action_report -> {
-                    val videoId = viewModel.state.value.currentItem?.streamId
-                    if (!videoId.isNullOrBlank()) {
-                        ContentReportBottomSheet.newInstance(ReportTargetType.VIDEO, videoId)
-                            .show(childFragmentManager, ContentReportBottomSheet.TAG)
-                    }
                     true
                 }
                 else -> false
