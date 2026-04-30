@@ -1,6 +1,7 @@
 package com.albunyaan.tube.di
 
 import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
+import com.albunyaan.tube.data.index.IndexRepository
 import com.albunyaan.tube.data.playlist.NewPipePlaylistDetailRepository
 import com.albunyaan.tube.data.playlist.PlaylistDetailRepository
 import dagger.Module
@@ -22,8 +23,9 @@ object PlaylistDetailRepositoryModule {
     @Provides
     @Singleton
     fun providePlaylistDetailRepository(
-        extractorClient: NewPipeExtractorClient
+        extractorClient: NewPipeExtractorClient,
+        indexRepository: IndexRepository
     ): PlaylistDetailRepository {
-        return NewPipePlaylistDetailRepository(extractorClient)
+        return NewPipePlaylistDetailRepository(extractorClient, indexRepository)
     }
 }
