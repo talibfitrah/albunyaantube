@@ -73,9 +73,11 @@ public class StreamIndexService {
 
             for (StreamItemDto item : items) {
                 if (excluded.contains(item.getId())) continue;
-                String channelId = extractChannelId(item.getUploaderUrl());
+                String channelId = item.getChannelId() != null
+                        ? item.getChannelId()
+                        : extractChannelId(item.getUploaderUrl());
                 if (channelId == null) {
-                    log.warn("Could not extract channelId from uploaderUrl='{}', skipping stream {}", item.getUploaderUrl(), item.getId());
+                    log.warn("Could not resolve channelId for stream {}, skipping", item.getId());
                     continue;
                 }
                 upsert(item, channelId, item.getUploaderName(), sourceKey);

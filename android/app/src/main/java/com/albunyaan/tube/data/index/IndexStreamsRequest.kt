@@ -16,6 +16,7 @@ data class StreamIndexItem(
     @Json(name = "name")         val name: String,
     @Json(name = "thumbnailUrl") val thumbnailUrl: String?,
     @Json(name = "uploaderName") val uploaderName: String?,
+    @Json(name = "channelId")    val channelId: String?,
     @Json(name = "duration")     val duration: Long?,
     @Json(name = "viewCount")    val viewCount: Long?,
     @Json(name = "streamType")   val streamType: String

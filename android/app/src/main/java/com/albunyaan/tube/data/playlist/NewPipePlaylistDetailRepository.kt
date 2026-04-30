@@ -290,8 +290,8 @@ class NewPipePlaylistDetailRepository @Inject constructor(
 
     private fun PlaylistItem.toIndexItem() = StreamIndexItem(
         id = videoId, name = title, thumbnailUrl = thumbnailUrl,
-        uploaderName = channelName, duration = durationSeconds?.toLong(),
-        viewCount = viewCount, streamType = "VIDEO"
+        uploaderName = channelName, channelId = channelId,
+        duration = durationSeconds?.toLong(), viewCount = viewCount, streamType = "VIDEO"
     )
 
     private data class CacheEntry<T>(val value: T, val timestamp: Long)

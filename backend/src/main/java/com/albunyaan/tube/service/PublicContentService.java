@@ -1099,8 +1099,15 @@ public class PublicContentService {
         } else if (type.equalsIgnoreCase("PLAYLISTS")) {
             results.addAll(searchPlaylistsByText(normalizedQuery, limit, overFetchLimit));
         } else if (type.equalsIgnoreCase("VIDEOS")) {
-            results.addAll(searchVideosByText(normalizedQuery, limit / 2, overFetchLimit));
-            results.addAll(searchStreams(normalizedQuery, limit / 2));
+            int half = Math.max(1, limit / 2);
+            List<ContentItemDto> videoResults = searchVideosByText(normalizedQuery, half, overFetchLimit);
+            results.addAll(videoResults);
+            Set<String> existingIds = videoResults.stream()
+                    .map(ContentItemDto::getId)
+                    .collect(java.util.stream.Collectors.toSet());
+            searchStreams(normalizedQuery, half).stream()
+                    .filter(r -> !existingIds.contains(r.getId()))
+                    .forEach(results::add);
         }
 
         return results;

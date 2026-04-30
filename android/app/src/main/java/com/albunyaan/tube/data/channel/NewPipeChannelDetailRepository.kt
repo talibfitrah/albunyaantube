@@ -431,20 +431,21 @@ class NewPipeChannelDetailRepository @Inject constructor(
 
     private fun ChannelVideo.toIndexItem(streamType: String = "VIDEO") = StreamIndexItem(
         id = id, name = title, thumbnailUrl = thumbnailUrl,
-        uploaderName = uploaderName, duration = durationSeconds?.toLong(),
-        viewCount = viewCount, streamType = streamType
+        uploaderName = uploaderName, channelId = null,
+        duration = durationSeconds?.toLong(), viewCount = viewCount, streamType = streamType
     )
 
     private fun ChannelShort.toIndexItem() = StreamIndexItem(
         id = id, name = title, thumbnailUrl = thumbnailUrl,
-        uploaderName = null, duration = durationSeconds?.toLong(),
-        viewCount = viewCount, streamType = "SHORT"
+        uploaderName = null, channelId = null,
+        duration = durationSeconds?.toLong(), viewCount = viewCount, streamType = "SHORT"
     )
 
     private fun ChannelLiveStream.toIndexItem() = StreamIndexItem(
         id = id, name = title, thumbnailUrl = thumbnailUrl,
-        uploaderName = uploaderName, duration = durationSeconds?.toLong(),
-        viewCount = viewCount, streamType = if (isLiveNow) "LIVE" else "PAST_LIVE"
+        uploaderName = uploaderName, channelId = null,
+        duration = durationSeconds?.toLong(), viewCount = viewCount,
+        streamType = if (isLiveNow) "LIVE" else "PAST_LIVE"
     )
 
     private data class CacheEntry<T>(val value: T, val timestamp: Long)

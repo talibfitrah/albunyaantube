@@ -10,6 +10,7 @@ public class StreamItemDto {
     private String thumbnailUrl;
     private String uploaderName;
     private String uploaderUrl;
+    private String channelId; // Direct channel ID — avoids URL parsing for playlist items
     private Long viewCount;
     private Long duration;
     private String uploadDate;
@@ -64,6 +65,14 @@ public class StreamItemDto {
 
     public void setUploaderUrl(String uploaderUrl) {
         this.uploaderUrl = uploaderUrl;
+    }
+
+    public String getChannelId() {
+        return channelId;
+    }
+
+    public void setChannelId(String channelId) {
+        this.channelId = channelId;
     }
 
     public Long getViewCount() {
