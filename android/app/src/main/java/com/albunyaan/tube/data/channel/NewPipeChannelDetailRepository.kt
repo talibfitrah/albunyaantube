@@ -71,7 +71,12 @@ class NewPipeChannelDetailRepository @Inject constructor(
         val result = fetchTabContent(channelId, ChannelTabs.VIDEOS, page) { item ->
             (item as? StreamInfoItem)?.takeIf { !it.isShortFormContent }?.toChannelVideo()
         }
-        indexRepository.indexChannelStreams(channelId, result.items.map { it.toIndexItem("VIDEO") })
+        // Graceful indexing: don't block video loading on index errors (429, etc)
+        try {
+            indexRepository.indexChannelStreams(channelId, result.items.map { it.toIndexItem("VIDEO") })
+        } catch (e: Exception) {
+            Log.w(TAG, "Indexing failed for channel $channelId videos (continuing anyway): ${e.message}")
+        }
         return result
     }
 
@@ -79,7 +84,12 @@ class NewPipeChannelDetailRepository @Inject constructor(
         val result = fetchTabContent(channelId, ChannelTabs.LIVESTREAMS, page) { item ->
             (item as? StreamInfoItem)?.toChannelLiveStream()
         }
-        indexRepository.indexChannelStreams(channelId, result.items.map { it.toIndexItem() })
+        // Graceful indexing: don't block live stream loading on index errors (429, etc)
+        try {
+            indexRepository.indexChannelStreams(channelId, result.items.map { it.toIndexItem() })
+        } catch (e: Exception) {
+            Log.w(TAG, "Indexing failed for channel $channelId livestreams (continuing anyway): ${e.message}")
+        }
         return result
     }
 
@@ -87,7 +97,12 @@ class NewPipeChannelDetailRepository @Inject constructor(
         val result = fetchTabContent(channelId, ChannelTabs.SHORTS, page) { item ->
             (item as? StreamInfoItem)?.toChannelShort()
         }
-        indexRepository.indexChannelStreams(channelId, result.items.map { it.toIndexItem() })
+        // Graceful indexing: don't block shorts loading on index errors (429, etc)
+        try {
+            indexRepository.indexChannelStreams(channelId, result.items.map { it.toIndexItem() })
+        } catch (e: Exception) {
+            Log.w(TAG, "Indexing failed for channel $channelId shorts (continuing anyway): ${e.message}")
+        }
         return result
     }
 

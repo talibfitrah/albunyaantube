@@ -122,7 +122,12 @@ class NewPipePlaylistDetailRepository @Inject constructor(
                 }
 
                 // Piggyback index loaded items (fire-and-forget, never blocks UI)
-                indexRepository.indexPlaylistStreams(playlistId, items.map { it.toIndexItem() })
+                // Graceful indexing: don't block playlist loading on index errors (429, etc)
+                try {
+                    indexRepository.indexPlaylistStreams(playlistId, items.map { it.toIndexItem() })
+                } catch (e: Exception) {
+                    Log.w(TAG, "Indexing failed for playlist $playlistId (continuing anyway): ${e.message}")
+                }
 
                 // Return the next item offset for the caller to use on subsequent calls
                 val nextItemOffset = itemOffset + items.size
