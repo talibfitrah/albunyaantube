@@ -71,21 +71,79 @@ class ShortsPlayerViewModel @AssistedInject constructor(
      * stalls on weak networks. Decoder fallback + audio-becoming-noisy +
      * NETWORK wake-mode mirror PlayerFragment.kt setupPlayer().
      */
+    /** Track selector kept at class scope so the kebab quality picker can call
+     *  applyQualityConstraint / clear after the player is built. Initialised
+     *  lazily alongside [player]. */
+    private lateinit var trackSelector: QualityTrackSelector
+
+    /** User-applied quality cap (height in px). 0 = AUTO (no cap). Surfaced
+     *  to the kebab picker so it pre-checks the active row. */
+    private var userQualityCapHeight: Int = 0
+
     val player: ExoPlayer by lazy {
         val renderersFactory = androidx.media3.exoplayer.DefaultRenderersFactory(context)
             .setEnableDecoderFallback(true)
-        val trackSelector = if (featureFlags.isNeverFreezeAbrEnabled) {
+        val selector = if (featureFlags.isNeverFreezeAbrEnabled) {
             QualityTrackSelector(context, neverFreezeTrackSelectionFactory.create())
         } else {
             QualityTrackSelector.createForDiscreteQualities(context)
         }
+        trackSelector = selector
         ExoPlayer.Builder(context, renderersFactory)
             .setLoadControl(bufferPolicy.buildLoadControl())
-            .setTrackSelector(trackSelector)
+            .setTrackSelector(selector)
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(androidx.media3.common.C.WAKE_MODE_NETWORK)
             .build()
     }
+
+    /**
+     * Apply a user-selected quality cap to the active player track selector.
+     * `heightPx == 0` clears the cap (auto / ABR-driven).
+     *
+     * Uses CAP so the player picks the highest track ≤ heightPx and ABR can
+     * step down on network congestion. CAP doesn't lock the rendition, so a
+     * stall won't get stuck at the picked height — useful for shorts which
+     * loop and would otherwise drain battery on a single buffering rendition.
+     */
+    fun applyQualityCap(heightPx: Int) {
+        // Touch player so trackSelector is initialised even if caller hits
+        // this before the first playback.
+        player
+        if (heightPx <= 0) {
+            userQualityCapHeight = 0
+            trackSelector.parameters = trackSelector.buildUponParameters()
+                .setMaxVideoSize(Int.MAX_VALUE, Int.MAX_VALUE)
+                .setMaxVideoBitrate(Int.MAX_VALUE)
+                .build()
+        } else {
+            userQualityCapHeight = heightPx
+            trackSelector.applyQualityConstraint(
+                heightPx,
+                com.albunyaan.tube.data.extractor.QualityConstraintMode.CAP
+            )
+        }
+    }
+
+    /** Currently applied user quality cap; 0 means AUTO. */
+    fun getUserQualityCap(): Int = userQualityCapHeight
+
+    /**
+     * Standard quality ladder for the kebab picker. Hard-coded list (highest →
+     * lowest) so the dialog renders even before the resolved-streams metadata
+     * lands. Heights that the active stream doesn't actually publish are still
+     * harmless — CAP_STRICT just picks the next-lower available track.
+     */
+    fun getQualityOptions(): List<Pair<Int, String>> = listOf(
+        2160 to "2160p",
+        1440 to "1440p",
+        1080 to "1080p",
+        720 to "720p",
+        480 to "480p",
+        360 to "360p",
+        240 to "240p",
+        144 to "144p",
+    )
 
     private var initialShortApplied = false
 

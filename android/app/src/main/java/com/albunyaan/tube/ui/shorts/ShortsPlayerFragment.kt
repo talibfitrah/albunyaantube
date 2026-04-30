@@ -241,6 +241,22 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
             findNavController().popBackStack()
         }
 
+        bnd.shortsMenuBtn.setOnClickListener {
+            showQualityPicker()
+        }
+
+        // Quality picker result: apply the selected cap (or clear if AUTO/0).
+        childFragmentManager.setFragmentResultListener(
+            com.albunyaan.tube.ui.shared.QualityPickerDialog.REQUEST_KEY,
+            viewLifecycleOwner,
+        ) { _, result ->
+            val height = result.getInt(
+                com.albunyaan.tube.ui.shared.QualityPickerDialog.RESULT_SELECTED_HEIGHT,
+                com.albunyaan.tube.ui.shared.QualityPickerDialog.AUTO,
+            )
+            viewModel.applyQualityCap(height)
+        }
+
         // Listen for the DownloadQualityDialog's selection result and
         // enqueue the download against the pending position. Registration
         // MUST be on childFragmentManager because that is where the dialog
@@ -544,6 +560,20 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
 
     private fun showToast(resId: Int) {
         Toast.makeText(requireContext(), resId, Toast.LENGTH_SHORT).show()
+    }
+
+    /**
+     * Show the kebab quality picker. Pulls the standard quality ladder from
+     * the ViewModel and pre-checks the current user-applied cap (0 = Auto).
+     * The dialog posts the selected height back via Fragment Result API; the
+     * listener registered in onViewCreated calls viewModel.applyQualityCap.
+     */
+    private fun showQualityPicker() {
+        val qualities = viewModel.getQualityOptions()
+        val current = viewModel.getUserQualityCap()
+        com.albunyaan.tube.ui.shared.QualityPickerDialog
+            .newInstance(qualities, current)
+            .show(childFragmentManager, com.albunyaan.tube.ui.shared.QualityPickerDialog.TAG)
     }
 
     /**

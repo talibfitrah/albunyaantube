@@ -44,4 +44,16 @@
         android:contentDescription="@string/back"
         android:src="@drawable/ic_arrow_back"
         app:tint="#FFFFFFFF"/>
+
+    <ImageButton
+        android:id="@+id/shortsMenuBtn"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="@dimen/spacing_md"
+        android:layout_marginEnd="@dimen/spacing_sm"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="More options"
+        android:src="@drawable/ic_more_vert"
+        app:tint="#FFFFFFFF"/>
 </androidx.coordinatorlayout.widget.CoordinatorLayout>
