@@ -19,6 +19,8 @@ import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
+import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.extractor.SubtitleTrack
 import com.albunyaan.tube.data.extractor.VideoTrack
@@ -575,8 +577,13 @@ class MultiQualityMediaSourceFactory(
                         .setSubtitleConfigurations(buildSubtitleConfigurations(resolved.subtitleTracks))
                         .build()
                     // Use iOS User-Agent for HLS to match the client that fetched the manifest
+                    // Custom LoadErrorHandlingPolicy: prevents Media3 1.9.2 ArrayIndexOutOfBoundsException
+                    // in BaseTrackSelection.isTrackExcluded when HLS has a single track variant.
+                    // Returning null fallback selection causes ExoPlayer to retry same URL on errors
+                    // instead of trying out-of-bounds track indices.
                     val source = HlsMediaSource.Factory(hlsSourceFactory)
                         .setAllowChunklessPreparation(true)
+                        .setLoadErrorHandlingPolicy(SingleTrackSafeLoadErrorPolicy())
                         .createMediaSource(mediaItem)
                     AdaptiveSourceResult(source, hlsUrl, MediaSourceResult.AdaptiveType.HLS)
                 } catch (e: Exception) {
@@ -770,5 +777,33 @@ class MultiQualityMediaSourceFactory(
 
         return ProgressiveMediaSource.Factory(cacheDataSourceFactory)
             .createMediaSource(mediaItem)
+    }
+}
+
+/**
+ * LoadErrorHandlingPolicy that disables track-fallback selection.
+ *
+ * Workaround for Media3 1.9.2 bug:
+ *   java.lang.ArrayIndexOutOfBoundsException: length=1; index=1
+ *     at BaseTrackSelection.isTrackExcluded(BaseTrackSelection.java:197)
+ *     at HlsChunkSource.createFallbackOptions(HlsChunkSource.java:954)
+ *
+ * Cause: When an HLS manifest has only one variant (length=1) and a load
+ * error happens, HlsChunkSource.createFallbackOptions iterates through
+ * indices including index 1, which is out of bounds. This crashes the
+ * ExoPlayer:Playback thread.
+ *
+ * Fix: Return null from `getFallbackSelectionFor` so ExoPlayer falls back
+ * to the standard retry path (same URL, with backoff) instead of trying
+ * to switch tracks. Retry/blacklist time is delegated to the default
+ * implementation, which is safe.
+ */
+@OptIn(UnstableApi::class)
+class SingleTrackSafeLoadErrorPolicy : DefaultLoadErrorHandlingPolicy() {
+    override fun getFallbackSelectionFor(
+        fallbackOptions: LoadErrorHandlingPolicy.FallbackOptions,
+        loadErrorInfo: LoadErrorHandlingPolicy.LoadErrorInfo,
+    ): LoadErrorHandlingPolicy.FallbackSelection? {
+        return null
     }
 }

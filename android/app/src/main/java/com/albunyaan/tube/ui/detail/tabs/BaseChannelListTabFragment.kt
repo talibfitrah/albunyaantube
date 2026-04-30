@@ -365,16 +365,17 @@ abstract class BaseChannelListTabFragment<T> : Fragment(R.layout.fragment_channe
         private const val TAG = "BaseChannelListTab"
         /**
          * Maximum number of autofill pagination attempts for phones.
-         * Lower limit since phone viewports are smaller.
+         * Raised from 3→8 to give large channels enough headroom to fill the
+         * screen when YouTube paginates with many empty/short-only pages.
          */
-        private const val MAX_AUTOFILL_ATTEMPTS_PHONE = 3
+        private const val MAX_AUTOFILL_ATTEMPTS_PHONE = 8
 
         /**
          * Maximum number of autofill pagination attempts for tablets/TVs.
-         * Higher limit since larger screens can display more items and need more
-         * pages to become scrollable.
+         * Raised from 5→12 because larger screens can display more items and
+         * need more pages to become scrollable.
          */
-        private const val MAX_AUTOFILL_ATTEMPTS_TABLET = 5
+        private const val MAX_AUTOFILL_ATTEMPTS_TABLET = 12
 
         /**
          * Delay before re-checking autofill pagination after rate-limiting.
