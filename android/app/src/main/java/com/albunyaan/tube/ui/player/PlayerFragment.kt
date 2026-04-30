@@ -890,6 +890,42 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         binding.playerView.player = player
         player.addListener(viewModel.playerListener)
 
+        // Force captions to render at the bottom of the frame regardless of
+        // the cue's embedded `line` / `lineAnchor`. YouTube TTML — auto-gen
+        // tracks especially — commonly uses `tts:displayAlign="before"`,
+        // which puts cues at the top. SubtitleView faithfully renders them
+        // at that position; there's no public flag to ignore embedded
+        // positioning, and `SubtitleView` is `final` so we can't subclass.
+        // Workaround: post a setCues with the positioning fields cleared
+        // back to defaults — `View.post` lands on the next loop tick, after
+        // PlayerView's internal listener already ran setCues synchronously,
+        // so our rewrite is the last write to win.
+        // Pin every cue to the bottom of the frame: line=0.92 (92% down
+        // from the top) with anchor at the cue's bottom edge — leaves a
+        // small breathing margin above the system bar / nav rail. DIMEN_UNSET
+        // / TYPE_UNSET is NOT equivalent: SubtitleView treats those as
+        // invalid and drops the cue entirely. Explicit fractional placement
+        // keeps the cue valid and overrides whatever line the parser produced
+        // (typically 0 for YouTube TTML's `tts:displayAlign="before"`).
+        //
+        // Listener registration order matters: PlayerView's internal
+        // listener was added by `binding.playerView.player = player` above,
+        // so adding ours afterwards means our `setCues` fires last each
+        // tick. Calling synchronously (no post) keeps the rewrite in the
+        // same frame, so users never see the unmodified top placement.
+        player.addListener(object : Player.Listener {
+            override fun onCues(cueGroup: androidx.media3.common.text.CueGroup) {
+                val subView = binding?.playerView?.subtitleView ?: return
+                val rewritten = cueGroup.cues.map { cue ->
+                    cue.buildUpon()
+                        .setLine(0.92f, androidx.media3.common.text.Cue.LINE_TYPE_FRACTION)
+                        .setLineAnchor(androidx.media3.common.text.Cue.ANCHOR_TYPE_END)
+                        .build()
+                }
+                subView.setCues(rewritten)
+            }
+        })
+
         player.addAnalyticsListener(object : AnalyticsListener {
             override fun onVideoDecoderInitialized(
                 eventTime: AnalyticsListener.EventTime,
