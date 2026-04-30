@@ -483,7 +483,14 @@ class StreamRequestTelemetry @Inject constructor() {
         })
     }
 
-    private fun String.escapeJson() = replace("\\", "\\\\").replace("\"", "\\\"")
+    private fun String.escapeJson(): String = this
+        // Order matters: backslash first so we don't double-escape the
+        // sequences emitted by the control-char replacements below.
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
 
     // -------------------------------------------------------------------------
     // Channel + page + resolve timing — extension of PlaybackSession telemetry.
@@ -517,6 +524,11 @@ class StreamRequestTelemetry @Inject constructor() {
         isAppend: Boolean,
         success: Boolean,
         error: String? = null,
+        // Step 6 telemetry: number of items painted from local cache before
+        // the NewPipe fetch loop ran. Distinguishes cache-warm from cache-cold
+        // loads in dashboards. Always 0 for tabs without a cache (Live, Shorts,
+        // Playlists) and for append loads.
+        cachedItemsEmitted: Int = 0,
     ) {
         Log.i(TAG, buildString {
             append("{\"event\":\"channel_tab\",")
@@ -526,6 +538,7 @@ class StreamRequestTelemetry @Inject constructor() {
             append("\"pageFetches\":$pageFetches,")
             append("\"emptyContinuations\":$emptyContinuations,")
             append("\"itemsReturned\":$itemsReturned,")
+            append("\"cachedItemsEmitted\":$cachedItemsEmitted,")
             append("\"isAppend\":$isAppend,")
             append("\"success\":$success")
             if (error != null) append(",\"error\":\"${error.escapeJson()}\"")

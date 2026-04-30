@@ -197,6 +197,59 @@ class ChannelDetailViewModelTest {
     }
 
     @Test
+    fun `videos initial keeps cached items as ErrorAppend when NewPipe fails`() = runTest {
+        // Step 6 + review fix: when the Step-6 cache has already painted
+        // content and the NewPipe fetch then throws, the catch must NOT
+        // overwrite the visible list with ErrorInitial (full-screen error).
+        // It must degrade to ErrorAppend so the cached list stays on screen
+        // with an inline error footer.
+        val cachedRow = ChannelVideoCache(
+            videoId = "cached-v1",
+            channelId = "UCtest123",
+            channelName = "Test Channel",
+            title = "Cached Video",
+            thumbnailUrl = null,
+            durationSeconds = null,
+            viewCount = null,
+            uploadedAt = null,
+            isShort = false,
+            fetchedAt = 0L,
+        )
+        fakeCacheDao.rowsForChannel = mapOf("UCtest123" to listOf(cachedRow))
+        fakeRepository.headerResponse = createTestHeader("UCtest123", "Test Channel")
+        fakeRepository.videosError = RuntimeException("Network down")
+
+        val viewModel = createViewModel("UCtest123")
+        advanceUntilIdle()
+
+        val state = viewModel.videosState.value
+        assertTrue(
+            "Expected ErrorAppend preserving cached items, got: $state",
+            state is ChannelDetailViewModel.PaginatedState.ErrorAppend<*>,
+        )
+        val errorAppend = state as ChannelDetailViewModel.PaginatedState.ErrorAppend<*>
+        assertEquals(1, errorAppend.items.size)
+        assertEquals("cached-v1", (errorAppend.items[0] as ChannelVideo).id)
+    }
+
+    @Test
+    fun `videos initial uses ErrorInitial when no cache and NewPipe fails`() = runTest {
+        // The non-cache path must still go to ErrorInitial — we did not
+        // change the no-cache UX, only the cache-warm-then-fail UX.
+        fakeRepository.headerResponse = createTestHeader("UCtest123", "Test Channel")
+        fakeRepository.videosError = RuntimeException("Network down")
+
+        val viewModel = createViewModel("UCtest123")
+        advanceUntilIdle()
+
+        val state = viewModel.videosState.value
+        assertTrue(
+            "Expected ErrorInitial when no cache, got: $state",
+            state is ChannelDetailViewModel.PaginatedState.ErrorInitial,
+        )
+    }
+
+    @Test
     fun `videos initial filters cached shorts so only long-form rows paint`() = runTest {
         // Step 6 sanity: the cache table holds both videos and shorts (Me-tab
         // also writes to it). The Videos tab must drop isShort=true rows so

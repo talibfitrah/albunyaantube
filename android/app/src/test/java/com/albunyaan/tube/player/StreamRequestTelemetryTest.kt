@@ -801,4 +801,44 @@ class StreamRequestTelemetryTest {
             itemsReturned = 0, isAppend = false, success = true,
         )
     }
+
+    @Test
+    fun `telemetry methods escape control characters in error strings`() {
+        // Newlines, carriage returns, and tabs must not break the JSON line
+        // (each emitter writes one JSON object per Log.i call). This guards
+        // against future wiring that passes raw e.message instead of the
+        // current e::class.simpleName.
+        telemetry.recordChannelHeaderLoad(
+            channelId = "UCtest",
+            durationMs = 1L,
+            success = false,
+            error = "line1\nline2\rwith\ttab",
+        )
+        telemetry.recordPlayerResolve(
+            videoId = "vid1",
+            durationMs = 1L,
+            priority = "PLAYER",
+            success = false,
+            error = "stack\ntrace",
+        )
+    }
+
+    @Test
+    fun `recordChannelTabLoad records cachedItemsEmitted when supplied`() {
+        // Step 6 telemetry distinguishes cache-warm from cache-cold loads.
+        telemetry.recordChannelTabLoad(
+            channelId = "UCtest", tab = "Videos",
+            durationMs = 50L,
+            pageFetches = 1, emptyContinuations = 0,
+            itemsReturned = 20, isAppend = false, success = true,
+            cachedItemsEmitted = 80,
+        )
+        // Append loads always pass cachedItemsEmitted = 0 (the default).
+        telemetry.recordChannelTabLoad(
+            channelId = "UCtest", tab = "Videos",
+            durationMs = 50L,
+            pageFetches = 1, emptyContinuations = 0,
+            itemsReturned = 20, isAppend = true, success = true,
+        )
+    }
 }

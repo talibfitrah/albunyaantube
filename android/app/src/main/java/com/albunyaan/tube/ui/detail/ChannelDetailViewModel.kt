@@ -177,7 +177,7 @@ class ChannelDetailViewModel @AssistedInject constructor(
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to load $tab", e)
-                updateTabState(tab, PaginatedState.ErrorInitial(e.message ?: "Unknown error"))
+                degradeToErrorPreservingCachedItems(tab, e.message ?: "Unknown error")
             } finally {
                 controller.isInitialLoading = false
             }
@@ -335,12 +335,14 @@ class ChannelDetailViewModel @AssistedInject constructor(
         var pageFetches = 0
         var emptyContinuations = 0
         var accumulatedItems = emptyList<ChannelVideo>()
+        var cachedEmittedCount = 0
         var loadError: String? = null
         try {
             // Step 6: paint cached videos before NewPipe responds. The fresh
-            // fetch overwrites this cached state on completion. On error the
-            // cached emit is replaced with ErrorInitial by [loadInitial]'s
-            // catch — pre-existing UX, intentionally unchanged here.
+            // fetch overwrites this cached state on completion. If the fetch
+            // throws, [loadInitial]'s catch checks for an existing Loaded
+            // state and degrades to ErrorAppend (footer error + visible
+            // cached list) instead of ErrorInitial (blank error screen).
             val cached = readCachedVideosFor(channelId)
             if (cached.isNotEmpty()) {
                 _videosState.value = PaginatedState.Loaded(
@@ -348,6 +350,7 @@ class ChannelDetailViewModel @AssistedInject constructor(
                     nextPage = null,
                     showLoadMoreFooter = false,
                 )
+                cachedEmittedCount = cached.size
                 Log.d(TAG, "Videos initial: emitted ${cached.size} cached items pre-NewPipe")
             }
 
@@ -402,6 +405,7 @@ class ChannelDetailViewModel @AssistedInject constructor(
                 isAppend = false,
                 success = loadError == null,
                 error = loadError,
+                cachedItemsEmitted = cachedEmittedCount,
             )
         }
     }
@@ -882,6 +886,72 @@ class ChannelDetailViewModel @AssistedInject constructor(
                 }
             }
             ChannelTab.ABOUT -> { /* No pagination for About */ }
+        }
+    }
+
+    /**
+     * If a tab is already in [PaginatedState.Loaded] (e.g. Videos painted from
+     * the Step 6 cache), an initial-load failure should not blow the list
+     * away. Convert to [PaginatedState.ErrorAppend] which preserves the
+     * visible items and surfaces the error inline. For tabs without a cache
+     * pre-emit, fall through to the original [PaginatedState.ErrorInitial]
+     * behaviour.
+     */
+    private fun degradeToErrorPreservingCachedItems(tab: ChannelTab, message: String) {
+        when (tab) {
+            ChannelTab.VIDEOS -> {
+                val current = _videosState.value
+                if (current is PaginatedState.Loaded) {
+                    _videosState.value = PaginatedState.ErrorAppend(
+                        message = message,
+                        items = current.items,
+                        nextPage = current.nextPage,
+                        showLoadMoreFooter = current.showLoadMoreFooter,
+                    )
+                } else {
+                    _videosState.value = PaginatedState.ErrorInitial(message)
+                }
+            }
+            ChannelTab.LIVE -> {
+                val current = _liveState.value
+                if (current is PaginatedState.Loaded) {
+                    _liveState.value = PaginatedState.ErrorAppend(
+                        message = message,
+                        items = current.items,
+                        nextPage = current.nextPage,
+                        showLoadMoreFooter = current.showLoadMoreFooter,
+                    )
+                } else {
+                    _liveState.value = PaginatedState.ErrorInitial(message)
+                }
+            }
+            ChannelTab.SHORTS -> {
+                val current = _shortsState.value
+                if (current is PaginatedState.Loaded) {
+                    _shortsState.value = PaginatedState.ErrorAppend(
+                        message = message,
+                        items = current.items,
+                        nextPage = current.nextPage,
+                        showLoadMoreFooter = current.showLoadMoreFooter,
+                    )
+                } else {
+                    _shortsState.value = PaginatedState.ErrorInitial(message)
+                }
+            }
+            ChannelTab.PLAYLISTS -> {
+                val current = _playlistsState.value
+                if (current is PaginatedState.Loaded) {
+                    _playlistsState.value = PaginatedState.ErrorAppend(
+                        message = message,
+                        items = current.items,
+                        nextPage = current.nextPage,
+                        showLoadMoreFooter = current.showLoadMoreFooter,
+                    )
+                } else {
+                    _playlistsState.value = PaginatedState.ErrorInitial(message)
+                }
+            }
+            ChannelTab.ABOUT -> { /* About uses header state, no list to preserve */ }
         }
     }
 

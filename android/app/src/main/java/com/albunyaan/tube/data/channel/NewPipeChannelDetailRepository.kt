@@ -118,7 +118,9 @@ class NewPipeChannelDetailRepository @Inject constructor(
                     // Fall back to the channel-tab path with the original
                     // single-tier shorts filter (matches pre-fix behaviour).
                     return@withContext fetchTabContent(channelId, ChannelTabs.VIDEOS, page) { item ->
-                        (item as? StreamInfoItem)?.takeIf { !it.isShortFormContent }?.toChannelVideo()
+                        (item as? StreamInfoItem)?.takeIf { !it.isShortFormContent }?.also {
+                            keptForCache.add(it)
+                        }?.toChannelVideo()
                     }
                 }
                 retryNewPipeRateLimiterTimeout("uploads playlist for $channelId") {
@@ -152,7 +154,9 @@ class NewPipeChannelDetailRepository @Inject constructor(
                 // Fall back to channel-tab path so the user sees something.
                 Log.w(TAG, "Uploads playlist fetch failed for $channelId, falling back to channel-tab: ${e.message}")
                 fetchTabContent(channelId, ChannelTabs.VIDEOS, page) { item ->
-                    (item as? StreamInfoItem)?.takeIf { !it.isShortFormContent }?.toChannelVideo()
+                    (item as? StreamInfoItem)?.takeIf { !it.isShortFormContent }?.also {
+                        keptForCache.add(it)
+                    }?.toChannelVideo()
                 }
             }
         }
