@@ -2,8 +2,13 @@ package com.albunyaan.tube.ui.detail
 
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.text.Editable
+import android.text.TextWatcher
 import android.util.Log
 import android.view.View
+import android.view.inputmethod.EditorInfo
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
@@ -16,8 +21,10 @@ import com.albunyaan.tube.R
 import com.albunyaan.tube.data.channel.ChannelHeader
 import com.albunyaan.tube.data.channel.ChannelTab
 import com.albunyaan.tube.databinding.FragmentChannelDetailBinding
+import com.albunyaan.tube.data.report.ReportTargetType
 import com.albunyaan.tube.share.ShareLinks
 import com.albunyaan.tube.share.ShareMetadataPublisher
+import com.albunyaan.tube.ui.report.ContentReportBottomSheet
 import com.albunyaan.tube.ui.detail.tabs.ChannelAboutTabFragment
 import com.albunyaan.tube.ui.detail.tabs.ChannelLiveTabFragment
 import com.albunyaan.tube.ui.detail.tabs.ChannelPlaylistsTabFragment
@@ -60,6 +67,7 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
     private var pageChangeCallback: androidx.viewpager2.widget.ViewPager2.OnPageChangeCallback? = null
     private var appBarOffsetListener: AppBarLayout.OnOffsetChangedListener? = null
     private var currentHeader: ChannelHeader? = null
+    private val searchHandler = Handler(Looper.getMainLooper())
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -67,6 +75,7 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
 
         setupToolbar()
         setupTabs()
+        setupSearch()
         observeHeaderState()
 
         // Restore selected tab
@@ -75,11 +84,43 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
         }
     }
 
+    private fun setupSearch() {
+        val editText = binding?.searchEditText ?: return
+        val clearBtn = binding?.searchClearButton ?: return
+
+        editText.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                val query = s?.toString() ?: ""
+                clearBtn.visibility = if (query.isNotEmpty()) View.VISIBLE else View.GONE
+                searchHandler.removeCallbacksAndMessages(null)
+                searchHandler.postDelayed({
+                    viewModel.setSearchQuery(query)
+                }, SEARCH_DEBOUNCE_MS)
+            }
+        })
+
+        editText.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_SEARCH) {
+                searchHandler.removeCallbacksAndMessages(null)
+                viewModel.setSearchQuery(editText.text?.toString() ?: "")
+                true
+            } else false
+        }
+
+        clearBtn.setOnClickListener {
+            searchHandler.removeCallbacksAndMessages(null)
+            editText.text?.clear()
+            viewModel.setSearchQuery("")
+        }
+    }
+
     private fun setupToolbar() {
         binding?.apply {
             toolbar.navigationIcon = AppCompatResources.getDrawable(requireContext(), R.drawable.ic_arrow_back)
             toolbar.title = channelName ?: channelId
-            toolbar.inflateMenu(R.menu.detail_share_menu)
+            toolbar.inflateMenu(R.menu.menu_detail_kebab)
             toolbar.setNavigationOnClickListener {
                 findNavController().navigateUp()
             }
@@ -87,6 +128,10 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
                 when (item.itemId) {
                     R.id.action_share -> {
                         shareChannel()
+                        true
+                    }
+                    R.id.action_report -> {
+                        openReportSheet()
                         true
                     }
                     else -> false
@@ -295,8 +340,14 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
         }
     }
 
+    private fun openReportSheet() {
+        if (channelId.isBlank()) return
+        ContentReportBottomSheet.newInstance(ReportTargetType.CHANNEL, channelId)
+            .show(childFragmentManager, ContentReportBottomSheet.TAG)
+    }
+
     private fun tintToolbarActions(color: Int) {
-        binding?.toolbar?.menu?.findItem(R.id.action_share)?.icon?.mutate()?.setTint(color)
+        binding?.toolbar?.overflowIcon?.mutate()?.setTint(color)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -307,6 +358,7 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
     }
 
     override fun onDestroyView() {
+        searchHandler.removeCallbacksAndMessages(null)
         tabLayoutMediator?.detach()
         tabLayoutMediator = null
         pageChangeCallback?.let { binding?.viewPager?.unregisterOnPageChangeCallback(it) }
@@ -324,6 +376,7 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
         const val ARG_CHANNEL_NAME = "channelName"
         const val ARG_EXCLUDED = "excluded"
         private const val STATE_SELECTED_TAB = "selectedTab"
+        private const val SEARCH_DEBOUNCE_MS = 300L
     }
 }
 

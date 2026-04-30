@@ -27,6 +27,7 @@ export const messages = {
       videoValidation: 'Video Validation',
       archivedContent: 'Archived Content',
       users: 'Users',
+      reports: 'Content Reports',
       audit: 'Audit log',
       activity: 'Activity log',
       settings: 'Settings',
@@ -603,6 +604,59 @@ export const messages = {
         actionFailed: 'Unable to update the proposal. Please try again.'
       },
       notesPlaceholder: 'No notes provided.'
+    },
+    reports: {
+      heading: 'Content Reports',
+      description: 'Review reports submitted by app users and take moderation action.',
+      stats: {
+        pending: 'Pending',
+        newLast3h: 'New (3h)',
+        resolved: 'Resolved',
+        rejected: 'Rejected'
+      },
+      filters: {
+        all: 'All',
+        status: 'Status',
+        targetType: 'Content type',
+        pending: 'Pending',
+        resolved: 'Resolved',
+        rejected: 'Rejected',
+        video: 'Video',
+        channel: 'Channel',
+        playlist: 'Playlist'
+      },
+      table: {
+        col: {
+          type: 'Type',
+          content: 'Content',
+          reasons: 'Reasons',
+          submitted: 'Submitted',
+          status: 'Status',
+          actions: 'Actions'
+        },
+        empty: 'No reports match this filter.',
+        error: 'Unable to load reports.',
+        retry: 'Retry'
+      },
+      actions: {
+        preview: 'Preview',
+        resolve: 'Resolve',
+        reject: 'Reject'
+      },
+      dialog: {
+        resolveTitle: 'Resolve report',
+        rejectTitle: 'Reject report',
+        noteLabelOptional: 'Optional note for the record',
+        notePlaceholder: 'E.g. verified and removed the content…',
+        cancel: 'Cancel',
+        confirm: 'Confirm',
+        submitting: 'Saving…'
+      },
+      pagination: {
+        prev: 'Previous',
+        next: 'Next',
+        page: 'Page {n}'
+      }
     },
     exclusions: {
       heading: 'Exclusions workspace',
@@ -1412,6 +1466,7 @@ export const messages = {
       videoValidation: 'التحقق من الفيديوهات',
       archivedContent: 'المحتوى المؤرشف',
       users: 'المستخدمون',
+      reports: 'البلاغات',
       audit: 'سجل التدقيق',
       activity: 'سجل النشاط',
       settings: 'الإعدادات',
@@ -1934,6 +1989,59 @@ export const messages = {
         actionFailed: 'تعذر تحديث المقترح. حاول مرة أخرى.'
       },
       notesPlaceholder: 'لا توجد ملاحظات.'
+    },
+    reports: {
+      heading: 'البلاغات',
+      description: 'راجع البلاغات المرسلة من مستخدمي التطبيق واتخذ إجراء الإشراف.',
+      stats: {
+        pending: 'قيد الانتظار',
+        newLast3h: 'جديد (3 ساعات)',
+        resolved: 'تمت المعالجة',
+        rejected: 'مرفوض'
+      },
+      filters: {
+        all: 'الكل',
+        status: 'الحالة',
+        targetType: 'نوع المحتوى',
+        pending: 'قيد الانتظار',
+        resolved: 'تمت المعالجة',
+        rejected: 'مرفوض',
+        video: 'فيديو',
+        channel: 'قناة',
+        playlist: 'قائمة تشغيل'
+      },
+      table: {
+        col: {
+          type: 'النوع',
+          content: 'المحتوى',
+          reasons: 'الأسباب',
+          submitted: 'تاريخ الإرسال',
+          status: 'الحالة',
+          actions: 'الإجراءات'
+        },
+        empty: 'لا توجد بلاغات تطابق هذا المرشح.',
+        error: 'تعذّر تحميل البلاغات.',
+        retry: 'إعادة المحاولة'
+      },
+      actions: {
+        preview: 'معاينة',
+        resolve: 'معالجة',
+        reject: 'رفض'
+      },
+      dialog: {
+        resolveTitle: 'معالجة البلاغ',
+        rejectTitle: 'رفض البلاغ',
+        noteLabelOptional: 'ملاحظة اختيارية',
+        notePlaceholder: 'مثال: تم التحقق وإزالة المحتوى…',
+        cancel: 'إلغاء',
+        confirm: 'تأكيد',
+        submitting: 'جارٍ الحفظ…'
+      },
+      pagination: {
+        prev: 'السابق',
+        next: 'التالي',
+        page: 'الصفحة {n}'
+      }
     },
     exclusions: {
       heading: 'مساحة الاستثناءات',
@@ -2576,6 +2684,7 @@ export const messages = {
       videoValidation: 'Video Validatie',
       archivedContent: 'Gearchiveerde Inhoud',
       users: 'Gebruikers',
+      reports: 'Meldingen',
       audit: 'Auditlogboek',
       activity: 'Activiteitenlogboek',
       settings: 'Instellingen',
@@ -3096,6 +3205,59 @@ export const messages = {
         actionFailed: 'Het voorstel kan niet worden bijgewerkt. Probeer het opnieuw.'
       },
       notesPlaceholder: 'Geen notities toegevoegd.'
+    },
+    reports: {
+      heading: 'Inhoudsbeheer — Meldingen',
+      description: 'Bekijk meldingen van app-gebruikers en neem moderatiemaatregelen.',
+      stats: {
+        pending: 'In behandeling',
+        newLast3h: 'Nieuw (3u)',
+        resolved: 'Opgelost',
+        rejected: 'Afgewezen'
+      },
+      filters: {
+        all: 'Alle',
+        status: 'Status',
+        targetType: 'Inhoudstype',
+        pending: 'In behandeling',
+        resolved: 'Opgelost',
+        rejected: 'Afgewezen',
+        video: "Video",
+        channel: 'Kanaal',
+        playlist: 'Afspeellijst'
+      },
+      table: {
+        col: {
+          type: 'Type',
+          content: 'Inhoud',
+          reasons: 'Redenen',
+          submitted: 'Ingediend',
+          status: 'Status',
+          actions: 'Acties'
+        },
+        empty: 'Geen meldingen gevonden voor dit filter.',
+        error: 'Kon meldingen niet laden.',
+        retry: 'Opnieuw proberen'
+      },
+      actions: {
+        preview: 'Bekijken',
+        resolve: 'Oplossen',
+        reject: 'Afwijzen'
+      },
+      dialog: {
+        resolveTitle: 'Melding oplossen',
+        rejectTitle: 'Melding afwijzen',
+        noteLabelOptional: 'Optionele opmerking',
+        notePlaceholder: 'Bijv. inhoud gecontroleerd en verwijderd…',
+        cancel: 'Annuleren',
+        confirm: 'Bevestigen',
+        submitting: 'Opslaan…'
+      },
+      pagination: {
+        prev: 'Vorige',
+        next: 'Volgende',
+        page: 'Pagina {n}'
+      }
     },
     exclusions: {
       heading: 'Workspace uitzonderingen',

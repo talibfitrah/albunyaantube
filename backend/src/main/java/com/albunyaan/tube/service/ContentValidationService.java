@@ -46,6 +46,7 @@ public class ContentValidationService {
     private final AuditLogService auditLogService;
     private final ValidationRunRepository validationRunRepository;
     private final ValidationProperties validationProperties;
+    private final PublicContentCacheService publicContentCacheService;
 
     public ContentValidationService(
             ChannelRepository channelRepository,
@@ -54,7 +55,8 @@ public class ContentValidationService {
             YouTubeService youtubeService,
             AuditLogService auditLogService,
             ValidationRunRepository validationRunRepository,
-            ValidationProperties validationProperties
+            ValidationProperties validationProperties,
+            PublicContentCacheService publicContentCacheService
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
@@ -63,6 +65,7 @@ public class ContentValidationService {
         this.auditLogService = auditLogService;
         this.validationRunRepository = validationRunRepository;
         this.validationProperties = validationProperties;
+        this.publicContentCacheService = publicContentCacheService;
     }
 
     // ==================== Validation Triggers ====================
@@ -1104,6 +1107,9 @@ public class ContentValidationService {
             }
         }
 
+        if (successCount > 0) {
+            publicContentCacheService.evictPublicContentCaches();
+        }
         return new BulkActionResult(successCount, ids.size() - successCount, errors);
     }
 

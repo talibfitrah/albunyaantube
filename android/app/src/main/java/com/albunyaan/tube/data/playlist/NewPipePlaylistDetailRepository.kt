@@ -3,6 +3,8 @@ package com.albunyaan.tube.data.playlist
 import android.util.Log
 import com.albunyaan.tube.data.channel.Page
 import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
+import com.albunyaan.tube.data.index.IndexRepository
+import com.albunyaan.tube.data.index.StreamIndexItem
 import com.albunyaan.tube.download.DownloadPolicy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -32,7 +34,8 @@ class NewPipePlaylistDetailRepository @Inject constructor(
     // Inject NewPipeExtractorClient to ensure NewPipe is initialized with shared
     // downloader, localization (US), and metrics. The client initializes NewPipe
     // in its constructor via initializeNewPipe().
-    @Suppress("unused") private val extractorClient: NewPipeExtractorClient
+    @Suppress("unused") private val extractorClient: NewPipeExtractorClient,
+    private val indexRepository: IndexRepository
 ) : PlaylistDetailRepository {
 
     private val youtubeService = ServiceList.YouTube
@@ -110,6 +113,9 @@ class NewPipePlaylistDetailRepository @Inject constructor(
 
                     Log.d(TAG, "Fetched more: ${items.size} items starting at $itemOffset, hasMore=${nextPage != null}")
                 }
+
+                // Piggyback index loaded items (fire-and-forget, never blocks UI)
+                indexRepository.indexPlaylistStreams(playlistId, items.map { it.toIndexItem() })
 
                 // Return the next item offset for the caller to use on subsequent calls
                 val nextItemOffset = itemOffset + items.size
@@ -281,6 +287,12 @@ class NewPipePlaylistDetailRepository @Inject constructor(
             null
         }
     }
+
+    private fun PlaylistItem.toIndexItem() = StreamIndexItem(
+        id = videoId, name = title, thumbnailUrl = thumbnailUrl,
+        uploaderName = channelName, channelId = channelId,
+        duration = durationSeconds?.toLong(), viewCount = viewCount, streamType = "VIDEO"
+    )
 
     private data class CacheEntry<T>(val value: T, val timestamp: Long)
 

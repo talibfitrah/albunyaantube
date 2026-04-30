@@ -75,6 +75,8 @@ import com.albunyaan.tube.player.PlaybackRecoveryManager
 import com.albunyaan.tube.player.PlaybackService
 import com.albunyaan.tube.player.StreamRequestTelemetry
 import com.albunyaan.tube.player.StreamUrlRefreshManager
+import com.albunyaan.tube.data.report.ReportTargetType
+import com.albunyaan.tube.ui.report.ContentReportBottomSheet
 import javax.inject.Inject
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.flow.collectLatest
@@ -431,6 +433,14 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         }
 
         // Setup action buttons
+        binding.reportButton.setOnClickListener {
+            val videoId = viewModel.state.value.currentItem?.streamId
+            if (!videoId.isNullOrBlank()) {
+                ContentReportBottomSheet.newInstance(ReportTargetType.VIDEO, videoId)
+                    .show(childFragmentManager, ContentReportBottomSheet.TAG)
+            }
+        }
+
         binding.favoriteButton.setOnClickListener {
             val wasFavorite = viewModel.state.value.isFavorite
             viewModel.toggleFavorite()

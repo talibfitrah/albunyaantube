@@ -47,7 +47,7 @@ public class NewPipeConfiguration {
     @Value("${app.newpipe.http.read-timeout-seconds:30}")
     private int readTimeoutSeconds;
 
-    @Value("${app.newpipe.http.user-agent:Mozilla/5.0 (Windows NT 10.0; rv:91.0) Gecko/20100101 Firefox/91.0}")
+    @Value("${app.newpipe.http.user-agent:Mozilla/5.0 (Windows NT 10.0; rv:127.0) Gecko/20100101 Firefox/127.0}")
     private String userAgent;
 
     @Value("${app.newpipe.stream-cache-ttl-minutes:30}")

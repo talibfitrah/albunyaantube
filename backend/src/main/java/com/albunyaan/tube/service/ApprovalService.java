@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import com.google.cloud.Timestamp;
 
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 
@@ -38,6 +39,7 @@ public class ApprovalService {
     private final ApprovalRepository approvalRepository;
     private final AuditLogService auditLogService;
     private final SortOrderService sortOrderService;
+    private final StreamIndexService streamIndexService;
 
     public ApprovalService(ChannelRepository channelRepository,
                           PlaylistRepository playlistRepository,
@@ -45,7 +47,8 @@ public class ApprovalService {
                           CategoryRepository categoryRepository,
                           ApprovalRepository approvalRepository,
                           AuditLogService auditLogService,
-                          SortOrderService sortOrderService) {
+                          SortOrderService sortOrderService,
+                          StreamIndexService streamIndexService) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
         this.videoRepository = videoRepository;
@@ -53,6 +56,7 @@ public class ApprovalService {
         this.approvalRepository = approvalRepository;
         this.auditLogService = auditLogService;
         this.sortOrderService = sortOrderService;
+        this.streamIndexService = streamIndexService;
     }
 
     /**
@@ -969,6 +973,12 @@ public class ApprovalService {
         details.put("notes", request.getReviewNotes());
         auditLogService.logRejection("channel", channel.getId(), actorUid, actorDisplayName, details);
 
+        // Remove search index entries for this channel — fire and forget
+        if (channel.getYoutubeId() != null) {
+            CompletableFuture.runAsync(() ->
+                streamIndexService.removeSource("CHANNEL", channel.getYoutubeId()));
+        }
+
         // Return response
         ApprovalResponseDto response = new ApprovalResponseDto();
         response.setStatus("REJECTED");
@@ -1008,6 +1018,12 @@ public class ApprovalService {
         details.put("reason", request.getReason());
         details.put("notes", request.getReviewNotes());
         auditLogService.logRejection("playlist", playlist.getId(), actorUid, actorDisplayName, details);
+
+        // Remove search index entries for this playlist — fire and forget
+        if (playlist.getYoutubeId() != null) {
+            CompletableFuture.runAsync(() ->
+                streamIndexService.removeSource("PLAYLIST", playlist.getYoutubeId()));
+        }
 
         // Return response
         ApprovalResponseDto response = new ApprovalResponseDto();

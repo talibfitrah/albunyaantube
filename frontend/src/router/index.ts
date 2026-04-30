@@ -17,6 +17,7 @@ const VideoValidationView = () => import('@/views/VideoValidationView.vue');
 const ArchivedContentReviewView = () => import('@/views/ArchivedContentReviewView.vue');
 const ContentSortingView = () => import('@/views/ContentSortingView.vue');
 const UsersManagementView = () => import('@/views/UsersManagementView.vue');
+const ReportsView = () => import('@/views/ReportsView.vue');
 const AuditLogView = () => import('@/views/AuditLogView.vue');
 const ActivityLogView = () => import('@/views/ActivityLogView.vue');
 const ProfileSettingsView = () => import('@/views/ProfileSettingsView.vue');
@@ -83,6 +84,12 @@ const protectedChildRoutes = [
     name: 'archived-content',
     component: ArchivedContentReviewView,
     meta: { requiresAuth: true, requiredRole: 'ADMIN' as UserRole }
+  },
+  {
+    path: 'reports',
+    name: 'reports',
+    component: ReportsView,
+    meta: { requiresAuth: true }
   },
   {
     path: 'users',

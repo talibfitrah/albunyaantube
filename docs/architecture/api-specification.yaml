@@ -126,6 +126,12 @@ paths:
           schema:
             type: string
             enum: [DEFAULT, MOST_POPULAR, NEWEST]
+        - name: q
+          in: query
+          description: Text search filter applied server-side (max 128 chars, case-insensitive)
+          schema:
+            type: string
+            maxLength: 128
       responses:
         '200':
           description: Content page
@@ -320,6 +326,152 @@ paths:
                 items:
                   $ref: '#/components/schemas/ContentItemDto'
                 description: Array of matching content items (not paginated)
+
+  /v1/reports:
+    post:
+      summary: Submit a content report
+      operationId: submitContentReport
+      tags: [Public Content]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetType, targetId, reasons]
+              properties:
+                targetType:
+                  type: string
+                  enum: [VIDEO, PLAYLIST, CHANNEL]
+                targetId:
+                  type: string
+                  maxLength: 128
+                reasons:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                    enum: [MUSIC, NUDITY, BAD_LANGUAGE, FLIRTING, ROMANCE, AWRAH, SHIRK, BIDAH, VIOLENCE, MISINFORMATION, OTHER]
+                otherDescription:
+                  type: string
+                  maxLength: 500
+                  nullable: true
+      responses:
+        '201':
+          description: Report submitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContentReport'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded (max 5 reports per device per hour)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/reports:
+    get:
+      summary: List submitted reports (admin/moderator)
+      operationId: getReports
+      tags: [Reports]
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [PENDING, RESOLVED, REJECTED]
+        - name: targetType
+          in: query
+          schema:
+            type: string
+            enum: [VIDEO, PLAYLIST, CHANNEL]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Paginated list of reports
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ContentReport'
+
+  /admin/reports/{id}:
+    patch:
+      summary: Resolve or reject a report (admin/moderator)
+      operationId: resolveReport
+      tags: [Reports]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [RESOLVED, REJECTED]
+                note:
+                  type: string
+                  nullable: true
+      responses:
+        '200':
+          description: Updated report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContentReport'
+
+  /admin/reports/stats:
+    get:
+      summary: Report statistics (admin/moderator)
+      operationId: getReportStats
+      tags: [Reports]
+      responses:
+        '200':
+          description: Report counts by status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pending:
+                    type: integer
+                  resolved:
+                    type: integer
+                  rejected:
+                    type: integer
+                  newLast3h:
+                    type: integer
 
   # ============================================================================
   # SORT ORDER (Admin)
@@ -2860,6 +3012,43 @@ components:
       description: Firebase Authentication JWT token
 
   schemas:
+    ContentReport:
+      type: object
+      properties:
+        id:
+          type: string
+        targetType:
+          type: string
+          enum: [VIDEO, PLAYLIST, CHANNEL]
+        targetId:
+          type: string
+        reasons:
+          type: array
+          items:
+            type: string
+            enum: [MUSIC, NUDITY, BAD_LANGUAGE, FLIRTING, ROMANCE, AWRAH, SHIRK, BIDAH, VIOLENCE, MISINFORMATION, OTHER]
+        otherDescription:
+          type: string
+          nullable: true
+        deviceId:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, RESOLVED, REJECTED]
+        createdAt:
+          type: string
+          format: date-time
+        resolvedAt:
+          type: string
+          format: date-time
+          nullable: true
+        resolvedBy:
+          type: string
+          nullable: true
+        resolutionNote:
+          type: string
+          nullable: true
+
     HomeCategoryDto:
       type: object
       properties:
@@ -4236,6 +4425,10 @@ components:
           format: int64
           nullable: true
           description: View count (videos only)
+        channelTitle:
+          type: string
+          nullable: true
+          description: Channel name for video/stream results
         # Channel-specific fields
         subscribers:
           type: integer

@@ -37,8 +37,10 @@
   --color-primary: var(--color-brand);
   --color-primary-hover: #12704d;
   --color-text: var(--color-text-primary);
+  --color-text-muted: var(--color-text-secondary);
   --color-background: var(--color-bg);
   --color-surface-variant: var(--color-surface-alt);
+  --color-surface-hover: var(--color-surface-alt);
 }
 
 /* Dark mode — set via JS (resolves system preference + manual override) */
@@ -75,8 +77,10 @@
   --color-primary: var(--color-brand);
   --color-primary-hover: #2aad7d;
   --color-text: var(--color-text-primary);
+  --color-text-muted: var(--color-text-secondary);
   --color-background: var(--color-bg);
   --color-surface-variant: var(--color-surface-alt);
+  --color-surface-hover: var(--color-surface-alt);
 }
 
 body {
@@ -114,4 +118,14 @@ select {
   outline: 2px solid var(--color-success);
   outline-offset: 2px;
   box-shadow: var(--shadow-focus);
+}
+
+input, textarea, select {
+  color: var(--color-text-primary);
+  background-color: var(--color-surface);
+}
+
+::placeholder {
+  color: var(--color-text-secondary);
+  opacity: 1;
 }

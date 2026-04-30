@@ -55,6 +55,10 @@ class ChannelPlaylistsTabFragment : BaseChannelListTabFragment<ChannelPlaylist>(
 
     override fun createAdapter(): RecyclerView.Adapter<*> = adapter
 
+    override fun matchesQuery(item: ChannelPlaylist, lowerQuery: String): Boolean =
+        item.title.lowercase().contains(lowerQuery) ||
+        item.uploaderName?.lowercase()?.contains(lowerQuery) == true
+
     override fun updateAdapterData(items: List<ChannelPlaylist>) {
         adapter.submitList(items)
     }

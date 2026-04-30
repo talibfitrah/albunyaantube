@@ -142,5 +142,18 @@ public class CacheConfig {
                 .recordStats()
                 .build();
     }
+
+    /**
+     * Rate-limit cache for content report submissions.
+     * Key: deviceId or IP address. Value: submission count within the TTL window.
+     * Max 5 submissions per device per hour.
+     */
+    @Bean
+    public com.github.benmanes.caffeine.cache.Cache<String, java.util.concurrent.atomic.AtomicInteger> reportRateLimitCache() {
+        return Caffeine.newBuilder()
+                .expireAfterWrite(1, TimeUnit.HOURS)
+                .maximumSize(10_000)
+                .build();
+    }
 }
 

@@ -2,6 +2,8 @@ package com.albunyaan.tube.data.channel
 
 import android.util.Log
 import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
+import com.albunyaan.tube.data.index.IndexRepository
+import com.albunyaan.tube.data.index.StreamIndexItem
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -45,7 +47,8 @@ class NewPipeChannelDetailRepository @Inject constructor(
     // Inject NewPipeExtractorClient to ensure NewPipe is initialized with shared
     // downloader, localization (US), and metrics. The client initializes NewPipe
     // in its constructor via initializeNewPipe().
-    @Suppress("unused") private val extractorClient: NewPipeExtractorClient
+    @Suppress("unused") private val extractorClient: NewPipeExtractorClient,
+    private val indexRepository: IndexRepository
 ) : ChannelDetailRepository {
 
     private val youtubeService = ServiceList.YouTube
@@ -62,21 +65,27 @@ class NewPipeChannelDetailRepository @Inject constructor(
     }
 
     override suspend fun getVideos(channelId: String, page: Page?): ChannelPage<ChannelVideo> {
-        return fetchTabContent(channelId, ChannelTabs.VIDEOS, page) { item ->
+        val result = fetchTabContent(channelId, ChannelTabs.VIDEOS, page) { item ->
             (item as? StreamInfoItem)?.takeIf { !it.isShortFormContent }?.toChannelVideo()
         }
+        indexRepository.indexChannelStreams(channelId, result.items.map { it.toIndexItem("VIDEO") })
+        return result
     }
 
     override suspend fun getLiveStreams(channelId: String, page: Page?): ChannelPage<ChannelLiveStream> {
-        return fetchTabContent(channelId, ChannelTabs.LIVESTREAMS, page) { item ->
+        val result = fetchTabContent(channelId, ChannelTabs.LIVESTREAMS, page) { item ->
             (item as? StreamInfoItem)?.toChannelLiveStream()
         }
+        indexRepository.indexChannelStreams(channelId, result.items.map { it.toIndexItem() })
+        return result
     }
 
     override suspend fun getShorts(channelId: String, page: Page?): ChannelPage<ChannelShort> {
-        return fetchTabContent(channelId, ChannelTabs.SHORTS, page) { item ->
+        val result = fetchTabContent(channelId, ChannelTabs.SHORTS, page) { item ->
             (item as? StreamInfoItem)?.toChannelShort()
         }
+        indexRepository.indexChannelStreams(channelId, result.items.map { it.toIndexItem() })
+        return result
     }
 
     override suspend fun getPlaylists(channelId: String, page: Page?): ChannelPage<ChannelPlaylist> {
@@ -419,6 +428,25 @@ class NewPipeChannelDetailRepository @Inject constructor(
                 ?: url.substringAfterLast("/").substringBefore("?")
         }
     }
+
+    private fun ChannelVideo.toIndexItem(streamType: String = "VIDEO") = StreamIndexItem(
+        id = id, name = title, thumbnailUrl = thumbnailUrl,
+        uploaderName = uploaderName, channelId = null,
+        duration = durationSeconds?.toLong(), viewCount = viewCount, streamType = streamType
+    )
+
+    private fun ChannelShort.toIndexItem() = StreamIndexItem(
+        id = id, name = title, thumbnailUrl = thumbnailUrl,
+        uploaderName = null, channelId = null,
+        duration = durationSeconds?.toLong(), viewCount = viewCount, streamType = "SHORT"
+    )
+
+    private fun ChannelLiveStream.toIndexItem() = StreamIndexItem(
+        id = id, name = title, thumbnailUrl = thumbnailUrl,
+        uploaderName = uploaderName, channelId = null,
+        duration = durationSeconds?.toLong(), viewCount = viewCount,
+        streamType = if (isLiveNow) "LIVE" else "PAST_LIVE"
+    )
 
     private data class CacheEntry<T>(val value: T, val timestamp: Long)
 

@@ -18,6 +18,7 @@ import com.albunyaan.tube.ui.detail.ChannelDetailViewModel
 import com.albunyaan.tube.ui.detail.adapters.ListFooterAdapter
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 /**
@@ -225,9 +226,30 @@ abstract class BaseChannelListTabFragment<T> : Fragment(R.layout.fragment_channe
         }
     }
 
+    protected open fun matchesQuery(item: T, lowerQuery: String): Boolean = true
+
     private fun observeState() {
         viewLifecycleOwner.lifecycleScope.launch {
-            getState().collect { state ->
+            combine(getState(), viewModel.searchQuery) { state, query ->
+                val lowerQuery = query.trim().lowercase(java.util.Locale.ROOT)
+                if (lowerQuery.isEmpty()) {
+                    state
+                } else {
+                    @Suppress("UNCHECKED_CAST")
+                    when (state) {
+                        is ChannelDetailViewModel.PaginatedState.Loaded -> {
+                            val filtered = state.items.filter { matchesQuery(it, lowerQuery) }
+                            if (filtered.isEmpty()) ChannelDetailViewModel.PaginatedState.Empty
+                            else state.copy(items = filtered, nextPage = null)
+                        }
+                        is ChannelDetailViewModel.PaginatedState.ErrorAppend -> {
+                            val filtered = state.items.filter { matchesQuery(it, lowerQuery) }
+                            state.copy(items = filtered)
+                        }
+                        else -> state
+                    }
+                }
+            }.collect { state ->
                 updateUI(state)
             }
         }

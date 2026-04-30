@@ -250,6 +250,7 @@ function getNavIcon(labelKey: string): string {
     'navigation.contentSearch': '🔍',
     'navigation.categories': '🏷️',
     'navigation.approvals': '✅',
+    'navigation.reports': '🚩',
     'navigation.contentLibrary': '📚',
     'navigation.contentSorting': '↕️',
     'navigation.exclusions': '🚫',

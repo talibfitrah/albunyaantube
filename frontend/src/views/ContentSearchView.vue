@@ -550,8 +550,14 @@ async function loadMoreResults() {
   border-radius: 0.5rem;
   border: 1.5px solid var(--color-border);
   background: var(--color-surface);
+  color: var(--color-text-primary);
   font-size: 0.9375rem;
   transition: all 0.2s ease;
+}
+
+.search-input::placeholder {
+  color: var(--color-text-secondary);
+  opacity: 1;
 }
 
 .search-input:hover {
@@ -656,6 +662,7 @@ async function loadMoreResults() {
   border: 1.5px solid var(--color-border);
   border-radius: 0.5rem;
   background: var(--color-surface);
+  color: var(--color-text-primary);
   font-size: 0.9375rem;
   cursor: pointer;
   transition: all 0.2s ease;

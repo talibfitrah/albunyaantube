@@ -156,7 +156,7 @@ public class PublicContentControllerTest {
         // Given
         CursorPageDto page = new CursorPageDto(Collections.emptyList(), null);
         when(contentService.getContent(
-                anyString(), any(), anyInt(), any(), any(), any(), any()))
+                anyString(), any(), anyInt(), any(), any(), any(), any(), any()))
                 .thenReturn(page);
 
         // When & Then
@@ -173,7 +173,7 @@ public class PublicContentControllerTest {
         // Given
         CursorPageDto page = new CursorPageDto(Collections.emptyList(), null);
         when(contentService.getContent(
-                anyString(), any(), anyInt(), eq("islamic-lectures"), any(), any(), any()))
+                anyString(), any(), anyInt(), eq("islamic-lectures"), any(), any(), any(), any()))
                 .thenReturn(page);
 
         // When & Then
@@ -190,7 +190,7 @@ public class PublicContentControllerTest {
         // Given
         CursorPageDto page = new CursorPageDto(Collections.emptyList(), null);
         when(contentService.getContent(
-                anyString(), any(), eq(50), any(), any(), any(), any()))
+                anyString(), any(), eq(50), any(), any(), any(), any(), any()))
                 .thenReturn(page);
 
         // When & Then - Request 100, should be capped at 50
@@ -206,7 +206,7 @@ public class PublicContentControllerTest {
         // Given
         CursorPageDto page = new CursorPageDto(Collections.emptyList(), null);
         when(contentService.getContent(
-                anyString(), any(), eq(1), any(), any(), any(), any()))
+                anyString(), any(), eq(1), any(), any(), any(), any(), any()))
                 .thenReturn(page);
 
         // When & Then - Request 0, should be set to 1

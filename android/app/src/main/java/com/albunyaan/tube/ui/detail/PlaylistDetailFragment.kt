@@ -2,8 +2,13 @@ package com.albunyaan.tube.ui.detail
 
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.text.Editable
+import android.text.TextWatcher
 import android.util.Log
 import android.view.View
+import android.view.inputmethod.EditorInfo
 import android.widget.Toast
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.content.ContextCompat
@@ -28,12 +33,15 @@ import com.albunyaan.tube.download.DownloadRepository
 import com.albunyaan.tube.download.DownloadStatus
 import com.albunyaan.tube.download.PlaylistDownloadItem
 import com.albunyaan.tube.player.StreamPrefetchService
+import com.albunyaan.tube.data.report.ReportTargetType
 import com.albunyaan.tube.share.ShareLinks
 import com.albunyaan.tube.share.ShareMetadataPublisher
+import com.albunyaan.tube.ui.report.ContentReportBottomSheet
 import com.albunyaan.tube.ui.detail.adapters.PlaylistVideosAdapter
 import com.google.android.material.chip.Chip
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.lifecycle.withCreationCallback
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -88,6 +96,7 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
     private var downloadStates: Map<String, Pair<DownloadStatus, Int>> = emptyMap()
     private var appBarOffsetListener: AppBarLayout.OnOffsetChangedListener? = null
     private var currentHeader: PlaylistHeader? = null
+    private val searchHandler = Handler(Looper.getMainLooper())
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -95,15 +104,48 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
 
         setupToolbar()
         setupRecyclerView()
+        setupSearch()
         setupActionButtons()
         observeViewModel()
         observeDownloads()
     }
 
+    private fun setupSearch() {
+        val editText = binding?.searchEditText ?: return
+        val clearBtn = binding?.searchClearButton ?: return
+
+        editText.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                val query = s?.toString() ?: ""
+                clearBtn.visibility = if (query.isNotEmpty()) View.VISIBLE else View.GONE
+                searchHandler.removeCallbacksAndMessages(null)
+                searchHandler.postDelayed({
+                    viewModel.setSearchQuery(query)
+                }, SEARCH_DEBOUNCE_MS)
+            }
+        })
+
+        editText.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_SEARCH) {
+                searchHandler.removeCallbacksAndMessages(null)
+                viewModel.setSearchQuery(editText.text?.toString() ?: "")
+                true
+            } else false
+        }
+
+        clearBtn.setOnClickListener {
+            searchHandler.removeCallbacksAndMessages(null)
+            editText.text?.clear()
+            viewModel.setSearchQuery("")
+        }
+    }
+
     private fun setupToolbar() {
         binding?.apply {
             toolbar.navigationIcon = AppCompatResources.getDrawable(requireContext(), R.drawable.ic_arrow_back)
-            toolbar.inflateMenu(R.menu.detail_share_menu)
+            toolbar.inflateMenu(R.menu.menu_detail_kebab)
             toolbar.setNavigationOnClickListener {
                 findNavController().navigateUp()
             }
@@ -111,6 +153,10 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
                 when (item.itemId) {
                     R.id.action_share -> {
                         sharePlaylist()
+                        true
+                    }
+                    R.id.action_report -> {
+                        openReportSheet()
                         true
                     }
                     else -> false
@@ -191,9 +237,30 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
                     }
                 }
 
-                // Items (videos) state
+                // Items (videos) state, filtered by search query
                 launch {
-                    viewModel.itemsState.collect { state ->
+                    combine(viewModel.itemsState, viewModel.searchQuery) { state, query ->
+                        val lowerQuery = query.trim().lowercase(java.util.Locale.ROOT)
+                        if (lowerQuery.isEmpty()) state
+                        else when (state) {
+                            is PlaylistDetailViewModel.PaginatedState.Loaded -> {
+                                val filtered = state.items.filter {
+                                    it.title.lowercase(java.util.Locale.ROOT).contains(lowerQuery) ||
+                                    it.channelName?.lowercase(java.util.Locale.ROOT)?.contains(lowerQuery) == true
+                                }
+                                if (filtered.isEmpty()) PlaylistDetailViewModel.PaginatedState.Empty
+                                else state.copy(items = filtered, nextPage = null)
+                            }
+                            is PlaylistDetailViewModel.PaginatedState.ErrorAppend -> {
+                                val filtered = state.items.filter {
+                                    it.title.lowercase(java.util.Locale.ROOT).contains(lowerQuery) ||
+                                    it.channelName?.lowercase(java.util.Locale.ROOT)?.contains(lowerQuery) == true
+                                }
+                                state.copy(items = filtered)
+                            }
+                            else -> state
+                        }
+                    }.collect { state ->
                         handleItemsState(state)
                     }
                 }
@@ -445,8 +512,14 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
         }
     }
 
+    private fun openReportSheet() {
+        if (playlistId.isBlank()) return
+        ContentReportBottomSheet.newInstance(ReportTargetType.PLAYLIST, playlistId)
+            .show(childFragmentManager, ContentReportBottomSheet.TAG)
+    }
+
     private fun tintToolbarActions(color: Int) {
-        binding?.toolbar?.menu?.findItem(R.id.action_share)?.icon?.mutate()?.setTint(color)
+        binding?.toolbar?.overflowIcon?.mutate()?.setTint(color)
     }
 
     private fun showErrorState(message: String) {
@@ -589,6 +662,7 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
     }
 
     override fun onDestroyView() {
+        searchHandler.removeCallbacksAndMessages(null)
         binding?.appBarLayout?.removeOnOffsetChangedListener(appBarOffsetListener)
         appBarOffsetListener = null
         currentHeader = null
@@ -598,6 +672,7 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
 
     companion object {
         private const val TAG = "PlaylistDetailFragment"
+        private const val SEARCH_DEBOUNCE_MS = 300L
         const val ARG_PLAYLIST_ID = "playlistId"
         const val ARG_PLAYLIST_TITLE = "playlistTitle"
         const val ARG_PLAYLIST_CATEGORY = "playlistCategory"

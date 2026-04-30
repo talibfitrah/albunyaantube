@@ -350,7 +350,7 @@
                 <td class="col-actions">
                   <button type="button" class="action-btn" @click="openDetailsModal(item)" :title="t('contentLibrary.view')">👁</button>
                   <button type="button" class="action-btn" @click="openCategoryModal(item)" :title="t('contentLibrary.categories')">🏷</button>
-                  <button type="button" class="action-btn" @click="openKeywordsModal(item)" :title="t('contentLibrary.keywords')">🔑</button>
+                  <button type="button" class="action-btn keywords-btn" @click="openKeywordsModal(item)" :title="t('contentLibrary.keywords')">🔑</button>
                   <button type="button" class="action-btn delete" @click="confirmDelete(item)" :title="t('contentLibrary.delete')">🗑</button>
                 </td>
               </tr>
@@ -1995,12 +1995,33 @@ onUnmounted(() => {
   background: transparent;
   cursor: pointer;
   font-size: 1.125rem;
-  opacity: 0.6;
-  transition: opacity 0.2s ease;
+  opacity: 0.85;
+  transition: opacity 0.2s ease, background 0.15s;
+  border-radius: 0.25rem;
 }
 
 .action-btn:hover {
   opacity: 1;
+  background: var(--color-surface-alt);
+}
+
+:root[data-theme="dark"] .action-btn:not(.keywords-btn) {
+  filter: brightness(0) invert(1);
+  opacity: 0.8;
+}
+
+:root[data-theme="dark"] .action-btn.keywords-btn {
+  opacity: 1;
+}
+
+:root[data-theme="dark"] .action-btn:not(.keywords-btn):hover {
+  filter: brightness(0) invert(1);
+  opacity: 1;
+  background: var(--color-surface-alt);
+}
+
+:root[data-theme="dark"] .action-btn.keywords-btn:hover {
+  background: var(--color-surface-alt);
 }
 
 /* Mobile Filter Bottom Sheet */

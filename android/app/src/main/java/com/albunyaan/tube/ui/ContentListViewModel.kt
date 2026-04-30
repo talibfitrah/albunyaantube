@@ -9,6 +9,7 @@ import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.source.ContentService
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -43,6 +44,24 @@ class ContentListViewModel(
 
     // Current filter state
     private var currentFilters: FilterState = FilterState()
+
+    // Search query — kept separate from FilterState to avoid DataStore persistence
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+    private var searchJob: Job? = null
+
+    val isSearchActive: Boolean
+        get() = _searchQuery.value.isNotEmpty()
+
+    fun setSearchQuery(q: String) {
+        if (_searchQuery.value == q) return
+        _searchQuery.value = q
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
+            delay(300L)
+            loadContent()
+        }
+    }
 
     // Public read-only accessors for Fragment-side guards
     val canLoadMore: Boolean
@@ -89,7 +108,8 @@ class ContentListViewModel(
                     type = contentType,
                     cursor = null,
                     pageSize = PAGE_SIZE,
-                    filters = currentFilters
+                    filters = currentFilters,
+                    query = _searchQuery.value.takeIf { it.isNotBlank() }
                 )
 
                 allItems.addAll(response.data)
@@ -99,7 +119,8 @@ class ContentListViewModel(
                 Log.d(TAG, "Received ${response.data.size} items, hasMore=$_hasMoreData")
                 _content.value = ContentState.Success(
                     items = allItems.toList(),
-                    hasMoreData = _hasMoreData
+                    hasMoreData = _hasMoreData,
+                    isSearchActive = isSearchActive
                 )
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading content for type=$contentType", e)
@@ -137,7 +158,8 @@ class ContentListViewModel(
                     type = contentType,
                     cursor = null,
                     pageSize = PAGE_SIZE,
-                    filters = currentFilters
+                    filters = currentFilters,
+                    query = _searchQuery.value.takeIf { it.isNotBlank() }
                 )
 
                 allItems.addAll(response.data)
@@ -147,7 +169,8 @@ class ContentListViewModel(
                 Log.d(TAG, "Refresh complete: ${response.data.size} items, hasMore=$_hasMoreData")
                 _content.value = ContentState.Success(
                     items = allItems.toList(),
-                    hasMoreData = _hasMoreData
+                    hasMoreData = _hasMoreData,
+                    isSearchActive = isSearchActive
                 )
             } catch (e: Exception) {
                 Log.e(TAG, "Error refreshing content for type=$contentType", e)
@@ -186,7 +209,8 @@ class ContentListViewModel(
                     type = contentType,
                     cursor = nextCursor,
                     pageSize = PAGE_SIZE,
-                    filters = currentFilters
+                    filters = currentFilters,
+                    query = _searchQuery.value.takeIf { it.isNotBlank() }
                 )
 
                 allItems.addAll(response.data)
@@ -196,7 +220,8 @@ class ContentListViewModel(
                 Log.d(TAG, "Loaded ${response.data.size} more items, total=${allItems.size}, hasMore=$_hasMoreData")
                 _content.value = ContentState.Success(
                     items = allItems.toList(),
-                    hasMoreData = _hasMoreData
+                    hasMoreData = _hasMoreData,
+                    isSearchActive = isSearchActive
                 )
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
@@ -205,7 +230,8 @@ class ContentListViewModel(
                 _content.value = ContentState.Success(
                     items = allItems.toList(),
                     hasMoreData = _hasMoreData,
-                    paginationError = e.message ?: "Failed to load more"
+                    paginationError = e.message ?: "Failed to load more",
+                    isSearchActive = isSearchActive
                 )
             } finally {
                 _isLoadingMore = false
@@ -233,7 +259,8 @@ class ContentListViewModel(
         data class Success(
             val items: List<ContentItem>,
             val hasMoreData: Boolean = true,
-            val paginationError: String? = null
+            val paginationError: String? = null,
+            val isSearchActive: Boolean = false
         ) : ContentState()
         data class Error(val message: String) : ContentState()
     }

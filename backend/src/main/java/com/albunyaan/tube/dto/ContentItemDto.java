@@ -1,6 +1,9 @@
 package com.albunyaan.tube.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
+
+import java.util.List;
 
 /**
  * Unified DTO for content items (channels, playlists, videos) in public API.
@@ -22,6 +25,7 @@ public class ContentItemDto {
     private Integer durationSeconds;
     private Integer uploadedDaysAgo;
     private Long viewCount;
+    private String channelTitle; // channel name for the video
 
     // Channel-specific
     private Long subscribers;
@@ -30,13 +34,18 @@ public class ContentItemDto {
     // Playlist-specific
     private Integer itemCount;
 
+    // Search-only: not serialized to API response
+    @JsonIgnore
+    private List<String> keywords;
+
     public ContentItemDto() {
     }
 
     // Builder pattern
     public static ContentItemDto channel(String id, String name, String category,
                                          Long subscribers, String description,
-                                         String thumbnailUrl, Integer videoCount) {
+                                         String thumbnailUrl, Integer videoCount,
+                                         List<String> keywords) {
         ContentItemDto dto = new ContentItemDto();
         dto.id = id;
         dto.type = "CHANNEL";
@@ -46,12 +55,13 @@ public class ContentItemDto {
         dto.description = description;
         dto.thumbnailUrl = thumbnailUrl;
         dto.videoCount = videoCount;
+        dto.keywords = keywords;
         return dto;
     }
 
     public static ContentItemDto playlist(String id, String title, String category,
                                           Integer itemCount, String description,
-                                          String thumbnailUrl) {
+                                          String thumbnailUrl, List<String> keywords) {
         ContentItemDto dto = new ContentItemDto();
         dto.id = id;
         dto.type = "PLAYLIST";
@@ -60,12 +70,14 @@ public class ContentItemDto {
         dto.itemCount = itemCount;
         dto.description = description;
         dto.thumbnailUrl = thumbnailUrl;
+        dto.keywords = keywords;
         return dto;
     }
 
     public static ContentItemDto video(String id, String title, String category,
                                        Integer durationSeconds, Integer uploadedDaysAgo,
-                                       String description, String thumbnailUrl, Long viewCount) {
+                                       String description, String thumbnailUrl, Long viewCount,
+                                       String channelTitle, List<String> keywords) {
         ContentItemDto dto = new ContentItemDto();
         dto.id = id;
         dto.type = "VIDEO";
@@ -76,6 +88,8 @@ public class ContentItemDto {
         dto.description = description;
         dto.thumbnailUrl = thumbnailUrl;
         dto.viewCount = viewCount;
+        dto.channelTitle = channelTitle;
+        dto.keywords = keywords;
         return dto;
     }
 
@@ -182,6 +196,22 @@ public class ContentItemDto {
 
     public void setItemCount(Integer itemCount) {
         this.itemCount = itemCount;
+    }
+
+    public String getChannelTitle() {
+        return channelTitle;
+    }
+
+    public void setChannelTitle(String channelTitle) {
+        this.channelTitle = channelTitle;
+    }
+
+    public List<String> getKeywords() {
+        return keywords;
+    }
+
+    public void setKeywords(List<String> keywords) {
+        this.keywords = keywords;
     }
 }
 

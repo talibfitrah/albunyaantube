@@ -54,6 +54,16 @@ class PlaylistDetailViewModel @AssistedInject constructor(
     private val _itemsState = MutableStateFlow<PaginatedState<PlaylistItem>>(PaginatedState.Idle)
     val itemsState: StateFlow<PaginatedState<PlaylistItem>> = _itemsState.asStateFlow()
 
+    // Client-side search query for filtering playlist items
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    val isSearchActive: Boolean get() = _searchQuery.value.isNotEmpty()
+
+    fun setSearchQuery(q: String) {
+        _searchQuery.value = q
+    }
+
     // Download state for the playlist
     private val _downloadUiState = MutableStateFlow(PlaylistDownloadUiState())
     val downloadUiState: StateFlow<PlaylistDownloadUiState> = _downloadUiState.asStateFlow()

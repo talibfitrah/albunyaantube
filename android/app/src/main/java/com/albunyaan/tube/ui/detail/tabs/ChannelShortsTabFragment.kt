@@ -182,7 +182,20 @@ class ChannelShortsTabFragment : Fragment(R.layout.fragment_channel_shorts_tab) 
 
     private fun observeState() {
         viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.shortsState.collect { state ->
+            kotlinx.coroutines.flow.combine(viewModel.shortsState, viewModel.searchQuery) { state, query ->
+                val lowerQuery = query.trim().lowercase(java.util.Locale.ROOT)
+                if (lowerQuery.isEmpty()) state
+                else when (state) {
+                    is ChannelDetailViewModel.PaginatedState.Loaded -> {
+                        val filtered = state.items.filter {
+                            it.title.lowercase(java.util.Locale.ROOT).contains(lowerQuery)
+                        }
+                        if (filtered.isEmpty()) ChannelDetailViewModel.PaginatedState.Empty
+                        else state.copy(items = filtered, nextPage = null)
+                    }
+                    else -> state
+                }
+            }.collect { state ->
                 updateUI(state)
             }
         }

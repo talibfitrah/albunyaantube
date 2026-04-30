@@ -10,11 +10,13 @@ import com.albunyaan.tube.model.Category;
 import com.albunyaan.tube.model.CategoryContentOrder;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
+import com.albunyaan.tube.model.SearchableStream;
 import com.albunyaan.tube.model.ValidationStatus;
 import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.CategoryContentOrderRepository;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
+import com.albunyaan.tube.repository.SearchableStreamRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import com.albunyaan.tube.repository.CategoryRepository;
 import org.slf4j.Logger;
@@ -56,6 +58,8 @@ public class PublicContentService {
     private final CategoryRepository categoryRepository;
     private final CategoryContentOrderRepository orderRepository;
     private final Executor contentExecutor;
+    private final SearchableStreamRepository searchableStreamRepository;
+    private final SearchTokenizer searchTokenizer;
 
     public PublicContentService(
             ChannelRepository channelRepository,
@@ -63,7 +67,9 @@ public class PublicContentService {
             VideoRepository videoRepository,
             CategoryRepository categoryRepository,
             CategoryContentOrderRepository orderRepository,
-            @org.springframework.beans.factory.annotation.Qualifier("publicContentExecutor") Executor contentExecutor
+            @org.springframework.beans.factory.annotation.Qualifier("publicContentExecutor") Executor contentExecutor,
+            SearchableStreamRepository searchableStreamRepository,
+            SearchTokenizer searchTokenizer
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
@@ -71,6 +77,8 @@ public class PublicContentService {
         this.categoryRepository = categoryRepository;
         this.orderRepository = orderRepository;
         this.contentExecutor = contentExecutor;
+        this.searchableStreamRepository = searchableStreamRepository;
+        this.searchTokenizer = searchTokenizer;
     }
 
     /**
@@ -87,10 +95,11 @@ public class PublicContentService {
      * @return Paginated content
      */
     @Cacheable(value = CacheConfig.CACHE_PUBLIC_CONTENT,
-               key = "(#type == null || #type.isBlank() ? 'HOME' : #type).toUpperCase(T(java.util.Locale).ROOT) + '-' + T(com.albunyaan.tube.service.PublicContentService).cacheCursorKey(#type, #cursor) + '-' + #limit + '-' + #category + '-' + #length + '-' + #date + '-' + #sort")
+               key = "(#type == null || #type.isBlank() ? 'HOME' : #type).toUpperCase(T(java.util.Locale).ROOT) + '-' + T(com.albunyaan.tube.service.PublicContentService).cacheCursorKey(#type, #cursor) + '-' + #limit + '-' + #category + '-' + #length + '-' + #date + '-' + #sort + '-q' + (#q == null ? '' : #q)",
+               condition = "#q == null || #q.isBlank()")
     public CursorPageDto<ContentItemDto> getContent(
             String type, String cursor, int limit,
-            String category, String length, String date, String sort
+            String category, String length, String date, String sort, String q
     ) throws ExecutionException, InterruptedException, TimeoutException {
 
         // Null-safe: default to HOME if type is null or blank
@@ -106,13 +115,28 @@ public class PublicContentService {
             allCategoryIds = resolveAllCategoryIds(category);
         }
 
+        TextFilter textFilter = new TextFilter(q);
+
         // For content types that support real cursor pagination
         switch (type.toUpperCase(Locale.ROOT)) {
             case "CHANNELS":
+                if (textFilter.isActive()) {
+                    return searchWithOffsetPagination(
+                            getChannels(MAX_SEARCH_FETCH, category, allCategoryIds), textFilter, cursor, limit);
+                }
                 return getChannelsWithCursor(limit, category, allCategoryIds, cursor);
             case "PLAYLISTS":
+                if (textFilter.isActive()) {
+                    return searchWithOffsetPagination(
+                            getPlaylists(MAX_SEARCH_FETCH, category, allCategoryIds), textFilter, cursor, limit);
+                }
                 return getPlaylistsWithCursor(limit, category, allCategoryIds, cursor);
             case "VIDEOS":
+                if (textFilter.isActive()) {
+                    return searchWithOffsetPagination(
+                            getVideos(MAX_SEARCH_FETCH, category, allCategoryIds, length, date, sort),
+                            textFilter, cursor, limit);
+                }
                 return getVideosWithCursor(limit, category, allCategoryIds, cursor, length, date, sort);
             case "HOME":
             default:
@@ -1056,6 +1080,16 @@ public class PublicContentService {
                 results.addAll(searchVideosByText(normalizedQuery, remaining, Math.min(remaining * 3, 50)));
             }
 
+            // Add stream results from searchable_streams index
+            try {
+                int streamLimit = Math.max(1, limit / 2);
+                List<ContentItemDto> streamResults = searchStreams(normalizedQuery, streamLimit);
+                Set<String> existingIds = results.stream().map(ContentItemDto::getId).collect(java.util.stream.Collectors.toSet());
+                streamResults.stream().filter(r -> !existingIds.contains(r.getId())).forEach(results::add);
+            } catch (Exception e) {
+                log.warn("Stream search failed, continuing without stream results: {}", e.getMessage());
+            }
+
             // Cap at requested limit in case distributed fetches returned more
             if (results.size() > limit) {
                 results = new ArrayList<>(results.subList(0, limit));
@@ -1065,7 +1099,15 @@ public class PublicContentService {
         } else if (type.equalsIgnoreCase("PLAYLISTS")) {
             results.addAll(searchPlaylistsByText(normalizedQuery, limit, overFetchLimit));
         } else if (type.equalsIgnoreCase("VIDEOS")) {
-            results.addAll(searchVideosByText(normalizedQuery, limit, overFetchLimit));
+            int half = Math.max(1, limit / 2);
+            List<ContentItemDto> videoResults = searchVideosByText(normalizedQuery, half, overFetchLimit);
+            results.addAll(videoResults);
+            Set<String> existingIds = videoResults.stream()
+                    .map(ContentItemDto::getId)
+                    .collect(java.util.stream.Collectors.toSet());
+            searchStreams(normalizedQuery, half).stream()
+                    .filter(r -> !existingIds.contains(r.getId()))
+                    .forEach(results::add);
         }
 
         return results;
@@ -1468,7 +1510,8 @@ public class PublicContentService {
                 channel.getSubscribers(),
                 channel.getDescription(),
                 channel.getThumbnailUrl(),
-                channel.getVideoCount()
+                channel.getVideoCount(),
+                channel.getKeywords()
         );
     }
 
@@ -1479,7 +1522,8 @@ public class PublicContentService {
                 playlist.getCategory() != null ? playlist.getCategory().getName() : null,
                 playlist.getItemCount(),
                 playlist.getDescription(),
-                playlist.getThumbnailUrl()
+                playlist.getThumbnailUrl(),
+                playlist.getKeywords()
         );
     }
 
@@ -1502,7 +1546,9 @@ public class PublicContentService {
                 uploadedDaysAgo,
                 video.getDescription(),
                 video.getThumbnailUrl(),
-                video.getViewCount()
+                video.getViewCount(),
+                video.getChannelTitle(),
+                video.getKeywords()
         );
     }
 
@@ -1550,6 +1596,20 @@ public class PublicContentService {
         return cursor;
     }
 
+    // TODO: replace with Firestore full-text index (Algolia/extensions) before collection exceeds ~500 items
+    private static final int MAX_SEARCH_FETCH = 1000;
+
+    private CursorPageDto<ContentItemDto> searchWithOffsetPagination(
+            List<ContentItemDto> allItems, TextFilter filter, String cursor, int limit) {
+        List<ContentItemDto> filtered = filter.apply(allItems);
+        int offset = decodeCursorOffset(cursor);
+        int from = Math.min(offset, filtered.size());
+        int to = Math.min(offset + limit, filtered.size());
+        List<ContentItemDto> page = filtered.subList(from, to);
+        boolean hasNext = to < filtered.size();
+        return new CursorPageDto<>(page, hasNext ? encodeCursor(offset + limit) : null);
+    }
+
     private String encodeCursor(int offset) {
         return Base64.getEncoder().encodeToString(String.valueOf(offset).getBytes());
     }
@@ -1580,5 +1640,103 @@ public class PublicContentService {
                 throw (e instanceof RuntimeException re) ? re : new RuntimeException(e);
             }
         }, contentExecutor);
+    }
+
+    /** Package-visible for unit testing. Tokenized AND-match filter across all content fields. */
+    static class TextFilter {
+        private final String[] tokens;
+
+        TextFilter(String q) {
+            if (q == null || q.trim().isEmpty()) {
+                this.tokens = new String[0];
+            } else {
+                this.tokens = q.trim().toLowerCase(Locale.ROOT).split("\\s+");
+            }
+        }
+
+        boolean isActive() { return tokens.length > 0; }
+
+        boolean matches(ContentItemDto dto) {
+            if (!isActive()) return true;
+            String combined = buildCombined(dto);
+            for (String token : tokens) {
+                if (!combined.contains(token)) return false;
+            }
+            return true;
+        }
+
+        List<ContentItemDto> apply(List<ContentItemDto> items) {
+            if (!isActive()) return items;
+            return items.stream().filter(this::matches).collect(Collectors.toList());
+        }
+
+        private String buildCombined(ContentItemDto dto) {
+            StringBuilder sb = new StringBuilder();
+            appendField(sb, dto.getName());
+            appendField(sb, dto.getTitle());
+            appendField(sb, dto.getDescription());
+            appendField(sb, dto.getChannelTitle());
+            List<String> kws = dto.getKeywords();
+            if (kws != null) {
+                for (String kw : kws) appendField(sb, kw);
+            }
+            return sb.toString().toLowerCase(Locale.ROOT);
+        }
+
+        private void appendField(StringBuilder sb, String field) {
+            if (field != null && !field.isEmpty()) {
+                sb.append(' ').append(field);
+            }
+        }
+    }
+
+    private List<ContentItemDto> searchStreams(String normalizedQuery, int limit)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        List<String> queryTokens = searchTokenizer.tokenize(normalizedQuery, null);
+        if (queryTokens.isEmpty()) return java.util.Collections.emptyList();
+
+        String primaryToken = queryTokens.get(0);
+        List<SearchableStream> candidates =
+                searchableStreamRepository.searchByToken(primaryToken, limit * 4);
+
+        if (queryTokens.size() > 1) {
+            List<String> rest = queryTokens.subList(1, queryTokens.size());
+            candidates = candidates.stream()
+                    .filter(s -> {
+                        Set<String> tSet = new HashSet<>(s.getSearchTokens());
+                        return rest.stream().allMatch(tSet::contains);
+                    })
+                    .collect(java.util.stream.Collectors.toList());
+        }
+
+        candidates.sort((a, b) -> scoreStream(b, normalizedQuery) - scoreStream(a, normalizedQuery));
+
+        return candidates.stream()
+                .limit(limit)
+                .map(this::streamToDto)
+                .collect(java.util.stream.Collectors.toList());
+    }
+
+    private int scoreStream(SearchableStream s, String query) {
+        String norm = s.getTitleNorm() != null ? s.getTitleNorm() : "";
+        if (norm.equals(query)) return 10;
+        if (norm.startsWith(query)) return 7;
+        if (norm.contains(query)) return 5;
+        return 1;
+    }
+
+    private ContentItemDto streamToDto(SearchableStream s) {
+        return ContentItemDto.video(
+                s.getStreamId(),
+                s.getTitle(),
+                null,
+                s.getDurationSeconds() != null ? s.getDurationSeconds().intValue() : 0,
+                0,
+                null,
+                s.getThumbnailUrl(),
+                s.getViewCount(),
+                s.getChannelName(),
+                null
+        );
     }
 }

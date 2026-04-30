@@ -44,6 +44,7 @@
     <string name="detail_excluded_banner">This item is currently unavailable due to policy restrictions.</string>
     <string name="player_audio_only_label">Audio only</string>
     <string name="player_action_audio">Audio</string>
+    <string name="player_action_report">Report</string>
     <string name="player_status_audio_only">Playing audio-only stream.</string>
     <string name="player_status_video_playing">Playing video stream.</string>
     <string name="player_status_initializing">Initializing player…</string>
@@ -205,6 +206,10 @@
     <string name="home_empty_videos">No videos available yet</string>
     <string name="videos_empty_title">No videos yet</string>
     <string name="videos_empty_subtitle">Approved videos will appear here</string>
+    <string name="channels_empty_title">No channels yet</string>
+    <string name="channels_empty_subtitle">Approved channels will appear here</string>
+    <string name="playlists_empty_title">No playlists yet</string>
+    <string name="playlists_empty_subtitle">Approved playlists will appear here</string>
     <string name="search">Search</string>
     <string name="categories">Categories</string>
     <string name="subcategories_title">Subcategories</string>
@@ -231,7 +236,7 @@
     <string name="player_added_to_favorites">Added to favorites</string>
     <string name="player_removed_from_favorites">Removed from favorites</string>
     <string name="player_favorite_toggle_error">Failed to update favorites. Please try again.</string>
-    <string name="player_action_share">Share video</string>
+    <string name="player_action_share">Share</string>
     <string name="action_share">Share</string>
     <string name="share_watch_in_app">Watch in FitrahTube:</string>
     <string name="share_channel_in_app">Open this channel in FitrahTube:</string>
@@ -517,7 +522,8 @@
     <string name="cancel">Cancel</string>
 
     <!-- Search Screen -->
-    <string name="search_hint">Search channels, playlists, videos…</string>
+    <string name="search_hint">Search…</string>
+    <string name="search_clear">Clear search</string>
     <string name="search_recent">Recent searches</string>
     <string name="search_clear_history">Clear</string>
     <string name="search_no_results">No results found</string>
@@ -559,4 +565,26 @@
         <item quantity="one">You are %d step away from being a developer</item>
         <item quantity="other">You are %d steps away from being a developer</item>
     </plurals>
+
+    <!-- Content Reporting -->
+    <string name="report_content">Report</string>
+    <string name="report_title">Report Content</string>
+    <string name="report_subtitle">Select all reasons that apply</string>
+    <string name="report_reason_music">Music / Instruments</string>
+    <string name="report_reason_nudity">Nudity / Immodesty</string>
+    <string name="report_reason_bad_language">Bad Language</string>
+    <string name="report_reason_flirting">Flirting / Innuendo</string>
+    <string name="report_reason_romance">Romance / Love Content</string>
+    <string name="report_reason_awrah">Awrah Exposure</string>
+    <string name="report_reason_shirk">Shirk / Polytheism</string>
+    <string name="report_reason_bidah">Bid\'ah / Innovation</string>
+    <string name="report_reason_violence">Violence / Gore</string>
+    <string name="report_reason_misinformation">Misinformation</string>
+    <string name="report_reason_other">Other</string>
+    <string name="report_other_hint">Please describe…</string>
+    <string name="report_submit">Submit Report</string>
+    <string name="report_success">Thank you — your report has been submitted</string>
+    <string name="report_rate_limited">You\'ve sent too many reports recently. Please try again later.</string>
+    <string name="report_error">Failed to submit report. Please try again.</string>
+    <string name="report_select_reason">Please select at least one reason</string>
 </resources>

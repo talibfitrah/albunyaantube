@@ -76,7 +76,7 @@ class PublicContentServicePaginationTest {
         // Act
         CursorPageDto<ContentItemDto> response = publicContentService.getContent(
                 "CHANNELS", null, 5, null, null, null, null
-        );
+        , null);
 
         // Assert
         assertNotNull(response);
@@ -98,7 +98,7 @@ class PublicContentServicePaginationTest {
         // Act
         CursorPageDto<ContentItemDto> response = publicContentService.getContent(
                 "CHANNELS", null, 5, null, null, null, null
-        );
+        , null);
 
         // Assert
         assertNotNull(response);
@@ -121,7 +121,7 @@ class PublicContentServicePaginationTest {
         // Act
         CursorPageDto<ContentItemDto> response = publicContentService.getContent(
                 "CHANNELS", null, 5, "islamic", null, null, null
-        );
+        , null);
 
         // Assert
         assertNotNull(response);
@@ -144,7 +144,7 @@ class PublicContentServicePaginationTest {
         // Act
         CursorPageDto<ContentItemDto> response = publicContentService.getContent(
                 "CHANNELS", cursor, 5, null, null, null, null
-        );
+        , null);
 
         // Assert
         assertNotNull(response);
@@ -165,7 +165,7 @@ class PublicContentServicePaginationTest {
         // Act
         CursorPageDto<ContentItemDto> response = publicContentService.getContent(
                 "PLAYLISTS", null, 5, null, null, null, null
-        );
+        , null);
 
         // Assert
         assertNotNull(response);
@@ -188,7 +188,7 @@ class PublicContentServicePaginationTest {
         // Act
         CursorPageDto<ContentItemDto> response = publicContentService.getContent(
                 "VIDEOS", null, 5, null, null, null, null
-        );
+        , null);
 
         // Assert
         assertNotNull(response);
@@ -209,7 +209,7 @@ class PublicContentServicePaginationTest {
         // Act - apply length filter
         CursorPageDto<ContentItemDto> response = publicContentService.getContent(
                 "VIDEOS", null, 5, null, "SHORT", null, null
-        );
+        , null);
 
         // Assert
         assertNotNull(response);
@@ -231,7 +231,7 @@ class PublicContentServicePaginationTest {
         // Act
         CursorPageDto<ContentItemDto> response = publicContentService.getContent(
                 "HOME", null, 6, null, null, null, null
-        );
+        , null);
 
         // Assert
         assertNotNull(response);
@@ -252,10 +252,10 @@ class PublicContentServicePaginationTest {
 
         CursorPageDto<ContentItemDto> firstPage = publicContentService.getContent(
                 "HOME", null, 50, "kids", null, null, null
-        );
+        , null);
         CursorPageDto<ContentItemDto> secondPage = publicContentService.getContent(
                 "HOME", firstPage.getPageInfo().getNextCursor(), 50, "kids", null, null, null
-        );
+        , null);
 
         assertEquals(50, firstPage.getData().size());
         assertNotNull(firstPage.getPageInfo().getNextCursor());
@@ -299,7 +299,7 @@ class PublicContentServicePaginationTest {
 
         CursorPageDto<ContentItemDto> response = publicContentService.getContent(
                 "HOME", null, 10, "parent", null, null, null
-        );
+        , null);
 
         assertEquals(2, response.getData().size());
         assertEquals("yt-parent", response.getData().get(0).getId());
@@ -329,7 +329,7 @@ class PublicContentServicePaginationTest {
         // Should not throw — negative offset is clamped to 0
         CursorPageDto<ContentItemDto> response = publicContentService.getContent(
                 "HOME", negativeCursor, 5, "kids", null, null, null
-        );
+        , null);
 
         assertNotNull(response);
         // Should return items starting from offset 0 (clamped)
@@ -353,7 +353,7 @@ class PublicContentServicePaginationTest {
 
         CursorPageDto<ContentItemDto> response = publicContentService.getContent(
                 "HOME", null, 20, "kids", null, null, null
-        );
+        , null);
 
         assertEquals(20, response.getData().size());
         // No phantom next cursor: we over-fetched by 1, got exactly 20, so hasNext=false

@@ -413,7 +413,38 @@
                     android:orientation="horizontal"
                     android:padding="@dimen/spacing_md"
                     android:gravity="center"
-                    android:weightSum="4">
+                    android:weightSum="5">
+
+                    <!-- Share Button -->
+                    <LinearLayout
+                        android:id="@+id/shareButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:background="?attr/selectableItemBackground"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:padding="@dimen/spacing_md"
+                        android:contentDescription="@string/player_action_share">
+
+                        <ImageView
+                            android:layout_width="@dimen/icon_medium"
+                            android:layout_height="@dimen/icon_medium"
+                            android:src="@drawable/ic_share"
+                            app:tint="@color/primary_green" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/spacing_xs"
+                            android:text="@string/player_action_share"
+                            android:textAlignment="center"
+                            android:textColor="@color/primary_green"
+                            android:textSize="@dimen/text_caption" />
+
+                    </LinearLayout>
 
                     <!-- Favorite Button -->
                     <LinearLayout
@@ -448,49 +479,18 @@
 
                     </LinearLayout>
 
-                    <!-- Share Button -->
-                    <LinearLayout
-                        android:id="@+id/shareButton"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical"
-                        android:gravity="center"
-                        android:background="?attr/selectableItemBackground"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:padding="@dimen/spacing_md"
-                        android:contentDescription="@string/player_action_share">
-
-                        <ImageView
-                            android:layout_width="@dimen/icon_medium"
-                            android:layout_height="@dimen/icon_medium"
-                            android:src="@drawable/ic_share"
-                            app:tint="@color/primary_green" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/spacing_xs"
-                            android:text="@string/player_action_share"
-                            android:textAlignment="center"
-                            android:textColor="@color/primary_green"
-                            android:textSize="@dimen/text_caption" />
-
-                    </LinearLayout>
-
                     <!-- Download Button -->
                     <LinearLayout
                         android:id="@+id/downloadButton"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:gravity="center"
                         android:background="?attr/selectableItemBackground"
                         android:clickable="true"
-                        android:contentDescription="@string/player_action_download"
                         android:focusable="true"
-                        android:gravity="center"
-                        android:orientation="vertical"
+                        android:contentDescription="@string/player_action_download"
                         android:padding="@dimen/spacing_md">
 
                         <ImageView
@@ -535,6 +535,37 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/spacing_xs"
                             android:text="@string/player_action_audio"
+                            android:textAlignment="center"
+                            android:textColor="@color/primary_green"
+                            android:textSize="@dimen/text_caption" />
+
+                    </LinearLayout>
+
+                    <!-- Report Button -->
+                    <LinearLayout
+                        android:id="@+id/reportButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:background="?attr/selectableItemBackground"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:padding="@dimen/spacing_md"
+                        android:contentDescription="@string/player_action_report">
+
+                        <ImageView
+                            android:layout_width="@dimen/icon_medium"
+                            android:layout_height="@dimen/icon_medium"
+                            android:src="@drawable/ic_flag"
+                            app:tint="@color/primary_green" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/spacing_xs"
+                            android:text="@string/player_action_report"
                             android:textAlignment="center"
                             android:textColor="@color/primary_green"
                             android:textSize="@dimen/text_caption" />
