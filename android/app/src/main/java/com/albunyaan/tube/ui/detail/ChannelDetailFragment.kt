@@ -120,8 +120,7 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
         binding?.apply {
             toolbar.navigationIcon = AppCompatResources.getDrawable(requireContext(), R.drawable.ic_arrow_back)
             toolbar.title = channelName ?: channelId
-            toolbar.inflateMenu(R.menu.detail_share_menu)
-            toolbar.inflateMenu(R.menu.menu_report)
+            toolbar.inflateMenu(R.menu.menu_detail_kebab)
             toolbar.setNavigationOnClickListener {
                 findNavController().navigateUp()
             }
@@ -348,8 +347,7 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
     }
 
     private fun tintToolbarActions(color: Int) {
-        binding?.toolbar?.menu?.findItem(R.id.action_share)?.icon?.mutate()?.setTint(color)
-        binding?.toolbar?.menu?.findItem(R.id.action_report)?.icon?.mutate()?.setTint(color)
+        binding?.toolbar?.overflowIcon?.mutate()?.setTint(color)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
