@@ -27,7 +27,7 @@ if (localPropertiesFile.exists()) {
 
 android {
     namespace = "com.albunyaan.tube"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.albunyaan.tube"
@@ -204,12 +204,13 @@ dependencies {
     implementation("androidx.viewpager2:viewpager2:1.1.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     // AndroidX Media3 (replaces ExoPlayer 2.x)
-    val media3Version = "1.9.2"
+    val media3Version = "1.10.0"
     implementation("androidx.media3:media3-exoplayer:$media3Version")
     implementation("androidx.media3:media3-exoplayer-hls:$media3Version")
     implementation("androidx.media3:media3-exoplayer-dash:$media3Version")
     implementation("androidx.media3:media3-ui:$media3Version")
     implementation("androidx.media3:media3-session:$media3Version")
+    implementation("androidx.media3:media3-datasource-cronet:$media3Version")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-moshi:2.11.0")
