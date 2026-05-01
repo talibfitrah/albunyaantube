@@ -117,6 +117,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private val viewModel: PlayerViewModel by viewModels()
     private val upNextAdapter = UpNextAdapter { item -> viewModel.playItem(item) }
     private var preparedStreamKey: Pair<String, Boolean>? = null
+    private var ttlWatcher: com.albunyaan.tube.player.MpdTtlWatcher? = null
     /**
      * Tracks the currently prepared *source identity*:
      * - Adaptive: manifest URL (HLS/DASH)
@@ -788,6 +789,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         // Clean up player resources - ExoPlayer handles its own callback cleanup during release
         binding?.playerView?.player = null
+        cancelTtlWatcher()
         preparedStreamKey = null
         preparedStreamUrl = null
         preparedIsAdaptive = false
@@ -1470,6 +1472,45 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     }
 
     /**
+     * Cancel any in-flight MPD TTL watcher. Safe to call repeatedly.
+     */
+    private fun cancelTtlWatcher() {
+        ttlWatcher?.cancel()
+        ttlWatcher = null
+    }
+
+    /**
+     * Arm the proactive MPD TTL watcher for the current synthetic-DASH stream.
+     *
+     * The synthetic-DASH MPD generator produces manifests whose embedded CDN URLs
+     * expire — `SyntheticDashDataSource.MPD_TTL_MS` is a conservative 2-minute
+     * lower bound. Without a proactive refresh, ExoPlayer hits a 403 on the next
+     * chunk fetch when URLs go stale and the user sees a visible stall while the
+     * reactive recovery path (`onPlayerError → handle403OrHttpError`) re-resolves.
+     *
+     * The watcher fires at 90% TTL and triggers `forceRefreshForAutoRecovery()`,
+     * which goes through the standard StreamState.Ready prepare path — same
+     * MediaSource swap that quality switches use. Position is preserved by
+     * `maybePrepareStream` via the `isQualitySwitch` branch.
+     *
+     * Only relevant for SYNTH_ADAPTIVE / SYNTHETIC_DASH; real HLS/DASH manifests
+     * carry their own segment-template TTLs and don't need this.
+     *
+     * Mirrors the Shorts wiring in `PlayerBinder.prepareAndPlay`.
+     */
+    private fun armTtlWatcher(streamId: String, adaptiveType: MediaSourceResult.AdaptiveType) {
+        cancelTtlWatcher()
+        if (!featureFlags.isTtlWatcherEnabled) return
+        if (adaptiveType != MediaSourceResult.AdaptiveType.SYNTH_ADAPTIVE &&
+            adaptiveType != MediaSourceResult.AdaptiveType.SYNTHETIC_DASH) return
+        ttlWatcher = com.albunyaan.tube.player.MpdTtlWatcher(
+            videoId = streamId,
+            registry = mpdRegistry,
+            onRefreshNeeded = { viewModel.forceRefreshForAutoRecovery() }
+        ).also { it.start(viewLifecycleOwner.lifecycleScope) }
+    }
+
+    /**
      * Handle seamless live stream URL refresh without stopping playback.
      * Saves current position, swaps media source, and resumes at same position.
      */
@@ -1529,6 +1570,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             preparedStreamUrl = mediaSourceResult.actualSourceUrl
             preparedIsAdaptive = mediaSourceResult.isAdaptive
             preparedAdaptiveType = mediaSourceResult.adaptiveType
+
+            // Re-arm the TTL watcher around the new MPD entry. The previous
+            // watcher (if any) is cancelled inside armTtlWatcher.
+            armTtlWatcher(event.streamId, mediaSourceResult.adaptiveType)
 
             // Force sync MediaSession metadata after source swap (setMediaSource may reset it)
             viewModel.state.value.currentItem?.let { item ->
@@ -2209,6 +2254,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     // Geo-restriction - no recovery possible, show error
                     android.util.Log.e("PlayerFragment", "Video geo-restricted: $videoId")
                     player.stop()
+                    cancelTtlWatcher()
                     // Clear prepared stream state to prevent stale cache hits in maybePrepareStream
                     preparedStreamKey = null
                     preparedStreamUrl = null
@@ -2635,6 +2681,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         if (streamState !is StreamState.Ready) {
             if (streamState is StreamState.Error) {
                 player?.stop()
+                cancelTtlWatcher()
                 preparedStreamKey = null
                 preparedStreamUrl = null
                 preparedIsAdaptive = false
@@ -2928,6 +2975,13 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             preparedStreamKey = key
             // Use the actual URL from the MediaSourceResult - this is the true source identity
             preparedStreamUrl = mediaSourceResult.actualSourceUrl
+
+            // Arm the proactive MPD TTL watcher (SYNTH_ADAPTIVE / SYNTHETIC_DASH
+            // only). Without this the synthetic-DASH URLs go stale at the 2-minute
+            // TTL and the user sees a visible stall while the reactive 403 recovery
+            // path re-resolves. See armTtlWatcher KDoc.
+            armTtlWatcher(streamState.streamId, mediaSourceResult.adaptiveType)
+
             if (BuildConfig.DEBUG) android.util.Log.d(
                 "PlayerFragment",
                 "Stream prepared successfully: ${streamState.streamId}, isAdaptive=$preparedIsAdaptive, type=${mediaSourceResult.adaptiveType}, mutedForStream=${mutedForStreamKey != null}, actualSource=${sourceIdentityForLog(preparedStreamUrl)}"
