@@ -51,6 +51,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
+import com.albunyaan.tube.util.showIcons
 
 /**
  * Playlist Detail screen showing playlist header info and paginated video list.
@@ -141,11 +142,16 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
             .distinctUntilChanged()
             .onEach { saved ->
                 isPlaylistSavedNow = saved
-                binding?.savePlaylistButton?.apply {
-                    setText(if (saved) R.string.playlist_unsave else R.string.playlist_save)
-                    setIconResource(if (saved) R.drawable.ic_favorite else R.drawable.ic_favorite_border)
-                    isSelected = saved
-                    setOnClickListener { togglePlaylistSaved() }
+                binding?.apply {
+                    savePlaylistLabel.setText(if (saved) R.string.playlist_unsave else R.string.playlist_save)
+                    savePlaylistIcon.setImageResource(
+                        if (saved) R.drawable.ic_favorite else R.drawable.ic_favorite_border
+                    )
+                    savePlaylistButton.contentDescription = getString(
+                        if (saved) R.string.playlist_unsave else R.string.cd_save_playlist_button
+                    )
+                    savePlaylistButton.isSelected = saved
+                    savePlaylistButton.setOnClickListener { togglePlaylistSaved() }
                 }
             }
             .launchIn(viewLifecycleOwner.lifecycleScope)
@@ -163,7 +169,7 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
         // the button while the IO is in flight, and catch failures so the
         // UI doesn't sit in a half-flipped state on a transient Room error.
         val shouldUnsave = isPlaylistSavedNow
-        binding?.savePlaylistButton?.isEnabled = false
+        binding?.savePlaylistButton?.setActionEnabled(false)
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 withContext(Dispatchers.IO) {
@@ -225,6 +231,7 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
         binding?.apply {
             toolbar.navigationIcon = AppCompatResources.getDrawable(requireContext(), R.drawable.ic_arrow_back)
             toolbar.inflateMenu(R.menu.menu_detail_kebab)
+            toolbar.menu.showIcons()
             toolbar.setNavigationOnClickListener {
                 findNavController().navigateUp()
             }
@@ -433,15 +440,15 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
     private fun handleDownloadUiState(state: PlaylistDetailViewModel.PlaylistDownloadUiState) {
         binding?.apply {
             if (state.isDownloading) {
-                downloadPlaylistButton.text = getString(R.string.playlist_detail_downloading)
-                downloadPlaylistButton.isEnabled = false
+                downloadPlaylistLabel.text = getString(R.string.playlist_detail_downloading)
+                downloadPlaylistButton.setActionEnabled(false)
             } else if (state.downloadedCount > 0 && state.downloadedCount == state.totalCount) {
-                downloadPlaylistButton.text = getString(R.string.download_status_completed)
-                downloadPlaylistButton.isEnabled = false
+                downloadPlaylistLabel.text = getString(R.string.download_status_completed)
+                downloadPlaylistButton.setActionEnabled(false)
             } else if (state.downloadedCount > 0) {
                 // Partial download
-                downloadPlaylistButton.text = "${state.downloadedCount}/${state.totalCount}"
-                downloadPlaylistButton.isEnabled = true
+                downloadPlaylistLabel.text = "${state.downloadedCount}/${state.totalCount}"
+                downloadPlaylistButton.setActionEnabled(true)
             } else {
                 // Default state
                 configureDownloadButton(downloadPolicy, isExcluded)
@@ -640,22 +647,28 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
     }
 
     private fun configureDownloadButton(policy: DownloadPolicy, excluded: Boolean) {
-        binding?.downloadPlaylistButton?.apply {
-            when (policy) {
-                DownloadPolicy.ENABLED -> {
-                    text = getString(R.string.playlist_detail_download)
-                    isEnabled = !excluded
-                }
-                DownloadPolicy.QUEUED -> {
-                    text = getString(R.string.playlist_detail_downloading)
-                    isEnabled = false
-                }
-                DownloadPolicy.DISABLED -> {
-                    text = getString(R.string.playlist_detail_download_disabled)
-                    isEnabled = false
-                }
+        val b = binding ?: return
+        when (policy) {
+            DownloadPolicy.ENABLED -> {
+                b.downloadPlaylistLabel.text = getString(R.string.playlist_detail_download)
+                b.downloadPlaylistButton.setActionEnabled(!excluded)
+            }
+            DownloadPolicy.QUEUED -> {
+                b.downloadPlaylistLabel.text = getString(R.string.playlist_detail_downloading)
+                b.downloadPlaylistButton.setActionEnabled(false)
+            }
+            DownloadPolicy.DISABLED -> {
+                b.downloadPlaylistLabel.text = getString(R.string.playlist_detail_download_disabled)
+                b.downloadPlaylistButton.setActionEnabled(false)
             }
         }
+    }
+
+    private fun View.setActionEnabled(enabled: Boolean) {
+        isEnabled = enabled
+        isClickable = enabled
+        isFocusable = enabled
+        alpha = if (enabled) 1f else 0.4f
     }
 
     private fun showDownloadQualitySheet(

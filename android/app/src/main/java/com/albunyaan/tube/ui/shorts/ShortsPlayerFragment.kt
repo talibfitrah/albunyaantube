@@ -43,6 +43,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import com.albunyaan.tube.util.showIcons
 
 /**
  * Hosts the vertical, swipeable custom shorts player.
@@ -603,6 +604,7 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
             android.view.Gravity.END,
         )
         popup.menuInflater.inflate(R.menu.menu_shorts_kebab, popup.menu)
+        popup.showIcons()
         popup.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 R.id.action_quality -> {

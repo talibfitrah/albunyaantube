@@ -24,6 +24,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import com.albunyaan.tube.databinding.FragmentHomeNewBinding
 import javax.inject.Inject
 import com.albunyaan.tube.ui.adapters.HomeSectionAdapter
+import com.albunyaan.tube.util.showIcons
 import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
@@ -297,6 +298,7 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
     private fun showOverflowMenu(anchor: View) {
         val popup = PopupMenu(requireContext(), anchor, android.view.Gravity.END)
         popup.menuInflater.inflate(R.menu.home_menu, popup.menu)
+        popup.showIcons()
         popup.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 R.id.action_downloads -> {

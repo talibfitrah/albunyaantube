@@ -50,6 +50,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.NumberFormat
+import com.albunyaan.tube.util.showIcons
 
 /**
  * Fragment for displaying channel details with tabs for Videos, Live, Shorts, Playlists, and About.
@@ -145,6 +146,7 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
             toolbar.navigationIcon = AppCompatResources.getDrawable(requireContext(), R.drawable.ic_arrow_back)
             toolbar.title = channelName ?: channelId
             toolbar.inflateMenu(R.menu.menu_detail_kebab)
+            toolbar.menu.showIcons()
             toolbar.setNavigationOnClickListener {
                 findNavController().navigateUp()
             }

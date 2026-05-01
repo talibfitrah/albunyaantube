@@ -217,77 +217,171 @@
 
                     </com.google.android.material.chip.ChipGroup>
 
-                    <!-- Actions Row (stacked on phone) -->
+                    <!-- Action Bar (icon + caption per cell, evenly spread — matches player screen) -->
                     <LinearLayout
                         android:id="@+id/actionsContainer"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/spacing_lg"
-                        android:orientation="vertical"
+                        android:layout_marginTop="@dimen/spacing_md"
+                        android:orientation="horizontal"
+                        android:gravity="center"
+                        android:baselineAligned="false"
+                        android:weightSum="4"
                         app:layout_constraintStart_toStartOf="parent"
                         app:layout_constraintEnd_toEndOf="parent"
                         app:layout_constraintTop_toBottomOf="@id/categoryChipsContainer">
 
-                        <!-- Play All Button -->
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/playAllButton"
-                            android:layout_width="match_parent"
-                            android:layout_height="@dimen/touch_target_button"
-                            android:text="@string/playlist_play_all"
-                            android:contentDescription="@string/cd_play_all_button"
-                            app:icon="@drawable/ic_play"
-                            app:iconGravity="textStart" />
-
-                        <!-- Shuffle and Download Row -->
+                        <!-- Play All -->
                         <LinearLayout
-                            android:layout_width="match_parent"
+                            android:id="@+id/playAllButton"
+                            android:layout_width="0dp"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/spacing_sm"
-                            android:orientation="horizontal"
-                            android:baselineAligned="false">
+                            android:layout_weight="1"
+                            android:orientation="vertical"
+                            android:gravity="center"
+                            android:background="?attr/selectableItemBackground"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:paddingTop="@dimen/spacing_sm"
+                            android:paddingBottom="@dimen/spacing_sm"
+                            android:paddingStart="@dimen/spacing_xs"
+                            android:paddingEnd="@dimen/spacing_xs"
+                            android:contentDescription="@string/cd_play_all_button">
 
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/shuffleButton"
-                                style="@style/Widget.Material3.Button.OutlinedButton"
-                                android:layout_width="0dp"
-                                android:layout_height="@dimen/touch_target_button"
-                                android:layout_weight="1"
-                                android:layout_marginEnd="@dimen/spacing_xs"
-                                android:text="@string/playlist_shuffle"
-                                android:contentDescription="@string/cd_shuffle_button"
-                                android:maxLines="1"
-                                android:ellipsize="end"
-                                app:icon="@drawable/ic_shuffle"
-                                app:iconGravity="textStart" />
+                            <ImageView
+                                android:layout_width="@dimen/icon_small"
+                                android:layout_height="@dimen/icon_small"
+                                android:src="@drawable/ic_play"
+                                android:importantForAccessibility="no"
+                                app:tint="@color/primary_green" />
 
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/downloadPlaylistButton"
-                                android:layout_width="0dp"
-                                android:layout_height="@dimen/touch_target_button"
-                                android:layout_weight="1"
-                                android:layout_marginStart="@dimen/spacing_xs"
-                                android:text="@string/playlist_detail_download"
-                                android:contentDescription="@string/cd_download_playlist_button"
+                            <TextView
+                                android:id="@+id/playAllLabel"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/spacing_xs"
+                                android:text="@string/playlist_play_all"
+                                android:textAlignment="center"
+                                android:textColor="@color/primary_green"
+                                android:textSize="@dimen/text_caption"
                                 android:maxLines="1"
-                                android:ellipsize="end"
-                                app:icon="@drawable/ic_download"
-                                app:iconGravity="textStart" />
+                                android:ellipsize="end" />
 
                         </LinearLayout>
 
-                        <com.google.android.material.button.MaterialButton
+                        <!-- Shuffle -->
+                        <LinearLayout
+                            android:id="@+id/shuffleButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical"
+                            android:gravity="center"
+                            android:background="?attr/selectableItemBackground"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:paddingTop="@dimen/spacing_sm"
+                            android:paddingBottom="@dimen/spacing_sm"
+                            android:paddingStart="@dimen/spacing_xs"
+                            android:paddingEnd="@dimen/spacing_xs"
+                            android:contentDescription="@string/cd_shuffle_button">
+
+                            <ImageView
+                                android:layout_width="@dimen/icon_small"
+                                android:layout_height="@dimen/icon_small"
+                                android:src="@drawable/ic_shuffle"
+                                android:importantForAccessibility="no"
+                                app:tint="@color/primary_green" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/spacing_xs"
+                                android:text="@string/playlist_shuffle"
+                                android:textAlignment="center"
+                                android:textColor="@color/primary_green"
+                                android:textSize="@dimen/text_caption"
+                                android:maxLines="1"
+                                android:ellipsize="end" />
+
+                        </LinearLayout>
+
+                        <!-- Download -->
+                        <LinearLayout
+                            android:id="@+id/downloadPlaylistButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical"
+                            android:gravity="center"
+                            android:background="?attr/selectableItemBackground"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:paddingTop="@dimen/spacing_sm"
+                            android:paddingBottom="@dimen/spacing_sm"
+                            android:paddingStart="@dimen/spacing_xs"
+                            android:paddingEnd="@dimen/spacing_xs"
+                            android:contentDescription="@string/cd_download_playlist_button">
+
+                            <ImageView
+                                android:layout_width="@dimen/icon_small"
+                                android:layout_height="@dimen/icon_small"
+                                android:src="@drawable/ic_download"
+                                android:importantForAccessibility="no"
+                                app:tint="@color/primary_green" />
+
+                            <TextView
+                                android:id="@+id/downloadPlaylistLabel"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/spacing_xs"
+                                android:text="@string/playlist_detail_download"
+                                android:textAlignment="center"
+                                android:textColor="@color/primary_green"
+                                android:textSize="@dimen/text_caption"
+                                android:maxLines="1"
+                                android:ellipsize="end" />
+
+                        </LinearLayout>
+
+                        <!-- Save (toggles between Save / Saved) -->
+                        <LinearLayout
                             android:id="@+id/savePlaylistButton"
-                            style="@style/Widget.Material3.Button.OutlinedButton"
-                            android:layout_width="match_parent"
-                            android:layout_height="@dimen/touch_target_button"
-                            android:layout_marginTop="@dimen/spacing_sm"
-                            android:text="@string/playlist_save"
-                            android:contentDescription="@string/cd_save_playlist_button"
-                            android:textAlignment="viewStart"
-                            android:maxLines="1"
-                            android:ellipsize="end"
-                            app:icon="@drawable/ic_favorite_border"
-                            app:iconGravity="textStart" />
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical"
+                            android:gravity="center"
+                            android:background="?attr/selectableItemBackground"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:paddingTop="@dimen/spacing_sm"
+                            android:paddingBottom="@dimen/spacing_sm"
+                            android:paddingStart="@dimen/spacing_xs"
+                            android:paddingEnd="@dimen/spacing_xs"
+                            android:contentDescription="@string/cd_save_playlist_button">
+
+                            <ImageView
+                                android:id="@+id/savePlaylistIcon"
+                                android:layout_width="@dimen/icon_small"
+                                android:layout_height="@dimen/icon_small"
+                                android:src="@drawable/ic_favorite_border"
+                                android:importantForAccessibility="no"
+                                app:tint="@color/primary_green" />
+
+                            <TextView
+                                android:id="@+id/savePlaylistLabel"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/spacing_xs"
+                                android:text="@string/playlist_save"
+                                android:textAlignment="center"
+                                android:textColor="@color/primary_green"
+                                android:textSize="@dimen/text_caption"
+                                android:maxLines="1"
+                                android:ellipsize="end" />
+
+                        </LinearLayout>
 
                     </LinearLayout>
 
@@ -494,7 +588,7 @@
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toBottomOf="@id/skeletonChannel" />
 
-            <!-- Button skeleton row -->
+            <!-- Button skeleton row (matches collapsed actions row) -->
             <View
                 android:id="@+id/skeletonPlayAllButton"
                 android:layout_width="0dp"
@@ -504,32 +598,6 @@
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintTop_toBottomOf="@id/skeletonMetadata" />
-
-            <!-- Second button row skeleton -->
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_sm"
-                android:orientation="horizontal"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/skeletonPlayAllButton">
-
-                <View
-                    android:layout_width="0dp"
-                    android:layout_height="@dimen/touch_target_button"
-                    android:layout_weight="1"
-                    android:layout_marginEnd="@dimen/spacing_xs"
-                    android:background="@drawable/skeleton_shimmer" />
-
-                <View
-                    android:layout_width="0dp"
-                    android:layout_height="@dimen/touch_target_button"
-                    android:layout_weight="1"
-                    android:layout_marginStart="@dimen/spacing_xs"
-                    android:background="@drawable/skeleton_shimmer" />
-
-            </LinearLayout>
 
         </androidx.constraintlayout.widget.ConstraintLayout>
 
