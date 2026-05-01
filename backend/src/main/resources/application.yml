@@ -115,8 +115,10 @@ app:
   # Content validation settings (for scheduled video/channel/playlist checks)
   validation:
     video:
-      # Maximum items to validate per scheduled run (conservative default to prevent rate limiting)
-      max-items-per-run: ${APP_VALIDATION_VIDEO_MAX_ITEMS_PER_RUN:10}
+      # Maximum items to validate per scheduled run. Bumped from 10 → 20 so
+      # view-count drift on the public catalog doesn't compound across many days.
+      # 20 × 4s throttle ≈ 80s per run.
+      max-items-per-run: ${APP_VALIDATION_VIDEO_MAX_ITEMS_PER_RUN:20}
       scheduler:
         # Enable/disable scheduled validation (set to false to stop all scheduled runs)
         enabled: ${APP_VALIDATION_VIDEO_SCHEDULER_ENABLED:true}
@@ -126,6 +128,30 @@ app:
         # Distributed lock TTL in minutes (default: 2 hours)
         # Should be longer than maximum expected validation run duration
         lock-ttl-minutes: ${APP_VALIDATION_VIDEO_SCHEDULER_LOCK_TTL_MINUTES:120}
+    channel:
+      # Re-validates approved channels and refreshes cached subscriber count + metadata.
+      # Caps per run; the validation.youtube.throttle below paces the actual extraction.
+      max-items-per-run: ${APP_VALIDATION_CHANNEL_MAX_ITEMS_PER_RUN:30}
+      scheduler:
+        enabled: ${APP_VALIDATION_CHANNEL_SCHEDULER_ENABLED:true}
+        # 6:30 AM UTC daily — staggered 30 min after the video validator
+        # so the two don't compete for extraction budget.
+        cron: ${APP_VALIDATION_CHANNEL_SCHEDULER_CRON:0 30 6 * * ?}
+        # 120 min — matches video. Heartbeat extends every 3 min; long TTL is
+        # the fallback if the heartbeat itself fails.
+        lock-ttl-minutes: ${APP_VALIDATION_CHANNEL_SCHEDULER_LOCK_TTL_MINUTES:120}
+    playlist:
+      # Re-validates approved playlists and refreshes title, description,
+      # thumbnail, and item count. 20 × 4s throttle ≈ 80s per run.
+      max-items-per-run: ${APP_VALIDATION_PLAYLIST_MAX_ITEMS_PER_RUN:20}
+      scheduler:
+        enabled: ${APP_VALIDATION_PLAYLIST_SCHEDULER_ENABLED:true}
+        # 7:00 AM UTC daily — staggered 30 min after the channel validator
+        # (1 hour after the video validator). Gap leaves a comfortable buffer
+        # for any extraction spillover and avoids three runs ever overlapping.
+        cron: ${APP_VALIDATION_PLAYLIST_SCHEDULER_CRON:0 0 7 * * ?}
+        # 120 min — matches video, defensive against override misconfigurations.
+        lock-ttl-minutes: ${APP_VALIDATION_PLAYLIST_SCHEDULER_LOCK_TTL_MINUTES:120}
     youtube:
       throttle:
         # Enable throttling between YouTube requests

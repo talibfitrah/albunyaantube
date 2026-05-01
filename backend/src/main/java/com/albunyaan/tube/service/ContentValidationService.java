@@ -265,7 +265,7 @@ public class ContentValidationService {
         try {
             validationRunRepository.save(validationRun);
 
-            int limit = maxItems != null ? maxItems : validationProperties.getVideo().getMaxItemsPerRun();
+            int limit = maxItems != null ? maxItems : validationProperties.getChannel().getMaxItemsPerRun();
             validateChannelsInternal(validationRun, triggeredByDisplayName, limit);
 
             validationRun.complete(ValidationRun.STATUS_COMPLETED);
@@ -304,7 +304,7 @@ public class ContentValidationService {
         try {
             validationRunRepository.save(validationRun);
 
-            int limit = maxItems != null ? maxItems : validationProperties.getVideo().getMaxItemsPerRun();
+            int limit = maxItems != null ? maxItems : validationProperties.getPlaylist().getMaxItemsPerRun();
             validatePlaylistsInternal(validationRun, triggeredByDisplayName, limit);
 
             validationRun.complete(ValidationRun.STATUS_COMPLETED);

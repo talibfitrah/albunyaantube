@@ -16,25 +16,32 @@ class NetworkMonitor(private val context: Context) {
         context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
     val isOnline: Flow<Boolean> = callbackFlow {
+        // Always emit the *aggregate* online state, never the per-network event.
+        // Android registers callbacks for every network matching the request
+        // (often WiFi + cellular simultaneously during a recovery handover).
+        // A per-network onLost is NOT the same as "we are offline" — it just
+        // means one of the registered networks was dropped, often because a
+        // higher-priority network (WiFi) took over. Emitting `false` on every
+        // onLost makes the offline banner reappear after recovery when the
+        // backup cellular network is released.
+        fun emitCurrent() {
+            trySend(isCurrentlyOnline())
+        }
+
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
-                trySend(true)
+                emitCurrent()
             }
 
             override fun onLost(network: Network) {
-                trySend(false)
+                emitCurrent()
             }
 
             override fun onCapabilitiesChanged(
                 network: Network,
                 networkCapabilities: NetworkCapabilities
             ) {
-                val isConnected = networkCapabilities.hasCapability(
-                    NetworkCapabilities.NET_CAPABILITY_INTERNET
-                ) && networkCapabilities.hasCapability(
-                    NetworkCapabilities.NET_CAPABILITY_VALIDATED
-                )
-                trySend(isConnected)
+                emitCurrent()
             }
         }
 
@@ -43,9 +50,7 @@ class NetworkMonitor(private val context: Context) {
             .build()
 
         connectivityManager.registerNetworkCallback(request, callback)
-
-        // Send initial state
-        trySend(isCurrentlyOnline())
+        emitCurrent()
 
         awaitClose {
             connectivityManager.unregisterNetworkCallback(callback)
@@ -55,8 +60,7 @@ class NetworkMonitor(private val context: Context) {
     fun isCurrentlyOnline(): Boolean {
         val network = connectivityManager.activeNetwork ?: return false
         val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
-        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
     fun isWifiConnected(): Boolean {
