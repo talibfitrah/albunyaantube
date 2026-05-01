@@ -14,10 +14,20 @@ import org.springframework.context.annotation.Configuration;
 public class ValidationProperties {
 
     private final Video video = new Video();
+    private final Channel channel = new Channel();
+    private final Playlist playlist = new Playlist();
     private final YouTube youtube = new YouTube();
 
     public Video getVideo() {
         return video;
+    }
+
+    public Channel getChannel() {
+        return channel;
+    }
+
+    public Playlist getPlaylist() {
+        return playlist;
     }
 
     public YouTube getYoutube() {
@@ -29,7 +39,12 @@ public class ValidationProperties {
      */
     public static class Video {
         private final Scheduler scheduler = new Scheduler();
-        private int maxItemsPerRun = 10;
+        /**
+         * Cap per run. Bumped from the original 10 so view-count drift on the
+         * public catalog doesn't compound across many days. 20 × 4s throttle
+         * ≈ 80s per run, comfortably inside the rate-limit budget.
+         */
+        private int maxItemsPerRun = 20;
 
         public Scheduler getScheduler() {
             return scheduler;
@@ -50,6 +65,135 @@ public class ValidationProperties {
             private boolean enabled = true;
             private String cron = "0 0 6 * * ?"; // Default: once daily at 6 AM UTC
             private int lockTtlMinutes = 120; // Default: 2 hours (120 minutes)
+
+            public boolean isEnabled() {
+                return enabled;
+            }
+
+            public void setEnabled(boolean enabled) {
+                this.enabled = enabled;
+            }
+
+            public String getCron() {
+                return cron;
+            }
+
+            public void setCron(String cron) {
+                this.cron = cron;
+            }
+
+            public int getLockTtlMinutes() {
+                return lockTtlMinutes;
+            }
+
+            public void setLockTtlMinutes(int lockTtlMinutes) {
+                this.lockTtlMinutes = lockTtlMinutes;
+            }
+        }
+    }
+
+    /**
+     * Channel validation settings.
+     *
+     * Drives {@code ChannelValidationScheduler}, which keeps the cached
+     * subscriber count (and other channel metadata) in sync with YouTube so
+     * the public Channels list doesn't drift from the channel detail screen.
+     */
+    public static class Channel {
+        private final Scheduler scheduler = new Scheduler();
+        /**
+         * Caps how many channels we re-validate per run. Default 30 matches
+         * the §4.2 per-user 30-channel cap so a single daily run covers a
+         * full subscription set; throttle keeps the run under ~2 minutes.
+         */
+        private int maxItemsPerRun = 30;
+
+        public Scheduler getScheduler() {
+            return scheduler;
+        }
+
+        public int getMaxItemsPerRun() {
+            return maxItemsPerRun;
+        }
+
+        public void setMaxItemsPerRun(int maxItemsPerRun) {
+            this.maxItemsPerRun = maxItemsPerRun;
+        }
+
+        public static class Scheduler {
+            private boolean enabled = true;
+            /** 6:30 AM UTC daily, staggered 30 min after the video validator. */
+            private String cron = "0 30 6 * * ?";
+            /**
+             * 120 min — matches video. Typical run is ~2 min so we have a 60×
+             * safety margin, but if an admin overrides {@code maxItemsPerRun}
+             * higher, the heartbeat keeps extending; the long TTL is the
+             * fallback if the heartbeat itself fails (Firestore unavailable),
+             * preventing a second instance from double-acquiring while the
+             * first run is still alive.
+             */
+            private int lockTtlMinutes = 120;
+
+            public boolean isEnabled() {
+                return enabled;
+            }
+
+            public void setEnabled(boolean enabled) {
+                this.enabled = enabled;
+            }
+
+            public String getCron() {
+                return cron;
+            }
+
+            public void setCron(String cron) {
+                this.cron = cron;
+            }
+
+            public int getLockTtlMinutes() {
+                return lockTtlMinutes;
+            }
+
+            public void setLockTtlMinutes(int lockTtlMinutes) {
+                this.lockTtlMinutes = lockTtlMinutes;
+            }
+        }
+    }
+
+    /**
+     * Playlist validation settings.
+     *
+     * Drives {@code PlaylistValidationScheduler}, which keeps the cached
+     * item count and other playlist metadata in sync with YouTube so the
+     * Playlists list doesn't drift from what the user sees on YouTube.
+     * Same throttle and circuit breaker as the other validators.
+     */
+    public static class Playlist {
+        private final Scheduler scheduler = new Scheduler();
+        /**
+         * Cap per run. 20 × 4s throttle ≈ 80s, same conservative budget as
+         * the video validator.
+         */
+        private int maxItemsPerRun = 20;
+
+        public Scheduler getScheduler() {
+            return scheduler;
+        }
+
+        public int getMaxItemsPerRun() {
+            return maxItemsPerRun;
+        }
+
+        public void setMaxItemsPerRun(int maxItemsPerRun) {
+            this.maxItemsPerRun = maxItemsPerRun;
+        }
+
+        public static class Scheduler {
+            private boolean enabled = true;
+            /** 7:00 AM UTC daily, staggered 30 min after the channel validator. */
+            private String cron = "0 0 7 * * ?";
+            /** 120 min — matches video, defensive against override misconfigurations. */
+            private int lockTtlMinutes = 120;
 
             public boolean isEnabled() {
                 return enabled;
