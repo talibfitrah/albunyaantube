@@ -94,6 +94,20 @@
 # Coroutines — DebugProbesKt referenced by reflection.
 -dontwarn kotlinx.coroutines.debug.AgentPremain
 
+# util/MenuIconExt.kt reflects on appcompat internals to force PopupMenu and
+# Toolbar overflow menus to render item icons. R8 was renaming the field /
+# method names so the reflection silently failed in release — icons looked
+# missing in every kebab. Keep the exact symbols looked up.
+-keepclassmembernames class androidx.appcompat.widget.PopupMenu {
+    androidx.appcompat.view.menu.MenuPopupHelper mPopup;
+}
+-keepclassmembers class androidx.appcompat.view.menu.MenuPopupHelper {
+    public void setForceShowIcon(boolean);
+}
+-keepclassmembers class androidx.appcompat.view.menu.MenuBuilder {
+    public void setOptionalIconsVisible(boolean);
+}
+
 # Parcelable / Serializable nav args — keep CREATOR + serialVersionUID so the
 # framework can rehydrate fragment arguments after process death.
 -keepclassmembers class * implements android.os.Parcelable {
