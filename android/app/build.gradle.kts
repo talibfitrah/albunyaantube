@@ -96,14 +96,14 @@ android {
         buildConfigField("boolean", "ENABLE_HLS_PROBATION", "true")
         buildConfigField("boolean", "ENABLE_CRONET", "true")
         // Predictive prefetch starts extraction when list cells attach so
-        // tap-to-open is instant. ON by default — the rate limiter now
-        // reserves a 5-token foreground budget for channel/Me loads and
-        // prefetch runs at Priority.BACKGROUND_REFRESH (lowest), so it
-        // can no longer starve visible tabs (the original concern that
-        // motivated keeping it opt-in). Override to false in
-        // local.properties: playback.predictive.prefetch.enabled=false
-        // if you still see scroll-triggered budget pressure on a device.
-        val enablePredictivePrefetch = localProperties.getProperty("playback.predictive.prefetch.enabled", "true").toBoolean()
+        // tap-to-open is instant. OFF by default — turning it on with the
+        // current controller fires for every visible cell, which on a
+        // Me-feed or channel screen with 100 items burns the global
+        // 10/min cap in seconds and locks foreground taps out for ~57s.
+        // Re-enable only after the controller is scoped (Me-only) and
+        // strictly capped (≤2 in flight). Override in local.properties:
+        // playback.predictive.prefetch.enabled=true
+        val enablePredictivePrefetch = localProperties.getProperty("playback.predictive.prefetch.enabled", "false").toBoolean()
         buildConfigField("boolean", "ENABLE_PREDICTIVE_PREFETCH", "$enablePredictivePrefetch")
         buildConfigField("boolean", "ENABLE_SEGMENT_PRELOAD", "true")
         buildConfigField("boolean", "ENABLE_NEVER_FREEZE_ABR", "true")
