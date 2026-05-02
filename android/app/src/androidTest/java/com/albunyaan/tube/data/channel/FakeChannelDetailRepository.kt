@@ -110,6 +110,15 @@ class FakeChannelDetailRepository : ChannelDetailRepository {
         return ChannelPage(items = videosToReturn, nextPage = null)
     }
 
+    override suspend fun getVideosViaChannelTab(channelId: String): ChannelPage<ChannelVideo> {
+        // Tests use the same items list for both paths — the production
+        // hybrid races UU and channel-tab; emitting identical data keeps
+        // existing test assertions valid.
+        if (simulatedDelayMs > 0) delay(simulatedDelayMs)
+        errorToThrow?.let { throw it }
+        return ChannelPage(items = videosToReturn, nextPage = null)
+    }
+
     override suspend fun getLiveStreams(channelId: String, page: Page?): ChannelPage<ChannelLiveStream> {
         errorToThrow?.let { throw it }
         return ChannelPage(items = liveStreamsToReturn, nextPage = null)

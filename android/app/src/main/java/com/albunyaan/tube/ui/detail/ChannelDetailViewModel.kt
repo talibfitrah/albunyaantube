@@ -19,6 +19,8 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -343,7 +345,6 @@ class ChannelDetailViewModel @AssistedInject constructor(
     private suspend fun loadVideosInitial(controller: TabPaginationController) {
         val startMs = System.currentTimeMillis()
         var pageFetches = 0
-        var emptyContinuations = 0
         var accumulatedItems = emptyList<ChannelVideo>()
         var cachedEmittedCount = 0
         var loadError: String? = null
@@ -364,57 +365,90 @@ class ChannelDetailViewModel @AssistedInject constructor(
                 Log.d(TAG, "Videos initial: emitted ${cached.size} cached items pre-NewPipe")
             }
 
-            // Fetch one page for the first paint. Empty continuation pages are exposed to
-            // the UI immediately so the fragment can autofill asynchronously or show Load More
-            // instead of hiding multiple NewPipe calls behind a blank loading state.
-            var currentNextPage: Page? = null
-
-            while (pageFetches < MAX_INITIAL_EMPTY_PAGE_FETCHES) {
-                pageFetches++
-                val page = repository.getVideos(channelId, currentNextPage)
-                accumulatedItems = accumulatedItems + page.items
-
-                controller.nextPage = page.nextPage
-                controller.hasReachedEnd = page.nextPage == null
-
-                // If we have items or no more pages, we're done
-                if (accumulatedItems.isNotEmpty() || page.nextPage == null) {
-                    break
-                }
-
-                // Empty page with continuation - expose it after the bounded initial fetch.
-                emptyContinuations++
-                Log.d(TAG, "Videos: empty page $pageFetches with continuation, exposing Load More")
-                currentNextPage = page.nextPage
-            }
-
-            // Final state determination.
+            // Race the slow UU uploads-playlist path against the fast
+            // channel-tab path. The UU response is ~3-5x larger and YouTube
+            // sometimes serves it slowly (notably for long-running channels);
+            // the channel-tab response is small and fast but its continuation
+            // tokens are unreliable past the first batch in NewPipe v0.26.
             //
-            // If NewPipe returned 0 items but we already emitted cached
-            // content above, *do not* wipe it. A successful-but-empty
-            // PlaylistInfo response is more often a transient extraction
-            // glitch (YouTube response variance, NewPipe parser miss) than
-            // a genuinely empty channel — and overwriting the cached
-            // emission would replace 100 visible videos with the empty
-            // state on a re-open. Keep the cached Loaded state and surface
-            // a warning instead.
-            if (accumulatedItems.isEmpty() && controller.nextPage == null) {
-                if (cachedEmittedCount > 0) {
-                    Log.w(
-                        TAG,
-                        "Videos initial: NewPipe returned 0 items but $cachedEmittedCount cached items already shown — preserving cached state",
-                    )
-                } else {
-                    _videosState.value = PaginatedState.Empty
+            // First arrival paints. UU's result wins the final state because
+            // its continuation token is what we need for deep pagination.
+            // Behaviour matches beta.2 first-paint speed without re-introducing
+            // beta.2's ~30-item pagination cap.
+            coroutineScope {
+                val uuDeferred = async {
+                    runCatching { repository.getVideos(channelId, null) }
                 }
-            } else {
-                _videosState.value = PaginatedState.Loaded(
-                    accumulatedItems,
-                    controller.nextPage,
-                    showLoadMoreFooter = accumulatedItems.isEmpty() && controller.nextPage != null,
-                )
+                val tabDeferred = async {
+                    runCatching { repository.getVideosViaChannelTab(channelId) }
+                }
+
+                // Fast paint: if channel-tab returns first with items and UU
+                // is still in flight, paint the channel-tab result so the user
+                // sees something quickly. UU will replace it below.
+                launch {
+                    val tabResult = tabDeferred.await().getOrNull()
+                    if (tabResult != null && tabResult.items.isNotEmpty() && !uuDeferred.isCompleted) {
+                        _videosState.value = PaginatedState.Loaded(
+                            tabResult.items,
+                            nextPage = null,
+                            showLoadMoreFooter = false,
+                        )
+                        Log.d(TAG, "Videos initial: fast paint ${tabResult.items.size} items via channel-tab")
+                    }
+                }
+
+                pageFetches = 1
+                val uuResult = uuDeferred.await()
+                val uu = uuResult.getOrNull()
+                if (uu != null && uu.items.isNotEmpty()) {
+                    accumulatedItems = uu.items
+                    controller.nextPage = uu.nextPage
+                    controller.hasReachedEnd = uu.nextPage == null
+                    _videosState.value = PaginatedState.Loaded(
+                        uu.items,
+                        uu.nextPage,
+                        showLoadMoreFooter = false,
+                    )
+                    Log.d(TAG, "Videos initial: ${uu.items.size} items via UU, hasMore=${uu.nextPage != null}")
+                } else {
+                    // UU failed or returned empty. Wait for channel-tab and use
+                    // it as the final state — even with limited deep pagination
+                    // it beats an empty screen.
+                    val tabResult = tabDeferred.await()
+                    val tab = tabResult.getOrNull()
+                    when {
+                        tab != null && tab.items.isNotEmpty() -> {
+                            accumulatedItems = tab.items
+                            controller.nextPage = tab.nextPage
+                            controller.hasReachedEnd = tab.nextPage == null
+                            _videosState.value = PaginatedState.Loaded(
+                                tab.items,
+                                tab.nextPage,
+                                showLoadMoreFooter = false,
+                            )
+                            Log.d(TAG, "Videos initial: ${tab.items.size} items via channel-tab fallback, hasMore=${tab.nextPage != null}")
+                        }
+                        // Both paths threw: surface the failure so loadInitial's
+                        // catch can route it to ErrorInitial (no cache) or
+                        // ErrorAppend (cached items still visible).
+                        uuResult.isFailure && tabResult.isFailure -> {
+                            throw uuResult.exceptionOrNull()
+                                ?: tabResult.exceptionOrNull()
+                                ?: java.io.IOException("Channel videos fetch failed via both paths")
+                        }
+                        cachedEmittedCount > 0 -> {
+                            Log.w(
+                                TAG,
+                                "Videos initial: both NewPipe paths returned 0 items but $cachedEmittedCount cached items already shown — preserving cached state",
+                            )
+                        }
+                        else -> {
+                            _videosState.value = PaginatedState.Empty
+                        }
+                    }
+                }
             }
-            Log.d(TAG, "Videos initial: ${accumulatedItems.size} items after $pageFetches fetches, hasMore=${controller.nextPage != null}")
         } catch (e: kotlinx.coroutines.CancellationException) {
             loadError = "Cancelled"
             throw e
@@ -427,7 +461,7 @@ class ChannelDetailViewModel @AssistedInject constructor(
                 tab = "Videos",
                 durationMs = System.currentTimeMillis() - startMs,
                 pageFetches = pageFetches,
-                emptyContinuations = emptyContinuations,
+                emptyContinuations = 0,
                 itemsReturned = accumulatedItems.size,
                 isAppend = false,
                 success = loadError == null,

@@ -24,6 +24,15 @@ interface ChannelDetailRepository {
     suspend fun getVideos(channelId: String, page: Page?): ChannelPage<ChannelVideo>
 
     /**
+     * Fast-path first page only: fetch the channel-tab Videos response
+     * (~30 items, smaller payload than the UU uploads playlist). The
+     * channel-tab continuation tokens are unreliable past 1-2 batches in
+     * NewPipe v0.26 — call this only for the initial paint, then switch
+     * to [getVideos] for deep pagination.
+     */
+    suspend fun getVideosViaChannelTab(channelId: String): ChannelPage<ChannelVideo>
+
+    /**
      * Fetch live streams from the channel's Live tab.
      *
      * @param channelId YouTube channel ID
