@@ -62,13 +62,29 @@
                 android:textAppearance="?attr/textAppearanceBodyLarge"
                 android:textColor="?attr/colorOnSurface" />
 
-            <TextView
-                android:id="@+id/update_release_notes"
+            <!--
+                Cap release-notes height and scroll within the box. Without
+                this, long release notes pushed the action buttons below the
+                screen on phones (no way to tap Update or Cancel). 280dp
+                leaves room for header + buttons on the smallest supported
+                screens; longer notes scroll vertically.
+            -->
+            <ScrollView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/spacing_sm"
-                android:textAppearance="?attr/textAppearanceBodyMedium"
-                android:textColor="?attr/colorOnSurfaceVariant" />
+                android:maxHeight="280dp"
+                android:scrollbars="vertical"
+                android:fadeScrollbars="false">
+
+                <TextView
+                    android:id="@+id/update_release_notes"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="?attr/textAppearanceBodyMedium"
+                    android:textColor="?attr/colorOnSurfaceVariant" />
+
+            </ScrollView>
 
         </LinearLayout>
 

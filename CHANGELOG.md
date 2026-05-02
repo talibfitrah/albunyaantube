@@ -3,6 +3,18 @@
 All notable changes to FitrahTube. Versions are tagged on the `develop` branch
 during the beta program.
 
+## [1.0.0-beta.7] - 2026-05-03
+
+### Android — Update dialog scrollability
+
+- **Update dialog no longer hides its buttons.** When a release had a long
+  changelog, the release-notes text expanded the dialog past the screen
+  height and the Update / Cancel buttons fell off the bottom — users had
+  no way to install or dismiss. Release notes now scroll inside a capped
+  280 dp box; the header and action buttons stay anchored.
+
+[1.0.0-beta.7]: https://github.com/talibfitrah/albunyaantube/releases/tag/v1.0.0-beta.7
+
 ## [1.0.0-beta.6] - 2026-05-03
 
 ### Android — Channel detail reliability and speed
