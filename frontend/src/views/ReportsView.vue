@@ -349,7 +349,10 @@ async function fetchContentMeta(items: ContentReport[]) {
     // the admin table showing opaque IDs and missing artwork.
     const lookupUrl = `/api/admin/reports/lookup?type=${r.type}&id=${encodeURIComponent(r.id)}`;
     try {
-      const res = await apiClient.get<{ title?: string; name?: string; thumbnailUrl?: string }>(lookupUrl);
+      const res = await apiClient.get<{ title?: string; name?: string; thumbnailUrl?: string }>(
+        lookupUrl,
+        { suppressNotFoundToast: true }
+      );
       const d = res.data;
       contentMeta.value[key] = {
         thumbnailUrl: d.thumbnailUrl ?? ytVideoThumb,

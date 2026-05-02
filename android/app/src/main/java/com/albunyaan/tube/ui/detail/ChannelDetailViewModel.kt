@@ -354,8 +354,9 @@ class ChannelDetailViewModel @AssistedInject constructor(
                 Log.d(TAG, "Videos initial: emitted ${cached.size} cached items pre-NewPipe")
             }
 
-            // Keep LoadingInitial visible throughout auto-fetch loop to avoid flashing empty list
-            // Loop through empty pages with continuations (bounded to prevent infinite loops)
+            // Fetch one page for the first paint. Empty continuation pages are exposed to
+            // the UI immediately so the fragment can autofill asynchronously or show Load More
+            // instead of hiding multiple NewPipe calls behind a blank loading state.
             var currentNextPage: Page? = null
 
             while (pageFetches < MAX_INITIAL_EMPTY_PAGE_FETCHES) {
@@ -371,9 +372,9 @@ class ChannelDetailViewModel @AssistedInject constructor(
                     break
                 }
 
-                // Empty page with continuation - continue fetching without updating UI
+                // Empty page with continuation - expose it after the bounded initial fetch.
                 emptyContinuations++
-                Log.d(TAG, "Videos: empty page $pageFetches with continuation, auto-fetching next")
+                Log.d(TAG, "Videos: empty page $pageFetches with continuation, exposing Load More")
                 currentNextPage = page.nextPage
             }
 
@@ -497,7 +498,7 @@ class ChannelDetailViewModel @AssistedInject constructor(
         var accumulatedItems = emptyList<ChannelLiveStream>()
         var loadError: String? = null
         try {
-            // Keep LoadingInitial visible throughout auto-fetch loop to avoid flashing empty list
+            // Fetch one page for the first paint; continuation walking belongs to append/autofill.
             var currentNextPage: Page? = null
 
             while (pageFetches < MAX_INITIAL_EMPTY_PAGE_FETCHES) {
@@ -513,7 +514,7 @@ class ChannelDetailViewModel @AssistedInject constructor(
                 }
 
                 emptyContinuations++
-                Log.d(TAG, "Live: empty page $pageFetches with continuation, auto-fetching next")
+                Log.d(TAG, "Live: empty page $pageFetches with continuation, exposing Load More")
                 currentNextPage = page.nextPage
             }
 
@@ -607,7 +608,7 @@ class ChannelDetailViewModel @AssistedInject constructor(
         var accumulatedItems = emptyList<ChannelShort>()
         var loadError: String? = null
         try {
-            // Keep LoadingInitial visible throughout auto-fetch loop to avoid flashing empty list
+            // Fetch one page for the first paint; continuation walking belongs to append/autofill.
             var currentNextPage: Page? = null
 
             while (pageFetches < MAX_INITIAL_EMPTY_PAGE_FETCHES) {
@@ -623,7 +624,7 @@ class ChannelDetailViewModel @AssistedInject constructor(
                 }
 
                 emptyContinuations++
-                Log.d(TAG, "Shorts: empty page $pageFetches with continuation, auto-fetching next")
+                Log.d(TAG, "Shorts: empty page $pageFetches with continuation, exposing Load More")
                 currentNextPage = page.nextPage
             }
 
@@ -717,7 +718,7 @@ class ChannelDetailViewModel @AssistedInject constructor(
         var accumulatedItems = emptyList<ChannelPlaylist>()
         var loadError: String? = null
         try {
-            // Keep LoadingInitial visible throughout auto-fetch loop to avoid flashing empty list
+            // Fetch one page for the first paint; continuation walking belongs to append/autofill.
             var currentNextPage: Page? = null
 
             while (pageFetches < MAX_INITIAL_EMPTY_PAGE_FETCHES) {
@@ -733,7 +734,7 @@ class ChannelDetailViewModel @AssistedInject constructor(
                 }
 
                 emptyContinuations++
-                Log.d(TAG, "Playlists: empty page $pageFetches with continuation, auto-fetching next")
+                Log.d(TAG, "Playlists: empty page $pageFetches with continuation, exposing Load More")
                 currentNextPage = page.nextPage
             }
 
@@ -1037,12 +1038,10 @@ class ChannelDetailViewModel @AssistedInject constructor(
         private const val TAG = "ChannelDetailViewModel"
         private const val MIN_APPEND_INTERVAL_MS = 1000L // Rate limit: 1 second between requests
         private const val PAGINATION_THRESHOLD = 5 // Trigger pagination when 5 items from end
-        // Hidden empty-page fetches are bounded tightly so channel screens do
-        // not feel frozen while NewPipe walks many filtered continuation pages.
-        // Four initial attempts preserves the known case where content appears
-        // after three empty pages; append gets one extra chance before the
-        // existing Load More footer asks the user to opt into deeper paging.
-        private const val MAX_INITIAL_EMPTY_PAGE_FETCHES = 4
+        // Initial load must paint after one extractor page. More continuation
+        // walking happens through fragment autofill/manual pagination where
+        // footer state is visible instead of appearing as a frozen tab.
+        private const val MAX_INITIAL_EMPTY_PAGE_FETCHES = 1
         private const val MAX_APPEND_EMPTY_PAGE_FETCHES = 5
     }
 }

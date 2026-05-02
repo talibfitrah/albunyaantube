@@ -12,10 +12,10 @@ import javax.inject.Singleton
 class NeverFreezeTrackSelectionFactory @Inject constructor() {
 
     companion object {
-        private const val MIN_DURATION_FOR_QUALITY_INCREASE_MS = 4_000
-        private const val MAX_DURATION_FOR_QUALITY_DECREASE_MS = 500
-        private const val MIN_DURATION_TO_RETAIN_AFTER_DISCARD_MS = 15_000
-        private const val BANDWIDTH_FRACTION = 0.65f
+        private const val MIN_DURATION_FOR_QUALITY_INCREASE_MS = 12_000
+        private const val MAX_DURATION_FOR_QUALITY_DECREASE_MS = 4_000
+        private const val MIN_DURATION_TO_RETAIN_AFTER_DISCARD_MS = 20_000
+        private const val BANDWIDTH_FRACTION = 0.55f
     }
 
     fun create(): ExoTrackSelection.Factory = AdaptiveTrackSelection.Factory(

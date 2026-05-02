@@ -32,8 +32,9 @@ class PlaybackRecoveryManager(
     companion object {
         private const val TAG = "PlaybackRecovery"
 
-        // Stall thresholds for VOD
-        private const val BUFFERING_STALL_THRESHOLD_MS = 15_000L
+        // Stall thresholds for VOD. A 15s hidden freeze is already a failed UX;
+        // recover while the user still sees the player as responsive.
+        private const val BUFFERING_STALL_THRESHOLD_MS = 6_000L
         // Live streams buffer more due to real-time data - use longer threshold
         private const val LIVE_BUFFERING_STALL_THRESHOLD_MS = 45_000L
         private const val STUCK_READY_CHECK_INTERVAL_MS = 3_000L
@@ -148,10 +149,8 @@ class PlaybackRecoveryManager(
                 if (player.playWhenReady) {
                     startStuckReadyDetection(player)
                 }
-                // If we were recovering and reached READY, recovery succeeded
-                if (isRecovering) {
-                    onRecoverySuccess()
-                }
+                // READY only means the player has enough state to render. Do not
+                // declare recovery success until playback actually advances.
             }
             Player.STATE_ENDED -> {
                 cancelAllJobs()
@@ -178,6 +177,8 @@ class PlaybackRecoveryManager(
      * Call when isPlaying changes to true - indicates successful playback.
      */
     fun onPlaybackStarted() {
+        stopStuckReadyDetection()
+        stopBufferingStallDetection()
         if (isRecovering) {
             onRecoverySuccess()
         }

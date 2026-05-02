@@ -293,14 +293,14 @@ class PlaybackRecoveryManagerTest {
     // --- Timing Tests (using injected clock + coroutine advancement) ---
 
     @Test
-    fun `buffering stall triggers recovery after 15 second threshold`() = testScope.runTest {
+    fun `buffering stall triggers recovery after 6 second threshold`() = testScope.runTest {
         // Arrange: start stream and enter buffering state
         recoveryManager.onNewStream("video1", false)
         whenever(mockPlayer.playbackState).thenReturn(Player.STATE_BUFFERING)
         recoveryManager.onPlaybackStateChanged(mockPlayer, Player.STATE_BUFFERING)
 
-        // Act: advance time past the 15s buffering stall threshold
-        advanceTimeAndClock(15_001L)
+        // Act: advance time past the 6s buffering stall threshold
+        advanceTimeAndClock(6_001L)
 
         // Assert: recovery should have been initiated
         verify(mockCallbacks).onRecoveryStarted(
@@ -310,14 +310,14 @@ class PlaybackRecoveryManagerTest {
     }
 
     @Test
-    fun `buffering stall does not trigger recovery before 15 second threshold`() = testScope.runTest {
+    fun `buffering stall does not trigger recovery before 6 second threshold`() = testScope.runTest {
         // Arrange: start stream and enter buffering state
         recoveryManager.onNewStream("video1", false)
         whenever(mockPlayer.playbackState).thenReturn(Player.STATE_BUFFERING)
         recoveryManager.onPlaybackStateChanged(mockPlayer, Player.STATE_BUFFERING)
 
         // Act: advance time just before the threshold
-        advanceTimeAndClock(14_999L)
+        advanceTimeAndClock(5_999L)
 
         // Assert: no recovery should be triggered yet
         verify(mockCallbacks, never()).onRecoveryStarted(any(), any())
@@ -326,15 +326,15 @@ class PlaybackRecoveryManagerTest {
     @Test
     fun `consecutive stall recoveries progress through recovery steps`() = testScope.runTest {
         // Verify that consecutive buffering stalls trigger progressive recovery steps.
-        // Note: With current constants (BUFFERING_STALL_THRESHOLD_MS=15s, RECOVERY_BACKOFF_BASE_MS=2s,
-        // MAX_RECOVERY_ATTEMPTS=5), stall threshold (15s) exceeds required backoff up through attempt 5
-        // (max 2s*5=10s), so stall-driven attempts won't be blocked by backoff.
+        // Note: With current constants (BUFFERING_STALL_THRESHOLD_MS=6s, RECOVERY_BACKOFF_BASE_MS=2s,
+        // MAX_RECOVERY_ATTEMPTS=5), the test advances 10s per attempt so every
+        // backoff window has elapsed before the next stall check.
         recoveryManager.onNewStream("video1", false)
         whenever(mockPlayer.playbackState).thenReturn(Player.STATE_BUFFERING)
         recoveryManager.onPlaybackStateChanged(mockPlayer, Player.STATE_BUFFERING)
 
-        // First recovery triggers after 15s stall threshold
-        advanceTimeAndClock(15_001L)
+        // First recovery triggers after 6s stall threshold
+        advanceTimeAndClock(6_001L)
 
         verify(mockCallbacks).onRecoveryStarted(eq(PlaybackRecoveryManager.RecoveryStep.RE_PREPARE), eq(1))
         clearInvocations(mockCallbacks)
@@ -342,8 +342,8 @@ class PlaybackRecoveryManagerTest {
         // Simulate player still buffering - re-trigger detection
         recoveryManager.onPlaybackStateChanged(mockPlayer, Player.STATE_BUFFERING)
 
-        // Second stall fires after another 15s
-        advanceTimeAndClock(15_001L)
+        // Second stall fires after another 6s
+        advanceTimeAndClock(6_001L)
 
         // Second recovery should use SEEK_TO_CURRENT step
         verify(mockCallbacks).onRecoveryStarted(eq(PlaybackRecoveryManager.RecoveryStep.SEEK_TO_CURRENT), eq(2))
@@ -356,18 +356,44 @@ class PlaybackRecoveryManagerTest {
         whenever(mockPlayer.playbackState).thenReturn(Player.STATE_BUFFERING)
 
         // Trigger 5 recovery attempts (MAX_RECOVERY_ATTEMPTS = 5)
-        // Each stall needs 15s to trigger; stall spacing (15s) > max backoff (10s), so no extra delay needed
+        // Each stall needs 6s to trigger. Attempts that need more backoff add the missing delay below.
         for (attempt in 1..5) {
             recoveryManager.onPlaybackStateChanged(mockPlayer, Player.STATE_BUFFERING)
-            advanceTimeAndClock(15_001L)
+            advanceTimeAndClock(10_001L)
         }
 
         // Try to trigger 6th attempt - should be rejected as exhausted
         recoveryManager.onPlaybackStateChanged(mockPlayer, Player.STATE_BUFFERING)
-        advanceTimeAndClock(15_001L)
+        advanceTimeAndClock(10_001L)
 
         // Assert: exhausted callback should be triggered
         verify(mockCallbacks).onRecoveryExhausted()
+    }
+
+    @Test
+    fun `ready state during recovery does not report success until playback starts`() = testScope.runTest {
+        recoveryManager.onNewStream("video1", false)
+        whenever(mockPlayer.playbackState).thenReturn(Player.STATE_BUFFERING)
+        recoveryManager.onPlaybackStateChanged(mockPlayer, Player.STATE_BUFFERING)
+        advanceTimeAndClock(6_001L)
+
+        verify(mockCallbacks).onRecoveryStarted(
+            eq(PlaybackRecoveryManager.RecoveryStep.RE_PREPARE),
+            eq(1)
+        )
+        clearInvocations(mockCallbacks)
+
+        whenever(mockPlayer.playbackState).thenReturn(Player.STATE_READY)
+        whenever(mockPlayer.playWhenReady).thenReturn(true)
+        whenever(mockPlayer.isPlaying).thenReturn(false)
+
+        recoveryManager.onPlaybackStateChanged(mockPlayer, Player.STATE_READY)
+
+        verify(mockCallbacks, never()).onRecoverySucceeded()
+
+        recoveryManager.onPlaybackStarted()
+
+        verify(mockCallbacks).onRecoverySucceeded()
     }
 
     @Test

@@ -465,7 +465,7 @@ class BufferHealthMonitorTest {
         }
 
         // Decline at ~1s/sample (1s buffer lost per second = throughput == bitrate)
-        // Need 10+ consecutive declines for predictive trigger
+        // Need sustained consecutive declines for predictive trigger
         // And projected to hit critical in < 30s
         repeat(80) { // Deplete buffer significantly
             bufferMs -= 1_100L // Slightly faster than 1s/sample
@@ -475,7 +475,7 @@ class BufferHealthMonitorTest {
 
         // At this point, buffer should be ~12s (100s - 88s) and still declining
         // Projection to critical (3s) = 9s / 1.1 ≈ 8s, which is < 30s horizon
-        // With 10+ consecutive declines, predictive should trigger
+        // With sustained consecutive declines, predictive should trigger
 
         // Assert: at least one predictive downshift occurred
         verify(mockCallbacks, atLeast(1)).onProactiveDownshiftRequested()

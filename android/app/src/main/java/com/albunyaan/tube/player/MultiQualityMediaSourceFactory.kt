@@ -600,17 +600,12 @@ class MultiQualityMediaSourceFactory(
             android.util.Log.d(TAG, "Skipping HLS for $videoId (poisoned), trying DASH directly")
         }
 
-        // WORKAROUND: Media3 1.9.2 has an ArrayIndexOutOfBoundsException bug in
-        // HlsChunkSource.createFallbackOptions when single-track HLS variants
-        // hit a load error. The bug crashes ExoPlayer:Playback thread before
-        // any LoadErrorHandlingPolicy can intercept. Until Media3 is upgraded,
-        // skip HLS entirely and rely on DASH / synthetic-DASH / progressive.
-        // Crash signature: ArrayIndexOutOfBoundsException at
-        //   BaseTrackSelection.isTrackExcluded line 197.
-        val hlsDisabledForBugWorkaround = true
+        // Media3 has been upgraded past the 1.9.2 HLS crash workaround. Keep
+        // HLS protected by probation + poison registry instead of globally
+        // disabling the best true-ABR source.
 
         // Try HLS first (better compatibility) unless poisoned
-        val hlsResult = if (!hlsPoisoned && !hlsDisabledForBugWorkaround) {
+        val hlsResult = if (!hlsPoisoned) {
             resolved.hlsUrl?.let { hlsUrl ->
                 // Phase 6 probation: HEAD-probe the manifest before committing to HLS.
                 // A non-2xx response or timeout means the URL is already invalid (e.g. 403

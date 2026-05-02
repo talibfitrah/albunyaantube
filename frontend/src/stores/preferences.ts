@@ -69,7 +69,7 @@ function readPersistedTheme(storage: Storage | undefined): ThemeMode | null {
   return null;
 }
 
-const systemDarkQuery = typeof window !== 'undefined'
+const systemDarkQuery = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
   ? window.matchMedia('(prefers-color-scheme: dark)')
   : null;
 
@@ -105,7 +105,7 @@ export const usePreferencesStore = defineStore('preferences', () => {
     applyTheme(theme.value);
 
     // Re-apply when OS dark/light preference changes (only matters for 'system' theme)
-    systemDarkQuery?.addEventListener('change', () => {
+    systemDarkQuery?.addEventListener?.('change', () => {
       if (theme.value === 'system') applyTheme('system');
     });
 

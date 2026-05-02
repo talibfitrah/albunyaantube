@@ -68,9 +68,10 @@ class BufferHealthMonitor(
 
         /**
          * Minimum consecutive declining samples required for predictive downshift.
-         * Higher threshold than low-buffer to avoid false positives.
+         * This must fit inside the five-sample trend window; the previous value
+         * of 10 made the predictive branch unreachable.
          */
-        private const val PREDICTIVE_DECLINING_THRESHOLD = 10
+        private const val PREDICTIVE_DECLINING_THRESHOLD = 3
     }
 
     interface BufferHealthCallbacks {

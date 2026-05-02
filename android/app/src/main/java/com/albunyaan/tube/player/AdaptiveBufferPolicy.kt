@@ -20,7 +20,7 @@ import javax.inject.Singleton
  * **Buffer sizing strategy:**
  * - Low-memory devices (≤128MB heap): Conservative buffers to prevent OOM
  * - Normal devices (128-256MB heap): Balanced buffers for good UX
- * - High-memory devices (>256MB heap): Aggressive buffers for minimal rebuffering
+ * - High-memory devices (>256MB heap): Stable buffers without over-buffering CDN streams
  * - TV/Set-top boxes: Use NORMAL profile even with high memory (slow eMMC storage)
  *
  * **TV/Set-top box handling:**
@@ -60,18 +60,20 @@ class AdaptiveBufferPolicy @Inject constructor(
         private const val LOW_BACK_BUFFER_MS = 30_000     // 30s back buffer
 
         // Balanced profile (normal devices)
-        private const val NORMAL_MIN_BUFFER_MS = 25_000   // 25s min buffer
-        private const val NORMAL_MAX_BUFFER_MS = 120_000  // 2 minutes max buffer
+        private const val NORMAL_MIN_BUFFER_MS = 20_000   // 20s min buffer
+        private const val NORMAL_MAX_BUFFER_MS = 90_000   // 90s max buffer
         private const val NORMAL_PLAYBACK_BUFFER_MS = 1_500 // 1.5s before playback (fast TTFF)
         private const val NORMAL_REBUFFER_BUFFER_MS = 3_000 // 3s after rebuffer
         private const val NORMAL_BACK_BUFFER_MS = 45_000  // 45s back buffer
 
-        // Aggressive profile (high-memory devices)
-        private const val HIGH_MIN_BUFFER_MS = 30_000     // 30s min buffer
-        private const val HIGH_MAX_BUFFER_MS = 180_000    // 3 minutes max buffer
+        // High-memory profile. Samsung/flagship devices should not silently
+        // buffer 3 minutes of adaptive media; that increases allocator churn and
+        // recovery latency without proving network health.
+        private const val HIGH_MIN_BUFFER_MS = 20_000     // 20s min buffer
+        private const val HIGH_MAX_BUFFER_MS = 90_000     // 90s max buffer
         private const val HIGH_PLAYBACK_BUFFER_MS = 1_500 // 1.5s before playback (fast TTFF)
-        private const val HIGH_REBUFFER_BUFFER_MS = 3_000 // 3s after rebuffer
-        private const val HIGH_BACK_BUFFER_MS = 60_000    // 60s back buffer
+        private const val HIGH_REBUFFER_BUFFER_MS = 4_000 // 4s after rebuffer for stable resume
+        private const val HIGH_BACK_BUFFER_MS = 45_000    // 45s back buffer
     }
 
     /**
@@ -147,7 +149,7 @@ class AdaptiveBufferPolicy @Inject constructor(
                     profile = BufferProfile.NORMAL
                 )
             }
-            // High memory phones/tablets get aggressive profile
+            // High memory phones/tablets get the stable high-memory profile
             memoryClass >= HIGH_MEMORY_CLASS -> {
                 BufferConfig(
                     minBufferMs = HIGH_MIN_BUFFER_MS,

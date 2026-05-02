@@ -26,7 +26,7 @@ describe('theme tokens', () => {
     requiredTokens.forEach(token => {
       expect(css).toContain(token);
     });
-    expect(css).toContain('@media (prefers-color-scheme: dark)');
+    expect(css).toContain(':root[data-theme="dark"]');
   });
 
   it('maps views to the tokenized palette', () => {

@@ -9,6 +9,8 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.dash.DashMediaSource
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.MergingMediaSource
@@ -46,7 +48,10 @@ import javax.inject.Singleton
 @Singleton
 class MultiRepSyntheticDashMediaSourceFactory @Inject constructor(
     private val mpdGenerator: MultiRepresentationMpdGenerator,
-    private val mpdRegistry: SyntheticDashMpdRegistry
+    private val mpdRegistry: SyntheticDashMpdRegistry,
+    private val featureFlags: PlaybackFeatureFlags? = null,
+    private val cronetDataSourceFactory: CronetDataSourceFactory? = null,
+    private val simpleCache: SimpleCache? = null
 ) {
 
     companion object {
@@ -170,14 +175,27 @@ class MultiRepSyntheticDashMediaSourceFactory @Inject constructor(
             )
         }
 
-        // Create data source factories
-        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-            .setUserAgent(HttpConstants.YOUTUBE_USER_AGENT)
-            .setConnectTimeoutMs(15000)
-            .setReadTimeoutMs(20000)
-            .setAllowCrossProtocolRedirects(true)
+        // Segment fetches should use the same transport/cache policy as normal playback.
+        // The previous path bypassed Cronet and SimpleCache for synthetic adaptive DASH,
+        // making the common fallback less stable than true HLS/DASH on flaky networks.
+        val httpDataSourceFactory: DataSource.Factory =
+            if (featureFlags?.isCronetEnabled == true && cronetDataSourceFactory != null) {
+                cronetDataSourceFactory.createForAndroidUA()
+            } else {
+                DefaultHttpDataSource.Factory()
+                    .setUserAgent(HttpConstants.YOUTUBE_USER_AGENT)
+                    .setConnectTimeoutMs(15000)
+                    .setReadTimeoutMs(20000)
+                    .setAllowCrossProtocolRedirects(true)
+            }
 
-        val upstreamFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
+        val baseUpstreamFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
+        val upstreamFactory = simpleCache?.let { cache ->
+            CacheDataSource.Factory()
+                .setCache(cache)
+                .setUpstreamDataSourceFactory(baseUpstreamFactory)
+                .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        } ?: baseUpstreamFactory
 
         // Create composite data source factory that handles both syntheticdash:// and http(s)://
         val compositeFactory = CompositeDataSourceFactory(

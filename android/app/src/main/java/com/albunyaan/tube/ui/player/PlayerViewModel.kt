@@ -421,8 +421,7 @@ class PlayerViewModel @Inject constructor(
      * @return true if step-down was applied, false if URLs were expired (refresh triggered)
      */
     fun applyAutoQualityStepDown(track: VideoTrack): Boolean {
-        val streamState = _state.value.streamState
-        if (streamState !is StreamState.Ready) return false
+        val streamState = readyOrRecoveringSelection() ?: return false
 
         val resolved = streamState.selection.resolved
         val isProgressiveStream = resolved.hlsUrl == null && resolved.dashUrl == null
@@ -463,8 +462,7 @@ class PlayerViewModel @Inject constructor(
      * @return true if step-down was applied, false if stream state was invalid
      */
     fun applyDecoderErrorStepDown(track: VideoTrack): Boolean {
-        val streamState = _state.value.streamState
-        if (streamState !is StreamState.Ready) return false
+        val streamState = readyOrRecoveringSelection() ?: return false
 
         val resolved = streamState.selection.resolved
         val isProgressiveStream = resolved.hlsUrl == null && resolved.dashUrl == null
@@ -496,6 +494,15 @@ class PlayerViewModel @Inject constructor(
             "Decoder error step-down to ${track.qualityLabel}: cap changed from ${oldCap}p to ${newCapHeight}p"
         )
         return true
+    }
+
+    private fun readyOrRecoveringSelection(): StreamState.Ready? {
+        return when (val streamState = _state.value.streamState) {
+            is StreamState.Ready -> streamState
+            is StreamState.Recovering -> StreamState.Ready(streamState.streamId, streamState.selection)
+            is StreamState.RecoveryExhausted -> StreamState.Ready(streamState.streamId, streamState.selection)
+            else -> null
+        }
     }
 
     /**

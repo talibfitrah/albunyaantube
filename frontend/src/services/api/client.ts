@@ -7,6 +7,13 @@ import axios, { AxiosError, type AxiosInstance, type InternalAxiosRequestConfig 
 import { useAuthStore } from '@/stores/auth';
 import { toast } from '@/utils/toast';
 
+declare module 'axios' {
+  export interface AxiosRequestConfig {
+    suppressNotFoundToast?: boolean;
+    suppressGlobalErrorToast?: boolean;
+  }
+}
+
 // In development, use relative URL to go through Vite proxy (avoids CORS)
 // In production, use the configured API base URL or fall back to relative URLs
 const API_BASE_URL = import.meta.env.DEV
@@ -42,6 +49,8 @@ apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const authStore = useAuthStore();
+    const suppressGlobalErrorToast = error.config?.suppressGlobalErrorToast === true;
+    const suppressNotFoundToast = suppressGlobalErrorToast || error.config?.suppressNotFoundToast === true;
 
     // Handle 401 - Token expired, try refresh
     if (error.response?.status === 401 && !error.config?.headers['X-Retry']) {
@@ -57,17 +66,17 @@ apiClient.interceptors.response.use(
     }
 
     // Handle 403 - Forbidden
-    if (error.response?.status === 403) {
+    if (error.response?.status === 403 && !suppressGlobalErrorToast) {
       toast.error('You do not have permission to perform this action');
     }
 
     // Handle 404 - Not Found
-    if (error.response?.status === 404) {
+    if (error.response?.status === 404 && !suppressNotFoundToast) {
       toast.error('Resource not found');
     }
 
     // Handle 500 - Server Error
-    if (error.response?.status === 500) {
+    if (error.response?.status === 500 && !suppressGlobalErrorToast) {
       toast.error('Server error. Please try again later.');
     }
 

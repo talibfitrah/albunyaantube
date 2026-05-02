@@ -639,7 +639,7 @@ class ChannelDetailViewModelTest {
     // Empty First Page With Continuation Tests
 
     @Test
-    fun `videos auto-fetches next page when first page is empty but has continuation`() = runTest {
+    fun `videos exposes empty first page continuation before manual append`() = runTest {
         val nextPage = Page("http://continuation", null, null, null)
         val page2Videos = listOf(createTestVideo("v1", "Video 1"), createTestVideo("v2", "Video 2"))
 
@@ -653,16 +653,26 @@ class ChannelDetailViewModelTest {
         val viewModel = createViewModel("UCtest123")
         advanceUntilIdle()
 
-        // Should have auto-fetched the second page and have items
+        // Initial load should paint quickly with visible continuation instead of hiding
+        // the second extractor call behind a blank tab.
         val state = viewModel.videosState.value
-        assertTrue("Expected Loaded state with items", state is ChannelDetailViewModel.PaginatedState.Loaded)
-        assertEquals(2, (state as ChannelDetailViewModel.PaginatedState.Loaded).items.size)
-        // Verify both pages were fetched
+        assertTrue("Expected Loaded state with continuation", state is ChannelDetailViewModel.PaginatedState.Loaded)
+        val initial = state as ChannelDetailViewModel.PaginatedState.Loaded
+        assertEquals(0, initial.items.size)
+        assertEquals(nextPage, initial.nextPage)
+        assertTrue(initial.showLoadMoreFooter)
+        assertEquals(1, fakeRepository.videosCallCount)
+
+        assertTrue(viewModel.loadNextPage(ChannelTab.VIDEOS))
+        advanceUntilIdle()
+
+        val appended = viewModel.videosState.value as ChannelDetailViewModel.PaginatedState.Loaded
+        assertEquals(2, appended.items.size)
         assertEquals(2, fakeRepository.videosCallCount)
     }
 
     @Test
-    fun `live auto-fetches next page when first page is empty but has continuation`() = runTest {
+    fun `live exposes empty first page continuation before manual append`() = runTest {
         val nextPage = Page("http://continuation", null, null, null)
         val page2Live = listOf(createTestLiveStream("l1", "Live Stream 1", isLiveNow = true))
 
@@ -679,13 +689,23 @@ class ChannelDetailViewModelTest {
         advanceUntilIdle()
 
         val state = viewModel.liveState.value
-        assertTrue("Expected Loaded state with items", state is ChannelDetailViewModel.PaginatedState.Loaded)
-        assertEquals(1, (state as ChannelDetailViewModel.PaginatedState.Loaded).items.size)
+        assertTrue("Expected Loaded state with continuation", state is ChannelDetailViewModel.PaginatedState.Loaded)
+        val initial = state as ChannelDetailViewModel.PaginatedState.Loaded
+        assertEquals(0, initial.items.size)
+        assertEquals(nextPage, initial.nextPage)
+        assertTrue(initial.showLoadMoreFooter)
+        assertEquals(1, fakeRepository.liveCallCount)
+
+        assertTrue(viewModel.loadNextPage(ChannelTab.LIVE))
+        advanceUntilIdle()
+
+        val appended = viewModel.liveState.value as ChannelDetailViewModel.PaginatedState.Loaded
+        assertEquals(1, appended.items.size)
         assertEquals(2, fakeRepository.liveCallCount)
     }
 
     @Test
-    fun `shorts auto-fetches next page when first page is empty but has continuation`() = runTest {
+    fun `shorts exposes empty first page continuation before manual append`() = runTest {
         val nextPage = Page("http://continuation", null, null, null)
         val page2Shorts = listOf(createTestShort("s1", "Short 1"))
 
@@ -702,13 +722,23 @@ class ChannelDetailViewModelTest {
         advanceUntilIdle()
 
         val state = viewModel.shortsState.value
-        assertTrue("Expected Loaded state with items", state is ChannelDetailViewModel.PaginatedState.Loaded)
-        assertEquals(1, (state as ChannelDetailViewModel.PaginatedState.Loaded).items.size)
+        assertTrue("Expected Loaded state with continuation", state is ChannelDetailViewModel.PaginatedState.Loaded)
+        val initial = state as ChannelDetailViewModel.PaginatedState.Loaded
+        assertEquals(0, initial.items.size)
+        assertEquals(nextPage, initial.nextPage)
+        assertTrue(initial.showLoadMoreFooter)
+        assertEquals(1, fakeRepository.shortsCallCount)
+
+        assertTrue(viewModel.loadNextPage(ChannelTab.SHORTS))
+        advanceUntilIdle()
+
+        val appended = viewModel.shortsState.value as ChannelDetailViewModel.PaginatedState.Loaded
+        assertEquals(1, appended.items.size)
         assertEquals(2, fakeRepository.shortsCallCount)
     }
 
     @Test
-    fun `playlists auto-fetches next page when first page is empty but has continuation`() = runTest {
+    fun `playlists exposes empty first page continuation before manual append`() = runTest {
         val nextPage = Page("http://continuation", null, null, null)
         val page2Playlists = listOf(createTestPlaylist("p1", "Playlist 1"))
 
@@ -725,8 +755,18 @@ class ChannelDetailViewModelTest {
         advanceUntilIdle()
 
         val state = viewModel.playlistsState.value
-        assertTrue("Expected Loaded state with items", state is ChannelDetailViewModel.PaginatedState.Loaded)
-        assertEquals(1, (state as ChannelDetailViewModel.PaginatedState.Loaded).items.size)
+        assertTrue("Expected Loaded state with continuation", state is ChannelDetailViewModel.PaginatedState.Loaded)
+        val initial = state as ChannelDetailViewModel.PaginatedState.Loaded
+        assertEquals(0, initial.items.size)
+        assertEquals(nextPage, initial.nextPage)
+        assertTrue(initial.showLoadMoreFooter)
+        assertEquals(1, fakeRepository.playlistsCallCount)
+
+        assertTrue(viewModel.loadNextPage(ChannelTab.PLAYLISTS))
+        advanceUntilIdle()
+
+        val appended = viewModel.playlistsState.value as ChannelDetailViewModel.PaginatedState.Loaded
+        assertEquals(1, appended.items.size)
         assertEquals(2, fakeRepository.playlistsCallCount)
     }
 
@@ -756,9 +796,15 @@ class ChannelDetailViewModelTest {
         val viewModel = createViewModel("UCtest123")
         advanceUntilIdle()
 
+        val initial = viewModel.videosState.value
+        assertTrue("Expected Loaded state with continuation", initial is ChannelDetailViewModel.PaginatedState.Loaded)
+        assertEquals(1, fakeRepository.videosCallCount)
+
+        assertTrue(viewModel.loadNextPage(ChannelTab.VIDEOS))
+        advanceUntilIdle()
+
         val state = viewModel.videosState.value
         assertTrue("Expected Empty state when all pages are empty", state is ChannelDetailViewModel.PaginatedState.Empty)
-        // Verify both pages were fetched
         assertEquals(2, fakeRepository.videosCallCount)
     }
 
@@ -781,10 +827,16 @@ class ChannelDetailViewModelTest {
         val viewModel = createViewModel("UCtest123")
         advanceUntilIdle()
 
+        val initial = viewModel.videosState.value
+        assertTrue("Expected Loaded state with continuation", initial is ChannelDetailViewModel.PaginatedState.Loaded)
+        assertEquals(1, fakeRepository.videosCallCount)
+
+        assertTrue(viewModel.loadNextPage(ChannelTab.VIDEOS))
+        advanceUntilIdle()
+
         val state = viewModel.videosState.value
-        assertTrue("Expected Loaded state after skipping empty pages", state is ChannelDetailViewModel.PaginatedState.Loaded)
+        assertTrue("Expected Loaded state after append walks empty pages", state is ChannelDetailViewModel.PaginatedState.Loaded)
         assertEquals(1, (state as ChannelDetailViewModel.PaginatedState.Loaded).items.size)
-        // Verify all pages were fetched
         assertEquals(4, fakeRepository.videosCallCount)
     }
 
@@ -802,8 +854,9 @@ class ChannelDetailViewModelTest {
         val viewModel = createViewModel("UCtest123")
         advanceUntilIdle()
 
-        // Should stop at MAX_INITIAL_EMPTY_PAGE_FETCHES (4), not fetch all 10.
-        assertEquals("Should limit initial empty page fetches to 4", 4, fakeRepository.videosCallCount)
+        // Initial load must stop after one page and expose continuation instead of
+        // hiding many extractor calls behind LoadingInitial.
+        assertEquals("Should limit initial empty page fetches to 1", 1, fakeRepository.videosCallCount)
 
         val state = viewModel.videosState.value
         assertTrue("Expected Loaded state with manual continuation", state is ChannelDetailViewModel.PaginatedState.Loaded)
@@ -856,6 +909,13 @@ class ChannelDetailViewModelTest {
         viewModel.loadInitial(ChannelTab.LIVE)
         advanceUntilIdle()
 
+        val initial = viewModel.liveState.value
+        assertTrue("Expected Loaded state with continuation", initial is ChannelDetailViewModel.PaginatedState.Loaded)
+        assertEquals(1, fakeRepository.liveCallCount)
+
+        assertTrue(viewModel.loadNextPage(ChannelTab.LIVE))
+        advanceUntilIdle()
+
         val state = viewModel.liveState.value
         assertTrue("Expected Empty state", state is ChannelDetailViewModel.PaginatedState.Empty)
         assertEquals(2, fakeRepository.liveCallCount)
@@ -877,6 +937,13 @@ class ChannelDetailViewModelTest {
         viewModel.loadInitial(ChannelTab.SHORTS)
         advanceUntilIdle()
 
+        val initial = viewModel.shortsState.value
+        assertTrue("Expected Loaded state with continuation", initial is ChannelDetailViewModel.PaginatedState.Loaded)
+        assertEquals(1, fakeRepository.shortsCallCount)
+
+        assertTrue(viewModel.loadNextPage(ChannelTab.SHORTS))
+        advanceUntilIdle()
+
         val state = viewModel.shortsState.value
         assertTrue("Expected Empty state", state is ChannelDetailViewModel.PaginatedState.Empty)
         assertEquals(2, fakeRepository.shortsCallCount)
@@ -896,6 +963,13 @@ class ChannelDetailViewModelTest {
         advanceUntilIdle()
 
         viewModel.loadInitial(ChannelTab.PLAYLISTS)
+        advanceUntilIdle()
+
+        val initial = viewModel.playlistsState.value
+        assertTrue("Expected Loaded state with continuation", initial is ChannelDetailViewModel.PaginatedState.Loaded)
+        assertEquals(1, fakeRepository.playlistsCallCount)
+
+        assertTrue(viewModel.loadNextPage(ChannelTab.PLAYLISTS))
         advanceUntilIdle()
 
         val state = viewModel.playlistsState.value

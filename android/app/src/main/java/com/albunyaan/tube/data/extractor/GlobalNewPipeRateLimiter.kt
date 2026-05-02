@@ -127,7 +127,7 @@ class GlobalNewPipeRateLimiter @VisibleForTesting internal constructor(
         const val DEFAULT_TOKENS: Int = 20
         const val DEFAULT_REFILL_MS: Long = 30_000L
         const val DEFAULT_ACQUIRE_TIMEOUT_MS: Long = 30_000L
-        const val DEFAULT_VISIBLE_INTERACTIVE_ACQUIRE_TIMEOUT_MS: Long = 2_000L
+        const val DEFAULT_VISIBLE_INTERACTIVE_ACQUIRE_TIMEOUT_MS: Long = 15_000L
         private const val DEFAULT_BACKGROUND_ACQUIRE_TIMEOUT_MS: Long = 0L
         private const val BACKGROUND_FOREGROUND_RESERVE_TOKENS: Int = 5
 
