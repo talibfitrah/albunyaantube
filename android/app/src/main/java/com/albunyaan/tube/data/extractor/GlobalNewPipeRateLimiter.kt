@@ -8,19 +8,27 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Global token-bucket rate limiter for NewPipe HTTP paths (spec §4.5).
+ * Global token-bucket rate limiter for NewPipe HTTP paths (spec §4.5,
+ * post-beta.5 fix).
  *
- * Bucket parameters (production):
+ * Scope: the bucket throttles **autonomous/background traffic only**
+ * ([Priority.BACKGROUND_REFRESH]). User-initiated paths — [Priority.PLAYER],
+ * [Priority.VISIBLE_INTERACTIVE], [Priority.USER_FOREGROUND] — bypass the
+ * bucket entirely. User gestures are self-rate-limited by human tap cadence,
+ * and real abuse signals from YouTube (HTTP 429 / ReCaptcha) still **trip**
+ * the cooldown via [RateLimitedDownloader] — but the resulting cooldown
+ * read is also scoped to BACKGROUND_REFRESH, so a stale persisted trip
+ * cannot lock the user out of channel/detail taps on subsequent app starts
+ * (the beta.4/beta.5 channel-detail regression). A static token clock is
+ * the wrong tool for user-facing flows: a 20-token / 30 s-refill bucket
+ * gives ~2 tokens/min steady state, which silently blocks a user who
+ * casually browses several channels in a row.
+ *
+ * Bucket parameters (production, BACKGROUND_REFRESH only):
  * - Capacity: 20 tokens
  * - Refill: 1 token / 30 s
- * - Player priority: bypasses bucket entirely (playback must never block)
- * - Visible interactive acquire timeout: 2 s for user-facing channel/detail loads
- * - Foreground acquire timeout: 30 s for explicit user work that may wait longer
- * - Background refresh/prefetch: opportunistic only, with a foreground reserve
- *
- * Smaller bucket than v1 because the Me-tab refresh no longer consumes from
- * it (T2 swapped Me-feed away from NewPipe to ATOM). The bucket now exists
- * primarily to throttle Home / Search burst load.
+ * - Foreground reserve (5 tokens) protects future user-foreground callers
+ *   if any are ever migrated back into the bucket
  *
  * Thread safety: a single suspend [Mutex] serialises refill + decrement,
  * so concurrent callers see consistent token counts. The mutex is only
@@ -73,14 +81,15 @@ class GlobalNewPipeRateLimiter @VisibleForTesting internal constructor(
         priority: Priority,
         timeoutMs: Long = DEFAULT_ACQUIRE_TIMEOUT_MS,
     ): Boolean {
-        if (priority == Priority.PLAYER) return true
+        // Only BACKGROUND_REFRESH consumes from the bucket. Every other
+        // priority is user-initiated (or the player) and must not be gated by
+        // a static token clock — see class-level KDoc for the rationale.
+        if (priority != Priority.BACKGROUND_REFRESH) return true
 
-        val effectiveTimeoutMs = when {
-            priority == Priority.VISIBLE_INTERACTIVE && timeoutMs == DEFAULT_ACQUIRE_TIMEOUT_MS ->
-                DEFAULT_VISIBLE_INTERACTIVE_ACQUIRE_TIMEOUT_MS
-            priority == Priority.BACKGROUND_REFRESH && timeoutMs == DEFAULT_ACQUIRE_TIMEOUT_MS ->
-                DEFAULT_BACKGROUND_ACQUIRE_TIMEOUT_MS
-            else -> timeoutMs
+        val effectiveTimeoutMs = if (timeoutMs == DEFAULT_ACQUIRE_TIMEOUT_MS) {
+            DEFAULT_BACKGROUND_ACQUIRE_TIMEOUT_MS
+        } else {
+            timeoutMs
         }
         val deadline = now() + effectiveTimeoutMs
         while (true) {
@@ -127,7 +136,6 @@ class GlobalNewPipeRateLimiter @VisibleForTesting internal constructor(
         const val DEFAULT_TOKENS: Int = 20
         const val DEFAULT_REFILL_MS: Long = 30_000L
         const val DEFAULT_ACQUIRE_TIMEOUT_MS: Long = 30_000L
-        const val DEFAULT_VISIBLE_INTERACTIVE_ACQUIRE_TIMEOUT_MS: Long = 15_000L
         private const val DEFAULT_BACKGROUND_ACQUIRE_TIMEOUT_MS: Long = 0L
         private const val BACKGROUND_FOREGROUND_RESERVE_TOKENS: Int = 5
 

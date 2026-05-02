@@ -1,19 +1,31 @@
 package com.albunyaan.tube.data.extractor
 
 /**
- * Priority levels for the global NewPipe rate limiter (spec §4.5).
+ * Priority levels for the global NewPipe rate limiter (spec §4.5,
+ * post-beta.5 fix).
  *
- * - [PLAYER]: bypasses the bucket entirely — playback must never block
- *   on a refresh-thread bucket because the user is actively watching.
- * - [VISIBLE_INTERACTIVE]: channel/detail pages the user is looking at right
- *   now. Uses the foreground bucket, but fails quickly so visible screens do
- *   not sit behind long NewPipe waits when the budget is exhausted.
- * - [USER_FOREGROUND]: Home / Search / paged grids the user is looking at.
- *   Acquires from the bucket with a foreground timeout.
- * - [BACKGROUND_REFRESH]: Reserved for any future background NewPipe path
- *   (the Me tab itself uses ATOM, so it does not consume the bucket).
- *   Uses the same bucket as USER_FOREGROUND, but only opportunistically so it
- *   cannot drain the foreground reserve.
+ * Gating rule: **only [BACKGROUND_REFRESH] respects the bucket and the
+ * cooldown read.** The other three priorities bypass both gates entirely.
+ * 429 / [org.schabi.newpipe.extractor.exceptions.ReCaptchaException]
+ * observations from any non-Player path still **trip** the cooldown as a
+ * one-way signal — but the trip only gates *future* [BACKGROUND_REFRESH],
+ * never user gestures. See [RateLimitedDownloader] KDoc for the rationale
+ * (a stale persisted cooldown was locking users out of every channel tap on
+ * subsequent app starts in beta.5).
+ *
+ * - [PLAYER]: bypasses both gates and never trips cooldown — playback must
+ *   never block on a refresh-thread gate because the user is actively
+ *   watching, and a player 429 is usually a stale stream URL not abuse.
+ * - [VISIBLE_INTERACTIVE]: channel/detail pages the user is looking at
+ *   right now. Bypasses both gates; trips cooldown on 429 to inform future
+ *   BACKGROUND_REFRESH.
+ * - [USER_FOREGROUND]: Home / Search / paged grids / playlist detail / user-
+ *   initiated downloads. Bypasses both gates; trips cooldown on 429 to
+ *   inform future BACKGROUND_REFRESH.
+ * - [BACKGROUND_REFRESH]: autonomous Me-tab refresh, prefetch, and any other
+ *   background NewPipe traffic. Consumes from the bucket non-blockingly
+ *   (default timeout 0 ms), respects the cooldown, and protects a
+ *   foreground reserve.
  *
  * Declaration order is not significant — no compareTo/ordinal usage.
  */

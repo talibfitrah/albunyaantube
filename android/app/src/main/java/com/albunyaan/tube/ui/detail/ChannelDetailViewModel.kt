@@ -105,8 +105,16 @@ class ChannelDetailViewModel @AssistedInject constructor(
         ChannelTab.entries.forEach { tab ->
             paginationControllers[tab] = TabPaginationController()
         }
-        // Load header on init
+        // Fire header and the currently-selected tab's first page in
+        // parallel. Sequencing them serialised the videos fetch behind
+        // ~300-600 ms of channel-info HTTP latency on cold first-open.
+        // The repository's getVideos has a UC->UU fast path that skips
+        // getChannelInfo, so the videos fetch can complete independently.
+        // ensureTabLoaded() in loadHeader's success path is still safe —
+        // it gates on Idle state and becomes a no-op once we've already
+        // transitioned to LoadingInitial here.
         loadHeader()
+        loadInitial(tabForPosition(_selectedTab.value))
     }
 
     /**
@@ -151,19 +159,21 @@ class ChannelDetailViewModel @AssistedInject constructor(
     fun loadInitial(tab: ChannelTab, forceRefresh: Boolean = false) {
         val controller = paginationControllers[tab] ?: return
 
-        // Skip if already loading
+        // Skip if already loading. The flag flip must happen before
+        // launching so two synchronous loadInitial calls (e.g. init {}
+        // and loadHeader's success path racing against test virtual time)
+        // can't both pass the guard and fan out duplicate fetches.
         if (controller.isInitialLoading) {
             Log.d(TAG, "Skipping loadInitial for $tab - already loading")
             return
         }
+        controller.isInitialLoading = true
+        controller.hasReachedEnd = false
+        controller.nextPage = null
 
         viewModelScope.launch {
             try {
                 Log.d(TAG, "Loading initial content for tab: $tab")
-                controller.isInitialLoading = true
-                controller.hasReachedEnd = false
-                controller.nextPage = null
-
                 updateTabState(tab, PaginatedState.LoadingInitial)
 
                 when (tab) {
@@ -378,9 +388,25 @@ class ChannelDetailViewModel @AssistedInject constructor(
                 currentNextPage = page.nextPage
             }
 
-            // Final state determination
+            // Final state determination.
+            //
+            // If NewPipe returned 0 items but we already emitted cached
+            // content above, *do not* wipe it. A successful-but-empty
+            // PlaylistInfo response is more often a transient extraction
+            // glitch (YouTube response variance, NewPipe parser miss) than
+            // a genuinely empty channel — and overwriting the cached
+            // emission would replace 100 visible videos with the empty
+            // state on a re-open. Keep the cached Loaded state and surface
+            // a warning instead.
             if (accumulatedItems.isEmpty() && controller.nextPage == null) {
-                _videosState.value = PaginatedState.Empty
+                if (cachedEmittedCount > 0) {
+                    Log.w(
+                        TAG,
+                        "Videos initial: NewPipe returned 0 items but $cachedEmittedCount cached items already shown — preserving cached state",
+                    )
+                } else {
+                    _videosState.value = PaginatedState.Empty
+                }
             } else {
                 _videosState.value = PaginatedState.Loaded(
                     accumulatedItems,

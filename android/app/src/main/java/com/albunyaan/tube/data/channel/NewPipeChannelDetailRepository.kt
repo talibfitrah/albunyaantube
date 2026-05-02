@@ -12,9 +12,7 @@ import com.albunyaan.tube.player.StreamRequestTelemetry
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
-import kotlin.random.Random
 import org.schabi.newpipe.extractor.InfoItem
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.channel.ChannelInfo
@@ -65,9 +63,6 @@ class NewPipeChannelDetailRepository @Inject constructor(
     private val youtubeService = ServiceList.YouTube
     private val channelLinkHandlerFactory = YoutubeChannelLinkHandlerFactory.getInstance()
 
-    // Limit concurrent NewPipe operations to prevent overwhelming rate limiter
-    private val newPipeOperationSemaphore = Semaphore(MAX_CONCURRENT_NEWPIPE_OPS)
-
     // In-memory cache for channel info (header + tabs)
     private val channelInfoCache = ConcurrentHashMap<String, CacheEntry<ChannelInfo>>()
 
@@ -111,17 +106,42 @@ class NewPipeChannelDetailRepository @Inject constructor(
         // playlist items. Use 3-tier detection (NewPipe flag OR /shorts/ URL
         // OR <=180s duration) to filter shorts client-side.
         val keptForCache = mutableListOf<StreamInfoItem>()
-        var resolvedChannelName: String? = null
+        var resolvedChannelName: String? = channelInfoCache[channelId]?.value?.name
         val result = withContext(Dispatchers.IO) {
+            // Fast path: a UC-prefixed channelId can derive its UU upload
+            // playlist URL directly, so we skip the upfront getChannelInfo
+            // HTTP. The header fetch in [ChannelDetailViewModel] runs in
+            // parallel with this — sequencing them added ~300-600 ms of
+            // channel-info HTTP to every cold first-open.
+            val canonicalUuUrl = channelId.takeIf { it.startsWith("UC") }?.let {
+                "https://www.youtube.com/playlist?list=UU" + it.removePrefix("UC")
+            }
+            if (canonicalUuUrl != null) {
+                try {
+                    return@withContext retryNewPipeRateLimiterTimeout("uploads playlist for $channelId") {
+                        NewPipePriorityContext.with(Priority.VISIBLE_INTERACTIVE) {
+                            fetchUploadsPlaylistPage(canonicalUuUrl, page, keptForCache)
+                        }
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "UU fast-path failed for $channelId, falling back to channel-info path: ${e.message}")
+                    keptForCache.clear()
+                    // Fall through to the slow path below.
+                }
+            }
+
+            // Slow / fallback path: needs getChannelInfo. Used when channelId
+            // isn't UC-prefixed, or when the UU fast path failed.
             try {
                 val channelInfo = getChannelInfo(channelId, forceRefresh = false)
                 resolvedChannelName = channelInfo.name ?: channelId
                 val playlistUrl = uploadsPlaylistUrlFor(channelInfo)
-                if (playlistUrl == null) {
-                    // Channel doesn't expose a UC-style ID we can derive UU
-                    // from (rare: legacy /c/handle or /@handle channels).
-                    // Fall back to the channel-tab path with the original
-                    // single-tier shorts filter (matches pre-fix behaviour).
+                // If the info-derived URL matches what the fast path already
+                // tried, skip straight to the channel-tab path — repeating
+                // the same HTTP would just produce the same failure.
+                if (playlistUrl == null || playlistUrl == canonicalUuUrl) {
                     return@withContext fetchTabContent(channelId, ChannelTabs.VIDEOS, page) { item ->
                         (item as? StreamInfoItem)?.takeIf { !it.isShortFormContent }?.also {
                             keptForCache.add(it)
@@ -130,33 +150,12 @@ class NewPipeChannelDetailRepository @Inject constructor(
                 }
                 retryNewPipeRateLimiterTimeout("uploads playlist for $channelId") {
                     NewPipePriorityContext.with(Priority.VISIBLE_INTERACTIVE) {
-                        val items: List<ChannelVideo>
-                        val nextPage: Page?
-                        if (page == null) {
-                            val info = PlaylistInfo.getInfo(youtubeService, playlistUrl)
-                            val raw = (info.relatedItems ?: emptyList()).filterIsInstance<StreamInfoItem>()
-                            val kept = raw.filter { !it.isLikelyShortByThreeTierDetection() }
-                            items = kept.map { it.toChannelVideo() }
-                            keptForCache.addAll(kept)
-                            nextPage = Page.fromNewPipePage(info.nextPage)
-                            Log.d(TAG, "Fetched videos via UU playlist (initial): raw=${raw.size} kept=${items.size} hasMore=${nextPage != null}")
-                        } else {
-                            val more = PlaylistInfo.getMoreItems(youtubeService, playlistUrl, page.toNewPipePage())
-                            val raw = (more.items ?: emptyList()).filterIsInstance<StreamInfoItem>()
-                            val kept = raw.filter { !it.isLikelyShortByThreeTierDetection() }
-                            items = kept.map { it.toChannelVideo() }
-                            keptForCache.addAll(kept)
-                            nextPage = Page.fromNewPipePage(more.nextPage)
-                            Log.d(TAG, "Fetched videos via UU playlist (more): raw=${raw.size} kept=${items.size} hasMore=${nextPage != null}")
-                        }
-                        ChannelPage(items = items, nextPage = nextPage)
+                        fetchUploadsPlaylistPage(playlistUrl, page, keptForCache)
                     }
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                // Uploads-playlist path failed (extraction error, network, etc).
-                // Fall back to channel-tab path so the user sees something.
                 Log.w(TAG, "Uploads playlist fetch failed for $channelId, falling back to channel-tab: ${e.message}")
                 fetchTabContent(channelId, ChannelTabs.VIDEOS, page) { item ->
                     (item as? StreamInfoItem)?.takeIf { !it.isShortFormContent }?.also {
@@ -184,6 +183,50 @@ class NewPipeChannelDetailRepository @Inject constructor(
             Log.w(TAG, "Indexing failed for channel $channelId videos (continuing anyway): ${e.message}")
         }
         return result
+    }
+
+    /**
+     * Single round-trip against the UU uploads playlist. Throws an
+     * [IOException] when the initial page comes back with zero raw items
+     * and no continuation — NewPipe occasionally returns an empty
+     * [PlaylistInfo] for an active channel without raising an exception,
+     * and we want the caller's catch to fall back to the channel-tab path
+     * in that case.
+     */
+    private fun fetchUploadsPlaylistPage(
+        playlistUrl: String,
+        page: Page?,
+        keptForCache: MutableList<StreamInfoItem>,
+    ): ChannelPage<ChannelVideo> {
+        val items: List<ChannelVideo>
+        val nextPage: Page?
+        if (page == null) {
+            val info = PlaylistInfo.getInfo(youtubeService, playlistUrl)
+            val raw = (info.relatedItems ?: emptyList()).filterIsInstance<StreamInfoItem>()
+            val kept = raw.filter { !it.isLikelyShortByThreeTierDetection() }
+            items = kept.map { it.toChannelVideo() }
+            keptForCache.addAll(kept)
+            nextPage = Page.fromNewPipePage(info.nextPage)
+            Log.d(
+                TAG,
+                "Fetched videos via UU playlist (initial): raw=${raw.size} kept=${items.size} hasMore=${nextPage != null}",
+            )
+            if (raw.isEmpty() && nextPage == null) {
+                throw IOException("UU playlist returned 0 items + no continuation")
+            }
+        } else {
+            val more = PlaylistInfo.getMoreItems(youtubeService, playlistUrl, page.toNewPipePage())
+            val raw = (more.items ?: emptyList()).filterIsInstance<StreamInfoItem>()
+            val kept = raw.filter { !it.isLikelyShortByThreeTierDetection() }
+            items = kept.map { it.toChannelVideo() }
+            keptForCache.addAll(kept)
+            nextPage = Page.fromNewPipePage(more.nextPage)
+            Log.d(
+                TAG,
+                "Fetched videos via UU playlist (more): raw=${raw.size} kept=${items.size} hasMore=${nextPage != null}",
+            )
+        }
+        return ChannelPage(items = items, nextPage = nextPage)
     }
 
     /**
@@ -275,32 +318,26 @@ class NewPipeChannelDetailRepository @Inject constructor(
 
             Log.d(TAG, "Fetching channel info for: $channelId")
             try {
-                newPipeOperationSemaphore.acquire()
-                try {
-                    // Mark this NewPipe path as VISIBLE_INTERACTIVE so
-                    // [com.albunyaan.tube.data.extractor.RateLimitedDownloader]
-                    // routes the HTTP call through the foreground bucket but fails
-                    // fast when the NewPipe budget is exhausted. Set inside
-                    // withContext(Dispatchers.IO) so the ThreadLocal is observed
-                    // on the actual NewPipe call thread.
-                    retryNewPipeRateLimiterTimeout("channel header $channelId") {
-                        NewPipePriorityContext.with(Priority.VISIBLE_INTERACTIVE) {
-                            val handler = createChannelLinkHandler(channelId)
-                                ?: throw ExtractionException("Invalid channel ID: $channelId")
+                // Mark this NewPipe path as VISIBLE_INTERACTIVE so the
+                // [com.albunyaan.tube.data.extractor.RateLimitedDownloader]
+                // cooldown gate sees the priority context. The token bucket
+                // bypasses for VISIBLE_INTERACTIVE — see
+                // [com.albunyaan.tube.data.extractor.GlobalNewPipeRateLimiter].
+                retryNewPipeRateLimiterTimeout("channel header $channelId") {
+                    NewPipePriorityContext.with(Priority.VISIBLE_INTERACTIVE) {
+                        val handler = createChannelLinkHandler(channelId)
+                            ?: throw ExtractionException("Invalid channel ID: $channelId")
 
-                            val extractor = youtubeService.getChannelExtractor(handler)
-                            extractor.fetchPage()
-                            val info = ChannelInfo.getInfo(extractor)
+                        val extractor = youtubeService.getChannelExtractor(handler)
+                        extractor.fetchPage()
+                        val info = ChannelInfo.getInfo(extractor)
 
-                            // Cache the result
-                            channelInfoCache[channelId] = CacheEntry(info, now)
-                            Log.d(TAG, "Cached channel info for: $channelId with ${info.tabs.size} tabs")
+                        // Cache the result
+                        channelInfoCache[channelId] = CacheEntry(info, now)
+                        Log.d(TAG, "Cached channel info for: $channelId with ${info.tabs.size} tabs")
 
-                            info
-                        }
+                        info
                     }
-                } finally {
-                    newPipeOperationSemaphore.release()
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -334,42 +371,37 @@ class NewPipeChannelDetailRepository @Inject constructor(
                 return@withContext ChannelPage(items = emptyList(), nextPage = null)
             }
 
-            newPipeOperationSemaphore.acquire()
-            try {
-                // Mark the NewPipe pagination calls as VISIBLE_INTERACTIVE for the
-                // rate-limit + cooldown gates (spec §4.4 / §4.5). [getChannelInfo]
-                // sets its own priority above; this scope covers the additional
-                // tab-content HTTP calls.
-                retryNewPipeRateLimiterTimeout("$tabName tab for $channelId") {
-                    NewPipePriorityContext.with(Priority.VISIBLE_INTERACTIVE) {
-                        val items: List<T>
-                        val nextPage: Page?
+            // Cooldown gate (RateLimitedDownloader) reads the priority context;
+            // the token bucket bypasses for VISIBLE_INTERACTIVE. [getChannelInfo]
+            // sets its own priority above; this scope covers the tab-content
+            // HTTP calls.
+            retryNewPipeRateLimiterTimeout("$tabName tab for $channelId") {
+                NewPipePriorityContext.with(Priority.VISIBLE_INTERACTIVE) {
+                    val items: List<T>
+                    val nextPage: Page?
 
-                        if (page == null) {
-                            // Initial page
-                            val tabInfo = ChannelTabInfo.getInfo(youtubeService, tabHandler)
-                            items = tabInfo.relatedItems.mapNotNull(mapper)
-                            nextPage = Page.fromNewPipePage(tabInfo.nextPage)
-                            Log.d(TAG, "Fetched initial $tabName page: ${items.size} items, hasMore=${nextPage != null}")
+                    if (page == null) {
+                        // Initial page
+                        val tabInfo = ChannelTabInfo.getInfo(youtubeService, tabHandler)
+                        items = tabInfo.relatedItems.mapNotNull(mapper)
+                        nextPage = Page.fromNewPipePage(tabInfo.nextPage)
+                        Log.d(TAG, "Fetched initial $tabName page: ${items.size} items, hasMore=${nextPage != null}")
 
-                            // If items are empty but nextPage exists, content may exist on subsequent pages
-                            // This can happen with some channels due to slow loading or extraction issues
-                            if (items.isEmpty() && nextPage != null) {
-                                Log.d(TAG, "$tabName: Initial page empty but pagination available - content may exist on subsequent pages")
-                            }
-                        } else {
-                            // Subsequent page
-                            val morePage = ChannelTabInfo.getMoreItems(youtubeService, tabHandler, page.toNewPipePage())
-                            items = morePage.items.mapNotNull(mapper)
-                            nextPage = Page.fromNewPipePage(morePage.nextPage)
-                            Log.d(TAG, "Fetched more $tabName: ${items.size} items, hasMore=${nextPage != null}")
+                        // If items are empty but nextPage exists, content may exist on subsequent pages
+                        // This can happen with some channels due to slow loading or extraction issues
+                        if (items.isEmpty() && nextPage != null) {
+                            Log.d(TAG, "$tabName: Initial page empty but pagination available - content may exist on subsequent pages")
                         }
-
-                        ChannelPage(items = items, nextPage = nextPage)
+                    } else {
+                        // Subsequent page
+                        val morePage = ChannelTabInfo.getMoreItems(youtubeService, tabHandler, page.toNewPipePage())
+                        items = morePage.items.mapNotNull(mapper)
+                        nextPage = Page.fromNewPipePage(morePage.nextPage)
+                        Log.d(TAG, "Fetched more $tabName: ${items.size} items, hasMore=${nextPage != null}")
                     }
+
+                    ChannelPage(items = items, nextPage = nextPage)
                 }
-            } finally {
-                newPipeOperationSemaphore.release()
             }
         } catch (e: CancellationException) {
             throw e
@@ -396,7 +428,7 @@ class NewPipeChannelDetailRepository @Inject constructor(
                 if (!e.isNewPipeRateLimiterTimeout()) throw e
                 lastFailure = e
                 if (attempt == RATE_LIMIT_RETRY_ATTEMPTS) break
-                val delayMs = calculateBackoffDelayMs(attempt)
+                val delayMs = RATE_LIMIT_RETRY_DELAY_MS * attempt
                 Log.w(
                     TAG,
                     "Retrying $operation after internal NewPipe limiter timeout " +
@@ -407,12 +439,6 @@ class NewPipeChannelDetailRepository @Inject constructor(
             }
         }
         throw lastFailure ?: IOException("NewPipe rate limiter timeout")
-    }
-
-    private fun calculateBackoffDelayMs(attempt: Int): Long {
-        val exponentialDelay = (RATE_LIMIT_RETRY_DELAY_MS * (1L shl (attempt - 1))).coerceAtMost(16_000L)
-        val jitterMs = Random.nextLong(0L, 1001L)
-        return exponentialDelay + jitterMs
     }
 
     private fun Throwable.isNewPipeRateLimiterTimeout(): Boolean {
@@ -693,9 +719,8 @@ class NewPipeChannelDetailRepository @Inject constructor(
     companion object {
         private const val TAG = "ChannelDetailRepo"
         private const val CACHE_TTL_MILLIS = 30 * 60 * 1000L // 30 minutes
-        private const val RATE_LIMIT_RETRY_ATTEMPTS = 8
+        private const val RATE_LIMIT_RETRY_ATTEMPTS = 2
         private const val RATE_LIMIT_RETRY_DELAY_MS = 1_000L
-        private const val MAX_CONCURRENT_NEWPIPE_OPS = 2
         private val UCID_REGEX = Regex("/channel/(UC[A-Za-z0-9_-]+)")
     }
 }

@@ -14,27 +14,53 @@ import java.io.IOException
  * ([GlobalNewPipeRateLimiter]) and the cooldown gate ([CooldownState]) before
  * delegating to [OkHttpDownloader] (spec §4.4).
  *
- * Behaviour by [Priority]:
- *  - [Priority.PLAYER]  — bypasses both gates entirely. Playback must never
- *    block on a refresh-thread bucket because the user is actively watching;
- *    the player path is also the only path that *must* survive a tripped
- *    cooldown so a previously cached / mid-stream playback can recover. See
- *    spec D1.
- *  - All other priorities — check [CooldownState.isTrippedSync] (synchronous
- *    bridge with internal [runBlocking]); if tripped, throw [IOException]
- *    without consulting the rate limiter or delegate. Otherwise acquire from
- *    the bucket via [GlobalNewPipeRateLimiter.acquire] and only delegate to
- *    [OkHttpDownloader] on success. After the acquire returns we **re-check**
- *    the cooldown state — between the initial check and the acquire, another
- *    caller may have observed a 429 and tripped the cooldown; without this
- *    second read we would race past a fresh trip and hit YouTube during an
- *    active cooldown (ANDROID-PERSONAL-02 [Bug 2]).
+ * ## Gating scope (post-beta.5 fix)
  *
- * Trip triggers (non-Player only):
- *  - [ReCaptchaException] from the delegate → [CooldownState.trip] then
- *    rethrow so NewPipe still sees the original exception.
- *  - HTTP 429 from the delegate → [CooldownState.trip] then convert to
- *    [IOException] so callers fall through to retry / backoff.
+ * Both gates apply **only** to [Priority.BACKGROUND_REFRESH]. User-initiated
+ * paths — [Priority.PLAYER], [Priority.VISIBLE_INTERACTIVE],
+ * [Priority.USER_FOREGROUND] — bypass the bucket and the cooldown read. A
+ * static token clock + persisted cooldown is the wrong tool for user-facing
+ * flows: in beta.4/beta.5 a single 429 from any path could persist a 1–24 h
+ * cooldown that then locked the user out of every channel/detail tap on
+ * subsequent app starts, even though human tap cadence is self-rate-limiting
+ * and YouTube's transient 429 is usually long gone by the time the user
+ * comes back. Symmetric to the bucket bypass in [GlobalNewPipeRateLimiter] —
+ * see that class's KDoc for the full rationale.
+ *
+ * ### Trip side effect (still applies to user paths)
+ *
+ * A 429 / [ReCaptchaException] from a non-Player path **still trips** the
+ * cooldown via [CooldownState.trip]. The trip itself is a one-way signal:
+ * it gates *future* [Priority.BACKGROUND_REFRESH] (which respects the
+ * cooldown read) but does not retro-block the user gesture that observed
+ * the 429. This preserves the original spec §4.6 protection for autonomous
+ * traffic while letting user gestures fail-naturally on real abuse signals
+ * instead of preemptively locking out on yesterday's persisted trip.
+ *
+ * ### Player exception (spec D1)
+ *
+ * Player still NEVER trips cooldown — the player path must survive a
+ * concurrent trip so a previously cached / mid-stream playback can recover,
+ * and a player 429 typically means the stream URL aged out, not that the
+ * service is being abused.
+ *
+ * ## Behaviour by [Priority]
+ *
+ *  - [Priority.PLAYER] — bypasses both gates and never trips cooldown
+ *    (spec D1).
+ *  - [Priority.VISIBLE_INTERACTIVE], [Priority.USER_FOREGROUND] — bypass
+ *    both gates. On 429 / [ReCaptchaException] from the delegate, *trip*
+ *    cooldown (so future [Priority.BACKGROUND_REFRESH] gets gated) and
+ *    surface the error to the caller.
+ *  - [Priority.BACKGROUND_REFRESH] — full gate: check
+ *    [CooldownState.isTrippedSync] first; if tripped, throw [IOException]
+ *    without consulting the rate limiter or delegate. Otherwise acquire
+ *    from the bucket via [GlobalNewPipeRateLimiter.acquire]. After the
+ *    acquire returns we **re-check** the cooldown state — between the
+ *    initial check and the acquire, another caller may have observed a
+ *    429 and tripped the cooldown; without this second read we would race
+ *    past a fresh trip and hit YouTube during an active cooldown
+ *    (ANDROID-PERSONAL-02 [Bug 2]).
  *
  * The priority is read from [NewPipePriorityContext.currentOrDefault] —
  * callers wrap each NewPipe entry point in
@@ -49,8 +75,8 @@ import java.io.IOException
  *
  * ## Residual TOCTOU (ANDROID-PERSONAL-02 round 2 [Bug C])
  *
- * A tiny window remains between the post-acquire cooldown re-check
- * (around line 87) and [delegate.execute] (around line 96). If a concurrent
+ * A tiny window remains between the post-acquire cooldown re-check and
+ * [delegate.execute] inside the BACKGROUND_REFRESH branch. If a concurrent
  * caller observes a 429 and trips the cooldown in this window, this
  * caller still issues exactly one request that races past the trip and
  * hits YouTube while the cooldown is technically active. We accept this
@@ -75,7 +101,12 @@ class RateLimitedDownloader @Inject constructor(
     override fun execute(request: Request): Response {
         val priority = NewPipePriorityContext.currentOrDefault()
 
-        if (priority != Priority.PLAYER) {
+        // Gate scope: only BACKGROUND_REFRESH respects the cooldown / bucket
+        // gates. User-initiated and Player paths bypass both — see class
+        // KDoc for the rationale (beta.5 channel-detail regression: a stale
+        // persisted cooldown locked the user out of every channel tap on
+        // subsequent app starts).
+        if (priority == Priority.BACKGROUND_REFRESH) {
             if (cooldownState.isTrippedSync()) {
                 throw IOException(
                     "NewPipe cooldown active until ${runBlocking { cooldownState.untilMs() }}"
@@ -108,6 +139,12 @@ class RateLimitedDownloader @Inject constructor(
 
         try {
             val response = delegate.execute(request)
+            // Trip-on-429 still applies to every non-Player priority. The
+            // trip is a one-way signal: it gates *future* BACKGROUND_REFRESH
+            // (which reads the cooldown above) but does not retro-block the
+            // user gesture that observed this 429. The user's own request
+            // surfaces the error normally so they can retry; only autonomous
+            // traffic is throttled by the resulting cooldown.
             if (priority != Priority.PLAYER && response.responseCode() == 429) {
                 runBlocking { cooldownState.trip(IOException("HTTP 429")) }
                 throw IOException("HTTP 429 — cooldown tripped")

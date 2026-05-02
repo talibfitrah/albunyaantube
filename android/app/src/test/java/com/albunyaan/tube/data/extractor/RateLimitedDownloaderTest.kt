@@ -36,14 +36,19 @@ import java.io.IOException
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * Tests for [RateLimitedDownloader] (spec §4.4).
+ * Tests for [RateLimitedDownloader] (spec §4.4, post-beta.5 fix).
  *
  * Covers the gating behaviour:
- *  - Player priority bypasses both rate-limit and cooldown gates (spec D1).
- *  - Non-player priorities check the cooldown first, then acquire a token.
- *  - HTTP 429 trips the cooldown.
- *  - ReCaptchaException trips the cooldown (and rethrows the original).
- *  - Rate-limiter timeout surfaces as IOException with no delegate call.
+ *  - [Priority.BACKGROUND_REFRESH] is the **only** priority that respects the
+ *    cooldown read and the rate-limiter acquire. User-initiated priorities
+ *    ([Priority.VISIBLE_INTERACTIVE], [Priority.USER_FOREGROUND]) and
+ *    [Priority.PLAYER] bypass both gates — see [RateLimitedDownloader] KDoc
+ *    for the rationale (beta.5 channel-detail regression).
+ *  - HTTP 429 / [ReCaptchaException] trip the cooldown for *every* non-Player
+ *    priority (the trip is a one-way signal that gates future
+ *    BACKGROUND_REFRESH but does not retro-block the user gesture that
+ *    observed the abuse signal).
+ *  - Player never trips cooldown (spec D1).
  *
  * Approach:
  *  - The delegate is a hand-rolled fake [Downloader] subclass — production
@@ -169,24 +174,28 @@ class RateLimitedDownloaderTest {
     }
 
     @Test
-    fun cooldown_active_blocks_non_player_calls() = runTest {
+    fun cooldown_active_blocks_background_refresh_calls() = runTest {
         cooldown.trip(IOException("preexisting"))
         val sut = RateLimitedDownloader(delegate, limiter, cooldown)
 
-        NewPipePriorityContext.with(Priority.USER_FOREGROUND) {
+        NewPipePriorityContext.with(Priority.BACKGROUND_REFRESH) {
             assertThrows(IOException::class.java) {
                 sut.execute(newRequest())
             }
         }
 
-        // Delegate must not be reached when cooldown is tripped.
+        // Delegate must not be reached when cooldown is tripped for background.
         assertEquals(0, delegate.callCount)
         // Rate limiter must not be consulted when cooldown is tripped.
         verifyBlocking(limiter, { never() }) { acquire(any(), any()) }
     }
 
     @Test
-    fun visible_interactive_priority_uses_rate_limiter_and_reaches_delegate() = runTest {
+    fun cooldown_active_does_NOT_block_visible_interactive_calls() = runTest {
+        // Post-beta.5 fix: cooldown gate is scoped to BACKGROUND_REFRESH only.
+        // A stale persisted cooldown must not lock the user out of channel /
+        // playlist detail taps — that's the regression this guards against.
+        cooldown.trip(IOException("preexisting"))
         delegate.nextResponse = ok()
         val sut = RateLimitedDownloader(delegate, limiter, cooldown)
 
@@ -195,9 +204,62 @@ class RateLimitedDownloaderTest {
             assertEquals(200, resp.responseCode())
         }
 
+        // Delegate WAS reached (user gesture bypasses cooldown gate).
+        assertEquals(1, delegate.callCount)
+        // Rate limiter is also bypassed for VISIBLE_INTERACTIVE.
+        verifyBlocking(limiter, { never() }) { acquire(any(), any()) }
+    }
+
+    @Test
+    fun cooldown_active_does_NOT_block_user_foreground_calls() = runTest {
+        // Same beta.5 regression guard, this time for the Home / Search /
+        // paged-grid / playlist-detail priority class.
+        cooldown.trip(IOException("preexisting"))
+        delegate.nextResponse = ok()
+        val sut = RateLimitedDownloader(delegate, limiter, cooldown)
+
+        NewPipePriorityContext.with(Priority.USER_FOREGROUND) {
+            val resp = sut.execute(newRequest())
+            assertEquals(200, resp.responseCode())
+        }
+
+        assertEquals(1, delegate.callCount)
+        verifyBlocking(limiter, { never() }) { acquire(any(), any()) }
+    }
+
+    @Test
+    fun visible_interactive_priority_bypasses_rate_limiter_and_reaches_delegate() = runTest {
+        // Post-beta.5 fix: VISIBLE_INTERACTIVE bypasses both gates. A static
+        // token clock is the wrong tool for user-paced channel/detail taps.
+        delegate.nextResponse = ok()
+        val sut = RateLimitedDownloader(delegate, limiter, cooldown)
+
+        NewPipePriorityContext.with(Priority.VISIBLE_INTERACTIVE) {
+            val resp = sut.execute(newRequest())
+            assertEquals(200, resp.responseCode())
+        }
+
+        // Bucket bypass: limiter is never consulted for VISIBLE_INTERACTIVE.
+        verifyBlocking(limiter, { never() }) { acquire(any(), any()) }
+        assertEquals(1, delegate.callCount)
+    }
+
+    @Test
+    fun background_refresh_priority_uses_rate_limiter_and_reaches_delegate() = runTest {
+        // BACKGROUND_REFRESH is the only priority that still consults the
+        // bucket (and the cooldown). This is the contract the bucket was
+        // designed for in spec §4.5.
+        delegate.nextResponse = ok()
+        val sut = RateLimitedDownloader(delegate, limiter, cooldown)
+
+        NewPipePriorityContext.with(Priority.BACKGROUND_REFRESH) {
+            val resp = sut.execute(newRequest())
+            assertEquals(200, resp.responseCode())
+        }
+
         verifyBlocking(limiter) {
             acquire(
-                Priority.VISIBLE_INTERACTIVE,
+                Priority.BACKGROUND_REFRESH,
                 GlobalNewPipeRateLimiter.DEFAULT_ACQUIRE_TIMEOUT_MS,
             )
         }
@@ -252,7 +314,9 @@ class RateLimitedDownloaderTest {
         wheneverBlocking { limiter.acquire(any(), any()) }.doReturn(false)
         val sut = RateLimitedDownloader(delegate, limiter, cooldown)
 
-        NewPipePriorityContext.with(Priority.USER_FOREGROUND) {
+        // Only BACKGROUND_REFRESH consults the limiter post-fix; user gestures
+        // bypass it entirely so they can never see this code path.
+        NewPipePriorityContext.with(Priority.BACKGROUND_REFRESH) {
             assertThrows(IOException::class.java) {
                 sut.execute(newRequest())
             }
@@ -267,6 +331,12 @@ class RateLimitedDownloaderTest {
     /**
      * ANDROID-PERSONAL-02 [Bug 2]: TOCTOU race between the initial cooldown
      * check and the rate-limiter acquire return.
+     *
+     * Post-beta.5 fix: only [Priority.BACKGROUND_REFRESH] still walks through
+     * the cooldown / acquire / re-check sequence, so this test pins the race
+     * coverage to that priority. User-gesture priorities bypass the gate
+     * entirely (covered by the dedicated bypass tests above) and cannot
+     * reach this code path.
      *
      * Sequence under test:
      *  1. Caller sees `isTrippedSync()=false` at the top of `execute()`.
@@ -299,7 +369,7 @@ class RateLimitedDownloaderTest {
 
         // The execute call must throw because the cooldown was tripped while
         // we were suspended in acquire.
-        val thrown = NewPipePriorityContext.with(Priority.USER_FOREGROUND) {
+        val thrown = NewPipePriorityContext.with(Priority.BACKGROUND_REFRESH) {
             assertThrows(IOException::class.java) {
                 sut.execute(newRequest())
             }

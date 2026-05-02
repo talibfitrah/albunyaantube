@@ -58,6 +58,7 @@ import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
 import java.io.File
 import javax.inject.Named
@@ -153,13 +154,36 @@ object DataModule {
         return MetadataCache(ttlMillis = 15 * 60 * 1000L, maxEntriesPerBucket = 200)
     }
 
+    /**
+     * Build a NewPipe-only [OkHttpClient] view that shares the singleton's
+     * connection pool but uses its own [Dispatcher].
+     *
+     * Why: the singleton [OkHttpClient] is also used by Retrofit (backend API)
+     * and [com.albunyaan.tube.data.me.AtomChannelFeedFetcher] (Me-tab ATOM
+     * refresh). OkHttp's per-host slot cap defaults to 5, and
+     * [com.albunyaan.tube.data.me.MeFeedRepository.MAX_CONCURRENT] = 4 ATOM
+     * fetches all hit `youtube.com`. With a shared dispatcher, those four
+     * BG fetches consume four of the five `youtube.com` slots and a user-
+     * gesture channel-detail tap (also `youtube.com` via NewPipe innertube)
+     * waits behind them. Beta.2 had no ATOM/prefetch traffic so user gestures
+     * had the pool to themselves; the slowdown reported in beta.5 vs beta.2
+     * is the cost of sharing the dispatcher with autonomous traffic.
+     *
+     * Giving NewPipe its own [Dispatcher] (default per-host = 5, same as
+     * beta.2 had effectively) restores user-gesture throughput while keeping
+     * ATOM's 4-concurrent fan-out on the shared dispatcher. The connection
+     * pool is shared (`newBuilder()` keeps it) so we don't waste sockets.
+     */
     @Provides
     @Singleton
     fun provideOkHttpDownloader(
         okHttpClient: OkHttpClient,
         @ApplicationContext context: Context
     ): OkHttpDownloader {
-        return OkHttpDownloader(okHttpClient, context.cacheDir)
+        val newPipeClient = okHttpClient.newBuilder()
+            .dispatcher(Dispatcher())
+            .build()
+        return OkHttpDownloader(newPipeClient, context.cacheDir)
     }
 
     /**
