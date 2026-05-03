@@ -219,6 +219,7 @@
     <string name="update_available_message">%1$s is ready to download.\n\n%2$s</string>
     <string name="update_version_ready">Version %1$s is ready to download.</string>
     <string name="update_no_release_notes">No release notes.</string>
+    <string name="update_view_full_changelog">View full changelog →</string>
     <string name="update_download_and_install">Update now</string>
     <string name="update_check_up_to_date">FitrahTube is up to date.</string>
     <string name="update_check_failed">Couldn\'t check for updates. Please try again.</string>

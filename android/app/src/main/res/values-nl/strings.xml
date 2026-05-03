@@ -196,6 +196,7 @@
     <string name="update_available_title">Update beschikbaar</string>
     <string name="update_available_message">Versie %1$s is beschikbaar.\n\n%2$s</string>
     <string name="update_no_release_notes">Geen release-opmerkingen.</string>
+    <string name="update_view_full_changelog">Volledige changelog bekijken →</string>
     <string name="update_download_and_install">Downloaden en installeren</string>
     <string name="update_check_up_to_date">U gebruikt de nieuwste versie.</string>
     <string name="update_check_failed">Kan niet controleren op updates.</string>

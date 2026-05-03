@@ -63,17 +63,17 @@
                 android:textColor="?attr/colorOnSurface" />
 
             <!--
-                Cap release-notes height and scroll within the box. Without
-                this, long release notes pushed the action buttons below the
-                screen on phones (no way to tap Update or Cancel). 280dp
-                leaves room for header + buttons on the smallest supported
-                screens; longer notes scroll vertically.
+                Hard-cap release-notes height. ScrollView ignores
+                android:maxHeight; the only reliable cap is an explicit
+                layout_height. 200dp leaves room for header, version label,
+                changelog link and action buttons on the smallest screens.
+                Notes are also length-truncated in code (see UpdatePromptFlow)
+                so the full multi-language release body never lands here.
             -->
             <ScrollView
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="200dp"
                 android:layout_marginTop="@dimen/spacing_sm"
-                android:maxHeight="280dp"
                 android:scrollbars="vertical"
                 android:fadeScrollbars="false">
 
@@ -85,6 +85,18 @@
                     android:textColor="?attr/colorOnSurfaceVariant" />
 
             </ScrollView>
+
+            <TextView
+                android:id="@+id/update_full_changelog"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_sm"
+                android:padding="@dimen/spacing_xs"
+                android:background="?attr/selectableItemBackground"
+                android:text="@string/update_view_full_changelog"
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:textColor="?attr/colorPrimary"
+                android:textStyle="bold" />
 
         </LinearLayout>
 

@@ -186,6 +186,7 @@
     <string name="update_available_title">يتوفر تحديث</string>
     <string name="update_available_message">الإصدار %1$s متاح.\n\n%2$s</string>
     <string name="update_no_release_notes">لا توجد ملاحظات إصدار.</string>
+    <string name="update_view_full_changelog">عرض سجل التغييرات الكامل ←</string>
     <string name="update_download_and_install">تنزيل وتثبيت</string>
     <string name="update_check_up_to_date">أنت تستخدم أحدث إصدار.</string>
     <string name="update_check_failed">تعذر التحقق من التحديثات.</string>

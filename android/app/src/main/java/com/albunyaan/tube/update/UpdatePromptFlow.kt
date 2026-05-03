@@ -1,8 +1,10 @@
 package com.albunyaan.tube.update
 
 import android.app.Activity
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
+import android.net.Uri
 import android.util.Log
 import android.view.Gravity
 import android.view.LayoutInflater
@@ -77,10 +79,20 @@ class UpdatePromptFlow @Inject constructor(
         dialogView.findViewById<TextView>(R.id.update_version_label).text =
             activity.getString(R.string.update_version_ready, info.releaseName)
         dialogView.findViewById<TextView>(R.id.update_release_notes).text =
-            info.releaseNotes.ifBlank { activity.getString(R.string.update_no_release_notes) }
+            summarizeReleaseNotes(info.releaseNotes)
+                .ifBlank { activity.getString(R.string.update_no_release_notes) }
         val dialog = MaterialAlertDialogBuilder(activity)
             .setView(dialogView)
             .create()
+        dialogView.findViewById<TextView>(R.id.update_full_changelog).setOnClickListener {
+            val url = "https://github.com/$GITHUB_REPO/releases/tag/v${info.versionName}"
+            runCatching {
+                activity.startActivity(
+                    Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }.onFailure { Log.w(TAG, "Failed to open changelog URL: $url", it) }
+        }
         dialogView.findViewById<MaterialButton>(R.id.update_btn_later).setOnClickListener {
             dialog.dismiss()
         }
@@ -181,7 +193,48 @@ class UpdatePromptFlow @Inject constructor(
         android.widget.Toast.makeText(activity, res, android.widget.Toast.LENGTH_LONG).show()
     }
 
+    /**
+     * Trim a GitHub release body down to a short, dialog-friendly summary.
+     *
+     * Release bodies are markdown and often trilingual (English / Arabic /
+     * Dutch sections separated by `---`). Rendering the whole thing in a
+     * dialog produces a wall of text that pushes the action buttons off-
+     * screen on phones. We take only the section in the user's locale, keep
+     * just the bullet lines (most release notes are bullets), strip basic
+     * markdown noise, and hard-cap the length. The full body is reachable
+     * via the "View full changelog" link below.
+     */
+    internal fun summarizeReleaseNotes(body: String): String {
+        if (body.isBlank()) return ""
+        val firstSection = body.substringBefore("\n---").trim()
+        val bullets = firstSection.lineSequence()
+            .map { it.trim() }
+            .filter { it.startsWith("- ") || it.startsWith("* ") }
+            .map { line ->
+                line.removePrefix("- ").removePrefix("* ")
+                    .replace(MD_BOLD, "$1")
+                    .replace(MD_LINK, "$1")
+                    .trim()
+            }
+            .toList()
+        val text = if (bullets.isNotEmpty()) {
+            bullets.joinToString("\n\n") { "• $it" }
+        } else {
+            firstSection
+                .lineSequence()
+                .filter { !it.trim().startsWith("#") && !it.trim().startsWith("---") }
+                .joinToString("\n")
+                .trim()
+        }
+        return if (text.length <= MAX_NOTES_CHARS) text
+        else text.take(MAX_NOTES_CHARS).trimEnd().trimEnd(',', '.', ';') + "…"
+    }
+
     companion object {
         private const val TAG = "UpdatePromptFlow"
+        private const val GITHUB_REPO = "talibfitrah/albunyaantube"
+        private const val MAX_NOTES_CHARS = 350
+        private val MD_BOLD = Regex("""\*\*(.+?)\*\*""")
+        private val MD_LINK = Regex("""\[(.+?)]\(.+?\)""")
     }
 }

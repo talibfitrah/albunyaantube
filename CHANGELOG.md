@@ -3,6 +3,19 @@
 All notable changes to FitrahTube. Versions are tagged on the `develop` branch
 during the beta program.
 
+## [1.0.0-beta.11] - 2026-05-03
+
+### Android
+
+- **Update dialog stays compact.** Long, multi-language release notes used
+  to fill the entire screen — pushing the action buttons off the bottom and
+  making the dialog impossible to dismiss or accept on phones. The dialog
+  now shows a short bullet summary of the user's locale, hard-caps the
+  release-notes box at 200 dp, and offers a "View full changelog" link
+  that opens the GitHub release page in the browser.
+
+[1.0.0-beta.11]: https://github.com/talibfitrah/albunyaantube/releases/tag/v1.0.0-beta.11
+
 ## [1.0.0-beta.10] - 2026-05-03
 
 ### Android
