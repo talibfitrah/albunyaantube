@@ -33,8 +33,8 @@ android {
         applicationId = "com.albunyaan.tube"
         minSdk = 26
         targetSdk = 35
-        versionCode = 23
-        versionName = "1.0.0-beta.9"
+        versionCode = 24
+        versionName = "1.0.0-beta.10"
 
         testInstrumentationRunner = "com.albunyaan.tube.HiltTestRunner"
         vectorDrawables.useSupportLibrary = true
@@ -237,7 +237,12 @@ dependencies {
     implementation("androidx.viewpager2:viewpager2:1.1.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     // AndroidX Media3 (replaces ExoPlayer 2.x)
-    val media3Version = "1.10.0"
+    // Media3 1.10.0 introduced a regression (androidx/media#3161) that crashes
+    // HlsChunkSource.createFallbackOptions with ArrayIndexOutOfBoundsException
+    // on every HLS chunk load error. The fix is committed upstream but not
+    // yet released. Pin to 1.9.3 (last stable before the regression) until a
+    // 1.10.x patch ships.
+    val media3Version = "1.9.3"
     implementation("androidx.media3:media3-exoplayer:$media3Version")
     implementation("androidx.media3:media3-exoplayer-hls:$media3Version")
     implementation("androidx.media3:media3-exoplayer-dash:$media3Version")

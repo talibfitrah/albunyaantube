@@ -3,6 +3,18 @@
 All notable changes to FitrahTube. Versions are tagged on the `develop` branch
 during the beta program.
 
+## [1.0.0-beta.10] - 2026-05-03
+
+### Android
+
+- **Real fix for the playback crash.** beta.9 removed one trigger but the
+  underlying bug in the video engine (Media3 1.10.0, androidx/media#3161)
+  still crashed the player on its own whenever an HLS chunk failed to load.
+  Pinned the engine to 1.9.3, the last stable release before the regression
+  was introduced. The crash path no longer exists.
+
+[1.0.0-beta.10]: https://github.com/talibfitrah/albunyaantube/releases/tag/v1.0.0-beta.10
+
 ## [1.0.0-beta.9] - 2026-05-03
 
 ### Android
