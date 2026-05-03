@@ -62,29 +62,14 @@
                 android:textAppearance="?attr/textAppearanceBodyLarge"
                 android:textColor="?attr/colorOnSurface" />
 
-            <!--
-                Hard-cap release-notes height. ScrollView ignores
-                android:maxHeight; the only reliable cap is an explicit
-                layout_height. 200dp leaves room for header, version label,
-                changelog link and action buttons on the smallest screens.
-                Notes are also length-truncated in code (see UpdatePromptFlow)
-                so the full multi-language release body never lands here.
-            -->
-            <ScrollView
+            <TextView
+                android:id="@+id/update_body_message"
                 android:layout_width="match_parent"
-                android:layout_height="200dp"
+                android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/spacing_sm"
-                android:scrollbars="vertical"
-                android:fadeScrollbars="false">
-
-                <TextView
-                    android:id="@+id/update_release_notes"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:textAppearance="?attr/textAppearanceBodyMedium"
-                    android:textColor="?attr/colorOnSurfaceVariant" />
-
-            </ScrollView>
+                android:text="@string/update_body_generic"
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:textColor="?attr/colorOnSurfaceVariant" />
 
             <TextView
                 android:id="@+id/update_full_changelog"

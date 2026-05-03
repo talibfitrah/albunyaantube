@@ -197,6 +197,8 @@
     <string name="update_available_message">Versie %1$s is beschikbaar.\n\n%2$s</string>
     <string name="update_no_release_notes">Geen release-opmerkingen.</string>
     <string name="update_view_full_changelog">Volledige changelog bekijken →</string>
+    <string name="update_body_generic">Er is een nieuwe versie beschikbaar. We raden aan deze te installeren — oudere versies presteren mogelijk niet zo goed als je gewend bent.</string>
+    <string name="update_cancelled_warning">Update overgeslagen. De app presteert mogelijk niet zo goed als je gewend bent totdat je bijwerkt.</string>
     <string name="update_download_and_install">Downloaden en installeren</string>
     <string name="update_check_up_to_date">U gebruikt de nieuwste versie.</string>
     <string name="update_check_failed">Kan niet controleren op updates.</string>

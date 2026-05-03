@@ -3,6 +3,24 @@
 All notable changes to FitrahTube. Versions are tagged on the `develop` branch
 during the beta program.
 
+## [1.0.0-beta.12] - 2026-05-03
+
+### Android
+
+- **Silent first recovery attempt.** Transient playback hiccups used to flash
+  a "Restoring… (1 of 5)" overlay before the first retry even completed,
+  alarming users for stalls that resolved in a fraction of a second. The
+  overlay now stays hidden on attempt 1 and only appears from attempt 2
+  onwards, so persistent failures still get visible feedback.
+- **Update dialog body is now localized.** The dialog used to render the
+  GitHub release notes verbatim — always English. It now shows a generic,
+  localized "new version available" message in the user's language with a
+  recommendation to install. Curious users can still tap "View full
+  changelog" for the release page. Cancelling the prompt now shows a brief
+  warning that older versions may not perform as expected.
+
+[1.0.0-beta.12]: https://github.com/talibfitrah/albunyaantube/releases/tag/v1.0.0-beta.12
+
 ## [1.0.0-beta.11] - 2026-05-03
 
 ### Android

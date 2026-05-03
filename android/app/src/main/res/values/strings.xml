@@ -220,6 +220,8 @@
     <string name="update_version_ready">Version %1$s is ready to download.</string>
     <string name="update_no_release_notes">No release notes.</string>
     <string name="update_view_full_changelog">View full changelog →</string>
+    <string name="update_body_generic">A new version is available. We recommend installing it — older versions may not perform as well as you\'re used to.</string>
+    <string name="update_cancelled_warning">Update skipped. The app may not perform as well as you\'re used to until you update.</string>
     <string name="update_download_and_install">Update now</string>
     <string name="update_check_up_to_date">FitrahTube is up to date.</string>
     <string name="update_check_failed">Couldn\'t check for updates. Please try again.</string>

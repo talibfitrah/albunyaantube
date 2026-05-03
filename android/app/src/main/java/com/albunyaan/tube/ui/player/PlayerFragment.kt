@@ -1888,17 +1888,26 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 binding.playerRecoveryOverlay.visibility = View.GONE
             }
             is StreamState.Recovering -> {
-                // Show recovery overlay with progress
-                binding.playerRecoveryOverlay.visibility = View.VISIBLE
-                binding.playerRecoveryProgress.visibility = View.VISIBLE
-                binding.playerRecoveryMessage.text = getString(
-                    R.string.player_recovering_attempt,
-                    streamState.attempt,
-                    PlaybackRecoveryManager.MAX_RECOVERY_ATTEMPTS
-                )
-                binding.playerRecoveryRetryButton.visibility = View.GONE
-                binding.playerErrorOverlay.visibility = View.GONE
-                binding.playerStatus.text = getString(R.string.player_recovering)
+                // First recovery attempt is silent — most transient stalls
+                // resolve on the first retry, and surfacing "Restoring 1/5"
+                // alarms users for a hiccup they would otherwise never see.
+                // From attempt 2 onwards we show the overlay so persistent
+                // failures still get visible feedback.
+                if (streamState.attempt <= 1) {
+                    binding.playerRecoveryOverlay.visibility = View.GONE
+                    binding.playerErrorOverlay.visibility = View.GONE
+                } else {
+                    binding.playerRecoveryOverlay.visibility = View.VISIBLE
+                    binding.playerRecoveryProgress.visibility = View.VISIBLE
+                    binding.playerRecoveryMessage.text = getString(
+                        R.string.player_recovering_attempt,
+                        streamState.attempt,
+                        PlaybackRecoveryManager.MAX_RECOVERY_ATTEMPTS
+                    )
+                    binding.playerRecoveryRetryButton.visibility = View.GONE
+                    binding.playerErrorOverlay.visibility = View.GONE
+                    binding.playerStatus.text = getString(R.string.player_recovering)
+                }
             }
             is StreamState.RecoveryExhausted -> {
                 // Show recovery overlay with retry button (exhausted state)

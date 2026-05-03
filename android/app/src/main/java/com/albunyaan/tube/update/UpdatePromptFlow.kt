@@ -78,9 +78,11 @@ class UpdatePromptFlow @Inject constructor(
             .inflate(R.layout.dialog_update_available, null)
         dialogView.findViewById<TextView>(R.id.update_version_label).text =
             activity.getString(R.string.update_version_ready, info.releaseName)
-        dialogView.findViewById<TextView>(R.id.update_release_notes).text =
-            summarizeReleaseNotes(info.releaseNotes)
-                .ifBlank { activity.getString(R.string.update_no_release_notes) }
+        // Body text is a generic, localized "new version available" message
+        // (see R.string.update_body_generic). We deliberately do NOT render
+        // the GitHub release notes inline — those are written in English and
+        // would be unreadable for users on Arabic / Dutch locales. Curious
+        // users can tap "View full changelog" to read the release page.
         val dialog = MaterialAlertDialogBuilder(activity)
             .setView(dialogView)
             .create()
@@ -95,6 +97,7 @@ class UpdatePromptFlow @Inject constructor(
         }
         dialogView.findViewById<MaterialButton>(R.id.update_btn_later).setOnClickListener {
             dialog.dismiss()
+            toast(activity, R.string.update_cancelled_warning)
         }
         dialogView.findViewById<MaterialButton>(R.id.update_btn_install).setOnClickListener {
             dialog.dismiss()
@@ -193,48 +196,8 @@ class UpdatePromptFlow @Inject constructor(
         android.widget.Toast.makeText(activity, res, android.widget.Toast.LENGTH_LONG).show()
     }
 
-    /**
-     * Trim a GitHub release body down to a short, dialog-friendly summary.
-     *
-     * Release bodies are markdown and often trilingual (English / Arabic /
-     * Dutch sections separated by `---`). Rendering the whole thing in a
-     * dialog produces a wall of text that pushes the action buttons off-
-     * screen on phones. We take only the section in the user's locale, keep
-     * just the bullet lines (most release notes are bullets), strip basic
-     * markdown noise, and hard-cap the length. The full body is reachable
-     * via the "View full changelog" link below.
-     */
-    internal fun summarizeReleaseNotes(body: String): String {
-        if (body.isBlank()) return ""
-        val firstSection = body.substringBefore("\n---").trim()
-        val bullets = firstSection.lineSequence()
-            .map { it.trim() }
-            .filter { it.startsWith("- ") || it.startsWith("* ") }
-            .map { line ->
-                line.removePrefix("- ").removePrefix("* ")
-                    .replace(MD_BOLD, "$1")
-                    .replace(MD_LINK, "$1")
-                    .trim()
-            }
-            .toList()
-        val text = if (bullets.isNotEmpty()) {
-            bullets.joinToString("\n\n") { "• $it" }
-        } else {
-            firstSection
-                .lineSequence()
-                .filter { !it.trim().startsWith("#") && !it.trim().startsWith("---") }
-                .joinToString("\n")
-                .trim()
-        }
-        return if (text.length <= MAX_NOTES_CHARS) text
-        else text.take(MAX_NOTES_CHARS).trimEnd().trimEnd(',', '.', ';') + "…"
-    }
-
     companion object {
         private const val TAG = "UpdatePromptFlow"
         private const val GITHUB_REPO = "talibfitrah/albunyaantube"
-        private const val MAX_NOTES_CHARS = 350
-        private val MD_BOLD = Regex("""\*\*(.+?)\*\*""")
-        private val MD_LINK = Regex("""\[(.+?)]\(.+?\)""")
     }
 }
