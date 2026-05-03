@@ -3,6 +3,30 @@
 All notable changes to FitrahTube. Versions are tagged on the `develop` branch
 during the beta program.
 
+## [1.0.0-beta.8] - 2026-05-03
+
+### Android
+
+- **Audio language switching works again.** Picking a different audio track
+  from the player menu now actually changes the language. For HLS streams a
+  `preferredAudioLanguage` hint steers the renderer natively (no source
+  rebuild, no stall). For synthetic-DASH streams the cached MPD is
+  invalidated and rebuilt around the chosen audio track.
+- **Onboarding shows once, not every cold start.** The "onboarding
+  completed" flag was being written to DataStore on the view-lifecycle
+  scope and the navigate fired synchronously after — destroying the
+  fragment cancelled the in-flight write before it committed. Persist now
+  awaits completion before navigating, so the flag survives the next cold
+  start.
+- **Category icons moved to home section headers.** Icons used to render
+  twice — once next to the home section title and once again in the full
+  categories list. They now appear only on the home screen (left of the
+  section title with a 16 dp gap). Long category labels are truncated to
+  18 characters with `…` so they can't crowd the "See all" button on
+  narrow phones.
+
+[1.0.0-beta.8]: https://github.com/talibfitrah/albunyaantube/releases/tag/v1.0.0-beta.8
+
 ## [1.0.0-beta.7] - 2026-05-03
 
 ### Android — Update dialog scrollability

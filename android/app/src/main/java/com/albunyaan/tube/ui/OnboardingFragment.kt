@@ -80,12 +80,17 @@ class OnboardingFragment : Fragment(R.layout.fragment_onboarding) {
     }
 
     private fun navigateToMain() {
+        // Persist BEFORE navigating. Earlier the write was launched on
+        // viewLifecycleOwner.lifecycleScope and the navigate fired
+        // synchronously after it — destroying the fragment cancelled the
+        // in-flight DataStore.edit before it committed, so on the next cold
+        // start the flag was still false and onboarding reappeared.
         viewLifecycleOwner.lifecycleScope.launch {
             settingsPreferences.setOnboardingCompleted(true)
-        }
-        val navController = findNavController()
-        if (navController.currentDestination?.id == R.id.onboardingFragment) {
-            navController.navigate(R.id.action_onboarding_to_main)
+            val navController = findNavController()
+            if (navController.currentDestination?.id == R.id.onboardingFragment) {
+                navController.navigate(R.id.action_onboarding_to_main)
+            }
         }
     }
 }

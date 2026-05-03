@@ -17,6 +17,19 @@
         android:minHeight="@dimen/touch_target_min">
 
         <TextView
+            android:id="@+id/sectionIcon"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="20sp"
+            android:layout_marginEnd="@dimen/spacing_md"
+            android:visibility="gone"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            tools:text="📖"
+            tools:visibility="visible"/>
+
+        <TextView
             android:id="@+id/sectionTitle"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -24,7 +37,9 @@
             android:textAlignment="viewStart"
             android:maxLines="1"
             android:ellipsize="end"
-            app:layout_constraintStart_toStartOf="parent"
+            android:layout_marginEnd="@dimen/spacing_sm"
+            android:layout_marginStart="@dimen/spacing_md"
+            app:layout_constraintStart_toEndOf="@id/sectionIcon"
             app:layout_constraintEnd_toStartOf="@id/sectionSeeAll"
             app:layout_constraintTop_toTopOf="parent"
             app:layout_constraintBottom_toBottomOf="parent"

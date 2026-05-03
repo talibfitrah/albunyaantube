@@ -68,7 +68,15 @@ class HomeSectionAdapter(
             val currentLocale = LocaleManager.getCurrentLocale(context).language
             val displayName = section.localizedNames?.get(currentLocale)
                 ?: section.categoryName
-            binding.sectionTitle.text = displayName
+            binding.sectionTitle.text = truncateLabel(displayName)
+
+            val icon = section.icon
+            if (!icon.isNullOrBlank()) {
+                binding.sectionIcon.text = icon
+                binding.sectionIcon.visibility = android.view.View.VISIBLE
+            } else {
+                binding.sectionIcon.visibility = android.view.View.GONE
+            }
 
             // Apply card widths to the nested adapter
             contentAdapter.cardWidth = videoCardWidth
@@ -87,6 +95,12 @@ class HomeSectionAdapter(
     }
 
     companion object {
+        private const val MAX_TITLE_CHARS = 18
+
+        private fun truncateLabel(label: String): String =
+            if (label.length <= MAX_TITLE_CHARS) label
+            else label.take(MAX_TITLE_CHARS).trimEnd() + "…"
+
         private val DIFF_CALLBACK = object : DiffUtil.ItemCallback<HomeSection>() {
             override fun areItemsTheSame(
                 oldItem: HomeSection,

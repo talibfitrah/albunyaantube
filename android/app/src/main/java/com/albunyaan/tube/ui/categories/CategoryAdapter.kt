@@ -38,13 +38,10 @@ class CategoryAdapter(
             val displayName = category.localizedNames?.get(currentLocale) ?: category.name
             binding.categoryName.text = displayName
 
-            // Show icon if available
-            if (!category.icon.isNullOrBlank()) {
-                binding.categoryIcon.text = category.icon
-                binding.categoryIcon.visibility = View.VISIBLE
-            } else {
-                binding.categoryIcon.visibility = View.GONE
-            }
+            // Icons are surfaced on the home screen section headers, not in the
+            // categories list — keep this row clean (icon + label is redundant
+            // here and crowds long localized names).
+            binding.categoryIcon.visibility = View.GONE
 
             // Show or hide chevron based on whether category has subcategories
             binding.chevron.visibility = if (category.hasSubcategories) {

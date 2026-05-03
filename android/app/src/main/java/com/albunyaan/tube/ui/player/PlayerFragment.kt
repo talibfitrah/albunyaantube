@@ -1433,38 +1433,50 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         handleLiveStreamRefresh(event)
                     }
                     is PlayerUiEvent.AudioTrackSwapReady -> {
-                        // Always rebuild around the chosen audio. We don't
-                        // branch on `resolved.dashUrl` / `hlsUrl` because
-                        // those reflect what NewPipe surfaced, not what the
-                        // factory actually built — HLS is disabled via the
-                        // Media3 1.9.2 crash workaround, so most YouTube
-                        // videos end up as SYNTH_ADAPTIVE even when an HLS
-                        // URL exists. SYNTH_ADAPTIVE bakes a single audio
-                        // track into a synthetic MPD that's cached by
-                        // videoId, so a track-selector hint cannot help —
-                        // the manifest advertises only one audio track and
-                        // no `lang` attribute to match against.
+                        // Two paths depending on the live source type:
                         //
-                        // Invalidate the MPD cache so the multi-rep factory
-                        // regenerates the manifest with the chosen audio,
-                        // then drive the seamless MediaSource swap. This is
-                        // the same path used by live URL refresh and is
-                        // also what the original ANDROID-SHORTS-01
-                        // implementation used — it broke when SYNTH_ADAPTIVE
-                        // started caching by videoId without the audio
-                        // track being part of the cache key.
+                        //  - HLS: HlsProbationChecker can re-admit HLS for
+                        //    videos that pass the HEAD probe, so we cannot
+                        //    assume SYNTH_ADAPTIVE. HLS playlists carry
+                        //    per-language audio renditions
+                        //    (#EXT-X-MEDIA TYPE=AUDIO LANGUAGE="…"); a
+                        //    rebuild from the same upstream HLS URL replays
+                        //    the same renditions and ExoPlayer keeps the
+                        //    previously-selected one. Setting
+                        //    `preferredAudioLanguage` switches the rendition
+                        //    natively without a source swap (no stall).
+                        //
+                        //  - SYNTH_ADAPTIVE / SYNTHETIC_DASH / DASH: bakes a
+                        //    single audio track into a synthetic MPD cached
+                        //    by videoId. Track-selector hints can't help —
+                        //    the manifest only advertises one audio track.
+                        //    Invalidate the cache and rebuild around the
+                        //    chosen audio (same path as live URL refresh).
                         if (BuildConfig.DEBUG) android.util.Log.d(
                             "PlayerFragment",
-                            "AudioTrackSwapReady: streamId=${event.streamId} lang=${event.newSelection.audio.language}"
+                            "AudioTrackSwapReady: streamId=${event.streamId} lang=${event.newSelection.audio.language} adaptiveType=$preparedAdaptiveType"
                         )
-                        mpdRegistry.unregisterBoth(event.streamId)
-                        val filteredResolved = event.newSelection.resolved.copy(
-                            audioTracks = listOf(event.newSelection.audio)
-                        )
-                        val filteredSelection = event.newSelection.copy(resolved = filteredResolved)
-                        handleLiveStreamRefresh(
-                            PlayerUiEvent.LiveStreamRefreshReady(event.streamId, filteredSelection)
-                        )
+                        val langTag = event.newSelection.audio.language
+                        if (!langTag.isNullOrBlank()) {
+                            player?.let { p ->
+                                p.trackSelectionParameters = p.trackSelectionParameters
+                                    .buildUpon()
+                                    .setPreferredAudioLanguage(langTag)
+                                    .build()
+                            }
+                        }
+                        if (preparedAdaptiveType == MediaSourceResult.AdaptiveType.HLS) {
+                            // Hint above will steer the renderer; no rebuild.
+                        } else {
+                            mpdRegistry.unregisterBoth(event.streamId)
+                            val filteredResolved = event.newSelection.resolved.copy(
+                                audioTracks = listOf(event.newSelection.audio)
+                            )
+                            val filteredSelection = event.newSelection.copy(resolved = filteredResolved)
+                            handleLiveStreamRefresh(
+                                PlayerUiEvent.LiveStreamRefreshReady(event.streamId, filteredSelection)
+                            )
+                        }
                     }
                 }
             }
