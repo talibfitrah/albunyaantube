@@ -1433,50 +1433,43 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                         handleLiveStreamRefresh(event)
                     }
                     is PlayerUiEvent.AudioTrackSwapReady -> {
-                        // Two paths depending on the live source type:
+                        // All adaptive types (HLS, DASH, SYNTH_ADAPTIVE) take
+                        // the rebuild path: filter the resolved selection
+                        // down to the chosen audio track, invalidate any
+                        // cached MPD, and re-resolve the stream.
                         //
-                        //  - HLS: HlsProbationChecker can re-admit HLS for
-                        //    videos that pass the HEAD probe, so we cannot
-                        //    assume SYNTH_ADAPTIVE. HLS playlists carry
-                        //    per-language audio renditions
-                        //    (#EXT-X-MEDIA TYPE=AUDIO LANGUAGE="…"); a
-                        //    rebuild from the same upstream HLS URL replays
-                        //    the same renditions and ExoPlayer keeps the
-                        //    previously-selected one. Setting
-                        //    `preferredAudioLanguage` switches the rendition
-                        //    natively without a source swap (no stall).
-                        //
-                        //  - SYNTH_ADAPTIVE / SYNTHETIC_DASH / DASH: bakes a
-                        //    single audio track into a synthetic MPD cached
-                        //    by videoId. Track-selector hints can't help —
-                        //    the manifest only advertises one audio track.
-                        //    Invalidate the cache and rebuild around the
-                        //    chosen audio (same path as live URL refresh).
+                        // Earlier we steered HLS natively via
+                        // `setPreferredAudioLanguage`. That triggered a
+                        // Media3 1.10.0 regression (androidx/media#3161):
+                        // narrowing the active selection to length=1 against
+                        // a multi-rendition HLS group caused
+                        // `HlsChunkSource.createFallbackOptions` to OOB on
+                        // the next chunk load error, killing the playback
+                        // thread. Fix is committed upstream but unreleased,
+                        // so we route HLS through the rebuild path too.
                         if (BuildConfig.DEBUG) android.util.Log.d(
                             "PlayerFragment",
                             "AudioTrackSwapReady: streamId=${event.streamId} lang=${event.newSelection.audio.language} adaptiveType=$preparedAdaptiveType"
                         )
-                        val langTag = event.newSelection.audio.language
-                        if (!langTag.isNullOrBlank()) {
-                            player?.let { p ->
-                                p.trackSelectionParameters = p.trackSelectionParameters
-                                    .buildUpon()
-                                    .setPreferredAudioLanguage(langTag)
-                                    .build()
-                            }
-                        }
+                        // HLS manifests carry every audio rendition, so the
+                        // filtered audioTracks list below is ignored when the
+                        // factory picks HLS. Poison HLS for this video so the
+                        // rebuild falls through to DASH/SYNTH, which respects
+                        // the single-track filter and actually swaps audio.
                         if (preparedAdaptiveType == MediaSourceResult.AdaptiveType.HLS) {
-                            // Hint above will steer the renderer; no rebuild.
-                        } else {
-                            mpdRegistry.unregisterBoth(event.streamId)
-                            val filteredResolved = event.newSelection.resolved.copy(
-                                audioTracks = listOf(event.newSelection.audio)
-                            )
-                            val filteredSelection = event.newSelection.copy(resolved = filteredResolved)
-                            handleLiveStreamRefresh(
-                                PlayerUiEvent.LiveStreamRefreshReady(event.streamId, filteredSelection)
+                            hlsPoisonRegistry.poisonHls(
+                                event.streamId,
+                                reason = "Audio language swap — HLS ignores per-rendition filter"
                             )
                         }
+                        mpdRegistry.unregisterBoth(event.streamId)
+                        val filteredResolved = event.newSelection.resolved.copy(
+                            audioTracks = listOf(event.newSelection.audio)
+                        )
+                        val filteredSelection = event.newSelection.copy(resolved = filteredResolved)
+                        handleLiveStreamRefresh(
+                            PlayerUiEvent.LiveStreamRefreshReady(event.streamId, filteredSelection)
+                        )
                     }
                 }
             }

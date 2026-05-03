@@ -3,6 +3,22 @@
 All notable changes to FitrahTube. Versions are tagged on the `develop` branch
 during the beta program.
 
+## [1.0.0-beta.9] - 2026-05-03
+
+### Android
+
+- **Player no longer crashes after a few videos.** A Media3 1.10.0 regression
+  (androidx/media#3161) made `HlsChunkSource` crash with an array
+  out-of-bounds exception whenever an HLS chunk failed to load — usually
+  after switching audio language. The audio-language path now rebuilds the
+  stream on a non-HLS source so the buggy code path is no longer reachable.
+- **Audio language switching keeps working on HLS streams.** When you pick a
+  different language on a video that's playing as HLS, the player now
+  briefly reloads the stream as DASH (which honors the chosen track) instead
+  of silently staying on the original audio.
+
+[1.0.0-beta.9]: https://github.com/talibfitrah/albunyaantube/releases/tag/v1.0.0-beta.9
+
 ## [1.0.0-beta.8] - 2026-05-03
 
 ### Android
