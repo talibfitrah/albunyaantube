@@ -505,9 +505,9 @@ public enum UserStatus {
     public static UserStatus fromString(String value) {
         if (value == null) return ACTIVE;
         String normalized = value.trim()
+            .replaceAll("([a-z])([A-Z])", "$1_$2")  // split camelCase BEFORE lowercasing
             .toLowerCase(Locale.ROOT)
-            .replace('-', '_')
-            .replaceAll("([a-z])([A-Z])", "$1_$2");
+            .replace('-', '_');
         if (normalized.isEmpty()) return ACTIVE;
         return switch (normalized) {
             case "active" -> ACTIVE;
