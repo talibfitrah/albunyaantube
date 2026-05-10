@@ -8,6 +8,7 @@ import com.albunyaan.tube.exception.PolicyViolationException;
 import com.albunyaan.tube.exception.ResourceNotFoundException;
 import com.albunyaan.tube.exception.StreamExtractionException;
 import com.albunyaan.tube.model.DownloadEvent;
+import com.albunyaan.tube.model.ValidationStatus;
 import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.VideoRepository;
 import com.google.cloud.firestore.Firestore;
@@ -52,6 +53,10 @@ public class DownloadService {
         if (!"APPROVED".equals(video.getStatus())) {
             return DownloadPolicyDto.denied("Video not approved for viewing");
         }
+        if (video.getValidationStatus() == ValidationStatus.ARCHIVED
+                || video.getValidationStatus() == ValidationStatus.UNAVAILABLE) {
+            return DownloadPolicyDto.denied("Video no longer available");
+        }
         return DownloadPolicyDto.allowedWithEula();
     }
 
@@ -76,6 +81,15 @@ public class DownloadService {
         }
         Video video = videoRepository.findByYoutubeId(videoId).orElse(null);
         if (video == null) {
+            throw new ResourceNotFoundException("Video", videoId);
+        }
+        if (!"APPROVED".equals(video.getStatus())) {
+            logger.warn("Download manifest denied for video {}: status={}", videoId, video.getStatus());
+            throw new ResourceNotFoundException("Video", videoId);
+        }
+        if (video.getValidationStatus() == ValidationStatus.ARCHIVED
+                || video.getValidationStatus() == ValidationStatus.UNAVAILABLE) {
+            logger.warn("Download manifest denied for video {}: validationStatus={}", videoId, video.getValidationStatus());
             throw new ResourceNotFoundException("Video", videoId);
         }
 

@@ -1,6 +1,8 @@
 package com.albunyaan.tube.service;
 import com.albunyaan.tube.dto.*;
 import com.albunyaan.tube.exception.PolicyViolationException;
+import com.albunyaan.tube.exception.ResourceNotFoundException;
+import com.albunyaan.tube.model.ValidationStatus;
 import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.VideoRepository;
 import com.google.cloud.firestore.*;
@@ -140,6 +142,66 @@ class DownloadServiceTest {
     void trackDownloadStarted_shouldCreateEvent() {
         downloadService.trackDownloadStarted("YT-video-123", "user-123", "720p", "mobile");
         verify(firestore, times(1)).collection("download_events");
+    }
+
+    @Test
+    void checkDownloadPolicy_archivedVideo_denied() throws Exception {
+        Video v = new Video();
+        v.setStatus("APPROVED");
+        v.setValidationStatus(ValidationStatus.ARCHIVED);
+        when(videoRepository.findByYoutubeId("ytv-1")).thenReturn(Optional.of(v));
+
+        DownloadPolicyDto policy = downloadService.checkDownloadPolicy("ytv-1");
+
+        assertFalse(policy.isAllowed());
+    }
+
+    @Test
+    void checkDownloadPolicy_unavailableVideo_denied() throws Exception {
+        Video v = new Video();
+        v.setStatus("APPROVED");
+        v.setValidationStatus(ValidationStatus.UNAVAILABLE);
+        when(videoRepository.findByYoutubeId("ytv-1")).thenReturn(Optional.of(v));
+
+        DownloadPolicyDto policy = downloadService.checkDownloadPolicy("ytv-1");
+
+        assertFalse(policy.isAllowed());
+    }
+
+    @Test
+    void getDownloadManifest_archivedVideo_throwsResourceNotFound() throws Exception {
+        when(tokenService.validateToken("tok", "ytv-1")).thenReturn(true);
+        Video v = new Video();
+        v.setStatus("APPROVED");
+        v.setValidationStatus(ValidationStatus.ARCHIVED);
+        when(videoRepository.findByYoutubeId("ytv-1")).thenReturn(Optional.of(v));
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> downloadService.getDownloadManifest("ytv-1", "tok", false));
+    }
+
+    @Test
+    void getDownloadManifest_unavailableVideo_throwsResourceNotFound() throws Exception {
+        when(tokenService.validateToken("tok", "ytv-1")).thenReturn(true);
+        Video v = new Video();
+        v.setStatus("APPROVED");
+        v.setValidationStatus(ValidationStatus.UNAVAILABLE);
+        when(videoRepository.findByYoutubeId("ytv-1")).thenReturn(Optional.of(v));
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> downloadService.getDownloadManifest("ytv-1", "tok", false));
+    }
+
+    @Test
+    void getDownloadManifest_rejectedVideo_throwsResourceNotFound() throws Exception {
+        when(tokenService.validateToken("tok", "ytv-1")).thenReturn(true);
+        Video v = new Video();
+        v.setStatus("REJECTED");
+        v.setValidationStatus(ValidationStatus.VALID);
+        when(videoRepository.findByYoutubeId("ytv-1")).thenReturn(Optional.of(v));
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> downloadService.getDownloadManifest("ytv-1", "tok", false));
     }
 }
 
