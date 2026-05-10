@@ -60,6 +60,9 @@ class MidBatchSkippedItemsTest {
     @Mock
     private PublicContentCacheService publicContentCacheService;
 
+    @Mock
+    private StreamIndexService streamIndexService;
+
     private ValidationProperties validationProperties;
 
     private ContentValidationService service;
@@ -77,7 +80,8 @@ class MidBatchSkippedItemsTest {
                 auditLogService,
                 validationRunRepository,
                 validationProperties,
-                publicContentCacheService
+                publicContentCacheService,
+                streamIndexService
         );
     }
 

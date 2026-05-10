@@ -60,6 +60,9 @@ class ContentValidationServiceTest {
     @Mock
     private PublicContentCacheService publicContentCacheService;
 
+    @Mock
+    private StreamIndexService streamIndexService;
+
     private ValidationProperties validationProperties;
 
     private ContentValidationService service;
@@ -77,7 +80,8 @@ class ContentValidationServiceTest {
                 auditLogService,
                 validationRunRepository,
                 validationProperties,
-                publicContentCacheService
+                publicContentCacheService,
+                streamIndexService
         );
     }
 
@@ -443,6 +447,71 @@ class ContentValidationServiceTest {
                     ids.size() == 1 && ids.contains("VLOWER")));
             assertEquals(1, run.getVideosChecked());
             assertEquals(1, run.getVideosMarkedArchived());
+        }
+    }
+
+    @Nested
+    @DisplayName("Archive Index Cleanup Tests")
+    class ArchiveIndexCleanupTests {
+
+        @Test
+        @DisplayName("Should call removeSource(CHANNEL) when channel is archived")
+        void validateChannels_archivedChannel_callsRemoveSource() throws Exception {
+            // Arrange: channel that YouTube reports as not found
+            Channel channel = createChannel("UCabc", "Test Channel", null);
+            when(channelRepository.findByStatusOrderByLastValidatedAtAsc(eq("APPROVED"), anyInt())).thenReturn(List.of(channel));
+            when(channelRepository.findByStatusOrderByLastValidatedAtAsc(eq("approved"), anyInt())).thenReturn(Collections.emptyList());
+
+            BatchValidationResult<ChannelDetailsDto> result = new BatchValidationResult<>();
+            result.addNotFound("UCabc");
+            when(youtubeService.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(result);
+            when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            // Act
+            service.validateChannels("MANUAL", "test-user", "Test User", 100);
+
+            // Assert: stream index must be purged for this channel
+            verify(streamIndexService).removeSource("CHANNEL", "UCabc");
+        }
+
+        @Test
+        @DisplayName("Should call removeSource(PLAYLIST) when playlist is archived")
+        void validatePlaylists_archivedPlaylist_callsRemoveSource() throws Exception {
+            // Arrange: playlist that YouTube reports as not found
+            Playlist playlist = createPlaylist("PLxyz", "Test Playlist", null);
+            when(playlistRepository.findByStatusOrderByLastValidatedAtAsc(eq("approved"), anyInt())).thenReturn(List.of(playlist));
+            when(playlistRepository.findByStatusOrderByLastValidatedAtAsc(eq("APPROVED"), anyInt())).thenReturn(Collections.emptyList());
+
+            BatchValidationResult<PlaylistDetailsDto> result = new BatchValidationResult<>();
+            result.addNotFound("PLxyz");
+            when(youtubeService.batchValidatePlaylistsDtoWithDetails(anyList())).thenReturn(result);
+            when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            // Act
+            service.validatePlaylists("MANUAL", "test-user", "Test User", 100);
+
+            // Assert: stream index must be purged for this playlist
+            verify(streamIndexService).removeSource("PLAYLIST", "PLxyz");
+        }
+
+        @Test
+        @DisplayName("Should call markStreamArchived() when video is archived")
+        void validateVideos_archivedVideo_callsMarkStreamArchived() throws Exception {
+            // Arrange: video that YouTube reports as not found
+            Video video = createVideo("dQw4w9WgXcQ", "Test Video", null);
+            when(videoRepository.findByStatusOrderByLastValidatedAtAsc(eq("APPROVED"), anyInt())).thenReturn(List.of(video));
+            when(videoRepository.findByStatusOrderByLastValidatedAtAsc(eq("approved"), anyInt())).thenReturn(Collections.emptyList());
+
+            BatchValidationResult<StreamDetailsDto> result = new BatchValidationResult<>();
+            result.addNotFound("dQw4w9WgXcQ");
+            when(youtubeService.batchValidateVideosDtoWithDetails(anyList())).thenReturn(result);
+            when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            // Act
+            service.validateVideos("MANUAL", "test-user", "Test User", 100);
+
+            // Assert: stream index entry must be marked archived for this video
+            verify(streamIndexService).markStreamArchived("dQw4w9WgXcQ");
         }
     }
 
