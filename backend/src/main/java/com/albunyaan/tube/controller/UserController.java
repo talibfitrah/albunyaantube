@@ -42,13 +42,17 @@ public class UserController {
     }
 
     /**
-     * List all users
+     * List all users.
+     *
+     * @param includeDeleted when true, soft-deleted users are included in the response.
+     *                       Defaults to false so deleted users are hidden unless explicitly requested.
      */
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<List<User>> getAllUsers() {
+    public ResponseEntity<List<User>> getAllUsers(
+            @RequestParam(required = false, defaultValue = "false") boolean includeDeleted) {
         try {
-            List<User> users = userRepository.findAll();
+            List<User> users = userRepository.findAll(includeDeleted);
             return ResponseEntity.ok(users);
         } catch (TimeoutException e) {
             log.error("Timeout while fetching all users", e);

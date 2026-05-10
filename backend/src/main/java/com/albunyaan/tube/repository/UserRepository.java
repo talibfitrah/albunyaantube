@@ -10,10 +10,12 @@ import com.google.cloud.firestore.CollectionReference;
 import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.Query;
+import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.google.cloud.firestore.QuerySnapshot;
 import com.google.cloud.firestore.WriteResult;
 import org.springframework.stereotype.Repository;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
@@ -82,6 +84,31 @@ public class UserRepository {
                 .get();
 
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(User.class);
+    }
+
+    /**
+     * Find all users, optionally including soft-deleted ones.
+     *
+     * D3: uses a whereIn whitelist over the three live statuses rather than
+     * whereNotEqualTo("status", "deleted"), because != excludes documents with
+     * a missing/null status field — which would hide pre-backfill legacy users.
+     *
+     * @param includeDeleted when true, delegates to findAll() (no filter).
+     *                       when false, returns only active/blocked/pending_profile users.
+     */
+    public List<User> findAll(boolean includeDeleted) throws ExecutionException, InterruptedException, TimeoutException {
+        if (includeDeleted) {
+            return findAll();
+        }
+        QuerySnapshot snap = firestore.collection(COLLECTION_NAME)
+                .whereIn("status", List.of("active", "blocked", "pending_profile"))
+                .get()
+                .get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
+        List<User> users = new ArrayList<>();
+        for (QueryDocumentSnapshot doc : snap.getDocuments()) {
+            users.add(doc.toObject(User.class));
+        }
+        return users;
     }
 
     /**

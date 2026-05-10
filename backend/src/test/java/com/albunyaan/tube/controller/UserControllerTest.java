@@ -64,15 +64,15 @@ class UserControllerTest {
     void getAllUsers_shouldReturnAllUsers() throws ExecutionException, InterruptedException, TimeoutException {
         // Arrange
         List<User> users = Arrays.asList(testAdmin, testModerator);
-        when(userRepository.findAll()).thenReturn(users);
+        when(userRepository.findAll(false)).thenReturn(users);
 
         // Act
-        ResponseEntity<List<User>> response = userController.getAllUsers();
+        ResponseEntity<List<User>> response = userController.getAllUsers(false);
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals(2, response.getBody().size());
-        verify(userRepository).findAll();
+        verify(userRepository).findAll(false);
     }
 
     @Test
