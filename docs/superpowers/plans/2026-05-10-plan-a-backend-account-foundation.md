@@ -46,6 +46,22 @@ This plan was drafted before the design spec at `docs/superpowers/specs/2026-05-
 
 Apply this pattern to **every** lifecycle method: `blockUser`, `unblockUser`, `softDeleteUser`, `recoverUser`, `updateUserRoleAsActor`. Replace the simpler patterns in Tasks 6, 7, 8 below.
 
+**⚠ ExecutionException unwrap (added 2026-05-10 from Task 6 review):** `firestore.runTransaction(...).get(timeout, TimeUnit.SECONDS)` wraps any exception thrown inside the transaction lambda in `ExecutionException`. Without unwrapping, `LastAdminException` / `IllegalArgumentException` / `IllegalStateException` never reach `@ControllerAdvice` — they surface as `ExecutionException` and route to the 500 handler instead of the 409/400/409 mapped handlers. Every lifecycle method MUST add a try/catch that unwraps and rethrows the cause:
+
+```java
+try {
+    firestore.runTransaction(tx -> { ... }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+} catch (java.util.concurrent.ExecutionException e) {
+    Throwable cause = e.getCause();
+    if (cause instanceof LastAdminException) throw (LastAdminException) cause;
+    if (cause instanceof IllegalArgumentException) throw (IllegalArgumentException) cause;
+    if (cause instanceof IllegalStateException) throw (IllegalStateException) cause;
+    throw e;
+}
+```
+
+A private `runLifecycleTx(Transaction.Function<T>)` helper on `AuthService` is the cleanest way to share this — see Task 6 fix-pass for the form. Integration tests assert the unwrapped exception type directly (e.g., `assertThrows(LastAdminException.class, () -> svc.softDelete(...))`), not `ExecutionException`.
+
 ```java
 public void blockUser(String uid, String actorUid, String reason) throws Exception {
     firestore.runTransaction(tx -> {
