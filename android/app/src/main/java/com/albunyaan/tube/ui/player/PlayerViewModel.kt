@@ -26,6 +26,8 @@ import androidx.media3.common.VideoSize
 import com.albunyaan.tube.data.channel.Page
 import com.albunyaan.tube.data.extractor.ExtractorClient
 import com.albunyaan.tube.data.playlist.PlaylistItem
+import com.albunyaan.tube.data.source.AvailabilityCheckType
+import com.albunyaan.tube.data.source.ContentService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -47,6 +49,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
+import javax.inject.Named
 
 /**
  * P3-T4: PlayerViewModel with Hilt DI
@@ -62,7 +65,8 @@ class PlayerViewModel @Inject constructor(
     private val metricsReporter: ExtractorMetricsReporter,
     private val playbackMetrics: PlaybackMetricsCollector,
     private val mpdRegistry: SyntheticDashMpdRegistry,
-    private val extractorClient: ExtractorClient
+    private val extractorClient: ExtractorClient,
+    @Named("real") private val contentService: ContentService,
 ) : ViewModel() {
 
     private val dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate
@@ -653,8 +657,26 @@ class PlayerViewModel @Inject constructor(
 
         publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(item, PlaybackStartReason.USER_SELECTED))
 
-        // Start stream resolution immediately - this is the fast path
-        resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
+        // T12: Availability gate — check backend before invoking NewPipe.
+        // State is already Loading (set by resolveStreamFor/resolveWithRetry). We do the
+        // check synchronously on the main dispatcher inside a coroutine so the suspend call
+        // doesn't block the UI thread while the overlay state can be observed immediately.
+        resolveJob?.cancel()
+        resolveJob = viewModelScope.launch {
+            val available = try {
+                contentService.verifyAvailable(AvailabilityCheckType.VIDEO, videoId)
+            } catch (e: Exception) {
+                android.util.Log.w("PlayerViewModel", "Availability check failed for $videoId; proceeding with playback", e)
+                true // Fail-open: transport errors must not block valid users
+            }
+            if (!available) {
+                android.util.Log.i("PlayerViewModel", "Video $videoId is unavailable per backend; emitting ContentUnavailable")
+                updateState { it.copy(streamState = StreamState.ContentUnavailable) }
+                return@launch
+            }
+            // Availability confirmed (or fail-open): proceed with stream resolution
+            resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
+        }
     }
 
     /**
@@ -1711,6 +1733,11 @@ sealed class StreamState {
     object Loading : StreamState()
     data class Ready(val streamId: String, val selection: PlaybackSelection) : StreamState()
     data class Error(@StringRes val messageRes: Int) : StreamState()
+    /**
+     * The video has been archived and is no longer available.
+     * The player must not attempt any NewPipe extraction when in this state.
+     */
+    object ContentUnavailable : StreamState()
     /**
      * Automatic recovery in progress. UI should show "Recovering..." overlay.
      * Contains the underlying Ready state so playback can continue while recovering.

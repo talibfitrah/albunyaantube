@@ -1874,10 +1874,25 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             }
             is StreamState.Error -> {
                 binding.playerStatus.text = getString(streamState.messageRes)
-                // Show error overlay with retry options
+                // Show error overlay with retry options; ensure buttons are visible
+                // (they may have been hidden by a prior ContentUnavailable state)
                 binding.playerErrorOverlay.visibility = View.VISIBLE
+                binding.playerErrorTitle.text = getString(R.string.player_error_title)
                 binding.playerErrorMessage.text = getString(streamState.messageRes)
+                binding.playerRetryButton.visibility = View.VISIBLE
+                binding.playerRefreshStreamButton.visibility = View.VISIBLE
                 binding.playerRecoveryOverlay.visibility = View.GONE
+            }
+            StreamState.ContentUnavailable -> {
+                // Video has been archived — show unavailable overlay, hide retry/refresh buttons
+                // since re-resolving won't help. Provide only a back/dismiss action.
+                binding.playerErrorOverlay.visibility = View.VISIBLE
+                binding.playerErrorTitle.text = getString(R.string.content_unavailable_title)
+                binding.playerErrorMessage.text = getString(R.string.content_unavailable_message)
+                binding.playerRetryButton.visibility = View.GONE
+                binding.playerRefreshStreamButton.visibility = View.GONE
+                binding.playerRecoveryOverlay.visibility = View.GONE
+                binding.playerStatus.text = getString(R.string.content_unavailable_title)
             }
             is StreamState.Ready -> {
                 binding.playerStatus.text = when {

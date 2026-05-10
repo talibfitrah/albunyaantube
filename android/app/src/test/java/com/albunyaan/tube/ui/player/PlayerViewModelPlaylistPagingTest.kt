@@ -25,6 +25,7 @@ import com.albunyaan.tube.download.DownloadRequest
 import com.albunyaan.tube.download.PlaylistDownloadItem
 import com.albunyaan.tube.player.ExtractionRateLimiter
 import com.albunyaan.tube.player.PlayerRepository
+import com.albunyaan.tube.data.source.FakeContentService
 import com.albunyaan.tube.player.StreamPrefetchService
 import com.albunyaan.tube.player.SyntheticDashMpdRegistry
 import kotlinx.coroutines.Dispatchers
@@ -113,7 +114,8 @@ class PlayerViewModelPlaylistPagingTest {
             metricsReporter = fakeMetricsReporter,
             playbackMetrics = playbackMetrics,
             mpdRegistry = mpdRegistry,
-            extractorClient = fakeExtractorClient
+            extractorClient = fakeExtractorClient,
+            contentService = FakeContentService(), // T12: always-available, tests not affected by gate
         )
     }
 
