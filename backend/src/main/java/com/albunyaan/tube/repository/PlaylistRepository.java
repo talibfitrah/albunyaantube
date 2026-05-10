@@ -448,14 +448,13 @@ public class PlaylistRepository {
 
         if (cursor != null && !cursor.isEmpty()) {
             CursorUtils.CursorData cursorData = CursorUtils.decode(cursor);
-            if (cursorData != null) {
+            if (cursorData != null && cursorData.getId() != null) {
                 DocumentReference cursorDoc = getCollection().document(cursorData.getId());
                 var cursorSnapshot = cursorDoc.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS);
                 if (cursorSnapshot.exists()) {
                     query = query.startAfter(cursorSnapshot);
-                } else {
-                    throw new IllegalArgumentException("Invalid cursor: playlist document '" + cursorData.getId() + "' not found");
                 }
+                // else: stale/foreign cursor — restart from the beginning
             }
         }
 
@@ -503,14 +502,13 @@ public class PlaylistRepository {
 
         if (cursor != null && !cursor.isEmpty()) {
             CursorUtils.CursorData cursorData = CursorUtils.decode(cursor);
-            if (cursorData != null) {
+            if (cursorData != null && cursorData.getId() != null) {
                 DocumentReference cursorDoc = getCollection().document(cursorData.getId());
                 var cursorSnapshot = cursorDoc.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS);
                 if (cursorSnapshot.exists()) {
                     query = query.startAfter(cursorSnapshot);
-                } else {
-                    throw new IllegalArgumentException("Invalid cursor: playlist document '" + cursorData.getId() + "' not found");
                 }
+                // else: stale/foreign cursor — restart from the beginning
             }
         }
 
