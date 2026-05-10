@@ -97,6 +97,9 @@ tasks.test {
     // Set test timeouts to prevent hanging
     systemProperty("junit.jupiter.execution.timeout.default", "30s")
     systemProperty("junit.jupiter.execution.timeout.testable.method.default", "30s")
+
+    // Tell the Firebase Admin SDK to use the Firestore emulator (admin bypass, no auth required)
+    environment("FIRESTORE_EMULATOR_HOST", "localhost:8090")
 }
 
 tasks.bootJar {
