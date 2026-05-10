@@ -10,6 +10,7 @@ import com.google.cloud.firestore.CollectionReference;
 import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.Query;
+import com.google.cloud.firestore.FieldPath;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.google.cloud.firestore.QuerySnapshot;
 import com.google.cloud.firestore.WriteResult;
@@ -155,6 +156,51 @@ public class UserRepository {
                 .get();
 
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(User.class);
+    }
+
+    /**
+     * Paginated cursor query ordered by document ID, used by UserBackfillMigration.
+     * Returns up to {@code batchSize} users whose document ID is strictly after {@code cursor}.
+     * Pass {@code cursor = null} to start from the beginning.
+     *
+     * Note: uses {@link FieldPath#documentId()} rather than "uid" because the uid
+     * field is annotated {@code @DocumentId} and is therefore NOT stored as a field
+     * inside the Firestore document — only as the document ID. orderBy("uid") would
+     * find no results on any collection ordered this way.
+     */
+    public List<User> findAfter(String cursor, int batchSize)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        Query q = getCollection()
+                .orderBy(FieldPath.documentId())
+                .limit(batchSize);
+        if (cursor != null) {
+            q = q.startAfter(cursor);
+        }
+        QuerySnapshot snap = q.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
+        List<User> users = new ArrayList<>();
+        for (QueryDocumentSnapshot doc : snap.getDocuments()) {
+            User u = doc.toObject(User.class);
+            // @DocumentId is populated by toObject(), but set explicitly as a safety net
+            // in case the mapping is skipped on partial documents.
+            if (u.getUid() == null) {
+                u.setUid(doc.getId());
+            }
+            users.add(u);
+        }
+        return users;
+    }
+
+    /**
+     * Persist a User document without calling {@link User#touch()}.
+     * Used by integration test fixtures to seed legacy-shaped documents that
+     * intentionally lack timestamps, so the migration can normalise them.
+     * Do NOT use in production code — always prefer {@link #save(User)}.
+     */
+    public void saveRaw(User user) throws ExecutionException, InterruptedException, TimeoutException {
+        getCollection()
+                .document(user.getUid())
+                .set(user)
+                .get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
     }
 
     public void deleteByUid(String uid) throws ExecutionException, InterruptedException, TimeoutException {
