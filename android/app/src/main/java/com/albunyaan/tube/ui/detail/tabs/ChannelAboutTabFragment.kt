@@ -78,10 +78,18 @@ class ChannelAboutTabFragment : Fragment(R.layout.fragment_channel_about_tab) {
                     aboutSkeleton.isVisible = false
                     aboutScrollView.isVisible = false
                     aboutErrorState.root.isVisible = true
+                    aboutErrorState.retryButton.isVisible = true
                     // Set up retry button to reload header
                     aboutErrorState.retryButton.setOnClickListener {
                         viewModel.loadHeader(forceRefresh = true)
                     }
+                }
+                is ChannelDetailViewModel.HeaderState.ContentUnavailable -> {
+                    // The parent ChannelDetailFragment already shows the unavailable UI.
+                    // The About tab will never be visible in this state; hide everything defensively.
+                    aboutSkeleton.isVisible = false
+                    aboutScrollView.isVisible = false
+                    aboutErrorState.root.isVisible = false
                 }
             }
         }

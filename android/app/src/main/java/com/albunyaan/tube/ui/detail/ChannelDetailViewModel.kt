@@ -1,6 +1,7 @@
 package com.albunyaan.tube.ui.detail
 
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.albunyaan.tube.data.channel.ChannelDetailRepository
@@ -13,12 +14,14 @@ import com.albunyaan.tube.data.channel.ChannelVideo
 import com.albunyaan.tube.data.channel.Page
 import com.albunyaan.tube.data.local.ChannelVideoCache
 import com.albunyaan.tube.data.local.ChannelVideoCacheDao
+import com.albunyaan.tube.data.source.AvailabilityCheckType
+import com.albunyaan.tube.data.source.ContentService
 import com.albunyaan.tube.player.StreamRequestTelemetry
-import androidx.annotation.VisibleForTesting
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Named
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,6 +44,7 @@ class ChannelDetailViewModel @AssistedInject constructor(
     private val repository: ChannelDetailRepository,
     private val telemetry: StreamRequestTelemetry,
     private val channelVideoCacheDao: ChannelVideoCacheDao,
+    @Named("real") private val contentService: ContentService,
     @Assisted private val channelId: String
 ) : ViewModel() {
 
@@ -128,6 +132,20 @@ class ChannelDetailViewModel @AssistedInject constructor(
                 Log.d(TAG, "Loading header for channel: $channelId")
                 _headerState.value = HeaderState.Loading
 
+                // Availability gate: check with backend before doing any NewPipe work.
+                // Fail-open on transport errors so offline users are not blocked.
+                val available = try {
+                    contentService.verifyAvailable(AvailabilityCheckType.CHANNEL, channelId)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Availability check failed for $channelId; proceeding with NewPipe", e)
+                    true
+                }
+                if (!available) {
+                    Log.i(TAG, "Channel $channelId is unavailable per backend; emitting ContentUnavailable")
+                    _headerState.value = HeaderState.ContentUnavailable
+                    return@launch
+                }
+
                 val header = repository.getChannelHeader(channelId, forceRefresh)
                 _headerState.value = HeaderState.Success(header)
                 Log.d(TAG, "Header loaded: ${header.title}")
@@ -159,6 +177,9 @@ class ChannelDetailViewModel @AssistedInject constructor(
      */
     @Suppress("UNUSED_PARAMETER")
     fun loadInitial(tab: ChannelTab, forceRefresh: Boolean = false) {
+        // Do not start tab loads when the channel is confirmed unavailable.
+        if (_headerState.value == HeaderState.ContentUnavailable) return
+
         val controller = paginationControllers[tab] ?: return
 
         // Skip if already loading. The flag flip must happen before
@@ -175,6 +196,25 @@ class ChannelDetailViewModel @AssistedInject constructor(
 
         viewModelScope.launch {
             try {
+                // Race-safe availability gate: loadInitial and loadHeader fire in
+                // parallel from init {}. The synchronous guard above only catches the
+                // case where ContentUnavailable was already set (e.g. a later explicit
+                // call after the header settled). For the parallel init race we need
+                // an independent backend check here so archived-channel content is
+                // never sent to NewPipe, even when loadHeader hasn't finished yet.
+                // Fail-open on transport errors to keep offline behaviour unchanged.
+                val available = try {
+                    contentService.verifyAvailable(AvailabilityCheckType.CHANNEL, channelId)
+                } catch (e: Exception) {
+                    Log.w(TAG, "loadInitial availability check failed for $channelId; proceeding", e)
+                    true
+                }
+                if (!available) {
+                    Log.i(TAG, "loadInitial: channel $channelId is unavailable; aborting tab load")
+                    _headerState.value = HeaderState.ContentUnavailable
+                    return@launch
+                }
+
                 Log.d(TAG, "Loading initial content for tab: $tab")
                 updateTabState(tab, PaginatedState.LoadingInitial)
 
@@ -1053,6 +1093,8 @@ class ChannelDetailViewModel @AssistedInject constructor(
         data object Loading : HeaderState()
         data class Success(val header: ChannelHeader) : HeaderState()
         data class Error(val message: String) : HeaderState()
+        /** Backend confirmed this channel is archived/unavailable. No retry possible. */
+        data object ContentUnavailable : HeaderState()
     }
 
     sealed class PaginatedState<out T> {

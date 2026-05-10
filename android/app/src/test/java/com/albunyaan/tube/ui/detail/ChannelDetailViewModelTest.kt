@@ -12,10 +12,13 @@ import com.albunyaan.tube.data.channel.Page
 import com.albunyaan.tube.data.local.ChannelOldest
 import com.albunyaan.tube.data.local.ChannelVideoCache
 import com.albunyaan.tube.data.local.ChannelVideoCacheDao
+import com.albunyaan.tube.data.source.AvailabilityCheckType
+import com.albunyaan.tube.data.source.ContentService
+import com.albunyaan.tube.data.source.FakeContentService
 import com.albunyaan.tube.player.StreamRequestTelemetry
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -23,11 +26,16 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
@@ -50,6 +58,7 @@ class ChannelDetailViewModelTest {
     private lateinit var fakeRepository: FakeChannelDetailRepository
     private lateinit var fakeCacheDao: FakeChannelVideoCacheDao
     private lateinit var fakeTelemetry: StreamRequestTelemetry
+    private lateinit var fakeContentService: FakeContentService
 
     /**
      * Fake clock for deterministic rate limiting tests.
@@ -65,6 +74,7 @@ class ChannelDetailViewModelTest {
         fakeRepository = FakeChannelDetailRepository()
         fakeCacheDao = FakeChannelVideoCacheDao()
         fakeTelemetry = StreamRequestTelemetry()
+        fakeContentService = FakeContentService()
         fakeCurrentTimeMs = 2000L
     }
 
@@ -75,9 +85,14 @@ class ChannelDetailViewModelTest {
 
     /**
      * Create a ViewModel with an injectable time provider for deterministic rate limiting tests.
+     * Pass a custom [contentService] to override the default [FakeContentService] (which always
+     * returns available=true). Use a Mockito mock when you need to simulate archived content.
      */
-    private fun createViewModel(channelId: String = "UCtest123"): ChannelDetailViewModel {
-        return ChannelDetailViewModel(fakeRepository, fakeTelemetry, fakeCacheDao, channelId).apply {
+    private fun createViewModel(
+        channelId: String = "UCtest123",
+        contentService: ContentService = fakeContentService,
+    ): ChannelDetailViewModel {
+        return ChannelDetailViewModel(fakeRepository, fakeTelemetry, fakeCacheDao, contentService, channelId).apply {
             timeProvider = { fakeCurrentTimeMs }
         }
     }
@@ -994,6 +1009,79 @@ class ChannelDetailViewModelTest {
         uploaderName = "Test Channel"
     )
 
+    // ── Availability Gate Tests ───────────────────────────────────────────────
+
+    @Test
+    fun `loadHeader archived channel emits ContentUnavailable and skips repository`() = runTest {
+        val mockContentService: ContentService = mock()
+        whenever(mockContentService.verifyAvailable(AvailabilityCheckType.CHANNEL, "UCabc"))
+            .thenReturn(false)
+
+        val vm = createViewModel(channelId = "UCabc", contentService = mockContentService)
+        advanceUntilIdle()
+
+        assertEquals(ChannelDetailViewModel.HeaderState.ContentUnavailable, vm.headerState.value)
+        // Repository must not have been called — no NewPipe work for archived channels
+        assertEquals(0, fakeRepository.headerCallCount)
+    }
+
+    @Test
+    fun `loadHeader transport error fails open and proceeds to repository`() = runTest {
+        val mockContentService: ContentService = mock()
+        val testHeader = createTestHeader("UCabc", "Test Channel")
+        whenever(mockContentService.verifyAvailable(AvailabilityCheckType.CHANNEL, "UCabc"))
+            .thenThrow(RuntimeException("network timeout"))
+        fakeRepository.headerResponse = testHeader
+
+        val vm = createViewModel(channelId = "UCabc", contentService = mockContentService)
+        advanceUntilIdle()
+
+        // Fail-open: transport error should not block the user; header must succeed
+        assertTrue(vm.headerState.value is ChannelDetailViewModel.HeaderState.Success)
+        assertEquals(1, fakeRepository.headerCallCount)
+    }
+
+    @Test
+    fun `loadInitial called after ContentUnavailable is a no-op`() = runTest {
+        val mockContentService: ContentService = mock()
+        whenever(mockContentService.verifyAvailable(AvailabilityCheckType.CHANNEL, "UCabc"))
+            .thenReturn(false)
+
+        val vm = createViewModel(channelId = "UCabc", contentService = mockContentService)
+        advanceUntilIdle()
+
+        assertEquals(ChannelDetailViewModel.HeaderState.ContentUnavailable, vm.headerState.value)
+
+        // Any explicit tab loads triggered after the unavailable state is set
+        // (e.g., ensureTabLoaded calls, tab selection) must be short-circuited.
+        val callCountBefore = fakeRepository.videosCallCount
+        vm.loadInitial(ChannelTab.VIDEOS)
+        advanceUntilIdle()
+
+        assertEquals("loadInitial must not call repository when channel is unavailable",
+            callCountBefore, fakeRepository.videosCallCount)
+    }
+
+    @Test
+    fun `loadInitial on archived channel skips NewPipe and emits ContentUnavailable`() = runTest {
+        // Simulate the parallel-fetch race: loadInitial fires at the same time as
+        // loadHeader (from init {}), BEFORE loadHeader has had a chance to settle
+        // _headerState to ContentUnavailable. The async gate inside loadInitial's
+        // launch block must independently query the backend and abort the tab load.
+        val mockContentService: ContentService = mock()
+        whenever(mockContentService.verifyAvailable(AvailabilityCheckType.CHANNEL, "UCabc"))
+            .thenReturn(false)
+
+        val vm = createViewModel(channelId = "UCabc", contentService = mockContentService)
+        advanceUntilIdle()
+
+        assertEquals(ChannelDetailViewModel.HeaderState.ContentUnavailable, vm.headerState.value)
+        // Repository must never have been called — no NewPipe work for archived channels.
+        assertEquals(0, fakeRepository.videosCallCount)
+    }
+
+    // ── Internal Fake Classes ─────────────────────────────────────────────────
+
     /**
      * Fake ChannelDetailRepository for testing.
      * Supports both single response mode (for simple tests) and paged response mode
@@ -1002,6 +1090,7 @@ class ChannelDetailViewModelTest {
     private class FakeChannelDetailRepository : ChannelDetailRepository {
         var headerResponse: ChannelHeader? = null
         var headerError: Exception? = null
+        var headerCallCount = 0
 
         // Single response mode (for backward compatibility with existing tests)
         var videosResponse: ChannelPage<ChannelVideo> = ChannelPage(emptyList(), null)
@@ -1027,6 +1116,7 @@ class ChannelDetailViewModelTest {
         var playlistsPagedResponses: List<ChannelPage<ChannelPlaylist>>? = null
 
         override suspend fun getChannelHeader(channelId: String, forceRefresh: Boolean): ChannelHeader {
+            headerCallCount++
             headerError?.let { throw it }
             return headerResponse ?: throw RuntimeException("No header response configured")
         }
