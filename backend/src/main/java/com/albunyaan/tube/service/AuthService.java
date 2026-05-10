@@ -110,7 +110,7 @@ public class AuthService {
 
         // Set custom claims for role-based access
         Map<String, Object> claims = new HashMap<>();
-        claims.put("role", role != null ? role.toUpperCase() : null);
+        claims.put("role", role != null ? role.toLowerCase(java.util.Locale.ROOT) : null);
         firebaseAuth.setCustomUserClaims(uid, claims);
 
         // Create user document in Firestore
@@ -130,7 +130,7 @@ public class AuthService {
 
         // Update custom claims in Firebase
         Map<String, Object> claims = new HashMap<>();
-        claims.put("role", newRole != null ? newRole.toUpperCase() : null);
+        claims.put("role", newRole != null ? newRole.toLowerCase(java.util.Locale.ROOT) : null);
         firebaseAuth.setCustomUserClaims(uid, claims);
 
         // Update Firestore document

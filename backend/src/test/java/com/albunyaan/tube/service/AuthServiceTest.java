@@ -77,7 +77,7 @@ class AuthServiceTest {
 
         verify(firebaseAuth).createUser(any(UserRecord.CreateRequest.class));
         verify(firebaseAuth).setCustomUserClaims(eq("test-uid"), argThat(claims ->
-                claims.get("role").equals("MODERATOR")  // Role is converted to uppercase in implementation
+                claims.get("role").equals("moderator")  // Role is converted to lowercase in implementation
         ));
         verify(userRepository).save(any(User.class));
     }
@@ -119,7 +119,7 @@ class AuthServiceTest {
         assertEquals("admin", updatedUser.getRole());
 
         verify(firebaseAuth).setCustomUserClaims(eq("test-uid"), argThat(claims ->
-                claims.get("role").equals("ADMIN")  // Role is converted to uppercase in implementation
+                claims.get("role").equals("admin")  // Role is converted to lowercase in implementation
         ));
         verify(userRepository).findByUid("test-uid");
         verify(userRepository).save(testUser);
@@ -153,6 +153,40 @@ class AuthServiceTest {
         verify(firebaseAuth).setCustomUserClaims(any(), any());
         verify(userRepository, never()).findByUid(any());
         verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void createUser_setsLowercaseRoleClaim() throws Exception {
+        // Arrange
+        when(mockUserRecord.getUid()).thenReturn("u1");
+        when(firebaseAuth.createUser(any(UserRecord.CreateRequest.class))).thenReturn(mockUserRecord);
+        doNothing().when(firebaseAuth).setCustomUserClaims(eq("u1"), any(Map.class));
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        // Act
+        authService.createUser("e@t", "password123", "Test", "ADMIN", "actor");
+
+        // Assert
+        verify(firebaseAuth).setCustomUserClaims(eq("u1"), argThat(claims ->
+                claims.get("role").equals("admin")
+        ));
+    }
+
+    @Test
+    void updateUserRole_setsLowercaseRoleClaim() throws Exception {
+        // Arrange
+        User u = new User("u1", "e@t", "Test", "user");
+        when(userRepository.findByUid("u1")).thenReturn(Optional.of(u));
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        doNothing().when(firebaseAuth).setCustomUserClaims(eq("u1"), any(Map.class));
+
+        // Act
+        authService.updateUserRole("u1", "MODERATOR");
+
+        // Assert
+        verify(firebaseAuth).setCustomUserClaims(eq("u1"), argThat(claims ->
+                claims.get("role").equals("moderator")
+        ));
     }
 
     @Test
