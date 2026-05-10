@@ -5,7 +5,6 @@ import com.google.cloud.firestore.annotation.DocumentId;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Objects;
 
 /**
  * FIREBASE-MIGRATE-04: Audit Log Model (Firestore)

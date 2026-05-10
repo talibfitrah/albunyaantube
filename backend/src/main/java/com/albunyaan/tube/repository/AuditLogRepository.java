@@ -43,7 +43,7 @@ public class AuditLogRepository {
      * Used by AuthService to write audit logs within database transactions.
      */
     public CollectionReference auditLogsCollection() {
-        return firestore.collection(COLLECTION_NAME);
+        return getCollection();
     }
 
     public AuditLog save(AuditLog auditLog) throws ExecutionException, InterruptedException, TimeoutException {
