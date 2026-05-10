@@ -8,6 +8,8 @@ import com.albunyaan.tube.data.channel.Page
 import com.albunyaan.tube.data.playlist.PlaylistDetailRepository
 import com.albunyaan.tube.data.playlist.PlaylistHeader
 import com.albunyaan.tube.data.playlist.PlaylistItem
+import com.albunyaan.tube.data.source.AvailabilityCheckType
+import com.albunyaan.tube.data.source.ContentService
 import com.albunyaan.tube.download.DownloadPolicy
 import com.albunyaan.tube.download.DownloadRepository
 import com.albunyaan.tube.download.DownloadStatus
@@ -15,6 +17,7 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Named
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -38,6 +41,7 @@ import kotlinx.coroutines.launch
 class PlaylistDetailViewModel @AssistedInject constructor(
     private val repository: PlaylistDetailRepository,
     private val downloadRepository: DownloadRepository,
+    @Named("real") private val contentService: ContentService,
     @Assisted("playlistId") private val playlistId: String,
     @Assisted("initialTitle") private val initialTitle: String?,
     @Assisted("initialCategory") private val initialCategory: String?,
@@ -96,6 +100,20 @@ class PlaylistDetailViewModel @AssistedInject constructor(
                 Log.d(TAG, "Loading header for playlist: $playlistId")
                 _headerState.value = HeaderState.Loading
 
+                // Availability gate: check with backend before doing any NewPipe work.
+                // Fail-open on transport errors so offline users are not blocked.
+                val available = try {
+                    contentService.verifyAvailable(AvailabilityCheckType.PLAYLIST, playlistId)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Availability check failed for $playlistId; proceeding with NewPipe", e)
+                    true
+                }
+                if (!available) {
+                    Log.i(TAG, "Playlist $playlistId is unavailable per backend; emitting ContentUnavailable")
+                    _headerState.value = HeaderState.ContentUnavailable
+                    return@launch
+                }
+
                 val header = repository.getHeader(
                     playlistId = playlistId,
                     forceRefresh = forceRefresh,
@@ -120,6 +138,9 @@ class PlaylistDetailViewModel @AssistedInject constructor(
      * Load initial page of items.
      */
     fun loadInitial() {
+        // Do not start item loads when the playlist is confirmed unavailable.
+        if (_headerState.value == HeaderState.ContentUnavailable) return
+
         // Skip if already loading
         if (paginationController.isInitialLoading) {
             Log.d(TAG, "Skipping loadInitial - already loading")
@@ -128,6 +149,24 @@ class PlaylistDetailViewModel @AssistedInject constructor(
 
         viewModelScope.launch {
             try {
+                // Race-safe availability gate: loadInitial may be called externally before
+                // loadHeader has had a chance to settle _headerState to ContentUnavailable.
+                // The synchronous guard above only catches the case where ContentUnavailable
+                // was already set. For the parallel-call race we need an independent backend
+                // check here so archived-playlist content is never sent to NewPipe.
+                // Fail-open on transport errors to keep offline behaviour unchanged.
+                val available = try {
+                    contentService.verifyAvailable(AvailabilityCheckType.PLAYLIST, playlistId)
+                } catch (e: Exception) {
+                    Log.w(TAG, "loadInitial availability check failed for $playlistId; proceeding", e)
+                    true
+                }
+                if (!available) {
+                    Log.i(TAG, "loadInitial: playlist $playlistId is unavailable; aborting item load")
+                    _headerState.value = HeaderState.ContentUnavailable
+                    return@launch
+                }
+
                 Log.d(TAG, "Loading initial items for playlist: $playlistId")
                 paginationController.isInitialLoading = true
                 paginationController.hasReachedEnd = false
@@ -435,6 +474,8 @@ class PlaylistDetailViewModel @AssistedInject constructor(
         data object Loading : HeaderState()
         data class Success(val header: PlaylistHeader) : HeaderState()
         data class Error(val message: String) : HeaderState()
+        /** Backend confirmed this playlist is archived/unavailable. No retry possible. */
+        data object ContentUnavailable : HeaderState()
     }
 
     sealed class PaginatedState<out T> {
