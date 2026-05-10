@@ -25,7 +25,6 @@ import com.albunyaan.tube.download.DownloadRequest
 import com.albunyaan.tube.download.PlaylistDownloadItem
 import com.albunyaan.tube.player.ExtractionRateLimiter
 import com.albunyaan.tube.player.PlayerRepository
-import com.albunyaan.tube.data.source.FakeContentService
 import com.albunyaan.tube.player.StreamPrefetchService
 import com.albunyaan.tube.player.SyntheticDashMpdRegistry
 import kotlinx.coroutines.Dispatchers
@@ -115,7 +114,6 @@ class PlayerViewModelPlaylistPagingTest {
             playbackMetrics = playbackMetrics,
             mpdRegistry = mpdRegistry,
             extractorClient = fakeExtractorClient,
-            contentService = FakeContentService(), // T12: always-available, tests not affected by gate
         )
     }
 
@@ -466,8 +464,9 @@ class PlayerViewModelPlaylistPagingTest {
         advanceUntilIdle()
         // Now mark the SAME id as archived and call retryCurrentStream so the
         // retry loop hits resolveStreams → throws ContentUnavailableException.
-        // (loadVideo's own gate fires earlier with FakeContentService always-true,
-        // so we exercise resolveStreamFor's path by re-issuing the resolve.)
+        // (Post-NB1 the gate lives inside [GlobalStreamResolver]; the fake
+        // repository here mirrors that contract by throwing the same
+        // exception, so we exercise resolveStreamFor's retry path identically.)
         fakePlayerRepository.archivedIds += "vid_archived"
         viewModel.retryCurrentStream()
         advanceUntilIdle()

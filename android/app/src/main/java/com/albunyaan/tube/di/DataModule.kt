@@ -274,19 +274,18 @@ object DataModule {
     /**
      * Phase 1A: PlayerRepository now uses GlobalStreamResolver for single-flight semantics.
      *
-     * Archived-content C1+C2 fix: backend availability gate runs inside
-     * [DefaultPlayerRepository.resolveStreams] BEFORE the resolver call so the
-     * playlist queue path (PlayerViewModel.loadPlaylist / advanceToNext / etc.)
-     * and the shorts player path (PlayerBinder.bind) are both gated by the
-     * single chokepoint. ContentService is the @Named("real") bound instance.
+     * Archived-content NB1 fix: the backend availability gate moved one level
+     * deeper into [GlobalStreamResolver] so both the player path AND the
+     * tap-prefetch path ([StreamPrefetchService]) share a single chokepoint.
+     * The per-caller gate that used to live in [DefaultPlayerRepository] is
+     * gone — this provider no longer wires a ContentService here.
      */
     @Provides
     @Singleton
     fun providePlayerRepository(
         globalResolver: GlobalStreamResolver,
-        @Named("real") contentService: ContentService,
     ): PlayerRepository {
-        return DefaultPlayerRepository(globalResolver, contentService)
+        return DefaultPlayerRepository(globalResolver)
     }
 
     @OptIn(UnstableApi::class)

@@ -2,23 +2,24 @@ package com.albunyaan.tube.player
 
 import com.albunyaan.tube.data.extractor.Priority
 import com.albunyaan.tube.data.extractor.ResolvedStreams
-import com.albunyaan.tube.data.source.AvailabilityCheckType
-import com.albunyaan.tube.data.source.ContentService
-import javax.inject.Named
 
 /**
- * Thrown by [PlayerRepository.resolveStreams] when the backend availability gate
- * reports the requested video is no longer available (archived, removed, hidden,
- * or otherwise non-public). Callers must catch this distinctly from
+ * Thrown by [GlobalStreamResolver.resolveStreams] when the backend availability
+ * gate reports the requested video is no longer available (archived, removed,
+ * hidden, or otherwise non-public). Callers must catch this distinctly from
  * stream-resolution failures so the UI can surface a "content not available"
  * state instead of a generic "stream error" / retry.
  *
- * Closes the C1 (regular player playlist queue) and C2 (shorts player) leaks
- * identified in the multi-stage review of the archived-content fix:
- * `PlayerViewModel.loadPlaylist`, `advanceToNext`, `playPrevious`,
- * `hydrateQueue`, `initializePlaylistQueue`, and `ShortsPlayerViewModel` all
- * funnel through `PlayerRepository.resolveStreams`, so gating here covers every
- * call site with a single chokepoint.
+ * NB1 fix (Stage-3 review): the gate moved one level deeper — from the
+ * per-caller [DefaultPlayerRepository.resolveStreams] chokepoint to the global
+ * [GlobalStreamResolver.resolveStreams] entry point. That covers BOTH
+ * [DefaultPlayerRepository] AND [StreamPrefetchService] (the tap-prefetch path
+ * was the leak: list-tap thumbnails for archived videos used to trigger NewPipe
+ * extraction in the background and cache the result).
+ *
+ * Earlier C1 + C2 fixes covered the regular-player playlist queue and the
+ * shorts player by gating inside the repository; the chokepoint move keeps
+ * those covered (every call still flows through [GlobalStreamResolver]).
  *
  * @param videoId The YouTube id whose availability check returned `false`.
  */
@@ -29,12 +30,11 @@ interface PlayerRepository {
     /**
      * Resolve stream URLs for the given video.
      *
-     * Implementations must perform a backend availability check first and throw
-     * [ContentUnavailableException] when the video is archived/removed. Transport
-     * errors during the availability check fail-open (proceed to resolve) so
-     * offline users are never blocked from valid playback. See the C1 + C2
-     * review notes for why this gate lives at the lowest common chokepoint
-     * instead of at each individual call site.
+     * The backend availability gate is enforced inside
+     * [GlobalStreamResolver.resolveStreams] — see [ContentUnavailableException]
+     * for context on why the chokepoint moved one level deeper. Callers must
+     * still catch [ContentUnavailableException] (the player path) or wrap in
+     * `runCatching` (the shorts path) to surface the right UI state.
      *
      * @param forceRefresh If true, bypass the cache and fetch fresh URLs (use for recovery from playback failures).
      * @param priority Which rate-limit / cooldown lane the caller belongs to (spec §4.5 + D1).
@@ -72,47 +72,22 @@ interface PlayerRepository {
  * (PlayerViewModel.prefetchNextItems, DownloadWorker.resolveStreamViaExtractor)
  * can declare their actual lane.
  *
- * Archived-content fix C1+C2: backend availability gate runs BEFORE delegating
- * to the global resolver. This is the single chokepoint that closes the
- * playlist-queue and shorts leaks T12 missed (T12 only gated `loadVideo`).
- * Fail-open on transport errors so offline users with a stale playlist still
- * play valid videos — matches T10/T11/T12 policy.
+ * Archived-content NB1 fix: the per-caller availability gate that used to live
+ * here moved one level deeper into [GlobalStreamResolver.resolveStreams]. That
+ * covers the tap-prefetch leak ([StreamPrefetchService.triggerPrefetch] +
+ * [StreamPrefetchService.awaitOrConsumePrefetch] both call the global resolver
+ * directly — they never went through this repository, so a per-caller gate
+ * here couldn't see them). The new chokepoint catches every path with a single
+ * gate and at most one HEAD per extraction.
  */
 class DefaultPlayerRepository(
     private val globalResolver: GlobalStreamResolver,
-    @Named("real") private val contentService: ContentService,
 ) : PlayerRepository {
     override suspend fun resolveStreams(
         videoId: String,
         forceRefresh: Boolean,
         priority: Priority,
     ): ResolvedStreams? {
-        // Archived-content fix C1+C2: gate every resolve through the backend
-        // availability check. Throw ContentUnavailableException so the regular
-        // player can emit StreamState.ContentUnavailable and the shorts binder
-        // (which already wraps this call in runCatching) skips the page.
-        val available = try {
-            contentService.verifyAvailable(AvailabilityCheckType.VIDEO, videoId)
-        } catch (e: Exception) {
-            if (e is kotlinx.coroutines.CancellationException) throw e
-            // Fail-open on transport errors — same policy as T10/T11/T12. An
-            // offline user with a stale playlist must still be able to play
-            // valid cached videos. The downstream resolver / NewPipe pipeline
-            // produces its own user-visible error if the actual extraction fails.
-            android.util.Log.w(
-                "DefaultPlayerRepository",
-                "Availability check failed for $videoId; proceeding with playback",
-                e,
-            )
-            true
-        }
-        if (!available) {
-            android.util.Log.i(
-                "DefaultPlayerRepository",
-                "Video $videoId is unavailable per backend; throwing ContentUnavailableException",
-            )
-            throw ContentUnavailableException(videoId)
-        }
         return globalResolver.resolveStreams(
             videoId = videoId,
             forceRefresh = forceRefresh,

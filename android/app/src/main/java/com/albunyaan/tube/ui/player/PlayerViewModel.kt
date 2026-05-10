@@ -26,8 +26,6 @@ import androidx.media3.common.VideoSize
 import com.albunyaan.tube.data.channel.Page
 import com.albunyaan.tube.data.extractor.ExtractorClient
 import com.albunyaan.tube.data.playlist.PlaylistItem
-import com.albunyaan.tube.data.source.AvailabilityCheckType
-import com.albunyaan.tube.data.source.ContentService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -49,7 +47,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
-import javax.inject.Named
 
 /**
  * P3-T4: PlayerViewModel with Hilt DI
@@ -66,7 +63,6 @@ class PlayerViewModel @Inject constructor(
     private val playbackMetrics: PlaybackMetricsCollector,
     private val mpdRegistry: SyntheticDashMpdRegistry,
     private val extractorClient: ExtractorClient,
-    @Named("real") private val contentService: ContentService,
 ) : ViewModel() {
 
     private val dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate
@@ -657,29 +653,18 @@ class PlayerViewModel @Inject constructor(
 
         publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(item, PlaybackStartReason.USER_SELECTED))
 
-        // T12: Availability gate — check backend before invoking NewPipe.
-        // State is already Loading (set by resolveStreamFor/resolveWithRetry). We do the
-        // check synchronously on the main dispatcher inside a coroutine so the suspend call
-        // doesn't block the UI thread while the overlay state can be observed immediately.
-        resolveJob?.cancel()
-        resolveJob = viewModelScope.launch {
-            // I6: Set Loading immediately so the UI transitions away from any previous
-            // video's Ready/Error state during the ~100-500ms availability HEAD round-trip.
-            updateState { it.copy(streamState = StreamState.Loading) }
-            val available = try {
-                contentService.verifyAvailable(AvailabilityCheckType.VIDEO, videoId)
-            } catch (e: Exception) {
-                android.util.Log.w("PlayerViewModel", "Availability check failed for $videoId; proceeding with playback", e)
-                true // Fail-open: transport errors must not block valid users
-            }
-            if (!available) {
-                android.util.Log.i("PlayerViewModel", "Video $videoId is unavailable per backend; emitting ContentUnavailable")
-                updateState { it.copy(streamState = StreamState.ContentUnavailable) }
-                return@launch
-            }
-            // Availability confirmed (or fail-open): proceed with stream resolution
-            resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
-        }
+        // A1 fix (Stage-3 review): the duplicate availability gate that used to
+        // live here is gone. The chokepoint inside [GlobalStreamResolver] runs
+        // the HEAD probe once per extraction; if the video is archived a
+        // [ContentUnavailableException] propagates up through
+        // [resolveWithRetry] and the existing handler renders
+        // ContentUnavailable. Two HEAD calls per cold-open dropped to one.
+        //
+        // I6 still satisfied: [resolveStreamFor] sets [StreamState.Loading]
+        // synchronously before launching its background job, so the UI
+        // transitions away from any previous video's Ready / Error state
+        // immediately on the main thread.
+        resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
     }
 
     /**
@@ -1167,7 +1152,27 @@ class PlayerViewModel @Inject constructor(
         // Check tap-to-prefetch service first (triggered when user taps video in list)
         // This will await in-flight prefetch for up to 3 seconds, providing in-flight dedupe
         if (!forceRefresh) {
-            val tapPrefetched = prefetchService.awaitOrConsumePrefetch(item.streamId)
+            val tapPrefetched = try {
+                prefetchService.awaitOrConsumePrefetch(item.streamId)
+            } catch (cu: com.albunyaan.tube.player.ContentUnavailableException) {
+                // NB1 fix: the chokepoint inside [GlobalStreamResolver] propagates
+                // [ContentUnavailableException] all the way out through the
+                // prefetch await path (the prefetch service forwards the in-flight
+                // job's exception). Handle it here with the same UX as the
+                // [repository.resolveStreams] catch below: no retries, auto-skip
+                // in playlist mode, otherwise ContentUnavailable overlay.
+                android.util.Log.i(
+                    "PlayerViewModel",
+                    "Content unavailable for ${item.streamId} via prefetch await; halting retries",
+                )
+                playbackMetrics.onPlaybackFailed(item.streamId, "content_unavailable")
+                publishAnalytics(PlaybackAnalyticsEvent.StreamFailed(item.streamId))
+                if (handleStreamResolutionFailure(item)) {
+                    return  // Auto-skipped to next item in playlist
+                }
+                updateState { it.copy(streamState = StreamState.ContentUnavailable) }
+                return
+            }
             if (tapPrefetched != null) {
                 android.util.Log.d("PlayerViewModel", "Using tap-prefetched stream for ${item.streamId}")
                 val selection = tapPrefetched.toDefaultSelection()

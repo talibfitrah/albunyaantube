@@ -13,13 +13,12 @@ import com.albunyaan.tube.data.local.FavoritesRepository
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.playlist.PlaylistDetailRepository
 import com.albunyaan.tube.data.playlist.PlaylistPage
-import com.albunyaan.tube.data.source.AvailabilityCheckType
-import com.albunyaan.tube.data.source.ContentService
 import com.albunyaan.tube.download.DownloadEntry
 import com.albunyaan.tube.download.DownloadPolicy
 import com.albunyaan.tube.download.DownloadRepository
 import com.albunyaan.tube.download.DownloadRequest
 import com.albunyaan.tube.download.PlaylistDownloadItem
+import com.albunyaan.tube.player.ContentUnavailableException
 import com.albunyaan.tube.player.ExtractionRateLimiter
 import com.albunyaan.tube.player.PlayerRepository
 import com.albunyaan.tube.player.StreamPrefetchService
@@ -29,7 +28,6 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -42,18 +40,21 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mockito.kotlin.mock
-import org.mockito.kotlin.whenever
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * T12: Tests for the PlayerViewModel backend availability gate.
+ * T12 (post-NB1 chokepoint move): Tests for the player's content-unavailable
+ * UI flow — the gate itself moved into [GlobalStreamResolver], so these tests
+ * now drive it via [FakePlayerRepository] throwing [ContentUnavailableException]
+ * (which is exactly what the chokepoint does in production).
  *
  * Verifies:
- * - Archived video → ContentUnavailable state, NewPipe never called
+ * - Archived video (repository throws ContentUnavailable) → ContentUnavailable state
  * - Valid video → proceeds normally (existing behavior preserved)
- * - Transport error on availability check → fail-open, proceeds to NewPipe
+ * - Transport-error fail-open is now covered by [GlobalStreamResolverTest] /
+ *   [DefaultPlayerRepositoryTest]; here we just assert the VM forwards the
+ *   Loading state and resolveStreams gets called.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -95,7 +96,7 @@ class PlayerViewModelAvailabilityGateTest {
         Dispatchers.resetMain()
     }
 
-    private fun createViewModel(contentService: ContentService): PlayerViewModel {
+    private fun createViewModel(): PlayerViewModel {
         return PlayerViewModel(
             repository = fakePlayerRepository,
             downloadRepository = FakeDownloadRepository(),
@@ -107,19 +108,19 @@ class PlayerViewModelAvailabilityGateTest {
             playbackMetrics = playbackMetrics,
             mpdRegistry = mpdRegistry,
             extractorClient = fakeExtractorClient,
-            contentService = contentService,
         )
     }
 
     // ── Availability Gate Tests ───────────────────────────────────────────────
 
     @Test
-    fun `loadVideo archived video emits ContentUnavailable and never calls repository`() = runTest {
-        val mockContentService: ContentService = mock()
-        whenever(mockContentService.verifyAvailable(AvailabilityCheckType.VIDEO, "vid_archived"))
-            .thenReturn(false)
+    fun `loadVideo archived video emits ContentUnavailable when repository throws`() = runTest {
+        // The chokepoint inside [GlobalStreamResolver] throws ContentUnavailableException
+        // for archived videos; the production [DefaultPlayerRepository] just forwards.
+        // Drive that here via the fake so the VM sees the same behaviour.
+        fakePlayerRepository.archivedIds.add("vid_archived")
 
-        val vm = createViewModel(mockContentService)
+        val vm = createViewModel()
         vm.loadVideo(videoId = "vid_archived")
         advanceUntilIdle()
 
@@ -128,23 +129,19 @@ class PlayerViewModelAvailabilityGateTest {
             StreamState.ContentUnavailable,
             vm.state.value.streamState,
         )
-        // NewPipe (PlayerRepository.resolveStreams) must never have been called
-        assertEquals(
-            "resolveStreams must not be called for archived video",
-            0,
-            fakePlayerRepository.resolveCallCount,
-        )
+        // resolveStreams MUST be called now (the gate is one level deeper) — the
+        // VM's job is to translate the exception into the right UI state.
+        assert(fakePlayerRepository.resolveCallCount > 0) {
+            "resolveStreams must be called (gate now lives inside GlobalStreamResolver)"
+        }
     }
 
     @Test
     fun `loadVideo valid video proceeds to stream resolution`() = runTest {
-        val mockContentService: ContentService = mock()
-        whenever(mockContentService.verifyAvailable(AvailabilityCheckType.VIDEO, "vid_valid"))
-            .thenReturn(true)
         // Provide a resolvable stream so the VM can reach Ready
         fakePlayerRepository.resolvedStreams = null // returns null → Error, but still called
 
-        val vm = createViewModel(mockContentService)
+        val vm = createViewModel()
         vm.loadVideo(videoId = "vid_valid")
         advanceUntilIdle()
 
@@ -160,33 +157,18 @@ class PlayerViewModelAvailabilityGateTest {
         }
     }
 
-    @Test
-    fun `loadVideo transport error on availability check fails open and proceeds to resolution`() = runTest {
-        val mockContentService: ContentService = mock()
-        whenever(mockContentService.verifyAvailable(AvailabilityCheckType.VIDEO, "vid_net_error"))
-            .thenThrow(RuntimeException("network timeout"))
-
-        val vm = createViewModel(mockContentService)
-        vm.loadVideo(videoId = "vid_net_error")
-        advanceUntilIdle()
-
-        // Fail-open: a transport error must not gate the user out
-        assertNotEquals(
-            "Transport error must not emit ContentUnavailable (fail-open)",
-            StreamState.ContentUnavailable,
-            vm.state.value.streamState,
-        )
-        // Resolution must have been attempted
-        assert(fakePlayerRepository.resolveCallCount > 0) {
-            "resolveStreams must be called when availability check throws"
-        }
-    }
-
     // ── Internal Fakes ────────────────────────────────────────────────────────
 
     private class FakePlayerRepository : PlayerRepository {
         var resolvedStreams: ResolvedStreams? = null
         var resolveCallCount = 0
+        /**
+         * Mirror the chokepoint behaviour from [com.albunyaan.tube.player.GlobalStreamResolver]:
+         * any videoId in this set throws [ContentUnavailableException] on
+         * [resolveStreams]. Lets these tests exercise the player's
+         * UI-state-mapping logic without having to wire a full GlobalStreamResolver.
+         */
+        val archivedIds: MutableSet<String> = mutableSetOf()
 
         override suspend fun resolveStreams(
             videoId: String,
@@ -194,6 +176,9 @@ class PlayerViewModelAvailabilityGateTest {
             priority: Priority,
         ): ResolvedStreams? {
             resolveCallCount++
+            if (videoId in archivedIds) {
+                throw ContentUnavailableException(videoId)
+            }
             return resolvedStreams
         }
     }

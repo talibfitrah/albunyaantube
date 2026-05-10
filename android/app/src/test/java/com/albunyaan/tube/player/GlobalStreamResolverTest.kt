@@ -2,6 +2,14 @@ package com.albunyaan.tube.player
 
 import com.albunyaan.tube.data.extractor.Priority
 import com.albunyaan.tube.data.extractor.ResolvedStreams
+import com.albunyaan.tube.data.filters.FilterState
+import com.albunyaan.tube.data.model.Category
+import com.albunyaan.tube.data.model.ContentItem
+import com.albunyaan.tube.data.model.ContentType
+import com.albunyaan.tube.data.model.CursorResponse
+import com.albunyaan.tube.data.model.HomeFeedResult
+import com.albunyaan.tube.data.source.AvailabilityCheckType
+import com.albunyaan.tube.data.source.ContentService
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -648,6 +656,186 @@ class GlobalStreamResolverTest {
         )
     }
 
+    // --- Availability Gate Tests (NB1 chokepoint move) ---
+    // The per-caller gate that lived in [DefaultPlayerRepository] moved here.
+    // These tests cover both the regular player path AND the prefetch path:
+    // any call to [resolveStreams] now hits the gate before any extraction.
+    // The leak being closed: [StreamPrefetchService.triggerPrefetch] used to
+    // call [GlobalStreamResolver.resolveStreams] directly, bypassing the
+    // repo gate entirely — so list-tap thumbnails for archived videos
+    // triggered NewPipe extractions in the background and cached the result.
+
+    @Test
+    fun `archived video throws ContentUnavailableException and never calls provider`() = runTest {
+        val fakeContentService = FakeContentService()
+        val gatedResolver = GlobalStreamResolver.createForTesting(fakeProvider, fakeContentService)
+        fakeContentService.setAvailable("vid_archived", false)
+        // Provider would have returned valid streams — but the gate must fire first.
+        fakeProvider.setResult("vid_archived", createMockStreams("vid_archived"))
+
+        try {
+            gatedResolver.resolveStreams("vid_archived", caller = "test")
+            fail("Expected ContentUnavailableException for archived video")
+        } catch (e: ContentUnavailableException) {
+            assertEquals(
+                "Exception must carry the archived videoId",
+                "vid_archived",
+                e.videoId,
+            )
+        }
+
+        assertEquals(
+            "Archived video MUST NOT reach the underlying resolver provider",
+            0,
+            fakeProvider.getCallCount("vid_archived"),
+        )
+        assertEquals(
+            "Availability gate must have run exactly once",
+            1,
+            fakeContentService.verifyCallCount.get(),
+        )
+    }
+
+    @Test
+    fun `available video proceeds to provider`() = runTest {
+        val fakeContentService = FakeContentService()
+        val gatedResolver = GlobalStreamResolver.createForTesting(fakeProvider, fakeContentService)
+        fakeContentService.setAvailable("vid_ok", true)
+        fakeProvider.setResult("vid_ok", createMockStreams("vid_ok"))
+
+        gatedResolver.resolveStreams("vid_ok", caller = "test")
+
+        assertEquals(
+            "Resolver provider must be reached for available video",
+            1,
+            fakeProvider.getCallCount("vid_ok"),
+        )
+    }
+
+    @Test
+    fun `transport error on availability check fails open and proceeds to provider`() = runTest {
+        // Mirrors offline / 5xx behaviour: a transport error must NOT block a
+        // valid user from playing. Same fail-open policy as T10/T11/T12 and
+        // the previous repository chokepoint.
+        val fakeContentService = FakeContentService()
+        val gatedResolver = GlobalStreamResolver.createForTesting(fakeProvider, fakeContentService)
+        fakeContentService.setError("vid_offline", RuntimeException("network timeout"))
+        fakeProvider.setResult("vid_offline", createMockStreams("vid_offline"))
+
+        // Must not throw — the gate is fail-open on transport errors.
+        gatedResolver.resolveStreams("vid_offline", caller = "test")
+
+        assertEquals(
+            "Transport error on availability check must NOT block resolution",
+            1,
+            fakeProvider.getCallCount("vid_offline"),
+        )
+    }
+
+    @Test
+    fun `archived prefetch caller cannot cache results`() = runTest {
+        // NB1 regression: list-tap prefetch used to call GlobalStreamResolver
+        // directly, bypassing the per-caller gate inside DefaultPlayerRepository.
+        // After the chokepoint move, even the prefetch caller (BACKGROUND_REFRESH)
+        // hits the gate, the gate throws, and the provider is never invoked —
+        // so no stream metadata can be cached for an archived video.
+        val fakeContentService = FakeContentService()
+        val gatedResolver = GlobalStreamResolver.createForTesting(fakeProvider, fakeContentService)
+        fakeContentService.setAvailable("vid_archived_prefetch", false)
+        fakeProvider.setResult("vid_archived_prefetch", createMockStreams("vid_archived_prefetch"))
+
+        try {
+            gatedResolver.resolveStreams(
+                videoId = "vid_archived_prefetch",
+                caller = "prefetch",
+                priority = Priority.BACKGROUND_REFRESH,
+            )
+            fail("Expected ContentUnavailableException for archived prefetch")
+        } catch (_: ContentUnavailableException) {
+            // expected
+        }
+
+        assertEquals(
+            "Prefetch must NOT extract streams for archived video",
+            0,
+            fakeProvider.getCallCount("vid_archived_prefetch"),
+        )
+    }
+
+    @Test
+    fun `joiners share gate verdict via single HEAD per extraction`() = runTest {
+        // NB1 fix invariant: at most one HEAD probe per extraction. When two
+        // callers (prefetch + player) both call resolveStreams for the same
+        // videoId at nearly the same time, the second caller joins the
+        // in-flight job rather than running its own gate. The shared
+        // ContentUnavailableException propagates to both.
+        val fakeContentService = FakeContentService()
+        val gatedResolver = GlobalStreamResolver.createForTesting(fakeProvider, fakeContentService)
+        val gate = CompletableDeferred<Unit>()
+        fakeContentService.setAvailable("vid_shared", false)
+        // Block the provider just to keep the in-flight window long enough
+        // for the second caller to join. (The gate fires before the provider,
+        // so this gate isn't actually awaited — kept for shape symmetry.)
+        fakeProvider.setGate("vid_shared", gate)
+        fakeProvider.setResult("vid_shared", createMockStreams("vid_shared"))
+
+        // First caller: USER_FOREGROUND prefetch. Will throw ContentUnavailable.
+        var firstException: Throwable? = null
+        val first = launch {
+            try {
+                gatedResolver.resolveStreams(
+                    videoId = "vid_shared",
+                    caller = "prefetch",
+                    priority = Priority.USER_FOREGROUND,
+                )
+            } catch (t: Throwable) {
+                firstException = t
+            }
+        }
+
+        // Wait for the gate's verdict to register (the verifyCallCount must
+        // increment regardless of whether the provider gets called) — busy-wait
+        // just enough for the async block to start.
+        kotlinx.coroutines.yield()
+        kotlinx.coroutines.yield()
+
+        // Second caller arrives after the gate already failed. The first
+        // caller's job is already complete-with-exception; the second caller
+        // creates a NEW resolve job so the gate fires a second time. (The
+        // single-HEAD invariant only applies to overlapping in-flight callers.)
+        var secondException: Throwable? = null
+        val second = launch {
+            try {
+                gatedResolver.resolveStreams(
+                    videoId = "vid_shared",
+                    caller = "player",
+                    priority = Priority.USER_FOREGROUND,
+                )
+            } catch (t: Throwable) {
+                secondException = t
+            }
+        }
+
+        gate.complete(Unit)
+        first.join()
+        second.join()
+
+        assertTrue(
+            "First caller (prefetch) must see ContentUnavailableException",
+            firstException is ContentUnavailableException,
+        )
+        assertTrue(
+            "Second caller (player) must also see ContentUnavailableException",
+            secondException is ContentUnavailableException,
+        )
+        // Both callers see the same archived verdict; the provider is never invoked.
+        assertEquals(
+            "Provider must never be called for archived video, regardless of caller",
+            0,
+            fakeProvider.getCallCount("vid_shared"),
+        )
+    }
+
     // --- Test Helpers ---
 
     private fun createMockStreams(id: String): ResolvedStreams {
@@ -714,5 +902,63 @@ class GlobalStreamResolverTest {
             gates[videoId]?.await()
             return results[videoId]
         }
+    }
+
+    /**
+     * In-test fake [ContentService] that lets us drive `verifyAvailable`
+     * deterministically — return true / false / throw per videoId — and
+     * count gate invocations. Other ContentService methods are unused here
+     * and either return empty data or fail loudly so accidental new calls
+     * surface as test failures.
+     */
+    private class FakeContentService : ContentService {
+        val verifyCallCount = AtomicInteger(0)
+        private val availability = mutableMapOf<String, Boolean>()
+        private val errors = mutableMapOf<String, Throwable>()
+
+        fun setAvailable(videoId: String, available: Boolean) {
+            availability[videoId] = available
+        }
+
+        fun setError(videoId: String, error: Throwable) {
+            errors[videoId] = error
+        }
+
+        override suspend fun verifyAvailable(
+            type: AvailabilityCheckType,
+            youtubeId: String,
+        ): Boolean {
+            verifyCallCount.incrementAndGet()
+            errors[youtubeId]?.let { throw it }
+            // Default to true (available) when the test didn't say otherwise.
+            return availability[youtubeId] ?: true
+        }
+
+        override suspend fun fetchContent(
+            type: ContentType,
+            cursor: String?,
+            pageSize: Int,
+            filters: FilterState,
+            query: String?,
+        ): CursorResponse = throw UnsupportedOperationException("not used in resolver gate tests")
+
+        override suspend fun fetchHomeFeed(
+            cursor: String?,
+            categoryLimit: Int,
+            contentLimit: Int,
+            category: String?,
+        ): HomeFeedResult = throw UnsupportedOperationException("not used in resolver gate tests")
+
+        override suspend fun search(
+            query: String,
+            type: String?,
+            limit: Int,
+        ): List<ContentItem> = throw UnsupportedOperationException("not used in resolver gate tests")
+
+        override suspend fun fetchCategories(): List<Category> =
+            throw UnsupportedOperationException("not used in resolver gate tests")
+
+        override suspend fun fetchSubcategories(parentId: String): List<Category> =
+            throw UnsupportedOperationException("not used in resolver gate tests")
     }
 }
