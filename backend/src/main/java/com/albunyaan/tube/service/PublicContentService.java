@@ -1746,7 +1746,26 @@ public class PublicContentService {
 
         candidates.sort((a, b) -> scoreStream(b, normalizedQuery) - scoreStream(a, normalizedQuery));
 
-        return candidates.stream()
+        // Overfetch to absorb filtering, then batch-check Video documents for archive status.
+        List<SearchableStream> top = candidates.stream()
+                .limit(limit * 2L)
+                .collect(java.util.stream.Collectors.toList());
+
+        if (top.isEmpty()) return java.util.Collections.emptyList();
+
+        // Batch-fetch Video documents; streams with no Video document are NOT filtered
+        // (parent channel/playlist cleanup handles those in separate tasks).
+        Map<String, Video> videoMap = videoRepository.findByYoutubeIds(
+                top.stream().map(SearchableStream::getStreamId).collect(java.util.stream.Collectors.toList())
+        );
+
+        Set<String> blockedIds = videoMap.values().stream()
+                .filter(v -> !isAvailable(v) || !isApproved(v))
+                .map(Video::getYoutubeId)
+                .collect(java.util.stream.Collectors.toSet());
+
+        return top.stream()
+                .filter(s -> !blockedIds.contains(s.getStreamId()))
                 .limit(limit)
                 .map(this::streamToDto)
                 .collect(java.util.stream.Collectors.toList());
