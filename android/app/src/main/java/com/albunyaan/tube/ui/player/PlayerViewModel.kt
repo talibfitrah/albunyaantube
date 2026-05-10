@@ -1204,6 +1204,24 @@ class PlayerViewModel @Inject constructor(
                 kotlinx.coroutines.withTimeout(EXTRACTOR_TIMEOUT_MS) {
                     repository.resolveStreams(item.streamId, forceRefresh = forceRefresh && attempt == 1)
                 }
+            } catch (cu: com.albunyaan.tube.player.ContentUnavailableException) {
+                // C1 fix: backend availability gate inside DefaultPlayerRepository
+                // signalled the video is archived/unavailable. Do NOT retry — the
+                // outcome is deterministic. In playlist mode, auto-skip to the next
+                // item (same UX as resolve failures). In single-video mode (or after
+                // the auto-skip limit is hit), surface ContentUnavailable so the UI
+                // shows the localized "content not available" overlay.
+                android.util.Log.i(
+                    "PlayerViewModel",
+                    "Content unavailable for ${item.streamId} per backend gate; halting retries",
+                )
+                playbackMetrics.onPlaybackFailed(item.streamId, "content_unavailable")
+                publishAnalytics(PlaybackAnalyticsEvent.StreamFailed(item.streamId))
+                if (handleStreamResolutionFailure(item)) {
+                    return  // Auto-skipped to next item in playlist
+                }
+                updateState { it.copy(streamState = StreamState.ContentUnavailable) }
+                return
             } catch (t: Throwable) {
                 if (t is kotlinx.coroutines.CancellationException) throw t
                 val errorMessage = when (t) {
@@ -1342,6 +1360,13 @@ class PlayerViewModel @Inject constructor(
             // Schedule next refresh
             scheduleLiveStreamRefresh(freshStreams, freshSelection)
 
+        } catch (cu: com.albunyaan.tube.player.ContentUnavailableException) {
+            // Live stream became unavailable mid-broadcast (channel removed, video
+            // archived, geo-changed). Surface ContentUnavailable instead of an
+            // opaque error — same as the regular resolve path. No need to schedule
+            // another refresh attempt.
+            android.util.Log.i("PlayerViewModel", "Live stream: ${cu.videoId} now unavailable per backend; emitting ContentUnavailable")
+            updateState { it.copy(streamState = StreamState.ContentUnavailable) }
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
             android.util.Log.e("PlayerViewModel", "Live stream: proactive refresh failed", e)
@@ -1442,6 +1467,11 @@ class PlayerViewModel @Inject constructor(
                         }
                         android.util.Log.d("PlayerViewModel", "Prefetch: Completed for ${item.streamId}")
                     }
+                } catch (cu: com.albunyaan.tube.player.ContentUnavailableException) {
+                    // Skip prefetching archived items — when the user advances to
+                    // them, the live resolve path will surface ContentUnavailable
+                    // (or auto-skip in playlist mode). No retry, no warning.
+                    android.util.Log.d("PlayerViewModel", "Prefetch: skipping archived ${item.streamId}")
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
                     android.util.Log.w("PlayerViewModel", "Prefetch failed for ${item.streamId}: ${e.message}")
