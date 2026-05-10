@@ -500,6 +500,7 @@ public class ContentValidationService {
 
         if (!archivedChannelIds.isEmpty()) {
             run.addDetail("archivedChannelIds", archivedChannelIds);
+            publicContentCacheService.evictPublicContentCaches();
         }
         if (!errorChannelIds.isEmpty()) {
             run.addDetail("errorChannelIds", errorChannelIds);
@@ -614,6 +615,7 @@ public class ContentValidationService {
 
         if (!archivedPlaylistIds.isEmpty()) {
             run.addDetail("archivedPlaylistIds", archivedPlaylistIds);
+            publicContentCacheService.evictPublicContentCaches();
         }
         if (!errorPlaylistIds.isEmpty()) {
             run.addDetail("errorPlaylistIds", errorPlaylistIds);
@@ -728,6 +730,7 @@ public class ContentValidationService {
 
         if (!archivedVideoIds.isEmpty()) {
             run.addDetail("archivedVideoIds", archivedVideoIds);
+            publicContentCacheService.evictPublicContentCaches();
         }
         if (!errorVideoIds.isEmpty()) {
             run.addDetail("errorVideoIds", errorVideoIds);
