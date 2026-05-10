@@ -663,6 +663,9 @@ class PlayerViewModel @Inject constructor(
         // doesn't block the UI thread while the overlay state can be observed immediately.
         resolveJob?.cancel()
         resolveJob = viewModelScope.launch {
+            // I6: Set Loading immediately so the UI transitions away from any previous
+            // video's Ready/Error state during the ~100-500ms availability HEAD round-trip.
+            updateState { it.copy(streamState = StreamState.Loading) }
             val available = try {
                 contentService.verifyAvailable(AvailabilityCheckType.VIDEO, videoId)
             } catch (e: Exception) {

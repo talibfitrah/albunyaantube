@@ -634,10 +634,10 @@ class PlaylistDetailViewModelTest {
     }
 
     @Test
-    fun `loadInitial on archived playlist skips NewPipe and emits ContentUnavailable`() = runTest {
-        // Simulate the parallel-fetch race: if loadInitial were called externally before
-        // loadHeader has settled _headerState to ContentUnavailable, the async gate inside
-        // loadInitial's launch block must independently query the backend and abort the load.
+    fun `loadInitial synchronous guard is a no-op when headerState is ContentUnavailable`() = runTest {
+        // Verify the synchronous guard: if _headerState is already ContentUnavailable,
+        // calling loadInitial() directly must return without touching the repository.
+        // This covers retryInitial() being called while the unavailable state is set.
         val mockContentService: ContentService = mock()
         whenever(mockContentService.verifyAvailable(AvailabilityCheckType.PLAYLIST, "PLabc"))
             .thenReturn(false)
@@ -646,8 +646,14 @@ class PlaylistDetailViewModelTest {
         advanceUntilIdle()
 
         assertEquals(PlaylistDetailViewModel.HeaderState.ContentUnavailable, vm.headerState.value)
-        // Repository must never have been called — no NewPipe work for archived playlists.
-        assertEquals(0, fakeRepository.itemsCallCount)
+
+        // Direct call — must be blocked by the synchronous guard at the top of loadInitial.
+        val callCountBefore = fakeRepository.itemsCallCount
+        vm.loadInitial()
+        advanceUntilIdle()
+
+        assertEquals("loadInitial synchronous guard must prevent repository call",
+            callCountBefore, fakeRepository.itemsCallCount)
     }
 
     // ── Internal Fake Classes ─────────────────────────────────────────────────

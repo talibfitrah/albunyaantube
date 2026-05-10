@@ -149,24 +149,6 @@ class PlaylistDetailViewModel @AssistedInject constructor(
 
         viewModelScope.launch {
             try {
-                // Race-safe availability gate: loadInitial may be called externally before
-                // loadHeader has had a chance to settle _headerState to ContentUnavailable.
-                // The synchronous guard above only catches the case where ContentUnavailable
-                // was already set. For the parallel-call race we need an independent backend
-                // check here so archived-playlist content is never sent to NewPipe.
-                // Fail-open on transport errors to keep offline behaviour unchanged.
-                val available = try {
-                    contentService.verifyAvailable(AvailabilityCheckType.PLAYLIST, playlistId)
-                } catch (e: Exception) {
-                    Log.w(TAG, "loadInitial availability check failed for $playlistId; proceeding", e)
-                    true
-                }
-                if (!available) {
-                    Log.i(TAG, "loadInitial: playlist $playlistId is unavailable; aborting item load")
-                    _headerState.value = HeaderState.ContentUnavailable
-                    return@launch
-                }
-
                 Log.d(TAG, "Loading initial items for playlist: $playlistId")
                 paginationController.isInitialLoading = true
                 paginationController.hasReachedEnd = false
