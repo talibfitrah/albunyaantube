@@ -1403,6 +1403,8 @@ if (cache != null) cache.evict(uid);
 
 The Canonical lifecycle method in Spec alignment shows the placement.
 
+**⚠ Eviction test prerequisite (added 2026-05-10 from 5b review):** The existing `application-test.yml` sets `spring.cache.type=none`, which means existing integration tests do NOT exercise the cache. Any test in Tasks 6/7/8 that intends to verify cache eviction MUST add a class-level `@TestPropertySource(properties = "spring.cache.type=caffeine")` override (as `UserStatusCacheTest` does), otherwise `cache.evict(uid)` is a no-op against a null cache and the assertion is meaningless. Tests that only verify business behavior (status field, audit log) don't need the override.
+
 Run:
 
 ```bash
