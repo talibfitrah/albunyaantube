@@ -656,6 +656,38 @@ class PlaylistDetailViewModelTest {
             callCountBefore, fakeRepository.itemsCallCount)
     }
 
+    @Test
+    fun `retryInitial without prior loadHeader settled blocks NewPipe when playlist archived`() = runTest {
+        // Simulates the retry-button race: the UI calls loadHeader(forceRefresh=true) AND
+        // retryInitial() consecutively. retryInitial() → loadInitial() races against the still
+        // in-flight loadHeader. Without the async gate inside loadInitial, the synchronous guard
+        // (headerState is Loading, not ContentUnavailable) would pass and NewPipe would fetch
+        // items for an archived playlist before loadHeader settles.
+        //
+        // This test calls retryInitial() directly WITHOUT a prior loadHeader settle (simulating
+        // the race window) and verifies the async gate stops NewPipe.
+        val mockContentService: ContentService = mock()
+        // Both loadHeader (called from init {}) and loadInitial's async gate report unavailable.
+        whenever(mockContentService.verifyAvailable(AvailabilityCheckType.PLAYLIST, "PLxyz"))
+            .thenReturn(false)
+
+        // Do NOT pre-configure a header response — if NewPipe work runs, the test would fail
+        // with a "No header response configured" exception or an unexpected itemsCallCount.
+        val vm = createViewModel(playlistId = "PLxyz", contentService = mockContentService)
+
+        // Call retryInitial() immediately, BEFORE init's loadHeader has settled.
+        // At this point headerState is still Loading (not ContentUnavailable), so the
+        // synchronous guard alone would pass — only the async gate inside loadInitial can stop it.
+        vm.retryInitial()
+        advanceUntilIdle()
+
+        // The async gate must have caught the unavailable signal and emitted ContentUnavailable.
+        assertEquals(PlaylistDetailViewModel.HeaderState.ContentUnavailable, vm.headerState.value)
+        // NewPipe repository must not have been touched.
+        assertEquals("NewPipe items must not be fetched for an archived playlist",
+            0, fakeRepository.itemsCallCount)
+    }
+
     // ── Internal Fake Classes ─────────────────────────────────────────────────
 
     /**

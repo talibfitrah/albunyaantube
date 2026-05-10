@@ -564,6 +564,88 @@ class ContentValidationServiceTest {
 
             verify(publicContentCacheService, never()).evictPublicContentCaches();
         }
+
+        // --- Cache eviction resilience (N6) ---
+
+        @Test
+        @DisplayName("Run must complete and channel must be archived even when cache eviction throws")
+        void validateChannels_evictionThrows_runStillCompletes() throws Exception {
+            // Arrange: a channel that YouTube doesn't know about → will be archived.
+            Channel channel = createChannel("UCabc", "Test Channel", null);
+            when(channelRepository.findByStatusOrderByLastValidatedAtAsc(eq("APPROVED"), anyInt())).thenReturn(List.of(channel));
+            when(channelRepository.findByStatusOrderByLastValidatedAtAsc(eq("approved"), anyInt())).thenReturn(Collections.emptyList());
+
+            BatchValidationResult<ChannelDetailsDto> result = new BatchValidationResult<>();
+            result.addNotFound("UCabc");
+            when(youtubeService.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(result);
+            when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            // Simulate Redis being down
+            doThrow(new RuntimeException("Redis down")).when(publicContentCacheService).evictPublicContentCaches();
+
+            // Should NOT throw; run must complete normally
+            ValidationRun run = assertDoesNotThrow(() ->
+                    service.validateChannels("MANUAL", "test-user", "Test User", 100));
+
+            assertEquals("COMPLETED", run.getStatus());
+
+            // Channel was still persisted as ARCHIVED before the failed eviction
+            ArgumentCaptor<Channel> channelCaptor = ArgumentCaptor.forClass(Channel.class);
+            verify(channelRepository).save(channelCaptor.capture());
+            assertEquals(ValidationStatus.ARCHIVED, channelCaptor.getValue().getValidationStatus());
+        }
+
+        @Test
+        @DisplayName("Run must complete and playlist must be archived even when cache eviction throws")
+        void validatePlaylists_evictionThrows_runStillCompletes() throws Exception {
+            // Arrange: a playlist that YouTube doesn't know about → will be archived.
+            Playlist playlist = createPlaylist("PLxyz", "Test Playlist", null);
+            when(playlistRepository.findByStatusOrderByLastValidatedAtAsc(eq("approved"), anyInt())).thenReturn(List.of(playlist));
+            when(playlistRepository.findByStatusOrderByLastValidatedAtAsc(eq("APPROVED"), anyInt())).thenReturn(Collections.emptyList());
+
+            BatchValidationResult<PlaylistDetailsDto> result = new BatchValidationResult<>();
+            result.addNotFound("PLxyz");
+            when(youtubeService.batchValidatePlaylistsDtoWithDetails(anyList())).thenReturn(result);
+            when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            // Simulate Redis being down
+            doThrow(new RuntimeException("Redis down")).when(publicContentCacheService).evictPublicContentCaches();
+
+            ValidationRun run = assertDoesNotThrow(() ->
+                    service.validatePlaylists("MANUAL", "test-user", "Test User", 100));
+
+            assertEquals("COMPLETED", run.getStatus());
+
+            ArgumentCaptor<Playlist> playlistCaptor = ArgumentCaptor.forClass(Playlist.class);
+            verify(playlistRepository).save(playlistCaptor.capture());
+            assertEquals(ValidationStatus.ARCHIVED, playlistCaptor.getValue().getValidationStatus());
+        }
+
+        @Test
+        @DisplayName("Run must complete and video must be archived even when cache eviction throws")
+        void validateVideos_evictionThrows_runStillCompletes() throws Exception {
+            // Arrange: a video that YouTube doesn't know about → will be archived.
+            Video video = createVideo("dQw4w9WgXcQ", "Test Video", null);
+            when(videoRepository.findByStatusOrderByLastValidatedAtAsc(eq("APPROVED"), anyInt())).thenReturn(List.of(video));
+            when(videoRepository.findByStatusOrderByLastValidatedAtAsc(eq("approved"), anyInt())).thenReturn(Collections.emptyList());
+
+            BatchValidationResult<StreamDetailsDto> result = new BatchValidationResult<>();
+            result.addNotFound("dQw4w9WgXcQ");
+            when(youtubeService.batchValidateVideosDtoWithDetails(anyList())).thenReturn(result);
+            when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            // Simulate Redis being down
+            doThrow(new RuntimeException("Redis down")).when(publicContentCacheService).evictPublicContentCaches();
+
+            ValidationRun run = assertDoesNotThrow(() ->
+                    service.validateVideos("MANUAL", "test-user", "Test User", 100));
+
+            assertEquals("COMPLETED", run.getStatus());
+
+            ArgumentCaptor<Video> videoCaptor = ArgumentCaptor.forClass(Video.class);
+            verify(videoRepository).save(videoCaptor.capture());
+            assertEquals(ValidationStatus.ARCHIVED, videoCaptor.getValue().getValidationStatus());
+        }
     }
 
     @Nested

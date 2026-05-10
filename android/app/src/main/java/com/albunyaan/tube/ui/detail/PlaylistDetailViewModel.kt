@@ -136,9 +136,17 @@ class PlaylistDetailViewModel @AssistedInject constructor(
 
     /**
      * Load initial page of items.
+     *
+     * Contains two availability guards:
+     * 1. Synchronous guard — fast-exits if the state is already ContentUnavailable (covers the
+     *    cold-open path where loadHeader already set the state).
+     * 2. Async gate — re-checks with the backend inside the coroutine. This is required for the
+     *    retry-button path: the UI calls loadHeader(forceRefresh=true) AND retryInitial()
+     *    consecutively, so loadInitial races against a still-in-flight loadHeader. Without this
+     *    async gate, a playlist archived between original load and retry tap could slip through.
      */
     fun loadInitial() {
-        // Do not start item loads when the playlist is confirmed unavailable.
+        // Synchronous guard: fast-exit if unavailability is already known.
         if (_headerState.value == HeaderState.ContentUnavailable) return
 
         // Skip if already loading
@@ -148,6 +156,20 @@ class PlaylistDetailViewModel @AssistedInject constructor(
         }
 
         viewModelScope.launch {
+            // Async availability gate: re-verify with backend before doing any NewPipe work.
+            // Fail-open on transport errors so offline users are not blocked.
+            val available = try {
+                contentService.verifyAvailable(AvailabilityCheckType.PLAYLIST, playlistId)
+            } catch (e: Exception) {
+                Log.w(TAG, "loadInitial availability check failed for $playlistId; proceeding", e)
+                true
+            }
+            if (!available) {
+                Log.i(TAG, "loadInitial: $playlistId unavailable per backend; aborting item load")
+                _headerState.value = HeaderState.ContentUnavailable
+                return@launch
+            }
+
             try {
                 Log.d(TAG, "Loading initial items for playlist: $playlistId")
                 paginationController.isInitialLoading = true
