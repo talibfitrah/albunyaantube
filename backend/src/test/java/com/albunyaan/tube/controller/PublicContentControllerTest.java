@@ -46,6 +46,9 @@ public class PublicContentControllerTest {
     @MockBean
     private FirebaseAuth firebaseAuth;
 
+    @MockBean
+    private com.albunyaan.tube.repository.UserRepository userRepository;
+
     private Video testVideo;
 
     @BeforeEach
