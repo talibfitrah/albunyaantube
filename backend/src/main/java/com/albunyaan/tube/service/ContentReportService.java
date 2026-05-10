@@ -36,6 +36,7 @@ public class ContentReportService {
     private final ChannelRepository channelRepository;
     private final PlaylistRepository playlistRepository;
     private final PublicContentCacheService publicContentCacheService;
+    private final StreamIndexService streamIndexService;
 
     public ContentReportService(
             ContentReportRepository reportRepository,
@@ -43,13 +44,15 @@ public class ContentReportService {
             VideoRepository videoRepository,
             ChannelRepository channelRepository,
             PlaylistRepository playlistRepository,
-            PublicContentCacheService publicContentCacheService) {
+            PublicContentCacheService publicContentCacheService,
+            StreamIndexService streamIndexService) {
         this.reportRepository = reportRepository;
         this.rateLimitCache = rateLimitCache;
         this.videoRepository = videoRepository;
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
         this.publicContentCacheService = publicContentCacheService;
+        this.streamIndexService = streamIndexService;
     }
 
     public ContentReport submitReport(
@@ -283,6 +286,7 @@ public class ContentReportService {
                     if (opt.isPresent()) {
                         opt.get().setValidationStatus(ValidationStatus.ARCHIVED);
                         videoRepository.save(opt.get());
+                        streamIndexService.markStreamArchived(opt.get().getYoutubeId());
                         archived = true;
                     } else {
                         log.warn("Cannot archive video {}: not found in database", targetId);
@@ -293,6 +297,7 @@ public class ContentReportService {
                     if (opt.isPresent()) {
                         opt.get().setValidationStatus(ValidationStatus.ARCHIVED);
                         channelRepository.save(opt.get());
+                        streamIndexService.removeSource("CHANNEL", opt.get().getYoutubeId());
                         archived = true;
                     } else {
                         log.warn("Cannot archive channel {}: not found in database", targetId);
@@ -303,6 +308,7 @@ public class ContentReportService {
                     if (opt.isPresent()) {
                         opt.get().setValidationStatus(ValidationStatus.ARCHIVED);
                         playlistRepository.save(opt.get());
+                        streamIndexService.removeSource("PLAYLIST", opt.get().getYoutubeId());
                         archived = true;
                     } else {
                         log.warn("Cannot archive playlist {}: not found in database", targetId);
