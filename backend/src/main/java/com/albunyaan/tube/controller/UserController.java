@@ -135,20 +135,11 @@ public class UserController {
             @PathVariable String uid,
             @RequestBody UpdateRoleRequest request,
             @AuthenticationPrincipal FirebaseUserDetails currentUser
-    ) {
-        try {
-            User user = authService.updateUserRole(uid, request.role);
-            try {
-                auditLogService.log("user_role_updated", "user", uid, currentUser);
-            } catch (Exception auditEx) {
-                log.error("Failed to audit user_role_updated for uid={}", uid, auditEx);
-            }
-            return ResponseEntity.ok(user);
-        } catch (FirebaseAuthException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+    ) throws Exception {
+        if (currentUser == null) {
+            return ResponseEntity.status(401).build();
         }
+        return ResponseEntity.ok(authService.updateUserRoleAsActor(uid, request.role, currentUser.getUid()));
     }
 
     /**

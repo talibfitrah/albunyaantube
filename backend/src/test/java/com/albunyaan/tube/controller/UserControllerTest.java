@@ -197,13 +197,13 @@ class UserControllerTest {
     }
 
     @Test
-    void updateUserRole_shouldUpdateRole_andLogAudit() throws Exception {
+    void updateUserRole_shouldUpdateRole() throws Exception {
         // Arrange
         UserController.UpdateRoleRequest request = new UserController.UpdateRoleRequest();
         request.role = "admin";
 
         User updatedUser = new User("test-mod-uid", "mod@example.com", "Test Moderator", "admin");
-        when(authService.updateUserRole("test-mod-uid", "admin")).thenReturn(updatedUser);
+        when(authService.updateUserRoleAsActor("test-mod-uid", "admin", "admin-uid")).thenReturn(updatedUser);
 
         // Act
         ResponseEntity<User> response = userController.updateUserRole("test-mod-uid", request, adminUser);
@@ -211,26 +211,21 @@ class UserControllerTest {
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals("admin", response.getBody().getRole());
-        verify(authService).updateUserRole("test-mod-uid", "admin");
-        verify(auditLogService).log(eq("user_role_updated"), eq("user"), eq("test-mod-uid"), eq(adminUser));
+        verify(authService).updateUserRoleAsActor("test-mod-uid", "admin", "admin-uid");
     }
 
     @Test
-    void updateUserRole_shouldReturnBadRequest_whenFirebaseAuthFails() throws Exception {
+    void updateUserRole_shouldReturn401_whenActorIsNull() throws Exception {
         // Arrange
         UserController.UpdateRoleRequest request = new UserController.UpdateRoleRequest();
         request.role = "admin";
 
-        FirebaseAuthException mockException = mock(FirebaseAuthException.class);
-        when(authService.updateUserRole(any(), any()))
-                .thenThrow(mockException);
-
         // Act
-        ResponseEntity<User> response = userController.updateUserRole("nonexistent", request, adminUser);
+        ResponseEntity<User> response = userController.updateUserRole("test-mod-uid", request, null);
 
         // Assert
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        verify(auditLogService, never()).log(any(), any(), any(), any());
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+        verify(authService, never()).updateUserRoleAsActor(any(), any(), any());
     }
 
     @Test

@@ -3,6 +3,7 @@ package com.albunyaan.tube.service;
 import com.albunyaan.tube.config.FirestoreTimeoutProperties;
 import com.albunyaan.tube.exception.LastAdminException;
 import com.albunyaan.tube.model.AuditLog;
+import com.albunyaan.tube.model.Role;
 import com.albunyaan.tube.model.User;
 import com.albunyaan.tube.repository.AuditLogRepository;
 import com.albunyaan.tube.repository.UserRepository;
@@ -151,25 +152,62 @@ public class AuthService {
     }
 
     /**
-     * Update user role (both Firebase claims and Firestore)
+     * Update user role with actor context: transactional Firestore update + audit log,
+     * then Firebase Auth claims update outside the tx (D9), and cache eviction (D4).
+     * Enforces the last-admin guard (D2) inline inside the transaction.
      */
-    public User updateUserRole(String uid, String newRole)
-            throws FirebaseAuthException, ExecutionException, InterruptedException, TimeoutException {
+    public User updateUserRoleAsActor(String uid, String newRoleStr, String actorUid)
+            throws Exception {
+        Role newRole = Role.fromString(newRoleStr);
+        final String[] previousRole = new String[1];
 
-        // Update custom claims in Firebase
+        User updated = runLifecycleTx(tx -> {
+            DocumentReference userRef = firestore.collection("users").document(uid);
+            DocumentSnapshot snap = tx.get(userRef).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+            if (!snap.exists()) {
+                throw new IllegalArgumentException("User not found: " + uid);
+            }
+            User target = snap.toObject(User.class);
+            previousRole[0] = target.getRole();
+
+            // Last-admin guard (D2) — inline, transactional
+            if (target.isAdmin() && newRole != Role.ADMIN) {
+                if (uid.equals(actorUid)) {
+                    throw new LastAdminException("Admins cannot demote themselves. Ask another admin.");
+                }
+                QuerySnapshot admins = tx.get(firestore.collection("users")
+                        .whereEqualTo("role", "admin")
+                        .whereEqualTo("status", "active"))
+                        .get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+                if (admins.size() <= 1) {
+                    throw new LastAdminException("Cannot demote the last active admin.");
+                }
+            }
+
+            target.setRole(newRole.getValue());
+            target.setUpdatedAt(com.google.cloud.Timestamp.now());
+
+            AuditLog audit = auditLogService.buildRoleChange(uid, actorUid,
+                    previousRole[0], newRole.getValue());
+
+            tx.set(userRef, target);
+            tx.set(auditLogRepository.auditLogsCollection().document(), audit);
+            return target;
+        });
+
+        // Update Firebase Auth custom claims OUTSIDE the tx (D9, D6 lowercase)
         Map<String, Object> claims = new HashMap<>();
-        claims.put("role", newRole != null ? newRole.toLowerCase(java.util.Locale.ROOT) : null);
+        claims.put("role", newRole.getValue());
         firebaseAuth.setCustomUserClaims(uid, claims);
 
-        // Update Firestore document
-        User user = userRepository.findByUid(uid)
-                .orElseThrow(() -> new IllegalArgumentException("User not found: " + uid));
-        user.setRole(newRole);
-        user.touch();
-        userRepository.save(user);
+        // Cache eviction (D4)
+        Cache cache = cacheManager.getCache("userStatus");
+        if (cache != null) cache.evict(uid);
 
-        logger.info("Updated role for user {} to: {}", uid, newRole);
-        return user;
+        logger.info("Role changed: uid={} from={} to={} actor={}",
+                uid, previousRole[0], newRole.getValue(), actorUid);
+
+        return updated;
     }
 
     /**

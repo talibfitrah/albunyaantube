@@ -127,56 +127,11 @@ class AuthServiceTest {
         verify(userRepository, never()).save(any());
     }
 
-    @Test
-    void updateUserRole_shouldUpdateRoleInFirebaseAndFirestore() throws Exception {
-        // Arrange
-        when(userRepository.findByUid("test-uid")).thenReturn(Optional.of(testUser));
-        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        doNothing().when(firebaseAuth).setCustomUserClaims(eq("test-uid"), any(Map.class));
-
-        // Act
-        User updatedUser = authService.updateUserRole("test-uid", "admin");
-
-        // Assert
-        assertNotNull(updatedUser);
-        assertEquals("admin", updatedUser.getRole());
-
-        verify(firebaseAuth).setCustomUserClaims(eq("test-uid"), argThat(claims ->
-                claims.get("role").equals("admin")  // Role is converted to lowercase in implementation
-        ));
-        verify(userRepository).findByUid("test-uid");
-        verify(userRepository).save(testUser);
-    }
-
-    @Test
-    void updateUserRole_shouldThrowException_whenUserNotFound() throws Exception {
-        // Arrange
-        when(userRepository.findByUid("nonexistent")).thenReturn(Optional.empty());
-
-        // Act & Assert
-        assertThrows(IllegalArgumentException.class, () ->
-                authService.updateUserRole("nonexistent", "admin")
-        );
-
-        verify(userRepository).findByUid("nonexistent");
-        verify(userRepository, never()).save(any());
-    }
-
-    @Test
-    void updateUserRole_shouldThrowException_whenFirebaseAuthFails() throws Exception {
-        // Arrange
-        FirebaseAuthException mockException = mock(FirebaseAuthException.class);
-        doThrow(mockException).when(firebaseAuth).setCustomUserClaims(any(), any());
-
-        // Act & Assert
-        assertThrows(FirebaseAuthException.class, () ->
-                authService.updateUserRole("test-uid", "admin")
-        );
-
-        verify(firebaseAuth).setCustomUserClaims(any(), any());
-        verify(userRepository, never()).findByUid(any());
-        verify(userRepository, never()).save(any());
-    }
+    // updateUserRole_shouldUpdateRoleInFirebaseAndFirestore,
+    // updateUserRole_shouldThrowException_whenUserNotFound, and
+    // updateUserRole_shouldThrowException_whenFirebaseAuthFails were removed:
+    // the old 2-arg updateUserRole() method was deleted in Task 8.
+    // Transactional path coverage lives in AuthServiceLastAdminIntegrationTest.
 
     @Test
     void createUser_setsLowercaseRoleClaim() throws Exception {
@@ -196,17 +151,22 @@ class AuthServiceTest {
     }
 
     @Test
-    void updateUserRole_setsLowercaseRoleClaim() throws Exception {
-        // Arrange
+    @SuppressWarnings("unchecked")
+    void updateUserRoleAsActor_setsLowercaseRoleClaim() throws Exception {
+        // Arrange: stub the Firestore transaction to return a User with the new role applied
         User u = new User("u1", "e@t", "Test", "user");
-        when(userRepository.findByUid("u1")).thenReturn(Optional.of(u));
-        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        u.setStatus("active");
+        ApiFuture<User> txFuture = mock(ApiFuture.class);
+        when(txFuture.get(anyLong(), any())).thenReturn(u);
+        doReturn(txFuture).when(firestore).runTransaction(any());
         doNothing().when(firebaseAuth).setCustomUserClaims(eq("u1"), any(Map.class));
+        when(cacheManager.getCache("userStatus")).thenReturn(null);
+        when(timeoutProperties.getWrite()).thenReturn(10L);
 
         // Act
-        authService.updateUserRole("u1", "MODERATOR");
+        authService.updateUserRoleAsActor("u1", "MODERATOR", "actor-uid");
 
-        // Assert
+        // Assert: claim written outside tx uses lowercase value from Role.fromString
         verify(firebaseAuth).setCustomUserClaims(eq("u1"), argThat(claims ->
                 claims.get("role").equals("moderator")
         ));
