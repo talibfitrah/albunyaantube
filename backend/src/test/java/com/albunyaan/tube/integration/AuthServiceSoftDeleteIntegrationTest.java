@@ -12,8 +12,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.mock.mockito.MockBean;
 
-import java.util.concurrent.ExecutionException;
-
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doNothing;
@@ -89,9 +87,9 @@ class AuthServiceSoftDeleteIntegrationTest extends BaseIntegrationTest {
         String soloAdmin = seedUser("solo@t.com", "admin");
         // No other active admins — last-admin guard should fire
 
-        assertThrows(ExecutionException.class,
+        assertThrows(LastAdminException.class,
                 () -> authService.softDeleteUser(soloAdmin, soloAdmin, "test"),
-                "Expected ExecutionException wrapping LastAdminException");
+                "Expected LastAdminException from last-admin guard");
 
         // Verify user is NOT deleted (transaction rolled back)
         User after = userRepository.findByUid(soloAdmin).orElseThrow();
@@ -100,7 +98,7 @@ class AuthServiceSoftDeleteIntegrationTest extends BaseIntegrationTest {
 
     @Test
     void softDeleteUnknownUid_throws() {
-        assertThrows(Exception.class,
+        assertThrows(IllegalArgumentException.class,
                 () -> authService.softDeleteUser("nonexistent-uid", "admin", "x"));
     }
 
@@ -111,9 +109,9 @@ class AuthServiceSoftDeleteIntegrationTest extends BaseIntegrationTest {
         String adminUid = seedUser("admin5@t.com", "admin");
         String activeUid = seedUser("active@t.com", "moderator"); // ACTIVE, not deleted
 
-        assertThrows(Exception.class,
+        assertThrows(IllegalStateException.class,
                 () -> authService.recoverUser(activeUid, adminUid),
-                "Expected exception when recovering a non-DELETED user");
+                "Expected IllegalStateException when recovering a non-DELETED user");
 
         // User should remain ACTIVE
         User after = userRepository.findByUid(activeUid).orElseThrow();

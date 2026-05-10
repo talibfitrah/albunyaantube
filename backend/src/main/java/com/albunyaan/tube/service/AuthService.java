@@ -10,6 +10,7 @@ import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.DocumentSnapshot;
 import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.QuerySnapshot;
+import com.google.cloud.firestore.Transaction;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
 import com.google.firebase.auth.UserRecord;
@@ -70,6 +71,26 @@ public class AuthService {
         this.firestore = firestore;
         this.cacheManager = cacheManager;
         this.timeoutProperties = timeoutProperties;
+    }
+
+    /**
+     * Unwraps ExecutionException from firestore.runTransaction(...).get() so that
+     * domain exceptions (LastAdminException, IllegalArgumentException, IllegalStateException)
+     * propagate to @ControllerAdvice for proper HTTP status mapping. Without this, every
+     * lifecycle method's spec'd 409/400/409 handler is unreachable.
+     */
+    private <T> T runLifecycleTx(Transaction.Function<T> fn) throws Exception {
+        try {
+            return firestore.runTransaction(fn)
+                    .get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof LastAdminException) throw (LastAdminException) cause;
+            if (cause instanceof IllegalArgumentException) throw (IllegalArgumentException) cause;
+            if (cause instanceof IllegalStateException) throw (IllegalStateException) cause;
+            if (cause instanceof RuntimeException) throw (RuntimeException) cause;
+            throw e;
+        }
     }
 
     /**
@@ -181,7 +202,7 @@ public class AuthService {
      * Enforces the last-admin guard (D2) inside the same transaction.
      */
     public void softDeleteUser(String uid, String actorUid, String reason) throws Exception {
-        firestore.runTransaction(tx -> {
+        runLifecycleTx(tx -> {
             DocumentReference userRef = firestore.collection("users").document(uid);
             DocumentSnapshot snap = tx.get(userRef).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
             if (!snap.exists()) {
@@ -210,7 +231,7 @@ public class AuthService {
             tx.set(userRef, target);
             tx.set(auditLogRepository.auditLogsCollection().document(), audit);
             return null;
-        }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        });
 
         // D9 — outside the tx, idempotent
         firebaseAuth.updateUser(new UserRecord.UpdateRequest(uid).setDisabled(true));
@@ -229,7 +250,7 @@ public class AuthService {
      * Requires target to currently be in DELETED status.
      */
     public void recoverUser(String uid, String actorUid) throws Exception {
-        firestore.runTransaction(tx -> {
+        runLifecycleTx(tx -> {
             DocumentReference userRef = firestore.collection("users").document(uid);
             DocumentSnapshot snap = tx.get(userRef).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
             if (!snap.exists()) {
@@ -247,7 +268,7 @@ public class AuthService {
             tx.set(userRef, target);
             tx.set(auditLogRepository.auditLogsCollection().document(), audit);
             return null;
-        }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        });
 
         firebaseAuth.updateUser(new UserRecord.UpdateRequest(uid).setDisabled(false));
 
