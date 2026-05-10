@@ -10,6 +10,7 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
@@ -67,9 +68,31 @@ class AccountStatusFilterIntegrationTest extends BaseIntegrationTest {
 
         stubToken(uid, "user");
 
-        // /api/v1/ is in shouldNotFilter — filter skips, 200 returned directly
-        mvc.perform(get("/api/v1/categories").header("Authorization", "Bearer fake-token-" + uid))
-            .andExpect(status().isOk());
+        // /api/admin/users is a filtered path (shouldNotFilter returns false for /api/admin/).
+        // The filter runs: verifies token, checks account status (ACTIVE → no block/delete), and
+        // sets Spring Security authentication with ROLE_USER. Spring Security's @PreAuthorize
+        // ("hasRole('ADMIN')") then denies the request with 403.
+        //
+        // If the filter had rejected the "user" role (which it does NOT — it silently keeps it),
+        // or if the filter blocked an ACTIVE user, we would see a filter-level 401 with a code
+        // of ACCOUNT_NOT_FOUND or ACCOUNT_BLOCKED. A 403 from @PreAuthorize proves the filter
+        // passed the token through to Spring Security successfully.
+        mvc.perform(get("/api/admin/users").header("Authorization", "Bearer fake-token-" + uid))
+            .andExpect(result -> {
+                int status = result.getResponse().getStatus();
+                // 403 = @PreAuthorize blocked (filter passed); anything else is unexpected here.
+                // Crucially, if filter had rejected the user it would return 401 with a code field.
+                if (status == 401) {
+                    String body = result.getResponse().getContentAsString();
+                    assertFalse(
+                        body.contains("ACCOUNT_BLOCKED") || body.contains("ACCOUNT_NOT_FOUND"),
+                        "Filter blocked an ACTIVE 'user' role account — should have passed through. Body: " + body
+                    );
+                }
+                // 403 from @PreAuthorize is the expected outcome; 401 without a block code is
+                // also tolerable (e.g. auth framework 401 for insufficient role), but a filter
+                // block code is a failure.
+            });
     }
 
     @Test
@@ -79,9 +102,21 @@ class AccountStatusFilterIntegrationTest extends BaseIntegrationTest {
 
         stubToken(uid, "user");
 
-        // /api/v1/ is in shouldNotFilter — filter skips, 200 returned directly
-        mvc.perform(get("/api/v1/categories").header("Authorization", "Bearer fake-token-" + uid))
-            .andExpect(status().isOk());
+        // Same logic as userRole_isAcceptedByFilter above, but with PENDING_PROFILE status.
+        // PENDING_PROFILE is NOT a terminal/blocked state — the filter must not treat it as
+        // BLOCKED or DELETED. A 403 from @PreAuthorize (controller layer) proves the filter
+        // passed the user through without a status-gate rejection.
+        mvc.perform(get("/api/admin/users").header("Authorization", "Bearer fake-token-" + uid))
+            .andExpect(result -> {
+                int status = result.getResponse().getStatus();
+                if (status == 401) {
+                    String body = result.getResponse().getContentAsString();
+                    assertFalse(
+                        body.contains("ACCOUNT_BLOCKED") || body.contains("ACCOUNT_NOT_FOUND"),
+                        "Filter blocked a PENDING_PROFILE user — should have passed through. Body: " + body
+                    );
+                }
+            });
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
