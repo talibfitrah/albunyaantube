@@ -64,4 +64,14 @@ class UserModelTest {
         assertNull(u.getDeletedBy());
         assertNull(u.getDeleteReason());
     }
+
+    @Test void recordUnblock_clearsBlockFieldsAndReactivates() {
+        User u = new User();
+        u.recordBlock("admin-1", "spam");
+        u.recordUnblock("admin-2");
+        assertEquals("active", u.getStatus());
+        assertNull(u.getBlockedAt());
+        assertNull(u.getBlockedBy());
+        assertNull(u.getBlockReason());
+    }
 }

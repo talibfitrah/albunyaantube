@@ -202,6 +202,9 @@ public class User {
         touch();
     }
 
+    // byUid is captured by AuditLogService.buildUnblock (Task 9, D5) — the
+    // audit trail lives in the auditLogs collection, not on the User doc.
+    // The parameter stays here for API symmetry with recordBlock.
     public void recordUnblock(String byUid) {
         this.status = UserStatus.ACTIVE.getValue();
         this.blockedAt = null;
