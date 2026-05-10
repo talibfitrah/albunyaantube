@@ -176,6 +176,8 @@
     <string name="error_timeout_title">خطأ المهلة</string>
     <string name="error_server">خطأ في الخادم. يرجى المحاولة لاحقاً.</string>
     <string name="error_server_title">خطأ الخادم</string>
+    <string name="content_unavailable_title">المحتوى غير متاح</string>
+    <string name="content_unavailable_message">هذا المحتوى لم يعد متاحًا. ربما تمت إزالته بواسطة المسؤول أو بواسطة يوتيوب.</string>
     <string name="error_parse">فشل معالجة البيانات. يرجى المحاولة مجدداً.</string>
     <string name="error_parse_title">خطأ في البيانات</string>
     <string name="error_unknown">حدث خطأ غير متوقع.</string>

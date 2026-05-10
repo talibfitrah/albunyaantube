@@ -186,6 +186,8 @@
     <string name="error_timeout_title">Time-out fout</string>
     <string name="error_server">Serverfout. Probeer het later opnieuw.</string>
     <string name="error_server_title">Serverfout</string>
+    <string name="content_unavailable_title">Inhoud niet beschikbaar</string>
+    <string name="content_unavailable_message">Deze inhoud is niet meer beschikbaar. Mogelijk is deze verwijderd door een beheerder of door YouTube.</string>
     <string name="error_parse">Gegevensverwerking mislukt. Probeer het opnieuw.</string>
     <string name="error_parse_title">Gegevensfout</string>
     <string name="error_unknown">Er is een onverwachte fout opgetreden.</string>
