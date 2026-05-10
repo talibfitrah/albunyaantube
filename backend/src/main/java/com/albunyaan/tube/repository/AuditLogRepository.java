@@ -38,6 +38,14 @@ public class AuditLogRepository {
         return firestore.collection(COLLECTION_NAME);
     }
 
+    /**
+     * Public accessor to the audit logs collection for transactional writes.
+     * Used by AuthService to write audit logs within database transactions.
+     */
+    public CollectionReference auditLogsCollection() {
+        return firestore.collection(COLLECTION_NAME);
+    }
+
     public AuditLog save(AuditLog auditLog) throws ExecutionException, InterruptedException, TimeoutException {
         if (auditLog.getId() == null) {
             DocumentReference docRef = getCollection().document();
