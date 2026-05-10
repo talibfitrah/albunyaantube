@@ -106,4 +106,20 @@ public class SearchableStreamRepository {
             return null;
         }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
     }
+
+    /**
+     * Mark a stream as invisible regardless of its sourceKeys.
+     * Used when an individual video is archived — the stream may still
+     * have valid sources from other channels/playlists, but the video
+     * itself is archived and must not appear in search.
+     */
+    public void markInvisible(String streamId)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        Map<String, Object> updates = new HashMap<>();
+        updates.put("visible", false);
+        firestore.collection(COLLECTION_NAME)
+                .document(streamId)
+                .update(updates)
+                .get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+    }
 }

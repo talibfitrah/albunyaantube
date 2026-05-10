@@ -88,6 +88,11 @@ class FallbackContentService(
         }
     }
 
+    override suspend fun verifyAvailable(type: AvailabilityCheckType, youtubeId: String): Boolean =
+        // Deliberately not falling back to FakeContentService: transport errors must propagate
+        // so the caller (ViewModel) can decide whether to fail-open or fail-closed.
+        primary.verifyAvailable(type, youtubeId)
+
     companion object {
         private const val TAG = "FallbackContentService"
     }

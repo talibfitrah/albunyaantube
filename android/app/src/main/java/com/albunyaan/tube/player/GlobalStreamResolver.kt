@@ -5,6 +5,8 @@ import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
 import com.albunyaan.tube.data.extractor.NewPipePriorityContext
 import com.albunyaan.tube.data.extractor.Priority
 import com.albunyaan.tube.data.extractor.ResolvedStreams
+import com.albunyaan.tube.data.source.AvailabilityCheckType
+import com.albunyaan.tube.data.source.ContentService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -17,6 +19,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import androidx.annotation.VisibleForTesting
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
+import javax.inject.Named
 import javax.inject.Singleton
 
 /**
@@ -60,6 +63,19 @@ fun interface StreamResolutionProvider {
 @Singleton
 class GlobalStreamResolver private constructor(
     private val resolutionProvider: StreamResolutionProvider,
+    /**
+     * Backend availability gate for the archived-content fix. When non-null, every
+     * call to [resolveStreams] hits this with a HEAD probe BEFORE invoking NewPipe
+     * — so an archived/removed videoId can never trigger an extraction (closes
+     * the NB1 prefetch leak: list-tap thumbnails for archived videos used to
+     * bypass the per-caller gate that lived in [DefaultPlayerRepository]).
+     *
+     * Nullable because [createForTesting] callers don't always need the gate;
+     * production wiring always supplies it via Hilt. When null, the gate is
+     * skipped (legacy behaviour) — every direct test should opt-in by passing
+     * a fake [ContentService] via [createForTesting].
+     */
+    private val contentService: ContentService?,
     private val resolverScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
 ) {
     companion object {
@@ -68,13 +84,23 @@ class GlobalStreamResolver private constructor(
 
         /**
          * Create a GlobalStreamResolver with a custom resolution provider for testing.
+         *
          * @param provider The stream resolution provider to use
+         * @param contentService Optional backend availability gate. Default `null`
+         *   skips the gate so existing tests that pre-date the chokepoint move
+         *   keep working. Tests that exercise the gate (NB1 prefetch leak
+         *   regression coverage) supply a fake.
          * @return A new GlobalStreamResolver instance
          */
         @JvmStatic
-        fun createForTesting(provider: StreamResolutionProvider): GlobalStreamResolver {
+        @JvmOverloads
+        fun createForTesting(
+            provider: StreamResolutionProvider,
+            contentService: ContentService? = null,
+        ): GlobalStreamResolver {
             return GlobalStreamResolver(
                 provider,
+                contentService,
                 CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
             )
         }
@@ -82,9 +108,20 @@ class GlobalStreamResolver private constructor(
 
     /**
      * Primary constructor for production use with Hilt DI.
+     *
+     * @param extractorClient NewPipe extraction backend.
+     * @param contentService Backend availability gate (the @Named("real") binding).
+     *   Runs ahead of every NewPipe extraction so archived / removed videos can
+     *   never trigger a list-tap prefetch (NB1 fix — moves the chokepoint that
+     *   used to live in [DefaultPlayerRepository] one level deeper, covering
+     *   prefetch + player + shorts in a single place). Fail-open on transport
+     *   errors: an offline user must still be able to play valid cached videos.
      */
     @Inject
-    constructor(extractorClient: NewPipeExtractorClient) : this(
+    constructor(
+        extractorClient: NewPipeExtractorClient,
+        @Named("real") contentService: ContentService,
+    ) : this(
         // ANDROID-PERSONAL-02 [Bug 1]: respect the caller-supplied priority
         // instead of hardcoding [Priority.PLAYER]. Only the real-time
         // playback path (DefaultPlayerRepository) declares PLAYER and earns
@@ -116,7 +153,8 @@ class GlobalStreamResolver private constructor(
                     extractorClient.resolveStreams(videoId, forceRefresh)
                 }
             }
-        }
+        },
+        contentService,
     )
 
     /**
@@ -243,6 +281,15 @@ class GlobalStreamResolver private constructor(
                     }
                     Log.w(TAG, "[$caller] shared job cancelled for $videoId, returning null")
                     null
+                } catch (e: ContentUnavailableException) {
+                    // NB1 fix: the chokepoint inside the in-flight job said the
+                    // video is archived. Every joining caller must see the same
+                    // verdict — propagate so the player path's
+                    // [com.albunyaan.tube.ui.player.PlayerViewModel.resolveWithRetry]
+                    // (and shorts via [PlayerBinder]'s runCatching) can render
+                    // ContentUnavailable. Squashing this to null would silently
+                    // re-open the leak.
+                    throw e
                 } catch (e: Exception) {
                     Log.w(TAG, "[$caller] in-flight resolve failed for $videoId: ${e.message}")
                     null
@@ -300,10 +347,48 @@ class GlobalStreamResolver private constructor(
             // Create new job
             Log.d(TAG, "[$caller] new resolve for $videoId (forceRefresh=$forceRefresh, priority=$priority)")
             val newJob: Deferred<ResolvedStreams?> = resolverScope.async {
+                // Archived-content NB1 fix: backend availability gate runs as the
+                // FIRST step of every new resolve job — moved from
+                // [DefaultPlayerRepository.resolveStreams] one level deeper so
+                // both the player path AND the tap-prefetch path
+                // ([StreamPrefetchService.triggerPrefetch] + [awaitOrConsumePrefetch])
+                // share a single chokepoint.
+                //
+                // Why inside the async (and not at the top of resolveStreams):
+                // joiners of an in-flight job must NOT each do their own HEAD
+                // call. Putting the gate here means exactly one HEAD per
+                // extraction — the gate fires for the first caller; later
+                // joiners share its outcome (the gate's
+                // [ContentUnavailableException] propagates to all awaiters).
+                //
+                // Fail-open on transport errors mirrors the policy used by T10
+                // / T11 / T12 and the previous repository chokepoint: an
+                // offline user with a stale list must still be able to play
+                // valid cached videos. The downstream resolver / NewPipe
+                // pipeline produces its own user-visible error if the actual
+                // extraction fails.
+                if (contentService != null) {
+                    val available = try {
+                        contentService.verifyAvailable(AvailabilityCheckType.VIDEO, videoId)
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.w(TAG, "[$caller] availability check failed for $videoId; proceeding", e)
+                        true
+                    }
+                    if (!available) {
+                        Log.i(
+                            TAG,
+                            "[$caller] $videoId unavailable per backend; throwing ContentUnavailableException",
+                        )
+                        throw ContentUnavailableException(videoId)
+                    }
+                }
                 try {
                     resolutionProvider.resolveStreams(videoId, forceRefresh, priority)
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
+                    if (e is ContentUnavailableException) throw e
                     Log.e(TAG, "resolveStreams failed for $videoId: ${e.message}")
                     null
                 }
@@ -344,6 +429,14 @@ class GlobalStreamResolver private constructor(
             }
             Log.w(TAG, "[$caller] shared job cancelled for $videoId, returning null")
             null
+        } catch (e: ContentUnavailableException) {
+            // NB1 fix: the chokepoint inside the new resolve job said the
+            // video is archived. Propagate to the caller so the player path
+            // ([PlayerViewModel.resolveWithRetry]) can render
+            // ContentUnavailable instead of treating it as a generic
+            // resolve failure (which would trigger retries and an Error
+            // overlay).
+            throw e
         } catch (e: Exception) {
             Log.w(TAG, "[$caller] resolve failed for $videoId: ${e.message}")
             null

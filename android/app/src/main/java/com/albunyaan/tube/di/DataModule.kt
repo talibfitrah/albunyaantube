@@ -273,10 +273,18 @@ object DataModule {
 
     /**
      * Phase 1A: PlayerRepository now uses GlobalStreamResolver for single-flight semantics.
+     *
+     * Archived-content NB1 fix: the backend availability gate moved one level
+     * deeper into [GlobalStreamResolver] so both the player path AND the
+     * tap-prefetch path ([StreamPrefetchService]) share a single chokepoint.
+     * The per-caller gate that used to live in [DefaultPlayerRepository] is
+     * gone — this provider no longer wires a ContentService here.
      */
     @Provides
     @Singleton
-    fun providePlayerRepository(globalResolver: GlobalStreamResolver): PlayerRepository {
+    fun providePlayerRepository(
+        globalResolver: GlobalStreamResolver,
+    ): PlayerRepository {
         return DefaultPlayerRepository(globalResolver)
     }
 

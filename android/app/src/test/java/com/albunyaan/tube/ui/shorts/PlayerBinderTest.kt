@@ -10,6 +10,7 @@ import com.albunyaan.tube.player.PlayerRepository
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -66,6 +67,11 @@ class PlayerBinderTest {
      * A [PlayerRepository] whose resolves suspend on externally-controlled
      * [CompletableDeferred]s, letting the test complete resolutions out of
      * order to simulate a network race.
+     *
+     * For the C2 fix, [completeExceptionally] propagates a thrown exception
+     * (typically [com.albunyaan.tube.player.ContentUnavailableException]) so
+     * we can verify the shorts binder treats archived content the same way
+     * it treats a null resolve: emit failureEvents, never touch the player.
      */
     private class TestPlayerRepository : PlayerRepository {
         private val deferred = mutableMapOf<String, CompletableDeferred<ResolvedStreams?>>()
@@ -78,6 +84,10 @@ class PlayerBinderTest {
 
         fun complete(videoId: String, result: ResolvedStreams?) {
             deferred.getOrPut(videoId) { CompletableDeferred() }.complete(result)
+        }
+
+        fun completeExceptionally(videoId: String, error: Throwable) {
+            deferred.getOrPut(videoId) { CompletableDeferred() }.completeExceptionally(error)
         }
     }
 
@@ -287,6 +297,55 @@ class PlayerBinderTest {
 
         assertFalse(ops.calls.contains("setMediaSource"))
         assertFalse(ops.calls.contains("prepare"))
+    }
+
+    /**
+     * C2 fix: archived shorts must not play. The chokepoint gate inside
+     * [com.albunyaan.tube.player.DefaultPlayerRepository.resolveStreams]
+     * throws [com.albunyaan.tube.player.ContentUnavailableException] for
+     * archived ids. PlayerBinder wraps the repo call in `runCatching{}.getOrNull()`,
+     * so the exception is treated identically to a null resolve: the player
+     * never receives a media source, and [PlayerBinder.failureEvents] emits
+     * the failing id so the fragment can advance the pager (existing UX —
+     * shorts skip past the unplayable page).
+     */
+    @Test
+    fun resolveThrowingContentUnavailable_emitsFailureAndDoesNotTouchPlayer() = runTest(dispatcher) {
+        val ops = RecordingPlayerOps()
+        val attach = RecordingAttach()
+        val repo = TestPlayerRepository()
+        val binder = newBinder(repo, ops, attach)
+
+        // Subscribe BEFORE bind() so we don't miss the emission. backgroundScope
+        // (provided by runTest) is auto-cancelled at end of test, so we don't
+        // leak the collector. UnconfinedTestDispatcher means the collector
+        // starts running synchronously before bind() suspends.
+        val received = mutableListOf<String>()
+        backgroundScope.launch {
+            binder.failureEvents.collect { received += it }
+        }
+
+        val view: PlayerView = org.mockito.kotlin.mock()
+        binder.bind(view, "ARCHIVED")
+        repo.completeExceptionally(
+            "ARCHIVED",
+            com.albunyaan.tube.player.ContentUnavailableException("ARCHIVED"),
+        )
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(
+            "failureEvents must emit the archived videoId",
+            listOf("ARCHIVED"),
+            received,
+        )
+        assertFalse(
+            "setMediaSource must NOT fire when resolve throws ContentUnavailableException",
+            ops.calls.contains("setMediaSource"),
+        )
+        assertFalse(
+            "prepare must NOT fire when resolve throws ContentUnavailableException",
+            ops.calls.contains("prepare"),
+        )
     }
 
 }

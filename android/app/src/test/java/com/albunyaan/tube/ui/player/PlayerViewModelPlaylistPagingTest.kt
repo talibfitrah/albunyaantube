@@ -113,7 +113,7 @@ class PlayerViewModelPlaylistPagingTest {
             metricsReporter = fakeMetricsReporter,
             playbackMetrics = playbackMetrics,
             mpdRegistry = mpdRegistry,
-            extractorClient = fakeExtractorClient
+            extractorClient = fakeExtractorClient,
         )
     }
 
@@ -378,6 +378,106 @@ class PlayerViewModelPlaylistPagingTest {
         assertTrue(viewModel.state.value.upNext.isEmpty())
     }
 
+    // =============================================================================
+    // C1 Fix: Archived Content Gate in Playlist Queue Path
+    // =============================================================================
+    // The chokepoint gate inside DefaultPlayerRepository.resolveStreams throws
+    // ContentUnavailableException for archived videos. PlayerViewModel must
+    // catch it BEFORE NewPipe is reached, and either auto-skip in playlist mode
+    // or surface ContentUnavailable for single-video paths.
+
+    @Test
+    fun `loadPlaylist starting on archived video auto-skips to next item`() = runTest {
+        // Arrange: 3-item playlist, first item is archived. Loading the playlist
+        // at startIndexHint=0 must NOT play the archived item via NewPipe — the
+        // gate fires inside resolveStreams and the queue advances to video_2.
+        val items = (1..3).map { createPlaylistItem(it, "video_$it") }
+        fakePlaylistRepository.setPages(listOf(PlaylistPage(items, null)))
+        fakePlayerRepository.archivedIds += "video_1"
+        fakePlayerRepository.resolvedStreams = createResolvedStreams("video_2")
+
+        val viewModel = createViewModel()
+        viewModel.loadPlaylist("PL123", startIndexHint = 0)
+        advanceUntilIdle()
+
+        // The auto-skip path advances to video_2.
+        assertEquals(
+            "Archived first item must auto-skip to next valid item",
+            "video_2",
+            viewModel.state.value.currentItem?.id,
+        )
+        // The archived video did flow through resolveStreams, but the gate threw
+        // before NewPipe was reached — that's the C1 invariant: no NewPipe call
+        // for an archived id even if it's the playlist start.
+        assertTrue(
+            "resolveStreams must have been invoked for video_1 (gate throws inside)",
+            "video_1" in fakePlayerRepository.resolvedVideoIds,
+        )
+    }
+
+    @Test
+    fun `advanceToNext to archived video auto-skips to following valid item`() = runTest {
+        // Arrange: 3 items, first valid, second archived, third valid. After
+        // playing video_1 the user (or autoplay) hits Next — the archived
+        // video_2 must NOT play, and video_3 must take its place.
+        val items = (1..3).map { createPlaylistItem(it, "video_$it") }
+        fakePlaylistRepository.setPages(listOf(PlaylistPage(items, null)))
+        fakePlayerRepository.archivedIds += "video_2"
+        fakePlayerRepository.resolvedStreams = createResolvedStreams("video_1")
+
+        val viewModel = createViewModel()
+        viewModel.loadPlaylist("PL123", startIndexHint = 0)
+        advanceUntilIdle()
+        assertEquals("video_1", viewModel.state.value.currentItem?.id)
+
+        // Reconfigure: video_3 will resolve to a valid stream after the skip.
+        fakePlayerRepository.resolvedStreams = createResolvedStreams("video_3")
+
+        viewModel.skipToNext()
+        advanceUntilIdle()
+
+        assertEquals(
+            "Archived video_2 must be skipped — playback continues at video_3",
+            "video_3",
+            viewModel.state.value.currentItem?.id,
+        )
+    }
+
+    @Test
+    fun `archived video in single-video mode emits ContentUnavailable`() = runTest {
+        // playItem (queue add → play) is the single-video selection path. When
+        // the chosen video turns out to be archived, the user must see the
+        // ContentUnavailable overlay rather than a generic stream error or a
+        // silent retry loop. NOT in playlist mode — so no auto-skip.
+        val items = (1..2).map { createPlaylistItem(it, "video_$it") }
+        fakePlaylistRepository.setPages(listOf(PlaylistPage(items, null)))
+        fakePlayerRepository.resolvedStreams = createResolvedStreams("video_1")
+
+        val viewModel = createViewModel()
+        // Use loadVideo for the single-video flow. T12's existing gate at
+        // loadVideo would short-circuit at the VM layer; the chokepoint inside
+        // DefaultPlayerRepository defends a different code path. We exercise
+        // the chokepoint here by clearing playlist mode and forcing the
+        // archived id through resolveStreamFor's retry loop — that's what the
+        // queue-advance path looks like at the call site level.
+        viewModel.loadVideo(videoId = "vid_archived")
+        advanceUntilIdle()
+        // Now mark the SAME id as archived and call retryCurrentStream so the
+        // retry loop hits resolveStreams → throws ContentUnavailableException.
+        // (Post-NB1 the gate lives inside [GlobalStreamResolver]; the fake
+        // repository here mirrors that contract by throwing the same
+        // exception, so we exercise resolveStreamFor's retry path identically.)
+        fakePlayerRepository.archivedIds += "vid_archived"
+        viewModel.retryCurrentStream()
+        advanceUntilIdle()
+
+        assertEquals(
+            "Archived video in single-video mode must surface ContentUnavailable",
+            StreamState.ContentUnavailable,
+            viewModel.state.value.streamState,
+        )
+    }
+
     @Test
     fun `consecutive skip limit prevents infinite loop`() = runTest {
         // Arrange: 5 videos, all will fail to resolve
@@ -596,9 +696,21 @@ class PlayerViewModelPlaylistPagingTest {
         var resolvedStreamsAfterFailure: ResolvedStreams? = null
         private var failCount = 0
 
+        /**
+         * VideoIds in this set will throw [com.albunyaan.tube.player.ContentUnavailableException]
+         * when [resolveStreams] is called — simulates the chokepoint gate inside
+         * DefaultPlayerRepository firing for archived content. C1 + C2 fix.
+         */
+        val archivedIds: MutableSet<String> = mutableSetOf()
+
         // Records the priority handed to the most recent resolveStreams call
         // so tests can assert callers actually plumb the lane through (round 2 [Bug A]).
         var lastObservedPriority: Priority? = null
+
+        // Records every videoId resolveStreams was invoked for, in order. C1
+        // tests use this to assert the playlist-queue advance never delegates
+        // through to the resolver for an archived item beyond the gate throw.
+        val resolvedVideoIds: MutableList<String> = mutableListOf()
 
         override suspend fun resolveStreams(
             videoId: String,
@@ -606,6 +718,10 @@ class PlayerViewModelPlaylistPagingTest {
             priority: Priority,
         ): ResolvedStreams? {
             lastObservedPriority = priority
+            resolvedVideoIds += videoId
+            if (videoId in archivedIds) {
+                throw com.albunyaan.tube.player.ContentUnavailableException(videoId)
+            }
             if (alwaysFail) {
                 return null
             }

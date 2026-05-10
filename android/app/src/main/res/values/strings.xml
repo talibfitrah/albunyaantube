@@ -208,6 +208,8 @@
     <string name="error_timeout_title">Timeout Error</string>
     <string name="error_server">Server error. Please try again later.</string>
     <string name="error_server_title">Server Error</string>
+    <string name="content_unavailable_title">Content not available</string>
+    <string name="content_unavailable_message">This content is no longer available. It may have been removed by an admin or by YouTube.</string>
     <string name="error_parse">Failed to process data. Please try again.</string>
     <string name="error_parse_title">Data Error</string>
     <string name="error_unknown">An unexpected error occurred.</string>

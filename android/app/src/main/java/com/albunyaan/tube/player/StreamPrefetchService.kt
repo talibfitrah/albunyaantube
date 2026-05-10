@@ -1,6 +1,7 @@
 package com.albunyaan.tube.player
 
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import com.albunyaan.tube.data.extractor.Priority
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import kotlinx.coroutines.CoroutineScope
@@ -71,14 +72,73 @@ class DefaultStreamPrefetchService @Inject constructor(
     private val mpdGenerator: MultiRepresentationMpdGenerator,
     private val mpdRegistry: SyntheticDashMpdRegistry,
     private val featureFlags: PlaybackFeatureFlags,
-    private val segmentPreBuffer: SegmentPreBuffer
+    private val segmentPreBuffer: SegmentPreBuffer,
 ) : StreamPrefetchService {
+
+    /**
+     * Time source for cache TTL bookkeeping. Defaults to [System.currentTimeMillis].
+     *
+     * Var-with-internal-setter rather than a constructor param so Hilt's
+     * @Inject ctor stays simple. Tests replace this via [setClockForTesting]
+     * to drive the TTL clock without depending on `runTest`'s virtual time
+     * (which advances scheduler time, not wall-clock). Wall-clock is the
+     * right reference here because the TTL bounds an **archive-bypass**
+     * window — the relevant elapsed time is the gap between the prefetch
+     * resolve and the user's tap, both real-time events regardless of the
+     * coroutine dispatcher.
+     */
+    @Volatile
+    private var clock: () -> Long = { System.currentTimeMillis() }
+
+    /**
+     * Test seam: replace the wall-clock used for TTL bookkeeping. Production
+     * callers MUST NOT use this — Hilt wires the production singleton with
+     * [System.currentTimeMillis].
+     */
+    @VisibleForTesting
+    internal fun setClockForTesting(newClock: () -> Long) {
+        clock = newClock
+    }
+
+    /**
+     * Test seam: write directly into the prefetch cache, skipping the
+     * background launch in [triggerPrefetch]. Production callers MUST NOT
+     * use this — it bypasses rate limiting and the resolver. Tests use this
+     * to keep TTL coverage hermetic without trying to drive
+     * [Dispatchers.IO] from a `runTest` virtual scheduler.
+     */
+    @VisibleForTesting
+    internal fun primeCacheForTesting(videoId: String, streams: ResolvedStreams, cachedAtMs: Long) {
+        prefetchResults[videoId] = CachedResult(streams, cachedAtMs)
+        insertionOrder.offer(videoId)
+    }
+
     companion object {
         private const val TAG = "StreamPrefetch"
         private const val PREFETCH_TIMEOUT_MS = 8000L // Max wait for prefetch extraction
         private const val AWAIT_TIMEOUT_MS = 3000L // Max wait when player wants result
         private const val MAX_CACHED_RESULTS = 5 // Limit memory usage
+
+        /**
+         * TTL on cached prefetch results.
+         *
+         * Bounds the archive-bypass window: if a video is archived AFTER prefetch
+         * resolved its streams, the cached entry is held for at most this long
+         * before consumption forces a re-resolve through [GlobalStreamResolver],
+         * which runs the backend availability gate again. 30s is plenty for the
+         * common case (user taps within a few seconds of the prefetch trigger)
+         * while keeping the bypass window short.
+         */
+        @VisibleForTesting
+        internal const val PREFETCH_RESULT_TTL_MS = 30_000L
     }
+
+    /**
+     * Cached prefetch result with the wall-clock timestamp at which it was
+     * stored. The timestamp drives the TTL eviction inside the consumer paths
+     * (see [awaitOrConsumePrefetch] and [consumePrefetch]).
+     */
+    private data class CachedResult(val streams: ResolvedStreams, val cachedAtMs: Long)
 
     // Internal scope that survives fragment destruction - prefetch shouldn't be cancelled on navigation
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -86,8 +146,8 @@ class DefaultStreamPrefetchService @Inject constructor(
     // Track which videoIds have prefetch triggered (for isPrefetchInFlight check)
     private val prefetchingVideoIds = ConcurrentHashMap.newKeySet<String>()
 
-    // Results from completed prefetches (short-lived cache - consumed once)
-    private val prefetchResults = ConcurrentHashMap<String, ResolvedStreams>()
+    // Results from completed prefetches (short-lived cache - consumed once or expires after TTL)
+    private val prefetchResults = ConcurrentHashMap<String, CachedResult>()
 
     // Tracks insertion order for FIFO eviction (ConcurrentHashMap doesn't maintain order)
     private val insertionOrder = ConcurrentLinkedQueue<String>()
@@ -146,7 +206,10 @@ class DefaultStreamPrefetchService @Inject constructor(
                         val oldest = insertionOrder.poll()
                         oldest?.let { prefetchResults.remove(it) }
                     }
-                    prefetchResults[videoId] = resolved
+                    // N8 fix: stamp the cache entry with wall-clock time so the
+                    // consumer can enforce PREFETCH_RESULT_TTL_MS and force a
+                    // re-resolve through the gate after the TTL expires.
+                    prefetchResults[videoId] = CachedResult(resolved, clock())
                     insertionOrder.offer(videoId)
                     rateLimiter.onExtractionSuccess(videoId)
 
@@ -183,12 +246,11 @@ class DefaultStreamPrefetchService @Inject constructor(
      *         Consumes the result (removes from cache).
      */
     override suspend fun awaitOrConsumePrefetch(videoId: String): ResolvedStreams? {
-        // First check if result is already ready (fastest path)
-        prefetchResults.remove(videoId)?.let { result ->
-            insertionOrder.remove(videoId) // Clean up order tracking
-            Log.d(TAG, "Prefetch consumed (cached) for $videoId")
-            return result
-        }
+        // First check if result is already ready (fastest path).
+        // N8 fix: validate TTL before returning. If the entry is stale, drop it
+        // and return null so the caller falls through to a fresh resolve via
+        // [globalResolver] — which runs the backend availability gate again.
+        consumeFreshCachedResult(videoId, "cached")?.let { return it }
 
         // Phase 1A: Check if prefetch triggered a resolve that's still in-flight
         // Using globalResolver means player will join the same job
@@ -216,12 +278,11 @@ class DefaultStreamPrefetchService @Inject constructor(
                 )
             }
             // Result may have been stored in prefetchResults by the job, consume it
-            prefetchResults.remove(videoId)?.let { cached ->
-                insertionOrder.remove(videoId) // Clean up order tracking
-                Log.d(TAG, "Prefetch consumed (awaited) for $videoId")
-                return cached
-            }
-            // Or use the direct result if available
+            // (TTL-checked: entries that landed before the await but expired during
+            // the await are dropped here, same as the fast-path check above).
+            consumeFreshCachedResult(videoId, "awaited")?.let { return it }
+            // Or use the direct result if available — `result` is the live return
+            // from globalResolver, not from our cache, so no TTL check needed.
             if (result != null) {
                 Log.d(TAG, "Prefetch consumed (direct await) for $videoId")
                 return result
@@ -233,17 +294,45 @@ class DefaultStreamPrefetchService @Inject constructor(
     }
 
     /**
+     * Consume the cached result for [videoId] iff it exists AND is younger than
+     * [PREFETCH_RESULT_TTL_MS]. Stale entries are evicted (and the FIFO order
+     * tracker is kept consistent). Returns null in both the absent and expired
+     * cases so the caller falls through to a fresh resolve through the gate.
+     *
+     * The [stage] parameter only feeds the success log line — it lets the
+     * cached/awaited paths share this helper without losing diagnostic context.
+     */
+    private fun consumeFreshCachedResult(videoId: String, stage: String): ResolvedStreams? {
+        val cached = prefetchResults[videoId] ?: return null
+        val ageMs = clock() - cached.cachedAtMs
+        if (ageMs > PREFETCH_RESULT_TTL_MS) {
+            // Drop stale entry. Don't return it — the caller must re-resolve so
+            // [GlobalStreamResolver]'s availability gate runs again. This bounds
+            // the archive-bypass window for N8.
+            prefetchResults.remove(videoId)
+            insertionOrder.remove(videoId)
+            Log.d(TAG, "Prefetch cache expired for $videoId (age=${ageMs}ms); will re-resolve")
+            return null
+        }
+        // Fresh enough — consume (remove-once semantics matches pre-TTL behaviour).
+        prefetchResults.remove(videoId)
+        insertionOrder.remove(videoId)
+        Log.d(TAG, "Prefetch consumed ($stage) for $videoId (age=${ageMs}ms)")
+        return cached.streams
+    }
+
+    /**
      * Try to get prefetched result immediately (non-blocking).
      * Call this from PlayerViewModel before starting normal resolution.
      *
      * @return The prefetched ResolvedStreams if already available and ready, null otherwise.
      *         Consumes the result (removes from cache).
+     *
+     * N8 fix: TTL-checked. Stale entries return null and are evicted so the
+     * caller re-resolves through the gate.
      */
     override fun consumePrefetch(videoId: String): ResolvedStreams? {
-        return prefetchResults.remove(videoId)?.also {
-            insertionOrder.remove(videoId) // Clean up order tracking
-            Log.d(TAG, "Prefetch consumed for $videoId")
-        }
+        return consumeFreshCachedResult(videoId, "sync")
     }
 
     /**

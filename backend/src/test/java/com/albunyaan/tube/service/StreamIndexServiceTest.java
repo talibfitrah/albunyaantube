@@ -116,6 +116,12 @@ class StreamIndexServiceTest {
     }
 
     @Test
+    void markStreamArchived_callsRepositoryMarkInvisible() throws Exception {
+        service.markStreamArchived("dQw4w9WgXcQ");
+        verify(streamRepository).markInvisible("dQw4w9WgXcQ");
+    }
+
+    @Test
     void removeSource_callsRepositoryForEachStream() throws Exception {
         SearchableStream s1 = new SearchableStream(); s1.setStreamId("aaa11111111");
         SearchableStream s2 = new SearchableStream(); s2.setStreamId("bbb22222222");

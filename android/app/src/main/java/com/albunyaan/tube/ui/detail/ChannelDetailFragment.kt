@@ -263,9 +263,24 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
                     contentSkeleton.isVisible = false
                     contentErrorState.root.isVisible = true
                     contentErrorState.errorBody.text = state.message
+                    contentErrorState.retryButton.isVisible = true
                     contentErrorState.retryButton.setOnClickListener {
                         viewModel.loadHeader(forceRefresh = true)
                     }
+                }
+                is ChannelDetailViewModel.HeaderState.ContentUnavailable -> {
+                    Log.i(TAG, "Channel is unavailable per backend")
+                    headerSkeleton.isVisible = false
+                    headerContent.isVisible = false
+                    tabLayout.isVisible = false
+                    viewPager.isVisible = false
+                    contentSkeleton.isVisible = false
+                    contentErrorState.root.isVisible = true
+                    contentErrorState.errorHeadline.text =
+                        getString(R.string.content_unavailable_title)
+                    contentErrorState.errorBody.text =
+                        getString(R.string.content_unavailable_message)
+                    contentErrorState.retryButton.isVisible = false
                 }
             }
         }

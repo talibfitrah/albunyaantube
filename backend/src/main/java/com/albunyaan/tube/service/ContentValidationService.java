@@ -47,6 +47,7 @@ public class ContentValidationService {
     private final ValidationRunRepository validationRunRepository;
     private final ValidationProperties validationProperties;
     private final PublicContentCacheService publicContentCacheService;
+    private final StreamIndexService streamIndexService;
 
     public ContentValidationService(
             ChannelRepository channelRepository,
@@ -56,7 +57,8 @@ public class ContentValidationService {
             AuditLogService auditLogService,
             ValidationRunRepository validationRunRepository,
             ValidationProperties validationProperties,
-            PublicContentCacheService publicContentCacheService
+            PublicContentCacheService publicContentCacheService,
+            StreamIndexService streamIndexService
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
@@ -66,6 +68,7 @@ public class ContentValidationService {
         this.validationRunRepository = validationRunRepository;
         this.validationProperties = validationProperties;
         this.publicContentCacheService = publicContentCacheService;
+        this.streamIndexService = streamIndexService;
     }
 
     // ==================== Validation Triggers ====================
@@ -453,6 +456,7 @@ public class ContentValidationService {
                     channel.setValidationStatus(ValidationStatus.ARCHIVED);
                     channel.setLastValidatedAt(Timestamp.now());
                     channelRepository.save(channel);
+                    streamIndexService.removeSource("CHANNEL", channel.getYoutubeId());
 
                     run.incrementChannelsArchived();
                     archivedChannelIds.add(channel.getId());
@@ -496,6 +500,11 @@ public class ContentValidationService {
 
         if (!archivedChannelIds.isEmpty()) {
             run.addDetail("archivedChannelIds", archivedChannelIds);
+            try {
+                publicContentCacheService.evictPublicContentCaches();
+            } catch (Exception e) {
+                logger.warn("Cache eviction failed after archiving channels; run continues", e);
+            }
         }
         if (!errorChannelIds.isEmpty()) {
             run.addDetail("errorChannelIds", errorChannelIds);
@@ -566,6 +575,7 @@ public class ContentValidationService {
                     playlist.setValidationStatus(ValidationStatus.ARCHIVED);
                     playlist.setLastValidatedAt(Timestamp.now());
                     playlistRepository.save(playlist);
+                    streamIndexService.removeSource("PLAYLIST", playlist.getYoutubeId());
 
                     run.incrementPlaylistsArchived();
                     archivedPlaylistIds.add(playlist.getId());
@@ -609,6 +619,11 @@ public class ContentValidationService {
 
         if (!archivedPlaylistIds.isEmpty()) {
             run.addDetail("archivedPlaylistIds", archivedPlaylistIds);
+            try {
+                publicContentCacheService.evictPublicContentCaches();
+            } catch (Exception e) {
+                logger.warn("Cache eviction failed after archiving playlists; run continues", e);
+            }
         }
         if (!errorPlaylistIds.isEmpty()) {
             run.addDetail("errorPlaylistIds", errorPlaylistIds);
@@ -679,6 +694,7 @@ public class ContentValidationService {
                     video.setValidationStatus(ValidationStatus.ARCHIVED);
                     video.setLastValidatedAt(Timestamp.now());
                     videoRepository.save(video);
+                    streamIndexService.markStreamArchived(video.getYoutubeId());
 
                     run.incrementVideosArchived();
                     archivedVideoIds.add(video.getId());
@@ -722,6 +738,11 @@ public class ContentValidationService {
 
         if (!archivedVideoIds.isEmpty()) {
             run.addDetail("archivedVideoIds", archivedVideoIds);
+            try {
+                publicContentCacheService.evictPublicContentCaches();
+            } catch (Exception e) {
+                logger.warn("Cache eviction failed after archiving videos; run continues", e);
+            }
         }
         if (!errorVideoIds.isEmpty()) {
             run.addDetail("errorVideoIds", errorVideoIds);

@@ -1,13 +1,18 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.ContentReport;
+import com.albunyaan.tube.model.Playlist;
 import com.albunyaan.tube.model.ReportReason;
+import com.albunyaan.tube.model.ReportStatus;
 import com.albunyaan.tube.model.ReportTargetType;
+import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.ContentReportRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import com.albunyaan.tube.service.PublicContentCacheService;
+import com.albunyaan.tube.service.StreamIndexService;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,6 +22,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -43,6 +49,8 @@ class ContentReportServiceTest {
     PlaylistRepository playlistRepository;
     @Mock
     PublicContentCacheService publicContentCacheService;
+    @Mock
+    StreamIndexService streamIndexService;
 
     Cache<String, AtomicInteger> rateLimitCache;
     ContentReportService service;
@@ -53,7 +61,7 @@ class ContentReportServiceTest {
     @BeforeEach
     void setUp() {
         rateLimitCache = Caffeine.newBuilder().build();
-        service = new ContentReportService(reportRepository, rateLimitCache, videoRepository, channelRepository, playlistRepository, publicContentCacheService);
+        service = new ContentReportService(reportRepository, rateLimitCache, videoRepository, channelRepository, playlistRepository, publicContentCacheService, streamIndexService);
     }
 
     @Test
@@ -128,5 +136,65 @@ class ContentReportServiceTest {
                 ReportTargetType.VIDEO, "vid-1", REASONS, null, DEVICE);
 
         assertThat(result.getId()).isEqualTo("report-2");
+    }
+
+    // --- archiveReportedContent stream-index cleanup ---
+
+    @Test
+    void archiveReportedContent_video_callsMarkStreamArchived()
+            throws ExecutionException, InterruptedException, TimeoutException {
+        Video v = new Video();
+        v.setYoutubeId("ytv-1");
+
+        ContentReport report = new ContentReport();
+        report.setTargetType(ReportTargetType.VIDEO);
+        report.setTargetId("ytv-1");
+        // no parent context → falls through to archiveReportedContent
+        when(reportRepository.findById("report-v1")).thenReturn(Optional.of(report));
+        when(reportRepository.update(any())).thenReturn(report);
+        when(videoRepository.findByYoutubeId("ytv-1")).thenReturn(Optional.of(v));
+        when(videoRepository.save(any())).thenReturn(v);
+
+        service.resolveReport("report-v1", ReportStatus.RESOLVED, "admin", null);
+
+        verify(streamIndexService).markStreamArchived("ytv-1");
+    }
+
+    @Test
+    void archiveReportedContent_channel_callsRemoveSource()
+            throws ExecutionException, InterruptedException, TimeoutException {
+        Channel ch = new Channel();
+        ch.setYoutubeId("UCabc");
+
+        ContentReport report = new ContentReport();
+        report.setTargetType(ReportTargetType.CHANNEL);
+        report.setTargetId("UCabc");
+        when(reportRepository.findById("report-ch1")).thenReturn(Optional.of(report));
+        when(reportRepository.update(any())).thenReturn(report);
+        when(channelRepository.findByYoutubeId("UCabc")).thenReturn(Optional.of(ch));
+        when(channelRepository.save(any())).thenReturn(ch);
+
+        service.resolveReport("report-ch1", ReportStatus.RESOLVED, "admin", null);
+
+        verify(streamIndexService).removeSource("CHANNEL", "UCabc");
+    }
+
+    @Test
+    void archiveReportedContent_playlist_callsRemoveSource()
+            throws ExecutionException, InterruptedException, TimeoutException {
+        Playlist pl = new Playlist();
+        pl.setYoutubeId("PLxyz");
+
+        ContentReport report = new ContentReport();
+        report.setTargetType(ReportTargetType.PLAYLIST);
+        report.setTargetId("PLxyz");
+        when(reportRepository.findById("report-pl1")).thenReturn(Optional.of(report));
+        when(reportRepository.update(any())).thenReturn(report);
+        when(playlistRepository.findByYoutubeId("PLxyz")).thenReturn(Optional.of(pl));
+        when(playlistRepository.save(any())).thenReturn(pl);
+
+        service.resolveReport("report-pl1", ReportStatus.RESOLVED, "admin", null);
+
+        verify(streamIndexService).removeSource("PLAYLIST", "PLxyz");
     }
 }

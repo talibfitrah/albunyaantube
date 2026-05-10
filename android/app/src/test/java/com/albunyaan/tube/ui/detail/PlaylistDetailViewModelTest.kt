@@ -5,6 +5,9 @@ import com.albunyaan.tube.data.playlist.PlaylistDetailRepository
 import com.albunyaan.tube.data.playlist.PlaylistHeader
 import com.albunyaan.tube.data.playlist.PlaylistItem
 import com.albunyaan.tube.data.playlist.PlaylistPage
+import com.albunyaan.tube.data.source.AvailabilityCheckType
+import com.albunyaan.tube.data.source.ContentService
+import com.albunyaan.tube.data.source.FakeContentService
 import com.albunyaan.tube.download.DownloadEntry
 import com.albunyaan.tube.download.DownloadPolicy
 import com.albunyaan.tube.download.DownloadRepository
@@ -28,6 +31,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.whenever
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.util.concurrent.atomic.AtomicLong
@@ -49,12 +54,14 @@ class PlaylistDetailViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
     private lateinit var fakeRepository: FakePlaylistDetailRepository
     private lateinit var fakeDownloadRepository: FakeDownloadRepository
+    private lateinit var fakeContentService: FakeContentService
 
     @Before
     fun setup() {
         Dispatchers.setMain(testDispatcher)
         fakeRepository = FakePlaylistDetailRepository()
         fakeDownloadRepository = FakeDownloadRepository()
+        fakeContentService = FakeContentService()
     }
 
     @After
@@ -62,17 +69,24 @@ class PlaylistDetailViewModelTest {
         Dispatchers.resetMain()
     }
 
+    /**
+     * Create a ViewModel under test.
+     * Pass a custom [contentService] to override the default [FakeContentService] (which always
+     * returns available=true). Use a Mockito mock when you need to simulate archived content.
+     */
     private fun createViewModel(
         playlistId: String = "PLtest123",
         initialTitle: String? = null,
         initialCategory: String? = null,
         initialCount: Int = 0,
         downloadPolicy: DownloadPolicy = DownloadPolicy.ENABLED,
-        excluded: Boolean = false
+        excluded: Boolean = false,
+        contentService: ContentService = fakeContentService,
     ): PlaylistDetailViewModel {
         return PlaylistDetailViewModel(
             repository = fakeRepository,
             downloadRepository = fakeDownloadRepository,
+            contentService = contentService,
             playlistId = playlistId,
             initialTitle = initialTitle,
             initialCategory = initialCategory,
@@ -341,6 +355,7 @@ class PlaylistDetailViewModelTest {
         val viewModel = PlaylistDetailViewModel(
             repository = pageRepository,
             downloadRepository = fakeDownloadRepository,
+            contentService = fakeContentService,
             playlistId = "PLtest123",
             initialTitle = null,
             initialCategory = null,
@@ -439,6 +454,7 @@ class PlaylistDetailViewModelTest {
         val trackingViewModel = PlaylistDetailViewModel(
             repository = trackingRepository,
             downloadRepository = fakeDownloadRepository,
+            contentService = fakeContentService,
             playlistId = "PLtest123",
             initialTitle = null,
             initialCategory = null,
@@ -565,12 +581,122 @@ class PlaylistDetailViewModelTest {
         channelName = "Test Channel"
     )
 
+    // ── Availability Gate Tests ───────────────────────────────────────────────
+
+    @Test
+    fun `loadHeader archived playlist emits ContentUnavailable and skips repository`() = runTest {
+        val mockContentService: ContentService = mock()
+        whenever(mockContentService.verifyAvailable(AvailabilityCheckType.PLAYLIST, "PLabc"))
+            .thenReturn(false)
+
+        val vm = createViewModel(playlistId = "PLabc", contentService = mockContentService)
+        advanceUntilIdle()
+
+        assertEquals(PlaylistDetailViewModel.HeaderState.ContentUnavailable, vm.headerState.value)
+        // Repository must not have been called — no NewPipe work for archived playlists
+        assertEquals(0, fakeRepository.itemsCallCount)
+    }
+
+    @Test
+    fun `loadHeader transport error fails open and proceeds to repository`() = runTest {
+        val mockContentService: ContentService = mock()
+        val testHeader = createTestHeader("PLabc", "Test Playlist")
+        whenever(mockContentService.verifyAvailable(AvailabilityCheckType.PLAYLIST, "PLabc"))
+            .thenThrow(RuntimeException("network timeout"))
+        fakeRepository.headerResponse = testHeader
+        fakeRepository.itemsResponse = PlaylistPage(emptyList(), null)
+
+        val vm = createViewModel(playlistId = "PLabc", contentService = mockContentService)
+        advanceUntilIdle()
+
+        // Fail-open: transport error should not block the user; header must succeed
+        assertTrue(vm.headerState.value is PlaylistDetailViewModel.HeaderState.Success)
+    }
+
+    @Test
+    fun `loadInitial called after ContentUnavailable is a no-op`() = runTest {
+        val mockContentService: ContentService = mock()
+        whenever(mockContentService.verifyAvailable(AvailabilityCheckType.PLAYLIST, "PLabc"))
+            .thenReturn(false)
+
+        val vm = createViewModel(playlistId = "PLabc", contentService = mockContentService)
+        advanceUntilIdle()
+
+        assertEquals(PlaylistDetailViewModel.HeaderState.ContentUnavailable, vm.headerState.value)
+
+        // Any explicit loadInitial calls triggered after unavailable state is set must be no-ops.
+        val callCountBefore = fakeRepository.itemsCallCount
+        vm.loadInitial()
+        advanceUntilIdle()
+
+        assertEquals("loadInitial must not call repository when playlist is unavailable",
+            callCountBefore, fakeRepository.itemsCallCount)
+    }
+
+    @Test
+    fun `loadInitial synchronous guard is a no-op when headerState is ContentUnavailable`() = runTest {
+        // Verify the synchronous guard: if _headerState is already ContentUnavailable,
+        // calling loadInitial() directly must return without touching the repository.
+        // This covers retryInitial() being called while the unavailable state is set.
+        val mockContentService: ContentService = mock()
+        whenever(mockContentService.verifyAvailable(AvailabilityCheckType.PLAYLIST, "PLabc"))
+            .thenReturn(false)
+
+        val vm = createViewModel(playlistId = "PLabc", contentService = mockContentService)
+        advanceUntilIdle()
+
+        assertEquals(PlaylistDetailViewModel.HeaderState.ContentUnavailable, vm.headerState.value)
+
+        // Direct call — must be blocked by the synchronous guard at the top of loadInitial.
+        val callCountBefore = fakeRepository.itemsCallCount
+        vm.loadInitial()
+        advanceUntilIdle()
+
+        assertEquals("loadInitial synchronous guard must prevent repository call",
+            callCountBefore, fakeRepository.itemsCallCount)
+    }
+
+    @Test
+    fun `retryInitial without prior loadHeader settled blocks NewPipe when playlist archived`() = runTest {
+        // Simulates the retry-button race: the UI calls loadHeader(forceRefresh=true) AND
+        // retryInitial() consecutively. retryInitial() → loadInitial() races against the still
+        // in-flight loadHeader. Without the async gate inside loadInitial, the synchronous guard
+        // (headerState is Loading, not ContentUnavailable) would pass and NewPipe would fetch
+        // items for an archived playlist before loadHeader settles.
+        //
+        // This test calls retryInitial() directly WITHOUT a prior loadHeader settle (simulating
+        // the race window) and verifies the async gate stops NewPipe.
+        val mockContentService: ContentService = mock()
+        // Both loadHeader (called from init {}) and loadInitial's async gate report unavailable.
+        whenever(mockContentService.verifyAvailable(AvailabilityCheckType.PLAYLIST, "PLxyz"))
+            .thenReturn(false)
+
+        // Do NOT pre-configure a header response — if NewPipe work runs, the test would fail
+        // with a "No header response configured" exception or an unexpected itemsCallCount.
+        val vm = createViewModel(playlistId = "PLxyz", contentService = mockContentService)
+
+        // Call retryInitial() immediately, BEFORE init's loadHeader has settled.
+        // At this point headerState is still Loading (not ContentUnavailable), so the
+        // synchronous guard alone would pass — only the async gate inside loadInitial can stop it.
+        vm.retryInitial()
+        advanceUntilIdle()
+
+        // The async gate must have caught the unavailable signal and emitted ContentUnavailable.
+        assertEquals(PlaylistDetailViewModel.HeaderState.ContentUnavailable, vm.headerState.value)
+        // NewPipe repository must not have been touched.
+        assertEquals("NewPipe items must not be fetched for an archived playlist",
+            0, fakeRepository.itemsCallCount)
+    }
+
+    // ── Internal Fake Classes ─────────────────────────────────────────────────
+
     /**
      * Fake PlaylistDetailRepository for testing.
      */
     private class FakePlaylistDetailRepository : PlaylistDetailRepository {
         var headerResponse: PlaylistHeader? = null
         var headerError: Exception? = null
+        var headerCallCount = 0
 
         var itemsResponse: PlaylistPage<PlaylistItem> = PlaylistPage(emptyList(), null)
         var itemsError: Exception? = null
@@ -583,6 +709,7 @@ class PlaylistDetailViewModelTest {
             excluded: Boolean,
             downloadPolicy: DownloadPolicy
         ): PlaylistHeader {
+            headerCallCount++
             headerError?.let { throw it }
             return headerResponse ?: throw RuntimeException("No header response configured")
         }

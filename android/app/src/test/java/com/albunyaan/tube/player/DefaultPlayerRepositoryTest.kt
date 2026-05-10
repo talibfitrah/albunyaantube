@@ -4,9 +4,9 @@ import com.albunyaan.tube.data.extractor.Priority
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Test
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -17,6 +17,12 @@ import java.util.concurrent.atomic.AtomicReference
  * [Priority.PLAYER] regardless of caller intent, so non-player callers
  * (prefetch, download worker) silently rode the player bypass and skipped
  * the rate-limit + cooldown gates.
+ *
+ * NB1 chokepoint move (Stage-3 review): the per-caller availability gate
+ * that used to live here moved into [GlobalStreamResolver]. Coverage for
+ * the gate itself (archived video, fail-open, defence-in-depth) is now
+ * in [GlobalStreamResolverTest]. This file is back to priority-propagation
+ * only.
  */
 class DefaultPlayerRepositoryTest {
 
@@ -27,6 +33,8 @@ class DefaultPlayerRepositoryTest {
     @Before
     fun setUp() {
         fakeProvider = PriorityCapturingProvider()
+        // No ContentService → gate is skipped, exposing pure priority-propagation
+        // behaviour. The gate's tests live in GlobalStreamResolverTest.
         resolver = GlobalStreamResolver.createForTesting(fakeProvider)
         repository = DefaultPlayerRepository(resolver)
     }
@@ -142,6 +150,7 @@ class DefaultPlayerRepositoryTest {
      */
     private class PriorityCapturingProvider : StreamResolutionProvider {
         val observedPriority = AtomicReference<Priority?>(null)
+        val callCount = AtomicInteger(0)
         private val results = mutableMapOf<String, ResolvedStreams?>()
 
         fun setResult(videoId: String, result: ResolvedStreams?) {
@@ -153,6 +162,7 @@ class DefaultPlayerRepositoryTest {
             forceRefresh: Boolean,
             priority: Priority,
         ): ResolvedStreams? {
+            callCount.incrementAndGet()
             observedPriority.set(priority)
             return results[videoId]
         }

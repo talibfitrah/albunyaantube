@@ -117,6 +117,21 @@ public class StreamIndexService {
         }
     }
 
+    /**
+     * Mark a single stream as invisible — used when an individual video
+     * is archived. Unlike removeSource, this flips visibility regardless
+     * of remaining sourceKeys (the stream may still be indexed via other
+     * still-active channels/playlists, but the video itself is archived).
+     */
+    public void markStreamArchived(String streamId) {
+        try {
+            streamRepository.markInvisible(streamId);
+            log.info("Stream {} marked invisible (archived)", streamId);
+        } catch (Exception e) {
+            log.warn("markStreamArchived failed for {}: {}", streamId, e.getMessage());
+        }
+    }
+
     private void upsert(StreamItemDto item, String channelId, String channelName, String sourceKey) {
         try {
             if (item.getId() == null || item.getName() == null) {

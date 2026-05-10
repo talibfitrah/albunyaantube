@@ -3,7 +3,10 @@ package com.albunyaan.tube.data.source.api
 import com.albunyaan.tube.data.model.api.models.ContentItemDto
 import com.albunyaan.tube.data.model.api.models.PageInfo
 import com.squareup.moshi.JsonClass
+import retrofit2.Response
 import retrofit2.http.GET
+import retrofit2.http.HEAD
+import retrofit2.http.Path
 import retrofit2.http.Query
 
 /**
@@ -39,6 +42,15 @@ interface ContentApi {
         @Query("contentLimit") contentLimit: Int,
         @Query("category") category: String? = null
     ): HomeFeedResponse
+
+    @HEAD("api/v1/channels/{id}")
+    suspend fun checkChannelAvailable(@Path("id") id: String): Response<Unit>
+
+    @HEAD("api/v1/playlists/{id}")
+    suspend fun checkPlaylistAvailable(@Path("id") id: String): Response<Unit>
+
+    @HEAD("api/v1/videos/{id}")
+    suspend fun checkVideoAvailable(@Path("id") id: String): Response<Unit>
 }
 
 /**

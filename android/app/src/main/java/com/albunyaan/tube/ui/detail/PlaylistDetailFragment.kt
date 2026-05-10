@@ -387,6 +387,17 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
                     // Show error in content area
                     showErrorState(state.message)
                 }
+                is PlaylistDetailViewModel.HeaderState.ContentUnavailable -> {
+                    Log.i(TAG, "Playlist is unavailable per backend")
+                    headerSkeleton.isVisible = false
+                    headerContent.isVisible = false
+                    errorState.root.isVisible = true
+                    errorState.errorHeadline.text =
+                        getString(R.string.content_unavailable_title)
+                    errorState.errorBody.text =
+                        getString(R.string.content_unavailable_message)
+                    errorState.retryButton.isVisible = false
+                }
             }
         }
     }

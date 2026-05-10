@@ -192,4 +192,7 @@ class FakeContentService : ContentService {
         // Fake service doesn't have hierarchical categories, return empty list
         return emptyList()
     }
+
+    override suspend fun verifyAvailable(type: AvailabilityCheckType, youtubeId: String): Boolean =
+        true // Fake never simulates archived content; tests that need that should mock ContentService directly.
 }
