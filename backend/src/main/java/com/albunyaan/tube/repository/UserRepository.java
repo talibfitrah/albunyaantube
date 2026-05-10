@@ -2,6 +2,7 @@ package com.albunyaan.tube.repository;
 
 import com.albunyaan.tube.config.FirestoreTimeoutProperties;
 import com.albunyaan.tube.model.User;
+import org.springframework.cache.annotation.Cacheable;
 import com.google.api.core.ApiFuture;
 import com.google.cloud.firestore.AggregateQuery;
 import com.google.cloud.firestore.AggregateQuerySnapshot;
@@ -53,6 +54,7 @@ public class UserRepository {
         return user;
     }
 
+    @Cacheable(value = "userStatus", key = "#uid")
     public Optional<User> findByUid(String uid) throws ExecutionException, InterruptedException, TimeoutException {
         DocumentReference docRef = getCollection().document(uid);
         // Single document reads: use shorter timeout (2 seconds)

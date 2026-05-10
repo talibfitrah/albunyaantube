@@ -1,13 +1,17 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.config.FirestoreTimeoutProperties;
 import com.albunyaan.tube.model.User;
+import com.albunyaan.tube.repository.AuditLogRepository;
 import com.albunyaan.tube.repository.UserRepository;
+import com.google.cloud.firestore.Firestore;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
 import com.google.firebase.auth.UserRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
@@ -29,6 +33,12 @@ public class AuthService {
 
     private final FirebaseAuth firebaseAuth;
     private final UserRepository userRepository;
+    // Injected here for Tasks 6/7/8: transactional lifecycle methods need all five.
+    private final AuditLogService auditLogService;
+    private final AuditLogRepository auditLogRepository;
+    private final Firestore firestore;
+    private final CacheManager cacheManager;
+    private final FirestoreTimeoutProperties timeoutProperties;
 
     @Value("${app.security.initial-admin.email}")
     private String initialAdminEmail;
@@ -39,9 +49,20 @@ public class AuthService {
     @Value("${app.security.initial-admin.display-name}")
     private String initialAdminDisplayName;
 
-    public AuthService(FirebaseAuth firebaseAuth, UserRepository userRepository) {
+    public AuthService(FirebaseAuth firebaseAuth,
+                       UserRepository userRepository,
+                       AuditLogService auditLogService,
+                       AuditLogRepository auditLogRepository,
+                       Firestore firestore,
+                       CacheManager cacheManager,
+                       FirestoreTimeoutProperties timeoutProperties) {
         this.firebaseAuth = firebaseAuth;
         this.userRepository = userRepository;
+        this.auditLogService = auditLogService;
+        this.auditLogRepository = auditLogRepository;
+        this.firestore = firestore;
+        this.cacheManager = cacheManager;
+        this.timeoutProperties = timeoutProperties;
     }
 
     /**
