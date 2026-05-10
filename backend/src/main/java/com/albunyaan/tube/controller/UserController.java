@@ -15,6 +15,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 
@@ -201,6 +202,36 @@ public class UserController {
     ) throws Exception {
         if (actor == null) return ResponseEntity.status(401).build();
         authService.recoverUser(uid, actor.getUid());
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Block a user (admin only)
+     */
+    @PostMapping("/{uid}/block")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> block(
+            @PathVariable String uid,
+            @AuthenticationPrincipal FirebaseUserDetails actor,
+            @RequestBody(required = false) Map<String, String> body
+    ) throws Exception {
+        if (actor == null) return ResponseEntity.status(401).build();
+        String reason = body != null ? body.getOrDefault("reason", "policy-violation") : "policy-violation";
+        authService.blockUser(uid, actor.getUid(), reason);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Unblock a user (admin only)
+     */
+    @PostMapping("/{uid}/unblock")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> unblock(
+            @PathVariable String uid,
+            @AuthenticationPrincipal FirebaseUserDetails actor
+    ) throws Exception {
+        if (actor == null) return ResponseEntity.status(401).build();
+        authService.unblockUser(uid, actor.getUid());
         return ResponseEntity.noContent().build();
     }
 

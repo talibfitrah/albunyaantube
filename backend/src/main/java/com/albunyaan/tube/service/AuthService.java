@@ -280,6 +280,91 @@ public class AuthService {
     }
 
     /**
+     * Block a user: marks BLOCKED in Firestore + writes audit log inside a transaction,
+     * then disables + revokes tokens in Firebase Auth and evicts the status cache.
+     * Enforces the last-admin guard (D2) inside the same transaction.
+     */
+    public void blockUser(String uid, String actorUid, String reason) throws Exception {
+        runLifecycleTx(tx -> {
+            DocumentReference userRef = firestore.collection("users").document(uid);
+            DocumentSnapshot snap = tx.get(userRef).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+            if (!snap.exists()) {
+                throw new IllegalArgumentException("User not found: " + uid);
+            }
+            User target = snap.toObject(User.class);
+
+            // Last-admin guard (D2) — inline transactional check
+            if (target.isAdmin()) {
+                if (uid.equals(actorUid)) {
+                    throw new LastAdminException("Admins cannot block themselves.");
+                }
+                QuerySnapshot admins = tx.get(firestore.collection("users")
+                        .whereEqualTo("role", "admin")
+                        .whereEqualTo("status", "active"))
+                        .get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+                if (admins.size() <= 1) {
+                    throw new LastAdminException("Cannot block the last active admin.");
+                }
+            }
+
+            target.recordBlock(actorUid, reason);
+
+            AuditLog audit = auditLogService.buildBlock(uid, actorUid, reason);
+
+            tx.set(userRef, target);
+            tx.set(auditLogRepository.auditLogsCollection().document(), audit);
+            return null;
+        });
+
+        // D9 — outside the tx, idempotent
+        firebaseAuth.updateUser(new UserRecord.UpdateRequest(uid).setDisabled(true));
+        firebaseAuth.revokeRefreshTokens(uid);
+
+        // D4 — cache evict
+        Cache cache = cacheManager.getCache("userStatus");
+        if (cache != null) cache.evict(uid);
+
+        logger.info("Blocked user uid={} actor={} reason={}", uid, actorUid, reason);
+    }
+
+    /**
+     * Unblock a user: clears BLOCKED status in Firestore + writes audit log inside a
+     * transaction, then re-enables the Firebase Auth account and evicts cache.
+     * Requires target to currently be in BLOCKED status.
+     * No last-admin guard — unblock only increases active-admin count.
+     */
+    public void unblockUser(String uid, String actorUid) throws Exception {
+        runLifecycleTx(tx -> {
+            DocumentReference userRef = firestore.collection("users").document(uid);
+            DocumentSnapshot snap = tx.get(userRef).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+            if (!snap.exists()) {
+                throw new IllegalArgumentException("User not found: " + uid);
+            }
+            User target = snap.toObject(User.class);
+            if (!target.isBlocked()) {
+                throw new IllegalStateException("User is not in BLOCKED status: " + uid);
+            }
+
+            target.recordUnblock(actorUid);
+
+            AuditLog audit = auditLogService.buildUnblock(uid, actorUid);
+
+            tx.set(userRef, target);
+            tx.set(auditLogRepository.auditLogsCollection().document(), audit);
+            return null;
+        });
+
+        // Re-enable Firebase Auth account
+        firebaseAuth.updateUser(new UserRecord.UpdateRequest(uid).setDisabled(false));
+
+        // D4 — cache evict
+        Cache cache = cacheManager.getCache("userStatus");
+        if (cache != null) cache.evict(uid);
+
+        logger.info("Unblocked user uid={} actor={}", uid, actorUid);
+    }
+
+    /**
      * Record user login
      */
     public void recordLogin(String uid) throws ExecutionException, InterruptedException, TimeoutException {
