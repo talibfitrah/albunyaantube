@@ -373,7 +373,8 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
                     assertFalse(seenIds.contains(item.getId()),
                             "Duplicate item found: " + item.getId());
                     seenIds.add(item.getId());
-                    itemCounts.add(item.getVideoCount());
+                    // Playlists carry their size in itemCount (not videoCount, which is a channel field).
+                    itemCounts.add(item.getItemCount());
                 }
 
                 cursor = page.getPageInfo().getNextCursor();
@@ -384,6 +385,8 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
 
             // Assert: Monotonic descending order (item count)
             for (int i = 1; i < itemCounts.size(); i++) {
+                assertNotNull(itemCounts.get(i - 1), "itemCount should not be null at index " + (i - 1));
+                assertNotNull(itemCounts.get(i), "itemCount should not be null at index " + i);
                 assertTrue(itemCounts.get(i - 1) >= itemCounts.get(i),
                         "Item counts should be in descending order at index " + i);
             }
