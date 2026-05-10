@@ -88,9 +88,34 @@ class PlayerViewModel @Inject constructor(
     private var prefetchJob: Job? = null
     private var latestDownloads: List<DownloadEntry> = emptyList()
 
-    // Prefetch cache: stores resolved streams for next items
-    private val prefetchCache = mutableMapOf<String, ResolvedStreams>()
+    /**
+     * Cached prefetch result paired with the wall-clock timestamp at which it
+     * was stored. Drives the [PREFETCH_CACHE_TTL_MS] eviction inside
+     * [resolveWithRetry] so an admin archive that lands AFTER prefetch resolved
+     * the streams can't keep playing the archived video forever.
+     */
+    private data class CachedPrefetch(val streams: ResolvedStreams, val cachedAtMs: Long)
+
+    // Prefetch cache: stores resolved streams for next items, with TTL for archive safety (N9 fix)
+    private val prefetchCache = mutableMapOf<String, CachedPrefetch>()
     private val maxPrefetchItems = 2
+
+    /**
+     * Time source for prefetch-cache TTL bookkeeping. Defaults to wall-clock.
+     * Tests replace this via [setClockForTesting] to drive the TTL clock
+     * deterministically without depending on `runTest` virtual time.
+     */
+    @Volatile
+    private var clock: () -> Long = { System.currentTimeMillis() }
+
+    /**
+     * Test seam: replace the clock used for [prefetchCache] TTL eviction.
+     * Production code MUST NOT call this.
+     */
+    @androidx.annotation.VisibleForTesting
+    internal fun setClockForTesting(newClock: () -> Long) {
+        clock = newClock
+    }
 
     // Pending quality cap: stored when URLs expire during quality switch, applied after refresh
     private var pendingQualityCap: VideoTrack? = null
@@ -1142,6 +1167,39 @@ class PlayerViewModel @Inject constructor(
     }
 
     /**
+     * Consume the queue-prefetch cache entry for [streamId] iff it exists AND is
+     * younger than [PREFETCH_CACHE_TTL_MS]. Stale entries are evicted (the
+     * insertion-order semantics of the underlying [prefetchCache] don't matter
+     * here — it's a small `mutableMapOf` with manual-eviction at write time).
+     *
+     * Returns null in both the absent and expired cases so the caller falls
+     * through to a fresh resolve via [repository.resolveStreams], which the
+     * archived-content fix has already gated through the backend availability
+     * HEAD check (see [DefaultPlayerRepository] + [GlobalStreamResolver]).
+     *
+     * The synchronization scope mirrors the writer in [prefetchNextItems] —
+     * both touch [prefetchCache] inside `synchronized(prefetchCache)`.
+     */
+    private fun consumeFreshPrefetchCache(streamId: String): ResolvedStreams? {
+        return synchronized(prefetchCache) {
+            val cached = prefetchCache[streamId] ?: return@synchronized null
+            val ageMs = clock() - cached.cachedAtMs
+            if (ageMs > PREFETCH_CACHE_TTL_MS) {
+                // N9: drop stale entry — caller re-resolves through the gate.
+                prefetchCache.remove(streamId)
+                android.util.Log.d(
+                    "PlayerViewModel",
+                    "Queue-prefetch cache expired for $streamId (age=${ageMs}ms); will re-resolve"
+                )
+                null
+            } else {
+                prefetchCache.remove(streamId)
+                cached.streams
+            }
+        }
+    }
+
+    /**
      * Resolve streams with exponential backoff retry.
      * Checks tap-to-prefetch service first (awaiting in-flight if needed), then local prefetch cache.
      * Attempts: 3 times with delays of 1s, 2s, 4s between attempts.
@@ -1187,7 +1245,7 @@ class PlayerViewModel @Inject constructor(
 
         // Check local prefetch cache (for queue items) - skip if forceRefresh
         if (!forceRefresh) {
-            val prefetched = synchronized(prefetchCache) { prefetchCache.remove(item.streamId) }
+            val prefetched = consumeFreshPrefetchCache(item.streamId)
             if (prefetched != null) {
                 android.util.Log.d("PlayerViewModel", "Using queue-prefetched stream for ${item.streamId}")
                 val selection = prefetched.toDefaultSelection()
@@ -1471,7 +1529,10 @@ class PlayerViewModel @Inject constructor(
                                 val oldest = prefetchCache.keys.firstOrNull()
                                 oldest?.let { prefetchCache.remove(it) }
                             }
-                            prefetchCache[item.streamId] = resolved
+                            // N9 fix: stamp with wall-clock so the consumer enforces
+                            // PREFETCH_CACHE_TTL_MS and forces a re-resolve through
+                            // the repository's availability gate after the TTL.
+                            prefetchCache[item.streamId] = CachedPrefetch(resolved, clock())
                         }
                         android.util.Log.d("PlayerViewModel", "Prefetch: Completed for ${item.streamId}")
                     }
@@ -1502,6 +1563,18 @@ class PlayerViewModel @Inject constructor(
         private const val MAX_SCAN_TIME_MS = 3000L        // Max time for deep start scanning
         private const val QUEUE_PREFETCH_THRESHOLD = 5    // Trigger background fetch when queue drops below this
         private const val MAX_CONSECUTIVE_SKIPS = 3       // Max auto-skips for unplayable items
+
+        /**
+         * TTL for the queue-prefetch cache (N9 fix).
+         *
+         * Bounds the archive-bypass window for queue-prefetched items: if a video
+         * is archived AFTER [prefetchNextItems] resolved its streams, the cached
+         * entry expires after this window so the next consumer has to re-resolve
+         * through the gate (which surfaces ContentUnavailable / triggers auto-skip).
+         * 30s matches the prefetch service TTL — both have the same threat model.
+         */
+        @androidx.annotation.VisibleForTesting
+        internal const val PREFETCH_CACHE_TTL_MS = 30_000L
     }
 
     private fun findDownloadFor(item: UpNextItem?, entries: List<DownloadEntry>): DownloadEntry? {
