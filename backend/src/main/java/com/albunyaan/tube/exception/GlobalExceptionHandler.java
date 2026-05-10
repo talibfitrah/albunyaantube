@@ -203,4 +203,29 @@ public class GlobalExceptionHandler {
 
         return new ResponseEntity<>(body, HttpStatus.INTERNAL_SERVER_ERROR);
     }
+
+    @ExceptionHandler(AccountBlockedException.class)
+    public ResponseEntity<Map<String, Object>> handleAccountBlocked(AccountBlockedException ex) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("code", "ACCOUNT_BLOCKED");
+        body.put("message", "This account has been blocked.");
+        if (ex.getReason() != null) body.put("reason", ex.getReason());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
+    }
+
+    @ExceptionHandler(AccountDeletedException.class)
+    public ResponseEntity<Map<String, Object>> handleAccountDeleted(AccountDeletedException ex) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("code", "ACCOUNT_NOT_FOUND");
+        body.put("message", "Authentication failed.");
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(body);
+    }
+
+    @ExceptionHandler(LastAdminException.class)
+    public ResponseEntity<Map<String, Object>> handleLastAdmin(LastAdminException ex) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("code", "LAST_ADMIN_PROTECTED");
+        body.put("message", ex.getMessage() != null ? ex.getMessage() : "Cannot remove the last admin.");
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
 }
