@@ -15,6 +15,7 @@ import com.albunyaan.tube.data.model.CursorResponse
 import com.albunyaan.tube.data.model.HomeFeedResult
 import com.albunyaan.tube.data.model.HomeSection
 import com.albunyaan.tube.data.model.Category
+import com.albunyaan.tube.data.source.AvailabilityCheckType
 import com.albunyaan.tube.data.source.ContentService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -301,5 +302,7 @@ class HomeViewModelTest {
         override suspend fun fetchSubcategories(parentId: String): List<Category> {
             return emptyList()
         }
+
+        override suspend fun verifyAvailable(type: AvailabilityCheckType, youtubeId: String): Boolean = true
     }
 }

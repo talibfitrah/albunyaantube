@@ -7,6 +7,8 @@ import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.model.CursorResponse
 import com.albunyaan.tube.data.model.HomeFeedResult
 
+enum class AvailabilityCheckType { CHANNEL, PLAYLIST, VIDEO }
+
 interface ContentService {
     suspend fun fetchContent(
         type: ContentType,
@@ -28,4 +30,13 @@ interface ContentService {
     suspend fun fetchCategories(): List<Category>
 
     suspend fun fetchSubcategories(parentId: String): List<Category>
+
+    /**
+     * Returns true if the content is currently available (not archived, rejected,
+     * or otherwise hidden). Returns false on a 404 from the backend (the public
+     * detail endpoints use 404 to signal archive/unavailable state).
+     * Throws on transport errors so the caller can decide whether to fail-open
+     * (e.g., offline scenarios) or fail-closed.
+     */
+    suspend fun verifyAvailable(type: AvailabilityCheckType, youtubeId: String): Boolean
 }

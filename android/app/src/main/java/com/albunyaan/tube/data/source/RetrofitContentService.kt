@@ -108,4 +108,17 @@ class RetrofitContentService(
             .filter { it.parentId == parentId }
             .map { it.toDomain() }
     }
+
+    override suspend fun verifyAvailable(type: AvailabilityCheckType, youtubeId: String): Boolean {
+        val response = when (type) {
+            AvailabilityCheckType.CHANNEL -> api.checkChannelAvailable(youtubeId)
+            AvailabilityCheckType.PLAYLIST -> api.checkPlaylistAvailable(youtubeId)
+            AvailabilityCheckType.VIDEO -> api.checkVideoAvailable(youtubeId)
+        }
+        return when {
+            response.isSuccessful -> true
+            response.code() == 404 -> false
+            else -> throw retrofit2.HttpException(response)
+        }
+    }
 }
