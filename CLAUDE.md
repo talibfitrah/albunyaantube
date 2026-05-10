@@ -56,7 +56,7 @@ cd android && ./gradlew assembleDebug
 ./gradlew test
 ```
 
-**Emulator → backend**: use `10.0.2.2:8080`. **Port 8080 stuck**: `lsof -ti:8080 | xargs kill -9`. **Firebase creds**: `export GOOGLE_APPLICATION_CREDENTIALS=backend/src/main/resources/firebase-service-account.json`.
+**Emulator → backend**: use `10.0.2.2:8080`. **Port 8080 stuck**: `lsof -ti:8080 | xargs kill -9`. **Firebase creds**: `export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/albunyaan/firebase-service-account.json` (file lives outside the repo — NEVER commit it).
 
 ---
 
