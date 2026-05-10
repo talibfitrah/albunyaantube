@@ -205,27 +205,53 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(AccountBlockedException.class)
-    public ResponseEntity<Map<String, Object>> handleAccountBlocked(AccountBlockedException ex) {
+    public ResponseEntity<Object> handleAccountBlocked(
+            AccountBlockedException ex, WebRequest request) {
+        logger.warn("Account blocked: uid={}, reason={}", ex.getUid(), ex.getReason());
+
         Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", HttpStatus.FORBIDDEN.value());
+        body.put("error", "Forbidden");
         body.put("code", "ACCOUNT_BLOCKED");
         body.put("message", "This account has been blocked.");
         if (ex.getReason() != null) body.put("reason", ex.getReason());
-        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
+        body.put("path", request.getDescription(false).replace("uri=", ""));
+
+        return new ResponseEntity<>(body, HttpStatus.FORBIDDEN);
     }
 
     @ExceptionHandler(AccountDeletedException.class)
-    public ResponseEntity<Map<String, Object>> handleAccountDeleted(AccountDeletedException ex) {
+    public ResponseEntity<Object> handleAccountDeleted(
+            AccountDeletedException ex, WebRequest request) {
+        // Log the uid server-side for audit, but DO NOT include it in the
+        // response body — exfiltration safety (don't reveal which uid is gone).
+        logger.warn("Account not found / deleted: uid={}", ex.getUid());
+
         Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", HttpStatus.UNAUTHORIZED.value());
+        body.put("error", "Unauthorized");
         body.put("code", "ACCOUNT_NOT_FOUND");
         body.put("message", "Authentication failed.");
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(body);
+        body.put("path", request.getDescription(false).replace("uri=", ""));
+
+        return new ResponseEntity<>(body, HttpStatus.UNAUTHORIZED);
     }
 
     @ExceptionHandler(LastAdminException.class)
-    public ResponseEntity<Map<String, Object>> handleLastAdmin(LastAdminException ex) {
+    public ResponseEntity<Object> handleLastAdmin(
+            LastAdminException ex, WebRequest request) {
+        logger.warn("Last-admin protection: {}", ex.getMessage());
+
         Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", HttpStatus.CONFLICT.value());
+        body.put("error", "Conflict");
         body.put("code", "LAST_ADMIN_PROTECTED");
         body.put("message", ex.getMessage() != null ? ex.getMessage() : "Cannot remove the last admin.");
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+        body.put("path", request.getDescription(false).replace("uri=", ""));
+
+        return new ResponseEntity<>(body, HttpStatus.CONFLICT);
     }
 }
