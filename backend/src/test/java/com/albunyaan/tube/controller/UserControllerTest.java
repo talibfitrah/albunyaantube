@@ -272,32 +272,39 @@ class UserControllerTest {
     }
 
     @Test
-    void deleteUser_shouldDeleteUser_andLogAudit() throws Exception {
+    void deleteUser_shouldSoftDeleteUser_andReturn204() throws Exception {
         // Arrange
-        doNothing().when(authService).deleteUser("test-mod-uid");
+        doNothing().when(authService).softDeleteUser(eq("test-mod-uid"), eq("admin-uid"), eq("admin-action"));
 
         // Act
-        ResponseEntity<Void> response = userController.deleteUser("test-mod-uid", adminUser);
+        ResponseEntity<Void> response = userController.deleteUser("test-mod-uid", adminUser, "admin-action");
 
         // Assert
         assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
-        verify(authService).deleteUser("test-mod-uid");
-        verify(auditLogService).log(eq("user_deleted"), eq("user"), eq("test-mod-uid"), eq(adminUser));
+        verify(authService).softDeleteUser("test-mod-uid", "admin-uid", "admin-action");
     }
 
     @Test
-    void deleteUser_shouldReturnBadRequest_whenFirebaseAuthFails() throws Exception {
-        // Arrange
-        FirebaseAuthException mockException = mock(FirebaseAuthException.class);
-        doThrow(mockException)
-                .when(authService).deleteUser("nonexistent");
-
+    void deleteUser_shouldReturn401_whenActorIsNull() throws Exception {
         // Act
-        ResponseEntity<Void> response = userController.deleteUser("nonexistent", adminUser);
+        ResponseEntity<Void> response = userController.deleteUser("test-mod-uid", null, "admin-action");
 
         // Assert
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        verify(auditLogService, never()).log(any(), any(), any(), any());
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+        verify(authService, never()).softDeleteUser(any(), any(), any());
+    }
+
+    @Test
+    void recoverUser_shouldRecoverUser_andReturn204() throws Exception {
+        // Arrange
+        doNothing().when(authService).recoverUser(eq("test-mod-uid"), eq("admin-uid"));
+
+        // Act
+        ResponseEntity<Void> response = userController.recoverUser("test-mod-uid", adminUser);
+
+        // Assert
+        assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
+        verify(authService).recoverUser("test-mod-uid", "admin-uid");
     }
 
     @Test

@@ -1,7 +1,12 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.config.FirestoreTimeoutProperties;
 import com.albunyaan.tube.model.User;
+import com.albunyaan.tube.repository.AuditLogRepository;
 import com.albunyaan.tube.repository.UserRepository;
+import com.albunyaan.tube.service.AuditLogService;
+import com.google.api.core.ApiFuture;
+import com.google.cloud.firestore.Firestore;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
 import com.google.firebase.auth.UserRecord;
@@ -11,6 +16,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 
 import java.util.Map;
 import java.util.Optional;
@@ -18,6 +25,7 @@ import java.util.concurrent.ExecutionException;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -33,6 +41,21 @@ class AuthServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private AuditLogService auditLogService;
+
+    @Mock
+    private AuditLogRepository auditLogRepository;
+
+    @Mock
+    private Firestore firestore;
+
+    @Mock
+    private CacheManager cacheManager;
+
+    @Mock
+    private FirestoreTimeoutProperties timeoutProperties;
 
     @InjectMocks
     private AuthService authService;
@@ -243,32 +266,49 @@ class AuthServiceTest {
     }
 
     @Test
-    void deleteUser_shouldDeleteFromFirebaseAndFirestore() throws Exception {
-        // Arrange
-        doNothing().when(firebaseAuth).deleteUser("test-uid");
-        doNothing().when(userRepository).deleteByUid("test-uid");
+    @SuppressWarnings("unchecked")
+    void softDeleteUser_shouldDisableFirebaseAuthAndEvictCache() throws Exception {
+        // Arrange: stub the Firestore transaction to complete successfully (real logic tested in integration test)
+        ApiFuture<Void> doneFuture = mock(ApiFuture.class);
+        when(doneFuture.get(anyLong(), any())).thenReturn(null);
+        doReturn(doneFuture).when(firestore).runTransaction(any());
+
+        when(firebaseAuth.updateUser(any())).thenReturn(null);
+        doNothing().when(firebaseAuth).revokeRefreshTokens(any());
+
+        Cache mockCache = mock(Cache.class);
+        when(cacheManager.getCache("userStatus")).thenReturn(mockCache);
+        when(timeoutProperties.getWrite()).thenReturn(10L);
 
         // Act
-        authService.deleteUser("test-uid");
+        authService.softDeleteUser("test-uid", "admin-uid", "policy-violation");
 
-        // Assert
-        verify(firebaseAuth).deleteUser("test-uid");
-        verify(userRepository).deleteByUid("test-uid");
+        // Assert: Firebase Auth disabled + tokens revoked after transaction
+        verify(firebaseAuth).updateUser(any());
+        verify(firebaseAuth).revokeRefreshTokens("test-uid");
+        verify(mockCache).evict("test-uid");
     }
 
     @Test
-    void deleteUser_shouldThrowException_whenFirebaseAuthFails() throws Exception {
-        // Arrange
-        FirebaseAuthException mockException = mock(FirebaseAuthException.class);
-        doThrow(mockException).when(firebaseAuth).deleteUser("test-uid");
+    @SuppressWarnings("unchecked")
+    void recoverUser_shouldEnableFirebaseAuthAndEvictCache() throws Exception {
+        // Arrange: stub the Firestore transaction to complete successfully
+        ApiFuture<Void> doneFuture = mock(ApiFuture.class);
+        when(doneFuture.get(anyLong(), any())).thenReturn(null);
+        doReturn(doneFuture).when(firestore).runTransaction(any());
 
-        // Act & Assert
-        assertThrows(FirebaseAuthException.class, () ->
-                authService.deleteUser("test-uid")
-        );
+        when(firebaseAuth.updateUser(any())).thenReturn(null);
 
-        verify(firebaseAuth).deleteUser("test-uid");
-        verify(userRepository, never()).deleteByUid(any());
+        Cache mockCache = mock(Cache.class);
+        when(cacheManager.getCache("userStatus")).thenReturn(mockCache);
+        when(timeoutProperties.getWrite()).thenReturn(10L);
+
+        // Act
+        authService.recoverUser("test-uid", "admin-uid");
+
+        // Assert: Firebase Auth re-enabled after transaction
+        verify(firebaseAuth).updateUser(any());
+        verify(mockCache).evict("test-uid");
     }
 
     @Test

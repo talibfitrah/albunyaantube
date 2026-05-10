@@ -176,27 +176,32 @@ public class UserController {
     }
 
     /**
-     * Delete user (admin only)
+     * Soft-delete user (admin only)
      */
     @DeleteMapping("/{uid}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> deleteUser(
             @PathVariable String uid,
-            @AuthenticationPrincipal FirebaseUserDetails currentUser
-    ) {
-        try {
-            authService.deleteUser(uid);
-            try {
-                auditLogService.log("user_deleted", "user", uid, currentUser);
-            } catch (Exception auditEx) {
-                log.error("Failed to audit user_deleted for uid={}", uid, auditEx);
-            }
-            return ResponseEntity.noContent().build();
-        } catch (FirebaseAuthException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
-        }
+            @AuthenticationPrincipal FirebaseUserDetails actor,
+            @RequestParam(required = false, defaultValue = "admin-action") String reason
+    ) throws Exception {
+        if (actor == null) return ResponseEntity.status(401).build();
+        authService.softDeleteUser(uid, actor.getUid(), reason);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Recover a soft-deleted user (admin only)
+     */
+    @PostMapping("/{uid}/recover")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> recoverUser(
+            @PathVariable String uid,
+            @AuthenticationPrincipal FirebaseUserDetails actor
+    ) throws Exception {
+        if (actor == null) return ResponseEntity.status(401).build();
+        authService.recoverUser(uid, actor.getUid());
+        return ResponseEntity.noContent().build();
     }
 
     /**

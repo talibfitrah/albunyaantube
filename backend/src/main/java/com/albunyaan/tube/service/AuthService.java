@@ -1,16 +1,22 @@
 package com.albunyaan.tube.service;
 
 import com.albunyaan.tube.config.FirestoreTimeoutProperties;
+import com.albunyaan.tube.exception.LastAdminException;
+import com.albunyaan.tube.model.AuditLog;
 import com.albunyaan.tube.model.User;
 import com.albunyaan.tube.repository.AuditLogRepository;
 import com.albunyaan.tube.repository.UserRepository;
+import com.google.cloud.firestore.DocumentReference;
+import com.google.cloud.firestore.DocumentSnapshot;
 import com.google.cloud.firestore.Firestore;
+import com.google.cloud.firestore.QuerySnapshot;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
 import com.google.firebase.auth.UserRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Service;
 
@@ -18,6 +24,7 @@ import jakarta.annotation.PostConstruct;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
@@ -169,12 +176,86 @@ public class AuthService {
     }
 
     /**
-     * Delete user from Firebase Auth and Firestore
+     * Soft-delete a user: marks DELETED in Firestore + writes audit log inside a transaction,
+     * then disables + revokes tokens in Firebase Auth and evicts the status cache.
+     * Enforces the last-admin guard (D2) inside the same transaction.
      */
-    public void deleteUser(String uid) throws FirebaseAuthException, ExecutionException, InterruptedException, TimeoutException {
-        firebaseAuth.deleteUser(uid);
-        userRepository.deleteByUid(uid);
-        logger.info("Deleted user: {}", uid);
+    public void softDeleteUser(String uid, String actorUid, String reason) throws Exception {
+        firestore.runTransaction(tx -> {
+            DocumentReference userRef = firestore.collection("users").document(uid);
+            DocumentSnapshot snap = tx.get(userRef).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+            if (!snap.exists()) {
+                throw new IllegalArgumentException("User not found: " + uid);
+            }
+            User target = snap.toObject(User.class);
+
+            // Last-admin guard (D2) — inline transactional check
+            if (target.isAdmin()) {
+                if (uid.equals(actorUid)) {
+                    throw new LastAdminException("Admins cannot delete themselves.");
+                }
+                QuerySnapshot admins = tx.get(firestore.collection("users")
+                        .whereEqualTo("role", "admin")
+                        .whereEqualTo("status", "active"))
+                        .get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+                if (admins.size() <= 1) {
+                    throw new LastAdminException("Cannot delete the last active admin.");
+                }
+            }
+
+            target.recordSoftDelete(actorUid, reason);
+
+            AuditLog audit = auditLogService.buildSoftDelete(uid, actorUid, reason);
+
+            tx.set(userRef, target);
+            tx.set(auditLogRepository.auditLogsCollection().document(), audit);
+            return null;
+        }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+
+        // D9 — outside the tx, idempotent
+        firebaseAuth.updateUser(new UserRecord.UpdateRequest(uid).setDisabled(true));
+        firebaseAuth.revokeRefreshTokens(uid);
+
+        // D4 — cache evict
+        Cache cache = cacheManager.getCache("userStatus");
+        if (cache != null) cache.evict(uid);
+
+        logger.info("Soft-deleted user uid={} actor={}", uid, actorUid);
+    }
+
+    /**
+     * Recover a soft-deleted user: clears DELETED status in Firestore + writes audit log
+     * inside a transaction, then re-enables the Firebase Auth account and evicts cache.
+     * Requires target to currently be in DELETED status.
+     */
+    public void recoverUser(String uid, String actorUid) throws Exception {
+        firestore.runTransaction(tx -> {
+            DocumentReference userRef = firestore.collection("users").document(uid);
+            DocumentSnapshot snap = tx.get(userRef).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+            if (!snap.exists()) {
+                throw new IllegalArgumentException("User not found: " + uid);
+            }
+            User target = snap.toObject(User.class);
+            if (!target.isDeleted()) {
+                throw new IllegalStateException("User is not in DELETED status: " + uid);
+            }
+
+            target.recordRecover(actorUid);
+
+            AuditLog audit = auditLogService.buildRecover(uid, actorUid);
+
+            tx.set(userRef, target);
+            tx.set(auditLogRepository.auditLogsCollection().document(), audit);
+            return null;
+        }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+
+        firebaseAuth.updateUser(new UserRecord.UpdateRequest(uid).setDisabled(false));
+
+        // D4 — cache evict
+        Cache cache = cacheManager.getCache("userStatus");
+        if (cache != null) cache.evict(uid);
+
+        logger.info("Recovered user uid={} actor={}", uid, actorUid);
     }
 
     /**
