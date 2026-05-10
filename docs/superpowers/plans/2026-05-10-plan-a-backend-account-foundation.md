@@ -854,77 +854,129 @@ public class LastAdminException extends RuntimeException {
 
 - [ ] **Step 3: Add handlers in `GlobalExceptionHandler`**
 
-Append to the existing class body (follow the format used by sibling handlers there):
+Match the existing handler shape (`{timestamp, status, error, message, path}`) used by sibling handlers (e.g., `handleResourceNotFoundException`, `handleInvalidTokenException`). Extend the shape with two new keys: `code` (always) and `reason` (conditional). This preserves backward-compatibility for any existing client that reads `timestamp`/`status`/`error`/`path`, while adding structured `code` for richer client error handling.
 
 ```java
     @ExceptionHandler(AccountBlockedException.class)
-    public ResponseEntity<Map<String, Object>> handleAccountBlocked(AccountBlockedException ex) {
-        Map<String, Object> body = new HashMap<>();
+    public ResponseEntity<Object> handleAccountBlocked(
+            AccountBlockedException ex, WebRequest request) {
+        logger.warn("Account blocked: uid={}, reason={}", ex.getUid(), ex.getReason());
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", HttpStatus.FORBIDDEN.value());
+        body.put("error", "Forbidden");
         body.put("code", "ACCOUNT_BLOCKED");
         body.put("message", "This account has been blocked.");
         if (ex.getReason() != null) body.put("reason", ex.getReason());
-        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
+        body.put("path", request.getDescription(false).replace("uri=", ""));
+
+        return new ResponseEntity<>(body, HttpStatus.FORBIDDEN);
     }
 
     @ExceptionHandler(AccountDeletedException.class)
-    public ResponseEntity<Map<String, Object>> handleAccountDeleted(AccountDeletedException ex) {
-        Map<String, Object> body = Map.of(
-            "code", "ACCOUNT_NOT_FOUND",
-            "message", "Authentication failed."
-        );
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(body);
+    public ResponseEntity<Object> handleAccountDeleted(
+            AccountDeletedException ex, WebRequest request) {
+        // Log the uid server-side for audit, but DO NOT include it in the
+        // response body — exfiltration safety (don't reveal which uid is gone).
+        logger.warn("Account not found / deleted: uid={}", ex.getUid());
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", HttpStatus.UNAUTHORIZED.value());
+        body.put("error", "Unauthorized");
+        body.put("code", "ACCOUNT_NOT_FOUND");
+        body.put("message", "Authentication failed.");
+        body.put("path", request.getDescription(false).replace("uri=", ""));
+
+        return new ResponseEntity<>(body, HttpStatus.UNAUTHORIZED);
     }
 
     @ExceptionHandler(LastAdminException.class)
-    public ResponseEntity<Map<String, Object>> handleLastAdmin(LastAdminException ex) {
-        Map<String, Object> body = Map.of(
-            "code", "LAST_ADMIN_PROTECTED",
-            "message", ex.getMessage() != null ? ex.getMessage() : "Cannot remove the last admin."
-        );
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    public ResponseEntity<Object> handleLastAdmin(
+            LastAdminException ex, WebRequest request) {
+        logger.warn("Last-admin protection: {}", ex.getMessage());
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", HttpStatus.CONFLICT.value());
+        body.put("error", "Conflict");
+        body.put("code", "LAST_ADMIN_PROTECTED");
+        body.put("message", ex.getMessage() != null ? ex.getMessage() : "Cannot remove the last admin.");
+        body.put("path", request.getDescription(false).replace("uri=", ""));
+
+        return new ResponseEntity<>(body, HttpStatus.CONFLICT);
     }
 ```
 
-Add any missing imports: `org.springframework.http.HttpStatus`, `org.springframework.http.ResponseEntity`, `java.util.HashMap`, `java.util.Map`, and the three new exception types.
+The existing imports in `GlobalExceptionHandler.java` (HttpStatus, ResponseEntity, LinkedHashMap, Map, WebRequest, LocalDateTime, Logger/LoggerFactory) cover everything; add only the three new exception types as imports.
 
 - [ ] **Step 4: Add a quick handler test**
 
-Create `backend/src/test/java/com/albunyaan/tube/exception/GlobalExceptionHandlerAccountTest.java`:
+Create `backend/src/test/java/com/albunyaan/tube/exception/GlobalExceptionHandlerAccountTest.java`. Tests use a Mockito mock for `WebRequest` (the project already uses Mockito broadly).
 
 ```java
 package com.albunyaan.tube.exception;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.context.request.WebRequest;
+
 import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class GlobalExceptionHandlerAccountTest {
 
     private final GlobalExceptionHandler handler = new GlobalExceptionHandler();
 
-    @Test void blockedReturns403WithCode() {
-        ResponseEntity<Map<String, Object>> r = handler.handleAccountBlocked(
-            new AccountBlockedException("u1", "spam"));
-        assertEquals(HttpStatus.FORBIDDEN, r.getStatusCode());
-        assertEquals("ACCOUNT_BLOCKED", r.getBody().get("code"));
-        assertEquals("spam", r.getBody().get("reason"));
+    private static WebRequest mockRequest(String uri) {
+        WebRequest req = Mockito.mock(WebRequest.class);
+        Mockito.when(req.getDescription(false)).thenReturn("uri=" + uri);
+        return req;
     }
 
-    @Test void deletedReturns401WithoutLeakingDetails() {
-        ResponseEntity<Map<String, Object>> r = handler.handleAccountDeleted(
-            new AccountDeletedException("u1"));
+    @Test void blockedReturns403WithCodeAndReason() {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) handler
+            .handleAccountBlocked(new AccountBlockedException("u1", "spam"), mockRequest("/api/v1/me"))
+            .getBody();
+        assertEquals("ACCOUNT_BLOCKED", body.get("code"));
+        assertEquals("spam", body.get("reason"));
+        assertEquals("/api/v1/me", body.get("path"));
+        assertEquals("Forbidden", body.get("error"));
+        assertEquals(HttpStatus.FORBIDDEN.value(), body.get("status"));
+    }
+
+    @Test void blockedWithoutReason_omitsReasonField() {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) handler
+            .handleAccountBlocked(new AccountBlockedException("u1", null), mockRequest("/api/v1/me"))
+            .getBody();
+        assertFalse(body.containsKey("reason"));
+        assertEquals("ACCOUNT_BLOCKED", body.get("code"));
+    }
+
+    @Test void deletedReturns401WithoutLeakingUid() {
+        ResponseEntity<Object> r = handler
+            .handleAccountDeleted(new AccountDeletedException("u1"), mockRequest("/api/v1/me"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) r.getBody();
         assertEquals(HttpStatus.UNAUTHORIZED, r.getStatusCode());
-        assertEquals("ACCOUNT_NOT_FOUND", r.getBody().get("code"));
-        assertFalse(r.getBody().containsKey("uid"));
+        assertEquals("ACCOUNT_NOT_FOUND", body.get("code"));
+        assertFalse(body.containsKey("uid"), "uid must NOT be in response body");
     }
 
     @Test void lastAdminReturns409Conflict() {
-        ResponseEntity<Map<String, Object>> r = handler.handleLastAdmin(
-            new LastAdminException("Cannot demote the last admin."));
-        assertEquals(HttpStatus.CONFLICT, r.getStatusCode());
-        assertEquals("LAST_ADMIN_PROTECTED", r.getBody().get("code"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) handler
+            .handleLastAdmin(new LastAdminException("Cannot demote the last admin."), mockRequest("/api/admin/users/u1"))
+            .getBody();
+        assertEquals("LAST_ADMIN_PROTECTED", body.get("code"));
+        assertEquals("Cannot demote the last admin.", body.get("message"));
+        assertEquals(HttpStatus.CONFLICT.value(), body.get("status"));
     }
 }
 ```
