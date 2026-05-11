@@ -108,14 +108,21 @@ sealed interface AuthState {
     data object SignedOut : AuthState
     data object SigningIn : AuthState
     data class SignedIn(val user: FirebaseUser, val uid: String) : AuthState
-    data class Error(val message: String, val cause: AuthErrorCode) : AuthState
+    data class Error(val cause: AuthErrorCode) : AuthState
 }
 
 enum class AuthErrorCode {
     INVALID_EMAIL, WRONG_PASSWORD, USER_NOT_FOUND, USER_DISABLED, EMAIL_ALREADY_IN_USE,
-    WEAK_PASSWORD, NETWORK, GOOGLE_SIGN_IN_FAILED, MICROSOFT_SIGN_IN_FAILED,
+    WEAK_PASSWORD, NETWORK, TOO_MANY_REQUESTS, INVALID_CREDENTIAL,
+    GOOGLE_SIGN_IN_FAILED, MICROSOFT_SIGN_IN_FAILED,
     PASSWORD_RESET_FAILED, UNKNOWN
 }
+
+// During T2 implementation: dropped `message: String` field from Error — the
+// ViewModel maps cause → localised string via res/values/strings.xml, so a
+// message in the state object would be redundant + locale-incorrect.
+// Added TOO_MANY_REQUESTS and INVALID_CREDENTIAL to cover the realistic
+// Firebase exception cases the original list omitted.
 ```
 
 #### `AccountStatusEvent.kt`
@@ -138,13 +145,17 @@ interface AuthRepository {
     suspend fun signInWithCredential(credential: AuthCredential): Result<FirebaseUser>
     suspend fun sendPasswordResetEmail(email: String): Result<Unit>
     suspend fun signOut()
+}
 
-    /** Internal — invoked by AccountStatusInterceptor. Not part of UI contract. */
-    fun emitAccountStatus(event: AccountStatusEvent)
+/** Internal-only sink, bound separately by Hilt so UI code can't forge events. */
+interface AccountStatusEmitter {
+    fun emit(event: AccountStatusEvent)
 }
 ```
 
 Note the **single** `signInWithCredential` instead of separate `signInWithGoogle` / `signInWithMicrosoft` (fixes self-critique #2). The Google or Microsoft credential is built in the ViewModel layer where the Activity is available.
+
+T2-implementation refinement: `emitAccountStatus` was originally on `AuthRepository`; the per-task reviewer flagged that the "Not part of UI contract" comment was a wish, not an enforced boundary. Split into `AccountStatusEmitter` (UI-bound code never sees the emit method). `AuthRepositoryImpl` implements both interfaces; Hilt `@Binds` provides each separately.
 
 #### `AuthRepositoryImpl.kt`
 - Wraps `FirebaseAuth`
