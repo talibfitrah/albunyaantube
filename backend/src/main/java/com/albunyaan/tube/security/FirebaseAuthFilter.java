@@ -96,9 +96,14 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
                             return;
                         }
                         if (u.isBlocked()) {
+                            // F15: do NOT echo u.getBlockReason() in the response. Moderators
+                            // commonly write internal notes there ("known troll, banned per
+                            // ticket #1234, contact legal") — exfiltrating them to the
+                            // blocked user is a privacy hazard. The block reason stays on
+                            // the User doc + audit log for internal observability; the
+                            // public response is just the coarse-grained code.
                             writeError(response, HttpServletResponse.SC_FORBIDDEN,
-                                "ACCOUNT_BLOCKED", "Your account is blocked.",
-                                Map.of("reason", u.getBlockReason() != null ? u.getBlockReason() : "policy-violation"));
+                                "ACCOUNT_BLOCKED", "Your account is blocked.");
                             return;
                         }
                     }

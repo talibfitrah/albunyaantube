@@ -48,6 +48,37 @@ class AccountStatusFilterIntegrationTest extends BaseIntegrationTest {
             .andExpect(jsonPath("$.code").value("ACCOUNT_BLOCKED"));
     }
 
+    // ── F15 — block reason MUST NOT be leaked to the blocked user ────────────
+    // Pre-fix the filter echoed u.getBlockReason() into the 403 body. If a
+    // moderator wrote internal notes ("internal-troll-banned-per-ticket-1234,
+    // contact legal"), the banned user could read them on every 403.
+
+    @Test
+    void filterResponseForBlockedUser_doesNotLeakInternalReason() throws Exception {
+        String uid = "test-uid-blocked-internal";
+        String internalReason = "internal-troll-banned-per-ticket-1234-contact-legal";
+
+        seedUser(uid, "leaky@test.com", "moderator", UserStatus.ACTIVE);
+        markBlocked(uid, internalReason);
+
+        stubToken(uid, "moderator");
+
+        mvc.perform(get("/api/admin/users/me").header("Authorization", "Bearer fake-token-" + uid))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.code").value("ACCOUNT_BLOCKED"))
+            // F15: the body must not include the raw block reason.
+            .andExpect(jsonPath("$.reason").doesNotExist())
+            .andExpect(result -> {
+                String body = result.getResponse().getContentAsString();
+                assertFalse(body.contains(internalReason),
+                    "Internal block reason leaked to blocked user. Body: " + body);
+                assertFalse(body.contains("ticket-1234"),
+                    "Internal ticket reference leaked. Body: " + body);
+                assertFalse(body.contains("legal"),
+                    "Internal legal-routing hint leaked. Body: " + body);
+            });
+    }
+
     @Test
     void deletedUser_gets401() throws Exception {
         String uid = "test-uid-deleted";
