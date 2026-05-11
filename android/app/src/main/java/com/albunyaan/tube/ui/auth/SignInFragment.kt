@@ -19,8 +19,11 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.navigation.fragment.findNavController
 import com.albunyaan.tube.R
 import com.albunyaan.tube.auth.AuthErrorCode
+import com.albunyaan.tube.auth.AuthRepository
+import com.albunyaan.tube.auth.AuthState
 import com.albunyaan.tube.auth.toAuthErrorCode
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
@@ -32,6 +35,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.OAuthProvider
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
@@ -58,6 +62,7 @@ class SignInFragment : Fragment(R.layout.fragment_sign_in) {
     private val viewModel: SignInViewModel by viewModels()
 
     @Inject lateinit var firebaseAuth: FirebaseAuth
+    @Inject lateinit var authRepository: AuthRepository
 
     private lateinit var emailField: TextInputEditText
     private lateinit var passwordField: TextInputEditText
@@ -86,6 +91,23 @@ class SignInFragment : Fragment(R.layout.fragment_sign_in) {
                 viewModel.ui.collect { render(it) }
             }
         }
+
+        // Post-sign-in routing. Collect the first SignedIn emission and pop
+        // SignInFragment off the back stack into MainShell. Without this the
+        // fragment sits there after a successful credential because nothing
+        // else observes authState (MainActivity only observes the 403 stream).
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                authRepository.authState
+                    .filterIsInstance<AuthState.SignedIn>()
+                    .collect {
+                        val nav = findNavController()
+                        if (nav.currentDestination?.id == R.id.signInFragment) {
+                            nav.navigate(R.id.action_signIn_to_main)
+                        }
+                    }
+            }
+        }
     }
 
     private fun bindViews(root: View) {
@@ -108,7 +130,6 @@ class SignInFragment : Fragment(R.layout.fragment_sign_in) {
             ActivityResultContracts.StartActivityForResult()
         ) { result ->
             if (result.resultCode != Activity.RESULT_OK) {
-                // User cancelled — just clear the loading spinner.
                 viewModel.setLoading(false)
                 return@registerForActivityResult
             }
@@ -124,6 +145,9 @@ class SignInFragment : Fragment(R.layout.fragment_sign_in) {
                 viewModel.onCredential(credential, AuthErrorCode.GOOGLE_SIGN_IN_FAILED)
             } catch (e: ApiException) {
                 Log.w(TAG, "Google sign-in returned ApiException: ${e.statusCode}")
+                viewModel.surfaceError(AuthErrorCode.GOOGLE_SIGN_IN_FAILED)
+            } catch (e: Exception) {
+                Log.w(TAG, "Google sign-in failed", e)
                 viewModel.surfaceError(AuthErrorCode.GOOGLE_SIGN_IN_FAILED)
             }
         }
@@ -142,15 +166,16 @@ class SignInFragment : Fragment(R.layout.fragment_sign_in) {
     }
 
     private fun adjustForFormFactor() {
-        val isTv = (resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK) ==
-            Configuration.UI_MODE_TYPE_TELEVISION
-        if (isTv) {
-            microsoftButton.visibility = View.GONE
-            microsoftUnavailableTv.visibility = View.VISIBLE
-        } else {
-            microsoftButton.visibility = View.VISIBLE
-            microsoftUnavailableTv.visibility = View.GONE
-        }
+        // Microsoft sign-in is disabled pending ANDROID-AUTH-02: Microsoft MSA
+        // (consumer accounts) backend has not synced with the Azure AD app's
+        // AzureADandPersonalMicrosoftAccount audience setting, so consumers
+        // hit "unauthorized_client" in the OAuth handler. Hidden defensively
+        // at both the XML and code layers — re-enable by reverting this
+        // method and removing android:visibility="gone" from the three
+        // fragment_sign_in.xml variants. The TV "unavailable" placeholder is
+        // also hidden because it would imply Microsoft works elsewhere.
+        microsoftButton.visibility = View.GONE
+        microsoftUnavailableTv.visibility = View.GONE
     }
 
     private fun launchGoogleSignIn() {

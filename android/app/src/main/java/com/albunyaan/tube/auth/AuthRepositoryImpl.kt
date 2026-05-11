@@ -54,19 +54,27 @@ class AuthRepositoryImpl @Inject constructor(
     private fun initialState(): AuthState =
         firebaseAuth.currentUser?.let { AuthState.SignedIn(it, it.uid) } ?: AuthState.SignedOut
 
+    // AuthStateListener (registered in init) is the *sole* source of truth for
+    // [_authState]. We never push SigningIn/Error into the StateFlow from an
+    // operation path: a failed sign-in attempt does NOT change Firebase's
+    // currentUser, so the global StateFlow shouldn't lie about it. Operation
+    // errors are returned via Result.failure and surfaced on the ViewModel's
+    // local UI state, not the process-wide auth state. (Bug fix: a Microsoft
+    // sign-in cancellation was pushing Error into _authState even though
+    // currentUser was still valid, hiding the Settings → Account section.)
     override suspend fun signInWithEmail(email: String, password: String): Result<FirebaseUser> =
-        runAuth { firebaseAuth.signInWithEmailAndPassword(email, password).await().requireUser() }
+        runCatching { firebaseAuth.signInWithEmailAndPassword(email, password).await().requireUser() }
 
     override suspend fun signUpWithEmail(email: String, password: String): Result<FirebaseUser> =
-        runAuth { firebaseAuth.createUserWithEmailAndPassword(email, password).await().requireUser() }
+        runCatching { firebaseAuth.createUserWithEmailAndPassword(email, password).await().requireUser() }
 
     override suspend fun signInWithCredential(credential: AuthCredential): Result<FirebaseUser> =
-        runAuth { firebaseAuth.signInWithCredential(credential).await().requireUser() }
+        runCatching { firebaseAuth.signInWithCredential(credential).await().requireUser() }
 
     override suspend fun sendPasswordResetEmail(email: String): Result<Unit> = runCatching {
         firebaseAuth.sendPasswordResetEmail(email).await()
         Unit
-    }.onFailure { _authState.value = AuthState.Error(it.toAuthErrorCode()) }
+    }
 
     /** suspend reserved for future server-side token revocation. */
     override suspend fun signOut() {
@@ -77,14 +85,6 @@ class AuthRepositoryImpl @Inject constructor(
 
     override fun emit(event: AccountStatusEvent) {
         _accountStatusEvents.tryEmit(event)
-    }
-
-    private inline fun runAuth(block: () -> FirebaseUser): Result<FirebaseUser> {
-        _authState.value = AuthState.SigningIn
-        return runCatching { block() }
-            .onFailure { _authState.value = AuthState.Error(it.toAuthErrorCode()) }
-        // Success path: the AuthStateListener fires from FirebaseAuth's internal
-        // commit and sets _authState to SignedIn; we don't double-write.
     }
 
     private fun com.google.firebase.auth.AuthResult.requireUser(): FirebaseUser =

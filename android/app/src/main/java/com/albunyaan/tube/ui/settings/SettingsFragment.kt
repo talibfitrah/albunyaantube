@@ -11,6 +11,7 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.navigation.Navigation
 import androidx.navigation.fragment.findNavController
 import com.albunyaan.tube.R
 import com.albunyaan.tube.auth.AuthRepository
@@ -96,10 +97,15 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
             .setPositiveButton(R.string.settings_account_sign_out_confirm_action) { _, _ ->
                 viewLifecycleOwner.lifecycleScope.launch {
                     authRepository.signOut()
-                    val nav = findNavController()
-                    // Pop everything back to the sign-in fragment. popUpToInclusive=true
-                    // ensures the back stack is clean — no return-to-settings via Back.
-                    nav.navigate(
+                    // SettingsFragment lives inside main_tabs_nav (nested NavHost in
+                    // MainShellFragment); signInFragment lives in the outer app_nav_graph
+                    // (hosted by MainActivity.nav_host_fragment). findNavController()
+                    // returns the nested controller, which doesn't know about signIn —
+                    // navigating there crashes with IllegalArgumentException. Grab the
+                    // activity-level controller and route from there.
+                    val activity = activity ?: return@launch
+                    val outerNav = Navigation.findNavController(activity, R.id.nav_host_fragment)
+                    outerNav.navigate(
                         R.id.signInFragment,
                         null,
                         androidx.navigation.navOptions {

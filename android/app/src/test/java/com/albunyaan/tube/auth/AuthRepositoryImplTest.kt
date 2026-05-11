@@ -55,30 +55,29 @@ class AuthRepositoryImplTest {
         assertEquals(user, result.getOrNull())
     }
 
-    @Test fun `signInWithEmail with wrong password emits Error WRONG_PASSWORD`() = runTest {
+    @Test fun `signInWithEmail with wrong password returns failure mapped to WRONG_PASSWORD`() = runTest {
         whenever(firebaseAuth.signInWithEmailAndPassword("a@b.com", "bad"))
             .thenReturn(Tasks.forException(FirebaseAuthException("ERROR_WRONG_PASSWORD", "")))
 
         val result = repository.signInWithEmail("a@b.com", "bad")
 
         assertTrue(result.isFailure)
-        val state = repository.authState.value
-        assertTrue("expected Error state, got $state", state is AuthState.Error)
-        assertEquals(AuthErrorCode.WRONG_PASSWORD, (state as AuthState.Error).cause)
+        assertEquals(AuthErrorCode.WRONG_PASSWORD, result.exceptionOrNull()?.toAuthErrorCode())
+        // Operation failure must NOT touch authState — Firebase's currentUser is unchanged,
+        // so the StateFlow stays at its construction-time value (SignedOut).
+        assertTrue(repository.authState.value is AuthState.SignedOut)
     }
 
     /** Plan A blocks users by disabling their FirebaseAuth record. */
-    @Test fun `signInWithEmail when user disabled emits Error USER_DISABLED`() = runTest {
+    @Test fun `signInWithEmail when user disabled returns failure mapped to USER_DISABLED`() = runTest {
         whenever(firebaseAuth.signInWithEmailAndPassword("blocked@x.com", "secret"))
             .thenReturn(Tasks.forException(FirebaseAuthException("ERROR_USER_DISABLED", "")))
 
         val result = repository.signInWithEmail("blocked@x.com", "secret")
 
         assertTrue(result.isFailure)
-        assertEquals(
-            AuthErrorCode.USER_DISABLED,
-            (repository.authState.value as AuthState.Error).cause,
-        )
+        assertEquals(AuthErrorCode.USER_DISABLED, result.exceptionOrNull()?.toAuthErrorCode())
+        assertTrue(repository.authState.value is AuthState.SignedOut)
     }
 
     // --- signUpWithEmail ---------------------------------------------------
@@ -93,17 +92,15 @@ class AuthRepositoryImplTest {
         assertEquals(user, result.getOrNull())
     }
 
-    @Test fun `signUpWithEmail when email already in use emits matching error`() = runTest {
+    @Test fun `signUpWithEmail when email already in use returns failure mapped to EMAIL_ALREADY_IN_USE`() = runTest {
         whenever(firebaseAuth.createUserWithEmailAndPassword("dup@x.com", "secret"))
             .thenReturn(Tasks.forException(FirebaseAuthException("ERROR_EMAIL_ALREADY_IN_USE", "")))
 
         val result = repository.signUpWithEmail("dup@x.com", "secret")
 
         assertTrue(result.isFailure)
-        assertEquals(
-            AuthErrorCode.EMAIL_ALREADY_IN_USE,
-            (repository.authState.value as AuthState.Error).cause,
-        )
+        assertEquals(AuthErrorCode.EMAIL_ALREADY_IN_USE, result.exceptionOrNull()?.toAuthErrorCode())
+        assertTrue(repository.authState.value is AuthState.SignedOut)
     }
 
     // --- signInWithCredential (Google / Microsoft) -------------------------
@@ -120,7 +117,7 @@ class AuthRepositoryImplTest {
     }
 
     /** Realistic Google/Microsoft failure: token expired / wrong audience. */
-    @Test fun `signInWithCredential failure emits Error INVALID_CREDENTIAL`() = runTest {
+    @Test fun `signInWithCredential failure returns failure mapped to INVALID_CREDENTIAL`() = runTest {
         val credential = mock<AuthCredential>()
         whenever(firebaseAuth.signInWithCredential(credential))
             .thenReturn(Tasks.forException(FirebaseAuthException("ERROR_INVALID_CREDENTIAL", "")))
@@ -128,10 +125,8 @@ class AuthRepositoryImplTest {
         val result = repository.signInWithCredential(credential)
 
         assertTrue(result.isFailure)
-        assertEquals(
-            AuthErrorCode.INVALID_CREDENTIAL,
-            (repository.authState.value as AuthState.Error).cause,
-        )
+        assertEquals(AuthErrorCode.INVALID_CREDENTIAL, result.exceptionOrNull()?.toAuthErrorCode())
+        assertTrue(repository.authState.value is AuthState.SignedOut)
     }
 
     // --- sendPasswordResetEmail -------------------------------------------
@@ -145,14 +140,15 @@ class AuthRepositoryImplTest {
         assertTrue(result.isSuccess)
     }
 
-    @Test fun `sendPasswordResetEmail failure emits Error state`() = runTest {
+    @Test fun `sendPasswordResetEmail failure returns failure without touching authState`() = runTest {
         whenever(firebaseAuth.sendPasswordResetEmail("a@b.com"))
             .thenReturn(Tasks.forException(FirebaseAuthException("ERROR_USER_NOT_FOUND", "")))
 
         val result = repository.sendPasswordResetEmail("a@b.com")
 
         assertTrue(result.isFailure)
-        assertTrue(repository.authState.value is AuthState.Error)
+        // sendPasswordResetEmail never changes Firebase's currentUser; authState stays SignedOut.
+        assertTrue(repository.authState.value is AuthState.SignedOut)
     }
 
     // --- signOut -----------------------------------------------------------
@@ -186,10 +182,9 @@ class AuthRepositoryImplTest {
 
     /**
      * After a successful sign-in plus the FirebaseAuth listener firing, the
-     * final observable state is SignedIn(user). Asserts the listener wins —
-     * if AuthRepositoryImpl ever started double-writing SignedIn from inside
-     * runAuth too, this test would still pass, but a subsequent listener-fire
-     * on the same value is a no-op for StateFlow.
+     * final observable state is SignedIn(user). The AuthStateListener is the
+     * sole writer of [AuthRepositoryImpl.authState]; operation paths never
+     * mutate it (see bug fix in AuthRepositoryImpl KDoc).
      */
     @Test fun `signInWithEmail success ends in SignedIn after listener fires`() = runTest {
         val listenerCaptor = argumentCaptor<com.google.firebase.auth.FirebaseAuth.AuthStateListener>()
@@ -210,15 +205,18 @@ class AuthRepositoryImplTest {
     }
 
     /**
-     * After a sign-in failure, state lands on Error and does NOT roll forward
-     * to SigningIn (which would leave the spinner stuck) or to SignedIn.
+     * After a sign-in failure, authState stays at SignedOut — operation errors
+     * must NOT mutate the global StateFlow because Firebase's currentUser is
+     * unchanged. The failed Result carries the mapped error code; the
+     * ViewModel is responsible for surfacing it on local UI state.
      */
-    @Test fun `signInWithEmail failure ends in Error not SigningIn`() = runTest {
+    @Test fun `signInWithEmail failure leaves authState SignedOut`() = runTest {
         whenever(firebaseAuth.signInWithEmailAndPassword("a@b.com", "bad"))
             .thenReturn(Tasks.forException(FirebaseAuthException("ERROR_WRONG_PASSWORD", "")))
 
-        repository.signInWithEmail("a@b.com", "bad")
+        val result = repository.signInWithEmail("a@b.com", "bad")
 
-        assertTrue(repository.authState.value is AuthState.Error)
+        assertTrue(result.isFailure)
+        assertTrue(repository.authState.value is AuthState.SignedOut)
     }
 }

@@ -155,7 +155,9 @@
                 android:textAppearance="?attr/textAppearanceBody2"
                 android:textAlignment="center"
                 android:text="@string/auth_microsoft_unavailable_tv"
-                android:focusable="true"/>
+                android:focusable="true"
+                android:visibility="gone"
+                tools:visibility="gone"/>
 
             <TextView
                 android:id="@+id/errorText"

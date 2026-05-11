@@ -83,7 +83,10 @@ class SignInViewModel @Inject constructor(
     }
 
     fun onCredential(credential: AuthCredential, fallbackError: AuthErrorCode) {
-        if (_ui.value.isLoading) return
+        // No isLoading re-entrancy guard: the call site is the system's
+        // ActivityResultLauncher (Google) — not user-tap re-entrant — and
+        // launchGoogleSignIn already set isLoading=true before opening the
+        // chooser, so a guard here would silently drop the returned credential.
         _ui.update { it.copy(isLoading = true, error = null) }
         viewModelScope.launch {
             val result = authRepository.signInWithCredential(credential)
@@ -91,11 +94,6 @@ class SignInViewModel @Inject constructor(
                 it.copy(
                     isLoading = false,
                     error = if (result.isFailure) {
-                        // Use the mapped code only if it carries real info;
-                        // an "UNKNOWN" map means we couldn't classify the
-                        // exception (e.g. a non-Firebase RuntimeException
-                        // from the OAuth provider) — fall back to the
-                        // caller-supplied provider-specific code.
                         val mapped = result.exceptionOrNull()?.toAuthErrorCode()
                         if (mapped == null || mapped == AuthErrorCode.UNKNOWN) fallbackError else mapped
                     } else null,

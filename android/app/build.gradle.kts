@@ -44,6 +44,16 @@ android {
 
         manifestPlaceholders["profileable"] = "false"
 
+        // Plan B ad-hoc: trim debug APK to arm64-v8a only when -PslimApk is set,
+        // so the build fits Telegram's 50 MB upload cap for local sideload testing.
+        // Strips x86, x86_64, armeabi-v7a — all modern Android phones are arm64-v8a.
+        if (project.hasProperty("slimApk")) {
+            ndk {
+                abiFilters.clear()
+                abiFilters.add("arm64-v8a")
+            }
+        }
+
         // API Base URL configuration
         // Configure via local.properties: api.base.url=http://YOUR_IP:8080/
         // Default: Emulator localhost (10.0.2.2)
