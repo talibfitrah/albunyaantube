@@ -279,17 +279,30 @@ public class AuthService {
      * D9 Firebase Auth sync, transactional consistency) is enforced. It used to bypass
      * all of them — review-pipeline finding F1.
      *
+     * <p>Legacy admin clients still send {@code "inactive"} as a synonym for
+     * {@code "blocked"} (see frontend {@code adminUsers.ts#toBackendStatus}).
+     * F17 accepts that alias and defaults the reason to a sentinel so the
+     * "block user" button keeps working until the admin dashboard migrates to
+     * the canonical wire shape. Will be removed once the frontend migrates.
+     *
      * Accepted status values:
-     *   "blocked" → delegates to {@link #blockUser} (reason required)
-     *   "active"  → if currently BLOCKED, delegates to {@link #unblockUser};
-     *               if currently DELETED, delegates to {@link #recoverUser};
-     *               otherwise no-op (returns current user unchanged)
-     *   "deleted" → delegates to {@link #softDeleteUser} (reason required)
+     *   "blocked"  → delegates to {@link #blockUser} (reason required)
+     *   "inactive" → F17 alias for "blocked"; reason defaults to
+     *                {@value #LEGACY_STATUS_REASON} if missing so the audit log
+     *                still records WHY the user was blocked (and identifies the
+     *                call as a legacy-shape one for operator triage).
+     *   "active"   → if currently BLOCKED, delegates to {@link #unblockUser};
+     *                if currently DELETED, delegates to {@link #recoverUser};
+     *                otherwise no-op (returns current user unchanged)
+     *   "deleted"  → delegates to {@link #softDeleteUser} (reason required)
      *
      * @param uid      target user UID
-     * @param status   new lifecycle status — one of "blocked" | "active" | "deleted"
+     * @param status   new lifecycle status — one of
+     *                 "blocked" | "inactive" (alias) | "active" | "deleted"
      * @param actorUid actor UID for audit + self-action guards
-     * @param reason   required for "blocked" and "deleted"; ignored for "active"
+     * @param reason   required for canonical "blocked" and "deleted";
+     *                 defaulted to {@value #LEGACY_STATUS_REASON} for the
+     *                 legacy "inactive" alias path; ignored for "active"
      * @throws IllegalArgumentException if {@code status} is null, blank, unknown, or
      *         a transition requires a {@code reason} that wasn't provided
      */
@@ -302,11 +315,21 @@ public class AuthService {
         String normalized = status.trim().toLowerCase(java.util.Locale.ROOT);
 
         switch (normalized) {
-            case "blocked" -> {
+            case "inactive", "blocked" -> {
+                // F17: only the legacy "inactive" alias may default the reason —
+                // canonical "blocked" callers must always provide one so new
+                // wire-shapes don't accidentally inherit the looser contract.
+                String effectiveReason;
                 if (reason == null || reason.isBlank()) {
-                    throw new IllegalArgumentException("reason is required when status=blocked");
+                    if ("inactive".equals(normalized)) {
+                        effectiveReason = LEGACY_STATUS_REASON;
+                    } else {
+                        throw new IllegalArgumentException("reason is required when status=blocked");
+                    }
+                } else {
+                    effectiveReason = reason;
                 }
-                blockUser(uid, actorUid, reason);
+                blockUser(uid, actorUid, effectiveReason);
             }
             case "deleted" -> {
                 if (reason == null || reason.isBlank()) {
@@ -332,6 +355,14 @@ public class AuthService {
         return userRepository.findByUid(uid)
                 .orElseThrow(() -> new IllegalArgumentException("User not found after status update: " + uid));
     }
+
+    /**
+     * F17: default reason recorded on the audit log when a legacy admin client
+     * hits the {@code "inactive"} alias path without sending a {@code reason}
+     * field. Surfaces in audit history so operators can filter for legacy-shape
+     * calls and identify callers that still need migration.
+     */
+    static final String LEGACY_STATUS_REASON = "legacy-status-update";
 
     /**
      * Soft-delete a user: marks DELETED in Firestore + writes audit log inside a transaction,

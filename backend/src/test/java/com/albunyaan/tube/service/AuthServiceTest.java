@@ -216,15 +216,12 @@ class AuthServiceTest {
 
     @Test
     void updateUserStatus_rejectsUnknownStatus() {
-        // Act + Assert: no Firestore / FB Auth calls expected — fails fast at validation.
+        // F17: "inactive" is now an accepted alias for "blocked" — only random
+        // garbage should still fall through to the default switch arm.
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> authService.updateUserStatus("test-uid", "inactive", "actor", "r"));
+                () -> authService.updateUserStatus("test-uid", "frobnicated", "actor", "r"));
         assertTrue(ex.getMessage().toLowerCase().contains("invalid status"),
                 "Error message must call out invalid status: " + ex.getMessage());
-
-        // Random garbage also rejected
-        assertThrows(IllegalArgumentException.class,
-                () -> authService.updateUserStatus("test-uid", "frobnicated", "actor", "r"));
 
         verifyNoInteractions(firebaseAuth);
         verifyNoInteractions(firestore);

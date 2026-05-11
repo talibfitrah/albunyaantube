@@ -183,20 +183,61 @@ class AuthServiceUpdateUserStatusFacadeIntegrationTest extends BaseIntegrationTe
                 "Soft-deleted user must be RECOVERED to ACTIVE via the facade");
     }
 
-    // ── F1.g — rejects unknown status (legacy 'inactive' no longer accepted) ─
+    // ── F17 — legacy "inactive" alias is accepted as a synonym for "blocked" ─
+    // Frontend adminUsers.ts#toBackendStatus emits {status: "inactive"} for the
+    // "block user" button. Pre-F17 the facade rejected this with 400, breaking
+    // the admin dashboard. F17 accepts "inactive" and defaults the reason to a
+    // sentinel so the audit log still records WHY the user was blocked and
+    // operators can filter legacy-shape calls.
 
     @Test
-    void rejectsLegacyInactiveStatus() throws Exception {
+    void acceptsLegacyInactiveStatus_blocksUser_defaultReason() throws Exception {
+        stubFirebaseAuthMutations();
         String adminUid = seedUser("admin11@t.com", "admin");
         seedUser("admin12@t.com", "admin");
-        String targetUid = seedUser("u-bad@t.com", "moderator");
+        String targetUid = seedUser("u-legacy@t.com", "moderator");
+
+        // No reason in the call — F17 must default it for the alias path.
+        authService.updateUserStatus(targetUid, "inactive", adminUid, null);
+
+        User after = userRepository.findByUid(targetUid).orElseThrow();
+        assertTrue(after.isBlocked(),
+                "F17: 'inactive' alias must drive user to BLOCKED via the lifecycle path");
+
+        // Audit log must record the sentinel reason so operators can identify
+        // legacy-shape calls in audit history.
+        QuerySnapshot audits = auditRepo.auditLogsCollection()
+                .whereEqualTo("action", "USER_BLOCKED")
+                .whereEqualTo("entityId", targetUid)
+                .get().get();
+        assertEquals(1, audits.size(),
+                "F17 alias path must write the same USER_BLOCKED audit as canonical blocked");
+        // The buildBlock audit captures the reason in details.reason; verify
+        // the sentinel surfaces there for triage.
+        Object detailsRaw = audits.getDocuments().get(0).get("details");
+        assertTrue(detailsRaw instanceof java.util.Map,
+                "Audit details must be a Map");
+        String recordedReason = (String) ((java.util.Map<?, ?>) detailsRaw).get("reason");
+        assertEquals("legacy-status-update", recordedReason,
+                "F17: audit details.reason must record the legacy sentinel "
+                + "so operators can identify legacy-shape calls");
+    }
+
+    // ── F17 — canonical 'blocked' WITHOUT reason still rejects (strict path) ─
+
+    @Test
+    void canonicalBlockedWithoutReason_stillRejects() throws Exception {
+        String adminUid = seedUser("admin13@t.com", "admin");
+        seedUser("admin14@t.com", "admin");
+        String targetUid = seedUser("u-strict@t.com", "moderator");
 
         assertThrows(IllegalArgumentException.class,
-                () -> authService.updateUserStatus(targetUid, "inactive", adminUid, "x"));
+                () -> authService.updateUserStatus(targetUid, "blocked", adminUid, null),
+                "F17: canonical 'blocked' must still require a reason");
 
-        // Underlying user state must be unchanged
         User after = userRepository.findByUid(targetUid).orElseThrow();
-        assertTrue(after.isActive(), "User state must not change on rejected facade call");
+        assertTrue(after.isActive(),
+                "User state must not change on rejected canonical-blocked call");
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
