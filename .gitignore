@@ -102,6 +102,10 @@ backend/src/generated/
 **/*.keystore
 **/keystore.properties
 
+# Firebase Android config (real file is per-developer / CI secret).
+# Template lives at android/app/google-services.json.template (committed).
+/android/app/google-services.json
+
 # Gradle wrapper for Android (keep)
 /android/gradle/
 /android/gradlew
