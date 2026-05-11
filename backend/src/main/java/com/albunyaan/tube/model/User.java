@@ -281,5 +281,41 @@ public class User {
 
     public Timestamp getProfileCompletedAt() { return profileCompletedAt; }
     public void setProfileCompletedAt(Timestamp t) { this.profileCompletedAt = t; }
+
+    /**
+     * F10: return a defensive copy of this User.
+     *
+     * UserRepository.findByUid is @Cacheable("userStatus") — without a copy,
+     * the cache hands back the same mutable instance to every caller. Any
+     * caller that mutates the returned User (notably AuthService.recordLogin
+     * which calls user.recordLogin() then save) corrupts the cached object,
+     * so the next concurrent lookup sees torn / stale state.
+     *
+     * Timestamps from com.google.cloud are immutable value objects, so a
+     * shallow copy is safe — references can be shared. Only the User shell
+     * itself must be cloned.
+     */
+    public User copy() {
+        User c = new User();
+        c.uid = this.uid;
+        c.email = this.email;
+        c.displayName = this.displayName;
+        c.role = this.role;
+        c.status = this.status;
+        c.createdAt = this.createdAt;
+        c.updatedAt = this.updatedAt;
+        c.lastLoginAt = this.lastLoginAt;
+        c.createdBy = this.createdBy;
+        c.blockedAt = this.blockedAt;
+        c.blockedBy = this.blockedBy;
+        c.blockReason = this.blockReason;
+        c.deletedAt = this.deletedAt;
+        c.deletedBy = this.deletedBy;
+        c.deleteReason = this.deleteReason;
+        c.recoveredAt = this.recoveredAt;
+        c.recoveredBy = this.recoveredBy;
+        c.profileCompletedAt = this.profileCompletedAt;
+        return c;
+    }
 }
 

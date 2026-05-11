@@ -93,6 +93,71 @@ class UserModelTest {
         assertNull(u.getBlockReason());
     }
 
+    // ── F10 — User.copy returns a defensive copy with all fields preserved ──
+
+    @Test void copy_preservesAllFields() {
+        // Seed every settable field, then verify copy mirrors them. Add new fields
+        // here whenever the User schema grows — this test pins the contract.
+        Timestamp now = Timestamp.now();
+        User original = new User();
+        original.setUid("u-copy");
+        original.setEmail("copy@t");
+        original.setDisplayName("Copy Test");
+        original.setRole("admin");
+        original.setStatus("blocked");
+        original.setCreatedAt(now);
+        original.setUpdatedAt(now);
+        original.setLastLoginAt(now);
+        original.setCreatedBy("admin-uid");
+        original.setBlockedAt(now);
+        original.setBlockedBy("admin-uid");
+        original.setBlockReason("policy");
+        original.setDeletedAt(now);
+        original.setDeletedBy("admin-uid");
+        original.setDeleteReason("test");
+        original.setRecoveredAt(now);
+        original.setRecoveredBy("admin-uid");
+        original.setProfileCompletedAt(now);
+
+        User copy = original.copy();
+
+        // Every field on the copy must equal the original.
+        assertEquals(original.getUid(), copy.getUid());
+        assertEquals(original.getEmail(), copy.getEmail());
+        assertEquals(original.getDisplayName(), copy.getDisplayName());
+        assertEquals(original.getRole(), copy.getRole());
+        assertEquals(original.getStatus(), copy.getStatus());
+        assertSame(original.getCreatedAt(), copy.getCreatedAt(),
+                "Timestamps are immutable; ref sharing is fine and avoids allocation");
+        assertSame(original.getUpdatedAt(), copy.getUpdatedAt());
+        assertSame(original.getLastLoginAt(), copy.getLastLoginAt());
+        assertEquals(original.getCreatedBy(), copy.getCreatedBy());
+        assertSame(original.getBlockedAt(), copy.getBlockedAt());
+        assertEquals(original.getBlockedBy(), copy.getBlockedBy());
+        assertEquals(original.getBlockReason(), copy.getBlockReason());
+        assertSame(original.getDeletedAt(), copy.getDeletedAt());
+        assertEquals(original.getDeletedBy(), copy.getDeletedBy());
+        assertEquals(original.getDeleteReason(), copy.getDeleteReason());
+        assertSame(original.getRecoveredAt(), copy.getRecoveredAt());
+        assertEquals(original.getRecoveredBy(), copy.getRecoveredBy());
+        assertSame(original.getProfileCompletedAt(), copy.getProfileCompletedAt());
+    }
+
+    @Test void copy_mutationOnCopyDoesNotAffectOriginal() {
+        User original = new User("u1", "e@t", "Name", "user");
+        original.setBlockReason("original-reason");
+
+        User copy = original.copy();
+        copy.setBlockReason("mutated-reason");
+        copy.setStatus("blocked");
+        copy.setRole("admin");
+
+        // Original is untouched — proves the copy is detached.
+        assertEquals("original-reason", original.getBlockReason());
+        assertEquals("active", original.getStatus());
+        assertEquals("user", original.getRole());
+    }
+
     // ── F8 — recordRecover clears block metadata as well as delete metadata ──
     // Pre-fix a block→softDelete→recover path left blockedAt/By/Reason populated
     // on an ACTIVE user doc. The User doc must mirror only the CURRENT state.

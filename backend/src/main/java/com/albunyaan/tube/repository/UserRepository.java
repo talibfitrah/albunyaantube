@@ -14,6 +14,8 @@ import com.google.cloud.firestore.FieldPath;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.google.cloud.firestore.QuerySnapshot;
 import com.google.cloud.firestore.WriteResult;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationContext;
 import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
@@ -36,6 +38,17 @@ public class UserRepository {
     private final Firestore firestore;
     private final FirestoreTimeoutProperties timeoutProperties;
 
+    /**
+     * F10: ApplicationContext is used only to retrieve the proxied self-reference
+     * so {@code @Cacheable} on {@link #loadByUid(String)} fires when invoked from
+     * {@link #findByUid(String)}. Direct {@code this.loadByUid(uid)} would bypass
+     * the cache aspect (proxy unwraps to the raw target). Field-injected on
+     * purpose: ctor-injection would force the existing UserRepositoryTest to be
+     * rewritten with a Spring application context.
+     */
+    @Autowired
+    private ApplicationContext applicationContext;
+
     public UserRepository(Firestore firestore, FirestoreTimeoutProperties timeoutProperties) {
         this.firestore = firestore;
         this.timeoutProperties = timeoutProperties;
@@ -57,12 +70,54 @@ public class UserRepository {
         return user;
     }
 
-    @Cacheable(value = "userStatus", key = "#uid")
+    /**
+     * F10: returns a defensive copy of the cached User on every call.
+     *
+     * Pre-fix, @Cacheable cached Optional<User> wrapping a mutable User. Every
+     * cache hit returned the SAME mutable reference, so AuthService.recordLogin
+     * (which calls user.recordLogin() then save) was mutating the cached User
+     * in place. Concurrent callers saw torn state for up to the 60s TTL window.
+     *
+     * Fix shape: a package-private @Cacheable {@link #loadByUid(String)} owns
+     * the cache layer. The public findByUid delegates through the Spring proxy
+     * (cacheManager-driven {@code self-call via this::loadByUid won't apply
+     * @Cacheable}, so we use the injected self-reference) and ALWAYS clones
+     * before returning. The cached value stays canonical; callers receive
+     * independent copies they can freely mutate without corrupting cache.
+     */
     public Optional<User> findByUid(String uid) throws ExecutionException, InterruptedException, TimeoutException {
+        Optional<User> cached = self().loadByUid(uid);
+        // Defensive copy — Optional.map allocates a new Optional too.
+        return cached.map(User::copy);
+    }
+
+    /**
+     * Package-private cached loader. Not for direct call by other classes —
+     * callers must go through {@link #findByUid(String)} which adds the
+     * defensive copy on the way out.
+     */
+    @Cacheable(value = "userStatus", key = "#uid")
+    public Optional<User> loadByUid(String uid) throws ExecutionException, InterruptedException, TimeoutException {
         DocumentReference docRef = getCollection().document(uid);
         // Single document reads: use shorter timeout (2 seconds)
         User user = docRef.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS).toObject(User.class);
         return Optional.ofNullable(user);
+    }
+
+    /**
+     * Returns the proxied self-reference so {@code @Cacheable} on
+     * {@link #loadByUid} fires when called from a sibling method. Without this,
+     * a direct {@code this.loadByUid(uid)} call would bypass the cache aspect.
+     *
+     * If {@code applicationContext} is null (unit test that constructs the
+     * repository directly without a Spring context), fall back to {@code this}.
+     * The cache aspect won't fire in that scenario — acceptable for unit tests
+     * that mock Firestore directly.
+     */
+    private UserRepository self() {
+        return applicationContext == null
+                ? this
+                : applicationContext.getBean(UserRepository.class);
     }
 
     public Optional<User> findByEmail(String email) throws ExecutionException, InterruptedException, TimeoutException {
