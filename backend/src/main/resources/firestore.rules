@@ -44,6 +44,15 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isSelf(userId) || isAdmin();
       allow write: if isAdmin();
+      // Plan C T4 — self-write specific profile sub-fields, only when in PENDING_PROFILE.
+      // Backend mediates all writes today; this is defense-in-depth so any future
+      // direct-from-client write is limited to the bootstrap field set.
+      allow update: if isSelf(userId) &&
+                       resource.data.status == 'pending_profile' &&
+                       request.resource.data.diff(resource.data)
+                         .affectedKeys()
+                         .hasOnly(['displayName', 'dateOfBirth', 'updatedAt',
+                                  'profileCompletedAt', 'status']);
     }
 
     // Categories collection
