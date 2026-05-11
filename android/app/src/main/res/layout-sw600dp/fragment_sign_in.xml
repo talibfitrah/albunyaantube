@@ -95,7 +95,7 @@
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/submitButton"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="@dimen/auth_button_height"
                 android:layout_marginTop="@dimen/spacing_md"
                 tools:text="Sign in"/>
 
@@ -119,7 +119,7 @@
                 android:id="@+id/googleButton"
                 style="@style/Widget.Material3.Button.OutlinedButton"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="@dimen/auth_button_height"
                 android:layout_marginTop="@dimen/spacing_sm"
                 android:text="@string/auth_google_button"/>
 
@@ -127,7 +127,7 @@
                 android:id="@+id/microsoftButton"
                 style="@style/Widget.Material3.Button.OutlinedButton"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="@dimen/auth_button_height"
                 android:layout_marginTop="@dimen/spacing_sm"
                 android:text="@string/auth_microsoft_button"
                 android:visibility="gone"

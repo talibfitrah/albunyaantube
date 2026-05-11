@@ -15,6 +15,9 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import com.albunyaan.tube.R
+import com.albunyaan.tube.auth.AccountRepository
+import com.albunyaan.tube.auth.AccountStatus
+import com.albunyaan.tube.auth.AuthRepository
 import com.albunyaan.tube.preferences.SettingsPreferences
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.AndroidEntryPoint
@@ -48,6 +51,19 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
      */
     @Inject lateinit var firebaseAuth: FirebaseAuth
 
+    /**
+     * Plan C T7: fetch /api/account/me in parallel with the splash animation
+     * to determine account status for routing. Retry logic lives in
+     * [AccountRepositoryImpl]; SplashFragment just calls fetchMe().
+     */
+    @Inject lateinit var accountRepository: AccountRepository
+
+    /**
+     * D12: needed to sign out when /api/account/me fails after retries, so
+     * the user gets a clean re-attempt instead of an infinite signed-in-but-stuck loop.
+     */
+    @Inject lateinit var authRepository: AuthRepository
+
     /** Track running animators for cleanup on fragment destruction */
     private val runningAnimators = mutableListOf<Animator>()
 
@@ -77,9 +93,16 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
                 settingsPreferences.onboardingCompleted.first()
             }
 
+            // Plan C T7: fetch /api/account/me in parallel. If signed out or fetch
+            // fails, status is null — SplashRouter treats null as "route to sign-in".
+            val accountStatusDeferred: Deferred<AccountStatus?> = async {
+                if (firebaseAuth.currentUser == null) null
+                else accountRepository.fetchMe().getOrNull()?.status
+            }
+
             // Check if this is a deep link launch - if so, skip splash entirely
             if (isDeepLinkLaunch()) {
-                routeAfterSplash(onboardingDeferred.await())
+                routeAfterSplash(onboardingDeferred.await(), accountStatusDeferred.await())
                 return@launch
             }
 
@@ -138,18 +161,34 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
             // Phase 5: Hold for a moment, then navigate
             delay(POST_ANIMATION_DELAY)
 
-            // Await the onboarding preference (should already be available from parallel fetch)
+            // Await both deferred values (should already be available from parallel fetch)
             val onboardingCompleted = onboardingDeferred.await()
-            routeAfterSplash(onboardingCompleted)
+            val accountStatus = accountStatusDeferred.await()
+            routeAfterSplash(onboardingCompleted, accountStatus)
         }
     }
 
     /** Routing logic in [SplashRouter] so it's unit-testable in isolation. */
-    private fun routeAfterSplash(onboardingCompleted: Boolean) {
+    private fun routeAfterSplash(onboardingCompleted: Boolean, accountStatus: AccountStatus?) {
         if (findNavController().currentDestination?.id != R.id.splashFragment) return
+        val signedIn = firebaseAuth.currentUser != null
+        if (signedIn && accountStatus == null) {
+            // D12: /api/account/me fetch failed after retries. Surface to user
+            // and sign out so they get a clean re-attempt instead of an infinite
+            // signed-in-but-stuck loop.
+            android.widget.Toast.makeText(
+                requireContext(),
+                getString(R.string.splash_couldnt_connect),
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+            viewLifecycleOwner.lifecycleScope.launch {
+                authRepository.signOut()
+            }
+        }
         val action = SplashRouter.decideSplashRoute(
             onboardingCompleted = onboardingCompleted,
-            signedIn = firebaseAuth.currentUser != null,
+            signedIn = signedIn,
+            accountStatus = accountStatus,
         )
         findNavController().navigate(action)
     }

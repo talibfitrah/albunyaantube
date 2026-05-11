@@ -87,6 +87,10 @@
     <dimen name="onboarding_description_size">16sp</dimen>
     <dimen name="onboarding_padding">24dp</dimen>
     <dimen name="onboarding_button_height">56dp</dimen>
+
+    <!-- Plan C T13 (post-review): primary auth buttons (Sign in / Google / Microsoft)
+         use a taller 72dp container — 1.5x the Material3 default (48dp). -->
+    <dimen name="auth_button_height">72dp</dimen>
     <dimen name="onboarding_button_corner_radius">28dp</dimen>
     <dimen name="onboarding_button_max_width">400dp</dimen>
     <dimen name="onboarding_content_max_width">600dp</dimen>
