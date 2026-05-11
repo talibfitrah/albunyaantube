@@ -654,4 +654,40 @@
          visual left of an LTR handle inside an RTL paragraph. -->
     <string name="shorts_channel_handle">\@%1$s</string>
     <string name="back">Back</string>
+
+    <!-- Plan B (ANDROID-AUTH-01) T4: Sign-in / sign-up form -->
+    <string name="auth_sign_in_title">Sign in</string>
+    <string name="auth_sign_up_title">Create account</string>
+    <string name="auth_email_hint">Email</string>
+    <string name="auth_password_hint">Password</string>
+    <string name="auth_sign_in_button">Sign in</string>
+    <string name="auth_sign_up_button">Create account</string>
+    <string name="auth_forgot_password">Forgot password?</string>
+    <string name="auth_create_account_link">Don\'t have an account? Create one</string>
+    <string name="auth_have_account_link">Already have an account? Sign in</string>
+    <string name="auth_divider_or">or</string>
+    <string name="auth_google_button">Continue with Google</string>
+    <string name="auth_microsoft_button">Continue with Microsoft</string>
+    <string name="auth_microsoft_unavailable_tv">Microsoft sign-in is not available on TV. Use Google or email instead.</string>
+    <string name="auth_password_reset_sent">Password reset email sent</string>
+    <string name="auth_error_invalid_email">That email looks wrong</string>
+    <string name="auth_error_wrong_password">Email or password is incorrect</string>
+    <string name="auth_error_user_not_found">No account found with that email</string>
+    <string name="auth_error_user_disabled">This account has been blocked. Contact support.</string>
+    <string name="auth_error_email_in_use">An account already exists with that email</string>
+    <string name="auth_error_weak_password">Password must be at least 6 characters</string>
+    <string name="auth_error_network">No internet connection</string>
+    <string name="auth_error_too_many_requests">Too many attempts — please wait and try again</string>
+    <string name="auth_error_invalid_credential">Sign-in credential is invalid or expired</string>
+    <string name="auth_error_google">Google sign-in failed</string>
+    <string name="auth_error_microsoft">Microsoft sign-in failed</string>
+    <string name="auth_error_password_reset_failed">Couldn\'t send the reset email</string>
+    <string name="auth_error_generic">Something went wrong</string>
+
+    <!-- Account-status dialogs (Plan A 403 responses) -->
+    <string name="account_blocked_title">Account blocked</string>
+    <string name="account_blocked_body">Your account has been blocked by an administrator. Contact support for details.</string>
+    <string name="account_deleted_title">Account deleted</string>
+    <string name="account_deleted_body">Your account has been deleted. To use FitrahTube again, create a new account.</string>
+    <string name="ok">OK</string>
 </resources>
