@@ -24,12 +24,11 @@
             app:popUpTo="@id/app_nav_graph"
             app:popUpToInclusive="true"
             app:launchSingleTop="true"/>
-        <!-- Plan C T7 — action ID needed for SplashRouter. Destination is TEMPORARILY
-             mainShellFragment; T10 will repoint to profileBootstrapFragment once it
-             exists. Do not exercise this action in production until T10 lands. -->
+        <!-- Plan C T8: now points to profileBootstrapFragment (was mainShellFragment
+             T7 stub). T10 will finalize SignInFragment → splash redirect. -->
         <action
             android:id="@+id/action_splash_to_bootstrap"
-            app:destination="@id/mainShellFragment"
+            app:destination="@id/profileBootstrapFragment"
             app:popUpTo="@id/splashFragment"
             app:popUpToInclusive="true" />
     </fragment>
@@ -72,5 +71,24 @@
         android:id="@+id/mainShellFragment"
         android:name="com.albunyaan.tube.ui.MainShellFragment"
         android:label="FitrahTube" />
+
+    <!-- Plan C T8: ProfileBootstrap destination. -->
+    <fragment
+        android:id="@+id/profileBootstrapFragment"
+        android:name="com.albunyaan.tube.ui.bootstrap.ProfileBootstrapFragment"
+        android:label="Profile Bootstrap">
+        <!-- Navigates to main shell after successful profile save.
+             popUpTo splashFragment inclusive so back-stack is clean. -->
+        <action
+            android:id="@+id/action_bootstrap_to_main"
+            app:destination="@id/mainShellFragment"
+            app:popUpTo="@id/splashFragment"
+            app:popUpToInclusive="true" />
+        <!-- Navigates to age-ineligible screen on 422.
+             T9 will repoint destination to ageIneligibleFragment once it exists. -->
+        <action
+            android:id="@+id/action_bootstrap_to_ageIneligible"
+            app:destination="@id/mainShellFragment" />
+    </fragment>
 
 </navigation>

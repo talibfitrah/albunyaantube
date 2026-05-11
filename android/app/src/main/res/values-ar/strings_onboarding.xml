@@ -18,4 +18,15 @@
     <!-- Page 3 -->
     <string name="onboarding_page3_title">حمّل للمشاهدة بدون إنترنت</string>
     <string name="onboarding_page3_desc">احفظ محتواك المفضل للمشاهدة أو الاستماع بدون اتصال، في أي وقت وأي مكان.</string>
+
+    <!-- Plan C T8: ProfileBootstrap (English placeholders — human translation pending) -->
+    <string name="bootstrap_title">Tell us about you</string>
+    <string name="bootstrap_display_name_label">What should we call you?</string>
+    <string name="bootstrap_display_name_hint">Display name</string>
+    <string name="bootstrap_dob_label">Date of birth</string>
+    <string name="bootstrap_dob_hint">Tap to select</string>
+    <string name="bootstrap_submit_button">Continue</string>
+    <string name="bootstrap_error_invalid_name">Please tell us your name (1–40 characters)</string>
+    <string name="bootstrap_error_invalid_dob">Please choose your date of birth</string>
+    <string name="bootstrap_error_save_failed">Couldn\'t save your profile — try again</string>
 </resources>
