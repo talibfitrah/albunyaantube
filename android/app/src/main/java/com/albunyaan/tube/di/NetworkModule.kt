@@ -160,6 +160,11 @@ object NetworkModule {
     fun provideIndexApi(retrofit: Retrofit): IndexApi {
         return retrofit.create(IndexApi::class.java)
     }
+
+    @Provides
+    @Singleton
+    fun provideAccountService(retrofit: Retrofit): com.albunyaan.tube.data.account.AccountService =
+        retrofit.create(com.albunyaan.tube.data.account.AccountService::class.java)
 }
 
 /** Moshi adapter for java.time.OffsetDateTime used in OpenAPI-generated models. */
