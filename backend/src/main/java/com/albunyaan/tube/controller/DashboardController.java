@@ -58,10 +58,13 @@ public class DashboardController {
             @RequestParam(required = false, defaultValue = "LAST_7_DAYS") String timeframe
     ) throws Exception {
 
-        // Count totals - using optimized count queries
+        // Count totals - using optimized count queries.
+        // F11: exclude soft-deleted users from the live total — pre-fix this
+        // included deleted rows, so the dashboard "total users" exceeded the
+        // visible row count from GET /api/admin/users.
         long totalCategories = categoryRepository.count();
         long totalChannels = channelRepository.countAll();
-        long totalUsers = userRepository.countAll();
+        long totalUsers = userRepository.countAll(false);
 
         // Count by status - using database-level queries instead of loading all channels
         long pendingChannels = channelRepository.countByStatus("PENDING");

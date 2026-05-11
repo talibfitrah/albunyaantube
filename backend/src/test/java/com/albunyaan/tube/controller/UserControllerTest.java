@@ -81,7 +81,7 @@ class UserControllerTest {
         when(userRepository.findByUid("test-admin-uid")).thenReturn(Optional.of(testAdmin));
 
         // Act
-        ResponseEntity<User> response = userController.getUserByUid("test-admin-uid");
+        ResponseEntity<User> response = userController.getUserByUid("test-admin-uid", false);
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
@@ -95,11 +95,41 @@ class UserControllerTest {
         when(userRepository.findByUid("nonexistent")).thenReturn(Optional.empty());
 
         // Act
-        ResponseEntity<User> response = userController.getUserByUid("nonexistent");
+        ResponseEntity<User> response = userController.getUserByUid("nonexistent", false);
 
         // Assert
         assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
         verify(userRepository).findByUid("nonexistent");
+    }
+
+    // ── F11 — getUserByUid filters deleted users by default ──────────────────
+    // Pre-F11 a soft-deleted user was still returned by /api/admin/users/{uid},
+    // diverging from the GET /api/admin/users list filter. Now defaults to 404
+    // for deleted users; includeDeleted=true exposes them.
+
+    @Test
+    void getUserByUid_returnsNotFound_forDeleted_byDefault() throws Exception {
+        // Arrange: returns a soft-deleted user.
+        User deleted = new User("u-del", "del@t.com", "Deleted", "moderator");
+        deleted.setStatus("deleted");
+        when(userRepository.findByUid("u-del")).thenReturn(Optional.of(deleted));
+
+        // Act + Assert: default (includeDeleted=false) → 404.
+        ResponseEntity<User> response = userController.getUserByUid("u-del", false);
+        assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode(),
+                "Deleted users must return 404 by default");
+    }
+
+    @Test
+    void getUserByUid_returnsDeleted_whenIncludeDeletedTrue() throws Exception {
+        User deleted = new User("u-del", "del@t.com", "Deleted", "moderator");
+        deleted.setStatus("deleted");
+        when(userRepository.findByUid("u-del")).thenReturn(Optional.of(deleted));
+
+        ResponseEntity<User> response = userController.getUserByUid("u-del", true);
+        assertEquals(HttpStatus.OK, response.getStatusCode(),
+                "includeDeleted=true must allow deleted users through");
+        assertEquals("del@t.com", response.getBody().getEmail());
     }
 
     @Test

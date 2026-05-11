@@ -134,6 +134,96 @@ class UserControllerLifecycleIntegrationTest extends BaseIntegrationTest {
             .andExpect(jsonPath("$[?(@.uid=='" + deadUid + "')]").exists());
     }
 
+    // ── F11 — getUserByUid + getUsersByRole + countAll honor includeDeleted ──
+    // Pre-F11 these endpoints returned/counted deleted users unconditionally,
+    // diverging from GET /api/admin/users behaviour. Admin UI saw inconsistent
+    // "total: 10" but visible row count of 8.
+
+    @Test
+    void getUserByUid_returnsNotFoundForDeleted_byDefault() throws Exception {
+        String adminUid = seedUser("a-f11-1@t", "admin");
+        seedUser("a-f11-2@t", "admin"); // ensure not last
+        String deadUid = seedUser("victim-f11@t", "moderator");
+        stubToken(adminUid, "admin");
+
+        mvc.perform(delete("/api/admin/users/" + deadUid + "?reason=test")
+                .header("Authorization", "Bearer fake-token"))
+            .andExpect(status().isNoContent());
+
+        // Default (no param): deleted user returns 404
+        mvc.perform(get("/api/admin/users/" + deadUid)
+                .header("Authorization", "Bearer fake-token"))
+            .andExpect(status().isNotFound());
+
+        // Explicit opt-in: 200 with the body
+        mvc.perform(get("/api/admin/users/" + deadUid + "?includeDeleted=true")
+                .header("Authorization", "Bearer fake-token"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.uid").value(deadUid));
+    }
+
+    @Test
+    void getUsersByRole_excludesDeleted_byDefault() throws Exception {
+        String adminUid = seedUser("a-f11-3@t", "admin");
+        seedUser("a-f11-4@t", "admin"); // ensure not last
+        String liveUid = seedUser("live-mod@t", "moderator");
+        String deadUid = seedUser("dead-mod@t", "moderator");
+        stubToken(adminUid, "admin");
+
+        // Soft-delete one moderator
+        mvc.perform(delete("/api/admin/users/" + deadUid + "?reason=test")
+                .header("Authorization", "Bearer fake-token"))
+            .andExpect(status().isNoContent());
+
+        // Default: deleted user is filtered out of the role list
+        mvc.perform(get("/api/admin/users/role/moderator")
+                .header("Authorization", "Bearer fake-token"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[?(@.uid=='" + liveUid + "')]").exists())
+            .andExpect(jsonPath("$[?(@.uid=='" + deadUid + "')]").doesNotExist());
+
+        // Explicit opt-in: deleted user appears
+        mvc.perform(get("/api/admin/users/role/moderator?includeDeleted=true")
+                .header("Authorization", "Bearer fake-token"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[?(@.uid=='" + deadUid + "')]").exists());
+    }
+
+    @Test
+    void countAll_excludesDeleted_byDefault() throws Exception {
+        String adminUid = seedUser("a-f11-5@t", "admin");
+        seedUser("a-f11-6@t", "admin"); // ensure not last
+        seedUser("live-1@t", "moderator");
+        String dead1 = seedUser("dead-1@t", "moderator");
+        String dead2 = seedUser("dead-2@t", "moderator");
+        stubToken(adminUid, "admin");
+
+        // 5 users total (2 admins + 1 active mod + 2 to-be-deleted mods).
+        // Pre-delete: countAll(false) returns 5, countAll() returns 5.
+        long beforeLive = userRepository.countAll(false);
+        long beforeAll = userRepository.countAll();
+        assertEquals(beforeAll, beforeLive,
+                "Pre-delete the two counts must match — no deleted users yet");
+
+        // Soft-delete 2 users.
+        mvc.perform(delete("/api/admin/users/" + dead1 + "?reason=test")
+                .header("Authorization", "Bearer fake-token"))
+            .andExpect(status().isNoContent());
+        mvc.perform(delete("/api/admin/users/" + dead2 + "?reason=test")
+                .header("Authorization", "Bearer fake-token"))
+            .andExpect(status().isNoContent());
+
+        long liveAfter = userRepository.countAll(false);
+        long allAfter = userRepository.countAll();
+        long deletedAfter = userRepository.countDeleted();
+        assertEquals(beforeLive - 2, liveAfter,
+                "countAll(false) must drop by exactly the number of deletions");
+        assertEquals(beforeAll, allAfter,
+                "countAll() (includeDeleted) must NOT drop — deleted rows still exist");
+        assertEquals(2L, deletedAfter,
+                "countDeleted() must return exactly the deleted count");
+    }
+
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
     /**

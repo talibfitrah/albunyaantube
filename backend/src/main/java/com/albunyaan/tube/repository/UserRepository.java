@@ -270,12 +270,48 @@ public class UserRepository {
     }
 
     /**
-     * Count all users using server-side aggregation
+     * Count all users (including soft-deleted) using server-side aggregation.
+     *
+     * F11: pre-fix this was the only count. Dashboard "total users" mixed in
+     * deleted users, while GET /api/admin/users hid them — so the dashboard
+     * "total" was always larger than the visible row count. Use
+     * {@link #countAll(boolean)} with {@code includeDeleted=false} for live
+     * dashboard totals.
      */
     public long countAll() throws ExecutionException, InterruptedException, TimeoutException {
         AggregateQuery countQuery = getCollection().count();
         AggregateQuerySnapshot snapshot = countQuery.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
         return snapshot.getCount();
+    }
+
+    /**
+     * Count users, optionally excluding soft-deleted ones.
+     *
+     * D3 parity: matches {@link #findAll(boolean)}'s whitelist semantics
+     * (uses {@code whereIn("status", [active, blocked, pending_profile])})
+     * rather than {@code whereNotEqualTo("status", "deleted")} — Firestore's
+     * {@code !=} excludes documents with a missing/null status field, which
+     * would silently drop pre-backfill legacy users from the count.
+     *
+     * @param includeDeleted when true, delegates to {@link #countAll()}
+     *                       (no filter). When false, counts only
+     *                       active/blocked/pending_profile users.
+     */
+    public long countAll(boolean includeDeleted) throws ExecutionException, InterruptedException, TimeoutException {
+        if (includeDeleted) return countAll();
+        AggregateQuery q = firestore.collection(COLLECTION_NAME)
+                .whereIn("status", List.of("active", "blocked", "pending_profile"))
+                .count();
+        return q.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).getCount();
+    }
+
+    /**
+     * Count soft-deleted users. Useful for admin dashboards that want to
+     * expose both "live" and "deleted" totals.
+     */
+    public long countDeleted() throws ExecutionException, InterruptedException, TimeoutException {
+        AggregateQuery q = getCollection().whereEqualTo("status", "deleted").count();
+        return q.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).getCount();
     }
 
     /**

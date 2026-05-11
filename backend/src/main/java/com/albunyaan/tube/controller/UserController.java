@@ -65,13 +65,24 @@ public class UserController {
     }
 
     /**
-     * Get user by UID
+     * Get user by UID.
+     *
+     * F11: hides soft-deleted users by default to match GET /api/admin/users
+     * semantics. Pre-fix this endpoint returned deleted users unconditionally,
+     * so an admin UI calling /api/admin/users (count=N) and then
+     * /api/admin/users/{uid} for each row saw inconsistent results.
+     *
+     * @param includeDeleted when true, returns the user even if soft-deleted.
      */
     @GetMapping("/{uid}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<User> getUserByUid(@PathVariable String uid) {
+    public ResponseEntity<User> getUserByUid(
+            @PathVariable String uid,
+            @RequestParam(required = false, defaultValue = "false") boolean includeDeleted) {
         try {
             return userRepository.findByUid(uid)
+                    // F11: deleted users return 404 unless explicitly opted in.
+                    .filter(u -> includeDeleted || !u.isDeleted())
                     .map(ResponseEntity::ok)
                     .orElse(ResponseEntity.notFound().build());
         } catch (TimeoutException e) {
