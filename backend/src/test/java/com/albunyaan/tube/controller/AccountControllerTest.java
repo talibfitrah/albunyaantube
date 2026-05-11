@@ -72,6 +72,13 @@ class AccountControllerTest {
         objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
     }
 
+    @org.junit.jupiter.api.AfterEach
+    void clearSecurityContext() {
+        // Spring TestContext does NOT auto-clear SecurityContextHolder (ThreadLocal).
+        // Explicit teardown so no auth state leaks across tests.
+        SecurityContextHolder.clearContext();
+    }
+
     private User activeUser() {
         User u = new User();
         u.setUid(TEST_UID);

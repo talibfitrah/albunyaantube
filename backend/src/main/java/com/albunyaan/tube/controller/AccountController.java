@@ -16,6 +16,8 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Plan C T3: account bootstrap endpoints.
@@ -42,7 +44,8 @@ public class AccountController {
     @PostMapping("/profile")
     public ResponseEntity<?> completeProfile(
             @AuthenticationPrincipal FirebaseUserDetails principal,
-            @Valid @RequestBody CompleteProfileRequest req) throws Exception {
+            @Valid @RequestBody CompleteProfileRequest req)
+            throws ExecutionException, InterruptedException, TimeoutException {
         var saved = accountProfileService.completeProfile(
                 principal.getUid(), req.getDisplayName(), req.getDateOfBirth());
         return ResponseEntity.ok(AccountMeResponse.from(saved));
@@ -50,7 +53,8 @@ public class AccountController {
 
     @GetMapping("/me")
     public ResponseEntity<?> getMe(
-            @AuthenticationPrincipal FirebaseUserDetails principal) throws Exception {
+            @AuthenticationPrincipal FirebaseUserDetails principal)
+            throws ExecutionException, InterruptedException, TimeoutException {
         var user = userRepository.findByUid(principal.getUid())
                 .orElseThrow(() -> new UserNotFoundException(principal.getUid()));
         return ResponseEntity.ok(AccountMeResponse.from(user));
