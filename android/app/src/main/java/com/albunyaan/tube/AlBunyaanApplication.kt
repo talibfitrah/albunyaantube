@@ -1,6 +1,7 @@
 package com.albunyaan.tube
 
 import android.app.Application
+import android.content.Context
 import android.util.Log
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
@@ -8,6 +9,9 @@ import com.albunyaan.tube.app.AppLifecycleTracker
 import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
 import com.albunyaan.tube.data.me.work.RefreshScheduler
 import com.albunyaan.tube.download.DownloadScheduler
+import com.albunyaan.tube.BuildConfig
+import com.google.firebase.FirebaseApp
+import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 
@@ -34,6 +38,45 @@ class AlBunyaanApplication : Application(), Configuration.Provider {
 
     @Inject
     lateinit var refreshScheduler: RefreshScheduler
+
+    /**
+     * Plan B (ANDROID-AUTH-01) T3: initialize FirebaseApp BEFORE Hilt's
+     * eager-injection chain runs in onCreate(). On real devices, the
+     * google-services plugin's manifest <provider> auto-initializes Firebase
+     * before any Application code; in Robolectric / JVM unit tests the
+     * provider does not run, so OkHttpClient → FirebaseAuthInterceptor →
+     * FirebaseAuth.getInstance() throws "Default FirebaseApp not initialized".
+     *
+     * attachBaseContext runs before onCreate (and before Hilt_*.onCreate()
+     * calls hiltInternalInject), so this is the earliest hook we have.
+     */
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(base)
+        if (FirebaseApp.getApps(this).isEmpty()) {
+            FirebaseApp.initializeApp(this)
+        }
+        applyAuthEmulatorOverrideIfConfigured()
+    }
+
+    /**
+     * Plan B (ANDROID-AUTH-01) T7: dev-time hop to a locally-running Firebase
+     * Auth Emulator instead of the live service. Gated on BOTH BuildConfig.DEBUG
+     * (release builds must never hit an emulator) AND a non-empty
+     * AUTH_EMULATOR_HOST (so dev builds default to live unless explicitly set
+     * in local.properties).
+     */
+    private fun applyAuthEmulatorOverrideIfConfigured() {
+        if (!BuildConfig.DEBUG) return
+        val host = BuildConfig.AUTH_EMULATOR_HOST
+        if (host.isNullOrBlank()) return
+        try {
+            FirebaseAuth.getInstance().useEmulator(host, BuildConfig.AUTH_EMULATOR_PORT)
+            Log.i(TAG, "Firebase Auth pointed at emulator $host:${BuildConfig.AUTH_EMULATOR_PORT}")
+        } catch (e: IllegalStateException) {
+            // Already configured (hot reload / re-create). Safe to ignore.
+            Log.d(TAG, "Auth emulator override no-op: ${e.message}")
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()

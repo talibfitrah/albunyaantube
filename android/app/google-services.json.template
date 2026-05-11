@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "__REPLACE_WITH_PROJECT_NUMBER__",
+    "project_id": "__REPLACE_WITH_PROJECT_ID__",
+    "storage_bucket": "__REPLACE_WITH_PROJECT_ID__.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "__REPLACE_WITH_MOBILESDK_APP_ID__",
+        "android_client_info": {
+          "package_name": "com.albunyaan.tube"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "__REPLACE_WITH_WEB_OAUTH_CLIENT_ID__.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "__REPLACE_WITH_ANDROID_API_KEY__"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "__REPLACE_WITH_WEB_OAUTH_CLIENT_ID__.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

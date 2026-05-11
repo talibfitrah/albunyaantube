@@ -8,9 +8,14 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.navigation.Navigation
 import androidx.navigation.fragment.findNavController
 import com.albunyaan.tube.R
+import com.albunyaan.tube.auth.AuthRepository
+import com.albunyaan.tube.auth.AuthState
 import com.albunyaan.tube.databinding.FragmentSettingsBinding
 import com.albunyaan.tube.download.DownloadStorage
 import com.albunyaan.tube.locale.LocaleManager
@@ -33,6 +38,10 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
     @Inject
     lateinit var updatePromptFlow: com.albunyaan.tube.update.UpdatePromptFlow
 
+    /** Plan B (ANDROID-AUTH-01) T6: source of truth for sign-out + Account section visibility. */
+    @Inject
+    lateinit var authRepository: AuthRepository
+
     private var binding: FragmentSettingsBinding? = null
     private lateinit var preferences: SettingsPreferences
 
@@ -46,6 +55,83 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
         loadPreferences()
         setupListeners()
         setupStorageManagement()
+        setupAccountSection()
+    }
+
+    /**
+     * Plan B (ANDROID-AUTH-01) T6: bind the Account card visibility and the
+     * signed-in subtitle to [AuthRepository.authState]. Hidden when signed-out.
+     */
+    private fun setupAccountSection() {
+        val root = binding?.root ?: return
+        val sectionHeader = root.findViewById<View>(R.id.accountSectionHeader)
+        val sectionCard = root.findViewById<View>(R.id.accountSectionCard)
+        val subtitle = root.findViewById<TextView>(R.id.signOutSubtitle)
+        val signOutItem = root.findViewById<View>(R.id.signOutItem)
+
+        signOutItem?.setOnClickListener { confirmSignOut() }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                authRepository.authState.collect { state ->
+                    val signedIn = state is AuthState.SignedIn
+                    sectionHeader?.visibility = if (signedIn) View.VISIBLE else View.GONE
+                    sectionCard?.visibility = if (signedIn) View.VISIBLE else View.GONE
+                    subtitle?.text = when {
+                        state is AuthState.SignedIn && !state.user.email.isNullOrBlank() ->
+                            getString(R.string.settings_account_signed_in_as, state.user.email)
+                        state is AuthState.SignedIn ->
+                            getString(R.string.settings_account_signed_in_default)
+                        else -> null
+                    }
+                }
+            }
+        }
+    }
+
+    private fun confirmSignOut() {
+        val ctx = context ?: return
+        MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.settings_account_sign_out_confirm_title)
+            .setMessage(R.string.settings_account_sign_out_confirm_body)
+            .setPositiveButton(R.string.settings_account_sign_out_confirm_action) { _, _ ->
+                viewLifecycleOwner.lifecycleScope.launch {
+                    authRepository.signOut()
+                    // SettingsFragment lives inside main_tabs_nav (nested NavHost in
+                    // MainShellFragment); signInFragment lives in the outer app_nav_graph
+                    // (hosted by MainActivity.nav_host_fragment). findNavController()
+                    // returns the nested controller, which doesn't know about signIn —
+                    // navigating there crashes with IllegalArgumentException. Grab the
+                    // activity-level controller and route from there.
+                    //
+                    // Guards: between the dialog tap and this continuation the user
+                    // may have backgrounded or rotated. activity can be null, the
+                    // activity may be finishing, or NavHostFragment's view may be
+                    // detached — Navigation.findNavController(activity, ...) throws
+                    // IllegalStateException in that case.
+                    val activity = activity ?: return@launch
+                    if (activity.isFinishing || activity.isDestroyed) return@launch
+                    val outerNav = try {
+                        Navigation.findNavController(activity, R.id.nav_host_fragment)
+                    } catch (e: IllegalStateException) {
+                        android.util.Log.w(
+                            "SettingsFragment",
+                            "outer NavController unavailable during sign-out — skipping nav",
+                            e,
+                        )
+                        return@launch
+                    }
+                    outerNav.navigate(
+                        R.id.signInFragment,
+                        null,
+                        androidx.navigation.navOptions {
+                            popUpTo(R.id.app_nav_graph) { inclusive = true }
+                        },
+                    )
+                }
+            }
+            .setNegativeButton(R.string.settings_account_sign_out_cancel, null)
+            .show()
     }
 
     /**

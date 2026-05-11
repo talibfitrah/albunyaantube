@@ -38,11 +38,35 @@ jobs:
           chmod +x gradlew
           ./gradlew generateKotlinDtos
 
+      # Materialize google-services.json (gitignored). If the GOOGLE_SERVICES_JSON
+      # secret is set (base64-encoded full file), decode it. Otherwise fall back
+      # to the committed CI stub — valid format, non-functional values; sufficient
+      # for the google-services Gradle plugin to generate BuildConfig at build
+      # time. CI does not run the APK, so the non-functional values do not block
+      # unit tests (which mock FirebaseAuth) or lint.
+      - name: Materialize google-services.json
+        env:
+          GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON_B64" ]; then
+            echo "Using GOOGLE_SERVICES_JSON secret"
+            printf '%s' "$GOOGLE_SERVICES_JSON_B64" | base64 -d > app/google-services.json
+          else
+            echo "GOOGLE_SERVICES_JSON secret not set — using CI stub (non-functional Firebase IDs)"
+            cp app/google-services.json.ci-stub app/google-services.json
+          fi
+
       - name: Build debug APK (canonical)
         run: ./gradlew assembleDebug
 
+      # Scoped to debug variant: schemas live in the debug source set only (see
+      # comment in app/build.gradle.kts:201) — running `./gradlew test`
+      # fans out to release+benchmark variants where MigrationTestHelper
+      # cannot find the schema JSON files, causing AppDatabaseMigration*Test
+      # to fail with FileNotFoundException. The author's design intent was
+      # debug-variant-only Room migration testing; this matches it.
       - name: Run unit tests (with 300s timeout)
-        run: timeout 300 ./gradlew test
+        run: timeout 300 ./gradlew testDebugUnitTest
 
       - name: Run lint checks
         run: ./gradlew lint

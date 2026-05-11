@@ -18,6 +18,8 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import com.albunyaan.tube.auth.AccountStatusInterceptor
+import com.albunyaan.tube.auth.FirebaseAuthInterceptor
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -70,7 +72,11 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideOkHttpClient(@ApplicationContext context: Context): OkHttpClient {
+    fun provideOkHttpClient(
+        @ApplicationContext context: Context,
+        firebaseAuthInterceptor: FirebaseAuthInterceptor,
+        accountStatusInterceptor: AccountStatusInterceptor,
+    ): OkHttpClient {
         // One-time cleanup: delete stale HTTP cache left by prior versions that
         // cached API responses (e.g. categories missing due to a backend bug).
         // Runs on a background thread to avoid blocking DI initialization.
@@ -81,10 +87,17 @@ object NetworkModule {
 
         val deviceId = getOrCreateDeviceId(context)
 
+        // Plan B (ANDROID-AUTH-01) T3: explicit ORDERED interceptor wiring.
+        // Order matters — FirebaseAuthInterceptor must attach the Bearer token
+        // BEFORE AccountStatusInterceptor inspects the response. Multibinding
+        // (@IntoSet) was rejected because Set iteration is non-deterministic.
+        //
+        // HttpLoggingInterceptor is a NETWORK interceptor, not an application
+        // interceptor: it sees every leg of any retry (including the post-
+        // refresh second request) and logs the final Bearer header. Pre-T3
+        // this was an application interceptor at the top of the chain, which
+        // logged the request before headers were added — less useful for debug.
         return OkHttpClient.Builder()
-            .addInterceptor(HttpLoggingInterceptor().apply {
-                level = HttpLoggingInterceptor.Level.BASIC
-            })
             .addInterceptor { chain ->
                 chain.proceed(
                     chain.request().newBuilder()
@@ -92,6 +105,11 @@ object NetworkModule {
                         .build()
                 )
             }
+            .addInterceptor(firebaseAuthInterceptor)
+            .addInterceptor(accountStatusInterceptor)
+            .addNetworkInterceptor(HttpLoggingInterceptor().apply {
+                level = HttpLoggingInterceptor.Level.BASIC
+            })
             // No HTTP cache — API responses are admin-curated and change frequently.
             // Server-side Caffeine cache handles backend performance.
             .connectTimeout(15, TimeUnit.SECONDS)

@@ -628,4 +628,9 @@
     <string name="shorts_channel_handle">\u200E\@%1$s</string>
     <string name="back">رجوع</string>
 
+    <!-- TODO(i18n): Plan B (ANDROID-AUTH-01) T4 auth strings — pending Arabic
+         translation. Until the translator delivers, Android falls back to the
+         English strings in values/strings.xml. Per docs/design/i18n-strategy.md
+         we do NOT machine-translate inline. -->
+
 </resources>

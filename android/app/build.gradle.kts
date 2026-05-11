@@ -7,6 +7,9 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("com.google.dagger.hilt.android")
     id("com.google.devtools.ksp")
+    // Plan B (ANDROID-AUTH-01): parses app/google-services.json (gitignored,
+    // see app/google-services.json.template) to wire FirebaseApp init.
+    id("com.google.gms.google-services")
 }
 
 // Load keystore properties for release signing
@@ -47,6 +50,17 @@ android {
         val apiBaseUrl = localProperties.getProperty("api.base.url", "http://10.0.2.2:8080/")
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
         buildConfigField("boolean", "ENABLE_THUMBNAIL_IMAGES", "true")
+
+        // Plan B (ANDROID-AUTH-01) T7: Firebase Auth emulator override (debug
+        // builds only — see AlBunyaanApplication). Empty host = use live
+        // Firebase. On Android emulator: 10.0.2.2:9099. On real device:
+        // your laptop's LAN IP. Set in local.properties:
+        //   auth.emulator.host=10.0.2.2
+        //   auth.emulator.port=9099
+        val authEmulatorHost = localProperties.getProperty("auth.emulator.host", "")
+        val authEmulatorPort = localProperties.getProperty("auth.emulator.port", "9099").toInt()
+        buildConfigField("String", "AUTH_EMULATOR_HOST", "\"$authEmulatorHost\"")
+        buildConfigField("int", "AUTH_EMULATOR_PORT", "$authEmulatorPort")
 
         // ANDROID-MULTI-01 Issue 4: public watch-page base URL. shareCurrentVideo()
         // emits https://host/api/watch/{id} so link unfurlers (WhatsApp / Telegram /
@@ -122,6 +136,20 @@ android {
     }
 
     buildTypes {
+        getByName("debug") {
+            // Plan B ad-hoc: trim DEBUG APK to arm64-v8a only when -PslimApk is set,
+            // so the build fits Telegram's 50 MB upload cap for local sideload testing.
+            // Strips x86, x86_64, armeabi-v7a. Scoped to the debug build type so a
+            // stray `assembleRelease -PslimApk` cannot ship a single-ABI release —
+            // release builds must always include the full ABI matrix.
+            if (project.hasProperty("slimApk")) {
+                ndk {
+                    abiFilters.clear()
+                    abiFilters.add("arm64-v8a")
+                }
+            }
+        }
+
         getByName("release") {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -235,7 +263,26 @@ dependencies {
     implementation("androidx.fragment:fragment-ktx:1.8.6")
     implementation("androidx.paging:paging-runtime-ktx:3.3.5")
     implementation("androidx.viewpager2:viewpager2:1.1.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    // Single source of truth for the coroutines stack — kotlinx-coroutines-android
+    // and the play-services bridge below must stay aligned (structured concurrency
+    // misbehaves on version drift).
+    val coroutinesVersion = "1.9.0"
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:$coroutinesVersion")
+    // Plan B (ANDROID-AUTH-01) T1: Firebase Auth + Google Sign-In.
+    // BoM pins all firebase-* artifact versions transitively — DO NOT add
+    // explicit versions to firebase-auth or other firebase- modules below.
+    //
+    // Pinned to 34.12.0 (firebase-auth 24.0.1) rather than the absolute
+    // latest. BoM 34.13.0 ships firebase-auth 24.1.0 which was compiled
+    // with Kotlin 2.3.0; this project is on Kotlin 2.0.21 (root
+    // build.gradle.kts) and KSP fails on the newer .kotlin_module metadata
+    // ("binary version 2.3.0, expected 2.0.0"). When bumping Kotlin or the
+    // Firebase BoM, re-verify ABI compatibility, not just version recency.
+    implementation(platform("com.google.firebase:firebase-bom:34.12.0"))
+    implementation("com.google.firebase:firebase-auth")
+    implementation("com.google.android.gms:play-services-auth:21.5.1")
+    // play-services-tasks ↔ kotlin coroutines bridge (`Task<T>.await()`).
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:$coroutinesVersion")
     // AndroidX Media3 (replaces ExoPlayer 2.x)
     // Media3 1.10.0 introduced a regression (androidx/media#3161) that crashes
     // HlsChunkSource.createFallbackOptions with ArrayIndexOutOfBoundsException
