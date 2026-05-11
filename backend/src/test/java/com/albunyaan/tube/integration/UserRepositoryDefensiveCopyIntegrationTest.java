@@ -71,6 +71,96 @@ class UserRepositoryDefensiveCopyIntegrationTest extends BaseIntegrationTest {
         assertTrue(userRepository.findByUid("never-existed").isEmpty());
     }
 
+    // ── F21 — save() evicts the userStatus cache so post-save reads are fresh ─
+    //
+    // Pre-F10 the cache was self-coherent because findByUid handed back the
+    // SAME mutable reference: AuthService.recordLogin (read → mutate → save)
+    // ALSO mutated the cached object. F10 fixed the mutable-shared-reference
+    // bug with a defensive copy, but in doing so created a cache-coherence
+    // regression: callers that read, mutate the COPY, and save have an
+    // up-to-date Firestore document but a stale cache entry for the 60s TTL.
+    // F21 fixes the regression by adding @CacheEvict to save().
+
+    @Test
+    void recordLogin_evictsCacheSoNextReadIsFresh() throws Exception {
+        // Seed a user with no lastLoginAt.
+        String uid = "u-recordlogin";
+        User seed = new User();
+        seed.setUid(uid);
+        seed.setEmail("login@t.com");
+        seed.setRole("moderator");
+        seed.setStatusEnum(UserStatus.ACTIVE);
+        seed.setCreatedAt(Timestamp.now());
+        seed.setUpdatedAt(Timestamp.now());
+        userRepository.save(seed);
+
+        // First read populates the cache with lastLoginAt == null.
+        User firstRead = userRepository.findByUid(uid).orElseThrow();
+        assertNull(firstRead.getLastLoginAt(),
+                "Sanity: seeded user has no lastLoginAt");
+
+        // recordLogin: read → mutate → save. Post-save the cache for `uid`
+        // must be evicted so the next read returns the fresh lastLoginAt.
+        User toUpdate = userRepository.findByUid(uid).orElseThrow();
+        toUpdate.recordLogin();
+        userRepository.save(toUpdate);
+
+        // Second read — F21 guarantees this hits Firestore (cache evicted)
+        // and returns the fresh lastLoginAt. Pre-F21 the stale Optional
+        // wrapping a User with lastLoginAt == null would be returned.
+        User afterLogin = userRepository.findByUid(uid).orElseThrow();
+        assertNotNull(afterLogin.getLastLoginAt(),
+                "F21: post-save findByUid must return fresh lastLoginAt — "
+                + "save() must @CacheEvict to prevent the F10 defensive-copy "
+                + "regression from leaving the cache stale.");
+    }
+
+    @Test
+    void save_evictsCacheForAffectedUid_butLeavesOtherUidsUntouched() throws Exception {
+        // Pin the @CacheEvict key = "#user.uid" semantics: saving uid-A must
+        // evict only uid-A's entry, not uid-B's.
+        String uidA = "u-save-evict-A";
+        String uidB = "u-save-evict-B";
+
+        User a = new User();
+        a.setUid(uidA);
+        a.setEmail("a@t.com");
+        a.setRole("user");
+        a.setStatusEnum(UserStatus.ACTIVE);
+        a.setCreatedAt(Timestamp.now());
+        a.setUpdatedAt(Timestamp.now());
+        userRepository.save(a);
+
+        User b = new User();
+        b.setUid(uidB);
+        b.setEmail("b@t.com");
+        b.setRole("user");
+        b.setStatusEnum(UserStatus.ACTIVE);
+        b.setCreatedAt(Timestamp.now());
+        b.setUpdatedAt(Timestamp.now());
+        userRepository.save(b);
+
+        // Prime both cache entries.
+        userRepository.findByUid(uidA);
+        userRepository.findByUid(uidB);
+        var cache = cacheManager.getCache("userStatus");
+        assertNotNull(cache);
+        assertNotNull(cache.get(uidA), "Sanity: uid-A primed");
+        assertNotNull(cache.get(uidB), "Sanity: uid-B primed");
+
+        // Save uid-A only.
+        User aReread = userRepository.findByUid(uidA).orElseThrow();
+        aReread.setDisplayName("changed");
+        userRepository.save(aReread);
+
+        // F21: uid-A's entry must be evicted; uid-B's must remain.
+        assertNull(cache.get(uidA),
+                "F21: save(A) MUST evict A's cache entry");
+        assertNotNull(cache.get(uidB),
+                "F21: save(A) must NOT touch B's cache entry — "
+                + "the @CacheEvict key is bound to #user.uid");
+    }
+
     // ── F19 — loadByUid must remain package-private ─────────────────────────
     // The docstring says "package-private. Not for direct call by other
     // classes". Pre-F19 the access modifier was actually `public`, so an

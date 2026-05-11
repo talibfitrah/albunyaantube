@@ -2,6 +2,7 @@ package com.albunyaan.tube.repository;
 
 import com.albunyaan.tube.config.FirestoreTimeoutProperties;
 import com.albunyaan.tube.model.User;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import com.google.api.core.ApiFuture;
 import com.google.cloud.firestore.AggregateQuery;
@@ -58,6 +59,29 @@ public class UserRepository {
         return firestore.collection(COLLECTION_NAME);
     }
 
+    /**
+     * Persist a User document.
+     *
+     * <p>F21: also evicts the {@code userStatus} cache entry for this uid so
+     * post-save reads via {@link #findByUid(String)} return the fresh state.
+     *
+     * <p>Pre-F21 the cache was self-coherent because {@code findByUid}
+     * returned the SAME mutable reference on every cache hit — mutating it
+     * also mutated the cached object. F10 fixed that by returning a
+     * defensive copy, but in doing so it broke the invariant: callers that
+     * mutate the returned copy and then call {@code save} have an
+     * up-to-date Firestore document but a stale cache entry for the 60s
+     * TTL. {@code AuthService.recordLogin} is the canonical example
+     * (read user → user.recordLogin() → save). The lifecycle methods
+     * (block/unblock/etc) write directly via {@code tx.set} inside a
+     * transaction so they don't go through this path; they have their own
+     * explicit {@code evictUserStatus} call.
+     *
+     * <p>Eviction cost: one extra Firestore round-trip on the next read of
+     * the affected uid. Acceptable — much cheaper than allowing stale data
+     * to surface.
+     */
+    @CacheEvict(value = "userStatus", key = "#user.uid")
     public User save(User user) throws ExecutionException, InterruptedException, TimeoutException {
         user.touch();
 
