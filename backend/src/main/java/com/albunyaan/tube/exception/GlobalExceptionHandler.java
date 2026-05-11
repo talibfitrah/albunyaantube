@@ -204,40 +204,12 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(body, HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
-    @ExceptionHandler(AccountBlockedException.class)
-    public ResponseEntity<Object> handleAccountBlocked(
-            AccountBlockedException ex, WebRequest request) {
-        logger.warn("Account blocked: uid={}, reason={}", ex.getUid(), ex.getReason());
-
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("timestamp", LocalDateTime.now());
-        body.put("status", HttpStatus.FORBIDDEN.value());
-        body.put("error", "Forbidden");
-        body.put("code", "ACCOUNT_BLOCKED");
-        body.put("message", "This account has been blocked.");
-        if (ex.getReason() != null) body.put("reason", ex.getReason());
-        body.put("path", request.getDescription(false).replace("uri=", ""));
-
-        return new ResponseEntity<>(body, HttpStatus.FORBIDDEN);
-    }
-
-    @ExceptionHandler(AccountDeletedException.class)
-    public ResponseEntity<Object> handleAccountDeleted(
-            AccountDeletedException ex, WebRequest request) {
-        // Log the uid server-side for audit, but DO NOT include it in the
-        // response body — exfiltration safety (don't reveal which uid is gone).
-        logger.warn("Account not found / deleted: uid={}", ex.getUid());
-
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("timestamp", LocalDateTime.now());
-        body.put("status", HttpStatus.UNAUTHORIZED.value());
-        body.put("error", "Unauthorized");
-        body.put("code", "ACCOUNT_NOT_FOUND");
-        body.put("message", "Authentication failed.");
-        body.put("path", request.getDescription(false).replace("uri=", ""));
-
-        return new ResponseEntity<>(body, HttpStatus.UNAUTHORIZED);
-    }
+    // F16: handlers for AccountBlockedException and AccountDeletedException
+    // were removed alongside those classes. The FirebaseAuthFilter writes its
+    // 401/403 responses inline (the filter runs BEFORE @ControllerAdvice in
+    // the servlet stack, so throwing here would not yield the intended body).
+    // No live code paths threw these exceptions — they were aspirational
+    // scaffolding from an earlier design.
 
     @ExceptionHandler(LastAdminException.class)
     public ResponseEntity<Object> handleLastAdmin(

@@ -25,10 +25,11 @@ service cloud.firestore {
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
     }
 
-    function isUser() {
-      return isAuthenticated() &&
-             exists(/databases/$(database)/documents/users/$(request.auth.uid));
-    }
+    // F16: the isUser() helper was defined but never referenced in any rule —
+    // the plan claimed "tightened /users access via isUser()" but the match
+    // block already uses isSelf() + isAdmin() (line 44). Removed as dead code.
+    // If Plan B/C needs a "any authenticated, registered user" predicate,
+    // re-introduce here and wire it into the relevant match block.
 
     function isSelf(userId) {
       return isAuthenticated() && request.auth.uid == userId;
