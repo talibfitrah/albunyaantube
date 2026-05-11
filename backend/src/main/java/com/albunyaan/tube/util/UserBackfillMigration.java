@@ -46,6 +46,18 @@ public class UserBackfillMigration {
     private static final int BATCH_SIZE = 200;
     private static final String LOCK_DOC = "migration_user_backfill";
 
+    /**
+     * F14: if a previously-claimed lock has not been released within this
+     * window, treat it as stale (probably a JVM crash mid-run) and reclaim.
+     *
+     * 30 minutes is well past any reasonable backfill duration — at BATCH_SIZE
+     * = 200 docs/iteration and typical Firestore latencies, a migration that
+     * hasn't completed in 30 min is wedged or dead. The original CAS lock had
+     * no staleness recovery, so a crashed instance left running:true forever
+     * and required manual Firestore intervention.
+     */
+    static final long STALE_LOCK_MS = 30L * 60L * 1000L;
+
     public record RunSummary(int scanned, int updated, int skipped,
                              String startedAt, String completedAt) {}
 
@@ -82,10 +94,27 @@ public class UserBackfillMigration {
         // Atomic CAS: claim the lock or bail out immediately.
         // F5: explicit write timeout — a stalled Firestore would otherwise block
         // forever and leave the calling admin's request thread hung indefinitely.
+        // F14: if a prior lock with running:true has been held longer than
+        // STALE_LOCK_MS, treat it as stale (likely a JVM crash mid-run) and
+        // reclaim. Pre-F14 a crashed instance left running:true forever, so the
+        // operator had to manually delete the Firestore lock doc to recover.
         boolean claimed = firestore.runTransaction(tx -> {
             DocumentSnapshot snap = tx.get(lockRef).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
             if (snap.exists() && Boolean.TRUE.equals(snap.getBoolean("running"))) {
-                return false;
+                Timestamp startedAt = snap.getTimestamp("startedAt");
+                long ageMs = startedAt == null
+                        ? Long.MAX_VALUE  // missing startedAt → conservatively treat as stale
+                        : Timestamp.now().toDate().getTime() - startedAt.toDate().getTime();
+                if (ageMs < STALE_LOCK_MS) {
+                    // Lock is still fresh — another run is genuinely in flight.
+                    return false;
+                }
+                // Stale lock — log loudly so the operator knows a prior run crashed.
+                logger.warn(
+                    "Reclaiming stale migration lock (held {} ms by claimedBy={} / claimedByUid={}). "
+                    + "This usually means a previous run crashed mid-flight. "
+                    + "Inspect audit_logs for incomplete USER_BACKFILL_RUN summary.",
+                    ageMs, snap.getString("claimedBy"), snap.getString("claimedByUid"));
             }
             tx.set(lockRef, Map.of(
                 "running", true,

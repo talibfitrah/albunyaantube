@@ -141,9 +141,14 @@ class UserBackfillMigrationTest extends BaseIntegrationTest {
 
     @Test
     void concurrentRun_throwsMigrationRunning() throws Exception {
-        // Pre-claim the CAS lock to simulate a running migration.
+        // Pre-claim the CAS lock to simulate a running migration. Use a recent
+        // startedAt so the F14 stale-lock check considers the lock fresh.
         firestore.collection("system_settings").document("migration_user_backfill")
-                .set(Map.of("running", true, "claimedBy", "other-host")).get();
+                .set(Map.of(
+                        "running", true,
+                        "claimedBy", "other-host",
+                        "startedAt", Timestamp.now()
+                )).get();
 
         IllegalStateException ex = assertThrows(IllegalStateException.class,
             () -> migration.run("test-actor"),
@@ -152,6 +157,71 @@ class UserBackfillMigrationTest extends BaseIntegrationTest {
             "Exception message should describe the lock conflict");
 
         // Release the lock so @AfterEach cleanup can delete the collection normally.
+        firestore.collection("system_settings").document("migration_user_backfill").delete().get();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // F14: stale lock recovery — a lock held longer than STALE_LOCK_MS is
+    //      treated as a crashed run and reclaimed automatically.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Test
+    void migration_reclaimsStaleLock_afterStaleThreshold() throws Exception {
+        // Seed a lock with a startedAt one hour ago — well past STALE_LOCK_MS
+        // (30 min). The current run must reclaim it.
+        Timestamp staleStart = Timestamp.ofTimeSecondsAndNanos(
+                Timestamp.now().getSeconds() - 60L * 60L,  // 1 hour ago
+                0);
+        firestore.collection("system_settings").document("migration_user_backfill")
+                .set(Map.of(
+                        "running", true,
+                        "claimedBy", "crashed-host",
+                        "claimedByUid", "ghost-admin",
+                        "startedAt", staleStart
+                )).get();
+
+        // Seed at least one user so the run has something to do.
+        User u = new User();
+        u.setUid("legacy-stale");
+        u.setRole("user");
+        u.setStatus("active");
+        u.setCreatedAt(Timestamp.now());
+        u.setUpdatedAt(Timestamp.now());
+        repo.saveRaw(u);
+
+        // Must NOT throw — stale lock is reclaimed and the run proceeds.
+        UserBackfillMigration.RunSummary summary = migration.run("rescue-actor");
+        assertNotNull(summary, "Stale-lock reclaim must allow the run to complete");
+
+        // Verify the lock was released cleanly at the end.
+        var lockSnap = firestore.collection("system_settings")
+                .document("migration_user_backfill").get().get();
+        assertEquals(Boolean.FALSE, lockSnap.getBoolean("running"),
+                "Lock must end in running=false after a successful reclaim run");
+    }
+
+    @Test
+    void migration_doesNotReclaimRecentLock() throws Exception {
+        // Lock with a 30-second-old startedAt — well inside STALE_LOCK_MS.
+        // Must NOT be reclaimed.
+        Timestamp recentStart = Timestamp.ofTimeSecondsAndNanos(
+                Timestamp.now().getSeconds() - 30L,  // 30s ago
+                0);
+        firestore.collection("system_settings").document("migration_user_backfill")
+                .set(Map.of(
+                        "running", true,
+                        "claimedBy", "live-host",
+                        "claimedByUid", "concurrent-admin",
+                        "startedAt", recentStart
+                )).get();
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> migration.run("would-be-rescuer"),
+                "Recent lock must NOT be reclaimed — concurrent run is genuine");
+        assertTrue(ex.getMessage().contains("already running"),
+                "Error message should describe the lock conflict");
+
+        // Cleanup
         firestore.collection("system_settings").document("migration_user_backfill").delete().get();
     }
 
