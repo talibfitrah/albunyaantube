@@ -51,6 +51,17 @@ android {
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
         buildConfigField("boolean", "ENABLE_THUMBNAIL_IMAGES", "true")
 
+        // Plan B (ANDROID-AUTH-01) T7: Firebase Auth emulator override (debug
+        // builds only — see AlBunyaanApplication). Empty host = use live
+        // Firebase. On Android emulator: 10.0.2.2:9099. On real device:
+        // your laptop's LAN IP. Set in local.properties:
+        //   auth.emulator.host=10.0.2.2
+        //   auth.emulator.port=9099
+        val authEmulatorHost = localProperties.getProperty("auth.emulator.host", "")
+        val authEmulatorPort = localProperties.getProperty("auth.emulator.port", "9099").toInt()
+        buildConfigField("String", "AUTH_EMULATOR_HOST", "\"$authEmulatorHost\"")
+        buildConfigField("int", "AUTH_EMULATOR_PORT", "$authEmulatorPort")
+
         // ANDROID-MULTI-01 Issue 4: public watch-page base URL. shareCurrentVideo()
         // emits https://host/api/watch/{id} so link unfurlers (WhatsApp / Telegram /
         // Slack / Skype) render the OpenGraph preview served by WatchPageController.

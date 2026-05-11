@@ -9,7 +9,9 @@ import com.albunyaan.tube.app.AppLifecycleTracker
 import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
 import com.albunyaan.tube.data.me.work.RefreshScheduler
 import com.albunyaan.tube.download.DownloadScheduler
+import com.albunyaan.tube.BuildConfig
 import com.google.firebase.FirebaseApp
+import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 
@@ -52,6 +54,27 @@ class AlBunyaanApplication : Application(), Configuration.Provider {
         super.attachBaseContext(base)
         if (FirebaseApp.getApps(this).isEmpty()) {
             FirebaseApp.initializeApp(this)
+        }
+        applyAuthEmulatorOverrideIfConfigured()
+    }
+
+    /**
+     * Plan B (ANDROID-AUTH-01) T7: dev-time hop to a locally-running Firebase
+     * Auth Emulator instead of the live service. Gated on BOTH BuildConfig.DEBUG
+     * (release builds must never hit an emulator) AND a non-empty
+     * AUTH_EMULATOR_HOST (so dev builds default to live unless explicitly set
+     * in local.properties).
+     */
+    private fun applyAuthEmulatorOverrideIfConfigured() {
+        if (!BuildConfig.DEBUG) return
+        val host = BuildConfig.AUTH_EMULATOR_HOST
+        if (host.isNullOrBlank()) return
+        try {
+            FirebaseAuth.getInstance().useEmulator(host, BuildConfig.AUTH_EMULATOR_PORT)
+            Log.i(TAG, "Firebase Auth pointed at emulator $host:${BuildConfig.AUTH_EMULATOR_PORT}")
+        } catch (e: IllegalStateException) {
+            // Already configured (hot reload / re-create). Safe to ignore.
+            Log.d(TAG, "Auth emulator override no-op: ${e.message}")
         }
     }
 
