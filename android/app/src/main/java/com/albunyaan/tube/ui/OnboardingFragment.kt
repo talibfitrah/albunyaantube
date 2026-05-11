@@ -12,12 +12,22 @@ import com.albunyaan.tube.databinding.FragmentOnboardingBinding
 import com.albunyaan.tube.onboarding.OnboardingPagerAdapter
 import com.albunyaan.tube.onboarding.onboardingPages
 import com.albunyaan.tube.preferences.SettingsPreferences
+import com.google.firebase.auth.FirebaseAuth
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class OnboardingFragment : Fragment(R.layout.fragment_onboarding) {
 
     private var binding: FragmentOnboardingBinding? = null
     private lateinit var settingsPreferences: SettingsPreferences
+
+    /**
+     * Plan B (ANDROID-AUTH-01) T5: route to sign-in after onboarding if the
+     * user isn't already signed in (carries over from a prior install).
+     */
+    @Inject lateinit var firebaseAuth: FirebaseAuth
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -89,7 +99,9 @@ class OnboardingFragment : Fragment(R.layout.fragment_onboarding) {
             settingsPreferences.setOnboardingCompleted(true)
             val navController = findNavController()
             if (navController.currentDestination?.id == R.id.onboardingFragment) {
-                navController.navigate(R.id.action_onboarding_to_main)
+                navController.navigate(
+                    SplashRouter.decideOnboardingRoute(signedIn = firebaseAuth.currentUser != null)
+                )
             }
         }
     }

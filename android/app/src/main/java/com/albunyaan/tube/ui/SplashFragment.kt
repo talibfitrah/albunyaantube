@@ -16,11 +16,14 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import com.albunyaan.tube.R
 import com.albunyaan.tube.preferences.SettingsPreferences
+import com.google.firebase.auth.FirebaseAuth
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 /**
  * Splash screen with phased animations:
@@ -33,9 +36,17 @@ import kotlinx.coroutines.launch
  * Onboarding preference is fetched in parallel with animations to avoid
  * adding latency after animations complete.
  */
+@AndroidEntryPoint
 class SplashFragment : Fragment(R.layout.fragment_splash) {
 
     private lateinit var settingsPreferences: SettingsPreferences
+
+    /**
+     * Plan B (ANDROID-AUTH-01) T5: route to sign-in if no Firebase user.
+     * Injected so future tests can swap in a fake. The same FirebaseAuth
+     * singleton lives in [com.albunyaan.tube.auth.di.FirebaseAuthModule].
+     */
+    @Inject lateinit var firebaseAuth: FirebaseAuth
 
     /** Track running animators for cleanup on fragment destruction */
     private val runningAnimators = mutableListOf<Animator>()
@@ -68,11 +79,7 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
 
             // Check if this is a deep link launch - if so, skip splash entirely
             if (isDeepLinkLaunch()) {
-                if (onboardingDeferred.await()) {
-                    navigateToMainIfCurrent()
-                } else {
-                    navigateToOnboardingIfCurrent()
-                }
+                routeAfterSplash(onboardingDeferred.await())
                 return@launch
             }
 
@@ -133,13 +140,18 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
 
             // Await the onboarding preference (should already be available from parallel fetch)
             val onboardingCompleted = onboardingDeferred.await()
-
-            if (onboardingCompleted) {
-                navigateToMainIfCurrent()
-            } else if (findNavController().currentDestination?.id == R.id.splashFragment) {
-                findNavController().navigate(R.id.action_splash_to_onboarding)
-            }
+            routeAfterSplash(onboardingCompleted)
         }
+    }
+
+    /** Routing logic in [SplashRouter] so it's unit-testable in isolation. */
+    private fun routeAfterSplash(onboardingCompleted: Boolean) {
+        if (findNavController().currentDestination?.id != R.id.splashFragment) return
+        val action = SplashRouter.decideSplashRoute(
+            onboardingCompleted = onboardingCompleted,
+            signedIn = firebaseAuth.currentUser != null,
+        )
+        findNavController().navigate(action)
     }
 
     private fun isDeepLinkLaunch(): Boolean {
@@ -147,17 +159,6 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
         return intent.action == Intent.ACTION_VIEW && intent.data != null
     }
 
-    private fun navigateToMainIfCurrent() {
-        if (findNavController().currentDestination?.id == R.id.splashFragment) {
-            findNavController().navigate(R.id.action_splash_to_main)
-        }
-    }
-
-    private fun navigateToOnboardingIfCurrent() {
-        if (findNavController().currentDestination?.id == R.id.splashFragment) {
-            findNavController().navigate(R.id.action_splash_to_onboarding)
-        }
-    }
 
     override fun onDestroyView() {
         super.onDestroyView()
