@@ -70,4 +70,29 @@ class UserRepositoryDefensiveCopyIntegrationTest extends BaseIntegrationTest {
         // defensive copy via map(User::copy) must not NPE on the absent path.
         assertTrue(userRepository.findByUid("never-existed").isEmpty());
     }
+
+    // ── F19 — loadByUid must remain package-private ─────────────────────────
+    // The docstring says "package-private. Not for direct call by other
+    // classes". Pre-F19 the access modifier was actually `public`, so an
+    // external caller could trust the docstring, skip the defensive copy,
+    // and re-introduce the F10 mutable-shared-reference bug. This test
+    // pins the modifier so the next refactor doesn't drift back.
+
+    @Test
+    void loadByUid_isPackagePrivate_notPublic() throws NoSuchMethodException {
+        java.lang.reflect.Method loadByUid =
+                com.albunyaan.tube.repository.UserRepository.class
+                        .getDeclaredMethod("loadByUid", String.class);
+        int mods = loadByUid.getModifiers();
+        assertFalse(java.lang.reflect.Modifier.isPublic(mods),
+                "F19: loadByUid must NOT be public — package-private only. "
+                + "External callers would bypass User.copy() defensive copy and "
+                + "re-introduce the F10 mutable-shared-reference bug.");
+        assertFalse(java.lang.reflect.Modifier.isProtected(mods),
+                "F19: loadByUid must NOT be protected — package-private only.");
+        assertFalse(java.lang.reflect.Modifier.isPrivate(mods),
+                "F19: loadByUid must NOT be private — Spring's CGLIB cache "
+                + "proxy needs package-private visibility to subclass and "
+                + "intercept the @Cacheable call.");
+    }
 }

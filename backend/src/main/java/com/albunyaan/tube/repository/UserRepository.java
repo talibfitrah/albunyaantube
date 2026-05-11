@@ -95,9 +95,21 @@ public class UserRepository {
      * Package-private cached loader. Not for direct call by other classes —
      * callers must go through {@link #findByUid(String)} which adds the
      * defensive copy on the way out.
+     *
+     * <p>F19: access modifier is now package-private (was {@code public}
+     * pre-fix). The docstring already said "package-private" but the keyword
+     * said otherwise, so external callers could trust the comment and skip
+     * the defensive copy — re-introducing the F10 mutable-shared-reference
+     * bug. Package-private both honours the docstring and gives the compiler
+     * teeth to enforce it.
+     *
+     * <p>Spring's CGLIB AOP proxy works with package-private methods just
+     * fine (subclass-based proxying). JDK dynamic proxies would have required
+     * a public method on an interface, but {@code @Cacheable} on a concrete
+     * bean uses CGLIB by default.
      */
     @Cacheable(value = "userStatus", key = "#uid")
-    public Optional<User> loadByUid(String uid) throws ExecutionException, InterruptedException, TimeoutException {
+    Optional<User> loadByUid(String uid) throws ExecutionException, InterruptedException, TimeoutException {
         DocumentReference docRef = getCollection().document(uid);
         // Single document reads: use shorter timeout (2 seconds)
         User user = docRef.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS).toObject(User.class);
