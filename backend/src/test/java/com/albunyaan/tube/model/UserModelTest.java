@@ -6,10 +6,28 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class UserModelTest {
 
-    @Test void defaultStatusIsActive_andRoleIsModerator_legacyContract() {
+    @Test void noArgCtor_defaultsRoleToNull_andStatusToActive() {
+        // F3: role MUST default to null. Previously it defaulted to "moderator",
+        // which silently granted moderator role to any Firestore doc missing the
+        // role field after deserialisation.
         User u = new User();
+        assertNull(u.getRole(), "Role default must be null — never an implicit grant");
         assertEquals("active", u.getStatus());
-        assertEquals("moderator", u.getRole());
+    }
+
+    @Test void isAdminAndIsModerator_returnFalseForNullRole() {
+        // Defensive: callers reading role on a freshly-deserialised doc must not
+        // accidentally see admin/moderator privileges when the field is null.
+        User u = new User();
+        assertFalse(u.isAdmin(), "isAdmin() must be false for null role");
+        assertFalse(u.isModerator(), "isModerator() must be false for null role");
+    }
+
+    @Test void getRoleEnum_returnsUserForNullRole() {
+        // Role.fromString(null) returns USER (least-privilege fallback) so any
+        // path going through the typed accessor lands on USER, not MODERATOR.
+        User u = new User();
+        assertEquals(Role.USER, u.getRoleEnum());
     }
 
     @Test void typedAccessorsRoundTrip() {

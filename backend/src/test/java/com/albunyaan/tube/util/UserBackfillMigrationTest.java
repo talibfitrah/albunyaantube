@@ -209,6 +209,32 @@ class UserBackfillMigrationTest extends BaseIntegrationTest {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // F3: a Firestore doc with no role field deserialises with role=null
+    //     (after F3 ctor fix), then the migration clamps it to "user".
+    //     Pre-fix the no-arg ctor defaulted role to "moderator" — a silent
+    //     privilege grant. This test must FAIL on the pre-F3 code.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Test
+    void migrationTreatsMissingRoleFieldAsUser_evenAfterDeserialization() throws Exception {
+        // Seed a doc with NO role field (simulating a legacy document predating
+        // the role column). Direct-to-Firestore write bypasses the User ctor.
+        firestore.collection("users").document("missing-role")
+                .set(java.util.Map.of(
+                        "email", "no-role@t",
+                        "status", "active",
+                        "createdAt", Timestamp.now(),
+                        "updatedAt", Timestamp.now()
+                )).get();
+
+        migration.run("test-actor");
+
+        User after = repo.findByUid("missing-role").orElseThrow();
+        assertEquals("user", after.getRole(),
+                "Missing role field MUST be normalised to 'user', not silently granted 'moderator'");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // T5: synchronous summary AuditLog is written on completion
     // ─────────────────────────────────────────────────────────────────────────
 
