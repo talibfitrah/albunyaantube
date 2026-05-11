@@ -6,18 +6,25 @@ import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.bundleOf
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.NavController
 import androidx.navigation.fragment.NavHostFragment
+import androidx.navigation.navOptions
 import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.R
+import com.albunyaan.tube.auth.AccountStatusEvent
+import com.albunyaan.tube.auth.AuthRepository
 import com.albunyaan.tube.databinding.ActivityMainBinding
 import com.albunyaan.tube.locale.LocaleManager
 import com.albunyaan.tube.player.PlaybackService
 import com.albunyaan.tube.preferences.SettingsPreferences
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 /**
  * P3-T2: Main activity with Hilt DI support
@@ -77,6 +84,8 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        observeAccountStatusEvents()
+
         // Handle back press for nested navigation
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -105,6 +114,58 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         })
+    }
+
+    /**
+     * Plan B (ANDROID-AUTH-01) T6: observe Plan A 403 events from
+     * [com.albunyaan.tube.auth.AccountStatusInterceptor]. Shows a terminal
+     * dialog and routes the user back to sign-in. The interceptor already
+     * called [com.google.firebase.auth.FirebaseAuth.signOut] BEFORE emitting,
+     * so by the time this collector fires, [AuthRepository.authState] is
+     * already SignedOut.
+     */
+    private fun observeAccountStatusEvents() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                authRepository.accountStatusEvents.collect { event ->
+                    showAccountStatusDialog(event)
+                }
+            }
+        }
+    }
+
+    private fun showAccountStatusDialog(event: AccountStatusEvent) {
+        val (titleRes, bodyRes) = when (event) {
+            AccountStatusEvent.Blocked ->
+                R.string.account_blocked_title to R.string.account_blocked_body
+            AccountStatusEvent.Deleted ->
+                R.string.account_deleted_title to R.string.account_deleted_body
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(titleRes)
+            .setMessage(bodyRes)
+            .setPositiveButton(R.string.ok) { _, _ -> navigateToSignIn() }
+            .setCancelable(false)
+            .show()
+    }
+
+    private fun navigateToSignIn() {
+        try {
+            val nav = navController
+            if (nav.currentDestination?.id != R.id.signInFragment) {
+                nav.navigate(
+                    R.id.signInFragment,
+                    null,
+                    navOptions {
+                        popUpTo(R.id.app_nav_graph) { inclusive = true }
+                    },
+                )
+            }
+        } catch (e: Exception) {
+            if (BuildConfig.DEBUG) {
+                android.util.Log.e("MainActivity", "Failed to navigate to sign-in after 403", e)
+            }
+        }
     }
 
     public override fun onNewIntent(intent: Intent) {
@@ -343,6 +404,10 @@ class MainActivity : AppCompatActivity() {
 
     @javax.inject.Inject
     lateinit var updatePromptFlow: com.albunyaan.tube.update.UpdatePromptFlow
+
+    /** Plan B (ANDROID-AUTH-01) T6: source of the 403 BLOCKED/DELETED stream from interceptors. */
+    @Inject
+    lateinit var authRepository: AuthRepository
 
     override fun onStart() {
         super.onStart()

@@ -690,4 +690,14 @@
     <string name="account_deleted_title">Account deleted</string>
     <string name="account_deleted_body">Your account has been deleted. To use FitrahTube again, create a new account.</string>
     <string name="ok">OK</string>
+
+    <!-- Settings Account section (Plan B T6) -->
+    <string name="settings_account_header">Account</string>
+    <string name="settings_account_signed_in_as">Signed in as %1$s</string>
+    <string name="settings_account_signed_in_default">Signed in</string>
+    <string name="settings_account_sign_out">Sign out</string>
+    <string name="settings_account_sign_out_confirm_title">Sign out?</string>
+    <string name="settings_account_sign_out_confirm_body">You\'ll need to sign in again to access admin features and personalised content.</string>
+    <string name="settings_account_sign_out_confirm_action">Sign out</string>
+    <string name="settings_account_sign_out_cancel">Cancel</string>
 </resources>
