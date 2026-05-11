@@ -26,6 +26,7 @@ import java.util.concurrent.ExecutionException;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -293,6 +294,140 @@ class AuthServiceTest {
         // Assert: Firebase Auth re-enabled after transaction
         verify(firebaseAuth).updateUser(any());
         verify(mockCache).evict("test-uid");
+    }
+
+    // ── F4 — Cache eviction in try/finally ───────────────────────────────────
+    // Pre-fix: cache evict ran AFTER firebaseAuth.updateUser / revokeRefreshTokens.
+    // If either threw, the cache evict was skipped and a stale ACTIVE entry
+    // persisted for the 60s TTL — long enough for the just-blocked user to
+    // continue passing AccountStatusFilter checks. These tests pin the
+    // always-runs semantics: cache MUST be evicted even on FB Auth failure.
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void blockUser_evictsCache_evenWhenFirebaseAuthUpdateThrows() throws Exception {
+        // Arrange: Firestore tx succeeds, but FB Auth disable throws.
+        ApiFuture<Void> doneFuture = mock(ApiFuture.class);
+        when(doneFuture.get(anyLong(), any())).thenReturn(null);
+        doReturn(doneFuture).when(firestore).runTransaction(any());
+
+        FirebaseAuthException fbEx = mock(FirebaseAuthException.class);
+        when(firebaseAuth.updateUser(any())).thenThrow(fbEx);
+
+        Cache mockCache = mock(Cache.class);
+        when(cacheManager.getCache("userStatus")).thenReturn(mockCache);
+        when(timeoutProperties.getWrite()).thenReturn(10L);
+
+        // Act + Assert: FB exception propagates, cache MUST still be evicted.
+        assertThrows(FirebaseAuthException.class,
+                () -> authService.blockUser("victim-uid", "admin-uid", "policy"));
+
+        verify(mockCache).evict("victim-uid");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void blockUser_evictsCache_evenWhenRevokeRefreshTokensThrows() throws Exception {
+        // Arrange: updateUser succeeds, but revokeRefreshTokens throws.
+        ApiFuture<Void> doneFuture = mock(ApiFuture.class);
+        when(doneFuture.get(anyLong(), any())).thenReturn(null);
+        doReturn(doneFuture).when(firestore).runTransaction(any());
+
+        when(firebaseAuth.updateUser(any())).thenReturn(null);
+        FirebaseAuthException fbEx = mock(FirebaseAuthException.class);
+        doThrow(fbEx).when(firebaseAuth).revokeRefreshTokens(any());
+
+        Cache mockCache = mock(Cache.class);
+        when(cacheManager.getCache("userStatus")).thenReturn(mockCache);
+        when(timeoutProperties.getWrite()).thenReturn(10L);
+
+        assertThrows(FirebaseAuthException.class,
+                () -> authService.blockUser("victim-uid", "admin-uid", "policy"));
+
+        verify(mockCache).evict("victim-uid");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void softDeleteUser_evictsCache_evenWhenFirebaseAuthThrows() throws Exception {
+        ApiFuture<Void> doneFuture = mock(ApiFuture.class);
+        when(doneFuture.get(anyLong(), any())).thenReturn(null);
+        doReturn(doneFuture).when(firestore).runTransaction(any());
+
+        FirebaseAuthException fbEx = mock(FirebaseAuthException.class);
+        when(firebaseAuth.updateUser(any())).thenThrow(fbEx);
+
+        Cache mockCache = mock(Cache.class);
+        when(cacheManager.getCache("userStatus")).thenReturn(mockCache);
+        when(timeoutProperties.getWrite()).thenReturn(10L);
+
+        assertThrows(FirebaseAuthException.class,
+                () -> authService.softDeleteUser("target", "admin-uid", "test"));
+
+        verify(mockCache).evict("target");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void recoverUser_evictsCache_evenWhenFirebaseAuthThrows() throws Exception {
+        ApiFuture<Void> doneFuture = mock(ApiFuture.class);
+        when(doneFuture.get(anyLong(), any())).thenReturn(null);
+        doReturn(doneFuture).when(firestore).runTransaction(any());
+
+        FirebaseAuthException fbEx = mock(FirebaseAuthException.class);
+        when(firebaseAuth.updateUser(any())).thenThrow(fbEx);
+
+        Cache mockCache = mock(Cache.class);
+        when(cacheManager.getCache("userStatus")).thenReturn(mockCache);
+        when(timeoutProperties.getWrite()).thenReturn(10L);
+
+        assertThrows(FirebaseAuthException.class,
+                () -> authService.recoverUser("target", "admin-uid"));
+
+        verify(mockCache).evict("target");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void unblockUser_evictsCache_evenWhenFirebaseAuthThrows() throws Exception {
+        ApiFuture<Void> doneFuture = mock(ApiFuture.class);
+        when(doneFuture.get(anyLong(), any())).thenReturn(null);
+        doReturn(doneFuture).when(firestore).runTransaction(any());
+
+        FirebaseAuthException fbEx = mock(FirebaseAuthException.class);
+        when(firebaseAuth.updateUser(any())).thenThrow(fbEx);
+
+        Cache mockCache = mock(Cache.class);
+        when(cacheManager.getCache("userStatus")).thenReturn(mockCache);
+        when(timeoutProperties.getWrite()).thenReturn(10L);
+
+        assertThrows(FirebaseAuthException.class,
+                () -> authService.unblockUser("target", "admin-uid"));
+
+        verify(mockCache).evict("target");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void updateUserRoleAsActor_evictsCache_evenWhenSetCustomClaimsThrows() throws Exception {
+        // Arrange: tx returns the updated user, but setCustomUserClaims throws.
+        User u = new User("u-role", "e@t", "Test", "user");
+        u.setStatus("active");
+        ApiFuture<User> txFuture = mock(ApiFuture.class);
+        when(txFuture.get(anyLong(), any())).thenReturn(u);
+        doReturn(txFuture).when(firestore).runTransaction(any());
+
+        FirebaseAuthException fbEx = mock(FirebaseAuthException.class);
+        doThrow(fbEx).when(firebaseAuth).setCustomUserClaims(anyString(), any(Map.class));
+
+        Cache mockCache = mock(Cache.class);
+        when(cacheManager.getCache("userStatus")).thenReturn(mockCache);
+        when(timeoutProperties.getWrite()).thenReturn(10L);
+
+        assertThrows(FirebaseAuthException.class,
+                () -> authService.updateUserRoleAsActor("u-role", "moderator", "actor-uid"));
+
+        verify(mockCache).evict("u-role");
     }
 
     @Test

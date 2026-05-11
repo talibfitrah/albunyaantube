@@ -75,6 +75,23 @@ public class AuthService {
     }
 
     /**
+     * F4: evict the userStatus cache entry for {@code uid}. Always-runs semantics —
+     * called from try/finally blocks in every lifecycle mutation so a Firebase Auth
+     * failure cannot leave a stale ACTIVE entry in cache for the 60s TTL window.
+     * Failures inside cache eviction itself are swallowed: an exception here would
+     * mask the actual cause of the failure and the next cache read repopulates from
+     * Firestore (which already reflects the new state).
+     */
+    private void evictUserStatus(String uid) {
+        try {
+            Cache cache = cacheManager.getCache("userStatus");
+            if (cache != null) cache.evict(uid);
+        } catch (RuntimeException e) {
+            logger.warn("userStatus cache eviction failed for uid={}: {}", uid, e.toString());
+        }
+    }
+
+    /**
      * Unwraps ExecutionException from firestore.runTransaction(...).get() so that
      * domain exceptions (LastAdminException, IllegalArgumentException, IllegalStateException)
      * propagate to @ControllerAdvice for proper HTTP status mapping. Without this, every
@@ -206,14 +223,17 @@ public class AuthService {
             return target;
         });
 
-        // Update Firebase Auth custom claims OUTSIDE the tx (D9, D6 lowercase)
-        Map<String, Object> claims = new HashMap<>();
-        claims.put("role", newRole.getValue());
-        firebaseAuth.setCustomUserClaims(uid, claims);
-
-        // Cache eviction (D4)
-        Cache cache = cacheManager.getCache("userStatus");
-        if (cache != null) cache.evict(uid);
+        // F4: cache eviction in try/finally so a FB Auth failure can't leave a
+        // stale entry behind. Pre-fix the evict ran AFTER the FB Auth call and
+        // would be skipped on any exception.
+        try {
+            // Update Firebase Auth custom claims OUTSIDE the tx (D9, D6 lowercase)
+            Map<String, Object> claims = new HashMap<>();
+            claims.put("role", newRole.getValue());
+            firebaseAuth.setCustomUserClaims(uid, claims);
+        } finally {
+            evictUserStatus(uid);
+        }
 
         logger.info("Role changed: uid={} from={} to={} actor={}",
                 uid, previousRole[0], newRole.getValue(), actorUid);
@@ -320,13 +340,16 @@ public class AuthService {
             return null;
         });
 
-        // D9 — outside the tx, idempotent
-        firebaseAuth.updateUser(new UserRecord.UpdateRequest(uid).setDisabled(true));
-        firebaseAuth.revokeRefreshTokens(uid);
-
-        // D4 — cache evict
-        Cache cache = cacheManager.getCache("userStatus");
-        if (cache != null) cache.evict(uid);
+        // F4: cache eviction in try/finally — guarantee D4 fires even when FB Auth
+        // calls throw, otherwise a stale ACTIVE entry can let a deleted user
+        // pass the AccountStatusFilter for the next 60s.
+        try {
+            // D9 — outside the tx, idempotent
+            firebaseAuth.updateUser(new UserRecord.UpdateRequest(uid).setDisabled(true));
+            firebaseAuth.revokeRefreshTokens(uid);
+        } finally {
+            evictUserStatus(uid);
+        }
 
         logger.info("Soft-deleted user uid={} actor={}", uid, actorUid);
     }
@@ -357,11 +380,12 @@ public class AuthService {
             return null;
         });
 
-        firebaseAuth.updateUser(new UserRecord.UpdateRequest(uid).setDisabled(false));
-
-        // D4 — cache evict
-        Cache cache = cacheManager.getCache("userStatus");
-        if (cache != null) cache.evict(uid);
+        // F4: cache eviction in try/finally (see softDeleteUser for rationale).
+        try {
+            firebaseAuth.updateUser(new UserRecord.UpdateRequest(uid).setDisabled(false));
+        } finally {
+            evictUserStatus(uid);
+        }
 
         logger.info("Recovered user uid={} actor={}", uid, actorUid);
     }
@@ -403,13 +427,16 @@ public class AuthService {
             return null;
         });
 
-        // D9 — outside the tx, idempotent
-        firebaseAuth.updateUser(new UserRecord.UpdateRequest(uid).setDisabled(true));
-        firebaseAuth.revokeRefreshTokens(uid);
-
-        // D4 — cache evict
-        Cache cache = cacheManager.getCache("userStatus");
-        if (cache != null) cache.evict(uid);
+        // F4: cache eviction in try/finally — guarantee D4 fires even when FB Auth
+        // calls throw, otherwise a stale ACTIVE entry lets a blocked user pass the
+        // AccountStatusFilter for the next 60s.
+        try {
+            // D9 — outside the tx, idempotent
+            firebaseAuth.updateUser(new UserRecord.UpdateRequest(uid).setDisabled(true));
+            firebaseAuth.revokeRefreshTokens(uid);
+        } finally {
+            evictUserStatus(uid);
+        }
 
         logger.info("Blocked user uid={} actor={} reason={}", uid, actorUid, reason);
     }
@@ -441,12 +468,13 @@ public class AuthService {
             return null;
         });
 
-        // Re-enable Firebase Auth account
-        firebaseAuth.updateUser(new UserRecord.UpdateRequest(uid).setDisabled(false));
-
-        // D4 — cache evict
-        Cache cache = cacheManager.getCache("userStatus");
-        if (cache != null) cache.evict(uid);
+        // F4: cache eviction in try/finally (see blockUser for rationale).
+        try {
+            // Re-enable Firebase Auth account
+            firebaseAuth.updateUser(new UserRecord.UpdateRequest(uid).setDisabled(false));
+        } finally {
+            evictUserStatus(uid);
+        }
 
         logger.info("Unblocked user uid={} actor={}", uid, actorUid);
     }
