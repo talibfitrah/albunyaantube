@@ -142,11 +142,36 @@ class AuthServiceTest {
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         // Act
-        authService.createUser("e@t", "password123", "Test", "ADMIN", "actor");
+        User created = authService.createUser("e@t", "password123", "Test", "ADMIN", "actor");
 
-        // Assert
+        // Assert: claim is lowercase canonical (D6)
         verify(firebaseAuth).setCustomUserClaims(eq("u1"), argThat(claims ->
                 claims.get("role").equals("admin")
+        ));
+
+        // F2 fix: returned User (which is what gets saved to Firestore) MUST also
+        // be lowercase. Pre-fix this returned "ADMIN" while the claim was "admin",
+        // so the last-admin guard query whereEqualTo("role","admin") missed this user.
+        assertEquals("admin", created.getRole(),
+                "Role on the User saved to Firestore must be canonical lowercase");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void createUser_savesLowercaseRoleToFirestore_evenForMixedCaseInput() throws Exception {
+        // Arrange
+        when(mockUserRecord.getUid()).thenReturn("u2");
+        when(firebaseAuth.createUser(any(UserRecord.CreateRequest.class))).thenReturn(mockUserRecord);
+        doNothing().when(firebaseAuth).setCustomUserClaims(eq("u2"), any(Map.class));
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        // Act: pass mixed-case role
+        authService.createUser("m@t", "password123", "M", "Moderator", "actor");
+
+        // Assert: persisted User has canonical lowercase role
+        verify(userRepository).save(argThat((User u) -> "moderator".equals(u.getRole())));
+        verify(firebaseAuth).setCustomUserClaims(eq("u2"), argThat(claims ->
+                claims.get("role").equals("moderator")
         ));
     }
 

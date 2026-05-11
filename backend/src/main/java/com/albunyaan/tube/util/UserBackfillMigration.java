@@ -20,6 +20,7 @@ import java.net.InetAddress;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * BACKEND-AUTH-01 Task 12: Idempotent user-backfill migration.
@@ -177,10 +178,27 @@ public class UserBackfillMigration {
             changed = true;
         }
 
-        // Role: null or blank → "user".
-        if (u.getRole() == null || u.getRole().isBlank()) {
+        // Role normalisation (D6).
+        // The migration must heal three classes of broken role values:
+        //   - null / blank  → "user" (safest default; matches Role.fromString fallback)
+        //   - uppercase / mixed-case canonical values → lowercase canonical
+        //     (e.g. "ADMIN" → "admin"); otherwise the admin-count guard misses them.
+        //   - non-canonical garbage (e.g. legacy "super-admin") → "user"
+        //     (privilege-reduction, safe).
+        String currentRole = u.getRole();
+        if (currentRole == null || currentRole.isBlank()) {
             u.setRole("user");
             changed = true;
+        } else {
+            String canonical = currentRole.toLowerCase(Locale.ROOT);
+            if (!Set.of("admin", "moderator", "user").contains(canonical)) {
+                // Unknown role value — clamp to "user".
+                u.setRole("user");
+                changed = true;
+            } else if (!currentRole.equals(canonical)) {
+                u.setRole(canonical);
+                changed = true;
+            }
         }
 
         // Timestamps: fill gaps without overwriting existing values.

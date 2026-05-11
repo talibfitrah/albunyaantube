@@ -148,6 +148,67 @@ class UserBackfillMigrationTest extends BaseIntegrationTest {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // F2: migration normalises uppercase / mixed-case roles to lowercase
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Test
+    void backfillNormalizesUppercaseRoleToLowercase() throws Exception {
+        // Pre-F2 admins (e.g. initial admin created with literal "ADMIN") never
+        // get healed because the null/blank check is the only role gate.
+        User uppercaseAdmin = new User();
+        uppercaseAdmin.setUid("legacy-admin");
+        uppercaseAdmin.setEmail("legacy-admin@t");
+        uppercaseAdmin.setRole("ADMIN");
+        uppercaseAdmin.setStatus("active");
+        uppercaseAdmin.setCreatedAt(Timestamp.now());
+        uppercaseAdmin.setUpdatedAt(Timestamp.now());
+        repo.saveRaw(uppercaseAdmin);
+
+        migration.run("test-actor");
+
+        User after = repo.findByUid("legacy-admin").orElseThrow();
+        assertEquals("admin", after.getRole(),
+                "Uppercase 'ADMIN' must be lowercased so admin-count queries hit it");
+    }
+
+    @Test
+    void backfillNormalizesMixedCaseRoleToLowercase() throws Exception {
+        User mixed = new User();
+        mixed.setUid("legacy-mixed");
+        mixed.setEmail("mixed@t");
+        mixed.setRole("Moderator");
+        mixed.setStatus("active");
+        mixed.setCreatedAt(Timestamp.now());
+        mixed.setUpdatedAt(Timestamp.now());
+        repo.saveRaw(mixed);
+
+        migration.run("test-actor");
+
+        assertEquals("moderator", repo.findByUid("legacy-mixed").orElseThrow().getRole());
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // F2: non-canonical role values are clamped to "user" (privilege reduction)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Test
+    void backfillClampsNonCanonicalRoleToUser() throws Exception {
+        User legacyJunk = new User();
+        legacyJunk.setUid("legacy-junk");
+        legacyJunk.setEmail("junk@t");
+        legacyJunk.setRole("super-admin"); // not in {admin, moderator, user}
+        legacyJunk.setStatus("active");
+        legacyJunk.setCreatedAt(Timestamp.now());
+        legacyJunk.setUpdatedAt(Timestamp.now());
+        repo.saveRaw(legacyJunk);
+
+        migration.run("test-actor");
+
+        assertEquals("user", repo.findByUid("legacy-junk").orElseThrow().getRole(),
+                "Unknown legacy role values must be clamped to 'user' (privilege reduction)");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // T5: synchronous summary AuditLog is written on completion
     // ─────────────────────────────────────────────────────────────────────────
 

@@ -110,7 +110,11 @@ public class AuthService {
 
             if (existingUser == null) {
                 logger.info("Creating initial admin user: {}", initialAdminEmail);
-                createUser(initialAdminEmail, initialAdminPassword, initialAdminDisplayName, "ADMIN", null);
+                // Use canonical lowercase value (D6). Literal "ADMIN" used to land in
+                // Firestore as-is, which made the (role,status) admin-count query miss
+                // the initial admin → last-admin guard fired wrong.
+                createUser(initialAdminEmail, initialAdminPassword, initialAdminDisplayName,
+                        Role.ADMIN.getValue(), null);
                 logger.info("Initial admin user created successfully");
             } else {
                 logger.info("Initial admin user already exists: {}", initialAdminEmail);
@@ -122,10 +126,17 @@ public class AuthService {
     }
 
     /**
-     * Create a new user in Firebase Auth and Firestore
+     * Create a new user in Firebase Auth and Firestore.
+     *
+     * D6: the role is normalised to canonical lowercase BEFORE both the Firestore
+     * write and the Firebase Auth custom-claim write. Anything else makes the
+     * (role,status) admin-count query miss legitimate admins.
      */
     public User createUser(String email, String password, String displayName, String role, String createdByUid)
             throws FirebaseAuthException, ExecutionException, InterruptedException, TimeoutException {
+
+        // Canonical lowercase role (D6) — single source of truth for downstream writes.
+        String canonicalRole = Role.fromString(role).getValue();
 
         // Create user in Firebase Authentication
         UserRecord.CreateRequest request = new UserRecord.CreateRequest()
@@ -137,17 +148,17 @@ public class AuthService {
         UserRecord userRecord = firebaseAuth.createUser(request);
         String uid = userRecord.getUid();
 
-        // Set custom claims for role-based access
+        // Set custom claims for role-based access (canonical lowercase)
         Map<String, Object> claims = new HashMap<>();
-        claims.put("role", role != null ? role.toLowerCase(java.util.Locale.ROOT) : null);
+        claims.put("role", canonicalRole);
         firebaseAuth.setCustomUserClaims(uid, claims);
 
-        // Create user document in Firestore
-        User user = new User(uid, email, displayName, role);
+        // Create user document in Firestore — canonical lowercase role
+        User user = new User(uid, email, displayName, canonicalRole);
         user.setCreatedBy(createdByUid);
         userRepository.save(user);
 
-        logger.info("Created user: {} (uid: {}) with role: {}", email, uid, role);
+        logger.info("Created user: {} (uid: {}) with role: {}", email, uid, canonicalRole);
         return user;
     }
 
