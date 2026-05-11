@@ -118,6 +118,68 @@ class AuthServiceSoftDeleteIntegrationTest extends BaseIntegrationTest {
         assertEquals(UserStatus.ACTIVE, after.getStatusEnum());
     }
 
+    // ── F8 — softDelete refuses already-blocked targets ──────────────────────
+    // Pre-F8 path: block → softDelete → recover ended up status="active" with
+    // leftover block metadata. We now refuse the softDelete entirely so admins
+    // must unblock first.
+
+    @Test
+    void softDeleteUser_throwsWhenTargetIsBlocked() throws Exception {
+        stubFirebaseAuthMutations();
+
+        String adminUid = seedUser("a-f8-1@t.com", "admin");
+        seedUser("a-f8-2@t.com", "admin"); // ensure not-last-admin guard passes
+        String targetUid = seedUser("victim-f8@t.com", "moderator");
+
+        // First block the target.
+        authService.blockUser(targetUid, adminUid, "test-block");
+        assertTrue(userRepository.findByUid(targetUid).orElseThrow().isBlocked(),
+                "Pre-condition: target must be blocked");
+
+        // Now attempt softDelete — must throw IllegalStateException.
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> authService.softDeleteUser(targetUid, adminUid, "policy"),
+                "softDeleteUser must throw when target is already BLOCKED");
+        assertTrue(ex.getMessage().toLowerCase().contains("unblock"),
+                "Error message must mention unblock requirement: " + ex.getMessage());
+
+        // Verify target is still BLOCKED (not transitioned to DELETED).
+        User after = userRepository.findByUid(targetUid).orElseThrow();
+        assertEquals(UserStatus.BLOCKED, after.getStatusEnum(),
+                "Target must remain in BLOCKED status after rejected softDelete");
+    }
+
+    // ── F8 — recover clears block metadata (end-to-end) ──────────────────────
+    // Belt-and-braces test of the model-level F8 fix. The softDelete-while-
+    // blocked path is now blocked by the F8 guard above, so we exercise the
+    // model-level clear via a recovered DELETED user that was never blocked,
+    // and verify all delete-AND-block metadata is empty after recover.
+
+    @Test
+    void recoverUser_clearsBlockMetadata_endToEnd() throws Exception {
+        stubFirebaseAuthMutations();
+
+        String adminUid = seedUser("a-f8-3@t.com", "admin");
+        seedUser("a-f8-4@t.com", "admin");
+        String targetUid = seedUser("victim-f8-recover@t.com", "moderator");
+
+        // softDelete then recover.
+        authService.softDeleteUser(targetUid, adminUid, "test");
+        authService.recoverUser(targetUid, adminUid);
+
+        User after = userRepository.findByUid(targetUid).orElseThrow();
+        assertTrue(after.isActive(), "User must be ACTIVE after recover");
+        // Delete metadata cleared.
+        assertNull(after.getDeletedAt(), "deletedAt must be null after recover");
+        assertNull(after.getDeletedBy(), "deletedBy must be null after recover");
+        assertNull(after.getDeleteReason(), "deleteReason must be null after recover");
+        // Block metadata also cleared (F8) — never set in this path, but verify
+        // the recover never sets them accidentally either.
+        assertNull(after.getBlockedAt(), "blockedAt must be null after recover");
+        assertNull(after.getBlockedBy(), "blockedBy must be null after recover");
+        assertNull(after.getBlockReason(), "blockReason must be null after recover");
+    }
+
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
     /**

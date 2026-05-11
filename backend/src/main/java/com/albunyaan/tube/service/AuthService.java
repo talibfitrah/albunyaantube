@@ -339,6 +339,17 @@ public class AuthService {
             }
             User target = snap.toObject(User.class);
 
+            // F8: forbid soft-delete of an already-blocked user. Pre-fix path was
+            //   block (status=blocked) → softDelete (status=deleted) → unblock (status=active)
+            // — the unblock step turned a blocked user back to ACTIVE without a
+            // USER_RECOVERED audit row, evading the audit trail. By refusing the
+            // delete entirely, admins must explicitly unblock or follow the
+            // recover path, both of which write the right audit events.
+            if (target.isBlocked()) {
+                throw new IllegalStateException(
+                    "Unblock before soft-deleting: " + uid);
+            }
+
             // Last-admin guard (D2) — inline transactional check
             if (target.isAdmin()) {
                 if (uid.equals(actorUid)) {

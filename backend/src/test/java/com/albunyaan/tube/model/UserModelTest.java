@@ -92,4 +92,35 @@ class UserModelTest {
         assertNull(u.getBlockedBy());
         assertNull(u.getBlockReason());
     }
+
+    // ── F8 — recordRecover clears block metadata as well as delete metadata ──
+    // Pre-fix a block→softDelete→recover path left blockedAt/By/Reason populated
+    // on an ACTIVE user doc. The User doc must mirror only the CURRENT state.
+
+    @Test void recordRecover_clearsBlockMetadata() {
+        User u = new User();
+        // Simulate a leftover-block path: block first, then soft-delete (without
+        // unblocking), then recover. We bypass the AuthService guard to test the
+        // model-level behaviour in isolation.
+        u.recordBlock("admin-1", "internal-troll-banned-per-ticket-1234");
+        // Skip the unblock — simulate pre-F8 data where someone soft-deleted a
+        // blocked user without unblocking first.
+        u.recordSoftDelete("admin-2", "policy");
+        // Verify the pre-condition: block metadata is still on the doc.
+        assertEquals("internal-troll-banned-per-ticket-1234", u.getBlockReason(),
+                "Pre-condition: block metadata should still be present after softDelete");
+        assertNotNull(u.getBlockedAt(), "Pre-condition: blockedAt should still be set");
+
+        // Act: recover.
+        u.recordRecover("admin-3");
+
+        // Assert: every block field is cleared, status is ACTIVE.
+        assertEquals("active", u.getStatus());
+        assertNull(u.getBlockedAt(), "blockedAt must be cleared on recover");
+        assertNull(u.getBlockedBy(), "blockedBy must be cleared on recover");
+        assertNull(u.getBlockReason(), "blockReason must be cleared on recover");
+        assertNull(u.getDeletedAt());
+        assertNull(u.getDeletedBy());
+        assertNull(u.getDeleteReason());
+    }
 }

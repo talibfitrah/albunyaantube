@@ -229,11 +229,32 @@ public class User {
         touch();
     }
 
+    /**
+     * F8: recover ALSO clears any leftover block metadata.
+     *
+     * Without this clear, a user who was blocked → soft-deleted → recovered
+     * would end up status="active" but still carry the prior blockedAt /
+     * blockedBy / blockReason values from the block lifecycle. That left the
+     * document internally inconsistent: isBlocked() returned false (status is
+     * active) while block audit fields were still populated.
+     *
+     * The audit trail in the auditLogs collection is the durable source of
+     * truth for "this user was ever blocked"; the User doc only mirrors the
+     * CURRENT state, so wiping block metadata here is the right shape.
+     */
     public void recordRecover(String byUid) {
         this.status = UserStatus.ACTIVE.getValue();
         this.deletedAt = null;
         this.deletedBy = null;
         this.deleteReason = null;
+        // F8: defence in depth — clear any block metadata that survived a
+        // block→softDelete→recover path. AuthService.softDeleteUser also
+        // refuses to soft-delete a blocked user, so this path should be
+        // rare, but clearing here keeps the User doc consistent if any
+        // pre-F8 data slipped through.
+        this.blockedAt = null;
+        this.blockedBy = null;
+        this.blockReason = null;
         this.recoveredAt = Timestamp.now();
         this.recoveredBy = byUid;
         touch();
