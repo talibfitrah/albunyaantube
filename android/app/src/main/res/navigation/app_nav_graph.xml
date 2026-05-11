@@ -84,11 +84,24 @@
             app:destination="@id/mainShellFragment"
             app:popUpTo="@id/splashFragment"
             app:popUpToInclusive="true" />
-        <!-- Navigates to age-ineligible screen on 422.
-             T9 will repoint destination to ageIneligibleFragment once it exists. -->
+        <!-- Navigates to age-ineligible screen on 422. -->
         <action
             android:id="@+id/action_bootstrap_to_ageIneligible"
-            app:destination="@id/mainShellFragment" />
+            app:destination="@id/ageIneligibleFragment" />
+    </fragment>
+
+    <!-- Plan C T9: AgeIneligible terminal screen. -->
+    <fragment
+        android:id="@+id/ageIneligibleFragment"
+        android:name="com.albunyaan.tube.ui.bootstrap.AgeIneligibleFragment"
+        android:label="Age Ineligible">
+        <!-- Navigates to sign-in after deleting Auth user + signing out.
+             popUpTo splashFragment inclusive so back-stack is clean. -->
+        <action
+            android:id="@+id/action_ageIneligible_to_signIn"
+            app:destination="@id/signInFragment"
+            app:popUpTo="@id/splashFragment"
+            app:popUpToInclusive="true" />
     </fragment>
 
 </navigation>

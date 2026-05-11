@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Plan C T9: Age-ineligible terminal screen — phone variant (<600dp).
+
+  Tablet / TV variants:
+    - layout-sw600dp/fragment_age_ineligible.xml — centered 560dp column.
+    - layout-sw720dp/fragment_age_ineligible.xml — TV/large-tablet, same column.
+
+  Same view IDs across all three so the Fragment binds the same code paths.
+  RTL: text uses textAlignment="viewStart" — never gravity="left".
+  fitsSystemWindows="true" per CLAUDE.md edge-to-edge policy (SDK 35).
+-->
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="@dimen/spacing_lg"
+    android:fitsSystemWindows="true"
+    tools:context="com.albunyaan.tube.ui.bootstrap.AgeIneligibleFragment">
+
+    <TextView
+        android:id="@+id/title"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="@string/age_ineligible_title"
+        android:textAppearance="?attr/textAppearanceHeadlineSmall"
+        android:textAlignment="viewStart"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/body"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintVertical_chainStyle="packed" />
+
+    <TextView
+        android:id="@+id/body"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/spacing_md"
+        android:text="@string/age_ineligible_body"
+        android:textAppearance="?attr/textAppearanceBodyLarge"
+        android:textAlignment="viewStart"
+        app:layout_constraintTop_toBottomOf="@id/title"
+        app:layout_constraintBottom_toTopOf="@id/okButton"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/okButton"
+        style="@style/Widget.Material3.Button"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/spacing_lg"
+        android:text="@string/age_ineligible_ok_button"
+        app:layout_constraintTop_toBottomOf="@id/body"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>

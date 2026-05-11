@@ -29,4 +29,9 @@
     <string name="bootstrap_error_invalid_name">Please tell us your name (1–40 characters)</string>
     <string name="bootstrap_error_invalid_dob">Please choose your date of birth</string>
     <string name="bootstrap_error_save_failed">Couldn\’t save your profile — try again</string>
+
+    <!-- Plan C T9: AgeIneligible -->
+    <string name="age_ineligible_title">Sorry — come back soon</string>
+    <string name="age_ineligible_body">FitrahTube is for users 13 and older. Please come back when you\’re a bit older.</string>
+    <string name="age_ineligible_ok_button">OK</string>
 </resources>
