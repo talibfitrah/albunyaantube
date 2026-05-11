@@ -5,22 +5,19 @@ import com.google.firebase.auth.FirebaseUser
 /**
  * Plan B (ANDROID-AUTH-01): observable auth state of the current user.
  *
- * Mirrors [com.google.firebase.auth.FirebaseAuth.AuthStateListener] but as a
- * Kotlin sealed type so the UI can `when`-exhaustively render. Lifetime is the
- * app process; the singleton [AuthRepository] keeps a `StateFlow<AuthState>`.
+ * Mirrors [com.google.firebase.auth.FirebaseAuth.AuthStateListener] one-to-one:
+ * the only two states are SignedOut (no [com.google.firebase.auth.FirebaseAuth.currentUser])
+ * and SignedIn (one exists). Operation-level error/loading state lives on the
+ * caller's local UI state, never here — see [AuthRepositoryImpl] for the
+ * invariant. Lifetime is the app process; the singleton [AuthRepository]
+ * keeps a `StateFlow<AuthState>`.
  */
 sealed interface AuthState {
     /** No FirebaseUser cached locally. */
     data object SignedOut : AuthState
 
-    /** A sign-in operation is in flight. ViewModels render a spinner here. */
-    data object SigningIn : AuthState
-
     /** A FirebaseUser is signed in. The Firebase SDK guarantees a usable ID token. */
     data class SignedIn(val user: FirebaseUser, val uid: String) : AuthState
-
-    /** The most recent sign-in attempt failed; UI shows the mapped message. */
-    data class Error(val cause: AuthErrorCode) : AuthState
 }
 
 /**

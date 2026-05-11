@@ -219,4 +219,47 @@ class AuthRepositoryImplTest {
         assertTrue(result.isFailure)
         assertTrue(repository.authState.value is AuthState.SignedOut)
     }
+
+    /**
+     * Regression test for the original symptom (2026-05-11): user did a failing
+     * Microsoft sign-in (which under the old runAuth contract left authState at
+     * Error), then signed up successfully with email+password — the Settings
+     * Account section stayed hidden because authState was still Error even
+     * though FirebaseAuth.currentUser was valid.
+     *
+     * The new contract: a failed op leaves authState SignedOut; a subsequent
+     * successful op + listener-fire moves it to SignedIn cleanly with no
+     * residue from the prior failure.
+     */
+    @Test fun `failed op followed by successful op lands authState in SignedIn`() = runTest {
+        val listenerCaptor = argumentCaptor<com.google.firebase.auth.FirebaseAuth.AuthStateListener>()
+        val repo = AuthRepositoryImpl(firebaseAuth)
+        verify(firebaseAuth, org.mockito.kotlin.atLeastOnce()).addAuthStateListener(listenerCaptor.capture())
+
+        // Op A: a credential sign-in that fails (Microsoft cancel analog).
+        val credential = mock<AuthCredential>()
+        whenever(firebaseAuth.signInWithCredential(credential))
+            .thenReturn(Tasks.forException(FirebaseAuthException("ERROR_INVALID_CREDENTIAL", "")))
+        val failed = repo.signInWithCredential(credential)
+        assertTrue("failed op must return failure", failed.isFailure)
+        assertTrue(
+            "failed op must NOT push Error into authState",
+            repo.authState.value is AuthState.SignedOut,
+        )
+
+        // Op B: email+password sign-up that succeeds. FirebaseAuth fires the
+        // AuthStateListener on real devices; we drive it manually here.
+        whenever(firebaseAuth.createUserWithEmailAndPassword("new@x.com", "secret"))
+            .thenReturn(Tasks.forResult(authResult))
+        whenever(firebaseAuth.currentUser).thenReturn(user)
+        repo.signUpWithEmail("new@x.com", "secret")
+        listenerCaptor.lastValue.onAuthStateChanged(firebaseAuth)
+
+        val finalState = repo.authState.value
+        assertTrue(
+            "expected SignedIn after success despite prior failure, got $finalState",
+            finalState is AuthState.SignedIn,
+        )
+        assertEquals("uid-123", (finalState as AuthState.SignedIn).uid)
+    }
 }

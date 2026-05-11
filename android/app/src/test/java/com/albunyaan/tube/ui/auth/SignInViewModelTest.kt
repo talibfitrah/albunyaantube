@@ -160,6 +160,37 @@ class SignInViewModelTest {
         assertEquals(AuthErrorCode.INVALID_CREDENTIAL, viewModel.ui.value.error)
     }
 
+    /**
+     * Double-call onCredential safety: ActivityResultLauncher can double-deliver
+     * a credential on rapid recreation around process death. The Job-based guard
+     * in [SignInViewModel] must cancel the prior in-flight coroutine so only the
+     * latest result lands on UiState. If two `viewModelScope.launch` blocks were
+     * allowed to race, the writes would be order-dependent (and the slower one's
+     * stale write could overwrite a fresh error or success).
+     */
+    @Test fun `onCredential called twice — only the latest result lands on UiState`() = runTest(dispatcher) {
+        val credential1 = mock<AuthCredential>()
+        val credential2 = mock<AuthCredential>()
+        val user = mock<FirebaseUser>()
+        // First call: will fail. Second call: will succeed. The cancellation
+        // means the first call's failure write should never reach UiState —
+        // only the second call's success (error=null) should be observable.
+        whenever(repository.signInWithCredential(credential1))
+            .thenReturn(Result.failure(FirebaseAuthException("ERROR_INVALID_CREDENTIAL", "")))
+        whenever(repository.signInWithCredential(credential2))
+            .thenReturn(Result.success(user))
+
+        viewModel.onCredential(credential1, AuthErrorCode.GOOGLE_SIGN_IN_FAILED)
+        // Second call enqueued before the first one resumes; the guard cancels
+        // the first coroutine before its _ui.update lands.
+        viewModel.onCredential(credential2, AuthErrorCode.GOOGLE_SIGN_IN_FAILED)
+        advanceUntilIdle()
+
+        // Latest call wins: no error, not loading.
+        assertNull("first call's error must not leak through", viewModel.ui.value.error)
+        assertFalse(viewModel.ui.value.isLoading)
+    }
+
     @Test fun `forgotPassword with blank email surfaces INVALID_EMAIL`() = runTest(dispatcher) {
         viewModel.forgotPassword()
         advanceUntilIdle()

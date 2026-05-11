@@ -103,8 +103,24 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
                     // returns the nested controller, which doesn't know about signIn —
                     // navigating there crashes with IllegalArgumentException. Grab the
                     // activity-level controller and route from there.
+                    //
+                    // Guards: between the dialog tap and this continuation the user
+                    // may have backgrounded or rotated. activity can be null, the
+                    // activity may be finishing, or NavHostFragment's view may be
+                    // detached — Navigation.findNavController(activity, ...) throws
+                    // IllegalStateException in that case.
                     val activity = activity ?: return@launch
-                    val outerNav = Navigation.findNavController(activity, R.id.nav_host_fragment)
+                    if (activity.isFinishing || activity.isDestroyed) return@launch
+                    val outerNav = try {
+                        Navigation.findNavController(activity, R.id.nav_host_fragment)
+                    } catch (e: IllegalStateException) {
+                        android.util.Log.w(
+                            "SettingsFragment",
+                            "outer NavController unavailable during sign-out — skipping nav",
+                            e,
+                        )
+                        return@launch
+                    }
                     outerNav.navigate(
                         R.id.signInFragment,
                         null,

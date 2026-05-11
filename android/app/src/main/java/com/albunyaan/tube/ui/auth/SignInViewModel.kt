@@ -7,6 +7,7 @@ import com.albunyaan.tube.auth.AuthRepository
 import com.albunyaan.tube.auth.toAuthErrorCode
 import com.google.firebase.auth.AuthCredential
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -46,6 +47,14 @@ class SignInViewModel @Inject constructor(
     private val _ui = MutableStateFlow(UiState())
     val ui: StateFlow<UiState> = _ui.asStateFlow()
 
+    /**
+     * Tracks the in-flight credential sign-in [Job], so a second concurrent
+     * [onCredential] call can cancel the prior one instead of racing. Without
+     * this, two parallel resolutions of [AuthRepository.signInWithCredential]
+     * could each write [UiState] and the order would be non-deterministic.
+     */
+    private var credentialJob: Job? = null
+
     fun onEmailChanged(value: String) {
         _ui.update { it.copy(email = value, error = null, passwordResetSent = false) }
     }
@@ -83,12 +92,18 @@ class SignInViewModel @Inject constructor(
     }
 
     fun onCredential(credential: AuthCredential, fallbackError: AuthErrorCode) {
-        // No isLoading re-entrancy guard: the call site is the system's
-        // ActivityResultLauncher (Google) — not user-tap re-entrant — and
-        // launchGoogleSignIn already set isLoading=true before opening the
-        // chooser, so a guard here would silently drop the returned credential.
+        // No simple isLoading re-entrancy guard here: the call site is the
+        // system's ActivityResultLauncher (Google) — not user-tap re-entrant —
+        // and launchGoogleSignIn already set isLoading=true before opening the
+        // chooser, so an `if (isLoading) return` here would silently drop the
+        // returned credential. Instead, cancel any prior in-flight credential
+        // coroutine so the latest credential wins deterministically — protects
+        // against double-delivery of the ActivityResult and against future
+        // callers (e.g., a re-enabled Microsoft path) that haven't pre-set
+        // isLoading.
+        credentialJob?.cancel()
         _ui.update { it.copy(isLoading = true, error = null) }
-        viewModelScope.launch {
+        credentialJob = viewModelScope.launch {
             val result = authRepository.signInWithCredential(credential)
             _ui.update {
                 it.copy(

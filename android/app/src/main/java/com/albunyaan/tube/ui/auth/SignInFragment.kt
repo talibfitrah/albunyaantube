@@ -1,7 +1,6 @@
 package com.albunyaan.tube.ui.auth
 
 import android.app.Activity
-import android.content.res.Configuration
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
@@ -36,6 +35,7 @@ import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.OAuthProvider
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
@@ -43,18 +43,20 @@ import javax.inject.Inject
 /**
  * Plan B (ANDROID-AUTH-01) T4: Sign-in / sign-up screen.
  *
- * Hosts three sign-in paths:
+ * Two active sign-in paths:
  * 1. Email + password: form submit → [SignInViewModel.submit].
  * 2. Google: GoogleSignIn Activity → Google ID token → GoogleAuthProvider
  *    credential → [SignInViewModel.onCredential].
- * 3. Microsoft: [FirebaseAuth.startActivityForSignInWithProvider] (Firebase
- *    handles the full OAuth flow). AuthStateListener picks up the result.
- *    On TV (UI_MODE_TYPE_TELEVISION) we hide the button — Custom Tabs are
- *    not available on AOSP TV. Plan B accepted this limitation explicitly.
  *
- * Navigation on success is handled by T5 once the nav graph adds the
- * sign-in destination. For now: `authRepository.authState` collected
- * elsewhere drives the post-signin route.
+ * A Microsoft path was wired (Firebase OAuthProvider) but is hidden across
+ * all layouts pending ANDROID-AUTH-02; the MSA consumer backend has not
+ * synced with the Azure AD `AzureADandPersonalMicrosoftAccount` audience
+ * setting. The dead code is kept for fast re-enable when MSA is fixed.
+ *
+ * Post-sign-in routing is driven locally by the [AuthRepository.authState]
+ * observer in [onViewCreated] — first [AuthState.SignedIn] pops this
+ * fragment off the back stack into MainShell. MainActivity only observes
+ * the 403 account-status stream, not the auth state.
  */
 @AndroidEntryPoint
 class SignInFragment : Fragment(R.layout.fragment_sign_in) {
@@ -92,20 +94,21 @@ class SignInFragment : Fragment(R.layout.fragment_sign_in) {
             }
         }
 
-        // Post-sign-in routing. Collect the first SignedIn emission and pop
-        // SignInFragment off the back stack into MainShell. Without this the
-        // fragment sits there after a successful credential because nothing
-        // else observes authState (MainActivity only observes the 403 stream).
+        // Post-sign-in routing. Wait for the first SignedIn emission, pop
+        // SignInFragment off the back stack into MainShell, then exit the
+        // collector (one-shot). first() terminates the flow after the first
+        // match; we never want to re-navigate from this fragment after a
+        // back nav lands the user here again (a fresh STARTED restart picks
+        // up the next SignedIn cleanly).
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 authRepository.authState
                     .filterIsInstance<AuthState.SignedIn>()
-                    .collect {
-                        val nav = findNavController()
-                        if (nav.currentDestination?.id == R.id.signInFragment) {
-                            nav.navigate(R.id.action_signIn_to_main)
-                        }
-                    }
+                    .first()
+                val nav = findNavController()
+                if (nav.currentDestination?.id == R.id.signInFragment) {
+                    nav.navigate(R.id.action_signIn_to_main)
+                }
             }
         }
     }
