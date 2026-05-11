@@ -59,8 +59,14 @@ jobs:
       - name: Build debug APK (canonical)
         run: ./gradlew assembleDebug
 
+      # Scoped to debug variant: schemas live in the debug source set only (see
+      # comment in app/build.gradle.kts:201) — running `./gradlew test`
+      # fans out to release+benchmark variants where MigrationTestHelper
+      # cannot find the schema JSON files, causing AppDatabaseMigration*Test
+      # to fail with FileNotFoundException. The author's design intent was
+      # debug-variant-only Room migration testing; this matches it.
       - name: Run unit tests (with 300s timeout)
-        run: timeout 300 ./gradlew test
+        run: timeout 300 ./gradlew testDebugUnitTest
 
       - name: Run lint checks
         run: ./gradlew lint
