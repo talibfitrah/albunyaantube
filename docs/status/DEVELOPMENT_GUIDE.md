@@ -801,12 +801,102 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
 ---
 
+## Authentication (Plan B / ANDROID-AUTH-01)
+
+The Android client uses Firebase Authentication and attaches the resulting ID token to every backend request. The full design is in [`docs/superpowers/specs/2026-05-11-android-auth-design.md`](../superpowers/specs/2026-05-11-android-auth-design.md); the implementation plan is in [`docs/superpowers/plans/2026-05-11-plan-b-android-auth.md`](../superpowers/plans/2026-05-11-plan-b-android-auth.md).
+
+### Architecture
+
+```
+SignInFragment ──┬─ email/password ──► AuthRepository.signInWithEmail / signUpWithEmail
+                 ├─ Google           ──► GoogleSignIn → AuthCredential → AuthRepository.signInWithCredential
+                 └─ Microsoft        ──► FirebaseAuth.startActivityForSignInWithProvider
+
+Every HTTP request → FirebaseAuthInterceptor (adds `Authorization: Bearer <id-token>`, one-shot 401 retry)
+                  → AccountStatusInterceptor (observes 403 ACCOUNT_BLOCKED/DELETED → signOut + emits event)
+                  → backend
+
+MainActivity ◄── AuthRepository.accountStatusEvents ── shows dialog, navigates to sign-in
+```
+
+Source paths:
+- `android/app/src/main/java/com/albunyaan/tube/auth/` — repository, interceptors, Hilt module.
+- `android/app/src/main/java/com/albunyaan/tube/ui/auth/` — SignInFragment + ViewModel.
+- `android/app/src/main/res/layout{,sw600dp,sw720dp}/fragment_sign_in.xml` — same view IDs, different density adaptations.
+
+### Provisioning google-services.json
+
+The real config file is gitignored — see [`android/app/google-services.json.README.md`](../../android/app/google-services.json.README.md). Quick path:
+
+```bash
+firebase apps:sdkconfig ANDROID 1:502702093037:android:a4bed108e492f0724852e4 \
+  --project=albunyaan-tube \
+  --out android/app/google-services.json
+```
+
+If the app isn't registered yet: `firebase apps:create ANDROID FitrahTube --package-name=com.albunyaan.tube --project=albunyaan-tube` first, then the sdkconfig.
+
+### Firebase console steps that are NOT automated
+
+The `apps:sdkconfig` download alone does NOT enable any sign-in providers. Before sign-in works end-to-end you must, in [the Firebase console](https://console.firebase.google.com/project/albunyaan-tube/authentication/providers):
+
+1. Enable **Email/Password** sign-in.
+2. Enable **Google** sign-in — automatic OAuth client; remember to add the debug-keystore SHA-1 fingerprint under Project Settings → Your apps → Android.
+3. Enable **Microsoft** sign-in. Requires an Azure AD app registration with redirect URI `https://albunyaan-tube.firebaseapp.com/__/auth/handler`.
+4. **Re-download** `google-services.json` after enabling Google so the generated `R.string.default_web_client_id` is populated. Without it, `SignInFragment.launchGoogleSignIn()` surfaces an inline error rather than crashing (defensive `resources.getIdentifier` lookup).
+
+### Running the Firebase Auth emulator locally
+
+```bash
+cd backend
+firebase emulators:start --only auth
+```
+
+Then point the Android app at it via `android/local.properties`:
+
+```properties
+# Android emulator hitting host
+auth.emulator.host=10.0.2.2
+auth.emulator.port=9099
+
+# Or for a real device on the same Wi-Fi:
+# auth.emulator.host=192.168.1.42
+# auth.emulator.port=9099
+```
+
+`AlBunyaanApplication.applyAuthEmulatorOverrideIfConfigured()` calls `FirebaseAuth.useEmulator()` on debug builds when the host is non-empty. Release builds NEVER hit an emulator regardless of `local.properties`.
+
+### Verifying end-to-end
+
+```bash
+# 1. Run backend + auth emulator
+cd backend && firebase emulators:start --only auth &
+./gradlew bootRun
+
+# 2. Build + install the debug APK
+cd ../android && ./gradlew installDebug
+
+# 3. Open the app, sign in
+# 4. Watch logcat
+adb logcat -s OkHttp,AccountStatusInterceptor,FirebaseAuthInterceptor
+# Expect:
+#   OkHttp ... Authorization: Bearer ey...
+#   Backend logs: FirebaseAuthFilter resolved uid <...>
+```
+
+### Known limitations
+
+- **Microsoft sign-in on TV is unsupported.** Plan B explicitly accepted this: AOSP TV doesn't ship Chrome Custom Tabs, so the OAuth redirect can't complete. The TV layout hides the Microsoft button and shows the unavailable-on-TV info text.
+- **No anonymous browsing of admin endpoints.** The status check fires only on `/api/admin/*` (Plan A's `FirebaseAuthFilter.shouldNotFilter` exempts `/api/v1/*`). A BLOCKED user can still browse the public catalog until they hit an admin endpoint. Plan D will widen this when sync endpoints arrive.
+- **Anonymous→account merge is Plan D.** Sign-in does NOT migrate the local Room state (favorites, downloads, history) into a server-side account. That happens when the sync engine lands.
+
+---
+
 ## Additional Resources
 
 - **Architecture**: [../architecture/overview.md](../architecture/overview.md)
 - **API Spec**: [../architecture/api-specification.yaml](../architecture/api-specification.yaml)
 - **Design System**: [../design/design-system.md](../design/design-system.md)
-- **Android Guide**: [ANDROID_GUIDE.md](ANDROID_GUIDE.md)
 - **PRD**: [../PRD.md](../PRD.md)
 
 ---
