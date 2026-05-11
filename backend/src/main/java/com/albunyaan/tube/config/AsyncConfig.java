@@ -104,6 +104,42 @@ public class AsyncConfig {
     }
 
     /**
+     * F5: bounded executor for audit-log writes.
+     *
+     * Previously {@code @Async} on AuditLogService.log* methods ran on Spring's
+     * default {@code SimpleAsyncTaskExecutor}, which spawns a NEW thread for every
+     * task with no upper bound. The UserBackfillMigration calls
+     * {@code auditLogService.logSystem(...)} once per user — on a sizeable user
+     * base this spawned N threads, exhausting the thread pool / heap.
+     *
+     * Configuration rationale:
+     * - corePoolSize=2: minimum threads kept alive for ambient logging.
+     * - maxPoolSize=8: cap concurrent audit writes (each is a Firestore set).
+     * - queueCapacity=200: absorbs short bursts from the migration without
+     *   spinning up extra threads.
+     * - CallerRunsPolicy: under saturation, the caller (e.g. migration loop)
+     *   runs the audit write inline. Audit logs MUST NOT be silently lost
+     *   (regulatory + post-incident forensic value), so we trade throughput
+     *   for durability. The caller is a background migration thread, not a
+     *   HTTP request thread, so this is safe.
+     */
+    @Bean(name = "auditExecutor")
+    public Executor auditExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(2);
+        executor.setMaxPoolSize(8);
+        executor.setQueueCapacity(200);
+        executor.setKeepAliveSeconds(60);
+        executor.setThreadNamePrefix("audit-");
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(15);
+        // CallerRunsPolicy → never lose an audit write; degrade to inline on pressure.
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.initialize();
+        return executor;
+    }
+
+    /**
      * Custom rejection handler that logs when tasks are rejected and throws an exception.
      *
      * This ensures:

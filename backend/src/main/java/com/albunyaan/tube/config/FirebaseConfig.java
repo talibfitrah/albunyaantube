@@ -110,12 +110,10 @@ public class FirebaseConfig {
         if (emulatorEnabled) {
             String emulatorEndpoint = emulatorHost + ":" + emulatorPort;
             logger.info("Using Firestore emulator at: {}", emulatorEndpoint);
-            optionsBuilder.setHost(emulatorEndpoint);
-            // Use mock credentials for emulator
-            GoogleCredentials mockCredentials = GoogleCredentials.create(
-                new AccessToken("emulator-token", new Date(System.currentTimeMillis() + 3600000))
-            );
-            optionsBuilder.setCredentials(mockCredentials);
+            // Use setEmulatorHost() — this sets EmulatorCredentials internally,
+            // which bypasses Firestore security-rules evaluation in the emulator.
+            // setHost() alone does NOT trigger the bypass; setEmulatorHost() does.
+            optionsBuilder.setEmulatorHost(emulatorEndpoint);
         } else {
             // Build Firestore with explicit credentials for production
             GoogleCredentials credentials;

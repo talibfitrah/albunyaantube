@@ -473,17 +473,19 @@ public class ChannelRepository {
                 .orderBy("subscribers", Query.Direction.DESCENDING)
                 .limit(limit + 1); // Fetch one extra to detect hasNext
 
-        // Apply cursor if provided
+        // Apply cursor if provided. If the cursor's document no longer exists
+        // (deleted, or cursor came from a different collection / content type),
+        // fall back to returning the first page — graceful degradation matching
+        // CursorUtils.decode()'s null-on-malformed behaviour.
         if (cursor != null && !cursor.isEmpty()) {
             CursorUtils.CursorData cursorData = CursorUtils.decode(cursor);
-            if (cursorData != null) {
+            if (cursorData != null && cursorData.getId() != null) {
                 DocumentReference cursorDoc = getCollection().document(cursorData.getId());
                 var cursorSnapshot = cursorDoc.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS);
                 if (cursorSnapshot.exists()) {
                     query = query.startAfter(cursorSnapshot);
-                } else {
-                    throw new IllegalArgumentException("Invalid cursor: channel document '" + cursorData.getId() + "' not found");
                 }
+                // else: stale/foreign cursor — restart from the beginning
             }
         }
 
@@ -530,17 +532,17 @@ public class ChannelRepository {
                 .orderBy("subscribers", Query.Direction.DESCENDING)
                 .limit(limit + 1);
 
-        // Apply cursor if provided
+        // Apply cursor if provided. Stale cursor → restart from first page
+        // (graceful degradation matching CursorUtils.decode()'s contract).
         if (cursor != null && !cursor.isEmpty()) {
             CursorUtils.CursorData cursorData = CursorUtils.decode(cursor);
-            if (cursorData != null) {
+            if (cursorData != null && cursorData.getId() != null) {
                 DocumentReference cursorDoc = getCollection().document(cursorData.getId());
                 var cursorSnapshot = cursorDoc.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS);
                 if (cursorSnapshot.exists()) {
                     query = query.startAfter(cursorSnapshot);
-                } else {
-                    throw new IllegalArgumentException("Invalid cursor: channel document '" + cursorData.getId() + "' not found");
                 }
+                // else: stale/foreign cursor — restart from the beginning
             }
         }
 

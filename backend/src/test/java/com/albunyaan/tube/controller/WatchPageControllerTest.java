@@ -40,6 +40,9 @@ class WatchPageControllerTest {
     @MockBean
     private FirebaseAuth firebaseAuth;
 
+    @MockBean
+    private com.albunyaan.tube.repository.UserRepository userRepository;
+
     private Video video;
 
     @BeforeEach

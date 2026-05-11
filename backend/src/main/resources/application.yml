@@ -177,6 +177,9 @@ app:
           error-threshold: ${APP_VALIDATION_YOUTUBE_CIRCUIT_BREAKER_ERROR_THRESHOLD:3}
           # Time window in minutes to count errors within (default: 10 minutes)
           window-minutes: ${APP_VALIDATION_YOUTUBE_CIRCUIT_BREAKER_WINDOW_MINUTES:10}
+  migrations:
+    user-backfill:
+      enabled: false
   security:
     cors:
       # Override in production via env var: APP_SECURITY_CORS_ALLOWED_ORIGINS

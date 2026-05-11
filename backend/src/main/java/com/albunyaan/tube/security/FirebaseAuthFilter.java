@@ -1,5 +1,8 @@
 package com.albunyaan.tube.security;
 
+import com.albunyaan.tube.model.User;
+import com.albunyaan.tube.repository.UserRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
 import com.google.firebase.auth.FirebaseToken;
@@ -17,8 +20,11 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -38,12 +44,16 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String ROLE_CLAIM = "role";
     /** Only these role values are accepted from Firebase custom claims. Any other value falls back to "user". */
-    private static final Set<String> VALID_ROLES = Set.of("admin", "moderator");
+    private static final Set<String> VALID_ROLES = Set.of("admin", "moderator", "user");
 
     private final FirebaseAuth firebaseAuth;
+    private final UserRepository userRepository;
+    private final ObjectMapper objectMapper;
 
-    public FirebaseAuthFilter(FirebaseAuth firebaseAuth) {
+    public FirebaseAuthFilter(FirebaseAuth firebaseAuth, UserRepository userRepository, ObjectMapper objectMapper) {
         this.firebaseAuth = firebaseAuth;
+        this.userRepository = userRepository;
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -66,6 +76,58 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
                 FirebaseToken decodedToken = firebaseAuth.verifyIdToken(token);
                 String uid = decodedToken.getUid();
                 String email = decodedToken.getEmail();
+
+                // Conditional revocation check on admin paths (higher-trust paths)
+                boolean isAdminPath = requestURI.startsWith("/api/admin/");
+                if (isAdminPath) {
+                    decodedToken = firebaseAuth.verifyIdToken(token, true);
+                    uid = decodedToken.getUid();
+                    email = decodedToken.getEmail();
+                }
+
+                // Server-authoritative status check against Firestore
+                try {
+                    Optional<User> userOpt = userRepository.findByUid(uid);
+                    if (userOpt.isPresent()) {
+                        User u = userOpt.get();
+                        if (u.isDeleted()) {
+                            writeError(response, HttpServletResponse.SC_UNAUTHORIZED,
+                                "ACCOUNT_NOT_FOUND", "Your account has been deleted.");
+                            return;
+                        }
+                        if (u.isBlocked()) {
+                            // F15: do NOT echo u.getBlockReason() in the response. Moderators
+                            // commonly write internal notes there ("known troll, banned per
+                            // ticket #1234, contact legal") — exfiltrating them to the
+                            // blocked user is a privacy hazard. The block reason stays on
+                            // the User doc + audit log for internal observability; the
+                            // public response is just the coarse-grained code.
+                            writeError(response, HttpServletResponse.SC_FORBIDDEN,
+                                "ACCOUNT_BLOCKED", "Your account is blocked.");
+                            return;
+                        }
+                    }
+                    // No Firestore doc yet (first-time user) — allow; Plan C will create it.
+                } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e) {
+                    logger.error("Status check failed for uid {}: {}", uid, e.getMessage());
+                    writeError(response, HttpServletResponse.SC_SERVICE_UNAVAILABLE,
+                        "SERVICE_UNAVAILABLE", "Account status check failed; try again.");
+                    return;
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    logger.error("Status check interrupted for uid {}", uid);
+                    writeError(response, HttpServletResponse.SC_SERVICE_UNAVAILABLE,
+                        "SERVICE_UNAVAILABLE", "Account status check failed; try again.");
+                    return;
+                } catch (RuntimeException e) {
+                    // Catch-all for unexpected Firestore client errors (network, NPE in mappers,
+                    // etc.) so the filter never bubbles a stack trace to the caller as a 500.
+                    logger.error("Unexpected error during status check for uid {}: {}",
+                        uid, e.getMessage(), e);
+                    writeError(response, HttpServletResponse.SC_SERVICE_UNAVAILABLE,
+                        "SERVICE_UNAVAILABLE", "Account status check failed; try again.");
+                    return;
+                }
 
                 // Extract role from custom claims with allowlist validation
                 Object roleClaim = decodedToken.getClaims().get(ROLE_CLAIM);
@@ -101,6 +163,22 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private void writeError(HttpServletResponse response, int status,
+                            String code, String message) throws IOException {
+        writeError(response, status, code, message, Map.of());
+    }
+
+    private void writeError(HttpServletResponse response, int status,
+                            String code, String message,
+                            Map<String, Object> extra) throws IOException {
+        response.setStatus(status);
+        response.setContentType("application/json");
+        Map<String, Object> body = new HashMap<>(extra);
+        body.put("code", code);
+        body.put("message", message);
+        objectMapper.writeValue(response.getWriter(), body);
     }
 
     @Override

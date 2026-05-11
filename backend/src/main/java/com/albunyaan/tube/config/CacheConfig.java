@@ -52,6 +52,9 @@ public class CacheConfig {
     // Dashboard stats cache (5-minute TTL for admin dashboard by-category stats)
     public static final String CACHE_DASHBOARD_CATEGORY_STATS = "dashboardCategoryStats";
 
+    // User status cache (60s TTL per D4; evicted on lifecycle mutation)
+    public static final String CACHE_USER_STATUS = "userStatus";
+
     /**
      * Configure Caffeine CacheManager with default settings.
      *
@@ -93,7 +96,10 @@ public class CacheConfig {
                 CACHE_NEWPIPE_VIDEO_VALIDATION,
                 CACHE_NEWPIPE_CHANNEL_VIDEOS,
                 CACHE_NEWPIPE_CHANNEL_PLAYLISTS,
-                CACHE_NEWPIPE_PLAYLIST_VIDEOS
+                CACHE_NEWPIPE_PLAYLIST_VIDEOS,
+
+                // User status cache (overridden below to 60s TTL per D4)
+                CACHE_USER_STATUS
 
                 // Note: workspace exclusions and dashboard category stats use dedicated beans
                 // with 5-min TTL, not the CacheManager (see beans below)
@@ -103,6 +109,14 @@ public class CacheConfig {
                 .expireAfterWrite(1, TimeUnit.HOURS)
                 .maximumSize(1000)
                 .recordStats());
+
+        // Override default for userStatus only — 60s TTL, 5,000 max entries (D4)
+        cacheManager.registerCustomCache(CACHE_USER_STATUS,
+                Caffeine.newBuilder()
+                        .expireAfterWrite(60, TimeUnit.SECONDS)
+                        .maximumSize(5_000)
+                        .recordStats()
+                        .build());
 
         return cacheManager;
     }

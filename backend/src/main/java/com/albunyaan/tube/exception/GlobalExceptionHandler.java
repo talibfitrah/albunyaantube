@@ -203,4 +203,27 @@ public class GlobalExceptionHandler {
 
         return new ResponseEntity<>(body, HttpStatus.INTERNAL_SERVER_ERROR);
     }
+
+    // F16: handlers for AccountBlockedException and AccountDeletedException
+    // were removed alongside those classes. The FirebaseAuthFilter writes its
+    // 401/403 responses inline (the filter runs BEFORE @ControllerAdvice in
+    // the servlet stack, so throwing here would not yield the intended body).
+    // No live code paths threw these exceptions — they were aspirational
+    // scaffolding from an earlier design.
+
+    @ExceptionHandler(LastAdminException.class)
+    public ResponseEntity<Object> handleLastAdmin(
+            LastAdminException ex, WebRequest request) {
+        logger.warn("Last-admin protection: {}", ex.getMessage());
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", HttpStatus.CONFLICT.value());
+        body.put("error", "Conflict");
+        body.put("code", "LAST_ADMIN_PROTECTED");
+        body.put("message", ex.getMessage() != null ? ex.getMessage() : "Cannot remove the last admin.");
+        body.put("path", request.getDescription(false).replace("uri=", ""));
+
+        return new ResponseEntity<>(body, HttpStatus.CONFLICT);
+    }
 }

@@ -30,7 +30,7 @@ public class AuditLogService {
     /**
      * Log an admin action (async to not block request)
      */
-    @Async
+    @Async("auditExecutor")
     public void log(String action, String entityType, String entityId, FirebaseUserDetails actor) {
         log(action, entityType, entityId, actor, null);
     }
@@ -38,7 +38,7 @@ public class AuditLogService {
     /**
      * Log an admin action with additional details (async)
      */
-    @Async
+    @Async("auditExecutor")
     public void log(String action, String entityType, String entityId, FirebaseUserDetails actor, Map<String, Object> details) {
         try {
             AuditLog auditLog = new AuditLog(action, entityType, entityId, actor.getUid());
@@ -58,7 +58,7 @@ public class AuditLogService {
     /**
      * Log action with simple string actor (for system actions)
      */
-    @Async
+    @Async("auditExecutor")
     public void logSystem(String action, String entityType, String entityId, String actorDescription) {
         try {
             AuditLog auditLog = new AuditLog(action, entityType, entityId, "system");
@@ -73,7 +73,7 @@ public class AuditLogService {
     /**
      * Log approval action (BACKEND-APPR-01)
      */
-    @Async
+    @Async("auditExecutor")
     public void logApproval(String entityType, String entityId, String actorUid, String actorDisplayName, String notes) {
         try {
             AuditLog auditLog = new AuditLog(entityType + "_approved", entityType, entityId, actorUid);
@@ -91,7 +91,7 @@ public class AuditLogService {
     /**
      * Log rejection action (BACKEND-APPR-01)
      */
-    @Async
+    @Async("auditExecutor")
     public void logRejection(String entityType, String entityId, String actorUid, String actorDisplayName, Map<String, Object> details) {
         try {
             AuditLog auditLog = new AuditLog(entityType + "_rejected", entityType, entityId, actorUid);
@@ -104,6 +104,65 @@ public class AuditLogService {
         } catch (ExecutionException | InterruptedException | java.util.concurrent.TimeoutException e) {
             logger.error("Failed to create rejection audit log: {} {} by {}", entityType, entityId, actorUid, e);
         }
+    }
+
+    /**
+     * Builder for USER_BLOCKED action log.
+     * Used in transactional user blocking (Task 7).
+     * Does NOT persist — caller must use tx.set() within AuthService transaction.
+     */
+    public AuditLog buildBlock(String targetUid, String actorUid, String reason) {
+        return AuditLog.of("USER_BLOCKED", "user", targetUid, actorUid,
+            reason != null ? Map.of("reason", reason) : Map.of());
+    }
+
+    /**
+     * Builder for USER_UNBLOCKED action log.
+     * Used in transactional user unblocking (Task 7).
+     * Does NOT persist — caller must use tx.set() within AuthService transaction.
+     */
+    public AuditLog buildUnblock(String targetUid, String actorUid) {
+        return AuditLog.of("USER_UNBLOCKED", "user", targetUid, actorUid, Map.of());
+    }
+
+    /**
+     * Builder for USER_SOFT_DELETED action log.
+     * Used in transactional user soft delete (Task 6).
+     * Does NOT persist — caller must use tx.set() within AuthService transaction.
+     */
+    public AuditLog buildSoftDelete(String targetUid, String actorUid, String reason) {
+        return AuditLog.of("USER_SOFT_DELETED", "user", targetUid, actorUid,
+            reason != null ? Map.of("reason", reason) : Map.of());
+    }
+
+    /**
+     * Builder for USER_RECOVERED action log.
+     * Used in transactional user recovery (Task 6).
+     * Does NOT persist — caller must use tx.set() within AuthService transaction.
+     */
+    public AuditLog buildRecover(String targetUid, String actorUid) {
+        return AuditLog.of("USER_RECOVERED", "user", targetUid, actorUid, Map.of());
+    }
+
+    /**
+     * Builder for USER_ROLE_CHANGED action log.
+     * Used in transactional user role updates (Task 8).
+     * Does NOT persist — caller must use tx.set() within AuthService transaction.
+     */
+    public AuditLog buildRoleChange(String targetUid, String actorUid,
+                                    String fromRole, String toRole) {
+        return AuditLog.of("USER_ROLE_CHANGED", "user", targetUid, actorUid,
+            Map.of("fromRole", fromRole, "toRole", toRole));
+    }
+
+    /**
+     * Builder for USER_BACKFILL_RUN action log (system action).
+     * Used in user backfill migration (Task 12).
+     * Does NOT persist — caller must use tx.set() within Firestore transaction.
+     */
+    public AuditLog buildBackfillRun(int scanned, int updated, int claimWriteFailures, String actorUid) {
+        return AuditLog.of("USER_BACKFILL_RUN", "system", "user-backfill", actorUid,
+            Map.of("scanned", scanned, "updated", updated, "claimWriteFailures", claimWriteFailures));
     }
 }
 

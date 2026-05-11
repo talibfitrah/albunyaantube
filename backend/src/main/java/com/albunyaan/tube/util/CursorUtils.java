@@ -114,8 +114,7 @@ public class CursorUtils {
      * Decode an opaque cursor string back to cursor data.
      *
      * @param cursor The base64 encoded cursor string
-     * @return Decoded cursor data, or null if cursor is null/empty
-     * @throws IllegalArgumentException if cursor format is invalid
+     * @return Decoded cursor data, or null if cursor is null/empty/malformed
      */
     public static CursorData decode(String cursor) {
         if (cursor == null || cursor.isEmpty()) {
@@ -126,7 +125,10 @@ public class CursorUtils {
             String json = new String(decoded, StandardCharsets.UTF_8);
             return objectMapper.readValue(json, CursorData.class);
         } catch (IllegalArgumentException | IOException e) {
-            throw new IllegalArgumentException("Invalid cursor format: " + cursor, e);
+            // Malformed or unrecognisable cursor — treat as first page (null cursor).
+            // This is the correct behaviour: an invalid cursor should not crash the
+            // request; it should simply restart from the beginning.
+            return null;
         }
     }
 

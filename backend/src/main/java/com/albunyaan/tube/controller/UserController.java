@@ -1,5 +1,6 @@
 package com.albunyaan.tube.controller;
 
+import com.albunyaan.tube.model.Role;
 import com.albunyaan.tube.model.User;
 import com.albunyaan.tube.repository.UserRepository;
 import com.albunyaan.tube.security.FirebaseUserDetails;
@@ -15,6 +16,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 
@@ -41,13 +43,17 @@ public class UserController {
     }
 
     /**
-     * List all users
+     * List all users.
+     *
+     * @param includeDeleted when true, soft-deleted users are included in the response.
+     *                       Defaults to false so deleted users are hidden unless explicitly requested.
      */
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<List<User>> getAllUsers() {
+    public ResponseEntity<List<User>> getAllUsers(
+            @RequestParam(required = false, defaultValue = "false") boolean includeDeleted) {
         try {
-            List<User> users = userRepository.findAll();
+            List<User> users = userRepository.findAll(includeDeleted);
             return ResponseEntity.ok(users);
         } catch (TimeoutException e) {
             log.error("Timeout while fetching all users", e);
@@ -59,13 +65,24 @@ public class UserController {
     }
 
     /**
-     * Get user by UID
+     * Get user by UID.
+     *
+     * F11: hides soft-deleted users by default to match GET /api/admin/users
+     * semantics. Pre-fix this endpoint returned deleted users unconditionally,
+     * so an admin UI calling /api/admin/users (count=N) and then
+     * /api/admin/users/{uid} for each row saw inconsistent results.
+     *
+     * @param includeDeleted when true, returns the user even if soft-deleted.
      */
     @GetMapping("/{uid}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<User> getUserByUid(@PathVariable String uid) {
+    public ResponseEntity<User> getUserByUid(
+            @PathVariable String uid,
+            @RequestParam(required = false, defaultValue = "false") boolean includeDeleted) {
         try {
             return userRepository.findByUid(uid)
+                    // F11: deleted users return 404 unless explicitly opted in.
+                    .filter(u -> includeDeleted || !u.isDeleted())
                     .map(ResponseEntity::ok)
                     .orElse(ResponseEntity.notFound().build());
         } catch (TimeoutException e) {
@@ -78,13 +95,32 @@ public class UserController {
     }
 
     /**
-     * Get users by role
+     * Get users by role.
+     *
+     * F9: the role path param is normalised to canonical lowercase via
+     * {@link Role#fromString(String)} before the Firestore query. Pre-fix the
+     * raw param flowed straight to {@code whereEqualTo("role", role)}, so
+     * /role/ADMIN matched zero documents post-D6 (all roles stored lowercase).
+     * Unknown role strings fall back to {@link Role#USER} (Role.fromString
+     * already implements least-privilege); to match the existing list-filter
+     * semantics we return the result for the resolved canonical role.
+     *
+     * @param includeDeleted when true, soft-deleted users are included in the response.
+     *                       Defaults to false so deleted users are hidden unless explicitly requested.
      */
     @GetMapping("/role/{role}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<List<User>> getUsersByRole(@PathVariable String role) {
+    public ResponseEntity<List<User>> getUsersByRole(
+            @PathVariable String role,
+            @RequestParam(required = false, defaultValue = "false") boolean includeDeleted) {
+        // F9: canonical lowercase via Role enum (e.g. /role/ADMIN → "admin").
+        String canonicalRole = Role.fromString(role).getValue();
         try {
-            List<User> users = userRepository.findByRole(role);
+            List<User> users = userRepository.findByRole(canonicalRole);
+            // F11: hide soft-deleted users by default — matches GET /api/admin/users semantics.
+            if (!includeDeleted) {
+                users = users.stream().filter(u -> !u.isDeleted()).toList();
+            }
             return ResponseEntity.ok(users);
         } catch (TimeoutException e) {
             log.error("Timeout while fetching users by role: {}", role, e);
@@ -134,24 +170,19 @@ public class UserController {
             @PathVariable String uid,
             @RequestBody UpdateRoleRequest request,
             @AuthenticationPrincipal FirebaseUserDetails currentUser
-    ) {
-        try {
-            User user = authService.updateUserRole(uid, request.role);
-            try {
-                auditLogService.log("user_role_updated", "user", uid, currentUser);
-            } catch (Exception auditEx) {
-                log.error("Failed to audit user_role_updated for uid={}", uid, auditEx);
-            }
-            return ResponseEntity.ok(user);
-        } catch (FirebaseAuthException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+    ) throws Exception {
+        if (currentUser == null) {
+            return ResponseEntity.status(401).build();
         }
+        return ResponseEntity.ok(authService.updateUserRoleAsActor(uid, request.role, currentUser.getUid()));
     }
 
     /**
-     * Update user status (activate/deactivate)
+     * Update user status (legacy facade — delegates to block / unblock / softDelete / recover).
+     *
+     * Kept for back-compat with admin dashboard. Plan A safeguards (last-admin guard,
+     * cache eviction, audit log, FB Auth sync) are enforced by the underlying lifecycle
+     * methods now — see {@link AuthService#updateUserStatus(String, String, String, String)}.
      */
     @PutMapping("/{uid}/status")
     @PreAuthorize("hasRole('ADMIN')")
@@ -159,44 +190,74 @@ public class UserController {
             @PathVariable String uid,
             @RequestBody UpdateStatusRequest request,
             @AuthenticationPrincipal FirebaseUserDetails currentUser
-    ) {
-        try {
-            User user = authService.updateUserStatus(uid, request.status);
-            try {
-                auditLogService.log("user_status_updated", "user", uid, currentUser);
-            } catch (Exception auditEx) {
-                log.error("Failed to audit user_status_updated for uid={}", uid, auditEx);
-            }
-            return ResponseEntity.ok(user);
-        } catch (FirebaseAuthException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+    ) throws Exception {
+        if (currentUser == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
+        // No try-catch here: domain exceptions (IllegalArgumentException → 400,
+        // LastAdminException → 409) are mapped by GlobalExceptionHandler so legacy
+        // callers get the right HTTP status instead of a swallowed 500.
+        User user = authService.updateUserStatus(uid, request.status, currentUser.getUid(), request.reason);
+        return ResponseEntity.ok(user);
     }
 
     /**
-     * Delete user (admin only)
+     * Soft-delete user (admin only)
      */
     @DeleteMapping("/{uid}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> deleteUser(
             @PathVariable String uid,
-            @AuthenticationPrincipal FirebaseUserDetails currentUser
-    ) {
-        try {
-            authService.deleteUser(uid);
-            try {
-                auditLogService.log("user_deleted", "user", uid, currentUser);
-            } catch (Exception auditEx) {
-                log.error("Failed to audit user_deleted for uid={}", uid, auditEx);
-            }
-            return ResponseEntity.noContent().build();
-        } catch (FirebaseAuthException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
-        }
+            @AuthenticationPrincipal FirebaseUserDetails actor,
+            @RequestParam(required = false, defaultValue = "admin-action") String reason
+    ) throws Exception {
+        if (actor == null) return ResponseEntity.status(401).build();
+        authService.softDeleteUser(uid, actor.getUid(), reason);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Recover a soft-deleted user (admin only)
+     */
+    @PostMapping("/{uid}/recover")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> recoverUser(
+            @PathVariable String uid,
+            @AuthenticationPrincipal FirebaseUserDetails actor
+    ) throws Exception {
+        if (actor == null) return ResponseEntity.status(401).build();
+        authService.recoverUser(uid, actor.getUid());
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Block a user (admin only)
+     */
+    @PostMapping("/{uid}/block")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> block(
+            @PathVariable String uid,
+            @AuthenticationPrincipal FirebaseUserDetails actor,
+            @RequestBody(required = false) Map<String, String> body
+    ) throws Exception {
+        if (actor == null) return ResponseEntity.status(401).build();
+        String reason = body != null ? body.getOrDefault("reason", "policy-violation") : "policy-violation";
+        authService.blockUser(uid, actor.getUid(), reason);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Unblock a user (admin only)
+     */
+    @PostMapping("/{uid}/unblock")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> unblock(
+            @PathVariable String uid,
+            @AuthenticationPrincipal FirebaseUserDetails actor
+    ) throws Exception {
+        if (actor == null) return ResponseEntity.status(401).build();
+        authService.unblockUser(uid, actor.getUid());
+        return ResponseEntity.noContent().build();
     }
 
     /**
@@ -246,7 +307,8 @@ public class UserController {
     }
 
     public static class UpdateStatusRequest {
-        public String status; // "active" | "inactive"
+        public String status; // "active" | "blocked" | "deleted"
+        public String reason; // required for "blocked" and "deleted"; ignored for "active"
     }
 }
 

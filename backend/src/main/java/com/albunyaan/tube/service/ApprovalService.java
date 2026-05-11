@@ -220,17 +220,23 @@ public class ApprovalService {
         String videoCursor = null;
 
         if (cursor != null && !cursor.isEmpty()) {
+            CursorUtils.CursorData cursorData;
             try {
-                CursorUtils.CursorData cursorData = CursorUtils.decode(cursor);
-                if (cursorData != null) {
-                    channelCursor = cursorData.getFieldAsString("channelCursor");
-                    playlistCursor = cursorData.getFieldAsString("playlistCursor");
-                    videoCursor = cursorData.getFieldAsString("videoCursor");
-                }
+                cursorData = CursorUtils.decode(cursor);
             } catch (Exception e) {
                 log.warn("Invalid cursor format: {}", cursor, e);
                 throw new IllegalArgumentException("Invalid cursor format");
             }
+            if (cursorData == null) {
+                // CursorUtils.decode degrades malformed input to null. The
+                // approvals API requires a valid cursor (it carries composite
+                // sub-cursors for channels/playlists/videos), so reject loudly.
+                log.warn("Invalid cursor format (could not decode): {}", cursor);
+                throw new IllegalArgumentException("Invalid cursor format");
+            }
+            channelCursor = cursorData.getFieldAsString("channelCursor");
+            playlistCursor = cursorData.getFieldAsString("playlistCursor");
+            videoCursor = cursorData.getFieldAsString("videoCursor");
         }
 
         // Fetch pageSize items from each collection (we'll merge and trim)
@@ -481,17 +487,22 @@ public class ApprovalService {
         String videoCursor = null;
 
         if (cursor != null && !cursor.isEmpty()) {
+            CursorUtils.CursorData cursorData;
             try {
-                CursorUtils.CursorData cursorData = CursorUtils.decode(cursor);
-                if (cursorData != null) {
-                    channelCursor = cursorData.getFieldAsString("channelCursor");
-                    playlistCursor = cursorData.getFieldAsString("playlistCursor");
-                    videoCursor = cursorData.getFieldAsString("videoCursor");
-                }
+                cursorData = CursorUtils.decode(cursor);
             } catch (Exception e) {
                 log.warn("Invalid cursor format: {}", cursor, e);
                 throw new IllegalArgumentException("Invalid cursor format");
             }
+            if (cursorData == null) {
+                // CursorUtils.decode degrades malformed input to null; the
+                // submissions API needs a real composite cursor, so reject.
+                log.warn("Invalid cursor format (could not decode): {}", cursor);
+                throw new IllegalArgumentException("Invalid cursor format");
+            }
+            channelCursor = cursorData.getFieldAsString("channelCursor");
+            playlistCursor = cursorData.getFieldAsString("playlistCursor");
+            videoCursor = cursorData.getFieldAsString("videoCursor");
         }
 
         ApprovalRepository.PaginatedResult<Channel> channelResult =

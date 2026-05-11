@@ -40,6 +40,12 @@ class ContentReportControllerTest {
     @MockBean
     FirebaseAuth firebaseAuth;
 
+    @MockBean
+    com.albunyaan.tube.service.YouTubeService youTubeService;
+
+    @MockBean
+    com.albunyaan.tube.repository.UserRepository userRepository;
+
     // Valid request body JSON
     private static final String VALID_BODY = """
             {
@@ -53,7 +59,9 @@ class ContentReportControllerTest {
     void submitReport_validBody_returns201() throws Exception {
         ContentReport saved = new ContentReport();
         saved.setId("report-1");
-        when(reportService.submitReport(any(), anyString(), anyList(), isNull(), anyString()))
+        saved.setStatus(com.albunyaan.tube.model.ReportStatus.PENDING);
+        when(reportService.submitReport(any(), anyString(), anyList(), isNull(), anyString(),
+                any(), any(), any()))
                 .thenReturn(saved);
 
         mockMvc.perform(post("/api/v1/reports")
@@ -113,7 +121,8 @@ class ContentReportControllerTest {
 
     @Test
     void submitReport_rateLimitExceeded_returns429() throws Exception {
-        when(reportService.submitReport(any(), anyString(), anyList(), any(), anyString()))
+        when(reportService.submitReport(any(), anyString(), anyList(), any(), anyString(),
+                any(), any(), any()))
                 .thenThrow(new ContentReportService.RateLimitExceededException("Too many reports"));
 
         mockMvc.perform(post("/api/v1/reports")

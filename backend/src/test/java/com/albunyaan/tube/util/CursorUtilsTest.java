@@ -88,21 +88,20 @@ class CursorUtilsTest {
     }
 
     @Test
-    void decode_invalidBase64_throwsException() {
-        assertThrows(IllegalArgumentException.class, () -> {
-            CursorUtils.decode("not-valid-base64!!!");
-        });
+    void decode_invalidBase64_returnsNull() {
+        // Malformed cursor input must NOT throw — clients should be able to
+        // pass a stale or garbled cursor and silently restart from page 1.
+        // The repository layer treats null as "no cursor" → first page.
+        assertNull(CursorUtils.decode("not-valid-base64!!!"));
     }
 
     @Test
-    void decode_invalidJson_throwsException() {
-        // Valid base64 but not valid JSON
+    void decode_invalidJson_returnsNull() {
+        // Valid base64 but not valid JSON — also degrades gracefully to null.
         String invalidJson = java.util.Base64.getUrlEncoder()
                 .encodeToString("not json".getBytes());
 
-        assertThrows(IllegalArgumentException.class, () -> {
-            CursorUtils.decode(invalidJson);
-        });
+        assertNull(CursorUtils.decode(invalidJson));
     }
 
     @Test

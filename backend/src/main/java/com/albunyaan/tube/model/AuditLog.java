@@ -149,5 +149,23 @@ public class AuditLog {
     public void addDetail(String key, Object value) {
         this.details.put(key, value);
     }
+
+    /**
+     * Factory method for creating AuditLog instances with all fields set.
+     * Convenience for transactional audit logging in AuthService.
+     */
+    public static AuditLog of(String action, String entityType, String entityId,
+                              String actorUid, Map<String, Object> details) {
+        AuditLog log = new AuditLog();
+        log.setAction(action);
+        log.setEntityType(entityType);
+        log.setEntityId(entityId);
+        log.setActorUid(actorUid);
+        log.setTimestamp(Timestamp.now());
+        if (details != null) {
+            details.forEach(log::addDetail);
+        }
+        return log;
+    }
 }
 

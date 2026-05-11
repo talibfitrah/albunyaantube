@@ -16,7 +16,7 @@ app:
   firebase:
     # Use emulator for tests
     service-account-path: classpath:firebase-service-account-test.json
-    project-id: test-project
+    project-id: demo-test
     firestore:
       database-id: (default)
       emulator:

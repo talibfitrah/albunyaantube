@@ -64,15 +64,15 @@ class UserControllerTest {
     void getAllUsers_shouldReturnAllUsers() throws ExecutionException, InterruptedException, TimeoutException {
         // Arrange
         List<User> users = Arrays.asList(testAdmin, testModerator);
-        when(userRepository.findAll()).thenReturn(users);
+        when(userRepository.findAll(false)).thenReturn(users);
 
         // Act
-        ResponseEntity<List<User>> response = userController.getAllUsers();
+        ResponseEntity<List<User>> response = userController.getAllUsers(false);
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals(2, response.getBody().size());
-        verify(userRepository).findAll();
+        verify(userRepository).findAll(false);
     }
 
     @Test
@@ -81,7 +81,7 @@ class UserControllerTest {
         when(userRepository.findByUid("test-admin-uid")).thenReturn(Optional.of(testAdmin));
 
         // Act
-        ResponseEntity<User> response = userController.getUserByUid("test-admin-uid");
+        ResponseEntity<User> response = userController.getUserByUid("test-admin-uid", false);
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
@@ -95,11 +95,41 @@ class UserControllerTest {
         when(userRepository.findByUid("nonexistent")).thenReturn(Optional.empty());
 
         // Act
-        ResponseEntity<User> response = userController.getUserByUid("nonexistent");
+        ResponseEntity<User> response = userController.getUserByUid("nonexistent", false);
 
         // Assert
         assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
         verify(userRepository).findByUid("nonexistent");
+    }
+
+    // ── F11 — getUserByUid filters deleted users by default ──────────────────
+    // Pre-F11 a soft-deleted user was still returned by /api/admin/users/{uid},
+    // diverging from the GET /api/admin/users list filter. Now defaults to 404
+    // for deleted users; includeDeleted=true exposes them.
+
+    @Test
+    void getUserByUid_returnsNotFound_forDeleted_byDefault() throws Exception {
+        // Arrange: returns a soft-deleted user.
+        User deleted = new User("u-del", "del@t.com", "Deleted", "moderator");
+        deleted.setStatus("deleted");
+        when(userRepository.findByUid("u-del")).thenReturn(Optional.of(deleted));
+
+        // Act + Assert: default (includeDeleted=false) → 404.
+        ResponseEntity<User> response = userController.getUserByUid("u-del", false);
+        assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode(),
+                "Deleted users must return 404 by default");
+    }
+
+    @Test
+    void getUserByUid_returnsDeleted_whenIncludeDeletedTrue() throws Exception {
+        User deleted = new User("u-del", "del@t.com", "Deleted", "moderator");
+        deleted.setStatus("deleted");
+        when(userRepository.findByUid("u-del")).thenReturn(Optional.of(deleted));
+
+        ResponseEntity<User> response = userController.getUserByUid("u-del", true);
+        assertEquals(HttpStatus.OK, response.getStatusCode(),
+                "includeDeleted=true must allow deleted users through");
+        assertEquals("del@t.com", response.getBody().getEmail());
     }
 
     @Test
@@ -109,13 +139,57 @@ class UserControllerTest {
         when(userRepository.findByRole("admin")).thenReturn(admins);
 
         // Act
-        ResponseEntity<List<User>> response = userController.getUsersByRole("admin");
+        ResponseEntity<List<User>> response = userController.getUsersByRole("admin", false);
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals(1, response.getBody().size());
         assertEquals("admin", response.getBody().get(0).getRole());
         verify(userRepository).findByRole("admin");
+    }
+
+    // ── F9 — role path param is normalized to canonical lowercase ────────────
+    // Pre-F9 a request to /role/ADMIN passed "ADMIN" straight to
+    // findByRole(...), and Firestore (post-D6, all lowercase) returned zero
+    // matches. The controller now canonicalises the path param.
+
+    @Test
+    void getUsersByRole_normalizesUppercasePathParam() throws Exception {
+        // Arrange: the controller must normalise "ADMIN" → "admin" before query.
+        List<User> admins = Arrays.asList(testAdmin);
+        when(userRepository.findByRole("admin")).thenReturn(admins);
+
+        // Act
+        ResponseEntity<List<User>> response = userController.getUsersByRole("ADMIN", false);
+
+        // Assert: same result as the lowercase call — proves normalization.
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(1, response.getBody().size());
+        verify(userRepository).findByRole("admin");
+        verify(userRepository, never()).findByRole("ADMIN");
+    }
+
+    @Test
+    void getUsersByRole_normalizesMixedCasePathParam() throws Exception {
+        when(userRepository.findByRole("moderator")).thenReturn(Arrays.asList(testModerator));
+
+        ResponseEntity<List<User>> response = userController.getUsersByRole("Moderator", false);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        verify(userRepository).findByRole("moderator");
+    }
+
+    @Test
+    void getUsersByRole_unknownRoleFallsBackToUser() throws Exception {
+        // Role.fromString returns Role.USER for unknown values (least-privilege).
+        // Controller queries the "user" collection rather than the unknown string,
+        // matching the existing list-filter behaviour.
+        when(userRepository.findByRole("user")).thenReturn(List.of());
+
+        ResponseEntity<List<User>> response = userController.getUsersByRole("super-admin", false);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        verify(userRepository).findByRole("user");
     }
 
     @Test
@@ -197,13 +271,13 @@ class UserControllerTest {
     }
 
     @Test
-    void updateUserRole_shouldUpdateRole_andLogAudit() throws Exception {
+    void updateUserRole_shouldUpdateRole() throws Exception {
         // Arrange
         UserController.UpdateRoleRequest request = new UserController.UpdateRoleRequest();
         request.role = "admin";
 
         User updatedUser = new User("test-mod-uid", "mod@example.com", "Test Moderator", "admin");
-        when(authService.updateUserRole("test-mod-uid", "admin")).thenReturn(updatedUser);
+        when(authService.updateUserRoleAsActor("test-mod-uid", "admin", "admin-uid")).thenReturn(updatedUser);
 
         // Act
         ResponseEntity<User> response = userController.updateUserRole("test-mod-uid", request, adminUser);
@@ -211,93 +285,106 @@ class UserControllerTest {
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals("admin", response.getBody().getRole());
-        verify(authService).updateUserRole("test-mod-uid", "admin");
-        verify(auditLogService).log(eq("user_role_updated"), eq("user"), eq("test-mod-uid"), eq(adminUser));
+        verify(authService).updateUserRoleAsActor("test-mod-uid", "admin", "admin-uid");
     }
 
     @Test
-    void updateUserRole_shouldReturnBadRequest_whenFirebaseAuthFails() throws Exception {
+    void updateUserRole_shouldReturn401_whenActorIsNull() throws Exception {
         // Arrange
         UserController.UpdateRoleRequest request = new UserController.UpdateRoleRequest();
         request.role = "admin";
 
-        FirebaseAuthException mockException = mock(FirebaseAuthException.class);
-        when(authService.updateUserRole(any(), any()))
-                .thenThrow(mockException);
-
         // Act
-        ResponseEntity<User> response = userController.updateUserRole("nonexistent", request, adminUser);
+        ResponseEntity<User> response = userController.updateUserRole("test-mod-uid", request, null);
 
         // Assert
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        verify(auditLogService, never()).log(any(), any(), any(), any());
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+        verify(authService, never()).updateUserRoleAsActor(any(), any(), any());
     }
 
     @Test
-    void updateUserStatus_shouldUpdateStatus_andLogAudit() throws Exception {
+    void updateUserStatus_shouldDelegateToBlockingFlow_whenStatusBlocked() throws Exception {
         // Arrange
         UserController.UpdateStatusRequest request = new UserController.UpdateStatusRequest();
-        request.status = "inactive";
+        request.status = "blocked";
+        request.reason = "policy";
 
         User updatedUser = new User("test-mod-uid", "mod@example.com", "Test Moderator", "moderator");
-        updatedUser.setStatus("inactive");
-        when(authService.updateUserStatus("test-mod-uid", "inactive")).thenReturn(updatedUser);
+        updatedUser.setStatus("blocked");
+        when(authService.updateUserStatus("test-mod-uid", "blocked", "admin-uid", "policy"))
+                .thenReturn(updatedUser);
 
         // Act
         ResponseEntity<User> response = userController.updateUserStatus("test-mod-uid", request, adminUser);
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertEquals("inactive", response.getBody().getStatus());
-        verify(authService).updateUserStatus("test-mod-uid", "inactive");
-        verify(auditLogService).log(eq("user_status_updated"), eq("user"), eq("test-mod-uid"), eq(adminUser));
+        assertEquals("blocked", response.getBody().getStatus());
+        verify(authService).updateUserStatus("test-mod-uid", "blocked", "admin-uid", "policy");
     }
 
     @Test
-    void updateUserStatus_shouldReturnBadRequest_whenFirebaseAuthFails() throws Exception {
+    void updateUserStatus_shouldReturn401_whenActorIsNull() throws Exception {
         // Arrange
         UserController.UpdateStatusRequest request = new UserController.UpdateStatusRequest();
-        request.status = "inactive";
-
-        FirebaseAuthException mockException = mock(FirebaseAuthException.class);
-        when(authService.updateUserStatus(any(), any()))
-                .thenThrow(mockException);
+        request.status = "blocked";
+        request.reason = "policy";
 
         // Act
-        ResponseEntity<User> response = userController.updateUserStatus("nonexistent", request, adminUser);
+        ResponseEntity<User> response = userController.updateUserStatus("test-mod-uid", request, null);
 
         // Assert
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        verify(auditLogService, never()).log(any(), any(), any(), any());
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+        verify(authService, never()).updateUserStatus(any(), any(), any(), any());
     }
 
     @Test
-    void deleteUser_shouldDeleteUser_andLogAudit() throws Exception {
+    void updateUserStatus_shouldPropagateIllegalArgumentException_forBadStatus() throws Exception {
         // Arrange
-        doNothing().when(authService).deleteUser("test-mod-uid");
+        UserController.UpdateStatusRequest request = new UserController.UpdateStatusRequest();
+        request.status = "inactive"; // legacy value — no longer accepted
+        when(authService.updateUserStatus(eq("test-mod-uid"), eq("inactive"), any(), any()))
+                .thenThrow(new IllegalArgumentException("Invalid status: inactive"));
+
+        // Act + Assert: exception propagates so GlobalExceptionHandler maps it to 400
+        assertThrows(IllegalArgumentException.class,
+                () -> userController.updateUserStatus("test-mod-uid", request, adminUser));
+    }
+
+    @Test
+    void deleteUser_shouldSoftDeleteUser_andReturn204() throws Exception {
+        // Arrange
+        doNothing().when(authService).softDeleteUser(eq("test-mod-uid"), eq("admin-uid"), eq("admin-action"));
 
         // Act
-        ResponseEntity<Void> response = userController.deleteUser("test-mod-uid", adminUser);
+        ResponseEntity<Void> response = userController.deleteUser("test-mod-uid", adminUser, "admin-action");
 
         // Assert
         assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
-        verify(authService).deleteUser("test-mod-uid");
-        verify(auditLogService).log(eq("user_deleted"), eq("user"), eq("test-mod-uid"), eq(adminUser));
+        verify(authService).softDeleteUser("test-mod-uid", "admin-uid", "admin-action");
     }
 
     @Test
-    void deleteUser_shouldReturnBadRequest_whenFirebaseAuthFails() throws Exception {
-        // Arrange
-        FirebaseAuthException mockException = mock(FirebaseAuthException.class);
-        doThrow(mockException)
-                .when(authService).deleteUser("nonexistent");
-
+    void deleteUser_shouldReturn401_whenActorIsNull() throws Exception {
         // Act
-        ResponseEntity<Void> response = userController.deleteUser("nonexistent", adminUser);
+        ResponseEntity<Void> response = userController.deleteUser("test-mod-uid", null, "admin-action");
 
         // Assert
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        verify(auditLogService, never()).log(any(), any(), any(), any());
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+        verify(authService, never()).softDeleteUser(any(), any(), any());
+    }
+
+    @Test
+    void recoverUser_shouldRecoverUser_andReturn204() throws Exception {
+        // Arrange
+        doNothing().when(authService).recoverUser(eq("test-mod-uid"), eq("admin-uid"));
+
+        // Act
+        ResponseEntity<Void> response = userController.recoverUser("test-mod-uid", adminUser);
+
+        // Assert
+        assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
+        verify(authService).recoverUser("test-mod-uid", "admin-uid");
     }
 
     @Test

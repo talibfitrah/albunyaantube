@@ -6,20 +6,43 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // F6: admin / moderator rule helpers require status=='active'.
+    // Pre-fix a blocked admin's ID token still passed isAdmin() until the token
+    // expired (up to 1h), letting them keep writing via the direct Firestore SDK
+    // even though the backend AccountStatusFilter would already reject HTTP calls.
+    // The inline status check is faster than composing with isActiveAccount() —
+    // we avoid a second get() on the same user doc.
     function isAdmin() {
       return isAuthenticated() &&
-             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
     }
 
     function isModerator() {
       return isAuthenticated() &&
              (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'moderator' ||
-              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
+    }
+
+    // F16: the isUser() helper was defined but never referenced in any rule —
+    // the plan claimed "tightened /users access via isUser()" but the match
+    // block already uses isSelf() + isAdmin() (line 44). Removed as dead code.
+    // If Plan B/C needs a "any authenticated, registered user" predicate,
+    // re-introduce here and wire it into the relevant match block.
+
+    function isSelf(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isActiveAccount() {
+      return isAuthenticated() &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
     }
 
     // Users collection
     match /users/{userId} {
-      allow read: if isAuthenticated();
+      allow read: if isSelf(userId) || isAdmin();
       allow write: if isAdmin();
     }
 

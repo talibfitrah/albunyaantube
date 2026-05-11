@@ -8,12 +8,14 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -99,9 +101,15 @@ public class CircuitBreakerIntegrationTest extends BaseIntegrationTest {
         Exception rateLimitError = new RuntimeException("Sign in to confirm you're not a bot");
         breaker1.recordRateLimitError(rateLimitError);
 
-        // Assert - instance 2 should see the open state on next isOpen() call
+        // Assert - instance 2 should see the open state from Firestore.
+        // YouTubeCircuitBreaker refreshes from Firestore at most every 5 seconds
+        // (REFRESH_INTERVAL_MS), so poll up to ~10 seconds to allow the refresh
+        // window to elapse before isOpen() re-reads persisted state.
         assertTrue(breaker1.isOpen(), "Breaker 1 should be open");
-        assertTrue(breaker2.isOpen(), "Breaker 2 should see open state from Firestore");
+        await().atMost(Duration.ofSeconds(10))
+                .pollInterval(Duration.ofMillis(500))
+                .untilAsserted(() -> assertTrue(breaker2.isOpen(),
+                        "Breaker 2 should see open state from Firestore"));
     }
 
     @Test
