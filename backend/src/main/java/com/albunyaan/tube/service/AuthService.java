@@ -221,6 +221,14 @@ public class AuthService {
             User target = snap.toObject(User.class);
             previousRole[0] = target.getRole();
 
+            // F12: refuse to change role on a DELETED user. Recover first, then
+            // change role. This keeps role-change audit events tied to live
+            // accounts only and prevents privilege drift on dormant rows.
+            if (target.isDeleted()) {
+                throw new IllegalStateException(
+                    "Cannot change role of a deleted user. Recover first: " + uid);
+            }
+
             // Last-admin guard (D2) — inline, transactional
             if (target.isAdmin() && newRole != Role.ADMIN) {
                 if (uid.equals(actorUid)) {
@@ -436,6 +444,16 @@ public class AuthService {
                 throw new IllegalArgumentException("User not found: " + uid);
             }
             User target = snap.toObject(User.class);
+
+            // F12: refuse to block an already-DELETED user. Pre-fix path was
+            //   softDelete → block (audit: USER_BLOCKED) → unblock (audit:
+            //   USER_UNBLOCKED) → ends up status="active" with NO USER_RECOVERED
+            // audit. That evaded the audit trail. Force admins down the recover
+            // path so the audit log reflects what actually happened.
+            if (target.isDeleted()) {
+                throw new IllegalStateException(
+                    "Cannot block a deleted user. Recover first: " + uid);
+            }
 
             // Last-admin guard (D2) — inline transactional check
             if (target.isAdmin()) {

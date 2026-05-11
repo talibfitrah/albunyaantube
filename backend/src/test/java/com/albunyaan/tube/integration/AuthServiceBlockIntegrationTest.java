@@ -103,6 +103,61 @@ class AuthServiceBlockIntegrationTest extends BaseIntegrationTest {
                 () -> authService.unblockUser(targetUid, adminUid));
     }
 
+    // ── F12 — blockUser refuses DELETED targets ─────────────────────────────
+    // Pre-F12 path: softDelete → block (audit: USER_BLOCKED) → unblock
+    // (audit: USER_UNBLOCKED) → ends up status="active" with NO recover audit.
+
+    @Test
+    void blockUser_throwsWhenTargetIsDeleted() throws Exception {
+        stubFirebaseAuthMutations();
+
+        String adminUid = seedUser("a-f12-1@t.com", "admin");
+        seedUser("a-f12-2@t.com", "admin");
+        String targetUid = seedUser("victim-f12@t.com", "moderator");
+
+        // Soft-delete first.
+        authService.softDeleteUser(targetUid, adminUid, "policy");
+        assertTrue(userRepository.findByUid(targetUid).orElseThrow().isDeleted(),
+                "Pre-condition: target must be DELETED");
+
+        // Attempt to block — must throw IllegalStateException.
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> authService.blockUser(targetUid, adminUid, "test-block"),
+                "blockUser must throw when target is DELETED");
+        assertTrue(ex.getMessage().toLowerCase().contains("recover"),
+                "Error message must mention recover path: " + ex.getMessage());
+
+        // Verify target is still DELETED.
+        User after = userRepository.findByUid(targetUid).orElseThrow();
+        assertEquals(UserStatus.DELETED, after.getStatusEnum());
+    }
+
+    // ── F12 — updateUserRoleAsActor refuses DELETED targets ─────────────────
+    // Same audit-evasion shape: deleted users could have their role mutated
+    // without ever transitioning back to ACTIVE through the recover path.
+
+    @Test
+    void updateUserRoleAsActor_throwsWhenTargetIsDeleted() throws Exception {
+        stubFirebaseAuthMutations();
+
+        String adminUid = seedUser("a-f12-3@t.com", "admin");
+        seedUser("a-f12-4@t.com", "admin");
+        String targetUid = seedUser("role-victim-f12@t.com", "moderator");
+
+        authService.softDeleteUser(targetUid, adminUid, "policy");
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> authService.updateUserRoleAsActor(targetUid, "admin", adminUid),
+                "updateUserRoleAsActor must throw when target is DELETED");
+        assertTrue(ex.getMessage().toLowerCase().contains("recover"),
+                "Error message must mention recover path: " + ex.getMessage());
+
+        // Role and status unchanged
+        User after = userRepository.findByUid(targetUid).orElseThrow();
+        assertEquals(UserStatus.DELETED, after.getStatusEnum());
+        assertEquals("moderator", after.getRole());
+    }
+
     // ─── Helpers ───────────────────────────────────────────────────────────────
 
     /**
