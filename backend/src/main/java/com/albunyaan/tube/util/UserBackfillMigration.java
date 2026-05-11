@@ -59,6 +59,7 @@ public class UserBackfillMigration {
     static final long STALE_LOCK_MS = 30L * 60L * 1000L;
 
     public record RunSummary(int scanned, int updated, int skipped,
+                             int claimWriteFailures,
                              String startedAt, String completedAt) {}
 
     private final Firestore firestore;
@@ -135,6 +136,7 @@ public class UserBackfillMigration {
         int scanned = 0;
         int updated = 0;
         int skipped = 0;
+        int claimWriteFailures = 0;
         String cursor = null;
 
         try {
@@ -164,9 +166,28 @@ public class UserBackfillMigration {
             // F7: merge-set via AuthService.setUserRoleClaim so any OTHER custom claims
             // (subscription tier, feature flags) survive the backfill. Pre-fix the
             // backfill silently wiped every non-role claim on every run.
+            //
+            // F18: per-user error isolation. setUserRoleClaim calls firebaseAuth.getUser
+            // first (to read existing claims for the merge). If ANY user in the loop is
+            // missing from Firebase Auth (orphaned Firestore doc — normal divergence
+            // after manual deletions or partial-failure history) getUser throws
+            // FirebaseAuthException and the entire phase-2 loop aborts. Pre-F18 the
+            // operator saw a "completed" lock release in the finally block and assumed
+            // success, when in reality phase 2 had silently skipped users. Now we
+            // wrap each call, log + count failures, and surface the count back to
+            // the operator via RunSummary.
             for (User u : userRepository.findAll(true)) {
                 if (u.getRole() != null && !u.getRole().isBlank()) {
-                    authService.setUserRoleClaim(u.getUid(), u.getRole());
+                    try {
+                        authService.setUserRoleClaim(u.getUid(), u.getRole());
+                    } catch (Exception e) {
+                        // Any exception — FirebaseAuthException (user missing in Auth),
+                        // network, etc. — must not abort the loop. Log loudly so the
+                        // operator can investigate the orphaned doc separately.
+                        logger.warn("Phase 2 claim write failed for uid={}: {}",
+                            u.getUid(), e.getMessage());
+                        claimWriteFailures++;
+                    }
                 }
             }
 
@@ -192,9 +213,9 @@ public class UserBackfillMigration {
         }
 
         String completedAt = Timestamp.now().toString();
-        logger.info("UserBackfillMigration complete: scanned={} updated={} skipped={}",
-            scanned, updated, skipped);
-        return new RunSummary(scanned, updated, skipped, startedAt, completedAt);
+        logger.info("UserBackfillMigration complete: scanned={} updated={} skipped={} claimWriteFailures={}",
+            scanned, updated, skipped, claimWriteFailures);
+        return new RunSummary(scanned, updated, skipped, claimWriteFailures, startedAt, completedAt);
     }
 
     /**

@@ -67,14 +67,21 @@ public class MigrationController {
 
         try {
             UserBackfillMigration.RunSummary summary = migration.run(actor.getUid());
-            logger.info("Migration user-backfill triggered by uid={} scanned={} updated={} skipped={}",
-                actor.getUid(), summary.scanned(), summary.updated(), summary.skipped());
+            logger.info(
+                "Migration user-backfill triggered by uid={} scanned={} updated={} skipped={} claimWriteFailures={}",
+                actor.getUid(), summary.scanned(), summary.updated(),
+                summary.skipped(), summary.claimWriteFailures());
+            // F18: surface claimWriteFailures so the operator can see when phase-2
+            // skipped users due to orphaned Firestore docs (user in Firestore but
+            // missing in Firebase Auth). Pre-F18 the loop aborted on the first
+            // such case and the operator saw a "success" response anyway.
             return ResponseEntity.ok(Map.of(
-                "scanned",     summary.scanned(),
-                "updated",     summary.updated(),
-                "skipped",     summary.skipped(),
-                "startedAt",   summary.startedAt(),
-                "completedAt", summary.completedAt()));
+                "scanned",             summary.scanned(),
+                "updated",             summary.updated(),
+                "skipped",             summary.skipped(),
+                "claimWriteFailures",  summary.claimWriteFailures(),
+                "startedAt",           summary.startedAt(),
+                "completedAt",         summary.completedAt()));
         } catch (IllegalStateException e) {
             return ResponseEntity.status(409).body(Map.of(
                 "code",    "MIGRATION_RUNNING",

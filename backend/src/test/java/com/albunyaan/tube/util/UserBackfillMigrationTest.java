@@ -336,4 +336,87 @@ class UserBackfillMigrationTest extends BaseIntegrationTest {
         assertTrue(audits.size() >= 1,
             "Summary audit log must be written synchronously after migration run");
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // F18: phase-2 per-user error isolation.
+    //
+    // Pre-F18 the phase-2 claim-write loop aborted on the first
+    // FirebaseAuthException (e.g. orphaned Firestore doc where the
+    // corresponding Firebase Auth user was manually deleted). Phase 1's
+    // "completed" lock-release audit fired anyway, so the operator believed
+    // the migration succeeded while it had actually skipped users. Now each
+    // setUserRoleClaim call is wrapped: failures are logged + counted +
+    // surfaced via RunSummary.claimWriteFailures().
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Test
+    void migration_phase2_continuesOnFirebaseAuthMissingUser() throws Exception {
+        // Seed TWO Firestore user docs.
+        User present = new User();
+        present.setUid("phase2-present");
+        present.setEmail("present@t");
+        present.setRole("moderator");
+        present.setStatus("active");
+        present.setCreatedAt(Timestamp.now());
+        present.setUpdatedAt(Timestamp.now());
+        repo.saveRaw(present);
+
+        User orphan = new User();
+        orphan.setUid("phase2-orphan");
+        orphan.setEmail("orphan@t");
+        orphan.setRole("user");
+        orphan.setStatus("active");
+        orphan.setCreatedAt(Timestamp.now());
+        orphan.setUpdatedAt(Timestamp.now());
+        repo.saveRaw(orphan);
+
+        // Override the @BeforeEach stub: getUser succeeds for "phase2-present"
+        // but throws FirebaseAuthException for "phase2-orphan", mimicking the
+        // orphaned-Firestore-doc scenario (user exists in Firestore but was
+        // manually deleted from Firebase Auth).
+        com.google.firebase.auth.UserRecord rec =
+                org.mockito.Mockito.mock(com.google.firebase.auth.UserRecord.class);
+        org.mockito.Mockito.when(rec.getCustomClaims()).thenReturn(null);
+        org.mockito.Mockito.when(firebaseAuth.getUser("phase2-present")).thenReturn(rec);
+
+        com.google.firebase.auth.FirebaseAuthException fbEx =
+                org.mockito.Mockito.mock(com.google.firebase.auth.FirebaseAuthException.class);
+        org.mockito.Mockito.when(fbEx.getMessage()).thenReturn("user-not-found");
+        org.mockito.Mockito.when(firebaseAuth.getUser("phase2-orphan")).thenThrow(fbEx);
+
+        // Migration must NOT abort — both users get scanned, only orphan's
+        // claim write fails, and the failure is surfaced in the summary.
+        UserBackfillMigration.RunSummary summary = migration.run("test-actor");
+
+        assertEquals(1, summary.claimWriteFailures(),
+                "F18: exactly one phase-2 claim write must have failed (the orphan)");
+
+        // The user that DID exist in FB Auth had its claim set successfully.
+        org.mockito.Mockito.verify(firebaseAuth, org.mockito.Mockito.atLeastOnce())
+                .setCustomUserClaims(org.mockito.ArgumentMatchers.eq("phase2-present"),
+                        org.mockito.ArgumentMatchers.anyMap());
+
+        // The orphan's claim write was never attempted (getUser threw first).
+        org.mockito.Mockito.verify(firebaseAuth, org.mockito.Mockito.never())
+                .setCustomUserClaims(org.mockito.ArgumentMatchers.eq("phase2-orphan"),
+                        org.mockito.ArgumentMatchers.anyMap());
+    }
+
+    @Test
+    void migration_phase2_zeroFailures_whenAllUsersExistInAuth() throws Exception {
+        // Sanity check: when all users exist in Auth, claimWriteFailures stays
+        // zero. Prevents the counter from drifting upward on healthy data.
+        User u = new User();
+        u.setUid("phase2-healthy");
+        u.setEmail("healthy@t");
+        u.setRole("admin");
+        u.setStatus("active");
+        u.setCreatedAt(Timestamp.now());
+        u.setUpdatedAt(Timestamp.now());
+        repo.saveRaw(u);
+
+        UserBackfillMigration.RunSummary summary = migration.run("test-actor");
+        assertEquals(0, summary.claimWriteFailures(),
+                "F18: claimWriteFailures must be 0 when every user has a FB Auth record");
+    }
 }

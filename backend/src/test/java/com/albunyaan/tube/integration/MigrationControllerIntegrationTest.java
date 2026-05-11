@@ -64,6 +64,10 @@ class MigrationControllerIntegrationTest extends BaseIntegrationTest {
             .andExpect(jsonPath("$.scanned").exists())
             .andExpect(jsonPath("$.updated").exists())
             .andExpect(jsonPath("$.skipped").exists())
+            // F18: claimWriteFailures must surface in the response body so
+            // operators can detect phase-2 claim writes that failed due to
+            // orphaned Firestore docs. Healthy data path expects 0.
+            .andExpect(jsonPath("$.claimWriteFailures").value(0))
             .andExpect(jsonPath("$.startedAt").exists())
             .andExpect(jsonPath("$.completedAt").exists());
     }
