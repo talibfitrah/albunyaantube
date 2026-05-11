@@ -94,13 +94,18 @@ class SignInViewModel @Inject constructor(
     fun onCredential(credential: AuthCredential, fallbackError: AuthErrorCode) {
         // No simple isLoading re-entrancy guard here: the call site is the
         // system's ActivityResultLauncher (Google) — not user-tap re-entrant —
-        // and launchGoogleSignIn already set isLoading=true before opening the
-        // chooser, so an `if (isLoading) return` here would silently drop the
-        // returned credential. Instead, cancel any prior in-flight credential
-        // coroutine so the latest credential wins deterministically — protects
-        // against double-delivery of the ActivityResult and against future
-        // callers (e.g., a re-enabled Microsoft path) that haven't pre-set
-        // isLoading.
+        // and launchGoogleSignIn already set isLoading=true before opening
+        // the chooser, so an `if (isLoading) return` here would silently drop
+        // the returned credential. Instead, cancel any prior in-flight
+        // credential coroutine so only the latest call's _ui.update lands.
+        // Caveat: Firebase's Task.await() (kotlinx-coroutines-play-services
+        // 1.9.0) does NOT propagate cancellation to the underlying
+        // signInWithCredential Task — a "cancelled" call's network request
+        // still completes and can fire AuthStateListener. UiState is
+        // deterministic; AuthState follows whichever Firebase Task finishes
+        // last. Acceptable because ActivityResultLauncher delivers the same
+        // credential on double-delivery, so both Tasks resolve to the same
+        // FirebaseUser.
         credentialJob?.cancel()
         _ui.update { it.copy(isLoading = true, error = null) }
         credentialJob = viewModelScope.launch {
