@@ -172,57 +172,56 @@ class AuthServiceTest {
         ));
     }
 
+    // updateUserStatus is now a facade that delegates to blockUser/unblockUser/
+    // softDeleteUser/recoverUser. End-to-end coverage of the new behaviour
+    // (last-admin guard, cache eviction, audit log) lives in
+    // AuthServiceUpdateUserStatusFacadeIntegrationTest. Two pure-unit checks below
+    // pin the validation surface (rejects unknown / requires reason).
+
     @Test
-    void updateUserStatus_shouldDeactivateUser() throws Exception {
-        // Arrange
-        when(userRepository.findByUid("test-uid")).thenReturn(Optional.of(testUser));
-        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(firebaseAuth.updateUser(any(UserRecord.UpdateRequest.class))).thenReturn(mockUserRecord);
+    void updateUserStatus_rejectsUnknownStatus() {
+        // Act + Assert: no Firestore / FB Auth calls expected — fails fast at validation.
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> authService.updateUserStatus("test-uid", "inactive", "actor", "r"));
+        assertTrue(ex.getMessage().toLowerCase().contains("invalid status"),
+                "Error message must call out invalid status: " + ex.getMessage());
 
-        // Act
-        User updatedUser = authService.updateUserStatus("test-uid", "inactive");
+        // Random garbage also rejected
+        assertThrows(IllegalArgumentException.class,
+                () -> authService.updateUserStatus("test-uid", "frobnicated", "actor", "r"));
 
-        // Assert
-        assertNotNull(updatedUser);
-        assertEquals("inactive", updatedUser.getStatus());
-
-        verify(firebaseAuth).updateUser(any(UserRecord.UpdateRequest.class));
-        verify(userRepository).findByUid("test-uid");
-        verify(userRepository).save(testUser);
+        verifyNoInteractions(firebaseAuth);
+        verifyNoInteractions(firestore);
     }
 
     @Test
-    void updateUserStatus_shouldActivateUser() throws Exception {
-        // Arrange
-        testUser.setStatus("inactive");
-        when(userRepository.findByUid("test-uid")).thenReturn(Optional.of(testUser));
-        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(firebaseAuth.updateUser(any(UserRecord.UpdateRequest.class))).thenReturn(mockUserRecord);
+    void updateUserStatus_requiresReasonForBlocked() {
+        assertThrows(IllegalArgumentException.class,
+                () -> authService.updateUserStatus("test-uid", "blocked", "actor", null));
+        assertThrows(IllegalArgumentException.class,
+                () -> authService.updateUserStatus("test-uid", "blocked", "actor", "  "));
 
-        // Act
-        User updatedUser = authService.updateUserStatus("test-uid", "active");
-
-        // Assert
-        assertNotNull(updatedUser);
-        assertEquals("active", updatedUser.getStatus());
-
-        verify(firebaseAuth).updateUser(any(UserRecord.UpdateRequest.class));
-        verify(userRepository).findByUid("test-uid");
-        verify(userRepository).save(testUser);
+        verifyNoInteractions(firebaseAuth);
+        verifyNoInteractions(firestore);
     }
 
     @Test
-    void updateUserStatus_shouldThrowException_whenUserNotFound() throws Exception {
-        // Arrange
-        when(userRepository.findByUid("nonexistent")).thenReturn(Optional.empty());
+    void updateUserStatus_requiresReasonForDeleted() {
+        assertThrows(IllegalArgumentException.class,
+                () -> authService.updateUserStatus("test-uid", "deleted", "actor", null));
+        assertThrows(IllegalArgumentException.class,
+                () -> authService.updateUserStatus("test-uid", "deleted", "actor", ""));
 
-        // Act & Assert
-        assertThrows(IllegalArgumentException.class, () ->
-                authService.updateUserStatus("nonexistent", "inactive")
-        );
+        verifyNoInteractions(firebaseAuth);
+        verifyNoInteractions(firestore);
+    }
 
-        verify(userRepository).findByUid("nonexistent");
-        verify(userRepository, never()).save(any());
+    @Test
+    void updateUserStatus_rejectsNullOrBlankStatus() {
+        assertThrows(IllegalArgumentException.class,
+                () -> authService.updateUserStatus("test-uid", null, "actor", "r"));
+        assertThrows(IllegalArgumentException.class,
+                () -> authService.updateUserStatus("test-uid", "   ", "actor", "r"));
     }
 
     @Test

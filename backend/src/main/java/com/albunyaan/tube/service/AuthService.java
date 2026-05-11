@@ -211,27 +211,65 @@ public class AuthService {
     }
 
     /**
-     * Activate/deactivate user
+     * @deprecated Legacy facade preserved for frontend backwards-compatibility. New callers
+     * should invoke {@link #blockUser}, {@link #unblockUser}, {@link #softDeleteUser}, or
+     * {@link #recoverUser} directly. This facade DELEGATES to those methods so that every
+     * lifecycle safeguard (D2 last-admin guard, D4 cache eviction, D5 audit log,
+     * D9 Firebase Auth sync, transactional consistency) is enforced. It used to bypass
+     * all of them — review-pipeline finding F1.
+     *
+     * Accepted status values:
+     *   "blocked" → delegates to {@link #blockUser} (reason required)
+     *   "active"  → if currently BLOCKED, delegates to {@link #unblockUser};
+     *               if currently DELETED, delegates to {@link #recoverUser};
+     *               otherwise no-op (returns current user unchanged)
+     *   "deleted" → delegates to {@link #softDeleteUser} (reason required)
+     *
+     * @param uid      target user UID
+     * @param status   new lifecycle status — one of "blocked" | "active" | "deleted"
+     * @param actorUid actor UID for audit + self-action guards
+     * @param reason   required for "blocked" and "deleted"; ignored for "active"
+     * @throws IllegalArgumentException if {@code status} is null, blank, unknown, or
+     *         a transition requires a {@code reason} that wasn't provided
      */
-    public User updateUserStatus(String uid, String status)
-            throws FirebaseAuthException, ExecutionException, InterruptedException, TimeoutException {
+    @Deprecated
+    public User updateUserStatus(String uid, String status, String actorUid, String reason)
+            throws Exception {
+        if (status == null || status.isBlank()) {
+            throw new IllegalArgumentException("status is required");
+        }
+        String normalized = status.trim().toLowerCase(java.util.Locale.ROOT);
 
-        boolean disabled = "inactive".equals(status);
+        switch (normalized) {
+            case "blocked" -> {
+                if (reason == null || reason.isBlank()) {
+                    throw new IllegalArgumentException("reason is required when status=blocked");
+                }
+                blockUser(uid, actorUid, reason);
+            }
+            case "deleted" -> {
+                if (reason == null || reason.isBlank()) {
+                    throw new IllegalArgumentException("reason is required when status=deleted");
+                }
+                softDeleteUser(uid, actorUid, reason);
+            }
+            case "active" -> {
+                User current = userRepository.findByUid(uid)
+                        .orElseThrow(() -> new IllegalArgumentException("User not found: " + uid));
+                if (current.isBlocked()) {
+                    unblockUser(uid, actorUid);
+                } else if (current.isDeleted()) {
+                    recoverUser(uid, actorUid);
+                }
+                // else: already active or pending-profile → no-op
+            }
+            default ->
+                throw new IllegalArgumentException(
+                    "Invalid status: " + status + ". Must be one of: blocked, active, deleted");
+        }
 
-        // Update Firebase Auth
-        UserRecord.UpdateRequest request = new UserRecord.UpdateRequest(uid)
-                .setDisabled(disabled);
-        firebaseAuth.updateUser(request);
-
-        // Update Firestore
-        User user = userRepository.findByUid(uid)
-                .orElseThrow(() -> new IllegalArgumentException("User not found: " + uid));
-        user.setStatus(status);
-        user.touch();
-        userRepository.save(user);
-
-        logger.info("Updated status for user {} to: {}", uid, status);
-        return user;
+        return userRepository.findByUid(uid)
+                .orElseThrow(() -> new IllegalArgumentException("User not found after status update: " + uid));
     }
 
     /**

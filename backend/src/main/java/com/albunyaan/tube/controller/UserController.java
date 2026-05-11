@@ -147,7 +147,11 @@ public class UserController {
     }
 
     /**
-     * Update user status (activate/deactivate)
+     * Update user status (legacy facade — delegates to block / unblock / softDelete / recover).
+     *
+     * Kept for back-compat with admin dashboard. Plan A safeguards (last-admin guard,
+     * cache eviction, audit log, FB Auth sync) are enforced by the underlying lifecycle
+     * methods now — see {@link AuthService#updateUserStatus(String, String, String, String)}.
      */
     @PutMapping("/{uid}/status")
     @PreAuthorize("hasRole('ADMIN')")
@@ -155,20 +159,15 @@ public class UserController {
             @PathVariable String uid,
             @RequestBody UpdateStatusRequest request,
             @AuthenticationPrincipal FirebaseUserDetails currentUser
-    ) {
-        try {
-            User user = authService.updateUserStatus(uid, request.status);
-            try {
-                auditLogService.log("user_status_updated", "user", uid, currentUser);
-            } catch (Exception auditEx) {
-                log.error("Failed to audit user_status_updated for uid={}", uid, auditEx);
-            }
-            return ResponseEntity.ok(user);
-        } catch (FirebaseAuthException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+    ) throws Exception {
+        if (currentUser == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
+        // No try-catch here: domain exceptions (IllegalArgumentException → 400,
+        // LastAdminException → 409) are mapped by GlobalExceptionHandler so legacy
+        // callers get the right HTTP status instead of a swallowed 500.
+        User user = authService.updateUserStatus(uid, request.status, currentUser.getUid(), request.reason);
+        return ResponseEntity.ok(user);
     }
 
     /**
@@ -277,7 +276,8 @@ public class UserController {
     }
 
     public static class UpdateStatusRequest {
-        public String status; // "active" | "inactive"
+        public String status; // "active" | "blocked" | "deleted"
+        public String reason; // required for "blocked" and "deleted"; ignored for "active"
     }
 }
 

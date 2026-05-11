@@ -229,41 +229,52 @@ class UserControllerTest {
     }
 
     @Test
-    void updateUserStatus_shouldUpdateStatus_andLogAudit() throws Exception {
+    void updateUserStatus_shouldDelegateToBlockingFlow_whenStatusBlocked() throws Exception {
         // Arrange
         UserController.UpdateStatusRequest request = new UserController.UpdateStatusRequest();
-        request.status = "inactive";
+        request.status = "blocked";
+        request.reason = "policy";
 
         User updatedUser = new User("test-mod-uid", "mod@example.com", "Test Moderator", "moderator");
-        updatedUser.setStatus("inactive");
-        when(authService.updateUserStatus("test-mod-uid", "inactive")).thenReturn(updatedUser);
+        updatedUser.setStatus("blocked");
+        when(authService.updateUserStatus("test-mod-uid", "blocked", "admin-uid", "policy"))
+                .thenReturn(updatedUser);
 
         // Act
         ResponseEntity<User> response = userController.updateUserStatus("test-mod-uid", request, adminUser);
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertEquals("inactive", response.getBody().getStatus());
-        verify(authService).updateUserStatus("test-mod-uid", "inactive");
-        verify(auditLogService).log(eq("user_status_updated"), eq("user"), eq("test-mod-uid"), eq(adminUser));
+        assertEquals("blocked", response.getBody().getStatus());
+        verify(authService).updateUserStatus("test-mod-uid", "blocked", "admin-uid", "policy");
     }
 
     @Test
-    void updateUserStatus_shouldReturnBadRequest_whenFirebaseAuthFails() throws Exception {
+    void updateUserStatus_shouldReturn401_whenActorIsNull() throws Exception {
         // Arrange
         UserController.UpdateStatusRequest request = new UserController.UpdateStatusRequest();
-        request.status = "inactive";
-
-        FirebaseAuthException mockException = mock(FirebaseAuthException.class);
-        when(authService.updateUserStatus(any(), any()))
-                .thenThrow(mockException);
+        request.status = "blocked";
+        request.reason = "policy";
 
         // Act
-        ResponseEntity<User> response = userController.updateUserStatus("nonexistent", request, adminUser);
+        ResponseEntity<User> response = userController.updateUserStatus("test-mod-uid", request, null);
 
         // Assert
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        verify(auditLogService, never()).log(any(), any(), any(), any());
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+        verify(authService, never()).updateUserStatus(any(), any(), any(), any());
+    }
+
+    @Test
+    void updateUserStatus_shouldPropagateIllegalArgumentException_forBadStatus() throws Exception {
+        // Arrange
+        UserController.UpdateStatusRequest request = new UserController.UpdateStatusRequest();
+        request.status = "inactive"; // legacy value — no longer accepted
+        when(authService.updateUserStatus(eq("test-mod-uid"), eq("inactive"), any(), any()))
+                .thenThrow(new IllegalArgumentException("Invalid status: inactive"));
+
+        // Act + Assert: exception propagates so GlobalExceptionHandler maps it to 400
+        assertThrows(IllegalArgumentException.class,
+                () -> userController.updateUserStatus("test-mod-uid", request, adminUser));
     }
 
     @Test
