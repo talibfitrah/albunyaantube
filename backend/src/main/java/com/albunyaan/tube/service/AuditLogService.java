@@ -30,7 +30,7 @@ public class AuditLogService {
     /**
      * Log an admin action (async to not block request)
      */
-    @Async
+    @Async("auditExecutor")
     public void log(String action, String entityType, String entityId, FirebaseUserDetails actor) {
         log(action, entityType, entityId, actor, null);
     }
@@ -38,7 +38,7 @@ public class AuditLogService {
     /**
      * Log an admin action with additional details (async)
      */
-    @Async
+    @Async("auditExecutor")
     public void log(String action, String entityType, String entityId, FirebaseUserDetails actor, Map<String, Object> details) {
         try {
             AuditLog auditLog = new AuditLog(action, entityType, entityId, actor.getUid());
@@ -58,7 +58,7 @@ public class AuditLogService {
     /**
      * Log action with simple string actor (for system actions)
      */
-    @Async
+    @Async("auditExecutor")
     public void logSystem(String action, String entityType, String entityId, String actorDescription) {
         try {
             AuditLog auditLog = new AuditLog(action, entityType, entityId, "system");
@@ -73,7 +73,7 @@ public class AuditLogService {
     /**
      * Log approval action (BACKEND-APPR-01)
      */
-    @Async
+    @Async("auditExecutor")
     public void logApproval(String entityType, String entityId, String actorUid, String actorDisplayName, String notes) {
         try {
             AuditLog auditLog = new AuditLog(entityType + "_approved", entityType, entityId, actorUid);
@@ -91,7 +91,7 @@ public class AuditLogService {
     /**
      * Log rejection action (BACKEND-APPR-01)
      */
-    @Async
+    @Async("auditExecutor")
     public void logRejection(String entityType, String entityId, String actorUid, String actorDisplayName, Map<String, Object> details) {
         try {
             AuditLog auditLog = new AuditLog(entityType + "_rejected", entityType, entityId, actorUid);

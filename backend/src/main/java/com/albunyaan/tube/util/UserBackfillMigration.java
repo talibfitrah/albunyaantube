@@ -1,5 +1,6 @@
 package com.albunyaan.tube.util;
 
+import com.albunyaan.tube.config.FirestoreTimeoutProperties;
 import com.albunyaan.tube.model.AuditLog;
 import com.albunyaan.tube.model.User;
 import com.albunyaan.tube.model.UserStatus;
@@ -21,6 +22,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 /**
  * BACKEND-AUTH-01 Task 12: Idempotent user-backfill migration.
@@ -52,17 +54,20 @@ public class UserBackfillMigration {
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
     private final AuditLogRepository auditLogRepository;
+    private final FirestoreTimeoutProperties timeoutProperties;
 
     public UserBackfillMigration(Firestore firestore,
                                  FirebaseAuth firebaseAuth,
                                  UserRepository userRepository,
                                  AuditLogService auditLogService,
-                                 AuditLogRepository auditLogRepository) {
+                                 AuditLogRepository auditLogRepository,
+                                 FirestoreTimeoutProperties timeoutProperties) {
         this.firestore = firestore;
         this.firebaseAuth = firebaseAuth;
         this.userRepository = userRepository;
         this.auditLogService = auditLogService;
         this.auditLogRepository = auditLogRepository;
+        this.timeoutProperties = timeoutProperties;
     }
 
     /**
@@ -75,8 +80,10 @@ public class UserBackfillMigration {
         DocumentReference lockRef = firestore.collection("system_settings").document(LOCK_DOC);
 
         // Atomic CAS: claim the lock or bail out immediately.
+        // F5: explicit write timeout — a stalled Firestore would otherwise block
+        // forever and leave the calling admin's request thread hung indefinitely.
         boolean claimed = firestore.runTransaction(tx -> {
-            DocumentSnapshot snap = tx.get(lockRef).get();
+            DocumentSnapshot snap = tx.get(lockRef).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
             if (snap.exists() && Boolean.TRUE.equals(snap.getBoolean("running"))) {
                 return false;
             }
@@ -87,7 +94,7 @@ public class UserBackfillMigration {
                 "claimedByUid", actorUid
             ));
             return true;
-        }).get();
+        }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
 
         if (!claimed) {
             throw new IllegalStateException(
@@ -134,6 +141,8 @@ public class UserBackfillMigration {
 
         } finally {
             // Release lock + write synchronous summary audit in a single transaction.
+            // F5: explicit write timeout — a JVM crash mid-loop already leaves
+            // running:true on the lock; we mustn't add an indefinite block here too.
             final int finalScanned = scanned;
             final int finalUpdated = updated;
             firestore.runTransaction(tx -> {
@@ -148,7 +157,7 @@ public class UserBackfillMigration {
                     finalScanned, finalUpdated, actorUid);
                 tx.set(auditLogRepository.auditLogsCollection().document(), summary);
                 return null;
-            }).get();
+            }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
         }
 
         String completedAt = Timestamp.now().toString();
