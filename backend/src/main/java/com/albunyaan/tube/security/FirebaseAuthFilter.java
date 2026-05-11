@@ -119,6 +119,14 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
                     writeError(response, HttpServletResponse.SC_SERVICE_UNAVAILABLE,
                         "SERVICE_UNAVAILABLE", "Account status check failed; try again.");
                     return;
+                } catch (RuntimeException e) {
+                    // Catch-all for unexpected Firestore client errors (network, NPE in mappers,
+                    // etc.) so the filter never bubbles a stack trace to the caller as a 500.
+                    logger.error("Unexpected error during status check for uid {}: {}",
+                        uid, e.getMessage(), e);
+                    writeError(response, HttpServletResponse.SC_SERVICE_UNAVAILABLE,
+                        "SERVICE_UNAVAILABLE", "Account status check failed; try again.");
+                    return;
                 }
 
                 // Extract role from custom claims with allowlist validation
