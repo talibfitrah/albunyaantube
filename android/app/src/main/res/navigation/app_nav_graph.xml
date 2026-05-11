@@ -24,6 +24,14 @@
             app:popUpTo="@id/app_nav_graph"
             app:popUpToInclusive="true"
             app:launchSingleTop="true"/>
+        <!-- Plan C T7 — action ID needed for SplashRouter. Destination is TEMPORARILY
+             mainShellFragment; T10 will repoint to profileBootstrapFragment once it
+             exists. Do not exercise this action in production until T10 lands. -->
+        <action
+            android:id="@+id/action_splash_to_bootstrap"
+            app:destination="@id/mainShellFragment"
+            app:popUpTo="@id/splashFragment"
+            app:popUpToInclusive="true" />
     </fragment>
 
     <fragment
