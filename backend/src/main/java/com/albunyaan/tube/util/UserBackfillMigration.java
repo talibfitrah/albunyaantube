@@ -7,12 +7,12 @@ import com.albunyaan.tube.model.UserStatus;
 import com.albunyaan.tube.repository.AuditLogRepository;
 import com.albunyaan.tube.repository.UserRepository;
 import com.albunyaan.tube.service.AuditLogService;
+import com.albunyaan.tube.service.AuthService;
 import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.DocumentSnapshot;
 import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.SetOptions;
-import com.google.firebase.auth.FirebaseAuth;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -50,24 +50,24 @@ public class UserBackfillMigration {
                              String startedAt, String completedAt) {}
 
     private final Firestore firestore;
-    private final FirebaseAuth firebaseAuth;
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
     private final AuditLogRepository auditLogRepository;
     private final FirestoreTimeoutProperties timeoutProperties;
+    private final AuthService authService;
 
     public UserBackfillMigration(Firestore firestore,
-                                 FirebaseAuth firebaseAuth,
                                  UserRepository userRepository,
                                  AuditLogService auditLogService,
                                  AuditLogRepository auditLogRepository,
-                                 FirestoreTimeoutProperties timeoutProperties) {
+                                 FirestoreTimeoutProperties timeoutProperties,
+                                 AuthService authService) {
         this.firestore = firestore;
-        this.firebaseAuth = firebaseAuth;
         this.userRepository = userRepository;
         this.auditLogService = auditLogService;
         this.auditLogRepository = auditLogRepository;
         this.timeoutProperties = timeoutProperties;
+        this.authService = authService;
     }
 
     /**
@@ -132,10 +132,12 @@ public class UserBackfillMigration {
 
             // Phase 2: re-issue lowercase Firebase Auth custom claims (D6).
             // includeDeleted=true so we also fix deleted accounts in case they are recovered later.
+            // F7: merge-set via AuthService.setUserRoleClaim so any OTHER custom claims
+            // (subscription tier, feature flags) survive the backfill. Pre-fix the
+            // backfill silently wiped every non-role claim on every run.
             for (User u : userRepository.findAll(true)) {
                 if (u.getRole() != null && !u.getRole().isBlank()) {
-                    firebaseAuth.setCustomUserClaims(u.getUid(),
-                        Map.of("role", u.getRole().toLowerCase(Locale.ROOT)));
+                    authService.setUserRoleClaim(u.getUid(), u.getRole());
                 }
             }
 

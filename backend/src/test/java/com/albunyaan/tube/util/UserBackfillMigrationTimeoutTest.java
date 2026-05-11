@@ -4,9 +4,9 @@ import com.albunyaan.tube.config.FirestoreTimeoutProperties;
 import com.albunyaan.tube.repository.AuditLogRepository;
 import com.albunyaan.tube.repository.UserRepository;
 import com.albunyaan.tube.service.AuditLogService;
+import com.albunyaan.tube.service.AuthService;
 import com.google.api.core.ApiFuture;
 import com.google.cloud.firestore.Firestore;
-import com.google.firebase.auth.FirebaseAuth;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -37,10 +37,10 @@ import static org.mockito.Mockito.*;
 class UserBackfillMigrationTimeoutTest {
 
     @Mock Firestore firestore;
-    @Mock FirebaseAuth firebaseAuth;
     @Mock UserRepository userRepository;
     @Mock AuditLogService auditLogService;
     @Mock AuditLogRepository auditLogRepository;
+    @Mock AuthService authService;
 
     @Test
     @SuppressWarnings({"unchecked", "rawtypes"})
@@ -63,7 +63,7 @@ class UserBackfillMigrationTimeoutTest {
         doReturn(future).when(firestore).runTransaction(any());
 
         UserBackfillMigration migration = new UserBackfillMigration(
-                firestore, firebaseAuth, userRepository, auditLogService, auditLogRepository, timeouts);
+                firestore, userRepository, auditLogService, auditLogRepository, timeouts, authService);
 
         // Act + Assert: the timeout must surface as TimeoutException (or wrap it),
         // NOT block indefinitely. We accept any exception that propagates from the future.
@@ -109,7 +109,7 @@ class UserBackfillMigrationTimeoutTest {
                 .thenReturn(Collections.emptyList());
 
         UserBackfillMigration migration = new UserBackfillMigration(
-                firestore, firebaseAuth, userRepository, auditLogService, auditLogRepository, timeouts);
+                firestore, userRepository, auditLogService, auditLogRepository, timeouts, authService);
 
         // The release timeout fires inside the finally{} block — pre-F5 this hung forever.
         assertThrows(Exception.class, () -> migration.run("test-actor"));

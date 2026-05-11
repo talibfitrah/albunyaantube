@@ -79,6 +79,9 @@ class AuthServiceTest {
         // Arrange
         when(mockUserRecord.getUid()).thenReturn("test-uid");
         when(firebaseAuth.createUser(any(UserRecord.CreateRequest.class))).thenReturn(mockUserRecord);
+        // F7: setUserRoleClaim reads existing claims via getUser before merging.
+        when(firebaseAuth.getUser("test-uid")).thenReturn(mockUserRecord);
+        when(mockUserRecord.getCustomClaims()).thenReturn(null); // fresh user — no prior claims
         doNothing().when(firebaseAuth).setCustomUserClaims(eq("test-uid"), any(Map.class));
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -139,6 +142,8 @@ class AuthServiceTest {
         // Arrange
         when(mockUserRecord.getUid()).thenReturn("u1");
         when(firebaseAuth.createUser(any(UserRecord.CreateRequest.class))).thenReturn(mockUserRecord);
+        when(firebaseAuth.getUser("u1")).thenReturn(mockUserRecord);
+        when(mockUserRecord.getCustomClaims()).thenReturn(null);
         doNothing().when(firebaseAuth).setCustomUserClaims(eq("u1"), any(Map.class));
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -163,6 +168,8 @@ class AuthServiceTest {
         // Arrange
         when(mockUserRecord.getUid()).thenReturn("u2");
         when(firebaseAuth.createUser(any(UserRecord.CreateRequest.class))).thenReturn(mockUserRecord);
+        when(firebaseAuth.getUser("u2")).thenReturn(mockUserRecord);
+        when(mockUserRecord.getCustomClaims()).thenReturn(null);
         doNothing().when(firebaseAuth).setCustomUserClaims(eq("u2"), any(Map.class));
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -185,6 +192,9 @@ class AuthServiceTest {
         ApiFuture<User> txFuture = mock(ApiFuture.class);
         when(txFuture.get(anyLong(), any())).thenReturn(u);
         doReturn(txFuture).when(firestore).runTransaction(any());
+        // F7: setUserRoleClaim reads existing claims before merging
+        when(firebaseAuth.getUser("u1")).thenReturn(mockUserRecord);
+        when(mockUserRecord.getCustomClaims()).thenReturn(null);
         doNothing().when(firebaseAuth).setCustomUserClaims(eq("u1"), any(Map.class));
         when(cacheManager.getCache("userStatus")).thenReturn(null);
         when(timeoutProperties.getWrite()).thenReturn(10L);
@@ -407,6 +417,64 @@ class AuthServiceTest {
         verify(mockCache).evict("target");
     }
 
+    // ── F7 — setUserRoleClaim merges, never clobbers other claims ────────────
+    // Pre-fix call sites used Map.of("role", role) which REPLACES the entire
+    // claims object. Any future custom claim (subscription tier, feature flags)
+    // would be silently wiped on every role-change / backfill run.
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void setUserRoleClaim_preservesOtherCustomClaims() throws Exception {
+        // Arrange: pretend the user already has a subscriptionTier claim.
+        java.util.Map<String, Object> existing = new java.util.HashMap<>();
+        existing.put("role", "user");
+        existing.put("subscriptionTier", "premium");
+        existing.put("featureFlag.beta", Boolean.TRUE);
+
+        UserRecord existingUserRecord = mock(UserRecord.class);
+        when(existingUserRecord.getCustomClaims()).thenReturn(existing);
+        when(firebaseAuth.getUser("u-merge")).thenReturn(existingUserRecord);
+
+        // Act: change role to admin
+        authService.setUserRoleClaim("u-merge", "ADMIN");
+
+        // Assert: the resulting claims map contains the NEW role AND the prior claims.
+        verify(firebaseAuth).setCustomUserClaims(eq("u-merge"), argThat(claims -> {
+            return "admin".equals(claims.get("role"))
+                && "premium".equals(claims.get("subscriptionTier"))
+                && Boolean.TRUE.equals(claims.get("featureFlag.beta"));
+        }));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void setUserRoleClaim_writesOnlyRole_whenNoPriorClaims() throws Exception {
+        UserRecord existingUserRecord = mock(UserRecord.class);
+        when(existingUserRecord.getCustomClaims()).thenReturn(null);
+        when(firebaseAuth.getUser("u-fresh")).thenReturn(existingUserRecord);
+
+        authService.setUserRoleClaim("u-fresh", "moderator");
+
+        verify(firebaseAuth).setCustomUserClaims(eq("u-fresh"), argThat(claims ->
+            claims.size() == 1 && "moderator".equals(claims.get("role"))
+        ));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void setUserRoleClaim_lowercasesRoleBeforeWrite() throws Exception {
+        UserRecord existingUserRecord = mock(UserRecord.class);
+        when(existingUserRecord.getCustomClaims()).thenReturn(null);
+        when(firebaseAuth.getUser("u-case")).thenReturn(existingUserRecord);
+
+        // Pass MixedCase — helper must canonicalise.
+        authService.setUserRoleClaim("u-case", "Admin");
+
+        verify(firebaseAuth).setCustomUserClaims(eq("u-case"), argThat(claims ->
+            "admin".equals(claims.get("role"))
+        ));
+    }
+
     @Test
     @SuppressWarnings("unchecked")
     void updateUserRoleAsActor_evictsCache_evenWhenSetCustomClaimsThrows() throws Exception {
@@ -416,6 +484,10 @@ class AuthServiceTest {
         ApiFuture<User> txFuture = mock(ApiFuture.class);
         when(txFuture.get(anyLong(), any())).thenReturn(u);
         doReturn(txFuture).when(firestore).runTransaction(any());
+
+        // F7: getUser is called before setCustomUserClaims, mock it
+        when(firebaseAuth.getUser("u-role")).thenReturn(mockUserRecord);
+        when(mockUserRecord.getCustomClaims()).thenReturn(null);
 
         FirebaseAuthException fbEx = mock(FirebaseAuthException.class);
         doThrow(fbEx).when(firebaseAuth).setCustomUserClaims(anyString(), any(Map.class));

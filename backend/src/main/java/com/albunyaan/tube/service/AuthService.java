@@ -75,6 +75,28 @@ public class AuthService {
     }
 
     /**
+     * F7: set the {@code role} custom claim on a Firebase Auth user WITHOUT
+     * clobbering any other claims that may have been written by other systems
+     * (subscription tier, feature flags, etc.).
+     *
+     * Pre-fix every call site used {@code Map.of("role", role)} which REPLACES
+     * the entire claims object. This is a forward-compat hazard — any new
+     * custom claim added in the future would be silently wiped by every
+     * role-change / migration backfill.
+     *
+     * The role is normalised to canonical lowercase here so callers don't have
+     * to remember D6 separately.
+     */
+    public void setUserRoleClaim(String uid, String role) throws FirebaseAuthException {
+        UserRecord existing = firebaseAuth.getUser(uid);
+        Map<String, Object> merged = existing.getCustomClaims() == null
+                ? new HashMap<>()
+                : new HashMap<>(existing.getCustomClaims());
+        merged.put("role", role == null ? null : role.toLowerCase(java.util.Locale.ROOT));
+        firebaseAuth.setCustomUserClaims(uid, merged);
+    }
+
+    /**
      * F4: evict the userStatus cache entry for {@code uid}. Always-runs semantics —
      * called from try/finally blocks in every lifecycle mutation so a Firebase Auth
      * failure cannot leave a stale ACTIVE entry in cache for the 60s TTL window.
@@ -165,10 +187,11 @@ public class AuthService {
         UserRecord userRecord = firebaseAuth.createUser(request);
         String uid = userRecord.getUid();
 
-        // Set custom claims for role-based access (canonical lowercase)
-        Map<String, Object> claims = new HashMap<>();
-        claims.put("role", canonicalRole);
-        firebaseAuth.setCustomUserClaims(uid, claims);
+        // F7: merge-set the role claim (preserves any prior custom claims).
+        // createUser is the genesis path, so existing claims will typically be
+        // empty, but using the helper keeps the API surface uniform with the
+        // role-update path.
+        setUserRoleClaim(uid, canonicalRole);
 
         // Create user document in Firestore — canonical lowercase role
         User user = new User(uid, email, displayName, canonicalRole);
@@ -227,10 +250,9 @@ public class AuthService {
         // stale entry behind. Pre-fix the evict ran AFTER the FB Auth call and
         // would be skipped on any exception.
         try {
-            // Update Firebase Auth custom claims OUTSIDE the tx (D9, D6 lowercase)
-            Map<String, Object> claims = new HashMap<>();
-            claims.put("role", newRole.getValue());
-            firebaseAuth.setCustomUserClaims(uid, claims);
+            // F7 + D6: merge-set the role claim so OTHER custom claims survive.
+            // Map.of("role", newRole) used to replace the entire claim object.
+            setUserRoleClaim(uid, newRole.getValue());
         } finally {
             evictUserStatus(uid);
         }
