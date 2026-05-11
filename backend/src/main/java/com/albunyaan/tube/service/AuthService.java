@@ -368,9 +368,17 @@ public class AuthService {
      * Soft-delete a user: marks DELETED in Firestore + writes audit log inside a transaction,
      * then disables + revokes tokens in Firebase Auth and evicts the status cache.
      * Enforces the last-admin guard (D2) inside the same transaction.
+     *
+     * <p>F20: the tx returns a boolean indicating whether a state transition
+     * actually occurred. The post-tx Firebase Auth side-effects
+     * ({@code setDisabled(true)}, {@code revokeRefreshTokens}) only fire when
+     * the tx wrote new state. The cache eviction still runs unconditionally
+     * (cheap, defensive). Pre-F20 the side-effects ran even on the F13
+     * idempotent no-op path, which could re-disable an out-of-band-enabled
+     * account or re-revoke tokens on an already-deleted user.
      */
     public void softDeleteUser(String uid, String actorUid, String reason) throws Exception {
-        runLifecycleTx(tx -> {
+        Boolean transitioned = runLifecycleTx(tx -> {
             DocumentReference userRef = firestore.collection("users").document(uid);
             DocumentSnapshot snap = tx.get(userRef).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
             if (!snap.exists()) {
@@ -394,8 +402,15 @@ public class AuthService {
             // USER_SOFT_DELETED audit nor overwrite the original deletedAt /
             // deleteReason. Runs AFTER F8 isBlocked guard so a (highly unusual)
             // BLOCKED + retry path still throws rather than silently skips.
+            //
+            // F20: return false on the no-op path so the post-tx FB Auth
+            // side-effects are skipped. Pre-F20 a retry would re-call
+            // setDisabled(true) + revokeRefreshTokens on an already-deleted
+            // user — harmless for setDisabled but revoking tokens updates
+            // validSince and would invalidate any fresh out-of-band token a
+            // SysAdmin minted for support investigation.
             if (target.isDeleted()) {
-                return null;
+                return Boolean.FALSE;
             }
 
             // Last-admin guard (D2) — inline transactional check
@@ -418,30 +433,44 @@ public class AuthService {
 
             tx.set(userRef, target);
             tx.set(auditLogRepository.auditLogsCollection().document(), audit);
-            return null;
+            return Boolean.TRUE;
         });
 
         // F4: cache eviction in try/finally — guarantee D4 fires even when FB Auth
         // calls throw, otherwise a stale ACTIVE entry can let a deleted user
-        // pass the AccountStatusFilter for the next 60s.
+        // pass the AccountStatusFilter for the next 60s. Eviction still runs
+        // unconditionally even when the tx no-op'd (cheap, defensive).
         try {
-            // D9 — outside the tx, idempotent
-            firebaseAuth.updateUser(new UserRecord.UpdateRequest(uid).setDisabled(true));
-            firebaseAuth.revokeRefreshTokens(uid);
+            // F20: only fire FB Auth side-effects if the tx actually
+            // transitioned the user. Pre-F20 an idempotent retry could
+            // re-revoke tokens and invalidate fresh out-of-band tokens.
+            if (Boolean.TRUE.equals(transitioned)) {
+                // D9 — outside the tx, idempotent
+                firebaseAuth.updateUser(new UserRecord.UpdateRequest(uid).setDisabled(true));
+                firebaseAuth.revokeRefreshTokens(uid);
+            }
         } finally {
             evictUserStatus(uid);
         }
 
-        logger.info("Soft-deleted user uid={} actor={}", uid, actorUid);
+        logger.info("Soft-deleted user uid={} actor={} transitioned={}",
+                uid, actorUid, transitioned);
     }
 
     /**
      * Recover a soft-deleted user: clears DELETED status in Firestore + writes audit log
      * inside a transaction, then re-enables the Firebase Auth account and evicts cache.
      * Requires target to currently be in DELETED status.
+     *
+     * <p>F20: same shape as softDeleteUser/blockUser/unblockUser — tx returns
+     * a boolean transition flag and the post-tx {@code setDisabled(false)}
+     * only fires when the tx actually transitioned. recoverUser currently
+     * THROWS on non-DELETED targets (no idempotent path), so the flag is
+     * effectively always true if we reach the post-tx code — but we keep the
+     * pattern uniform so future idempotency additions don't drift.
      */
     public void recoverUser(String uid, String actorUid) throws Exception {
-        runLifecycleTx(tx -> {
+        Boolean transitioned = runLifecycleTx(tx -> {
             DocumentReference userRef = firestore.collection("users").document(uid);
             DocumentSnapshot snap = tx.get(userRef).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
             if (!snap.exists()) {
@@ -458,26 +487,39 @@ public class AuthService {
 
             tx.set(userRef, target);
             tx.set(auditLogRepository.auditLogsCollection().document(), audit);
-            return null;
+            return Boolean.TRUE;
         });
 
         // F4: cache eviction in try/finally (see softDeleteUser for rationale).
         try {
-            firebaseAuth.updateUser(new UserRecord.UpdateRequest(uid).setDisabled(false));
+            // F20: only re-enable if the tx actually transitioned. With the
+            // current strict guard (must be DELETED) this is always TRUE, but
+            // keeping the gate keeps the pattern consistent.
+            if (Boolean.TRUE.equals(transitioned)) {
+                firebaseAuth.updateUser(new UserRecord.UpdateRequest(uid).setDisabled(false));
+            }
         } finally {
             evictUserStatus(uid);
         }
 
-        logger.info("Recovered user uid={} actor={}", uid, actorUid);
+        logger.info("Recovered user uid={} actor={} transitioned={}",
+                uid, actorUid, transitioned);
     }
 
     /**
      * Block a user: marks BLOCKED in Firestore + writes audit log inside a transaction,
      * then disables + revokes tokens in Firebase Auth and evicts the status cache.
      * Enforces the last-admin guard (D2) inside the same transaction.
+     *
+     * <p>F20: post-tx FB Auth side-effects gated on the tx transition flag.
+     * Pre-F20 a retry against an already-BLOCKED target re-called
+     * revokeRefreshTokens, which updates {@code validSince} and would
+     * invalidate any fresh out-of-band token issued by a SysAdmin for
+     * support investigation. Now the idempotent path skips both
+     * setDisabled and revokeRefreshTokens.
      */
     public void blockUser(String uid, String actorUid, String reason) throws Exception {
-        runLifecycleTx(tx -> {
+        Boolean transitioned = runLifecycleTx(tx -> {
             DocumentReference userRef = firestore.collection("users").document(uid);
             DocumentSnapshot snap = tx.get(userRef).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
             if (!snap.exists()) {
@@ -502,8 +544,13 @@ public class AuthService {
             // safe; the original block timestamp and audit are preserved.
             // Cross-state guard (F12) above runs FIRST so a deleted target
             // still throws cleanly instead of being silently skipped.
+            //
+            // F20: return false here so the post-tx setDisabled +
+            // revokeRefreshTokens are skipped. revokeRefreshTokens has a
+            // visible side-effect (updates validSince) — re-calling it on an
+            // already-blocked user can invalidate fresh out-of-band tokens.
             if (target.isBlocked()) {
-                return null;
+                return Boolean.FALSE;
             }
 
             // Last-admin guard (D2) — inline transactional check
@@ -526,21 +573,26 @@ public class AuthService {
 
             tx.set(userRef, target);
             tx.set(auditLogRepository.auditLogsCollection().document(), audit);
-            return null;
+            return Boolean.TRUE;
         });
 
         // F4: cache eviction in try/finally — guarantee D4 fires even when FB Auth
         // calls throw, otherwise a stale ACTIVE entry lets a blocked user pass the
         // AccountStatusFilter for the next 60s.
         try {
-            // D9 — outside the tx, idempotent
-            firebaseAuth.updateUser(new UserRecord.UpdateRequest(uid).setDisabled(true));
-            firebaseAuth.revokeRefreshTokens(uid);
+            // F20: only fire FB Auth side-effects on actual transitions —
+            // see method-level javadoc for rationale.
+            if (Boolean.TRUE.equals(transitioned)) {
+                // D9 — outside the tx, idempotent
+                firebaseAuth.updateUser(new UserRecord.UpdateRequest(uid).setDisabled(true));
+                firebaseAuth.revokeRefreshTokens(uid);
+            }
         } finally {
             evictUserStatus(uid);
         }
 
-        logger.info("Blocked user uid={} actor={} reason={}", uid, actorUid, reason);
+        logger.info("Blocked user uid={} actor={} reason={} transitioned={}",
+                uid, actorUid, reason, transitioned);
     }
 
     /**
@@ -548,9 +600,24 @@ public class AuthService {
      * transaction, then re-enables the Firebase Auth account and evicts cache.
      * Requires target to currently be in BLOCKED status.
      * No last-admin guard — unblock only increases active-admin count.
+     *
+     * <p>F20: post-tx {@code setDisabled(false)} gated on the tx transition
+     * flag. The motivating scenario:
+     * <ol>
+     *   <li>SysAdmin disables a user in FB Auth Console out-of-band (e.g.,
+     *       for support investigation). Firestore status stays ACTIVE.</li>
+     *   <li>A moderator calls unblockUser on this user by mistake.</li>
+     *   <li>F13 sees ACTIVE → tx no-op return.</li>
+     *   <li>Pre-F20 the post-tx {@code setDisabled(false)} ran
+     *       unconditionally and re-enabled the out-of-band-disabled account,
+     *       silently undoing the SysAdmin action.</li>
+     * </ol>
+     * Pre-F13 this would have thrown {@code IllegalStateException}
+     * ("User is not in BLOCKED status"), surfacing the divergence. With F13
+     * making the path idempotent, F20 must restore the safety property.
      */
     public void unblockUser(String uid, String actorUid) throws Exception {
-        runLifecycleTx(tx -> {
+        Boolean transitioned = runLifecycleTx(tx -> {
             DocumentReference userRef = firestore.collection("users").document(uid);
             DocumentSnapshot snap = tx.get(userRef).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
             if (!snap.exists()) {
@@ -565,8 +632,12 @@ public class AuthService {
             // retry after a partial failure would have looked like a bug to the
             // operator. ACTIVE no-op preserves the "look, we're done" UX while
             // keeping the DELETED guard strict (audit-trail honesty).
+            //
+            // F20: return false so the post-tx setDisabled(false) is skipped
+            // — see method-level javadoc for the out-of-band-disabled
+            // scenario this protects against.
             if (target.isActive()) {
-                return null;
+                return Boolean.FALSE;
             }
             if (!target.isBlocked()) {
                 throw new IllegalStateException("User is not in BLOCKED status: " + uid);
@@ -578,18 +649,23 @@ public class AuthService {
 
             tx.set(userRef, target);
             tx.set(auditLogRepository.auditLogsCollection().document(), audit);
-            return null;
+            return Boolean.TRUE;
         });
 
         // F4: cache eviction in try/finally (see blockUser for rationale).
         try {
-            // Re-enable Firebase Auth account
-            firebaseAuth.updateUser(new UserRecord.UpdateRequest(uid).setDisabled(false));
+            // F20: only re-enable FB Auth if the tx actually transitioned.
+            // See method-level javadoc — protects against silently undoing
+            // an out-of-band SysAdmin-issued disable.
+            if (Boolean.TRUE.equals(transitioned)) {
+                firebaseAuth.updateUser(new UserRecord.UpdateRequest(uid).setDisabled(false));
+            }
         } finally {
             evictUserStatus(uid);
         }
 
-        logger.info("Unblocked user uid={} actor={}", uid, actorUid);
+        logger.info("Unblocked user uid={} actor={} transitioned={}",
+                uid, actorUid, transitioned);
     }
 
     /**

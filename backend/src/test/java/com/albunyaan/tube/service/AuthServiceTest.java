@@ -260,9 +260,12 @@ class AuthServiceTest {
     @Test
     @SuppressWarnings("unchecked")
     void softDeleteUser_shouldDisableFirebaseAuthAndEvictCache() throws Exception {
-        // Arrange: stub the Firestore transaction to complete successfully (real logic tested in integration test)
-        ApiFuture<Void> doneFuture = mock(ApiFuture.class);
-        when(doneFuture.get(anyLong(), any())).thenReturn(null);
+        // Arrange: stub the Firestore transaction to complete with a TRUE
+        // transition flag (real logic tested in integration test). F20 gates
+        // FB Auth side-effects on the tx's return value — TRUE here so we
+        // exercise the post-tx path.
+        ApiFuture<Boolean> doneFuture = mock(ApiFuture.class);
+        when(doneFuture.get(anyLong(), any())).thenReturn(Boolean.TRUE);
         doReturn(doneFuture).when(firestore).runTransaction(any());
 
         when(firebaseAuth.updateUser(any())).thenReturn(null);
@@ -284,9 +287,10 @@ class AuthServiceTest {
     @Test
     @SuppressWarnings("unchecked")
     void recoverUser_shouldEnableFirebaseAuthAndEvictCache() throws Exception {
-        // Arrange: stub the Firestore transaction to complete successfully
-        ApiFuture<Void> doneFuture = mock(ApiFuture.class);
-        when(doneFuture.get(anyLong(), any())).thenReturn(null);
+        // F20: stub the tx to return Boolean.TRUE so the post-tx FB Auth call
+        // path runs.
+        ApiFuture<Boolean> doneFuture = mock(ApiFuture.class);
+        when(doneFuture.get(anyLong(), any())).thenReturn(Boolean.TRUE);
         doReturn(doneFuture).when(firestore).runTransaction(any());
 
         when(firebaseAuth.updateUser(any())).thenReturn(null);
@@ -313,9 +317,11 @@ class AuthServiceTest {
     @Test
     @SuppressWarnings("unchecked")
     void blockUser_evictsCache_evenWhenFirebaseAuthUpdateThrows() throws Exception {
-        // Arrange: Firestore tx succeeds, but FB Auth disable throws.
-        ApiFuture<Void> doneFuture = mock(ApiFuture.class);
-        when(doneFuture.get(anyLong(), any())).thenReturn(null);
+        // Arrange: Firestore tx succeeds and reports a state transition
+        // (F20: post-tx FB Auth side-effects gated on this flag). FB Auth
+        // disable then throws — cache evict MUST still run.
+        ApiFuture<Boolean> doneFuture = mock(ApiFuture.class);
+        when(doneFuture.get(anyLong(), any())).thenReturn(Boolean.TRUE);
         doReturn(doneFuture).when(firestore).runTransaction(any());
 
         FirebaseAuthException fbEx = mock(FirebaseAuthException.class);
@@ -336,8 +342,8 @@ class AuthServiceTest {
     @SuppressWarnings("unchecked")
     void blockUser_evictsCache_evenWhenRevokeRefreshTokensThrows() throws Exception {
         // Arrange: updateUser succeeds, but revokeRefreshTokens throws.
-        ApiFuture<Void> doneFuture = mock(ApiFuture.class);
-        when(doneFuture.get(anyLong(), any())).thenReturn(null);
+        ApiFuture<Boolean> doneFuture = mock(ApiFuture.class);
+        when(doneFuture.get(anyLong(), any())).thenReturn(Boolean.TRUE);
         doReturn(doneFuture).when(firestore).runTransaction(any());
 
         when(firebaseAuth.updateUser(any())).thenReturn(null);
@@ -357,8 +363,8 @@ class AuthServiceTest {
     @Test
     @SuppressWarnings("unchecked")
     void softDeleteUser_evictsCache_evenWhenFirebaseAuthThrows() throws Exception {
-        ApiFuture<Void> doneFuture = mock(ApiFuture.class);
-        when(doneFuture.get(anyLong(), any())).thenReturn(null);
+        ApiFuture<Boolean> doneFuture = mock(ApiFuture.class);
+        when(doneFuture.get(anyLong(), any())).thenReturn(Boolean.TRUE);
         doReturn(doneFuture).when(firestore).runTransaction(any());
 
         FirebaseAuthException fbEx = mock(FirebaseAuthException.class);
@@ -377,8 +383,8 @@ class AuthServiceTest {
     @Test
     @SuppressWarnings("unchecked")
     void recoverUser_evictsCache_evenWhenFirebaseAuthThrows() throws Exception {
-        ApiFuture<Void> doneFuture = mock(ApiFuture.class);
-        when(doneFuture.get(anyLong(), any())).thenReturn(null);
+        ApiFuture<Boolean> doneFuture = mock(ApiFuture.class);
+        when(doneFuture.get(anyLong(), any())).thenReturn(Boolean.TRUE);
         doReturn(doneFuture).when(firestore).runTransaction(any());
 
         FirebaseAuthException fbEx = mock(FirebaseAuthException.class);
@@ -397,8 +403,8 @@ class AuthServiceTest {
     @Test
     @SuppressWarnings("unchecked")
     void unblockUser_evictsCache_evenWhenFirebaseAuthThrows() throws Exception {
-        ApiFuture<Void> doneFuture = mock(ApiFuture.class);
-        when(doneFuture.get(anyLong(), any())).thenReturn(null);
+        ApiFuture<Boolean> doneFuture = mock(ApiFuture.class);
+        when(doneFuture.get(anyLong(), any())).thenReturn(Boolean.TRUE);
         doReturn(doneFuture).when(firestore).runTransaction(any());
 
         FirebaseAuthException fbEx = mock(FirebaseAuthException.class);
@@ -412,6 +418,77 @@ class AuthServiceTest {
                 () -> authService.unblockUser("target", "admin-uid"));
 
         verify(mockCache).evict("target");
+    }
+
+    // ── F20 — Post-tx FB Auth side-effects gated on tx transition flag ───
+    //
+    // Pre-F20 the tx-no-op (idempotent) path still re-fired
+    // setDisabled(true)/setDisabled(false) and revokeRefreshTokens. The
+    // setDisabled(false) re-enable was the most painful — a moderator
+    // calling unblockUser on a user that a SysAdmin had disabled
+    // out-of-band would silently re-enable the account. F20 returns
+    // Boolean.FALSE from the tx no-op path so the post-tx side-effects
+    // are skipped. These tests pin that gating.
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void unblockUser_onAlreadyActiveTarget_doesNotCallSetDisabled() throws Exception {
+        // Tx returns FALSE (idempotent no-op — target was already ACTIVE).
+        ApiFuture<Boolean> doneFuture = mock(ApiFuture.class);
+        when(doneFuture.get(anyLong(), any())).thenReturn(Boolean.FALSE);
+        doReturn(doneFuture).when(firestore).runTransaction(any());
+
+        Cache mockCache = mock(Cache.class);
+        when(cacheManager.getCache("userStatus")).thenReturn(mockCache);
+        when(timeoutProperties.getWrite()).thenReturn(10L);
+
+        authService.unblockUser("already-active-uid", "admin-uid");
+
+        // F20: setDisabled(false) MUST be skipped — pre-F20 this fired
+        // unconditionally and could re-enable an out-of-band-disabled user.
+        verify(firebaseAuth, never()).updateUser(any());
+        // Cache eviction still runs unconditionally (cheap, defensive).
+        verify(mockCache).evict("already-active-uid");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void blockUser_onAlreadyBlockedTarget_doesNotReCallRevokeRefreshTokens() throws Exception {
+        // Tx returns FALSE (F13 idempotent — already BLOCKED).
+        ApiFuture<Boolean> doneFuture = mock(ApiFuture.class);
+        when(doneFuture.get(anyLong(), any())).thenReturn(Boolean.FALSE);
+        doReturn(doneFuture).when(firestore).runTransaction(any());
+
+        Cache mockCache = mock(Cache.class);
+        when(cacheManager.getCache("userStatus")).thenReturn(mockCache);
+        when(timeoutProperties.getWrite()).thenReturn(10L);
+
+        authService.blockUser("already-blocked-uid", "admin-uid", "retry");
+
+        // F20: revokeRefreshTokens MUST be skipped — pre-F20 re-calling it
+        // updates validSince and invalidates fresh out-of-band tokens.
+        verify(firebaseAuth, never()).updateUser(any());
+        verify(firebaseAuth, never()).revokeRefreshTokens(any());
+        verify(mockCache).evict("already-blocked-uid");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void softDeleteUser_onAlreadyDeletedTarget_doesNotReDisable() throws Exception {
+        // Tx returns FALSE (F13 idempotent — already DELETED).
+        ApiFuture<Boolean> doneFuture = mock(ApiFuture.class);
+        when(doneFuture.get(anyLong(), any())).thenReturn(Boolean.FALSE);
+        doReturn(doneFuture).when(firestore).runTransaction(any());
+
+        Cache mockCache = mock(Cache.class);
+        when(cacheManager.getCache("userStatus")).thenReturn(mockCache);
+        when(timeoutProperties.getWrite()).thenReturn(10L);
+
+        authService.softDeleteUser("already-deleted-uid", "admin-uid", "retry");
+
+        verify(firebaseAuth, never()).updateUser(any());
+        verify(firebaseAuth, never()).revokeRefreshTokens(any());
+        verify(mockCache).evict("already-deleted-uid");
     }
 
     // ── F7 — setUserRoleClaim merges, never clobbers other claims ────────────
