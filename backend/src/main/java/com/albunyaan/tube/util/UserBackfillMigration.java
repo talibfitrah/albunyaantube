@@ -221,7 +221,7 @@ public class UserBackfillMigration {
 
                 AuditLog summary = auditLogService.buildBackfillRun(
                     finalScanned, finalUpdated, finalClaimWriteFailures, actorUid);
-                tx.set(auditLogRepository.auditLogsCollection().document(), summary);
+                auditLogRepository.saveInTransaction(tx, summary);
                 return null;
             }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
         }

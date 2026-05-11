@@ -250,7 +250,7 @@ public class AuthService {
                     previousRole[0], newRole.getValue());
 
             tx.set(userRef, target);
-            tx.set(auditLogRepository.auditLogsCollection().document(), audit);
+            auditLogRepository.saveInTransaction(tx, audit);
             return target;
         });
 
@@ -432,7 +432,7 @@ public class AuthService {
             AuditLog audit = auditLogService.buildSoftDelete(uid, actorUid, reason);
 
             tx.set(userRef, target);
-            tx.set(auditLogRepository.auditLogsCollection().document(), audit);
+            auditLogRepository.saveInTransaction(tx, audit);
             return Boolean.TRUE;
         });
 
@@ -486,7 +486,7 @@ public class AuthService {
             AuditLog audit = auditLogService.buildRecover(uid, actorUid);
 
             tx.set(userRef, target);
-            tx.set(auditLogRepository.auditLogsCollection().document(), audit);
+            auditLogRepository.saveInTransaction(tx, audit);
             return Boolean.TRUE;
         });
 
@@ -572,7 +572,7 @@ public class AuthService {
             AuditLog audit = auditLogService.buildBlock(uid, actorUid, reason);
 
             tx.set(userRef, target);
-            tx.set(auditLogRepository.auditLogsCollection().document(), audit);
+            auditLogRepository.saveInTransaction(tx, audit);
             return Boolean.TRUE;
         });
 
@@ -648,7 +648,7 @@ public class AuthService {
             AuditLog audit = auditLogService.buildUnblock(uid, actorUid);
 
             tx.set(userRef, target);
-            tx.set(auditLogRepository.auditLogsCollection().document(), audit);
+            auditLogRepository.saveInTransaction(tx, audit);
             return Boolean.TRUE;
         });
 
