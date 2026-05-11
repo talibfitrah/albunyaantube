@@ -185,11 +185,24 @@ class AccountStatusFilterIntegrationTest extends BaseIntegrationTest {
         User u = userRepository.findByUid(uid).orElseThrow();
         u.recordBlock("system-test", reason);
         userRepository.save(u);
+        // F10: findByUid now returns a defensive copy, so mutating the
+        // returned User then saving does NOT update the cached entry that the
+        // filter will read on the next request. The lifecycle methods evict
+        // automatically; this test helper bypasses the lifecycle, so we
+        // evict manually to keep cache and Firestore in sync.
+        evictUserStatus(uid);
     }
 
     private void markDeleted(String uid) throws Exception {
         User u = userRepository.findByUid(uid).orElseThrow();
         u.recordSoftDelete("system-test", null);
         userRepository.save(u);
+        // F10: see markBlocked.
+        evictUserStatus(uid);
+    }
+
+    private void evictUserStatus(String uid) {
+        org.springframework.cache.Cache cache = cacheManager.getCache("userStatus");
+        if (cache != null) cache.evict(uid);
     }
 }

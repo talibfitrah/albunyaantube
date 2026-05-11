@@ -72,9 +72,15 @@ class MigrationControllerIntegrationTest extends BaseIntegrationTest {
     void migrationEndpoint_concurrent_returns409() throws Exception {
         String adminUid = seedUser("admin2@t", "admin");
 
-        // Pre-claim the CAS lock to simulate a concurrent run.
+        // Pre-claim the CAS lock to simulate a concurrent run. F14 (stale-lock
+        // recovery) requires a recent startedAt — without it the lock is
+        // treated as stale and reclaimed, defeating the point of this test.
         firestore.collection("system_settings").document("migration_user_backfill")
-            .set(Map.of("running", true, "claimedBy", "other-host")).get();
+            .set(Map.of(
+                "running", true,
+                "claimedBy", "other-host",
+                "startedAt", Timestamp.now()
+            )).get();
 
         stubToken(adminUid, "admin");
 
