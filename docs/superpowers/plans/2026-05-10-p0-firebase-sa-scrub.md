@@ -44,7 +44,7 @@ Expected: file exists at `~/.config/albunyaan/firebase-service-account.json` wit
 
 ```bash
 cd ..
-tar --exclude='albunyaantube/.git/objects/pack/*' -czf albunyaantube-pre-scrub-$(date +%Y%m%d-%H%M).tar.gz albunyaantube/
+tar -czf albunyaantube-pre-scrub-$(date +%Y%m%d-%H%M).tar.gz albunyaantube/
 ls -lh albunyaantube-pre-scrub-*.tar.gz
 cd albunyaantube
 ```
@@ -217,12 +217,13 @@ Tags that pointed at rewritten commits get new SHAs; re-pushing replaces the rem
 - [ ] **Step 19: Fresh-clone and confirm the file is absent**
 
 ```bash
+ORIGINAL_REPO_PATH=$(pwd)
 cd /tmp
 git clone <repo-url> albunyaantube-verify
 cd albunyaantube-verify
 git log --all --oneline -- backend/src/main/resources/firebase-service-account.json
 ls backend/src/main/resources/firebase-service-account.json 2>&1
-cd /home/farouq/Development/albunyaantube
+cd "$ORIGINAL_REPO_PATH"
 rm -rf /tmp/albunyaantube-verify
 ```
 
