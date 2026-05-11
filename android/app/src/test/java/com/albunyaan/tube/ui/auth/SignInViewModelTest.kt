@@ -221,6 +221,21 @@ class SignInViewModelTest {
         assertEquals(AuthErrorCode.PASSWORD_RESET_FAILED, viewModel.ui.value.error)
     }
 
+    /**
+     * Without an isLoading interlock, a rapid double-tap on "Forgot password?"
+     * fires two `sendPasswordResetEmail` calls — Firebase rate-limits the second
+     * with `TOO_MANY_REQUESTS`, surfacing as `PASSWORD_RESET_FAILED` to the user.
+     * The guard short-circuits the second tap while the first is in flight.
+     */
+    @Test fun `forgotPassword while loading is no-op`() = runTest(dispatcher) {
+        viewModel.setLoading(true)
+        viewModel.onEmailChanged("a@b.com")
+        viewModel.forgotPassword()
+        advanceUntilIdle()
+
+        verify(repository, never()).sendPasswordResetEmail(org.mockito.kotlin.any())
+    }
+
     @Test fun `surfaceError sets error and clears loading`() {
         viewModel.setLoading(true)
         viewModel.surfaceError(AuthErrorCode.MICROSOFT_SIGN_IN_FAILED)

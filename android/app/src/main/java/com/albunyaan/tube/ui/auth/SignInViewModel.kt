@@ -136,16 +136,19 @@ class SignInViewModel @Inject constructor(
     }
 
     fun forgotPassword() {
-        val email = _ui.value.email
+        val snapshot = _ui.value
+        if (snapshot.isLoading) return  // de-dupe rapid double-taps (mirrors submit())
+        val email = snapshot.email
         if (email.isBlank()) {
             _ui.update { it.copy(error = AuthErrorCode.INVALID_EMAIL) }
             return
         }
+        _ui.update { it.copy(isLoading = true, error = null, passwordResetSent = false) }
         viewModelScope.launch {
             val result = authRepository.sendPasswordResetEmail(email)
             _ui.update {
-                if (result.isSuccess) it.copy(passwordResetSent = true, error = null)
-                else it.copy(error = AuthErrorCode.PASSWORD_RESET_FAILED)
+                if (result.isSuccess) it.copy(isLoading = false, passwordResetSent = true, error = null)
+                else it.copy(isLoading = false, error = AuthErrorCode.PASSWORD_RESET_FAILED)
             }
         }
     }

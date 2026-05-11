@@ -45,10 +45,13 @@ interface AuthRepository {
 }
 
 /**
- * Internal-only sink for [AccountStatusEvent]. Bound separately by Hilt so the
- * [AccountStatusInterceptor] (T3) can call `emit()` without the UI-facing
- * [AuthRepository] interface exposing it. Prevents fragments from forging
- * sign-out by calling `repository.emitAccountStatus(Deleted)`.
+ * Sink for [AccountStatusEvent]. Bound separately by Hilt so
+ * [AccountStatusInterceptor] (T3) writes events without polluting the
+ * UI-facing [AuthRepository] surface. Soft separation only — both bindings
+ * resolve to the same [AuthRepositoryImpl] singleton, so a UI caller could
+ * downcast at runtime. The split is for type-level intent (UI reads events
+ * via [AuthRepository.accountStatusEvents]; network layer writes them via
+ * this interface), not a security boundary.
  */
 interface AccountStatusEmitter {
     fun emit(event: AccountStatusEvent)
