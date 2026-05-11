@@ -65,6 +65,16 @@
             app:popUpTo="@id/app_nav_graph"
             app:popUpToInclusive="true"
             app:launchSingleTop="true"/>
+        <!-- Plan C T10: redirect via splash so SplashRouter makes the final
+             routing decision (ACTIVE → main, PENDING_PROFILE → bootstrap,
+             BLOCKED/DELETED → signIn). Replaces action_signIn_to_main as the
+             canonical post-sign-in path. action_signIn_to_main kept for safe
+             rollback. -->
+        <action
+            android:id="@+id/action_signIn_to_splash"
+            app:destination="@id/splashFragment"
+            app:popUpTo="@id/signInFragment"
+            app:popUpToInclusive="true" />
     </fragment>
 
     <fragment

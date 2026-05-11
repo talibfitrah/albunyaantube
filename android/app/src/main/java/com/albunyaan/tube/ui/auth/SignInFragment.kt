@@ -122,12 +122,15 @@ class SignInFragment : Fragment(R.layout.fragment_sign_in) {
             }
         }
 
-        // Post-sign-in routing. Wait for the first SignedIn emission, pop
-        // SignInFragment off the back stack into MainShell, then exit the
-        // collector (one-shot). first() terminates the flow after the first
-        // match; we never want to re-navigate from this fragment after a
-        // back nav lands the user here again (a fresh STARTED restart picks
-        // up the next SignedIn cleanly).
+        // Post-sign-in routing. Plan C T10: route via splashFragment so SplashRouter
+        // makes the final routing decision based on /api/account/me status (ACTIVE → main,
+        // PENDING_PROFILE → bootstrap, BLOCKED/DELETED → signIn). This is the single
+        // routing decision point — keeps PENDING_PROFILE/AGE_INELIGIBLE logic out of
+        // SignInFragment. Wait for the first SignedIn emission, pop SignInFragment off
+        // the back stack into SplashFragment, then exit the collector (one-shot). first()
+        // terminates the flow after the first match; we never want to re-navigate from
+        // this fragment after a back nav lands the user here again (a fresh STARTED
+        // restart picks up the next SignedIn cleanly).
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 authRepository.authState
@@ -135,7 +138,7 @@ class SignInFragment : Fragment(R.layout.fragment_sign_in) {
                     .first()
                 val nav = findNavController()
                 if (nav.currentDestination?.id == R.id.signInFragment) {
-                    nav.navigate(R.id.action_signIn_to_main)
+                    nav.navigate(R.id.action_signIn_to_splash)
                 }
             }
         }
