@@ -358,6 +358,15 @@ public class AuthService {
                     "Unblock before soft-deleting: " + uid);
             }
 
+            // F13: idempotent — if target is already DELETED, no-op. Retry-safe:
+            // a tx-commits-but-FB-Auth-fails retry won't write a SECOND
+            // USER_SOFT_DELETED audit nor overwrite the original deletedAt /
+            // deleteReason. Runs AFTER F8 isBlocked guard so a (highly unusual)
+            // BLOCKED + retry path still throws rather than silently skips.
+            if (target.isDeleted()) {
+                return null;
+            }
+
             // Last-admin guard (D2) — inline transactional check
             if (target.isAdmin()) {
                 if (uid.equals(actorUid)) {
@@ -455,6 +464,17 @@ public class AuthService {
                     "Cannot block a deleted user. Recover first: " + uid);
             }
 
+            // F13: idempotent — if target is already BLOCKED, no-op. Pre-fix a
+            // retry after a partial failure (tx commits, FB Auth fails, admin
+            // retries) re-ran recordBlock, overwriting blockedAt/blockReason
+            // and writing a SECOND USER_BLOCKED audit row. Now retries are
+            // safe; the original block timestamp and audit are preserved.
+            // Cross-state guard (F12) above runs FIRST so a deleted target
+            // still throws cleanly instead of being silently skipped.
+            if (target.isBlocked()) {
+                return null;
+            }
+
             // Last-admin guard (D2) — inline transactional check
             if (target.isAdmin()) {
                 if (uid.equals(actorUid)) {
@@ -506,6 +526,17 @@ public class AuthService {
                 throw new IllegalArgumentException("User not found: " + uid);
             }
             User target = snap.toObject(User.class);
+            // F13 — three cases for non-BLOCKED targets:
+            //   1) Already ACTIVE → idempotent no-op (retry-safe).
+            //   2) DELETED → reject (must go through recover, not unblock).
+            //   3) PENDING_PROFILE → reject (was never blocked).
+            // Pre-F13 every non-BLOCKED case threw IllegalStateException, so a
+            // retry after a partial failure would have looked like a bug to the
+            // operator. ACTIVE no-op preserves the "look, we're done" UX while
+            // keeping the DELETED guard strict (audit-trail honesty).
+            if (target.isActive()) {
+                return null;
+            }
             if (!target.isBlocked()) {
                 throw new IllegalStateException("User is not in BLOCKED status: " + uid);
             }

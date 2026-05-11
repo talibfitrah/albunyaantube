@@ -118,6 +118,44 @@ class AuthServiceSoftDeleteIntegrationTest extends BaseIntegrationTest {
         assertEquals(UserStatus.ACTIVE, after.getStatusEnum());
     }
 
+    // ── F13 — softDeleteUser is idempotent on already-DELETED target ─────────
+    // Pre-F13 a retry after a partial failure (Firestore tx commits, FB Auth
+    // disable throws, admin retries) re-ran recordSoftDelete and wrote a
+    // SECOND USER_SOFT_DELETED audit row.
+
+    @Test
+    void softDeleteUser_isIdempotent_onAlreadyDeletedTarget() throws Exception {
+        stubFirebaseAuthMutations();
+
+        String adminUid = seedUser("a-f13d-1@t.com", "admin");
+        seedUser("a-f13d-2@t.com", "admin");
+        String targetUid = seedUser("victim-f13d@t.com", "moderator");
+
+        // First soft-delete.
+        authService.softDeleteUser(targetUid, adminUid, "first-reason");
+        User after1 = userRepository.findByUid(targetUid).orElseThrow();
+        Timestamp firstDeletedAt = after1.getDeletedAt();
+        assertNotNull(firstDeletedAt);
+
+        // Second call — must be a no-op.
+        Thread.sleep(5);
+        authService.softDeleteUser(targetUid, adminUid, "second-reason");
+
+        User after2 = userRepository.findByUid(targetUid).orElseThrow();
+        assertEquals(firstDeletedAt, after2.getDeletedAt(),
+                "Idempotent softDelete: deletedAt timestamp must not change");
+        assertEquals("first-reason", after2.getDeleteReason(),
+                "Idempotent softDelete: original deleteReason must be preserved");
+
+        // Audit row count must still be 1.
+        QuerySnapshot audits = auditRepo.auditLogsCollection()
+                .whereEqualTo("action", "USER_SOFT_DELETED")
+                .whereEqualTo("entityId", targetUid)
+                .get().get();
+        assertEquals(1, audits.size(),
+                "Idempotent softDelete: only ONE USER_SOFT_DELETED audit row");
+    }
+
     // ── F8 — softDelete refuses already-blocked targets ──────────────────────
     // Pre-F8 path: block → softDelete → recover ended up status="active" with
     // leftover block metadata. We now refuse the softDelete entirely so admins
