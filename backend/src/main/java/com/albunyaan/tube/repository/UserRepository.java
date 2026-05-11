@@ -224,15 +224,21 @@ public class UserRepository {
     }
 
     /**
-     * Count users with ADMIN or MODERATOR role using server-side aggregation
+     * Count users with admin or moderator role using server-side aggregation.
+     *
+     * F9: role values are stored canonical-lowercase post-Plan-A (D6). Pre-fix
+     * the query was whereEqualTo("role", "ADMIN") / "MODERATOR" — uppercase
+     * literals that no longer match any document, so the admin dashboard
+     * showed "0 moderators" regardless of reality.
      */
     public long countModerators() throws ExecutionException, InterruptedException, TimeoutException {
-        // Note: Firestore doesn't support OR queries, so we need to count separately and sum
+        // Note: Firestore doesn't support OR queries, so we count separately and sum.
+        // D6: role values in Firestore are canonical lowercase.
         AggregateQuery adminCountQuery = getCollection()
-                .whereEqualTo("role", "ADMIN")
+                .whereEqualTo("role", "admin")
                 .count();
         AggregateQuery modCountQuery = getCollection()
-                .whereEqualTo("role", "MODERATOR")
+                .whereEqualTo("role", "moderator")
                 .count();
 
         long adminCount = adminCountQuery.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).getCount();

@@ -109,13 +109,57 @@ class UserControllerTest {
         when(userRepository.findByRole("admin")).thenReturn(admins);
 
         // Act
-        ResponseEntity<List<User>> response = userController.getUsersByRole("admin");
+        ResponseEntity<List<User>> response = userController.getUsersByRole("admin", false);
 
         // Assert
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals(1, response.getBody().size());
         assertEquals("admin", response.getBody().get(0).getRole());
         verify(userRepository).findByRole("admin");
+    }
+
+    // ── F9 — role path param is normalized to canonical lowercase ────────────
+    // Pre-F9 a request to /role/ADMIN passed "ADMIN" straight to
+    // findByRole(...), and Firestore (post-D6, all lowercase) returned zero
+    // matches. The controller now canonicalises the path param.
+
+    @Test
+    void getUsersByRole_normalizesUppercasePathParam() throws Exception {
+        // Arrange: the controller must normalise "ADMIN" → "admin" before query.
+        List<User> admins = Arrays.asList(testAdmin);
+        when(userRepository.findByRole("admin")).thenReturn(admins);
+
+        // Act
+        ResponseEntity<List<User>> response = userController.getUsersByRole("ADMIN", false);
+
+        // Assert: same result as the lowercase call — proves normalization.
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(1, response.getBody().size());
+        verify(userRepository).findByRole("admin");
+        verify(userRepository, never()).findByRole("ADMIN");
+    }
+
+    @Test
+    void getUsersByRole_normalizesMixedCasePathParam() throws Exception {
+        when(userRepository.findByRole("moderator")).thenReturn(Arrays.asList(testModerator));
+
+        ResponseEntity<List<User>> response = userController.getUsersByRole("Moderator", false);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        verify(userRepository).findByRole("moderator");
+    }
+
+    @Test
+    void getUsersByRole_unknownRoleFallsBackToUser() throws Exception {
+        // Role.fromString returns Role.USER for unknown values (least-privilege).
+        // Controller queries the "user" collection rather than the unknown string,
+        // matching the existing list-filter behaviour.
+        when(userRepository.findByRole("user")).thenReturn(List.of());
+
+        ResponseEntity<List<User>> response = userController.getUsersByRole("super-admin", false);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        verify(userRepository).findByRole("user");
     }
 
     @Test

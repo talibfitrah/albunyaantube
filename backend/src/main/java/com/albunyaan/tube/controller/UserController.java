@@ -1,5 +1,6 @@
 package com.albunyaan.tube.controller;
 
+import com.albunyaan.tube.model.Role;
 import com.albunyaan.tube.model.User;
 import com.albunyaan.tube.repository.UserRepository;
 import com.albunyaan.tube.security.FirebaseUserDetails;
@@ -83,13 +84,32 @@ public class UserController {
     }
 
     /**
-     * Get users by role
+     * Get users by role.
+     *
+     * F9: the role path param is normalised to canonical lowercase via
+     * {@link Role#fromString(String)} before the Firestore query. Pre-fix the
+     * raw param flowed straight to {@code whereEqualTo("role", role)}, so
+     * /role/ADMIN matched zero documents post-D6 (all roles stored lowercase).
+     * Unknown role strings fall back to {@link Role#USER} (Role.fromString
+     * already implements least-privilege); to match the existing list-filter
+     * semantics we return the result for the resolved canonical role.
+     *
+     * @param includeDeleted when true, soft-deleted users are included in the response.
+     *                       Defaults to false so deleted users are hidden unless explicitly requested.
      */
     @GetMapping("/role/{role}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<List<User>> getUsersByRole(@PathVariable String role) {
+    public ResponseEntity<List<User>> getUsersByRole(
+            @PathVariable String role,
+            @RequestParam(required = false, defaultValue = "false") boolean includeDeleted) {
+        // F9: canonical lowercase via Role enum (e.g. /role/ADMIN → "admin").
+        String canonicalRole = Role.fromString(role).getValue();
         try {
-            List<User> users = userRepository.findByRole(role);
+            List<User> users = userRepository.findByRole(canonicalRole);
+            // F11: hide soft-deleted users by default — matches GET /api/admin/users semantics.
+            if (!includeDeleted) {
+                users = users.stream().filter(u -> !u.isDeleted()).toList();
+            }
             return ResponseEntity.ok(users);
         } catch (TimeoutException e) {
             log.error("Timeout while fetching users by role: {}", role, e);
