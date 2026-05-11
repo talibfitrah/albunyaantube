@@ -81,6 +81,46 @@ class NewPipeChannelDetailRepository @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
+                // Channel page scrape failed (OAuth gate, UNAUTHENTICATED, bot-check).
+                // Fall back to UU uploads playlist — doesn't require a full channel page;
+                // gives name + avatar so the screen isn't a blank error.
+                if (channelId.startsWith("UC")) {
+                    try {
+                        val playlistUrl = "https://www.youtube.com/playlist?list=UU" +
+                            channelId.removePrefix("UC")
+                        val pInfo = retryNewPipeRateLimiterTimeout("UU header fallback $channelId") {
+                            NewPipePriorityContext.with(Priority.VISIBLE_INTERACTIVE) {
+                                PlaylistInfo.getInfo(youtubeService, playlistUrl)
+                            }
+                        }
+                        Log.w(TAG, "Channel page failed for $channelId; using UU playlist fallback header", e)
+                        telemetry.recordChannelHeaderLoad(
+                            channelId = channelId,
+                            durationMs = System.currentTimeMillis() - startMs,
+                            success = true,
+                        )
+                        return@withContext ChannelHeader(
+                            id = channelId,
+                            title = pInfo.uploaderName ?: channelId,
+                            avatarUrl = pInfo.uploaderAvatars.chooseBestUrl(),
+                            bannerUrl = null,
+                            subscriberCount = null,
+                            shortDescription = null,
+                            summaryLine = null,
+                            fullDescription = null,
+                            links = emptyList(),
+                            location = null,
+                            joinedDate = null,
+                            totalViews = null,
+                            isVerified = false,
+                            tags = emptyList(),
+                        )
+                    } catch (c: CancellationException) {
+                        throw c
+                    } catch (fallbackEx: Exception) {
+                        Log.w(TAG, "UU playlist fallback also failed for $channelId", fallbackEx)
+                    }
+                }
                 telemetry.recordChannelHeaderLoad(
                     channelId = channelId,
                     durationMs = System.currentTimeMillis() - startMs,
