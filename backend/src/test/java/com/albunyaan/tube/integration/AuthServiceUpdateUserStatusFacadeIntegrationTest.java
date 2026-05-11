@@ -71,16 +71,38 @@ class AuthServiceUpdateUserStatusFacadeIntegrationTest extends BaseIntegrationTe
         seedUser("admin2@t.com", "admin"); // not last admin
         String targetUid = seedUser("victim@t.com", "moderator");
 
-        // Prime the cache with the pre-block state
+        // Prime the cache by reading findByUid (the @Cacheable entry point that
+        // populates "userStatus"). Cache now holds the ACTIVE User.
         Cache cache = realCacheManager.getCache("userStatus");
         assertNotNull(cache);
-        cache.put(targetUid, "ACTIVE");
-        assertNotNull(cache.get(targetUid), "Cache must be primed before block");
+        java.util.Optional<User> primed = userRepository.findByUid(targetUid);
+        assertTrue(primed.isPresent() && primed.get().isActive(),
+                "Sanity: cache primed with ACTIVE user before block");
+        Cache.ValueWrapper before = cache.get(targetUid);
+        assertNotNull(before, "Cache must be primed before block");
+        Object beforeObj = before.get();
+        assertTrue(beforeObj instanceof java.util.Optional
+                ? ((java.util.Optional<?>) beforeObj).filter(x -> x instanceof User && ((User) x).isActive()).isPresent()
+                : (beforeObj instanceof User && ((User) beforeObj).isActive()),
+                "Sanity: cache primed value must be ACTIVE");
 
         authService.updateUserStatus(targetUid, "blocked", adminUid, "policy");
 
-        assertNull(cache.get(targetUid),
-                "Cache MUST be evicted after block — otherwise stale ACTIVE entry lingers for the 60s TTL");
+        // Pre-fix: the legacy facade wrote status="blocked" to Firestore without
+        // evicting the cache, so the cache still held an ACTIVE entry — letting
+        // the just-blocked user pass AccountStatusFilter for 60s.
+        // Post-fix: blockUser inside the facade evicts the cache. The terminal
+        // findByUid (also @Cacheable) re-populates it from Firestore, so the
+        // cached value MUST now reflect BLOCKED status, never ACTIVE.
+        Cache.ValueWrapper after = cache.get(targetUid);
+        assertNotNull(after, "Cache should re-populate via the terminal findByUid");
+        Object cachedAfter = after.get();
+        User cachedUser = cachedAfter instanceof java.util.Optional<?>
+                ? (User) ((java.util.Optional<?>) cachedAfter).orElseThrow()
+                : (User) cachedAfter;
+        assertTrue(cachedUser.isBlocked(),
+                "Cache MUST reflect BLOCKED state after the facade returns. " +
+                "Pre-fix the cache held a stale ACTIVE entry for the 60s TTL.");
     }
 
     // ── F1.c — blocked path writes USER_BLOCKED audit log ────────────────────

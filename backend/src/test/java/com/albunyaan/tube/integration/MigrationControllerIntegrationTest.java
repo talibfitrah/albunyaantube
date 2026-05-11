@@ -116,6 +116,10 @@ class MigrationControllerIntegrationTest extends BaseIntegrationTest {
     /**
      * Stub FirebaseAuth.verifyIdToken (both overloads) to return a fake token
      * carrying the given uid and role claim.
+     *
+     * Also stubs firebaseAuth.getUser (used by AuthService.setUserRoleClaim, F7)
+     * to return a UserRecord with null claims so the migration's phase-2
+     * claim-merge loop doesn't NPE.
      */
     private void stubToken(String uid, String role) throws Exception {
         FirebaseToken token = Mockito.mock(FirebaseToken.class);
@@ -126,5 +130,11 @@ class MigrationControllerIntegrationTest extends BaseIntegrationTest {
         Mockito.when(token.getClaims()).thenReturn(claims);
         Mockito.when(firebaseAuth.verifyIdToken(anyString())).thenReturn(token);
         Mockito.when(firebaseAuth.verifyIdToken(anyString(), anyBoolean())).thenReturn(token);
+
+        // F7: AuthService.setUserRoleClaim reads existing claims before merging.
+        com.google.firebase.auth.UserRecord rec =
+                Mockito.mock(com.google.firebase.auth.UserRecord.class);
+        Mockito.when(rec.getCustomClaims()).thenReturn(null);
+        Mockito.when(firebaseAuth.getUser(anyString())).thenReturn(rec);
     }
 }

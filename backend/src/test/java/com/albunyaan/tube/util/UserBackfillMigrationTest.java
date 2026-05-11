@@ -41,6 +41,14 @@ class UserBackfillMigrationTest extends BaseIntegrationTest {
 
     @BeforeEach
     void stubFirebaseAuth() throws Exception {
+        // F7: AuthService.setUserRoleClaim reads existing claims via getUser
+        // before merging. Stub a UserRecord with null claims so the merge call
+        // doesn't NPE in the migration's phase-2 loop.
+        com.google.firebase.auth.UserRecord rec =
+                org.mockito.Mockito.mock(com.google.firebase.auth.UserRecord.class);
+        org.mockito.Mockito.when(rec.getCustomClaims()).thenReturn(null);
+        org.mockito.Mockito.when(firebaseAuth.getUser(anyString())).thenReturn(rec);
+
         doNothing().when(firebaseAuth).setCustomUserClaims(anyString(), anyMap());
     }
 

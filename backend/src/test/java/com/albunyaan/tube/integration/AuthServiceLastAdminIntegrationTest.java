@@ -54,6 +54,11 @@ class AuthServiceLastAdminIntegrationTest extends BaseIntegrationTest {
         String adminA = seedUser("aA@t", "admin");
         String adminB = seedUser("aB@t", "admin");
 
+        // F7: AuthService.setUserRoleClaim reads existing claims before merging.
+        com.google.firebase.auth.UserRecord rec = org.mockito.Mockito.mock(com.google.firebase.auth.UserRecord.class);
+        org.mockito.Mockito.when(rec.getCustomClaims()).thenReturn(null);
+        org.mockito.Mockito.when(firebaseAuth.getUser(adminA)).thenReturn(rec);
+
         // Stub setCustomUserClaims for the successful demotion
         doNothing().when(firebaseAuth).setCustomUserClaims(anyString(), anyMap());
 
