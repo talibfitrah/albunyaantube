@@ -160,9 +160,9 @@ public class AuditLogService {
      * Used in user backfill migration (Task 12).
      * Does NOT persist — caller must use tx.set() within Firestore transaction.
      */
-    public AuditLog buildBackfillRun(int scanned, int updated, String actorUid) {
+    public AuditLog buildBackfillRun(int scanned, int updated, int claimWriteFailures, String actorUid) {
         return AuditLog.of("USER_BACKFILL_RUN", "system", "user-backfill", actorUid,
-            Map.of("scanned", scanned, "updated", updated));
+            Map.of("scanned", scanned, "updated", updated, "claimWriteFailures", claimWriteFailures));
     }
 }
 

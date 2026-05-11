@@ -101,11 +101,9 @@ class UserBackfillMigrationTimeoutTest {
         // runTransaction is called twice — return claim first, release second
         doReturn(claimFuture, releaseFuture).when(firestore).runTransaction(any());
 
-        // userRepository.findAfter returns no users → loop exits cleanly, then the
-        // release path runs in finally and times out.
+        // userRepository.findAfter returns no users → both phase-1 and phase-2 loops
+        // exit cleanly, then the release path runs in finally and times out.
         when(userRepository.findAfter(any(), org.mockito.ArgumentMatchers.anyInt()))
-                .thenReturn(Collections.emptyList());
-        when(userRepository.findAll(org.mockito.ArgumentMatchers.anyBoolean()))
                 .thenReturn(Collections.emptyList());
 
         UserBackfillMigration migration = new UserBackfillMigration(

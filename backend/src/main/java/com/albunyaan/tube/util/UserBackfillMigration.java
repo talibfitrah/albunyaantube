@@ -176,37 +176,51 @@ public class UserBackfillMigration {
             // success, when in reality phase 2 had silently skipped users. Now we
             // wrap each call, log + count failures, and surface the count back to
             // the operator via RunSummary.
-            for (User u : userRepository.findAll(true)) {
-                if (u.getRole() != null && !u.getRole().isBlank()) {
-                    try {
-                        authService.setUserRoleClaim(u.getUid(), u.getRole());
-                    } catch (Exception e) {
-                        // Any exception — FirebaseAuthException (user missing in Auth),
-                        // network, etc. — must not abort the loop. Log loudly so the
-                        // operator can investigate the orphaned doc separately.
-                        logger.warn("Phase 2 claim write failed for uid={}: {}",
-                            u.getUid(), e.getMessage());
-                        claimWriteFailures++;
+            // CodeRabbit-flagged: paginate phase 2 with the same cursor-pattern as phase 1.
+            // findAll(true) loaded the whole users collection into memory; on a large user
+            // base that is an OOM hazard. Reuse findAfter(cursor, BATCH_SIZE).
+            String claimCursor = null;
+            while (true) {
+                List<User> claimPage = userRepository.findAfter(claimCursor, BATCH_SIZE);
+                if (claimPage.isEmpty()) break;
+                for (User u : claimPage) {
+                    if (u.getRole() != null && !u.getRole().isBlank()) {
+                        try {
+                            authService.setUserRoleClaim(u.getUid(), u.getRole());
+                        } catch (Exception e) {
+                            // Any exception — FirebaseAuthException (user missing in Auth),
+                            // network, etc. — must not abort the loop. Log loudly so the
+                            // operator can investigate the orphaned doc separately.
+                            logger.warn("Phase 2 claim write failed for uid={}: {}",
+                                u.getUid(), e.getMessage());
+                            claimWriteFailures++;
+                        }
                     }
                 }
+                claimCursor = claimPage.get(claimPage.size() - 1).getUid();
+                if (claimPage.size() < BATCH_SIZE) break;
             }
 
         } finally {
             // Release lock + write synchronous summary audit in a single transaction.
             // F5: explicit write timeout — a JVM crash mid-loop already leaves
             // running:true on the lock; we mustn't add an indefinite block here too.
+            // CodeRabbit-flagged: persist claimWriteFailures so operators can see Phase 2
+            // failures in both the lock doc and the audit log.
             final int finalScanned = scanned;
             final int finalUpdated = updated;
+            final int finalClaimWriteFailures = claimWriteFailures;
             firestore.runTransaction(tx -> {
                 tx.set(lockRef, Map.of(
                     "running", false,
                     "completedAt", Timestamp.now(),
                     "lastScanned", finalScanned,
-                    "lastUpdated", finalUpdated
+                    "lastUpdated", finalUpdated,
+                    "lastClaimWriteFailures", finalClaimWriteFailures
                 ), SetOptions.merge());
 
                 AuditLog summary = auditLogService.buildBackfillRun(
-                    finalScanned, finalUpdated, actorUid);
+                    finalScanned, finalUpdated, finalClaimWriteFailures, actorUid);
                 tx.set(auditLogRepository.auditLogsCollection().document(), summary);
                 return null;
             }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
