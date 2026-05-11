@@ -56,6 +56,9 @@ public class User {
     // Profile completion (Plan C will populate; Plan A only stores)
     private Timestamp profileCompletedAt;
 
+    // Plan C T1: profile bootstrap captures DOB; stored as Firestore Timestamp at 00:00 UTC.
+    private Timestamp dateOfBirth;
+
     public User() {
         // F3: role MUST default to null, not "moderator".
         // Firestore's @DocumentId path calls the no-arg ctor and then copies fields
@@ -282,6 +285,9 @@ public class User {
     public Timestamp getProfileCompletedAt() { return profileCompletedAt; }
     public void setProfileCompletedAt(Timestamp t) { this.profileCompletedAt = t; }
 
+    public Timestamp getDateOfBirth() { return dateOfBirth; }
+    public void setDateOfBirth(Timestamp t) { this.dateOfBirth = t; }
+
     /**
      * F10: return a defensive copy of this User.
      *
@@ -315,6 +321,7 @@ public class User {
         c.recoveredAt = this.recoveredAt;
         c.recoveredBy = this.recoveredBy;
         c.profileCompletedAt = this.profileCompletedAt;
+        c.dateOfBirth = this.dateOfBirth;
         return c;
     }
 }
