@@ -11,10 +11,9 @@ class AccountStatusTest {
         assertEquals(AccountStatus.DELETED, AccountStatus.fromWire("deleted"))
     }
 
-    @Test fun `unknown wire value falls back to PENDING_PROFILE`() {
-        // Conservative default: treat unknown as "needs bootstrap" so the user
-        // gets routed through the explicit flow rather than silently allowed in.
-        assertEquals(AccountStatus.PENDING_PROFILE, AccountStatus.fromWire("future_status"))
-        assertEquals(AccountStatus.PENDING_PROFILE, AccountStatus.fromWire(null))
+    @Test fun `unknown wire value falls back to BLOCKED`() {
+        // Safer-exit posture: unknown status routes to signIn, not a trap in bootstrap.
+        assertEquals(AccountStatus.BLOCKED, AccountStatus.fromWire("future_status"))
+        assertEquals(AccountStatus.BLOCKED, AccountStatus.fromWire(null))
     }
 }

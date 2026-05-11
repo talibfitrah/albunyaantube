@@ -59,21 +59,15 @@
         android:id="@+id/signInFragment"
         android:name="com.albunyaan.tube.ui.auth.SignInFragment"
         android:label="Sign in">
-        <action
-            android:id="@+id/action_signIn_to_main"
-            app:destination="@id/mainShellFragment"
-            app:popUpTo="@id/app_nav_graph"
-            app:popUpToInclusive="true"
-            app:launchSingleTop="true"/>
         <!-- Plan C T10: redirect via splash so SplashRouter makes the final
              routing decision (ACTIVE → main, PENDING_PROFILE → bootstrap,
-             BLOCKED/DELETED → signIn). Replaces action_signIn_to_main as the
-             canonical post-sign-in path. action_signIn_to_main kept for safe
-             rollback. -->
+             BLOCKED/DELETED → signIn). T12 fix: popUpTo graph root inclusive
+             so back-press from the post-signIn splash doesn't surface a stale
+             signIn instance. action_signIn_to_main removed (dead code). -->
         <action
             android:id="@+id/action_signIn_to_splash"
             app:destination="@id/splashFragment"
-            app:popUpTo="@id/signInFragment"
+            app:popUpTo="@id/app_nav_graph"
             app:popUpToInclusive="true" />
     </fragment>
 
@@ -98,6 +92,13 @@
         <action
             android:id="@+id/action_bootstrap_to_ageIneligible"
             app:destination="@id/ageIneligibleFragment" />
+        <!-- D11: back-nav cancels sign-in. Signs out and routes to signIn
+             with a clean back-stack so the user isn't looped. -->
+        <action
+            android:id="@+id/action_bootstrap_to_signIn"
+            app:destination="@id/signInFragment"
+            app:popUpTo="@id/app_nav_graph"
+            app:popUpToInclusive="true" />
     </fragment>
 
     <!-- Plan C T9: AgeIneligible terminal screen. -->

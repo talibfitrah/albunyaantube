@@ -2,9 +2,12 @@ package com.albunyaan.tube.controller;
 
 import com.albunyaan.tube.dto.AccountMeResponse;
 import com.albunyaan.tube.dto.CompleteProfileRequest;
+import com.albunyaan.tube.model.User;
+import com.albunyaan.tube.model.UserStatus;
 import com.albunyaan.tube.repository.UserRepository;
 import com.albunyaan.tube.security.FirebaseUserDetails;
 import com.albunyaan.tube.service.AccountProfileService;
+import com.albunyaan.tube.service.AgeIneligibleAbortedException;
 import com.albunyaan.tube.service.AgeIneligibleException;
 import com.albunyaan.tube.service.ProfileAlreadyCompletedException;
 import com.albunyaan.tube.service.UserNotFoundException;
@@ -55,8 +58,19 @@ public class AccountController {
     public ResponseEntity<?> getMe(
             @AuthenticationPrincipal FirebaseUserDetails principal)
             throws ExecutionException, InterruptedException, TimeoutException {
-        var user = userRepository.findByUid(principal.getUid())
-                .orElseThrow(() -> new UserNotFoundException(principal.getUid()));
+        String uid = principal.getUid();
+        User user = userRepository.findByUid(uid).orElseGet(() -> {
+            // Plan C T12 fix: lazy-create on first /api/account/me hit (per
+            // FirebaseAuthFilter:110 "Plan C will create it" contract).
+            User fresh = new User(uid, principal.getEmail(), null, "user");
+            fresh.setStatusEnum(UserStatus.PENDING_PROFILE);
+            try {
+                return userRepository.save(fresh);
+            } catch (ExecutionException | InterruptedException | TimeoutException e) {
+                if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+                throw new RuntimeException("lazy-create failed for uid=" + uid, e);
+            }
+        });
         return ResponseEntity.ok(AccountMeResponse.from(user));
     }
 
@@ -69,18 +83,27 @@ public class AccountController {
                              "message", "FitrahTube is for users 13 and older."));
     }
 
+    @ExceptionHandler(AgeIneligibleAbortedException.class)
+    public ResponseEntity<Map<String, String>> handleAgeIneligibleAborted(AgeIneligibleAbortedException e) {
+        // Plan C T12 fix: distinct 500 with machine-readable code so the
+        // Android client doesn't conflate this with generic SAVE_FAILED.
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("code", "AGE_INELIGIBLE_ABORTED",
+                             "message", "Account rejection could not be completed. Please try again."));
+    }
+
     @ExceptionHandler(ProfileAlreadyCompletedException.class)
     public ResponseEntity<Map<String, String>> handleAlreadyCompleted(ProfileAlreadyCompletedException e) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(Map.of("code", "PROFILE_ALREADY_COMPLETED",
-                             "message", e.getMessage()));
+                             "message", "Profile already completed."));
     }
 
     @ExceptionHandler(UserNotFoundException.class)
     public ResponseEntity<Map<String, String>> handleNotFound(UserNotFoundException e) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(Map.of("code", "USER_NOT_FOUND",
-                             "message", e.getMessage()));
+                             "message", "Account not found."));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

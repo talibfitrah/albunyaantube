@@ -7,6 +7,7 @@ import com.albunyaan.tube.model.UserStatus;
 import com.albunyaan.tube.repository.UserRepository;
 import com.albunyaan.tube.security.FirebaseUserDetails;
 import com.albunyaan.tube.service.AccountProfileService;
+import com.albunyaan.tube.service.AgeIneligibleAbortedException;
 import com.albunyaan.tube.service.AgeIneligibleException;
 import com.albunyaan.tube.service.ProfileAlreadyCompletedException;
 import com.albunyaan.tube.service.UserNotFoundException;
@@ -32,6 +33,7 @@ import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -183,5 +185,45 @@ class AccountControllerTest {
                 .andExpect(jsonPath("$.uid").value(TEST_UID))
                 .andExpect(jsonPath("$.email").value(TEST_EMAIL))
                 .andExpect(jsonPath("$.displayName").value("Test User"));
+    }
+
+    // ── Test 7: GET /me lazy-creates doc when missing ──────────────────────
+
+    @Test
+    void getMeLazyCreatesIfMissing() throws Exception {
+        when(userRepository.findByUid(TEST_UID)).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> {
+            User u = inv.getArgument(0);
+            // Assert the fresh user has PENDING_PROFILE status before we return it
+            org.junit.jupiter.api.Assertions.assertEquals(
+                UserStatus.PENDING_PROFILE, u.getStatusEnum());
+            return u;
+        });
+
+        mockMvc.perform(get("/api/account/me"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("pending_profile"))
+                .andExpect(jsonPath("$.uid").value(TEST_UID));
+
+        verify(userRepository).save(any(User.class));
+    }
+
+    // ── Test 8: POST /profile AgeIneligibleAborted → 500 ──────────────────
+
+    @Test
+    void postProfileAgeIneligibleAbortedReturns500() throws Exception {
+        when(accountProfileService.completeProfile(eq(TEST_UID), any(), any(LocalDate.class)))
+                .thenThrow(new AgeIneligibleAbortedException(TEST_UID,
+                        new RuntimeException("revoke failed")));
+
+        CompleteProfileRequest req = new CompleteProfileRequest();
+        req.setDisplayName("Kid");
+        req.setDateOfBirth(LocalDate.of(2020, 1, 1));
+
+        mockMvc.perform(post("/api/account/profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.code").value("AGE_INELIGIBLE_ABORTED"));
     }
 }

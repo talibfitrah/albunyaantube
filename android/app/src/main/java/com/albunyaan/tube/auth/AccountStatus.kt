@@ -11,9 +11,10 @@ package com.albunyaan.tube.auth
  *                      AccountStatusInterceptor too; SplashRouter is the
  *                      cold-start path, the interceptor is the warm path.
  *
- * Unknown values map to PENDING_PROFILE as a conservative default: a status
- * the client doesn't recognize is treated as "needs bootstrap" so the user
- * gets a deterministic explicit flow rather than a silent allow into MainShell.
+ * Unknown values map to BLOCKED — the safest exit when the client doesn't
+ * recognize a status (a future server-added status, or a malformed response).
+ * BLOCKED routes to signIn rather than trapping the user in the bootstrap
+ * form which 409s on repeat entry.
  */
 enum class AccountStatus(val wire: String) {
     ACTIVE("active"),
@@ -23,6 +24,6 @@ enum class AccountStatus(val wire: String) {
 
     companion object {
         fun fromWire(value: String?): AccountStatus =
-            entries.firstOrNull { it.wire == value } ?: PENDING_PROFILE
+            entries.firstOrNull { it.wire == value } ?: BLOCKED
     }
 }

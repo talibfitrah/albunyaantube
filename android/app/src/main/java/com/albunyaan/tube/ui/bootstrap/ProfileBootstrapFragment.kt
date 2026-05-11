@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.View
+import androidx.activity.OnBackPressedCallback
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
@@ -55,6 +56,20 @@ class ProfileBootstrapFragment : Fragment(R.layout.fragment_profile_bootstrap) {
         super.onViewCreated(view, savedInstanceState)
         bindViews(view)
         wireListeners()
+
+        // D11: back-nav cancels sign-in. Sign out and route to signIn so the user
+        // isn't trapped in a splash → /me → PENDING_PROFILE → bootstrap → back loop.
+        requireActivity().onBackPressedDispatcher.addCallback(
+            viewLifecycleOwner,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        authRepository.signOut()
+                        findNavController().navigate(R.id.action_bootstrap_to_signIn)
+                    }
+                }
+            }
+        )
 
         viewModel.seedDisplayName(firebaseAuth.currentUser?.displayName.orEmpty())
 

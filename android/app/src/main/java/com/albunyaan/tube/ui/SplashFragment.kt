@@ -17,6 +17,7 @@ import androidx.navigation.fragment.findNavController
 import com.albunyaan.tube.R
 import com.albunyaan.tube.auth.AccountRepository
 import com.albunyaan.tube.auth.AccountStatus
+import com.albunyaan.tube.auth.AuthRepository
 import com.albunyaan.tube.preferences.SettingsPreferences
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.AndroidEntryPoint
@@ -56,6 +57,12 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
      * [AccountRepositoryImpl]; SplashFragment just calls fetchMe().
      */
     @Inject lateinit var accountRepository: AccountRepository
+
+    /**
+     * D12: needed to sign out when /api/account/me fails after retries, so
+     * the user gets a clean re-attempt instead of an infinite signed-in-but-stuck loop.
+     */
+    @Inject lateinit var authRepository: AuthRepository
 
     /** Track running animators for cleanup on fragment destruction */
     private val runningAnimators = mutableListOf<Animator>()
@@ -164,9 +171,23 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
     /** Routing logic in [SplashRouter] so it's unit-testable in isolation. */
     private fun routeAfterSplash(onboardingCompleted: Boolean, accountStatus: AccountStatus?) {
         if (findNavController().currentDestination?.id != R.id.splashFragment) return
+        val signedIn = firebaseAuth.currentUser != null
+        if (signedIn && accountStatus == null) {
+            // D12: /api/account/me fetch failed after retries. Surface to user
+            // and sign out so they get a clean re-attempt instead of an infinite
+            // signed-in-but-stuck loop.
+            android.widget.Toast.makeText(
+                requireContext(),
+                getString(R.string.splash_couldnt_connect),
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+            viewLifecycleOwner.lifecycleScope.launch {
+                authRepository.signOut()
+            }
+        }
         val action = SplashRouter.decideSplashRoute(
             onboardingCompleted = onboardingCompleted,
-            signedIn = firebaseAuth.currentUser != null,
+            signedIn = signedIn,
             accountStatus = accountStatus,
         )
         findNavController().navigate(action)
