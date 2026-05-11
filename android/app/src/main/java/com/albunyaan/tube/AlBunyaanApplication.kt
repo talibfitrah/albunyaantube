@@ -1,6 +1,7 @@
 package com.albunyaan.tube
 
 import android.app.Application
+import android.content.Context
 import android.util.Log
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
@@ -8,6 +9,7 @@ import com.albunyaan.tube.app.AppLifecycleTracker
 import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
 import com.albunyaan.tube.data.me.work.RefreshScheduler
 import com.albunyaan.tube.download.DownloadScheduler
+import com.google.firebase.FirebaseApp
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 
@@ -34,6 +36,24 @@ class AlBunyaanApplication : Application(), Configuration.Provider {
 
     @Inject
     lateinit var refreshScheduler: RefreshScheduler
+
+    /**
+     * Plan B (ANDROID-AUTH-01) T3: initialize FirebaseApp BEFORE Hilt's
+     * eager-injection chain runs in onCreate(). On real devices, the
+     * google-services plugin's manifest <provider> auto-initializes Firebase
+     * before any Application code; in Robolectric / JVM unit tests the
+     * provider does not run, so OkHttpClient → FirebaseAuthInterceptor →
+     * FirebaseAuth.getInstance() throws "Default FirebaseApp not initialized".
+     *
+     * attachBaseContext runs before onCreate (and before Hilt_*.onCreate()
+     * calls hiltInternalInject), so this is the earliest hook we have.
+     */
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(base)
+        if (FirebaseApp.getApps(this).isEmpty()) {
+            FirebaseApp.initializeApp(this)
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
