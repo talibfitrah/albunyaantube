@@ -79,12 +79,40 @@ class SignInFragment : Fragment(R.layout.fragment_sign_in) {
     private lateinit var loadingSpinner: ProgressBar
     private lateinit var titleText: TextView
 
-    private lateinit var googleSignInLauncher: ActivityResultLauncher<android.content.Intent>
+    /**
+     * Registered at property-init time (before the fragment reaches CREATED) per
+     * the ActivityResult API contract. Calling [registerForActivityResult] in
+     * [onViewCreated] would throw `IllegalStateException("Fragment is attempting
+     * to registerForActivityResult after being created.")` on first launch.
+     */
+    private val googleSignInLauncher: ActivityResultLauncher<android.content.Intent> =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode != Activity.RESULT_OK) {
+                viewModel.setLoading(false)
+                return@registerForActivityResult
+            }
+            try {
+                val account = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+                    .getResult(ApiException::class.java)
+                val idToken = account.idToken
+                if (idToken.isNullOrBlank()) {
+                    viewModel.surfaceError(AuthErrorCode.GOOGLE_SIGN_IN_FAILED)
+                    return@registerForActivityResult
+                }
+                val credential = GoogleAuthProvider.getCredential(idToken, null)
+                viewModel.onCredential(credential, AuthErrorCode.GOOGLE_SIGN_IN_FAILED)
+            } catch (e: ApiException) {
+                Log.w(TAG, "Google sign-in returned ApiException: ${e.statusCode}")
+                viewModel.surfaceError(AuthErrorCode.GOOGLE_SIGN_IN_FAILED)
+            } catch (e: Exception) {
+                Log.w(TAG, "Google sign-in failed", e)
+                viewModel.surfaceError(AuthErrorCode.GOOGLE_SIGN_IN_FAILED)
+            }
+        }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         bindViews(view)
-        wireGoogleSignIn()
         wireListeners()
         adjustForFormFactor()
 
@@ -126,34 +154,6 @@ class SignInFragment : Fragment(R.layout.fragment_sign_in) {
         errorText = root.findViewById(R.id.errorText)
         loadingSpinner = root.findViewById(R.id.loadingSpinner)
         titleText = root.findViewById(R.id.title)
-    }
-
-    private fun wireGoogleSignIn() {
-        googleSignInLauncher = registerForActivityResult(
-            ActivityResultContracts.StartActivityForResult()
-        ) { result ->
-            if (result.resultCode != Activity.RESULT_OK) {
-                viewModel.setLoading(false)
-                return@registerForActivityResult
-            }
-            try {
-                val account = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-                    .getResult(ApiException::class.java)
-                val idToken = account.idToken
-                if (idToken.isNullOrBlank()) {
-                    viewModel.surfaceError(AuthErrorCode.GOOGLE_SIGN_IN_FAILED)
-                    return@registerForActivityResult
-                }
-                val credential = GoogleAuthProvider.getCredential(idToken, null)
-                viewModel.onCredential(credential, AuthErrorCode.GOOGLE_SIGN_IN_FAILED)
-            } catch (e: ApiException) {
-                Log.w(TAG, "Google sign-in returned ApiException: ${e.statusCode}")
-                viewModel.surfaceError(AuthErrorCode.GOOGLE_SIGN_IN_FAILED)
-            } catch (e: Exception) {
-                Log.w(TAG, "Google sign-in failed", e)
-                viewModel.surfaceError(AuthErrorCode.GOOGLE_SIGN_IN_FAILED)
-            }
-        }
     }
 
     private fun wireListeners() {
