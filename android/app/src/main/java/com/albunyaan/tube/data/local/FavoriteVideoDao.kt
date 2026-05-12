@@ -63,7 +63,15 @@ interface FavoriteVideoDao {
     @Query("SELECT * FROM favorite_videos WHERE videoId = :videoId AND user_id = :uid LIMIT 1")
     suspend fun getById(uid: String, videoId: String): FavoriteVideo?
 
-    /** Clears a soft-deleted row so [addFavorite] (IGNORE) can re-insert it. */
+    /**
+     * Resurrects a soft-deleted row in place (deleted=0, dirty=1).
+     * Plan D: [toggleFavorite]'s re-add path calls this BEFORE [upsertFavorite] so
+     * the latter's [isFavoriteOnce] check (which excludes deleted=1 rows) sees
+     * the row, takes the [updateMetadata] branch, and refreshes title/channel/
+     * thumbnail/durationSeconds in addition to the dirty=1 + deleted=0 we set
+     * here. [updateMetadata] also stamps dirty=1, so the sync push fires
+     * regardless of whether the metadata actually changed.
+     */
     @Query("UPDATE favorite_videos SET deleted = 0, dirty = 1 WHERE videoId = :videoId AND user_id = :uid")
     suspend fun clearSoftDelete(uid: String, videoId: String)
 

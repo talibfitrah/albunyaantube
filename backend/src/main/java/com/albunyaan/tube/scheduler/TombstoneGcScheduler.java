@@ -1,5 +1,6 @@
 package com.albunyaan.tube.scheduler;
 
+import com.albunyaan.tube.config.FirestoreTimeoutProperties;
 import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Plan D — weekly tombstone GC. Sunday 03:00 UTC. Bounded work per type.
@@ -27,10 +29,14 @@ public class TombstoneGcScheduler {
 
     private final Firestore firestore;
     private final MeterRegistry meters;
+    private final FirestoreTimeoutProperties timeouts;
 
-    public TombstoneGcScheduler(Firestore firestore, MeterRegistry meters) {
+    public TombstoneGcScheduler(Firestore firestore,
+                                MeterRegistry meters,
+                                FirestoreTimeoutProperties timeouts) {
         this.firestore = firestore;
         this.meters = meters;
+        this.timeouts = timeouts;
     }
 
     @Scheduled(cron = "0 0 3 * * SUN", zone = "UTC")
@@ -49,10 +55,10 @@ public class TombstoneGcScheduler {
             QuerySnapshot snap = firestore.collectionGroup(type)
                     .whereEqualTo("deleted", true)
                     .whereLessThan("updatedAt", cutoff)
-                    .get().get();
+                    .get().get(timeouts.getBulkQuery(), TimeUnit.SECONDS);
             int n = 0;
             for (QueryDocumentSnapshot d : snap.getDocuments()) {
-                d.getReference().delete().get();
+                d.getReference().delete().get(timeouts.getWrite(), TimeUnit.SECONDS);
                 n++;
             }
             return n;
