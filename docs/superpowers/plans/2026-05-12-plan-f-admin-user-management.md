@@ -998,7 +998,27 @@ Identify the success branch (where the transaction commits and the user is retur
 
 > **AuditLogService signature note (post-T9 amendment):** `auditLogService.log(...)` takes a `FirebaseUserDetails` actor, not separate `(actorUid, actorEmail)` strings. The deep-stack location here has only the `String actorUid` (Plan A's pre-existing `updateUserRoleAsActor` signature). We construct a synthetic `FirebaseUserDetails(actorUid, null, "admin")` solely for the audit call — this preserves the structured `details` Map (which T12's IT asserts) and the admin's UID in the audit row; the only loss is `actorDisplayName` (null instead of the admin's email). Acceptable trade vs. rippling a `FirebaseUserDetails actor` parameter through Plan A's API.
 
-Inside `updateUserRoleAsActor`, after the existing `auditLogService.log("USER_ROLE_UPDATED", ...)` call (find it by grep — should already exist from Plan A), append:
+Inside `updateUserRoleAsActor`, the existing structure is:
+```
+final String[] previousRole = new String[1];
+User updated = runLifecycleTx(tx -> {
+    ...
+    previousRole[0] = target.getRole();
+    ...
+    AuditLog audit = auditLogService.buildRoleChange(uid, actorUid, previousRole[0], newRole.getValue());
+    tx.set(userRef, target);
+    auditLogRepository.saveInTransaction(tx, audit);
+    return target;
+});
+// post-tx FB Auth claim update + cache eviction
+try { setUserRoleClaim(uid, newRole.getValue()); } finally { evictUserStatus(uid); }
+logger.info("Role changed: ...");
+return updated;
+```
+
+The existing audit row is written via the transactional `buildRoleChange` + `saveInTransaction` pattern (action: `USER_ROLE_CHANGED`) — there's NO inline `auditLogService.log("USER_ROLE_UPDATED", ...)` call. The auto-revoke must fire AFTER `setUserRoleClaim` + `evictUserStatus` complete and AFTER the `logger.info("Role changed: ...")` line, but BEFORE the `return updated;`.
+
+Append at that location:
 
 ```java
         // Plan F (ADMIN-USER-01, F6) — auto-revoke refresh tokens so the new role
@@ -1014,8 +1034,8 @@ Inside `updateUserRoleAsActor`, after the existing `auditLogService.log("USER_RO
                     "user", uid,
                     actor,
                     java.util.Map.of(
-                            "oldRole", existingRole == null ? "" : existingRole,
-                            "newRole", newRoleStr,
+                            "oldRole", previousRole[0] == null ? "" : previousRole[0],
+                            "newRole", newRole.getValue(),
                             "trigger", "role_change"));
         } catch (Exception e) {
             // F6 + risk §11.6: log + audit-failure, never throw.
@@ -1027,8 +1047,6 @@ Inside `updateUserRoleAsActor`, after the existing `auditLogService.log("USER_RO
                     java.util.Map.of("error", e.getClass().getSimpleName()));
         }
 ```
-
-> **`existingRole` variable:** if the surrounding code already captures the prior role into a local (search for `existingRole` or `oldRole` in the method), reuse it. If not, fetch it from the user object at method entry: `String existingRole = existing.getRole();` before the role mutation.
 
 - [ ] **Step 3: Compile**
 
