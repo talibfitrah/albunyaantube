@@ -1,5 +1,6 @@
 package com.albunyaan.tube.controller;
 
+import com.albunyaan.tube.dto.RevokeSessionsRequest;
 import com.albunyaan.tube.model.Role;
 import com.albunyaan.tube.model.User;
 import com.albunyaan.tube.repository.UserRepository;
@@ -290,6 +291,22 @@ public class UserController {
         } catch (FirebaseAuthException e) {
             log.error("Firebase auth error for password reset, uid: {}", uid, e);
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+        }
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @PostMapping("/{uid}/revoke-sessions")
+    public ResponseEntity<Void> revokeSessions(
+            @PathVariable String uid,
+            @RequestBody(required = false) RevokeSessionsRequest body,
+            @AuthenticationPrincipal FirebaseUserDetails actor) {
+        try {
+            String reason = body != null ? body.getReason() : null;
+            authService.revokeSessions(uid, actor, reason);
+            return ResponseEntity.noContent().build();
+        } catch (FirebaseAuthException e) {
+            log.error("revoke-sessions failed uid={}", uid, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
 
