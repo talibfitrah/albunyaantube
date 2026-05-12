@@ -1,7 +1,6 @@
 package com.albunyaan.tube.service.sync;
 
-import com.albunyaan.tube.dto.sync.SyncCursors;
-import com.albunyaan.tube.dto.sync.SyncResponseDto;
+import com.albunyaan.tube.dto.sync.*;
 import com.albunyaan.tube.repository.SyncRepository;
 import com.albunyaan.tube.repository.SyncRepository.RawRow;
 import org.junit.jupiter.api.BeforeEach;
@@ -77,5 +76,31 @@ class SyncServiceTest {
         Mockito.verify(projector).projectPlaylist(p);
         Mockito.verify(projector).projectFavorite(v);
         Mockito.verifyNoMoreInteractions(projector);
+    }
+
+    @Test
+    void upsertSubscriptionPersistsBodyAndEchoesUpdatedAt() throws Exception {
+        var req = new PutSubscriptionRequest();
+        req.setChannelUrl("u"); req.setName("n"); req.setSubscribedAt(50L);
+        when(repo.upsert(eq("u1"), eq("subscriptions"), eq("ch1"), Mockito.anyMap()))
+                .thenReturn(new RawRow("ch1", Map.of("deleted", false), 1234L));
+
+        SubscriptionSyncDto out = service.upsertSubscription("u1", "ch1", req);
+
+        assertEquals("ch1", out.getEntityId());
+        assertFalse(out.isDeleted());
+        assertEquals(1234L, out.getUpdatedAt());
+    }
+
+    @Test
+    void tombstoneSubscriptionEchoesDeletedTrue() throws Exception {
+        when(repo.tombstone(eq("u1"), eq("subscriptions"), eq("ch1")))
+                .thenReturn(new RawRow("ch1", Map.of("deleted", true), 5678L));
+
+        SubscriptionSyncDto out = service.tombstoneSubscription("u1", "ch1");
+
+        assertEquals("ch1", out.getEntityId());
+        assertTrue(out.isDeleted());
+        assertEquals(5678L, out.getUpdatedAt());
     }
 }

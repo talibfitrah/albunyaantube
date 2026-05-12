@@ -101,4 +101,53 @@ public class SyncService {
         if (o instanceof Number n) return n.intValue();
         return 0;
     }
+
+    // ── Write path ───────────────────────────────────────────────────────────
+
+    public SubscriptionSyncDto upsertSubscription(String uid, String id, PutSubscriptionRequest req)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("channelUrl", req.getChannelUrl());
+        body.put("name", req.getName());
+        body.put("avatarUrl", req.getAvatarUrl());
+        body.put("subscribedAt", req.getSubscribedAt());
+        return toSubscriptionDto(repo.upsert(uid, SyncRepository.SUBS_COLL, id, body));
+    }
+
+    public SubscriptionSyncDto tombstoneSubscription(String uid, String id)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        return toSubscriptionDto(repo.tombstone(uid, SyncRepository.SUBS_COLL, id));
+    }
+
+    public PlaylistSyncDto upsertPlaylist(String uid, String id, PutPlaylistRequest req)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("playlistUrl", req.getPlaylistUrl());
+        body.put("name", req.getName());
+        body.put("thumbnailUrl", req.getThumbnailUrl());
+        body.put("uploaderName", req.getUploaderName());
+        body.put("savedAt", req.getSavedAt());
+        return toPlaylistDto(repo.upsert(uid, SyncRepository.PLAYLISTS_COLL, id, body));
+    }
+
+    public PlaylistSyncDto tombstonePlaylist(String uid, String id)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        return toPlaylistDto(repo.tombstone(uid, SyncRepository.PLAYLISTS_COLL, id));
+    }
+
+    public FavoriteSyncDto upsertFavorite(String uid, String id, PutFavoriteRequest req)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("title", req.getTitle());
+        body.put("channelName", req.getChannelName());
+        body.put("thumbnailUrl", req.getThumbnailUrl());
+        body.put("durationSeconds", req.getDurationSeconds());
+        body.put("addedAt", req.getAddedAt());
+        return toFavoriteDto(repo.upsert(uid, SyncRepository.FAVORITES_COLL, id, body));
+    }
+
+    public FavoriteSyncDto tombstoneFavorite(String uid, String id)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        return toFavoriteDto(repo.tombstone(uid, SyncRepository.FAVORITES_COLL, id));
+    }
 }
