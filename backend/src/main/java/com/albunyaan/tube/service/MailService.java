@@ -59,7 +59,48 @@ public class MailService {
             log.info("mail.disabled to={}", to);
             return;
         }
-        // Happy path + failure path implemented in T4 + T5.
-        throw new UnsupportedOperationException("implemented in T4");
+        try {
+            com.microsoft.graph.models.Message msg = buildPasswordResetMessage(to, resetLink);
+            com.microsoft.graph.users.item.sendmail.SendMailPostRequestBody body =
+                    new com.microsoft.graph.users.item.sendmail.SendMailPostRequestBody();
+            body.setMessage(msg);
+            body.setSaveToSentItems(false);
+            graph.users().byUserId(fromAddress).sendMail().post(body);
+            meters.counter("email.send.success", "type", "password_reset").increment();
+            log.info("password_reset_email.sent to={}", to);
+        } catch (Exception e) {
+            // Implemented fully in T5.
+            log.error("password_reset_email.failed to={}", to, e);
+            meters.counter("email.send.failure", "type", "password_reset").increment();
+        }
+    }
+
+    /** Package-private for unit-testability. */
+    com.microsoft.graph.models.Message buildPasswordResetMessage(String to, String link) {
+        com.microsoft.graph.models.Message m = new com.microsoft.graph.models.Message();
+        m.setSubject("Reset your FitrahTube password");
+
+        com.microsoft.graph.models.ItemBody body = new com.microsoft.graph.models.ItemBody();
+        body.setContentType(com.microsoft.graph.models.BodyType.Text);
+        body.setContent(
+                "Hi,\n\n"
+              + "We received a request to reset your FitrahTube password.\n"
+              + "Click the link below to set a new password:\n\n"
+              + link + "\n\n"
+              + "This link expires in 1 hour. If you didn't request a reset, ignore this email — "
+              + "your account is safe.\n\n"
+              + "This is an automated message from " + fromDisplayName
+              + ". Replies to this address are not monitored.\n");
+        m.setBody(body);
+
+        com.microsoft.graph.models.Recipient r = new com.microsoft.graph.models.Recipient();
+        com.microsoft.graph.models.EmailAddress addr = new com.microsoft.graph.models.EmailAddress();
+        addr.setAddress(to);
+        r.setEmailAddress(addr);
+        java.util.LinkedList<com.microsoft.graph.models.Recipient> toRecipients = new java.util.LinkedList<>();
+        toRecipients.add(r);
+        m.setToRecipients(toRecipients);
+
+        return m;
     }
 }

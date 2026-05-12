@@ -30,4 +30,29 @@ class MailServiceTest {
         assertEquals(0.0, meters.counter("email.send.success", "type", "password_reset").count());
         assertEquals(0.0, meters.counter("email.send.failure", "type", "password_reset").count());
     }
+
+    @Test
+    void enabledMail_buildsCorrectMessage_andSends() throws Exception {
+        MailProperties mail = new MailProperties();
+        mail.setEnabled(false); // skip Graph init in constructor
+        mail.setFromAddress("noreply@fitrahtube.com");
+        mail.setFromDisplayName("FitrahTube");
+        AzureProperties azure = new AzureProperties();
+        MeterRegistry meters = new SimpleMeterRegistry();
+        AuditLogService auditLog = mock(AuditLogService.class);
+
+        MailService svc = new MailService(mail, azure, meters, auditLog);
+
+        com.microsoft.graph.models.Message msg = svc.buildPasswordResetMessage(
+                "user@example.com", "https://app.fitrahtube.com/reset/abc");
+
+        assertEquals("Reset your FitrahTube password", msg.getSubject());
+        assertEquals(com.microsoft.graph.models.BodyType.Text, msg.getBody().getContentType());
+        assertTrue(msg.getBody().getContent().contains("https://app.fitrahtube.com/reset/abc"));
+        assertTrue(msg.getBody().getContent().contains("This link expires in 1 hour"));
+        assertTrue(msg.getBody().getContent().contains("FitrahTube"));
+        assertEquals(1, msg.getToRecipients().size());
+        assertEquals("user@example.com",
+                msg.getToRecipients().get(0).getEmailAddress().getAddress());
+    }
 }
