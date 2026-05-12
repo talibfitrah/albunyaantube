@@ -3016,9 +3016,23 @@ On the new app's Overview page, copy:
 2. Search `Mail.Send`, check it, click **Add permissions**.
 3. Click **Grant admin consent for <tenant>** (requires Global Admin).
 
-## Step 5 — Restrict scope to the noreply mailbox (CRITICAL)
-Without this step, the app can send mail as ANY mailbox in the tenant. Open
-Exchange Online PowerShell:
+## Step 5 — Restrict scope to the noreply mailbox (DEFERRED — Path A, 2026-05-12)
+
+> **Status:** DEFERRED. The original Plan F spec marked this CRITICAL; we accepted
+> running unscoped because connecting Exchange Online PowerShell from the only
+> available host (Linux, unregistered device) is blocked by Microsoft Entra
+> Conditional Access / Security Defaults (`AADSTS53003`).
+>
+> **What this means:** `Mail.Send` (Application permission) currently allows the
+> backend to send mail as ANY mailbox in the tenant. Blast radius is bounded:
+> single-admin tenant, ≤2 mailboxes total, no end-user mailboxes.
+>
+> **MUST DO BEFORE:** adding additional staff mailboxes, before onboarding any
+> user-facing mailbox, before rotating the secret to a longer-lived one. Single
+> PowerShell command, no code change.
+
+When ready (from a registered Windows device or after CA exclusions are configured),
+open Exchange Online PowerShell:
 
 ```powershell
 Connect-ExchangeOnline
@@ -3033,7 +3047,7 @@ New-ApplicationAccessPolicy `
     -Description "FitrahTube Backend may only send from noreply mailbox"
 ```
 
-## Step 6 — Verify the policy
+## Step 6 — Verify the policy (after Step 5 is eventually applied)
 ```powershell
 Test-ApplicationAccessPolicy -AppId <AZURE_CLIENT_ID> -Identity noreply@fitrahtube.com
 # AccessCheckResult: Granted
