@@ -341,9 +341,11 @@ public class MailService {
         } catch (Exception e) {
             log.error("password_reset_email.failed to={}", to, e);
             meters.counter("email.send.failure", "type", "password_reset").increment();
-            auditLog.log("USER_PASSWORD_RESET_EMAIL_FAILED", "user", to,
-                         "system", "system",
-                         Map.of("error", e.getClass().getSimpleName()));
+            // AuditLogService API (Plan E) has no overload taking a separate actorUid/displayName +
+            // details Map; logSystem(...) is the closest fit. Error class is folded into
+            // actorDescription; full stack-trace stays in the application log above.
+            auditLog.logSystem("USER_PASSWORD_RESET_EMAIL_FAILED", "user", to,
+                               "mail-service: error=" + e.getClass().getSimpleName());
         }
     }
 

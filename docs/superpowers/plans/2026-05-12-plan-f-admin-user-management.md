@@ -485,6 +485,13 @@ git commit -m "[FEAT-ADMIN-USER-01-T4]: MailService happy-path send + buildPassw
 
 Per spec F7 — silent failure + audit `USER_PASSWORD_RESET_EMAIL_FAILED`.
 
+> **Audit signature amendment (2026-05-12, post-AuditLogService recon):** The existing `AuditLogService` API (Plan E) has no overload matching the spec §6 example call `log(action, "user", to, "system", "system", Map.of(...))`. The available overloads are:
+> - `log(String action, String entityType, String entityId, FirebaseUserDetails actor)` — requires non-null actor
+> - `log(String action, String entityType, String entityId, FirebaseUserDetails actor, Map<String, Object> details)` — requires non-null actor
+> - `logSystem(String action, String entityType, String entityId, String actorDescription)` — no details Map
+>
+> Per the original plan directive "If the existing signature differs, adapt this call site (DO NOT add an overload)", T5 uses `logSystem(...)`. The error class metadata is captured in the application log (`log.error(..., e)`) rather than the audit Map. Acceptable trade: audit captures WHO + WHEN; app log captures stack-trace diagnostics. If admins later need error-class breakdowns in audit, that's a follow-up to extend `AuditLogService` (deferred).
+
 - [ ] **Step 1: Add failing failure-path test**
 
 Append to `MailServiceTest.java`:
@@ -492,43 +499,37 @@ Append to `MailServiceTest.java`:
 ```java
     @Test
     void enabledMail_whenSendThrows_logsCountsAndAudits() {
-        // We exercise the exception path by constructing a service with enabled=true
-        // and a deliberately invalid Azure config — token acquisition will fail when
-        // sendPasswordResetEmail is invoked. To keep the test fast and offline, we
-        // instead simulate by injecting a throwing handler via a subclass.
+        // The exception path is exercised via a subclass that exposes the package-private
+        // handleSendFailure helper. We don't need real Graph/HTTP — we just need to prove
+        // the handler increments the failure counter and emits the system audit log.
         MailProperties mail = new MailProperties();
-        mail.setEnabled(false); // we'll override sendPasswordResetEmail behaviour
+        mail.setEnabled(false); // skip Graph init in constructor
         mail.setFromAddress("noreply@fitrahtube.com");
         mail.setFromDisplayName("FitrahTube");
         AzureProperties azure = new AzureProperties();
         MeterRegistry meters = new SimpleMeterRegistry();
         AuditLogService auditLog = mock(AuditLogService.class);
 
-        // Subclass that simulates the failure branch via a direct call.
-        MailService svc = new MailService(mail, azure, meters, auditLog) {
-            // Expose the failure-handling helper via a known path.
+        // Subclass-with-accessor pattern: exposes the package-private helper via a public
+        // simulateFailure(...) entry point so the test doesn't need reflection.
+        class TestableMailService extends MailService {
+            TestableMailService() { super(mail, azure, meters, auditLog); }
             void simulateFailure(String to) {
                 handleSendFailure(to, new RuntimeException("graph 503"));
             }
-        };
-        // NOTE: depends on T5 step 3 introducing handleSendFailure (see below).
-        ((java.util.function.Consumer<String>) ((MailService self) -> {
-            try {
-                self.getClass().getDeclaredMethod("simulateFailure", String.class)
-                        .invoke(self, "user@example.com");
-            } catch (Exception ex) { throw new RuntimeException(ex); }
-        }).apply(svc));
+        }
+        TestableMailService svc = new TestableMailService();
+
+        svc.simulateFailure("user@example.com");
 
         assertEquals(1.0, meters.counter("email.send.failure", "type", "password_reset").count());
-        verify(auditLog).log(
+        verify(auditLog).logSystem(
                 eq("USER_PASSWORD_RESET_EMAIL_FAILED"),
-                eq("user"), eq("user@example.com"),
-                eq("system"), eq("system"),
-                anyMap());
+                eq("user"),
+                eq("user@example.com"),
+                anyString());
     }
 ```
-
-> **Implementation note:** the reflective call keeps the test compiling regardless of subclass visibility quirks. If the team prefers, refactor to a direct package-private method call after T5 step 3 lands.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -551,15 +552,15 @@ Replace the catch block in `sendPasswordResetEmail`, and add a package-private h
     void handleSendFailure(String to, Exception e) {
         log.error("password_reset_email.failed to={}", to, e);
         meters.counter("email.send.failure", "type", "password_reset").increment();
-        auditLog.log(
+        auditLog.logSystem(
                 "USER_PASSWORD_RESET_EMAIL_FAILED",
-                "user", to,
-                "system", "system",
-                java.util.Map.of("error", e.getClass().getSimpleName()));
+                "user",
+                to,
+                "mail-service: error=" + e.getClass().getSimpleName());
     }
 ```
 
-> **Important:** the `auditLog.log` signature above MUST match the existing `AuditLogService.log(...)` overload. Open `AuditLogService.java` and confirm the parameter order. If the existing signature differs, adapt this call site (DO NOT add an overload). Spec §6 shows the intended shape.
+> The `actorDescription` argument is repurposed to carry the error class (`mail-service: error=…`) since `logSystem` has no details Map. App log captures the full stack trace separately at ERROR level.
 
 - [ ] **Step 4: Run test to verify it passes**
 
