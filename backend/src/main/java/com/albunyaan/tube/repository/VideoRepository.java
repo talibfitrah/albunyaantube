@@ -110,6 +110,26 @@ public class VideoRepository {
     }
 
     /**
+     * Plan D — returns true when the video is unplayable (ARCHIVED or UNAVAILABLE).
+     * Used by ArchiveProjector to convert sync rows into virtual tombstones.
+     * False if the video is not in the registry (it isn't tracked = not gated).
+     */
+    public boolean isArchivedById(String youtubeId) {
+        try {
+            return findByYoutubeId(youtubeId)
+                    .map(v -> {
+                        var s = v.getValidationStatus();
+                        return s == com.albunyaan.tube.model.ValidationStatus.ARCHIVED
+                            || s == com.albunyaan.tube.model.ValidationStatus.UNAVAILABLE;
+                    })
+                    .orElse(false);
+        } catch (Exception e) {
+            // Don't mask sync reads with archive-lookup errors — fail open
+            return false;
+        }
+    }
+
+    /**
      * Find videos by status ordered by createdAt descending (newest first).
      *
      * Note: Requires Firestore composite index: status (ASC) + createdAt (DESC)
