@@ -78,6 +78,7 @@ class AccountRepositoryImpl(
         email = email,
         displayName = displayName,
         status = AccountStatus.fromWire(status),
+        role = (role ?: "user").lowercase(),
     )
 
     /**
