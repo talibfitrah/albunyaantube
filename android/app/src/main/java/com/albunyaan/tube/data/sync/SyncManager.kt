@@ -1,5 +1,6 @@
 package com.albunyaan.tube.data.sync
 
+import androidx.room.withTransaction
 import com.albunyaan.tube.data.local.*
 import com.albunyaan.tube.data.sync.dto.*
 import kotlinx.coroutines.CoroutineScope
@@ -7,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -80,7 +82,92 @@ class SyncManager @Inject constructor(
         binding.markMergeDone(uid)
     }
 
-    suspend fun pullAll(uid: String) { /* Task 23 */ }
+    suspend fun pullAll(uid: String) = pullMutex.withLock {
+        val cursors = mutableMapOf(
+            "subscriptions" to (syncState.cursorFor(uid, "subscriptions") ?: 0L),
+            "playlists"     to (syncState.cursorFor(uid, "playlists")     ?: 0L),
+            "favorites"     to (syncState.cursorFor(uid, "favorites")     ?: 0L),
+        )
+
+        var more: Boolean
+        do {
+            val resp = api.pull(cursors["subscriptions"]!!, cursors["playlists"]!!, cursors["favorites"]!!)
+            if (!resp.isSuccessful) return@withLock
+            val body = resp.body() ?: return@withLock
+
+            db.withTransaction {
+                for (row in body.subscriptions.items) {
+                    if (row.deleted) subs.applyTombstone(uid, row.entityId, row.updatedAt)
+                    else             subs.upsertFromServer(rowToSub(uid, row))
+                }
+                for (row in body.playlists.items) {
+                    if (row.deleted) playlists.applyTombstone(uid, row.entityId, row.updatedAt)
+                    else             playlists.upsertFromServer(rowToPlaylist(uid, row))
+                }
+                for (row in body.favorites.items) {
+                    if (row.deleted) favorites.applyTombstone(uid, row.entityId, row.updatedAt)
+                    else             favorites.upsertFromServer(rowToFavorite(uid, row))
+                }
+                body.subscriptions.items.maxByOrNull { it.updatedAt }?.let {
+                    syncState.upsert(SyncStateEntity("subscriptions", uid, it.updatedAt, System.currentTimeMillis()))
+                    cursors["subscriptions"] = it.updatedAt
+                }
+                body.playlists.items.maxByOrNull { it.updatedAt }?.let {
+                    syncState.upsert(SyncStateEntity("playlists", uid, it.updatedAt, System.currentTimeMillis()))
+                    cursors["playlists"] = it.updatedAt
+                }
+                body.favorites.items.maxByOrNull { it.updatedAt }?.let {
+                    syncState.upsert(SyncStateEntity("favorites", uid, it.updatedAt, System.currentTimeMillis()))
+                    cursors["favorites"] = it.updatedAt
+                }
+            }
+            more = (body.subscriptions.nextCursor != null) ||
+                   (body.playlists.nextCursor     != null) ||
+                   (body.favorites.nextCursor     != null)
+        } while (more)
+    }
+
+    private fun rowToSub(uid: String, r: SubscriptionSyncDto) =
+        SubscribedChannel(
+            channelId    = r.entityId,
+            channelUrl   = r.channelUrl,
+            name         = r.name,
+            avatarUrl    = r.avatarUrl,
+            subscribedAt = r.subscribedAt,
+            user_id      = uid,
+            updated_at   = r.updatedAt,
+            deleted      = false,
+            dirty        = false,
+        )
+
+    private fun rowToPlaylist(uid: String, r: PlaylistSyncDto) =
+        SavedPlaylist(
+            playlistId   = r.entityId,
+            playlistUrl  = r.playlistUrl,
+            name         = r.name,
+            thumbnailUrl = r.thumbnailUrl,
+            uploaderName = r.uploaderName,
+            savedAt      = r.savedAt,
+            user_id      = uid,
+            updated_at   = r.updatedAt,
+            deleted      = false,
+            dirty        = false,
+        )
+
+    private fun rowToFavorite(uid: String, r: FavoriteSyncDto) =
+        FavoriteVideo(
+            videoId         = r.entityId,
+            title           = r.title,
+            channelName     = r.channelName,
+            thumbnailUrl    = r.thumbnailUrl,
+            durationSeconds = r.durationSeconds,
+            addedAt         = r.addedAt,
+            user_id         = uid,
+            updated_at      = r.updatedAt,
+            deleted         = false,
+            dirty           = false,
+        )
+
     suspend fun pushDirty(uid: String) { /* Task 24 */ }
     fun unbind() { /* in-memory clear; nothing persistent to flush */ }
 
