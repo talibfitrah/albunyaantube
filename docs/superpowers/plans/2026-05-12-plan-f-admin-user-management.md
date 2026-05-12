@@ -2634,9 +2634,11 @@ git commit -m "[TEST-ADMIN-USER-01-T24]: AuditPaginationIT walks 5 pages of 50 w
 
 Per spec §4 + §5 — new client methods.
 
-- [ ] **Step 1: Add type definitions + 5 new methods**
+> **HTTP-client pattern note (post-recon):** the existing `adminUsers.ts` uses `authorizedJsonFetch` (from `@/services/http`) and a `USERS_BASE_PATH` constant (`/api/admin/users`). T25 follows that pattern — no `http.post(...)` axios style.
 
-Open `frontend/src/services/adminUsers.ts`, identify the existing `http` import + base URL pattern, and append:
+- [ ] **Step 1: Append type definitions + 5 new methods**
+
+Open `frontend/src/services/adminUsers.ts` and APPEND to the bottom (after the existing exports):
 
 ```typescript
 // Plan F (ADMIN-USER-01) — bulk + force-logout
@@ -2659,8 +2661,11 @@ export interface BulkUserActionRequest {
 }
 
 async function postBulk(path: string, req: BulkUserActionRequest): Promise<BulkUserActionResult> {
-  const { data } = await http.post<BulkUserActionResult>(`/api/admin/users/${path}`, req);
-  return data;
+  return authorizedJsonFetch<BulkUserActionResult>(`${USERS_BASE_PATH}/${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req)
+  });
 }
 
 export const bulkBlock          = (req: BulkUserActionRequest) => postBulk('bulk-block', req);
@@ -2669,11 +2674,13 @@ export const bulkRecover        = (req: BulkUserActionRequest) => postBulk('bulk
 export const bulkRevokeSessions = (req: BulkUserActionRequest) => postBulk('bulk-revoke-sessions', req);
 
 export async function forceLogout(uid: string, reason?: string): Promise<void> {
-  await http.post(`/api/admin/users/${uid}/revoke-sessions`, { reason });
+  await authorizedJsonFetch<void>(`${USERS_BASE_PATH}/${uid}/revoke-sessions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(reason !== undefined ? { reason } : {})
+  });
 }
 ```
-
-> **`http` reference:** match whatever the existing file uses (`import { http } from './http'` or similar). Reuse, don't add a new HTTP client.
 
 - [ ] **Step 2: Compile (TypeScript check)**
 
