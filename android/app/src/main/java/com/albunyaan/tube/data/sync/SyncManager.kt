@@ -168,7 +168,78 @@ class SyncManager @Inject constructor(
             dirty           = false,
         )
 
-    suspend fun pushDirty(uid: String) { /* Task 24 */ }
+    suspend fun pushDirty(uid: String) = pushMutex.withLock {
+        // Subscriptions
+        for (row in subs.selectDirty(uid)) {
+            val ok = if (row.deleted) {
+                push({ api.deleteSubscription(row.channelId) },
+                    onSuccess = { resp -> subs.clearDirty(uid, row.channelId, resp.updatedAt) },
+                    on404    = { subs.clearDirty(uid, row.channelId, System.currentTimeMillis()) })
+            } else {
+                push({ api.putSubscription(row.channelId, PutSubscriptionRequest(
+                    channelUrl = row.channelUrl, name = row.name,
+                    avatarUrl  = row.avatarUrl,  subscribedAt = row.subscribedAt)) },
+                    onSuccess = { resp -> subs.clearDirty(uid, row.channelId, resp.updatedAt) },
+                    on404    = { /* PUT 404 shouldn't happen; surface failure */ })
+            }
+            if (!ok) return@withLock     // 5xx/429/abort — leave dirty for next cycle
+        }
+        // Playlists
+        for (row in playlists.selectDirty(uid)) {
+            val ok = if (row.deleted) {
+                push({ api.deletePlaylist(row.playlistId) },
+                    onSuccess = { resp -> playlists.clearDirty(uid, row.playlistId, resp.updatedAt) },
+                    on404    = { playlists.clearDirty(uid, row.playlistId, System.currentTimeMillis()) })
+            } else {
+                push({ api.putPlaylist(row.playlistId, PutPlaylistRequest(
+                    playlistUrl  = row.playlistUrl,  name         = row.name,
+                    thumbnailUrl = row.thumbnailUrl, uploaderName = row.uploaderName,
+                    savedAt      = row.savedAt)) },
+                    onSuccess = { resp -> playlists.clearDirty(uid, row.playlistId, resp.updatedAt) },
+                    on404    = { /* PUT 404 shouldn't happen */ })
+            }
+            if (!ok) return@withLock
+        }
+        // Favorites
+        for (row in favorites.selectDirty(uid)) {
+            val ok = if (row.deleted) {
+                push({ api.deleteFavorite(row.videoId) },
+                    onSuccess = { resp -> favorites.clearDirty(uid, row.videoId, resp.updatedAt) },
+                    on404    = { favorites.clearDirty(uid, row.videoId, System.currentTimeMillis()) })
+            } else {
+                push({ api.putFavorite(row.videoId, PutFavoriteRequest(
+                    title           = row.title,           channelName     = row.channelName,
+                    thumbnailUrl    = row.thumbnailUrl,    durationSeconds = row.durationSeconds,
+                    addedAt         = row.addedAt)) },
+                    onSuccess = { resp -> favorites.clearDirty(uid, row.videoId, resp.updatedAt) },
+                    on404    = { /* PUT 404 shouldn't happen */ })
+            }
+            if (!ok) return@withLock
+        }
+    }
+
+    /**
+     * Returns true on success (caller should continue), false on retryable failure
+     * (caller should break out of the drain loop and retry next cycle).
+     * - 2xx → onSuccess(body), returns true
+     * - 404 → on404(), returns true (treated as success for idempotent DELETEs)
+     * - 401/403 → return false (interceptors handle; abort loop)
+     * - 5xx/429 → return false (back off; retry next trigger)
+     */
+    private suspend inline fun <T> push(
+        crossinline op: suspend () -> retrofit2.Response<T>,
+        crossinline onSuccess: suspend (T) -> Unit,
+        crossinline on404: suspend () -> Unit,
+    ): Boolean {
+        val resp = op()
+        return when {
+            resp.isSuccessful -> { resp.body()?.let { onSuccess(it) }; true }
+            resp.code() == 404 -> { on404(); true }
+            resp.code() == 401 || resp.code() == 403 -> false
+            else -> false   // 5xx / 429 / unknown — pause draining
+        }
+    }
+
     fun unbind() { /* in-memory clear; nothing persistent to flush */ }
 
     fun pushDirtyAsync(uid: String) { scope.launch { pushDirty(uid) } }
