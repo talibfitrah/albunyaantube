@@ -2704,53 +2704,114 @@ git commit -m "[FEAT-ADMIN-USER-01-T25]: adminUsers service bulkBlock/Delete/Rec
 
 Per spec §5 — `nextCursor` in response, `?cursor=...&limit=...` on requests.
 
-- [ ] **Step 1: Add cursor types + update methods**
+> **Service-pattern note (post-recon):** the existing `adminAudit.ts` uses `authorizedJsonFetch` (not axios `http.get`), returns `CursorPage<AuditEntry>` (a typed wrapper from `@/types/pagination`), and uses a `mapAuditLogToEntry(log)` helper that handles the backend-vs-OpenAPI field-name drift (actorDisplayName/details vs actorEmail/metadata). After T21-T23, the backend's `/api/admin/audit`, `/audit/actor/{actorUid}`, and `/audit/action/{action}` endpoints all return `PaginatedAuditLog` (`{items, nextCursor}`); the `/audit/entity-type/{entityType}` endpoint is unchanged and still returns a bare array.
 
-Open `frontend/src/services/adminAudit.ts`, append/replace:
+- [ ] **Step 1: Update `fetchAuditLogPage` to parse the new `PaginatedAuditLog` response shape**
+
+Replace the existing `fetchAuditLogPage` body (the one that does `authorizedJsonFetch<AuditLog[]>(...)` and hardcodes `nextCursor: null`) with:
 
 ```typescript
-// Plan F (ADMIN-USER-01) — cursor pagination types
+export async function fetchAuditLogPage(params: AuditLogPageParams = {}): Promise<CursorPage<AuditEntry>> {
+  const limit = params.limit || 100;
+  const queryParams = new URLSearchParams();
+  queryParams.append('limit', limit.toString());
+  if (params.cursor) queryParams.append('cursor', params.cursor);
+  // actorId + action are filter routes — if set, callers should use the dedicated
+  // fetchAuditLogsByActor / fetchAuditLogsByAction methods (now cursor-aware too).
+  if (params.actorId) queryParams.append('actorId', params.actorId);
+  if (params.action)  queryParams.append('action',  params.action);
 
-export interface PaginatedAuditLog<T> {
-  items: T[];
-  nextCursor: string | null;
-}
+  // Plan F (T21-T23): backend now returns { items, nextCursor } instead of a bare array.
+  const page = await authorizedJsonFetch<{ items: AuditLog[]; nextCursor: string | null }>(
+      `${AUDIT_BASE_PATH}?${queryParams}`);
 
-export interface AuditQuery {
-  actorUid?: string;
-  action?: string;
-  cursor?: string | null;
-  limit?: number;
-}
-
-export async function fetchAuditPage(q: AuditQuery): Promise<PaginatedAuditLog<AuditLogEntry>> {
-  const params: Record<string, string> = {};
-  if (q.cursor) params.cursor = q.cursor;
-  if (q.limit)  params.limit  = String(q.limit);
-  let path = '/api/admin/audit';
-  if (q.actorUid) path = `/api/admin/audit/actor/${encodeURIComponent(q.actorUid)}`;
-  else if (q.action) path = `/api/admin/audit/action/${encodeURIComponent(q.action)}`;
-  const { data } = await http.get<PaginatedAuditLog<AuditLogEntry>>(path, { params });
-  return data;
+  return {
+    data: page.items.map(mapAuditLogToEntry).filter((e): e is AuditEntry => e !== null),
+    pageInfo: {
+      cursor: params.cursor ?? null,
+      nextCursor: page.nextCursor ?? null,
+      hasNext: page.nextCursor != null
+    }
+  };
 }
 ```
 
-> **`AuditLogEntry` type:** if this type is not already declared in the file, define it as a passthrough interface matching the backend's `AuditLog` shape (action, entityType, entityId, actorUid, timestamp, details). Reuse the existing type if present; do not introduce a duplicate.
+- [ ] **Step 2: Update `fetchAuditLogsByActor` and `fetchAuditLogsByAction` to handle the new response shape**
 
-- [ ] **Step 2: Update any existing callers**
+Replace `fetchAuditLogsByActor` and `fetchAuditLogsByAction` with cursor-aware variants that also return `CursorPage<AuditEntry>`:
 
-Search `frontend/src` for previous calls like `fetchAuditPage({ page: 1 })` or similar and migrate them to `{ cursor: null, limit: 50 }`. If the prior signature differed, this task may need to deprecate the old method and add the new one rather than replace it — preserve backward compat for any in-flight call sites.
+```typescript
+export async function fetchAuditLogsByActor(
+    actorUid: string,
+    options: { cursor?: string | null; limit?: number } = {}
+): Promise<CursorPage<AuditEntry>> {
+  const limit = options.limit || 100;
+  const qp = new URLSearchParams();
+  qp.append('limit', String(limit));
+  if (options.cursor) qp.append('cursor', options.cursor);
 
-- [ ] **Step 3: Compile**
+  const page = await authorizedJsonFetch<{ items: AuditLog[]; nextCursor: string | null }>(
+      `${AUDIT_BASE_PATH}/actor/${encodeURIComponent(actorUid)}?${qp}`);
+
+  return {
+    data: page.items.map(mapAuditLogToEntry).filter((e): e is AuditEntry => e !== null),
+    pageInfo: {
+      cursor: options.cursor ?? null,
+      nextCursor: page.nextCursor ?? null,
+      hasNext: page.nextCursor != null
+    }
+  };
+}
+
+export async function fetchAuditLogsByAction(
+    action: string,
+    options: { cursor?: string | null; limit?: number } = {}
+): Promise<CursorPage<AuditEntry>> {
+  const limit = options.limit || 100;
+  const qp = new URLSearchParams();
+  qp.append('limit', String(limit));
+  if (options.cursor) qp.append('cursor', options.cursor);
+
+  const page = await authorizedJsonFetch<{ items: AuditLog[]; nextCursor: string | null }>(
+      `${AUDIT_BASE_PATH}/action/${encodeURIComponent(action)}?${qp}`);
+
+  return {
+    data: page.items.map(mapAuditLogToEntry).filter((e): e is AuditEntry => e !== null),
+    pageInfo: {
+      cursor: options.cursor ?? null,
+      nextCursor: page.nextCursor ?? null,
+      hasNext: page.nextCursor != null
+    }
+  };
+}
+```
+
+> **`fetchAuditLogsByEntityType` (the 4th method) stays unchanged.** Backend T23 amendment explicitly left `/audit/entity-type/{entityType}` returning a bare array. The frontend `fetchAuditLogsByEntityType` continues to return `Promise<AuditEntry[]>`.
+
+- [ ] **Step 3: Update callers of the renamed Actor/Action helpers**
+
+The old signatures were:
+```typescript
+fetchAuditLogsByActor(actorUid: string, limit = 100): Promise<AuditEntry[]>
+fetchAuditLogsByAction(action: string, limit = 100): Promise<AuditEntry[]>
+```
+The new signatures wrap `CursorPage<AuditEntry>`. Search for callers and migrate:
+```bash
+cd frontend && grep -rn "fetchAuditLogsByActor\|fetchAuditLogsByAction" src/ --include="*.ts" --include="*.vue"
+```
+At each call site, replace `const logs = await fetchAuditLogsByActor(uid, 50);` with `const { data: logs } = await fetchAuditLogsByActor(uid, { limit: 50 });`. If there are no callers (only `fetchAuditLogPage` is used today), this step is a no-op.
+
+- [ ] **Step 4: Type-check + build**
 
 ```bash
 cd frontend && npm run build
 ```
+Expected: BUILD SUCCESSFUL (`vue-tsc` passes).
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add frontend/src/services/adminAudit.ts
+git add frontend/src/services/adminAudit.ts $(cd frontend && grep -rln "fetchAuditLogsByActor\|fetchAuditLogsByAction" src/ --include="*.ts" --include="*.vue")
 git commit -m "[FEAT-ADMIN-USER-01-T26]: adminAudit cursor pagination support"
 ```
 
