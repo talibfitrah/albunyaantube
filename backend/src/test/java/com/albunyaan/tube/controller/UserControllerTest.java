@@ -5,6 +5,7 @@ import com.albunyaan.tube.repository.UserRepository;
 import com.albunyaan.tube.security.FirebaseUserDetails;
 import com.albunyaan.tube.service.AuditLogService;
 import com.albunyaan.tube.service.AuthService;
+import com.albunyaan.tube.service.BulkUserService;
 import com.google.firebase.auth.FirebaseAuthException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,6 +42,9 @@ class UserControllerTest {
 
     @Mock
     private AuditLogService auditLogService;
+
+    @Mock
+    private BulkUserService bulkUserService;
 
     @InjectMocks
     private UserController userController;

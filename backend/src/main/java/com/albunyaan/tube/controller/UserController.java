@@ -1,5 +1,7 @@
 package com.albunyaan.tube.controller;
 
+import com.albunyaan.tube.dto.BulkUserActionRequest;
+import com.albunyaan.tube.dto.BulkUserActionResult;
 import com.albunyaan.tube.dto.RevokeSessionsRequest;
 import com.albunyaan.tube.model.Role;
 import com.albunyaan.tube.model.User;
@@ -7,7 +9,10 @@ import com.albunyaan.tube.repository.UserRepository;
 import com.albunyaan.tube.security.FirebaseUserDetails;
 import com.albunyaan.tube.service.AuditLogService;
 import com.albunyaan.tube.service.AuthService;
+import com.albunyaan.tube.service.BulkAction;
+import com.albunyaan.tube.service.BulkUserService;
 import com.google.firebase.auth.FirebaseAuthException;
+import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -36,11 +41,13 @@ public class UserController {
     private final UserRepository userRepository;
     private final AuthService authService;
     private final AuditLogService auditLogService;
+    private final BulkUserService bulkUserService;
 
-    public UserController(UserRepository userRepository, AuthService authService, AuditLogService auditLogService) {
+    public UserController(UserRepository userRepository, AuthService authService, AuditLogService auditLogService, BulkUserService bulkUserService) {
         this.userRepository = userRepository;
         this.authService = authService;
         this.auditLogService = auditLogService;
+        this.bulkUserService = bulkUserService;
     }
 
     /**
@@ -308,6 +315,42 @@ public class UserController {
             log.error("revoke-sessions failed uid={}", uid, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @PostMapping("/bulk-block")
+    public ResponseEntity<BulkUserActionResult> bulkBlock(
+            @Valid @RequestBody BulkUserActionRequest req,
+            @AuthenticationPrincipal com.albunyaan.tube.security.FirebaseUserDetails actor) {
+        return ResponseEntity.ok(bulkUserService.execute(
+                BulkAction.BLOCK, req.getUids(), actor, req.getReason()));
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @PostMapping("/bulk-delete")
+    public ResponseEntity<BulkUserActionResult> bulkDelete(
+            @Valid @RequestBody BulkUserActionRequest req,
+            @AuthenticationPrincipal com.albunyaan.tube.security.FirebaseUserDetails actor) {
+        return ResponseEntity.ok(bulkUserService.execute(
+                BulkAction.DELETE, req.getUids(), actor, req.getReason()));
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @PostMapping("/bulk-recover")
+    public ResponseEntity<BulkUserActionResult> bulkRecover(
+            @Valid @RequestBody BulkUserActionRequest req,
+            @AuthenticationPrincipal com.albunyaan.tube.security.FirebaseUserDetails actor) {
+        return ResponseEntity.ok(bulkUserService.execute(
+                BulkAction.RECOVER, req.getUids(), actor, req.getReason()));
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @PostMapping("/bulk-revoke-sessions")
+    public ResponseEntity<BulkUserActionResult> bulkRevokeSessions(
+            @Valid @RequestBody BulkUserActionRequest req,
+            @AuthenticationPrincipal com.albunyaan.tube.security.FirebaseUserDetails actor) {
+        return ResponseEntity.ok(bulkUserService.execute(
+                BulkAction.REVOKE_SESSIONS, req.getUids(), actor, req.getReason()));
     }
 
     // DTOs
