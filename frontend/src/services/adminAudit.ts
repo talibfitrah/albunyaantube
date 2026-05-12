@@ -78,22 +78,43 @@ export async function fetchAuditLogPage(params: AuditLogPageParams = {}): Promis
     queryParams.append('action', params.action);
   }
 
-  // Backend returns array, not paginated response
-  const logs = await authorizedJsonFetch<AuditLog[]>(`${AUDIT_BASE_PATH}?${queryParams}`);
+  // Plan F (T21-T23): backend now returns { items, nextCursor } instead of a bare array.
+  const page = await authorizedJsonFetch<{ items: AuditLog[]; nextCursor: string | null }>(
+    `${AUDIT_BASE_PATH}?${queryParams}`
+  );
 
   return {
-    data: logs.map(mapAuditLogToEntry).filter((entry): entry is AuditEntry => entry !== null),
+    data: page.items.map(mapAuditLogToEntry).filter((entry): entry is AuditEntry => entry !== null),
     pageInfo: {
-      cursor: null,
-      nextCursor: null,
-      hasNext: false
+      cursor: params.cursor ?? null,
+      nextCursor: page.nextCursor ?? null,
+      hasNext: page.nextCursor != null
     }
   };
 }
 
-export async function fetchAuditLogsByActor(actorUid: string, limit = 100): Promise<AuditEntry[]> {
-  const logs = await authorizedJsonFetch<AuditLog[]>(`${AUDIT_BASE_PATH}/actor/${encodeURIComponent(actorUid)}?limit=${limit}`);
-  return logs.map(mapAuditLogToEntry).filter((entry): entry is AuditEntry => entry !== null);
+export async function fetchAuditLogsByActor(
+  actorUid: string,
+  options: { cursor?: string | null; limit?: number } = {}
+): Promise<CursorPage<AuditEntry>> {
+  const limit = options.limit || 100;
+  const qp = new URLSearchParams();
+  qp.append('limit', String(limit));
+  if (options.cursor) qp.append('cursor', options.cursor);
+
+  // Plan F (T22): /actor/{uid} now returns { items, nextCursor }
+  const page = await authorizedJsonFetch<{ items: AuditLog[]; nextCursor: string | null }>(
+    `${AUDIT_BASE_PATH}/actor/${encodeURIComponent(actorUid)}?${qp}`
+  );
+
+  return {
+    data: page.items.map(mapAuditLogToEntry).filter((entry): entry is AuditEntry => entry !== null),
+    pageInfo: {
+      cursor: options.cursor ?? null,
+      nextCursor: page.nextCursor ?? null,
+      hasNext: page.nextCursor != null
+    }
+  };
 }
 
 export async function fetchAuditLogsByEntityType(entityType: string, limit = 100): Promise<AuditEntry[]> {
@@ -101,7 +122,26 @@ export async function fetchAuditLogsByEntityType(entityType: string, limit = 100
   return logs.map(mapAuditLogToEntry).filter((entry): entry is AuditEntry => entry !== null);
 }
 
-export async function fetchAuditLogsByAction(action: string, limit = 100): Promise<AuditEntry[]> {
-  const logs = await authorizedJsonFetch<AuditLog[]>(`${AUDIT_BASE_PATH}/action/${encodeURIComponent(action)}?limit=${limit}`);
-  return logs.map(mapAuditLogToEntry).filter((entry): entry is AuditEntry => entry !== null);
+export async function fetchAuditLogsByAction(
+  action: string,
+  options: { cursor?: string | null; limit?: number } = {}
+): Promise<CursorPage<AuditEntry>> {
+  const limit = options.limit || 100;
+  const qp = new URLSearchParams();
+  qp.append('limit', String(limit));
+  if (options.cursor) qp.append('cursor', options.cursor);
+
+  // Plan F (T23): /action/{action} now returns { items, nextCursor }
+  const page = await authorizedJsonFetch<{ items: AuditLog[]; nextCursor: string | null }>(
+    `${AUDIT_BASE_PATH}/action/${encodeURIComponent(action)}?${qp}`
+  );
+
+  return {
+    data: page.items.map(mapAuditLogToEntry).filter((entry): entry is AuditEntry => entry !== null),
+    pageInfo: {
+      cursor: options.cursor ?? null,
+      nextCursor: page.nextCursor ?? null,
+      hasNext: page.nextCursor != null
+    }
+  };
 }
