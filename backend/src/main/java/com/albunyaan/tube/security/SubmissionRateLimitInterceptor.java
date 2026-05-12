@@ -7,13 +7,19 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-@Component
+/**
+ * Plan E — submission rate-limit gate.
+ *
+ * Not annotated {@code @Component}: registered as a bean via
+ * {@link com.albunyaan.tube.config.WebConfig} so {@code @WebMvcTest} slices
+ * (which auto-load every {@link HandlerInterceptor} bean and would fail on
+ * the {@link SubmissionRateLimiter} dependency) don't pick it up by accident.
+ */
 public class SubmissionRateLimitInterceptor implements HandlerInterceptor {
 
     private final SubmissionRateLimiter limiter;
