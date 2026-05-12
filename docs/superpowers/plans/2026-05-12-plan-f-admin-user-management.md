@@ -357,6 +357,12 @@ git commit -m "[FEAT-ADMIN-USER-01-T3]: MailService skeleton with disabled-path 
 
 Per spec §6 — F2 plaintext body, `saveToSentItems=false`, F3 subject + display name.
 
+> **SDK note (2026-05-12, post-T3 amendment):** the resolved `microsoft-graph:6.+` dependency uses the Kiota-generated v6 client. The original code below was written against v5 syntax; this section is updated for v6. Key differences:
+> - Use setters (`msg.setSubject(...)`, `body.setContentType(...)`, `r.setEmailAddress(...)`) instead of public-field assignment.
+> - `BodyType.Text` (camel case) replaces `BodyType.TEXT`.
+> - Send via `SendMailPostRequestBody` + `graph.users().byUserId(fromAddress).sendMail().post(body)` instead of `UserSendMailParameterSet` + `.buildRequest().post()`.
+> - `GraphServiceClient` no longer has a generic type parameter (the field type in `MailService` is plain `GraphServiceClient`).
+
 - [ ] **Step 1: Add failing happy-path test**
 
 Append to `MailServiceTest.java`:
@@ -379,13 +385,14 @@ Append to `MailServiceTest.java`:
         com.microsoft.graph.models.Message msg = svc.buildPasswordResetMessage(
                 "user@example.com", "https://app.fitrahtube.com/reset/abc");
 
-        assertEquals("Reset your FitrahTube password", msg.subject);
-        assertEquals(com.microsoft.graph.models.BodyType.TEXT, msg.body.contentType);
-        assertTrue(msg.body.content.contains("https://app.fitrahtube.com/reset/abc"));
-        assertTrue(msg.body.content.contains("This link expires in 1 hour"));
-        assertTrue(msg.body.content.contains("FitrahTube")); // display name
-        assertEquals(1, msg.toRecipients.size());
-        assertEquals("user@example.com", msg.toRecipients.get(0).emailAddress.address);
+        assertEquals("Reset your FitrahTube password", msg.getSubject());
+        assertEquals(com.microsoft.graph.models.BodyType.Text, msg.getBody().getContentType());
+        assertTrue(msg.getBody().getContent().contains("https://app.fitrahtube.com/reset/abc"));
+        assertTrue(msg.getBody().getContent().contains("This link expires in 1 hour"));
+        assertTrue(msg.getBody().getContent().contains("FitrahTube")); // display name
+        assertEquals(1, msg.getToRecipients().size());
+        assertEquals("user@example.com",
+                msg.getToRecipients().get(0).getEmailAddress().getAddress());
     }
 ```
 
@@ -409,12 +416,11 @@ In `MailService.java`, replace the `sendPasswordResetEmail` body and add `buildP
         }
         try {
             com.microsoft.graph.models.Message msg = buildPasswordResetMessage(to, resetLink);
-            com.microsoft.graph.models.UserSendMailParameterSet params =
-                    com.microsoft.graph.models.UserSendMailParameterSet.newBuilder()
-                            .withMessage(msg)
-                            .withSaveToSentItems(false)
-                            .build();
-            graph.users(fromAddress).sendMail(params).buildRequest().post();
+            com.microsoft.graph.users.item.sendmail.SendMailPostRequestBody body =
+                    new com.microsoft.graph.users.item.sendmail.SendMailPostRequestBody();
+            body.setMessage(msg);
+            body.setSaveToSentItems(false);
+            graph.users().byUserId(fromAddress).sendMail().post(body);
             meters.counter("email.send.success", "type", "password_reset").increment();
             log.info("password_reset_email.sent to={}", to);
         } catch (Exception e) {
@@ -427,11 +433,11 @@ In `MailService.java`, replace the `sendPasswordResetEmail` body and add `buildP
     /** Package-private for unit-testability. */
     com.microsoft.graph.models.Message buildPasswordResetMessage(String to, String link) {
         com.microsoft.graph.models.Message m = new com.microsoft.graph.models.Message();
-        m.subject = "Reset your FitrahTube password";
+        m.setSubject("Reset your FitrahTube password");
 
         com.microsoft.graph.models.ItemBody body = new com.microsoft.graph.models.ItemBody();
-        body.contentType = com.microsoft.graph.models.BodyType.TEXT;
-        body.content =
+        body.setContentType(com.microsoft.graph.models.BodyType.Text);
+        body.setContent(
                 "Hi,\n\n"
               + "We received a request to reset your FitrahTube password.\n"
               + "Click the link below to set a new password:\n\n"
@@ -439,14 +445,16 @@ In `MailService.java`, replace the `sendPasswordResetEmail` body and add `buildP
               + "This link expires in 1 hour. If you didn't request a reset, ignore this email — "
               + "your account is safe.\n\n"
               + "This is an automated message from " + fromDisplayName
-              + ". Replies to this address are not monitored.\n";
-        m.body = body;
+              + ". Replies to this address are not monitored.\n");
+        m.setBody(body);
 
         com.microsoft.graph.models.Recipient r = new com.microsoft.graph.models.Recipient();
-        com.microsoft.graph.models.EmailAddress e = new com.microsoft.graph.models.EmailAddress();
-        e.address = to;
-        r.emailAddress = e;
-        m.toRecipients = java.util.List.of(r);
+        com.microsoft.graph.models.EmailAddress addr = new com.microsoft.graph.models.EmailAddress();
+        addr.setAddress(to);
+        r.setEmailAddress(addr);
+        java.util.LinkedList<com.microsoft.graph.models.Recipient> toRecipients = new java.util.LinkedList<>();
+        toRecipients.add(r);
+        m.setToRecipients(toRecipients);
 
         return m;
     }
@@ -750,12 +758,14 @@ public class MailServiceStartupCheck implements ApplicationRunner {
 Append to `MailService.java`:
 
 ```java
-    /** Plan F risk §11.3 — Graph users(fromAddress).get() smoke call. */
+    /** Plan F risk §11.3 — Graph users.byUserId(fromAddress).get() smoke call. */
     public void verifyFromMailboxReachable() {
         if (!enabled) return;
-        graph.users(fromAddress).buildRequest().get();
+        graph.users().byUserId(fromAddress).get();
     }
 ```
+
+> **SDK note:** v6 Kiota syntax — `graph.users().byUserId(id).get()` replaces v5's `graph.users(id).buildRequest().get()`.
 
 - [ ] **Step 3: Compile**
 

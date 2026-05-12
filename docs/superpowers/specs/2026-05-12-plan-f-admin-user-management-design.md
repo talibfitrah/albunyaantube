@@ -287,12 +287,14 @@ The deployment doc `docs/deployment/azure-app-registration.md` repeats this verb
 
 ### MailService skeleton
 
+> **SDK note (amended 2026-05-12 post-T3):** `microsoft-graph:6.+` resolves to the Kiota-generated v6 client, which uses setter methods and a different send-mail call shape than v5. Snippet below reflects v6. See plan T4 for the full mapping table.
+
 ```java
 @Service
 public class MailService {
     private static final Logger log = LoggerFactory.getLogger(MailService.class);
 
-    private final GraphServiceClient<?> graph;
+    private final GraphServiceClient graph;          // v6: no generic type param
     private final String fromAddress;
     private final String fromDisplayName;
     private final boolean enabled;
@@ -315,9 +317,8 @@ public class MailService {
                 .clientId(azure.getClientId())
                 .clientSecret(azure.getClientSecret())
                 .build();
-            TokenCredentialAuthProvider auth =
-                new TokenCredentialAuthProvider(List.of("https://graph.microsoft.com/.default"), cred);
-            this.graph = GraphServiceClient.builder().authenticationProvider(auth).buildClient();
+            // v6: GraphServiceClient takes (TokenCredential, scopes...) directly; no separate auth provider class.
+            this.graph = new GraphServiceClient(cred, "https://graph.microsoft.com/.default");
         } else {
             this.graph = null;
         }
@@ -331,13 +332,10 @@ public class MailService {
         }
         try {
             Message msg = buildPasswordResetMessage(to, resetLink);
-            graph.users(fromAddress)
-                 .sendMail(UserSendMailParameterSet.newBuilder()
-                     .withMessage(msg)
-                     .withSaveToSentItems(false)
-                     .build())
-                 .buildRequest()
-                 .post();
+            SendMailPostRequestBody body = new SendMailPostRequestBody();
+            body.setMessage(msg);
+            body.setSaveToSentItems(false);
+            graph.users().byUserId(fromAddress).sendMail().post(body);
             meters.counter("email.send.success", "type", "password_reset").increment();
             log.info("password_reset_email.sent to={}", to);
         } catch (Exception e) {
@@ -351,23 +349,25 @@ public class MailService {
 
     private Message buildPasswordResetMessage(String to, String link) {
         Message m = new Message();
-        m.subject = "Reset your FitrahTube password";
+        m.setSubject("Reset your FitrahTube password");
         ItemBody body = new ItemBody();
-        body.contentType = BodyType.TEXT;
-        body.content =
+        body.setContentType(BodyType.Text);         // v6: BodyType.Text (camel), not BodyType.TEXT
+        body.setContent(
             "Hi,\n\n"
           + "We received a request to reset your FitrahTube password.\n"
           + "Click the link below to set a new password:\n\n"
           + link + "\n\n"
           + "This link expires in 1 hour. If you didn't request a reset, ignore this email — your account is safe.\n\n"
-          + "This is an automated message from " + fromDisplayName + ". Replies to this address are not monitored.\n";
-        m.body = body;
+          + "This is an automated message from " + fromDisplayName + ". Replies to this address are not monitored.\n");
+        m.setBody(body);
 
         Recipient r = new Recipient();
-        EmailAddress e = new EmailAddress();
-        e.address = to;
-        r.emailAddress = e;
-        m.toRecipients = List.of(r);
+        EmailAddress addr = new EmailAddress();
+        addr.setAddress(to);
+        r.setEmailAddress(addr);
+        LinkedList<Recipient> toList = new LinkedList<>();
+        toList.add(r);
+        m.setToRecipients(toList);
 
         return m;
     }
