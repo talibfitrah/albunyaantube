@@ -48,6 +48,7 @@ public class AuthService {
     private final Firestore firestore;
     private final CacheManager cacheManager;
     private final FirestoreTimeoutProperties timeoutProperties;
+    private final MailService mailService;
 
     @Value("${app.security.initial-admin.email}")
     private String initialAdminEmail;
@@ -64,7 +65,8 @@ public class AuthService {
                        AuditLogRepository auditLogRepository,
                        Firestore firestore,
                        CacheManager cacheManager,
-                       FirestoreTimeoutProperties timeoutProperties) {
+                       FirestoreTimeoutProperties timeoutProperties,
+                       MailService mailService) {
         this.firebaseAuth = firebaseAuth;
         this.userRepository = userRepository;
         this.auditLogService = auditLogService;
@@ -72,6 +74,7 @@ public class AuthService {
         this.firestore = firestore;
         this.cacheManager = cacheManager;
         this.timeoutProperties = timeoutProperties;
+        this.mailService = mailService;
     }
 
     /**
@@ -684,9 +687,8 @@ public class AuthService {
      */
     public void sendPasswordResetEmail(String email) throws FirebaseAuthException {
         String link = firebaseAuth.generatePasswordResetLink(email);
-        // In production, send this link via email service
         logger.info("Password reset link generated for: {}", email);
-        // TODO: Integrate with email service
+        mailService.sendPasswordResetEmail(email, link);
     }
 
     /**
