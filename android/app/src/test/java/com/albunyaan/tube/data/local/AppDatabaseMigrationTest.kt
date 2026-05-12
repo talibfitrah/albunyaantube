@@ -147,9 +147,12 @@ class AppDatabaseMigrationTest {
         }
         v6Helper.close()
 
-        // --- Step 2: Reopen with the real AppDatabase + MIGRATION_6_7 only.
+        // --- Step 2: Reopen with the real AppDatabase + the migration chain up
+        // to the current DB version. Plan D pushed AppDatabase to v8, so the
+        // chain must include MIGRATION_7_8 too — its ALTER ADD COLUMN steps
+        // are additive and leave the v6→v7 assertions below intact.
         val roomDb = Room.databaseBuilder(context, AppDatabase::class.java, dbFile.absolutePath)
-            .addMigrations(MIGRATION_6_7)
+            .addMigrations(MIGRATION_6_7, MIGRATION_7_8)
             .allowMainThreadQueries()
             .build()
 
