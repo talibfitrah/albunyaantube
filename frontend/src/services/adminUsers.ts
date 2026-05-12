@@ -112,3 +112,43 @@ export async function sendPasswordReset(userId: string): Promise<void> {
     method: 'POST'
   });
 }
+
+// Plan F (ADMIN-USER-01) — bulk + force-logout
+
+export type BulkAction = 'block' | 'delete' | 'recover' | 'revokeSessions';
+
+export interface FailureEntry {
+  uid: string;
+  reason: string;
+}
+
+export interface BulkUserActionResult {
+  successes: string[];
+  failures: FailureEntry[];
+}
+
+export interface BulkUserActionRequest {
+  uids: string[];
+  reason?: string;
+}
+
+async function postBulk(path: string, req: BulkUserActionRequest): Promise<BulkUserActionResult> {
+  return authorizedJsonFetch<BulkUserActionResult>(`${USERS_BASE_PATH}/${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req)
+  });
+}
+
+export const bulkBlock          = (req: BulkUserActionRequest) => postBulk('bulk-block', req);
+export const bulkDelete         = (req: BulkUserActionRequest) => postBulk('bulk-delete', req);
+export const bulkRecover        = (req: BulkUserActionRequest) => postBulk('bulk-recover', req);
+export const bulkRevokeSessions = (req: BulkUserActionRequest) => postBulk('bulk-revoke-sessions', req);
+
+export async function forceLogout(uid: string, reason?: string): Promise<void> {
+  await authorizedJsonFetch<void>(`${USERS_BASE_PATH}/${uid}/revoke-sessions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(reason !== undefined ? { reason } : {})
+  });
+}
