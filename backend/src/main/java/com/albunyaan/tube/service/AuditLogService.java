@@ -3,6 +3,7 @@ package com.albunyaan.tube.service;
 import com.albunyaan.tube.model.AuditLog;
 import com.albunyaan.tube.repository.AuditLogRepository;
 import com.albunyaan.tube.security.FirebaseUserDetails;
+import com.google.cloud.firestore.Firestore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
@@ -22,9 +23,11 @@ public class AuditLogService {
     private static final Logger logger = LoggerFactory.getLogger(AuditLogService.class);
 
     private final AuditLogRepository auditLogRepository;
+    private final Firestore firestore;
 
-    public AuditLogService(AuditLogRepository auditLogRepository) {
+    public AuditLogService(AuditLogRepository auditLogRepository, Firestore firestore) {
         this.auditLogRepository = auditLogRepository;
+        this.firestore = firestore;
     }
 
     /**
@@ -163,6 +166,50 @@ public class AuditLogService {
     public AuditLog buildBackfillRun(int scanned, int updated, int claimWriteFailures, String actorUid) {
         return AuditLog.of("USER_BACKFILL_RUN", "system", "user-backfill", actorUid,
             Map.of("scanned", scanned, "updated", updated, "claimWriteFailures", claimWriteFailures));
+    }
+
+    public com.albunyaan.tube.dto.PaginatedAuditLog findPaginated(
+            String actorUid, String action, int limit, String cursor)
+            throws java.util.concurrent.ExecutionException, InterruptedException {
+        int effLimit = Math.min(Math.max(limit, 1), 200);
+        com.google.cloud.firestore.Query q = firestore.collection("audit_logs")
+                .orderBy("timestamp", com.google.cloud.firestore.Query.Direction.DESCENDING)
+                .orderBy(com.google.cloud.firestore.FieldPath.documentId(),
+                        com.google.cloud.firestore.Query.Direction.DESCENDING);
+
+        if (actorUid != null && !actorUid.isBlank()) q = q.whereEqualTo("actorUid", actorUid);
+        if (action != null && !action.isBlank())     q = q.whereEqualTo("action", action);
+
+        if (cursor != null && !cursor.isBlank()) {
+            com.albunyaan.tube.util.AuditCursor.Decoded c =
+                    com.albunyaan.tube.util.AuditCursor.decode(cursor);
+            com.google.cloud.firestore.DocumentSnapshot snap = firestore.collection("audit_logs")
+                    .document(c.docId()).get().get();
+            if (!snap.exists()) {
+                throw new IllegalArgumentException("Cursor references missing document");
+            }
+            q = q.startAfter(snap);
+        }
+
+        com.google.cloud.firestore.QuerySnapshot snapAll = q.limit(effLimit + 1).get().get();
+        var docs = snapAll.getDocuments();
+        java.util.List<com.albunyaan.tube.model.AuditLog> rows =
+                docs.stream()
+                    .limit(effLimit)
+                    .map(d -> d.toObject(com.albunyaan.tube.model.AuditLog.class))
+                    .toList();
+
+        boolean hasMore = docs.size() > effLimit;
+        String nextCursor = null;
+        if (hasMore) {
+            var lastDoc = docs.get(effLimit - 1);
+            com.albunyaan.tube.model.AuditLog last = lastDoc.toObject(com.albunyaan.tube.model.AuditLog.class);
+            java.time.Instant ts = last.getTimestamp() != null
+                    ? last.getTimestamp().toDate().toInstant()
+                    : java.time.Instant.now();
+            nextCursor = com.albunyaan.tube.util.AuditCursor.encode(ts, lastDoc.getId());
+        }
+        return new com.albunyaan.tube.dto.PaginatedAuditLog(rows, nextCursor);
     }
 }
 
