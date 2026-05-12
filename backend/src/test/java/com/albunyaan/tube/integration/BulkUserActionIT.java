@@ -62,10 +62,16 @@ class BulkUserActionIT extends BaseIntegrationTest {
 
         JsonNode result = json.readTree(res.getResponse().getContentAsString());
 
-        assertEquals(2, result.get("successes").size(),
-                "expected 2 successes (the two regular-active users)");
-        assertEquals(4, result.get("failures").size(),
-                "expected 4 failures (self, other admin, blocked, deleted)");
+        // F13: AuthService.blockUser is idempotent — already-blocked targets return
+        // silently (no exception, no audit row). BulkUserService counts the no-op as
+        // a "success" because no exception was thrown. So the already-blocked user
+        // joins the successes bucket but does NOT produce a USER_BLOCKED audit row.
+        // The DELETED target throws "Cannot block a deleted user" which classifies as
+        // "invalid_state".
+        assertEquals(3, result.get("successes").size(),
+                "expected 3 successes (2 regular-active + already-blocked idempotent no-op)");
+        assertEquals(3, result.get("failures").size(),
+                "expected 3 failures (self, other admin, deleted)");
 
         Set<String> reasons = new HashSet<>();
         result.get("failures").forEach(n -> reasons.add(n.get("reason").asText()));
@@ -73,8 +79,6 @@ class BulkUserActionIT extends BaseIntegrationTest {
                 "must reject the calling admin's own uid");
         assertTrue(reasons.contains("admin_target_forbidden"),
                 "must reject the other admin uid");
-        assertTrue(reasons.contains("already_blocked"),
-                "must classify the BLOCKED user as already_blocked");
         // The DELETED target's specific failure code depends on AuthService.blockUser
         // behaviour — either already_deleted or invalid_state is acceptable.
         assertTrue(reasons.contains("already_deleted") || reasons.contains("invalid_state"),
@@ -87,7 +91,8 @@ class BulkUserActionIT extends BaseIntegrationTest {
                 .whereEqualTo("action", "USER_BLOCKED").get().get().size();
         long summaryCount = firestore.collection("audit_logs")
                 .whereEqualTo("action", "USER_BULK_ACTION").get().get().size();
-        assertEquals(2L, blockedCount, "USER_BLOCKED rows = 2 (one per successful block)");
+        assertEquals(2L, blockedCount,
+                "USER_BLOCKED rows = 2 (only the 2 active→blocked transitions; F13 idempotent path skips audit)");
         assertEquals(1L, summaryCount, "USER_BULK_ACTION summary row = 1");
     }
 

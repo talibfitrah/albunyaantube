@@ -8,9 +8,13 @@ import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.google.cloud.firestore.QuerySnapshot;
 import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.UserRecord;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.mock.mockito.MockBean;
+
+import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.Map;
@@ -31,6 +35,12 @@ class AutoRevokeOnRoleChangeIT extends BaseIntegrationTest {
         String adminUid = seedUser("admin-aroc@test.com", "admin");
         seedUser("admin-aroc-2@test.com", "admin"); // not last admin
         String targetUid = seedUser("target-aroc@test.com", "user");
+
+        // AuthService.setUserRoleClaim calls firebaseAuth.getUser(uid) to read existing
+        // custom claims so they can be merged. Stub it; @MockBean returns null otherwise.
+        UserRecord targetRecord = Mockito.mock(UserRecord.class);
+        when(targetRecord.getCustomClaims()).thenReturn(java.util.Map.of());
+        when(firebaseAuth.getUser(targetUid)).thenReturn(targetRecord);
 
         authService.updateUserRoleAsActor(targetUid, "moderator", adminUid);
 
