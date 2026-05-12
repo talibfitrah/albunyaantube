@@ -30,6 +30,44 @@
     <div v-if="actionMessage" class="action-message" role="status">{{ actionMessage }}</div>
     <div v-if="actionError" class="action-error" role="alert">{{ actionError }}</div>
 
+    <!-- Bulk result toast -->
+    <div
+      v-if="lastResult"
+      data-testid="bulk-result-toast"
+      class="bulk-toast"
+      role="status"
+    >
+      <span>{{ lastResult.action }}: {{ lastResult.ok }} succeeded, {{ lastResult.fail }} failed</span>
+      <button type="button" class="toast-close" @click="lastResult = null">✕</button>
+      <div v-if="lastResult.failures.length > 0">
+        <button type="button" class="toast-details-toggle" @click="lastResult.expand = !lastResult.expand">
+          {{ lastResult.expand ? 'Hide details' : 'Details' }}
+        </button>
+        <ul v-if="lastResult.expand" class="toast-failures">
+          <li v-for="f in lastResult.failures" :key="f.uid">
+            {{ f.uid }}: {{ t('users.bulk.reason.' + f.reason) }}
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Sticky bulk-action toolbar -->
+    <div v-if="selected.size >= 1" class="bulk-toolbar">
+      <span class="bulk-selected">{{ selected.size }} selected</span>
+      <button type="button" data-testid="bulk-block" class="bulk-btn" @click="handleBulkBlock">
+        {{ t('users.bulk.block') }}
+      </button>
+      <button type="button" data-testid="bulk-delete" class="bulk-btn danger" @click="handleBulkDelete">
+        {{ t('users.bulk.delete') }}
+      </button>
+      <button type="button" data-testid="bulk-recover" class="bulk-btn" @click="handleBulkRecover">
+        {{ t('users.bulk.recover') }}
+      </button>
+      <button type="button" data-testid="bulk-revoke-sessions" class="bulk-btn" @click="handleBulkRevokeSessions">
+        {{ t('users.bulk.revokeSessions') }}
+      </button>
+    </div>
+
     <div class="filters">
       <label class="filter">
         <span>{{ t('users.filters.role') }}</span>
@@ -59,6 +97,15 @@
       <table v-else class="data-table">
         <thead>
           <tr>
+            <th scope="col" class="checkbox-column">
+              <input
+                type="checkbox"
+                :checked="users.length > 0 && selected.size === users.length"
+                :indeterminate="selected.size > 0 && selected.size < users.length"
+                @change="toggleSelectAll"
+                aria-label="Select all"
+              />
+            </th>
             <th scope="col">{{ t('users.columns.email') }}</th>
             <th scope="col">{{ t('users.columns.roles') }}</th>
             <th scope="col">{{ t('users.columns.status') }}</th>
@@ -69,16 +116,25 @@
         </thead>
         <tbody>
           <tr v-if="isLoading && !users.length">
-            <td :colspan="6">
+            <td :colspan="7">
               <div class="skeleton-stack" aria-hidden="true">
                 <div v-for="index in 5" :key="`skeleton-${index}`" class="skeleton-row"></div>
               </div>
             </td>
           </tr>
           <tr v-else-if="!users.length">
-            <td :colspan="6" class="empty-state">{{ t('users.table.empty') }}</td>
+            <td :colspan="7" class="empty-state">{{ t('users.table.empty') }}</td>
           </tr>
           <tr v-for="user in users" :key="user.id">
+            <td class="checkbox-column">
+              <input
+                type="checkbox"
+                :checked="selected.has(user.id)"
+                data-testid="row-select"
+                :aria-label="`Select ${user.email}`"
+                @change="toggleSelectUser(user.id)"
+              />
+            </td>
             <td>
               <div class="user-email">{{ user.email }}</div>
               <div class="user-id">{{ user.id }}</div>
@@ -135,6 +191,15 @@
                 @click="openDeleteDialog(user)"
               >
                 {{ t('users.actions.delete') }}
+              </button>
+              <button
+                type="button"
+                class="action danger"
+                data-testid="force-logout-btn"
+                :disabled="isLoading || forcingLogoutUserId === user.id"
+                @click="handleForceLogout(user)"
+              >
+                {{ forcingLogoutUserId === user.id ? 'Logging out…' : 'Force Logout' }}
               </button>
             </td>
           </tr>
@@ -327,9 +392,14 @@ import { useI18n } from 'vue-i18n';
 import { useCursorPagination } from '@/composables/useCursorPagination';
 import { useFocusTrap } from '@/composables/useFocusTrap';
 import {
+  bulkBlock,
+  bulkDelete,
+  bulkRecover,
+  bulkRevokeSessions,
   createUser,
   deleteUser,
   fetchUsersPage,
+  forceLogout,
   sendPasswordReset,
   updateUserRole,
   updateUserStatus
@@ -350,6 +420,19 @@ const actionMessage = ref<string | null>(null);
 const actionError = ref<string | null>(null);
 const busyUserId = ref<string | null>(null);
 const resettingPasswordUserId = ref<string | null>(null);
+const forcingLogoutUserId = ref<string | null>(null);
+
+// Checkbox selection
+const selected = ref<Set<string>>(new Set());
+
+interface BulkResult {
+  action: string;
+  ok: number;
+  fail: number;
+  failures: { uid: string; reason: string }[];
+  expand: boolean;
+}
+const lastResult = ref<BulkResult | null>(null);
 
 const pagination = useCursorPagination<AdminUser>(async (cursor, limit) => {
   return fetchUsersPage({
@@ -678,6 +761,113 @@ async function handleResetPassword(user: AdminUser) {
     actionError.value = err instanceof Error ? err.message : t('users.errors.resetPassword');
   } finally {
     resettingPasswordUserId.value = null;
+  }
+}
+
+// Checkbox helpers
+function toggleSelectUser(id: string) {
+  const next = new Set(selected.value);
+  if (next.has(id)) {
+    next.delete(id);
+  } else {
+    next.add(id);
+  }
+  selected.value = next;
+}
+
+function toggleSelectAll() {
+  if (selected.value.size === users.value.length) {
+    selected.value = new Set();
+  } else {
+    selected.value = new Set(users.value.map((u) => u.id));
+  }
+}
+
+// Bulk action helpers
+async function handleBulkBlock() {
+  const uids = Array.from(selected.value);
+  try {
+    const result = await bulkBlock({ uids });
+    lastResult.value = {
+      action: t('users.bulk.block'),
+      ok: result.successes.length,
+      fail: result.failures.length,
+      failures: result.failures,
+      expand: false
+    };
+    selected.value = new Set();
+  } catch (err) {
+    actionError.value = err instanceof Error ? err.message : 'Bulk block failed';
+  }
+}
+
+async function handleBulkDelete() {
+  if (!window.confirm('Delete selected users? This cannot be undone.')) {
+    return;
+  }
+  const uids = Array.from(selected.value);
+  try {
+    const result = await bulkDelete({ uids });
+    lastResult.value = {
+      action: t('users.bulk.delete'),
+      ok: result.successes.length,
+      fail: result.failures.length,
+      failures: result.failures,
+      expand: false
+    };
+    selected.value = new Set();
+  } catch (err) {
+    actionError.value = err instanceof Error ? err.message : 'Bulk delete failed';
+  }
+}
+
+async function handleBulkRecover() {
+  const uids = Array.from(selected.value);
+  try {
+    const result = await bulkRecover({ uids });
+    lastResult.value = {
+      action: t('users.bulk.recover'),
+      ok: result.successes.length,
+      fail: result.failures.length,
+      failures: result.failures,
+      expand: false
+    };
+    selected.value = new Set();
+  } catch (err) {
+    actionError.value = err instanceof Error ? err.message : 'Bulk recover failed';
+  }
+}
+
+async function handleBulkRevokeSessions() {
+  const uids = Array.from(selected.value);
+  try {
+    const result = await bulkRevokeSessions({ uids });
+    lastResult.value = {
+      action: t('users.bulk.revokeSessions'),
+      ok: result.successes.length,
+      fail: result.failures.length,
+      failures: result.failures,
+      expand: false
+    };
+    selected.value = new Set();
+  } catch (err) {
+    actionError.value = err instanceof Error ? err.message : 'Bulk revoke sessions failed';
+  }
+}
+
+async function handleForceLogout(user: AdminUser) {
+  if (forcingLogoutUserId.value === user.id) {
+    return;
+  }
+  forcingLogoutUserId.value = user.id;
+  actionError.value = null;
+  try {
+    await forceLogout(user.id);
+    actionMessage.value = `Force logout sent for ${user.email}`;
+  } catch (err) {
+    actionError.value = err instanceof Error ? err.message : 'Force logout failed';
+  } finally {
+    forcingLogoutUserId.value = null;
   }
 }
 
@@ -1248,5 +1438,81 @@ button,
 
 .radio-item span {
   user-select: none;
+}
+
+.checkbox-column {
+  width: 40px;
+  text-align: center;
+}
+
+.bulk-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  background: var(--color-surface);
+  border-radius: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  box-shadow: var(--shadow-elevated);
+}
+
+.bulk-selected {
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin-right: auto;
+}
+
+.bulk-btn {
+  border: none;
+  border-radius: 0.5rem;
+  padding: 0.4rem 1rem;
+  font-weight: 600;
+  background: var(--color-surface-alt);
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+
+.bulk-btn.danger {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.bulk-toast {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  box-shadow: var(--shadow-elevated);
+}
+
+.toast-close {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 1rem;
+  color: var(--color-text-secondary);
+  align-self: flex-end;
+}
+
+.toast-details-toggle {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--color-brand);
+  font-weight: 600;
+  padding: 0;
+}
+
+.toast-failures {
+  margin: 0.25rem 0 0;
+  padding-left: 1.25rem;
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
 }
 </style>

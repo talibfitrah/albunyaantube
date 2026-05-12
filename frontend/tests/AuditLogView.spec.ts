@@ -48,6 +48,28 @@ function createPage(): AuditPage {
   };
 }
 
+/** Build a page with N synthetic entries */
+function buildPage(count: number, nextCursor: string | null): AuditPage {
+  return {
+    data: Array.from({ length: count }, (_, i) => ({
+      id: `audit-${i + 1}`,
+      actorUid: `actor-${i + 1}@example.com`,
+      actorDisplayName: `Actor ${i + 1}`,
+      action: 'users:create',
+      entityType: 'USER',
+      entityId: `user-${i + 1}`,
+      details: {},
+      timestamp: '2025-10-01T10:00:00Z'
+    })),
+    pageInfo: {
+      cursor: null,
+      nextCursor,
+      hasNext: nextCursor !== null,
+      limit: count
+    }
+  };
+}
+
 describe('AuditLogView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -72,5 +94,79 @@ describe('AuditLogView', () => {
     });
 
     vi.useRealTimers();
+  });
+
+  describe('Load-more cursor pagination', () => {
+    it('shows 50 rows and Load-more button on first page with nextCursor', async () => {
+      (fetchAuditLogPage as unknown as vi.Mock).mockResolvedValueOnce(
+        buildPage(50, 'CURSOR-1')
+      );
+
+      renderView();
+
+      // Wait for rows to appear
+      await waitFor(() => {
+        expect(screen.getAllByTestId('audit-row')).toHaveLength(50);
+      });
+
+      // Load-more button must be visible
+      expect(screen.getByTestId('audit-load-more')).toBeVisible();
+    });
+
+    it('appends 30 more rows on Load-more click and hides button when no nextCursor', async () => {
+      (fetchAuditLogPage as unknown as vi.Mock)
+        .mockResolvedValueOnce(buildPage(50, 'CURSOR-1'))
+        .mockResolvedValueOnce(buildPage(30, null));
+
+      renderView();
+
+      // Wait for first page
+      await waitFor(() => {
+        expect(screen.getAllByTestId('audit-row')).toHaveLength(50);
+      });
+
+      // Click Load-more
+      const loadMoreBtn = screen.getByTestId('audit-load-more');
+      await fireEvent.click(loadMoreBtn);
+
+      // Should now have 80 rows total (append, not replace)
+      await waitFor(() => {
+        expect(screen.getAllByTestId('audit-row')).toHaveLength(80);
+      });
+
+      // Load-more button must be gone
+      expect(screen.queryByTestId('audit-load-more')).toBeNull();
+    });
+
+    it('resets list and cursor when filter changes', async () => {
+      vi.useFakeTimers();
+
+      // First load: 50 rows + nextCursor
+      (fetchAuditLogPage as unknown as vi.Mock)
+        .mockResolvedValueOnce(buildPage(50, 'CURSOR-1'))
+        // Filter change triggers reload from scratch: 1 row, no nextCursor
+        .mockResolvedValueOnce(createPage());
+
+      renderView();
+
+      await waitFor(() => {
+        expect(screen.getAllByTestId('audit-row')).toHaveLength(50);
+      });
+
+      // Change actor filter
+      const actorInput = screen.getByPlaceholderText(/actor email/i);
+      await fireEvent.update(actorInput, 'other@example.com');
+      vi.runAllTimers();
+
+      // After reset, only 1 row should exist
+      await waitFor(() => {
+        expect(screen.getAllByTestId('audit-row')).toHaveLength(1);
+      });
+
+      // Load-more should not be visible (nextCursor is null)
+      expect(screen.queryByTestId('audit-load-more')).toBeNull();
+
+      vi.useRealTimers();
+    });
   });
 });

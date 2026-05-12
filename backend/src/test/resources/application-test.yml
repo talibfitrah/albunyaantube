@@ -48,3 +48,13 @@ logging:
     com.albunyaan.tube: DEBUG
     com.google.cloud.firestore: WARN
 
+# Plan F — disable outbound mail in tests
+mail:
+  enabled: false
+  from-address: noreply@test.fitrahtube.com
+  from-display-name: FitrahTube Test
+
+azure:
+  tenant-id: test-tenant
+  client-id: test-client
+  client-secret: test-secret

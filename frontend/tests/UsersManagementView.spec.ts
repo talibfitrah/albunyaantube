@@ -9,7 +9,12 @@ import {
   createUser,
   updateUserRole,
   updateUserStatus,
-  deleteUser
+  deleteUser,
+  bulkBlock,
+  bulkDelete,
+  bulkRecover,
+  bulkRevokeSessions,
+  forceLogout
 } from '@/services/adminUsers';
 import type { AdminUser, AdminUsersPage } from '@/types/admin';
 
@@ -19,7 +24,12 @@ vi.mock('@/services/adminUsers', () => ({
   updateUserRole: vi.fn(),
   updateUserStatus: vi.fn(),
   deleteUser: vi.fn(),
-  sendPasswordReset: vi.fn()
+  sendPasswordReset: vi.fn(),
+  bulkBlock: vi.fn(),
+  bulkDelete: vi.fn(),
+  bulkRecover: vi.fn(),
+  bulkRevokeSessions: vi.fn(),
+  forceLogout: vi.fn()
 }));
 
 const i18n = createI18n({
@@ -75,6 +85,22 @@ const createUserMock = createUser as unknown as vi.Mock;
 const updateUserRoleMock = updateUserRole as unknown as vi.Mock;
 const updateUserStatusMock = updateUserStatus as unknown as vi.Mock;
 const deleteUserMock = deleteUser as unknown as vi.Mock;
+const bulkBlockMock = bulkBlock as unknown as vi.Mock;
+const bulkDeleteMock = bulkDelete as unknown as vi.Mock;
+const bulkRecoverMock = bulkRecover as unknown as vi.Mock;
+const bulkRevokeMock = bulkRevokeSessions as unknown as vi.Mock;
+const forceLogoutMock = forceLogout as unknown as vi.Mock;
+
+const thirdUser: AdminUser = {
+  id: 'user-3',
+  email: 'third@example.com',
+  role: 'MODERATOR',
+  status: 'ACTIVE',
+  displayName: 'Third User',
+  lastLoginAt: null,
+  createdAt: '2025-09-16T08:00:00Z',
+  updatedAt: '2025-09-16T08:00:00Z'
+};
 
 describe('UsersManagementView', () => {
   beforeEach(() => {
@@ -93,6 +119,11 @@ describe('UsersManagementView', () => {
     updateUserRoleMock.mockResolvedValue(undefined);
     updateUserStatusMock.mockResolvedValue(undefined);
     deleteUserMock.mockResolvedValue(undefined);
+    bulkBlockMock.mockResolvedValue(undefined);
+    bulkDeleteMock.mockResolvedValue(undefined);
+    bulkRecoverMock.mockResolvedValue(undefined);
+    bulkRevokeMock.mockResolvedValue(undefined);
+    forceLogoutMock.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -160,6 +191,55 @@ describe('UsersManagementView', () => {
 
     await waitFor(() => {
       expect(updateUserStatus).toHaveBeenCalledWith('user-1', 'DISABLED');
+    });
+  });
+
+  describe('T27: checkbox + bulk toolbar + force logout', () => {
+    it('shows mixed-result toast after bulk-block with 1 success and 2 failures', async () => {
+      // Arrange: 3 active users
+      fetchUsersPageMock.mockResolvedValue(createPage([baseUser, secondUser, thirdUser]));
+      bulkBlockMock.mockResolvedValue({
+        successes: ['user-1'],
+        failures: [
+          { uid: 'user-2', reason: 'already_blocked' },
+          { uid: 'user-3', reason: 'firebase_error' }
+        ]
+      });
+
+      renderView();
+      await screen.findByText('admin@example.com');
+
+      // Select all 3 row checkboxes
+      const checkboxes = screen.getAllByTestId('row-select');
+      expect(checkboxes).toHaveLength(3);
+      for (const cb of checkboxes) {
+        await fireEvent.click(cb);
+      }
+
+      // Click bulk-block button in the toolbar
+      const bulkBlockBtn = screen.getByTestId('bulk-block');
+      await fireEvent.click(bulkBlockBtn);
+
+      // Assert toast appears with correct counts
+      await waitFor(() => {
+        const toast = screen.getByTestId('bulk-result-toast');
+        expect(toast).toBeInTheDocument();
+        expect(toast.textContent).toContain('1 succeeded');
+        expect(toast.textContent).toContain('2 failed');
+      });
+    });
+
+    it('calls forceLogout for the correct user on force-logout button click', async () => {
+      forceLogoutMock.mockResolvedValue(undefined);
+      renderView();
+      await screen.findByText('admin@example.com');
+
+      const forceLogoutButtons = screen.getAllByTestId('force-logout-btn');
+      await fireEvent.click(forceLogoutButtons[0]);
+
+      await waitFor(() => {
+        expect(forceLogout).toHaveBeenCalledWith('user-1');
+      });
     });
   });
 });

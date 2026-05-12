@@ -2,6 +2,7 @@ package com.albunyaan.tube.service;
 
 import com.albunyaan.tube.config.FirestoreTimeoutProperties;
 import com.albunyaan.tube.exception.LastAdminException;
+import com.albunyaan.tube.security.FirebaseUserDetails;
 import com.albunyaan.tube.model.AuditLog;
 import com.albunyaan.tube.model.Role;
 import com.albunyaan.tube.model.User;
@@ -48,6 +49,7 @@ public class AuthService {
     private final Firestore firestore;
     private final CacheManager cacheManager;
     private final FirestoreTimeoutProperties timeoutProperties;
+    private final MailService mailService;
 
     @Value("${app.security.initial-admin.email}")
     private String initialAdminEmail;
@@ -64,7 +66,8 @@ public class AuthService {
                        AuditLogRepository auditLogRepository,
                        Firestore firestore,
                        CacheManager cacheManager,
-                       FirestoreTimeoutProperties timeoutProperties) {
+                       FirestoreTimeoutProperties timeoutProperties,
+                       MailService mailService) {
         this.firebaseAuth = firebaseAuth;
         this.userRepository = userRepository;
         this.auditLogService = auditLogService;
@@ -72,6 +75,7 @@ public class AuthService {
         this.firestore = firestore;
         this.cacheManager = cacheManager;
         this.timeoutProperties = timeoutProperties;
+        this.mailService = mailService;
     }
 
     /**
@@ -267,6 +271,32 @@ public class AuthService {
 
         logger.info("Role changed: uid={} from={} to={} actor={}",
                 uid, previousRole[0], newRole.getValue(), actorUid);
+
+        // Plan F (ADMIN-USER-01, F6) — auto-revoke refresh tokens so the new role
+        // takes effect immediately rather than after the existing JWT expires.
+        // Errors are absorbed: the role change has already committed. Audit entry
+        // distinguishes the auto-fire from an admin-triggered revoke.
+        FirebaseUserDetails actor =
+                new FirebaseUserDetails(actorUid, null, "admin");
+        try {
+            firebaseAuth.revokeRefreshTokens(uid);
+            auditLogService.log(
+                    "USER_SESSIONS_REVOKED_AUTO",
+                    "user", uid,
+                    actor,
+                    java.util.Map.of(
+                            "oldRole", previousRole[0] == null ? "" : previousRole[0],
+                            "newRole", newRole.getValue(),
+                            "trigger", "role_change"));
+        } catch (Exception e) {
+            // F6 + risk §11.6: log + audit-failure, never throw.
+            logger.error("auto-revoke after role change failed uid={}", uid, e);
+            auditLogService.log(
+                    "USER_SESSIONS_REVOKED_AUTO_FAILED",
+                    "user", uid,
+                    actor,
+                    java.util.Map.of("error", e.getClass().getSimpleName()));
+        }
 
         return updated;
     }
@@ -507,6 +537,25 @@ public class AuthService {
     }
 
     /**
+     * Plan F (ADMIN-USER-01, F6) — stand-alone refresh-token revocation.
+     * Extracted from the inline calls in {@link #blockUser} / {@link #softDeleteUser}
+     * so admins can force-logout a user without changing their account state.
+     */
+    public void revokeSessions(String uid,
+                               FirebaseUserDetails actor,
+                               String reason)
+            throws FirebaseAuthException {
+        firebaseAuth.revokeRefreshTokens(uid);
+        Map<String, Object> details = new HashMap<>();
+        if (reason != null && !reason.isBlank()) details.put("reason", reason);
+        auditLogService.log(
+                "USER_SESSIONS_REVOKED",
+                "user", uid,
+                actor,
+                details);
+    }
+
+    /**
      * Block a user: marks BLOCKED in Firestore + writes audit log inside a transaction,
      * then disables + revokes tokens in Firebase Auth and evicts the status cache.
      * Enforces the last-admin guard (D2) inside the same transaction.
@@ -684,9 +733,8 @@ public class AuthService {
      */
     public void sendPasswordResetEmail(String email) throws FirebaseAuthException {
         String link = firebaseAuth.generatePasswordResetLink(email);
-        // In production, send this link via email service
         logger.info("Password reset link generated for: {}", email);
-        // TODO: Integrate with email service
+        mailService.sendPasswordResetEmail(email, link);
     }
 
     /**

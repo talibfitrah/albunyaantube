@@ -58,6 +58,9 @@ class AuthServiceTest {
     @Mock
     private FirestoreTimeoutProperties timeoutProperties;
 
+    @Mock
+    private MailService mailService;
+
     @InjectMocks
     private AuthService authService;
 

@@ -901,6 +901,34 @@ export const messages = {
       },
       confirm: {
         deactivate: 'Deactivate {email}?'
+      },
+      bulk: {
+        block: 'Block',
+        delete: 'Delete',
+        recover: 'Recover',
+        revokeSessions: 'Force Logout',
+        selected: '{n} selected',
+        toast: {
+          summary: '{action} — {ok} succeeded, {fail} failed',
+          details: 'Show details'
+        },
+        reason: {
+          user_not_found: 'User not found',
+          already_blocked: 'Already blocked',
+          not_blocked: 'Not blocked',
+          already_deleted: 'Already deleted',
+          not_deleted: 'Not deleted',
+          self_action_forbidden: 'Cannot apply to your own account',
+          admin_target_forbidden: 'Cannot apply to admin accounts',
+          firebase_error: 'Provider error',
+          invalid_state: 'Invalid state for this action'
+        }
+      },
+      confirmDelete: {
+        bulk: 'Soft-delete {n} users? They can be recovered later.'
+      },
+      forceLogout: {
+        confirm: 'Force logout {email}? They will be signed out within an hour.'
       }
     },
     audit: {
@@ -934,7 +962,8 @@ export const messages = {
       pagination: {
         previous: 'Previous',
         next: 'Next',
-        showing: 'Showing {count} of {limit} events'
+        showing: 'Showing {count} of {limit} events',
+        loadMore: 'Load more'
       }
     },
     activity: {
@@ -2286,6 +2315,34 @@ export const messages = {
       },
       confirm: {
         deactivate: 'هل ترغب في تعطيل {email}؟'
+      },
+      bulk: {
+        block: 'حظر',
+        delete: 'حذف',
+        recover: 'استعادة',
+        revokeSessions: 'تسجيل خروج إجباري',
+        selected: 'تم تحديد {n}',
+        toast: {
+          summary: '{action} — نجح {ok}، فشل {fail}',
+          details: 'عرض التفاصيل'
+        },
+        reason: {
+          user_not_found: 'المستخدم غير موجود',
+          already_blocked: 'محظور بالفعل',
+          not_blocked: 'غير محظور',
+          already_deleted: 'محذوف بالفعل',
+          not_deleted: 'غير محذوف',
+          self_action_forbidden: 'لا يمكن تطبيق هذا الإجراء على حسابك',
+          admin_target_forbidden: 'لا يمكن تطبيق هذا الإجراء على حسابات المسؤولين',
+          firebase_error: 'خطأ في الموفر',
+          invalid_state: 'الحالة غير صالحة لهذا الإجراء'
+        }
+      },
+      confirmDelete: {
+        bulk: 'حذف {n} مستخدمين مبدئياً؟ يمكن استعادتهم لاحقاً.'
+      },
+      forceLogout: {
+        confirm: 'تسجيل خروج إجباري لـ {email}؟ سيتم تسجيل خروجه خلال ساعة.'
       }
     },
     audit: {
@@ -2319,7 +2376,8 @@ export const messages = {
       pagination: {
         previous: 'السابق',
         next: 'التالي',
-        showing: 'عرض {count} من {limit} أحداث'
+        showing: 'عرض {count} من {limit} أحداث',
+        loadMore: 'تحميل المزيد'
       }
     },
     activity: {
@@ -3502,6 +3560,34 @@ export const messages = {
       },
       confirm: {
         deactivate: '{email} deactiveren?'
+      },
+      bulk: {
+        block: 'Blokkeren',
+        delete: 'Verwijderen',
+        recover: 'Herstellen',
+        revokeSessions: 'Geforceerd afmelden',
+        selected: '{n} geselecteerd',
+        toast: {
+          summary: '{action} — {ok} geslaagd, {fail} mislukt',
+          details: 'Details tonen'
+        },
+        reason: {
+          user_not_found: 'Gebruiker niet gevonden',
+          already_blocked: 'Al geblokkeerd',
+          not_blocked: 'Niet geblokkeerd',
+          already_deleted: 'Al verwijderd',
+          not_deleted: 'Niet verwijderd',
+          self_action_forbidden: 'Kan niet op je eigen account toepassen',
+          admin_target_forbidden: 'Kan niet op beheerdersaccounts toepassen',
+          firebase_error: 'Providerfout',
+          invalid_state: 'Ongeldige status voor deze actie'
+        }
+      },
+      confirmDelete: {
+        bulk: '{n} gebruikers tijdelijk verwijderen? Ze kunnen later worden hersteld.'
+      },
+      forceLogout: {
+        confirm: 'Geforceerd afmelden van {email}? Ze worden binnen een uur uitgelogd.'
       }
     },
     audit: {
@@ -3535,7 +3621,8 @@ export const messages = {
       pagination: {
         previous: 'Vorige',
         next: 'Volgende',
-        showing: '{count} van {limit} gebeurtenissen'
+        showing: '{count} van {limit} gebeurtenissen',
+        loadMore: 'Meer laden'
       }
     },
     activity: {
