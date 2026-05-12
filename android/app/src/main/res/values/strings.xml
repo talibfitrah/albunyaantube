@@ -700,4 +700,14 @@
     <string name="settings_account_sign_out_confirm_body">You\'ll need to sign in again to access admin features and personalised content.</string>
     <string name="settings_account_sign_out_confirm_action">Sign out</string>
     <string name="settings_account_sign_out_cancel">Cancel</string>
+
+    <!-- My Submissions (Plan E T10) -->
+    <string name="my_submissions_title">My Submissions</string>
+    <string name="my_submissions_empty">No submissions yet. Tap + to suggest content for the library.</string>
+    <string name="my_submissions_status_pending">Pending</string>
+    <string name="my_submissions_status_approved">Approved</string>
+    <string name="my_submissions_status_rejected">Rejected</string>
+    <string name="my_submissions_status_request_changes">Changes requested</string>
+    <string name="my_submissions_submit_cta">Suggest content</string>
+    <string name="my_submissions_error">Could not load submissions</string>
 </resources>

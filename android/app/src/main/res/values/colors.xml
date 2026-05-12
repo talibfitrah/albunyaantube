@@ -76,4 +76,10 @@
 
     <!-- Settings icon backgrounds (theme-aware) -->
     <color name="settings_icon_bg">#F0F0F0</color>
+
+    <!-- My Submissions status strip / badge colours -->
+    <color name="my_submission_status_pending">#FFA000</color>
+    <color name="my_submission_status_approved">#43A047</color>
+    <color name="my_submission_status_rejected">#E53935</color>
+    <color name="my_submission_status_request_changes">#1E88E5</color>
 </resources>
