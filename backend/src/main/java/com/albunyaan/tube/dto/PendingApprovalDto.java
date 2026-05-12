@@ -48,6 +48,16 @@ public class PendingApprovalDto {
     private String submittedBy;
 
     /**
+     * Display name of submitter
+     */
+    private String submittedByDisplayName;
+
+    /**
+     * Email of submitter
+     */
+    private String submittedByEmail;
+
+    /**
      * Current status: PENDING, APPROVED, REJECTED
      */
     private String status;
@@ -127,6 +137,22 @@ public class PendingApprovalDto {
 
     public void setSubmittedBy(String submittedBy) {
         this.submittedBy = submittedBy;
+    }
+
+    public String getSubmittedByDisplayName() {
+        return submittedByDisplayName;
+    }
+
+    public void setSubmittedByDisplayName(String submittedByDisplayName) {
+        this.submittedByDisplayName = submittedByDisplayName;
+    }
+
+    public String getSubmittedByEmail() {
+        return submittedByEmail;
+    }
+
+    public void setSubmittedByEmail(String submittedByEmail) {
+        this.submittedByEmail = submittedByEmail;
     }
 
     public String getStatus() {

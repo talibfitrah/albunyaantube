@@ -7,6 +7,7 @@ import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import com.albunyaan.tube.repository.CategoryRepository;
+import com.albunyaan.tube.repository.UserRepository;
 import com.albunyaan.tube.util.CursorUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,6 +41,7 @@ public class ApprovalService {
     private final AuditLogService auditLogService;
     private final SortOrderService sortOrderService;
     private final StreamIndexService streamIndexService;
+    private final UserRepository userRepository;
 
     public ApprovalService(ChannelRepository channelRepository,
                           PlaylistRepository playlistRepository,
@@ -48,7 +50,8 @@ public class ApprovalService {
                           ApprovalRepository approvalRepository,
                           AuditLogService auditLogService,
                           SortOrderService sortOrderService,
-                          StreamIndexService streamIndexService) {
+                          StreamIndexService streamIndexService,
+                          UserRepository userRepository) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
         this.videoRepository = videoRepository;
@@ -57,6 +60,7 @@ public class ApprovalService {
         this.auditLogService = auditLogService;
         this.sortOrderService = sortOrderService;
         this.streamIndexService = streamIndexService;
+        this.userRepository = userRepository;
     }
 
     /**
@@ -864,6 +868,18 @@ public class ApprovalService {
         dto.setSubmittedAt(channel.getCreatedAt());
         dto.setSubmittedBy(channel.getSubmittedBy());
 
+        // Enrich with submitter details
+        if (dto.getSubmittedBy() != null && !dto.getSubmittedBy().isEmpty()) {
+            try {
+                userRepository.findByUid(dto.getSubmittedBy()).ifPresent(u -> {
+                    dto.setSubmittedByDisplayName(u.getDisplayName());
+                    dto.setSubmittedByEmail(u.getEmail());
+                });
+            } catch (Exception e) {
+                log.debug("Failed to enrich submittedBy uid={}", dto.getSubmittedBy(), e);
+            }
+        }
+
         // Get first category name
         if (channel.getCategoryIds() != null && !channel.getCategoryIds().isEmpty()) {
             try {
@@ -905,6 +921,18 @@ public class ApprovalService {
         dto.setSubmittedAt(playlist.getCreatedAt());
         dto.setSubmittedBy(playlist.getSubmittedBy());
 
+        // Enrich with submitter details
+        if (dto.getSubmittedBy() != null && !dto.getSubmittedBy().isEmpty()) {
+            try {
+                userRepository.findByUid(dto.getSubmittedBy()).ifPresent(u -> {
+                    dto.setSubmittedByDisplayName(u.getDisplayName());
+                    dto.setSubmittedByEmail(u.getEmail());
+                });
+            } catch (Exception e) {
+                log.debug("Failed to enrich submittedBy uid={}", dto.getSubmittedBy(), e);
+            }
+        }
+
         // Get first category name
         if (playlist.getCategoryIds() != null && !playlist.getCategoryIds().isEmpty()) {
             try {
@@ -942,6 +970,18 @@ public class ApprovalService {
         dto.setTitle(video.getTitle());
         dto.setSubmittedAt(video.getCreatedAt());
         dto.setSubmittedBy(video.getSubmittedBy());
+
+        // Enrich with submitter details
+        if (dto.getSubmittedBy() != null && !dto.getSubmittedBy().isEmpty()) {
+            try {
+                userRepository.findByUid(dto.getSubmittedBy()).ifPresent(u -> {
+                    dto.setSubmittedByDisplayName(u.getDisplayName());
+                    dto.setSubmittedByEmail(u.getEmail());
+                });
+            } catch (Exception e) {
+                log.debug("Failed to enrich submittedBy uid={}", dto.getSubmittedBy(), e);
+            }
+        }
 
         // Get first category name
         if (video.getCategoryIds() != null && !video.getCategoryIds().isEmpty()) {
