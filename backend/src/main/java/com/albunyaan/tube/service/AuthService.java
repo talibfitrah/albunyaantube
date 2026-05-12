@@ -272,6 +272,32 @@ public class AuthService {
         logger.info("Role changed: uid={} from={} to={} actor={}",
                 uid, previousRole[0], newRole.getValue(), actorUid);
 
+        // Plan F (ADMIN-USER-01, F6) — auto-revoke refresh tokens so the new role
+        // takes effect immediately rather than after the existing JWT expires.
+        // Errors are absorbed: the role change has already committed. Audit entry
+        // distinguishes the auto-fire from an admin-triggered revoke.
+        FirebaseUserDetails actor =
+                new FirebaseUserDetails(actorUid, null, "admin");
+        try {
+            firebaseAuth.revokeRefreshTokens(uid);
+            auditLogService.log(
+                    "USER_SESSIONS_REVOKED_AUTO",
+                    "user", uid,
+                    actor,
+                    java.util.Map.of(
+                            "oldRole", previousRole[0] == null ? "" : previousRole[0],
+                            "newRole", newRole.getValue(),
+                            "trigger", "role_change"));
+        } catch (Exception e) {
+            // F6 + risk §11.6: log + audit-failure, never throw.
+            logger.error("auto-revoke after role change failed uid={}", uid, e);
+            auditLogService.log(
+                    "USER_SESSIONS_REVOKED_AUTO_FAILED",
+                    "user", uid,
+                    actor,
+                    java.util.Map.of("error", e.getClass().getSimpleName()));
+        }
+
         return updated;
     }
 
