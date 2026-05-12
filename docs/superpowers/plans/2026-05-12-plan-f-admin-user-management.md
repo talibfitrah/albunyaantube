@@ -1279,6 +1279,8 @@ git commit -m "[FEAT-ADMIN-USER-01-T13]: BulkAction enum + BulkUserActionRequest
 
 Per spec §7 BulkUserService design.
 
+> **API alignment amendment (2026-05-12, applies to T14-T18):** Same root cause as the T5/T9/T11 amendments — `AuditLogService.log(...)` takes a `FirebaseUserDetails actor`, not separate `(actorUid, actorEmail)` strings. And `AuthService.revokeSessions` (per T9) takes `FirebaseUserDetails actor`, not `String actorUid`. T14's `BulkUserService.execute(...)` therefore takes a `FirebaseUserDetails actor` parameter; internally it extracts `actorUid = actor.getUid()` when calling `blockUser`/`softDeleteUser`/`recoverUser` (those take String actorUid) and passes `actor` directly when calling `revokeSessions` and the audit log.
+
 - [ ] **Step 1: Write the failing happy-path test**
 
 ```java
@@ -1287,6 +1289,7 @@ package com.albunyaan.tube.service;
 import com.albunyaan.tube.dto.BulkUserActionResult;
 import com.albunyaan.tube.model.User;
 import com.albunyaan.tube.repository.UserRepository;
+import com.albunyaan.tube.security.FirebaseUserDetails;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -1297,6 +1300,9 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class BulkUserServiceTest {
+
+    private static final FirebaseUserDetails ADMIN_ACTOR =
+            new FirebaseUserDetails("admin-uid", "admin@fitrahtube.com", "admin");
 
     @Test
     void happyPath_block_threeUsersSucceed() throws Exception {
@@ -1312,7 +1318,7 @@ class BulkUserServiceTest {
         BulkUserActionResult result = svc.execute(
                 BulkAction.BLOCK,
                 List.of("u1", "u2", "u3"),
-                "admin-uid",
+                ADMIN_ACTOR,
                 "policy violation");
 
         assertEquals(List.of("u1", "u2", "u3"), result.getSuccesses());
@@ -1325,7 +1331,7 @@ class BulkUserServiceTest {
         verify(auditLog).log(
                 eq("USER_BULK_ACTION"),
                 eq("user"), eq("(batch)"),
-                eq("admin-uid"), eq("admin-uid"),
+                eq(ADMIN_ACTOR),
                 argThat(m -> "block".equals(m.get("action"))
                         && Integer.valueOf(3).equals(m.get("successes"))
                         && Integer.valueOf(0).equals(m.get("failures"))));
@@ -1338,8 +1344,6 @@ class BulkUserServiceTest {
     }
 }
 ```
-
-> **`AuditLogService.log(...)` signature mismatch:** if the existing signature differs from the 6-arg form above (e.g., no `details` map), match whatever pattern Plan E's `ApprovalService.requestChanges` uses for its audit entries. Consistency with existing rows wins.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -1357,6 +1361,7 @@ import com.albunyaan.tube.dto.BulkUserActionResult;
 import com.albunyaan.tube.dto.BulkUserActionResult.FailureEntry;
 import com.albunyaan.tube.model.User;
 import com.albunyaan.tube.repository.UserRepository;
+import com.albunyaan.tube.security.FirebaseUserDetails;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -1390,8 +1395,9 @@ public class BulkUserService {
 
     public BulkUserActionResult execute(BulkAction action,
                                          List<String> uids,
-                                         String actorUid,
+                                         FirebaseUserDetails actor,
                                          String reason) {
+        String actorUid = actor.getUid();
         List<String> successes = new ArrayList<>();
         List<FailureEntry> failures = new ArrayList<>();
 
@@ -1401,7 +1407,7 @@ public class BulkUserService {
                     case BLOCK            -> authService.blockUser(uid, actorUid, reason);
                     case DELETE           -> authService.softDeleteUser(uid, actorUid, reason);
                     case RECOVER          -> authService.recoverUser(uid, actorUid);
-                    case REVOKE_SESSIONS  -> authService.revokeSessions(uid, actorUid, reason);
+                    case REVOKE_SESSIONS  -> authService.revokeSessions(uid, actor, reason);
                 }
                 successes.add(uid);
             } catch (Exception e) {
@@ -1419,7 +1425,7 @@ public class BulkUserService {
         auditLogService.log(
                 "USER_BULK_ACTION",
                 "user", "(batch)",
-                actorUid, actorUid,
+                actor,
                 details);
 
         return new BulkUserActionResult(successes, failures);
@@ -1470,7 +1476,7 @@ Append to `BulkUserServiceTest.java`:
         BulkUserActionResult result = svc.execute(
                 BulkAction.BLOCK,
                 List.of("admin-uid", "other-uid"),
-                "admin-uid",
+                ADMIN_ACTOR,
                 null);
 
         assertEquals(List.of("other-uid"), result.getSuccesses());
@@ -1545,7 +1551,7 @@ Append to `BulkUserServiceTest.java`:
         BulkUserActionResult result = svc.execute(
                 BulkAction.BLOCK,
                 List.of("admin-target", "user-target"),
-                "actor",
+                ADMIN_ACTOR,
                 null);
 
         assertEquals(List.of("user-target"), result.getSuccesses());
@@ -1567,12 +1573,12 @@ Append to `BulkUserServiceTest.java`:
         BulkUserActionResult result = svc.execute(
                 BulkAction.RECOVER,
                 List.of("admin-target"),
-                "actor",
+                ADMIN_ACTOR,
                 null);
 
         assertEquals(List.of("admin-target"), result.getSuccesses());
         assertTrue(result.getFailures().isEmpty());
-        verify(authService).recoverUser("admin-target", "actor");
+        verify(authService).recoverUser("admin-target", "admin-uid");
     }
 ```
 
@@ -1635,12 +1641,12 @@ Append to `BulkUserServiceTest.java`:
 
         when(userRepo.findByUid("u1")).thenReturn(Optional.of(userWithRole("user")));
         doThrow(new IllegalStateException("User is already blocked"))
-                .when(authService).blockUser("u1", "actor", null);
+                .when(authService).blockUser("u1", "admin-uid", null);
 
         BulkUserService svc = new BulkUserService(authService, userRepo, auditLog);
 
         BulkUserActionResult result = svc.execute(
-                BulkAction.BLOCK, List.of("u1"), "actor", null);
+                BulkAction.BLOCK, List.of("u1"), ADMIN_ACTOR, null);
 
         assertEquals("already_blocked", result.getFailures().get(0).reason());
     }
@@ -1653,12 +1659,12 @@ Append to `BulkUserServiceTest.java`:
 
         when(userRepo.findByUid("u1")).thenReturn(Optional.of(userWithRole("user")));
         doThrow(new com.albunyaan.tube.service.UserNotFoundException("u1"))
-                .when(authService).blockUser("u1", "actor", null);
+                .when(authService).blockUser("u1", "admin-uid", null);
 
         BulkUserService svc = new BulkUserService(authService, userRepo, auditLog);
 
         BulkUserActionResult result = svc.execute(
-                BulkAction.BLOCK, List.of("u1"), "actor", null);
+                BulkAction.BLOCK, List.of("u1"), ADMIN_ACTOR, null);
 
         assertEquals("user_not_found", result.getFailures().get(0).reason());
     }
@@ -1671,12 +1677,12 @@ Append to `BulkUserServiceTest.java`:
 
         when(userRepo.findByUid("u1")).thenReturn(Optional.of(userWithRole("user")));
         doThrow(new IllegalStateException("User already deleted"))
-                .when(authService).softDeleteUser("u1", "actor", null);
+                .when(authService).softDeleteUser("u1", "admin-uid", null);
 
         BulkUserService svc = new BulkUserService(authService, userRepo, auditLog);
 
         BulkUserActionResult result = svc.execute(
-                BulkAction.DELETE, List.of("u1"), "actor", null);
+                BulkAction.DELETE, List.of("u1"), ADMIN_ACTOR, null);
 
         assertEquals("already_deleted", result.getFailures().get(0).reason());
     }
@@ -1689,12 +1695,12 @@ Append to `BulkUserServiceTest.java`:
 
         when(userRepo.findByUid("u1")).thenReturn(Optional.of(userWithRole("user")));
         doThrow(new IllegalStateException("some weird business rule"))
-                .when(authService).blockUser("u1", "actor", null);
+                .when(authService).blockUser("u1", "admin-uid", null);
 
         BulkUserService svc = new BulkUserService(authService, userRepo, auditLog);
 
         BulkUserActionResult result = svc.execute(
-                BulkAction.BLOCK, List.of("u1"), "actor", null);
+                BulkAction.BLOCK, List.of("u1"), ADMIN_ACTOR, null);
 
         assertEquals("invalid_state", result.getFailures().get(0).reason());
     }
@@ -1776,7 +1782,7 @@ After the single `revoke-sessions` endpoint (added in T10), append:
             @Valid @RequestBody BulkUserActionRequest req,
             @AuthenticationPrincipal com.albunyaan.tube.security.FirebaseUserDetails actor) {
         return ResponseEntity.ok(bulkUserService.execute(
-                BulkAction.BLOCK, req.getUids(), actor.getUid(), req.getReason()));
+                BulkAction.BLOCK, req.getUids(), actor, req.getReason()));
     }
 
     @PreAuthorize("hasRole('ADMIN')")
@@ -1785,7 +1791,7 @@ After the single `revoke-sessions` endpoint (added in T10), append:
             @Valid @RequestBody BulkUserActionRequest req,
             @AuthenticationPrincipal com.albunyaan.tube.security.FirebaseUserDetails actor) {
         return ResponseEntity.ok(bulkUserService.execute(
-                BulkAction.DELETE, req.getUids(), actor.getUid(), req.getReason()));
+                BulkAction.DELETE, req.getUids(), actor, req.getReason()));
     }
 
     @PreAuthorize("hasRole('ADMIN')")
@@ -1794,7 +1800,7 @@ After the single `revoke-sessions` endpoint (added in T10), append:
             @Valid @RequestBody BulkUserActionRequest req,
             @AuthenticationPrincipal com.albunyaan.tube.security.FirebaseUserDetails actor) {
         return ResponseEntity.ok(bulkUserService.execute(
-                BulkAction.RECOVER, req.getUids(), actor.getUid(), req.getReason()));
+                BulkAction.RECOVER, req.getUids(), actor, req.getReason()));
     }
 
     @PreAuthorize("hasRole('ADMIN')")
@@ -1803,7 +1809,7 @@ After the single `revoke-sessions` endpoint (added in T10), append:
             @Valid @RequestBody BulkUserActionRequest req,
             @AuthenticationPrincipal com.albunyaan.tube.security.FirebaseUserDetails actor) {
         return ResponseEntity.ok(bulkUserService.execute(
-                BulkAction.REVOKE_SESSIONS, req.getUids(), actor.getUid(), req.getReason()));
+                BulkAction.REVOKE_SESSIONS, req.getUids(), actor, req.getReason()));
     }
 ```
 
