@@ -71,6 +71,11 @@ dependencies {
     // OkHttp for NewPipe's HTTP client
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
+    // Plan F (ADMIN-USER-01) — Microsoft Graph for outbound mail
+    implementation("com.microsoft.azure:msal4j:1.16.+")
+    implementation("com.microsoft.graph:microsoft-graph:6.+")
+    implementation("com.azure:azure-identity:1.+")
+
     testImplementation("org.springframework.boot:spring-boot-starter-test")
 
     // Embedded Redis - BACKEND-PERF-01: Enable for testing
