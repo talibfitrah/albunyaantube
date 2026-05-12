@@ -700,4 +700,29 @@
     <string name="settings_account_sign_out_confirm_body">You\'ll need to sign in again to access admin features and personalised content.</string>
     <string name="settings_account_sign_out_confirm_action">Sign out</string>
     <string name="settings_account_sign_out_cancel">Cancel</string>
+
+    <!-- My Submissions (Plan E T10) -->
+    <string name="my_submissions_title">My Submissions</string>
+    <string name="my_submissions_empty">No submissions yet. Tap + to suggest content for the library.</string>
+    <string name="my_submissions_status_pending">Pending</string>
+    <string name="my_submissions_status_approved">Approved</string>
+    <string name="my_submissions_status_rejected">Rejected</string>
+    <string name="my_submissions_status_request_changes">Changes requested</string>
+    <string name="my_submissions_submit_cta">Suggest content</string>
+    <string name="my_submissions_error">Could not load submissions</string>
+
+    <!-- SubmitContentBottomSheet -->
+    <string name="submit_content_sheet_title">Suggest Content</string>
+    <string name="submit_content_url_hint">YouTube URL (channel, playlist, or video)</string>
+    <string name="submit_content_category_hint">Category</string>
+    <string name="submit_content_submit_button">Submit for review</string>
+    <string name="submit_content_invalid_url">Couldn\'t recognise that URL. Paste a YouTube channel, playlist, or video link.</string>
+    <string name="submit_content_pick_category">Pick a category</string>
+    <string name="submit_content_success">Submitted for review</string>
+    <string name="submit_content_rate_limited">Daily submission limit reached. Try again in %1$s.</string>
+    <string name="submit_content_error_generic">Could not submit. Please try again.</string>
+    <string name="submit_content_conflict">Already in the registry.</string>
+    <string name="submit_content_detected_channel">Detected: Channel</string>
+    <string name="submit_content_detected_playlist">Detected: Playlist</string>
+    <string name="submit_content_detected_video">Detected: Video</string>
 </resources>

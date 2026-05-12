@@ -1,0 +1,178 @@
+package com.albunyaan.tube.ui.me.submissions
+
+import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.widget.ArrayAdapter
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import com.albunyaan.tube.R
+import com.albunyaan.tube.databinding.BottomSheetSubmitContentBinding
+import com.google.android.material.bottomsheet.BottomSheetDialogFragment
+import com.google.android.material.snackbar.Snackbar
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
+import java.util.regex.Pattern
+
+@AndroidEntryPoint
+class SubmitContentBottomSheet : BottomSheetDialogFragment() {
+
+    private val viewModel: SubmitContentViewModel by viewModels()
+    private var _binding: BottomSheetSubmitContentBinding? = null
+    private val binding get() = _binding!!
+
+    private var parsedUrl: ParsedYouTubeUrl? = null
+    private var selectedCategoryId: String? = null
+
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?,
+    ): View {
+        _binding = BottomSheetSubmitContentBinding.inflate(inflater, container, false)
+        return binding.root
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+
+        // URL field — parse on every keystroke
+        binding.urlInput.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) {
+                val raw = s?.toString().orEmpty()
+                parsedUrl = parseYouTubeUrl(raw)
+                if (raw.isEmpty()) {
+                    binding.detectedType.visibility = View.GONE
+                } else {
+                    binding.detectedType.visibility = View.VISIBLE
+                    binding.detectedType.setText(
+                        when (parsedUrl?.type) {
+                            DetectedContentType.CHANNEL -> R.string.submit_content_detected_channel
+                            DetectedContentType.PLAYLIST -> R.string.submit_content_detected_playlist
+                            DetectedContentType.VIDEO -> R.string.submit_content_detected_video
+                            null -> R.string.submit_content_invalid_url
+                        }
+                    )
+                }
+                updateSubmitEnabled()
+            }
+
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+        })
+
+        // Category dropdown
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.categories.collect { cats ->
+                    val labels = cats.map { it.name }
+                    val adapter = ArrayAdapter(
+                        requireContext(),
+                        android.R.layout.simple_list_item_1,
+                        labels,
+                    )
+                    binding.categoryDropdown.setAdapter(adapter)
+                    binding.categoryDropdown.setOnItemClickListener { _, _, pos, _ ->
+                        selectedCategoryId = cats.getOrNull(pos)?.id
+                        updateSubmitEnabled()
+                    }
+                }
+            }
+        }
+
+        // Busy state → button enable + progress bar
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.submitting.collect { busy ->
+                    binding.submitButton.isEnabled =
+                        !busy && parsedUrl != null && selectedCategoryId != null
+                    binding.submitProgress.visibility =
+                        if (busy) View.VISIBLE else View.GONE
+                }
+            }
+        }
+
+        // One-shot events
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.events.collect { event ->
+                    if (event == null) return@collect
+                    val anchor = requireView()
+                    when (event) {
+                        SubmitContentEvent.Success -> {
+                            Snackbar.make(anchor, R.string.submit_content_success, Snackbar.LENGTH_SHORT).show()
+                            dismiss()
+                        }
+                        is SubmitContentEvent.RateLimited -> {
+                            val hours = (event.retryAfterSeconds + 3599) / 3600
+                            Snackbar.make(
+                                anchor,
+                                getString(R.string.submit_content_rate_limited, "${hours}h"),
+                                Snackbar.LENGTH_LONG,
+                            ).show()
+                        }
+                        SubmitContentEvent.Conflict -> {
+                            Snackbar.make(anchor, R.string.submit_content_conflict, Snackbar.LENGTH_LONG).show()
+                        }
+                        is SubmitContentEvent.Error -> {
+                            Snackbar.make(anchor, event.message, Snackbar.LENGTH_LONG).show()
+                        }
+                    }
+                    viewModel.consumeEvent()
+                }
+            }
+        }
+
+        binding.submitButton.setOnClickListener {
+            val parsed = parsedUrl ?: return@setOnClickListener
+            val catId = selectedCategoryId ?: return@setOnClickListener
+            viewModel.submit(parsed, catId)
+        }
+    }
+
+    private fun updateSubmitEnabled() {
+        binding.submitButton.isEnabled =
+            parsedUrl != null && selectedCategoryId != null && !viewModel.submitting.value
+    }
+
+    /**
+     * Recognises the most common YouTube URL shapes.
+     * @handle / /c/ form is deferred — only UCxxx channel IDs are supported for now.
+     */
+    private fun parseYouTubeUrl(input: String): ParsedYouTubeUrl? {
+        val url = input.trim()
+        if (url.isEmpty()) return null
+
+        // youtu.be/<id> → video
+        val short = Pattern.compile("""youtu\.be/([A-Za-z0-9_-]{11})""").matcher(url)
+        if (short.find()) return ParsedYouTubeUrl(DetectedContentType.VIDEO, short.group(1)!!)
+
+        // youtube.com/watch?v=<id> → video
+        val watch = Pattern.compile("""[?&]v=([A-Za-z0-9_-]{11})""").matcher(url)
+        if (watch.find()) return ParsedYouTubeUrl(DetectedContentType.VIDEO, watch.group(1)!!)
+
+        // youtube.com/playlist?list=<id> → playlist
+        val list = Pattern.compile("""[?&]list=([A-Za-z0-9_-]{10,})""").matcher(url)
+        if (list.find()) return ParsedYouTubeUrl(DetectedContentType.PLAYLIST, list.group(1)!!)
+
+        // youtube.com/channel/<UCxxx> → channel (handle / /c/ deferred)
+        val ch = Pattern.compile("""youtube\.com/channel/(UC[A-Za-z0-9_-]{20,})""").matcher(url)
+        if (ch.find()) return ParsedYouTubeUrl(DetectedContentType.CHANNEL, ch.group(1)!!)
+
+        return null
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        _binding = null
+    }
+
+    companion object {
+        const val TAG = "SubmitContentBottomSheet"
+    }
+}

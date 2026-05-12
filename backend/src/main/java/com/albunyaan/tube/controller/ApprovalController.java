@@ -5,6 +5,7 @@ import com.albunyaan.tube.repository.ApprovalRepository;
 import com.albunyaan.tube.security.FirebaseUserDetails;
 import com.albunyaan.tube.service.ApprovalService;
 import com.albunyaan.tube.service.PublicContentCacheService;
+import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -218,6 +219,50 @@ public class ApprovalController {
             return ResponseEntity.notFound().build();
         } catch (Exception e) {
             log.error("Failed to reject item: {}", id, e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * POST /api/admin/approvals/{id}/request-changes
+     *
+     * Request changes on a pending item
+     *
+     * Body:
+     * {
+     *   "note": "Please improve the description",
+     *   "contentType": "channel|playlist|video"
+     * }
+     */
+    @PreAuthorize("hasRole('ADMIN')")
+    @PostMapping("/{id}/request-changes")
+    public ResponseEntity<ApprovalResponseDto> requestChanges(
+            @PathVariable String id,
+            @Valid @RequestBody RequestChangesRequest request,
+            @AuthenticationPrincipal FirebaseUserDetails user)
+            throws ExecutionException, InterruptedException, TimeoutException {
+
+        try {
+            log.debug("POST /request-changes - id={}, contentType={}, user={}",
+                    id, request.getContentType(), user.getUid());
+
+            ApprovalResponseDto response = approvalService.requestChanges(
+                    id, request.getNote(), request.getContentType(), user.getUid(), user.getEmail());
+            try {
+                publicContentCacheService.evictPublicContentCaches();
+            } catch (Exception ce) {
+                log.warn("Cache eviction failed after request-changes {}: {}", id, ce.getMessage());
+            }
+
+            return ResponseEntity.ok(response);
+        } catch (IllegalStateException e) {
+            log.warn("Request-changes failed - invalid state: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        } catch (IllegalArgumentException e) {
+            log.warn("Request-changes failed - item not found: {}", id);
+            return ResponseEntity.notFound().build();
+        } catch (Exception e) {
+            log.error("Failed to request-changes on item: {}", id, e);
             return ResponseEntity.internalServerError().build();
         }
     }

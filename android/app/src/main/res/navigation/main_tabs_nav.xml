@@ -52,7 +52,17 @@
         android:id="@+id/meFragment"
         android:name="com.albunyaan.tube.ui.me.MeFragment"
         android:label="@string/nav_me"
-        tools:layout="@layout/fragment_me" />
+        tools:layout="@layout/fragment_me">
+        <action
+            android:id="@+id/action_me_to_mySubmissions"
+            app:destination="@id/mySubmissionsFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/mySubmissionsFragment"
+        android:name="com.albunyaan.tube.ui.me.submissions.MySubmissionsFragment"
+        android:label="@string/my_submissions_title"
+        tools:layout="@layout/fragment_my_submissions" />
 
     <fragment
         android:id="@+id/downloadsFragment"

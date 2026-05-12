@@ -7,6 +7,7 @@ import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import com.albunyaan.tube.repository.CategoryRepository;
+import com.albunyaan.tube.repository.UserRepository;
 import com.albunyaan.tube.util.CursorUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,7 +31,7 @@ public class ApprovalService {
     private static final Logger log = LoggerFactory.getLogger(ApprovalService.class);
 
     private static final java.util.Set<String> VALID_TYPES = java.util.Set.of("CHANNEL", "PLAYLIST", "VIDEO");
-    private static final java.util.Set<String> VALID_STATUSES = java.util.Set.of("PENDING", "APPROVED", "REJECTED");
+    private static final java.util.Set<String> VALID_STATUSES = java.util.Set.of("PENDING", "APPROVED", "REJECTED", "REQUEST_CHANGES");
 
     private final ChannelRepository channelRepository;
     private final PlaylistRepository playlistRepository;
@@ -40,6 +41,7 @@ public class ApprovalService {
     private final AuditLogService auditLogService;
     private final SortOrderService sortOrderService;
     private final StreamIndexService streamIndexService;
+    private final UserRepository userRepository;
 
     public ApprovalService(ChannelRepository channelRepository,
                           PlaylistRepository playlistRepository,
@@ -48,7 +50,8 @@ public class ApprovalService {
                           ApprovalRepository approvalRepository,
                           AuditLogService auditLogService,
                           SortOrderService sortOrderService,
-                          StreamIndexService streamIndexService) {
+                          StreamIndexService streamIndexService,
+                          UserRepository userRepository) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
         this.videoRepository = videoRepository;
@@ -57,6 +60,7 @@ public class ApprovalService {
         this.auditLogService = auditLogService;
         this.sortOrderService = sortOrderService;
         this.streamIndexService = streamIndexService;
+        this.userRepository = userRepository;
     }
 
     /**
@@ -727,6 +731,132 @@ public class ApprovalService {
         throw new IllegalArgumentException("Item not found: " + id);
     }
 
+    /**
+     * Request changes on a pending item.
+     * Only valid from PENDING status; re-submission via T1 flips REQUEST_CHANGES → PENDING.
+     */
+    public ApprovalResponseDto requestChanges(String id, String note, String contentType,
+                                              String actorUid, String actorDisplayName)
+            throws ExecutionException, InterruptedException, TimeoutException {
+
+        if (note == null || note.isBlank()) {
+            throw new IllegalArgumentException("Review note must not be blank for REQUEST_CHANGES");
+        }
+
+        // Try to find as channel first
+        Optional<Channel> channelOpt = channelRepository.findById(id);
+        if (channelOpt.isPresent()) {
+            return requestChangesChannel(channelOpt.get(), note, actorUid, actorDisplayName);
+        }
+
+        // Try to find as playlist
+        Optional<Playlist> playlistOpt = playlistRepository.findById(id);
+        if (playlistOpt.isPresent()) {
+            return requestChangesPlaylist(playlistOpt.get(), note, actorUid, actorDisplayName);
+        }
+
+        // Try to find as video
+        Optional<Video> videoOpt = videoRepository.findById(id);
+        if (videoOpt.isPresent()) {
+            return requestChangesVideo(videoOpt.get(), note, actorUid, actorDisplayName);
+        }
+
+        throw new IllegalArgumentException("Item not found: " + id);
+    }
+
+    private ApprovalResponseDto requestChangesChannel(Channel channel, String note,
+                                                      String actorUid, String actorDisplayName)
+            throws ExecutionException, InterruptedException, TimeoutException {
+
+        if (!"PENDING".equals(channel.getStatus())) {
+            throw new IllegalStateException(
+                    "Cannot request changes on channel " + channel.getId()
+                            + ": current status is " + channel.getStatus());
+        }
+
+        channel.setStatus("REQUEST_CHANGES");
+        channel.touch();
+
+        ApprovalMetadata metadata = new ApprovalMetadata(actorUid, actorDisplayName, note);
+        channel.setApprovalMetadata(metadata);
+
+        channelRepository.saveIfStatus(channel, "PENDING");
+
+        Map<String, Object> details = new HashMap<>();
+        details.put("notes", note);
+        auditLogService.logRejection("channel", channel.getId(), actorUid, actorDisplayName, details);
+
+        ApprovalResponseDto response = new ApprovalResponseDto();
+        response.setStatus("REQUEST_CHANGES");
+        response.setReviewedAt(metadata.getReviewedAt());
+        response.setReviewedBy(actorUid);
+        response.setReviewNotes(note);
+
+        return response;
+    }
+
+    private ApprovalResponseDto requestChangesPlaylist(Playlist playlist, String note,
+                                                       String actorUid, String actorDisplayName)
+            throws ExecutionException, InterruptedException, TimeoutException {
+
+        if (!"PENDING".equals(playlist.getStatus())) {
+            throw new IllegalStateException(
+                    "Cannot request changes on playlist " + playlist.getId()
+                            + ": current status is " + playlist.getStatus());
+        }
+
+        playlist.setStatus("REQUEST_CHANGES");
+        playlist.touch();
+
+        ApprovalMetadata metadata = new ApprovalMetadata(actorUid, actorDisplayName, note);
+        playlist.setApprovalMetadata(metadata);
+
+        playlistRepository.saveIfStatus(playlist, "PENDING");
+
+        Map<String, Object> details = new HashMap<>();
+        details.put("notes", note);
+        auditLogService.logRejection("playlist", playlist.getId(), actorUid, actorDisplayName, details);
+
+        ApprovalResponseDto response = new ApprovalResponseDto();
+        response.setStatus("REQUEST_CHANGES");
+        response.setReviewedAt(metadata.getReviewedAt());
+        response.setReviewedBy(actorUid);
+        response.setReviewNotes(note);
+
+        return response;
+    }
+
+    private ApprovalResponseDto requestChangesVideo(Video video, String note,
+                                                    String actorUid, String actorDisplayName)
+            throws ExecutionException, InterruptedException, TimeoutException {
+
+        if (!"PENDING".equals(video.getStatus())) {
+            throw new IllegalStateException(
+                    "Cannot request changes on video " + video.getId()
+                            + ": current status is " + video.getStatus());
+        }
+
+        video.setStatus("REQUEST_CHANGES");
+        video.touch();
+
+        ApprovalMetadata metadata = new ApprovalMetadata(actorUid, actorDisplayName, note);
+        video.setApprovalMetadata(metadata);
+
+        videoRepository.saveIfStatus(video, "PENDING");
+
+        Map<String, Object> details = new HashMap<>();
+        details.put("notes", note);
+        auditLogService.logRejection("video", video.getId(), actorUid, actorDisplayName, details);
+
+        ApprovalResponseDto response = new ApprovalResponseDto();
+        response.setStatus("REQUEST_CHANGES");
+        response.setReviewedAt(metadata.getReviewedAt());
+        response.setReviewedBy(actorUid);
+        response.setReviewNotes(note);
+
+        return response;
+    }
+
     // Private helper methods
 
     private PendingApprovalDto channelToApprovalDto(Channel channel) {
@@ -737,6 +867,18 @@ public class ApprovalService {
         dto.setTitle(channel.getName());
         dto.setSubmittedAt(channel.getCreatedAt());
         dto.setSubmittedBy(channel.getSubmittedBy());
+
+        // Enrich with submitter details
+        if (dto.getSubmittedBy() != null && !dto.getSubmittedBy().isEmpty()) {
+            try {
+                userRepository.findByUid(dto.getSubmittedBy()).ifPresent(u -> {
+                    dto.setSubmittedByDisplayName(u.getDisplayName());
+                    dto.setSubmittedByEmail(u.getEmail());
+                });
+            } catch (Exception e) {
+                log.debug("Failed to enrich submittedBy uid={}", dto.getSubmittedBy(), e);
+            }
+        }
 
         // Get first category name
         if (channel.getCategoryIds() != null && !channel.getCategoryIds().isEmpty()) {
@@ -779,6 +921,18 @@ public class ApprovalService {
         dto.setSubmittedAt(playlist.getCreatedAt());
         dto.setSubmittedBy(playlist.getSubmittedBy());
 
+        // Enrich with submitter details
+        if (dto.getSubmittedBy() != null && !dto.getSubmittedBy().isEmpty()) {
+            try {
+                userRepository.findByUid(dto.getSubmittedBy()).ifPresent(u -> {
+                    dto.setSubmittedByDisplayName(u.getDisplayName());
+                    dto.setSubmittedByEmail(u.getEmail());
+                });
+            } catch (Exception e) {
+                log.debug("Failed to enrich submittedBy uid={}", dto.getSubmittedBy(), e);
+            }
+        }
+
         // Get first category name
         if (playlist.getCategoryIds() != null && !playlist.getCategoryIds().isEmpty()) {
             try {
@@ -816,6 +970,18 @@ public class ApprovalService {
         dto.setTitle(video.getTitle());
         dto.setSubmittedAt(video.getCreatedAt());
         dto.setSubmittedBy(video.getSubmittedBy());
+
+        // Enrich with submitter details
+        if (dto.getSubmittedBy() != null && !dto.getSubmittedBy().isEmpty()) {
+            try {
+                userRepository.findByUid(dto.getSubmittedBy()).ifPresent(u -> {
+                    dto.setSubmittedByDisplayName(u.getDisplayName());
+                    dto.setSubmittedByEmail(u.getEmail());
+                });
+            } catch (Exception e) {
+                log.debug("Failed to enrich submittedBy uid={}", dto.getSubmittedBy(), e);
+            }
+        }
 
         // Get first category name
         if (video.getCategoryIds() != null && !video.getCategoryIds().isEmpty()) {

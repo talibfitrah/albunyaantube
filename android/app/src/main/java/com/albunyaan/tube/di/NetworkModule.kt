@@ -171,6 +171,11 @@ object NetworkModule {
     @Singleton
     fun provideSyncApi(retrofit: Retrofit): SyncApi =
         retrofit.create(SyncApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideApprovalApi(retrofit: Retrofit): com.albunyaan.tube.data.approvals.ApprovalApi =
+        retrofit.create(com.albunyaan.tube.data.approvals.ApprovalApi::class.java)
 }
 
 /** Moshi adapter for java.time.OffsetDateTime used in OpenAPI-generated models. */
