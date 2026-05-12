@@ -1,5 +1,8 @@
 package com.albunyaan.tube.data.local
 
+import com.albunyaan.tube.auth.AccountRepository
+import com.albunyaan.tube.auth.currentUid
+import com.albunyaan.tube.data.sync.SyncManager
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -69,25 +72,27 @@ interface FavoritesRepository {
 /**
  * Default implementation of FavoritesRepository using Room DAO.
  *
- * NOTE: Until T26 wires real FirebaseAuth UIDs, all DAO calls pass uid=""
- * (the anon-era sentinel). SyncManager.bind() will tag these rows with the
- * real uid on first sign-in. Do not replace "" with a hardcoded string here.
+ * Plan D T26: all DAO calls now source the uid from [AccountRepository.currentUid].
+ * When no user is signed in this returns "" (anon-era sentinel), matching prior
+ * behaviour. SyncManager.bind() tags those rows with the real uid on first sign-in.
  */
 @Singleton
 class FavoritesRepositoryImpl @Inject constructor(
-    private val favoriteVideoDao: FavoriteVideoDao
+    private val favoriteVideoDao: FavoriteVideoDao,
+    private val accountRepository: AccountRepository,
+    private val syncManager: SyncManager,
 ) : FavoritesRepository {
 
     override fun getAllFavorites(): Flow<List<FavoriteVideo>> {
-        return favoriteVideoDao.getAllFavorites(uid = "")
+        return favoriteVideoDao.getAllFavorites(uid = accountRepository.currentUid())
     }
 
     override fun isFavorite(videoId: String): Flow<Boolean> {
-        return favoriteVideoDao.isFavorite(uid = "", videoId = videoId)
+        return favoriteVideoDao.isFavorite(uid = accountRepository.currentUid(), videoId = videoId)
     }
 
     override suspend fun isFavoriteOnce(videoId: String): Boolean {
-        return favoriteVideoDao.isFavoriteOnce(uid = "", videoId = videoId)
+        return favoriteVideoDao.isFavoriteOnce(uid = accountRepository.currentUid(), videoId = videoId)
     }
 
     override suspend fun addFavorite(
@@ -97,20 +102,25 @@ class FavoritesRepositoryImpl @Inject constructor(
         thumbnailUrl: String?,
         durationSeconds: Int
     ) {
+        val uid = accountRepository.currentUid()
         val favorite = FavoriteVideo(
             videoId = videoId,
             title = title,
             channelName = channelName,
             thumbnailUrl = thumbnailUrl,
             durationSeconds = durationSeconds,
-            user_id = "",
+            user_id = uid,
+            dirty = true,
         )
         // Use upsert to update metadata while preserving addedAt for existing favorites
         favoriteVideoDao.upsertFavorite(favorite)
+        syncManager.pushDirtyAsync(uid)
     }
 
     override suspend fun removeFavorite(videoId: String) {
-        favoriteVideoDao.softDelete(uid = "", videoId = videoId)
+        val uid = accountRepository.currentUid()
+        favoriteVideoDao.softDelete(uid = uid, videoId = videoId)
+        syncManager.pushDirtyAsync(uid)
     }
 
     override suspend fun toggleFavorite(
@@ -120,22 +130,26 @@ class FavoritesRepositoryImpl @Inject constructor(
         thumbnailUrl: String?,
         durationSeconds: Int
     ): Boolean {
+        val uid = accountRepository.currentUid()
         val video = FavoriteVideo(
             videoId = videoId,
             title = title,
             channelName = channelName,
             thumbnailUrl = thumbnailUrl,
             durationSeconds = durationSeconds,
-            user_id = "",
+            user_id = uid,
+            dirty = true,
         )
-        return favoriteVideoDao.toggleFavorite(video)
+        val result = favoriteVideoDao.toggleFavorite(video)
+        syncManager.pushDirtyAsync(uid)
+        return result
     }
 
     override fun getFavoriteCount(): Flow<Int> {
-        return favoriteVideoDao.getFavoriteCount(uid = "")
+        return favoriteVideoDao.getFavoriteCount(uid = accountRepository.currentUid())
     }
 
     override suspend fun clearAll() {
-        favoriteVideoDao.clearAll(uid = "")
+        favoriteVideoDao.clearAll(uid = accountRepository.currentUid())
     }
 }

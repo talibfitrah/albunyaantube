@@ -59,15 +59,33 @@ interface FavoriteVideoDao {
     @Query("UPDATE favorite_videos SET deleted = 1, dirty = 1 WHERE videoId = :videoId AND user_id = :uid")
     suspend fun softDelete(uid: String, videoId: String)
 
+    /** Returns the row regardless of [deleted] flag — used by [toggleFavorite] re-add path. */
+    @Query("SELECT * FROM favorite_videos WHERE videoId = :videoId AND user_id = :uid LIMIT 1")
+    suspend fun getById(uid: String, videoId: String): FavoriteVideo?
+
+    /** Clears a soft-deleted row so [addFavorite] (IGNORE) can re-insert it. */
+    @Query("UPDATE favorite_videos SET deleted = 0, dirty = 1 WHERE videoId = :videoId AND user_id = :uid")
+    suspend fun clearSoftDelete(uid: String, videoId: String)
+
+    /**
+     * Toggle favorite status.
+     *
+     * The re-add path uses [clearSoftDelete] + [upsertFavorite] instead of plain
+     * [addFavorite] so that a previously soft-deleted row is resurrected rather
+     * than silently skipped by the IGNORE conflict strategy.
+     */
     @Transaction
     suspend fun toggleFavorite(video: FavoriteVideo): Boolean {
-        val isFav = isFavoriteOnce(video.user_id, video.videoId)
-        if (isFav) {
+        val existing = getById(video.user_id, video.videoId)
+        if (existing != null && !existing.deleted) {
             softDelete(video.user_id, video.videoId)
+            return false
         } else {
-            addFavorite(video)
+            // Fresh add OR re-add of a previously soft-deleted row.
+            clearSoftDelete(video.user_id, video.videoId)
+            upsertFavorite(video)
+            return true
         }
-        return !isFav
     }
 
     @Query("SELECT COUNT(*) FROM favorite_videos WHERE user_id = :uid AND deleted = 0")

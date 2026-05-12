@@ -7,10 +7,14 @@ import androidx.work.Configuration
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.testing.WorkManagerTestInitHelper
+import com.albunyaan.tube.auth.AccountRepository
+import com.albunyaan.tube.auth.AccountState
 import com.albunyaan.tube.data.local.AppDatabase
 import com.albunyaan.tube.data.local.ChannelFeedRefreshState
 import com.albunyaan.tube.data.local.SubscribedChannel
 import com.albunyaan.tube.data.subscriptions.SubscriptionRepository
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -18,9 +22,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.kotlin.mock
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowLog
+import java.time.LocalDate
 
 /**
  * Tests for [RefreshScheduler] (ANDROID-PERSONAL-02 / T9 + [Bug 4]).
@@ -68,6 +74,8 @@ class RefreshSchedulerTest {
             playlists = db.savedPlaylistDao(),
             cache = db.channelVideoCacheDao(),
             refreshState = db.channelFeedRefreshStateDao(),
+            accountRepository = FakeAccountRepository(),
+            syncManager = mock(),
         )
         scheduler = RefreshScheduler(
             ctx = ctx,
@@ -248,5 +256,14 @@ class RefreshSchedulerTest {
 
         val infos = oneshotInfos()
         assertEquals("empty subscriptions must not enqueue a foreground burst", 0, infos.size)
+    }
+
+    private class FakeAccountRepository : AccountRepository {
+        override val accountState: StateFlow<AccountState> =
+            MutableStateFlow(AccountState.NotSignedIn)
+        override suspend fun fetchMe() = Result.failure<AccountState.Loaded>(RuntimeException("stub"))
+        override suspend fun completeProfile(displayName: String, dateOfBirth: LocalDate) =
+            Result.failure<AccountState.Loaded>(RuntimeException("stub"))
+        override fun signOut() {}
     }
 }

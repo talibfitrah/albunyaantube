@@ -1,8 +1,12 @@
 package com.albunyaan.tube.data.local
 
+import com.albunyaan.tube.auth.AccountRepository
+import com.albunyaan.tube.auth.AccountState
+import com.albunyaan.tube.data.sync.SyncManager
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.runTest
@@ -12,6 +16,8 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.mockito.kotlin.mock
+import java.time.LocalDate
 
 /**
  * Unit tests for FavoritesRepositoryImpl.
@@ -35,7 +41,7 @@ class FavoritesRepositoryImplTest {
     @Before
     fun setup() {
         fakeDao = FakeFavoriteVideoDao()
-        repository = FavoritesRepositoryImpl(fakeDao)
+        repository = FavoritesRepositoryImpl(fakeDao, FakeAccountRepository(), mock())
     }
 
     @Test
@@ -276,6 +282,16 @@ class FavoritesRepositoryImplTest {
             favoritesFlow.value = favoritesFlow.value.filter { it.user_id != uid }
         }
 
+        override suspend fun getById(uid: String, videoId: String): FavoriteVideo? =
+            favoritesFlow.value.firstOrNull { it.videoId == videoId && it.user_id == uid }
+
+        override suspend fun clearSoftDelete(uid: String, videoId: String) {
+            val current = favoritesFlow.value.toMutableList()
+            val index = current.indexOfFirst { it.videoId == videoId && it.user_id == uid }
+            if (index >= 0) current[index] = current[index].copy(deleted = false, dirty = true)
+            favoritesFlow.value = current
+        }
+
         // ── Sync surface stubs (not exercised by repo tests) ──────────────────
         override suspend fun tagAnonRowsToUid(uid: String): Int = 0
         override suspend fun selectDirty(uid: String): List<FavoriteVideo> = emptyList()
@@ -284,4 +300,15 @@ class FavoritesRepositoryImplTest {
         override suspend fun applyTombstone(uid: String, videoId: String, ts: Long) {}
         override suspend fun upsertFromServer(video: FavoriteVideo) { addFavorite(video) }
     }
+
+    /** Returns uid="" (anon-era) — matches production state before sign-in. */
+    private class FakeAccountRepository : AccountRepository {
+        override val accountState: StateFlow<AccountState> =
+            MutableStateFlow(AccountState.NotSignedIn)
+        override suspend fun fetchMe() = Result.failure<AccountState.Loaded>(RuntimeException("stub"))
+        override suspend fun completeProfile(displayName: String, dateOfBirth: LocalDate) =
+            Result.failure<AccountState.Loaded>(RuntimeException("stub"))
+        override fun signOut() {}
+    }
+
 }

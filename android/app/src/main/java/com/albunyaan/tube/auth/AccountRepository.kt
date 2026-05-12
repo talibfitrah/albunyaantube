@@ -32,3 +32,10 @@ interface AccountRepository {
 
 /** Sentinel error type for under-13 rejection. UI maps this to navigation. */
 class AgeIneligibleError : RuntimeException("age-ineligible")
+
+/**
+ * Plan D T26 — synchronous read of the current uid for sync writes.
+ * Returns the empty string when no user is signed in (anon-era sentinel).
+ */
+fun AccountRepository.currentUid(): String =
+    (accountState.value as? AccountState.Loaded)?.uid ?: ""

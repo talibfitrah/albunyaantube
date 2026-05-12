@@ -2,9 +2,13 @@ package com.albunyaan.tube.data.subscriptions
 
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.albunyaan.tube.auth.AccountRepository
+import com.albunyaan.tube.auth.AccountState
 import com.albunyaan.tube.data.local.AppDatabase
 import com.albunyaan.tube.data.local.SavedPlaylist
 import com.albunyaan.tube.data.local.SubscribedChannel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -12,8 +16,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.kotlin.mock
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.time.LocalDate
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [31])
@@ -28,7 +34,12 @@ class SubscriptionLimitGuardTest {
             ApplicationProvider.getApplicationContext(),
             AppDatabase::class.java,
         ).allowMainThreadQueries().build()
-        guard = SubscriptionLimitGuard(db.subscribedChannelDao(), db)
+        guard = SubscriptionLimitGuard(
+            channels = db.subscribedChannelDao(),
+            db = db,
+            accountRepository = FakeAccountRepository(),
+            syncManager = mock(),
+        )
     }
 
     @After
@@ -97,4 +108,14 @@ class SubscriptionLimitGuardTest {
         uploaderName = null,
         savedAt = System.currentTimeMillis(),
     )
+
+    /** Returns uid="" matching the SubscribedChannel default user_id in seed data. */
+    private class FakeAccountRepository : AccountRepository {
+        override val accountState: StateFlow<AccountState> =
+            MutableStateFlow(AccountState.NotSignedIn)
+        override suspend fun fetchMe() = Result.failure<AccountState.Loaded>(RuntimeException("stub"))
+        override suspend fun completeProfile(displayName: String, dateOfBirth: LocalDate) =
+            Result.failure<AccountState.Loaded>(RuntimeException("stub"))
+        override fun signOut() {}
+    }
 }
