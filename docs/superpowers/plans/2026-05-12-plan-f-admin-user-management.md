@@ -1838,38 +1838,60 @@ git commit -m "[FEAT-ADMIN-USER-01-T18]: 4 bulk endpoints (block/delete/recover/
 
 Per spec §10.
 
+> **IT-style amendment (2026-05-12, post-recon):** the existing controller-level ITs (`SyncControllerIT`, `SyncArchiveIT`) use `@MockBean FirebaseAuth firebaseAuth` + a local `stubAuthAs(uid, role)` helper that mocks `firebaseAuth.verifyIdToken(...)` to return a `FirebaseToken` carrying the uid + role claim, then hit endpoints with `Authorization: Bearer fake`. No `seedAdmin`/`stubIdToken` helpers exist in this codebase. T19 follows the existing convention. The `tokensValidAfterTime` shift assertion from the original plan is replaced by `verify(firebaseAuth).revokeRefreshTokens(targetUid)` since the FirebaseAuth bean is mocked (real Firebase Auth state can't be inspected). The audit-write verification is unchanged (Firestore emulator is real).
+
 - [ ] **Step 1: `BulkUserActionIT.java`**
 
 ```java
 package com.albunyaan.tube.integration;
 
-import com.google.cloud.firestore.QueryDocumentSnapshot;
+import com.albunyaan.tube.model.User;
+import com.albunyaan.tube.model.UserStatus;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.cloud.Timestamp;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseToken;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.web.servlet.MvcResult;
 
-import java.util.List;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Plan F (ADMIN-USER-01) — bulk-block over 5 mixed users.
- * Spec §10: 5 seeded users (1 admin, 4 regular; one already blocked, one already deleted).
- * Bulk-block targeting all 5 → 200 + 2 successes + 3 failures with correct reasons.
+ * Plan F (ADMIN-USER-01) — bulk-block over 6 mixed users.
+ * 1 self + 1 other admin + 2 regular-active + 1 already-blocked + 1 already-deleted
+ * → HTTP 200 with 2 successes + 4 failures (self_action_forbidden, admin_target_forbidden,
+ *   already_blocked, and one already_deleted-or-invalid_state).
  */
-public class BulkUserActionIT extends BaseIntegrationTest {
+class BulkUserActionIT extends BaseIntegrationTest {
+
+    @MockBean
+    FirebaseAuth firebaseAuth;
+
+    @Autowired
+    ObjectMapper json;
 
     @Test
-    void bulkBlock_5users_returnsMixedResultWithCorrectReasons() throws Exception {
-        String adminUid = seedAdmin("admin@test.com", "Admin");
-        String adminToken = stubIdToken(adminUid);
-
-        String otherAdminUid = seedUser("admin2@test.com", "Admin2", "admin", "active");
-        String regularActive1 = seedUser("u1@test.com", "U1", "user", "active");
-        String regularActive2 = seedUser("u2@test.com", "U2", "user", "active");
-        String regularBlocked = seedUser("u3@test.com", "U3", "user", "blocked");
-        String regularDeleted = seedUser("u4@test.com", "U4", "user", "deleted");
+    void bulkBlock_6users_returnsMixedResultWithCorrectReasons() throws Exception {
+        String adminUid       = seedUser("admin-bulkblock@test.com",  "admin",    UserStatus.ACTIVE);
+        String otherAdminUid  = seedUser("admin2-bulkblock@test.com", "admin",    UserStatus.ACTIVE);
+        String regularActive1 = seedUser("u1-bulkblock@test.com",     "user",     UserStatus.ACTIVE);
+        String regularActive2 = seedUser("u2-bulkblock@test.com",     "user",     UserStatus.ACTIVE);
+        String regularBlocked = seedUser("u3-bulkblock@test.com",     "user",     UserStatus.BLOCKED);
+        String regularDeleted = seedUser("u4-bulkblock@test.com",     "user",     UserStatus.DELETED);
+        stubAuthAs(adminUid, "admin");
 
         String body = String.format(
                 "{\"uids\":[\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\"],\"reason\":\"audit\"}",
@@ -1877,39 +1899,66 @@ public class BulkUserActionIT extends BaseIntegrationTest {
                 regularBlocked, regularDeleted);
 
         MvcResult res = mvc.perform(post("/api/admin/users/bulk-block")
-                        .header("Authorization", "Bearer " + adminToken)
+                        .header("Authorization", "Bearer fake")
                         .contentType("application/json")
                         .content(body))
                 .andExpect(status().isOk())
                 .andReturn();
 
-        com.fasterxml.jackson.databind.JsonNode json =
-                new com.fasterxml.jackson.databind.ObjectMapper()
-                        .readTree(res.getResponse().getContentAsString());
+        JsonNode result = json.readTree(res.getResponse().getContentAsString());
 
-        // 2 successes (u1, u2), 4 failures (self, other admin, already blocked, already deleted).
-        assertEquals(2, json.get("successes").size());
-        assertEquals(4, json.get("failures").size());
+        assertEquals(2, result.get("successes").size(),
+                "expected 2 successes (the two regular-active users)");
+        assertEquals(4, result.get("failures").size(),
+                "expected 4 failures (self, other admin, blocked, deleted)");
 
-        java.util.Set<String> reasons = new java.util.HashSet<>();
-        json.get("failures").forEach(n -> reasons.add(n.get("reason").asText()));
-        assertTrue(reasons.contains("self_action_forbidden"));
-        assertTrue(reasons.contains("admin_target_forbidden"));
-        assertTrue(reasons.contains("already_blocked"));
-        // already-deleted target may surface as "already_deleted" or "invalid_state"
-        // depending on AuthService.blockUser's behaviour; both are acceptable.
-        assertTrue(reasons.contains("already_deleted") || reasons.contains("invalid_state"));
+        Set<String> reasons = new HashSet<>();
+        result.get("failures").forEach(n -> reasons.add(n.get("reason").asText()));
+        assertTrue(reasons.contains("self_action_forbidden"),
+                "must reject the calling admin's own uid");
+        assertTrue(reasons.contains("admin_target_forbidden"),
+                "must reject the other admin uid");
+        assertTrue(reasons.contains("already_blocked"),
+                "must classify the BLOCKED user as already_blocked");
+        // The DELETED target's specific failure code depends on AuthService.blockUser
+        // behaviour — either already_deleted or invalid_state is acceptable.
+        assertTrue(reasons.contains("already_deleted") || reasons.contains("invalid_state"),
+                "deleted user should surface as already_deleted or invalid_state");
 
-        // Allow async audit writes to settle.
-        Thread.sleep(300);
+        // Audit assertions. AuditLogService.log is @Async, so allow it to settle.
+        Thread.sleep(500);
 
-        // 2 USER_BLOCKED + 1 USER_BULK_ACTION summary expected.
         long blockedCount = firestore.collection("audit_logs")
                 .whereEqualTo("action", "USER_BLOCKED").get().get().size();
         long summaryCount = firestore.collection("audit_logs")
                 .whereEqualTo("action", "USER_BULK_ACTION").get().get().size();
-        assertEquals(2L, blockedCount);
-        assertEquals(1L, summaryCount);
+        assertEquals(2L, blockedCount, "USER_BLOCKED rows = 2 (one per successful block)");
+        assertEquals(1L, summaryCount, "USER_BULK_ACTION summary row = 1");
+    }
+
+    /** Mocks the bearer-token verification path so any bearer string passes. */
+    private void stubAuthAs(String uid, String role) throws Exception {
+        FirebaseToken token = Mockito.mock(FirebaseToken.class);
+        Mockito.when(token.getUid()).thenReturn(uid);
+        Mockito.when(token.getEmail()).thenReturn(uid + "@test.com");
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("role", role);
+        Mockito.when(token.getClaims()).thenReturn(claims);
+        Mockito.when(firebaseAuth.verifyIdToken(anyString())).thenReturn(token);
+        Mockito.when(firebaseAuth.verifyIdToken(anyString(), anyBoolean())).thenReturn(token);
+    }
+
+    private String seedUser(String email, String role, UserStatus status) throws Exception {
+        String uid = "test-" + email.replace("@", "-at-").replace(".", "-");
+        User u = new User();
+        u.setUid(uid);
+        u.setEmail(email);
+        u.setRole(role);
+        u.setStatusEnum(status);
+        u.setCreatedAt(Timestamp.now());
+        u.setUpdatedAt(Timestamp.now());
+        userRepository.save(u);
+        return uid;
     }
 }
 ```
@@ -1919,79 +1968,118 @@ public class BulkUserActionIT extends BaseIntegrationTest {
 ```java
 package com.albunyaan.tube.integration;
 
+import com.albunyaan.tube.model.User;
+import com.albunyaan.tube.model.UserStatus;
+import com.google.cloud.Timestamp;
+import com.google.cloud.firestore.QueryDocumentSnapshot;
+import com.google.cloud.firestore.QuerySnapshot;
 import com.google.firebase.auth.FirebaseAuth;
-import com.google.firebase.auth.UserRecord;
+import com.google.firebase.auth.FirebaseToken;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+import org.springframework.boot.test.mock.mockito.MockBean;
 
-import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Plan F (ADMIN-USER-01) — single + bulk revoke-sessions.
- * Spec §10: assert tokensValidAfterTime advances past Instant.now() - 1s.
+ * Plan F (ADMIN-USER-01) — single + bulk revoke-sessions HTTP path.
+ * FirebaseAuth is mocked, so we verify the revokeRefreshTokens call was made
+ * rather than inspecting real tokensValidAfterTime state.
  */
-public class RevokeSessionsIT extends BaseIntegrationTest {
+class RevokeSessionsIT extends BaseIntegrationTest {
+
+    @MockBean
+    FirebaseAuth firebaseAuth;
 
     @Test
-    void singleRevokeSessions_advancesTokensValidAfterTime_andAudits() throws Exception {
-        String adminUid = seedAdmin("admin@test.com", "Admin");
-        String adminToken = stubIdToken(adminUid);
-        String targetUid = seedUser("target@test.com", "Target", "user", "active");
-
-        long before = System.currentTimeMillis() - 1000;
+    void singleRevokeSessions_callsFirebase_andAudits() throws Exception {
+        String adminUid = seedUser("admin-rs@test.com", "admin", UserStatus.ACTIVE);
+        String targetUid = seedUser("target-rs@test.com", "user", UserStatus.ACTIVE);
+        stubAuthAs(adminUid, "admin");
 
         mvc.perform(post("/api/admin/users/" + targetUid + "/revoke-sessions")
-                        .header("Authorization", "Bearer " + adminToken)
+                        .header("Authorization", "Bearer fake")
                         .contentType("application/json")
                         .content("{\"reason\":\"reported phishing\"}"))
                 .andExpect(status().isNoContent());
 
+        verify(firebaseAuth).revokeRefreshTokens(targetUid);
+
         Thread.sleep(300);
 
-        // Assert Firebase Admin SDK recorded the revocation.
-        UserRecord user = FirebaseAuth.getInstance().getUser(targetUid);
-        Date validAfter = new Date(user.getTokensValidAfterTimestamp());
-        assertTrue(validAfter.getTime() >= before,
-                "tokensValidAfterTime should advance past " + new Date(before));
-
-        // Audit entry with reason.
-        var snap = firestore.collection("audit_logs")
+        QuerySnapshot snap = firestore.collection("audit_logs")
                 .whereEqualTo("action", "USER_SESSIONS_REVOKED")
                 .whereEqualTo("entityId", targetUid)
                 .get().get();
         assertEquals(1, snap.size());
-        var details = (java.util.Map<String, Object>) snap.getDocuments().get(0).get("details");
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> details =
+                (Map<String, Object>) snap.getDocuments().get(0).get("details");
+        assertNotNull(details);
         assertEquals("reported phishing", details.get("reason"));
     }
 
     @Test
     void bulkRevokeSessions_audits3perUid_plusSummary() throws Exception {
-        String adminUid = seedAdmin("admin@test.com", "Admin");
-        String adminToken = stubIdToken(adminUid);
-        String u1 = seedUser("u1@test.com", "U1", "user", "active");
-        String u2 = seedUser("u2@test.com", "U2", "user", "active");
-        String u3 = seedUser("u3@test.com", "U3", "user", "active");
+        String adminUid = seedUser("admin-rs-bulk@test.com", "admin", UserStatus.ACTIVE);
+        String u1 = seedUser("u1-rs@test.com", "user", UserStatus.ACTIVE);
+        String u2 = seedUser("u2-rs@test.com", "user", UserStatus.ACTIVE);
+        String u3 = seedUser("u3-rs@test.com", "user", UserStatus.ACTIVE);
+        stubAuthAs(adminUid, "admin");
 
         String body = String.format(
                 "{\"uids\":[\"%s\",\"%s\",\"%s\"],\"reason\":\"sweep\"}", u1, u2, u3);
 
         mvc.perform(post("/api/admin/users/bulk-revoke-sessions")
-                        .header("Authorization", "Bearer " + adminToken)
+                        .header("Authorization", "Bearer fake")
                         .contentType("application/json")
                         .content(body))
                 .andExpect(status().isOk());
 
-        Thread.sleep(400);
+        verify(firebaseAuth, times(3)).revokeRefreshTokens(anyString());
+
+        Thread.sleep(500);
 
         long perUid = firestore.collection("audit_logs")
                 .whereEqualTo("action", "USER_SESSIONS_REVOKED").get().get().size();
         long summary = firestore.collection("audit_logs")
                 .whereEqualTo("action", "USER_BULK_ACTION").get().get().size();
-        assertEquals(3L, perUid);
-        assertEquals(1L, summary);
+        assertEquals(3L, perUid, "3 USER_SESSIONS_REVOKED audits");
+        assertEquals(1L, summary, "1 USER_BULK_ACTION summary");
+    }
+
+    private void stubAuthAs(String uid, String role) throws Exception {
+        FirebaseToken token = Mockito.mock(FirebaseToken.class);
+        Mockito.when(token.getUid()).thenReturn(uid);
+        Mockito.when(token.getEmail()).thenReturn(uid + "@test.com");
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("role", role);
+        Mockito.when(token.getClaims()).thenReturn(claims);
+        Mockito.when(firebaseAuth.verifyIdToken(anyString())).thenReturn(token);
+        Mockito.when(firebaseAuth.verifyIdToken(anyString(), anyBoolean())).thenReturn(token);
+    }
+
+    private String seedUser(String email, String role, UserStatus status) throws Exception {
+        String uid = "test-" + email.replace("@", "-at-").replace(".", "-");
+        User u = new User();
+        u.setUid(uid);
+        u.setEmail(email);
+        u.setRole(role);
+        u.setStatusEnum(status);
+        u.setCreatedAt(Timestamp.now());
+        u.setUpdatedAt(Timestamp.now());
+        userRepository.save(u);
+        return uid;
     }
 }
 ```
@@ -2003,7 +2091,7 @@ cd backend && ./gradlew test -Pintegration=true \
     --tests "com.albunyaan.tube.integration.BulkUserActionIT" \
     --tests "com.albunyaan.tube.integration.RevokeSessionsIT"
 ```
-Expected: PASS. Firebase emulator must be running.
+Expected: PASS. Firestore emulator must be running (Auth emulator NOT needed — FirebaseAuth is mocked).
 
 - [ ] **Step 4: Commit**
 
