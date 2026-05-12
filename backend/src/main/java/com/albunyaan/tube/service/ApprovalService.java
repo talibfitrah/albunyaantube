@@ -30,7 +30,7 @@ public class ApprovalService {
     private static final Logger log = LoggerFactory.getLogger(ApprovalService.class);
 
     private static final java.util.Set<String> VALID_TYPES = java.util.Set.of("CHANNEL", "PLAYLIST", "VIDEO");
-    private static final java.util.Set<String> VALID_STATUSES = java.util.Set.of("PENDING", "APPROVED", "REJECTED");
+    private static final java.util.Set<String> VALID_STATUSES = java.util.Set.of("PENDING", "APPROVED", "REJECTED", "REQUEST_CHANGES");
 
     private final ChannelRepository channelRepository;
     private final PlaylistRepository playlistRepository;
@@ -725,6 +725,132 @@ public class ApprovalService {
         }
 
         throw new IllegalArgumentException("Item not found: " + id);
+    }
+
+    /**
+     * Request changes on a pending item.
+     * Only valid from PENDING status; re-submission via T1 flips REQUEST_CHANGES → PENDING.
+     */
+    public ApprovalResponseDto requestChanges(String id, String note, String contentType,
+                                              String actorUid, String actorDisplayName)
+            throws ExecutionException, InterruptedException, TimeoutException {
+
+        if (note == null || note.isBlank()) {
+            throw new IllegalArgumentException("Review note must not be blank for REQUEST_CHANGES");
+        }
+
+        // Try to find as channel first
+        Optional<Channel> channelOpt = channelRepository.findById(id);
+        if (channelOpt.isPresent()) {
+            return requestChangesChannel(channelOpt.get(), note, actorUid, actorDisplayName);
+        }
+
+        // Try to find as playlist
+        Optional<Playlist> playlistOpt = playlistRepository.findById(id);
+        if (playlistOpt.isPresent()) {
+            return requestChangesPlaylist(playlistOpt.get(), note, actorUid, actorDisplayName);
+        }
+
+        // Try to find as video
+        Optional<Video> videoOpt = videoRepository.findById(id);
+        if (videoOpt.isPresent()) {
+            return requestChangesVideo(videoOpt.get(), note, actorUid, actorDisplayName);
+        }
+
+        throw new IllegalArgumentException("Item not found: " + id);
+    }
+
+    private ApprovalResponseDto requestChangesChannel(Channel channel, String note,
+                                                      String actorUid, String actorDisplayName)
+            throws ExecutionException, InterruptedException, TimeoutException {
+
+        if (!"PENDING".equals(channel.getStatus())) {
+            throw new IllegalStateException(
+                    "Cannot request changes on channel " + channel.getId()
+                            + ": current status is " + channel.getStatus());
+        }
+
+        channel.setStatus("REQUEST_CHANGES");
+        channel.touch();
+
+        ApprovalMetadata metadata = new ApprovalMetadata(actorUid, actorDisplayName, note);
+        channel.setApprovalMetadata(metadata);
+
+        channelRepository.saveIfStatus(channel, "PENDING");
+
+        Map<String, Object> details = new HashMap<>();
+        details.put("notes", note);
+        auditLogService.logRejection("channel", channel.getId(), actorUid, actorDisplayName, details);
+
+        ApprovalResponseDto response = new ApprovalResponseDto();
+        response.setStatus("REQUEST_CHANGES");
+        response.setReviewedAt(metadata.getReviewedAt());
+        response.setReviewedBy(actorUid);
+        response.setReviewNotes(note);
+
+        return response;
+    }
+
+    private ApprovalResponseDto requestChangesPlaylist(Playlist playlist, String note,
+                                                       String actorUid, String actorDisplayName)
+            throws ExecutionException, InterruptedException, TimeoutException {
+
+        if (!"PENDING".equals(playlist.getStatus())) {
+            throw new IllegalStateException(
+                    "Cannot request changes on playlist " + playlist.getId()
+                            + ": current status is " + playlist.getStatus());
+        }
+
+        playlist.setStatus("REQUEST_CHANGES");
+        playlist.touch();
+
+        ApprovalMetadata metadata = new ApprovalMetadata(actorUid, actorDisplayName, note);
+        playlist.setApprovalMetadata(metadata);
+
+        playlistRepository.saveIfStatus(playlist, "PENDING");
+
+        Map<String, Object> details = new HashMap<>();
+        details.put("notes", note);
+        auditLogService.logRejection("playlist", playlist.getId(), actorUid, actorDisplayName, details);
+
+        ApprovalResponseDto response = new ApprovalResponseDto();
+        response.setStatus("REQUEST_CHANGES");
+        response.setReviewedAt(metadata.getReviewedAt());
+        response.setReviewedBy(actorUid);
+        response.setReviewNotes(note);
+
+        return response;
+    }
+
+    private ApprovalResponseDto requestChangesVideo(Video video, String note,
+                                                    String actorUid, String actorDisplayName)
+            throws ExecutionException, InterruptedException, TimeoutException {
+
+        if (!"PENDING".equals(video.getStatus())) {
+            throw new IllegalStateException(
+                    "Cannot request changes on video " + video.getId()
+                            + ": current status is " + video.getStatus());
+        }
+
+        video.setStatus("REQUEST_CHANGES");
+        video.touch();
+
+        ApprovalMetadata metadata = new ApprovalMetadata(actorUid, actorDisplayName, note);
+        video.setApprovalMetadata(metadata);
+
+        videoRepository.saveIfStatus(video, "PENDING");
+
+        Map<String, Object> details = new HashMap<>();
+        details.put("notes", note);
+        auditLogService.logRejection("video", video.getId(), actorUid, actorDisplayName, details);
+
+        ApprovalResponseDto response = new ApprovalResponseDto();
+        response.setStatus("REQUEST_CHANGES");
+        response.setReviewedAt(metadata.getReviewedAt());
+        response.setReviewedBy(actorUid);
+        response.setReviewNotes(note);
+
+        return response;
     }
 
     // Private helper methods
