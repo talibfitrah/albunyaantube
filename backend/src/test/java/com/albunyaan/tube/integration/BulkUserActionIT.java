@@ -120,4 +120,37 @@ class BulkUserActionIT extends BaseIntegrationTest {
         userRepository.save(u);
         return uid;
     }
+
+    @Test
+    void bulkBlock_withBlankUidElement_rejectedWith400() throws Exception {
+        String adminUid = seedUser("admin-validation@test.com", "admin", UserStatus.ACTIVE);
+        stubAuthAs(adminUid, "admin");
+
+        // Bean Validation: @NotBlank on List<@NotBlank String> uids should reject
+        // both empty-string and whitespace-only elements before the controller runs.
+        String body = "{\"uids\":[\"\"],\"reason\":\"audit\"}";
+
+        mvc.perform(post("/api/admin/users/bulk-block")
+                        .header("Authorization", "Bearer fake")
+                        .contentType("application/json")
+                        .content(body))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void bulkBlock_withOversizedReason_rejectedWith400() throws Exception {
+        String adminUid = seedUser("admin-validation-2@test.com", "admin", UserStatus.ACTIVE);
+        stubAuthAs(adminUid, "admin");
+
+        // @Size(max=500) on reason prevents audit-storage abuse via giant strings.
+        String oversized = "x".repeat(501);
+        String body = String.format(
+                "{\"uids\":[\"some-uid\"],\"reason\":\"%s\"}", oversized);
+
+        mvc.perform(post("/api/admin/users/bulk-block")
+                        .header("Authorization", "Bearer fake")
+                        .contentType("application/json")
+                        .content(body))
+                .andExpect(status().isBadRequest());
+    }
 }

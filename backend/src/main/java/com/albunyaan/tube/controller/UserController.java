@@ -305,8 +305,9 @@ public class UserController {
     @PostMapping("/{uid}/revoke-sessions")
     public ResponseEntity<Void> revokeSessions(
             @PathVariable String uid,
-            @RequestBody(required = false) RevokeSessionsRequest body,
+            @Valid @RequestBody(required = false) RevokeSessionsRequest body,
             @AuthenticationPrincipal FirebaseUserDetails actor) {
+        if (actor == null) return ResponseEntity.status(401).build();
         try {
             String reason = body != null ? body.getReason() : null;
             authService.revokeSessions(uid, actor, reason);
@@ -322,6 +323,7 @@ public class UserController {
     public ResponseEntity<BulkUserActionResult> bulkBlock(
             @Valid @RequestBody BulkUserActionRequest req,
             @AuthenticationPrincipal com.albunyaan.tube.security.FirebaseUserDetails actor) {
+        if (actor == null) return ResponseEntity.status(401).build();
         return ResponseEntity.ok(bulkUserService.execute(
                 BulkAction.BLOCK, req.getUids(), actor, req.getReason()));
     }
@@ -331,6 +333,7 @@ public class UserController {
     public ResponseEntity<BulkUserActionResult> bulkDelete(
             @Valid @RequestBody BulkUserActionRequest req,
             @AuthenticationPrincipal com.albunyaan.tube.security.FirebaseUserDetails actor) {
+        if (actor == null) return ResponseEntity.status(401).build();
         return ResponseEntity.ok(bulkUserService.execute(
                 BulkAction.DELETE, req.getUids(), actor, req.getReason()));
     }
@@ -340,6 +343,7 @@ public class UserController {
     public ResponseEntity<BulkUserActionResult> bulkRecover(
             @Valid @RequestBody BulkUserActionRequest req,
             @AuthenticationPrincipal com.albunyaan.tube.security.FirebaseUserDetails actor) {
+        if (actor == null) return ResponseEntity.status(401).build();
         return ResponseEntity.ok(bulkUserService.execute(
                 BulkAction.RECOVER, req.getUids(), actor, req.getReason()));
     }
@@ -349,6 +353,7 @@ public class UserController {
     public ResponseEntity<BulkUserActionResult> bulkRevokeSessions(
             @Valid @RequestBody BulkUserActionRequest req,
             @AuthenticationPrincipal com.albunyaan.tube.security.FirebaseUserDetails actor) {
+        if (actor == null) return ResponseEntity.status(401).build();
         return ResponseEntity.ok(bulkUserService.execute(
                 BulkAction.REVOKE_SESSIONS, req.getUids(), actor, req.getReason()));
     }
