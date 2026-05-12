@@ -67,6 +67,10 @@ public class BulkUserService {
                     case REVOKE_SESSIONS  -> authService.revokeSessions(uid, actor, reason);
                 }
                 successes.add(uid);
+            } catch (com.albunyaan.tube.service.UserNotFoundException e) {
+                failures.add(new FailureEntry(uid, "user_not_found"));
+            } catch (IllegalStateException e) {
+                failures.add(new FailureEntry(uid, classify(e.getMessage())));
             } catch (Exception e) {
                 log.error("bulk.action.error uid={} action={}", uid, action, e);
                 failures.add(new FailureEntry(uid, "firebase_error"));
@@ -86,5 +90,15 @@ public class BulkUserService {
                 details);
 
         return new BulkUserActionResult(successes, failures);
+    }
+
+    private static String classify(String msg) {
+        if (msg == null) return "invalid_state";
+        String m = msg.toLowerCase();
+        if (m.contains("already blocked")) return "already_blocked";
+        if (m.contains("not blocked"))     return "not_blocked";
+        if (m.contains("already deleted")) return "already_deleted";
+        if (m.contains("not deleted"))     return "not_deleted";
+        return "invalid_state";
     }
 }

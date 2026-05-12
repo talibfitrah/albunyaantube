@@ -119,6 +119,78 @@ class BulkUserServiceTest {
         verify(authService).recoverUser("admin-target", "admin-uid");
     }
 
+    @Test
+    void alreadyBlockedException_classifiedAsAlreadyBlocked() throws Exception {
+        AuthService authService = mock(AuthService.class);
+        UserRepository userRepo = mock(UserRepository.class);
+        AuditLogService auditLog = mock(AuditLogService.class);
+
+        when(userRepo.findByUid("u1")).thenReturn(Optional.of(userWithRole("user")));
+        doThrow(new IllegalStateException("User is already blocked"))
+                .when(authService).blockUser("u1", "admin-uid", null);
+
+        BulkUserService svc = new BulkUserService(authService, userRepo, auditLog);
+
+        BulkUserActionResult result = svc.execute(
+                BulkAction.BLOCK, List.of("u1"), ADMIN_ACTOR, null);
+
+        assertEquals("already_blocked", result.getFailures().get(0).reason());
+    }
+
+    @Test
+    void notFoundException_classifiedAsUserNotFound() throws Exception {
+        AuthService authService = mock(AuthService.class);
+        UserRepository userRepo = mock(UserRepository.class);
+        AuditLogService auditLog = mock(AuditLogService.class);
+
+        when(userRepo.findByUid("u1")).thenReturn(Optional.of(userWithRole("user")));
+        doThrow(new com.albunyaan.tube.service.UserNotFoundException("u1"))
+                .when(authService).blockUser("u1", "admin-uid", null);
+
+        BulkUserService svc = new BulkUserService(authService, userRepo, auditLog);
+
+        BulkUserActionResult result = svc.execute(
+                BulkAction.BLOCK, List.of("u1"), ADMIN_ACTOR, null);
+
+        assertEquals("user_not_found", result.getFailures().get(0).reason());
+    }
+
+    @Test
+    void illegalStateAlreadyDeleted_classified() throws Exception {
+        AuthService authService = mock(AuthService.class);
+        UserRepository userRepo = mock(UserRepository.class);
+        AuditLogService auditLog = mock(AuditLogService.class);
+
+        when(userRepo.findByUid("u1")).thenReturn(Optional.of(userWithRole("user")));
+        doThrow(new IllegalStateException("User already deleted"))
+                .when(authService).softDeleteUser("u1", "admin-uid", null);
+
+        BulkUserService svc = new BulkUserService(authService, userRepo, auditLog);
+
+        BulkUserActionResult result = svc.execute(
+                BulkAction.DELETE, List.of("u1"), ADMIN_ACTOR, null);
+
+        assertEquals("already_deleted", result.getFailures().get(0).reason());
+    }
+
+    @Test
+    void unrecognizedIllegalStateMessage_classifiedAsInvalidState() throws Exception {
+        AuthService authService = mock(AuthService.class);
+        UserRepository userRepo = mock(UserRepository.class);
+        AuditLogService auditLog = mock(AuditLogService.class);
+
+        when(userRepo.findByUid("u1")).thenReturn(Optional.of(userWithRole("user")));
+        doThrow(new IllegalStateException("some weird business rule"))
+                .when(authService).blockUser("u1", "admin-uid", null);
+
+        BulkUserService svc = new BulkUserService(authService, userRepo, auditLog);
+
+        BulkUserActionResult result = svc.execute(
+                BulkAction.BLOCK, List.of("u1"), ADMIN_ACTOR, null);
+
+        assertEquals("invalid_state", result.getFailures().get(0).reason());
+    }
+
     private static User userWithRole(String role) {
         User u = new User();
         u.setRole(role);
