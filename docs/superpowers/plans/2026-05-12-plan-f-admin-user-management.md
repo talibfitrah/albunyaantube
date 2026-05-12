@@ -787,7 +787,7 @@ git commit -m "[FEAT-ADMIN-USER-01-T8]: mail startup health check (verify from-a
 
 # Phase 2 — Force-Logout (Single + Auto)
 
-## Task 9: Extract `AuthService.revokeSessions(uid, actorUid, reason)`
+## Task 9: Extract `AuthService.revokeSessions(uid, actor, reason)`
 
 **Files:**
 - Modify: `backend/src/main/java/com/albunyaan/tube/service/AuthService.java`
@@ -795,11 +795,14 @@ git commit -m "[FEAT-ADMIN-USER-01-T8]: mail startup health check (verify from-a
 
 Per spec §7 note + F6 — new public method extracted from existing inline `firebaseAuth.revokeRefreshTokens(uid)` calls.
 
+> **API alignment amendment (2026-05-12, post-AuditLogService recon):** The existing `AuditLogService.log(...)` overload signature is `log(String action, String entityType, String entityId, FirebaseUserDetails actor[, Map<String,Object> details])` — no overload takes separate `(actorUid, actorEmail)` string pair. Plan F uses the existing 5-arg overload. The service method therefore accepts `FirebaseUserDetails actor` (not `String actorUid`); the controller (T10) extracts it from SecurityContext. Auto-revoke (T11) deals with the `updateUserRoleAsActor` string-actor case via a synthetic `FirebaseUserDetails` constructed from the actorUid for low-fidelity attribution (uid populated, email/role null) — see T11 for details.
+
 - [ ] **Step 1: Write the failing test**
 
 ```java
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.security.FirebaseUserDetails;
 import com.google.firebase.auth.FirebaseAuth;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -815,9 +818,10 @@ class AuthServiceRevokeSessionsTest {
     void revokeSessions_callsFirebase_andAuditsWithReason() throws Exception {
         FirebaseAuth firebaseAuth = mock(FirebaseAuth.class);
         AuditLogService auditLog = mock(AuditLogService.class);
-        AuthService svc = AuthServiceTestFactory.with(firebaseAuth, auditLog); // see step 3
+        FirebaseUserDetails actor = new FirebaseUserDetails("admin-uid", "admin@fitrahtube.com", "admin");
+        AuthService svc = AuthServiceTestFactory.with(firebaseAuth, auditLog);
 
-        svc.revokeSessions("target-uid", "admin-uid", "user reported phishing");
+        svc.revokeSessions("target-uid", actor, "user reported phishing");
 
         verify(firebaseAuth).revokeRefreshTokens("target-uid");
 
@@ -825,7 +829,7 @@ class AuthServiceRevokeSessionsTest {
         verify(auditLog).log(
                 eq("USER_SESSIONS_REVOKED"),
                 eq("user"), eq("target-uid"),
-                eq("admin-uid"), eq("admin-uid"),
+                eq(actor),
                 details.capture());
         assertEquals("user reported phishing", details.getValue().get("reason"));
     }
@@ -834,21 +838,22 @@ class AuthServiceRevokeSessionsTest {
     void revokeSessions_nullReason_auditsWithoutReasonKey() throws Exception {
         FirebaseAuth firebaseAuth = mock(FirebaseAuth.class);
         AuditLogService auditLog = mock(AuditLogService.class);
+        FirebaseUserDetails actor = new FirebaseUserDetails("admin-uid", "admin@fitrahtube.com", "admin");
         AuthService svc = AuthServiceTestFactory.with(firebaseAuth, auditLog);
 
-        svc.revokeSessions("target-uid", "admin-uid", null);
+        svc.revokeSessions("target-uid", actor, null);
 
         verify(firebaseAuth).revokeRefreshTokens("target-uid");
         verify(auditLog).log(
                 eq("USER_SESSIONS_REVOKED"),
                 eq("user"), eq("target-uid"),
-                eq("admin-uid"), eq("admin-uid"),
+                eq(actor),
                 argThat(m -> !m.containsKey("reason") || m.get("reason") == null));
     }
 }
 ```
 
-> **Note:** the `AuthServiceTestFactory` helper is created in this task only if the existing test suite doesn't already provide a builder. If `AuthServiceBlockIntegrationTest` or similar already shows how to construct `AuthService` with mocks, copy that wiring inline instead of building a new factory.
+> **Note:** `AuthServiceTestFactory` is a small helper that builds an AuthService with default mocks for everything except the two args you care about. Create one in this task if no equivalent exists; otherwise reuse what `AuthServiceBlockIntegrationTest` (or similar) already provides.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -867,11 +872,13 @@ In `AuthService.java`, after the existing `recoverUser` method (around line 472+
      * Extracted from the inline calls in {@link #blockUser} / {@link #softDeleteUser}
      * so admins can force-logout a user without changing their account state.
      *
-     * @param uid       target user
-     * @param actorUid  admin performing the action
-     * @param reason    optional free-text reason captured in audit details
+     * @param uid     target user
+     * @param actor   admin performing the action (SecurityContext principal)
+     * @param reason  optional free-text reason captured in audit details
      */
-    public void revokeSessions(String uid, String actorUid, String reason)
+    public void revokeSessions(String uid,
+                               com.albunyaan.tube.security.FirebaseUserDetails actor,
+                               String reason)
             throws com.google.firebase.auth.FirebaseAuthException {
         firebaseAuth.revokeRefreshTokens(uid);
         java.util.Map<String, Object> details = new java.util.HashMap<>();
@@ -879,12 +886,10 @@ In `AuthService.java`, after the existing `recoverUser` method (around line 472+
         auditLogService.log(
                 "USER_SESSIONS_REVOKED",
                 "user", uid,
-                actorUid, actorUid,
+                actor,
                 details);
     }
 ```
-
-> **Confirm audit signature:** open `AuditLogService.java` and verify the `log(action, entityType, entityId, actorUid, actorEmail, details)` parameter order. Match exactly — Plan E uses the same pattern. If the existing code uses a different shape (e.g., the 5th param is the actor's display name), use whatever existing call sites pass for "actor" — consistency with existing audit rows matters more than the spec wording.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -946,7 +951,7 @@ After the existing `/{uid}/reset-password` handler (around line 266), append:
             @AuthenticationPrincipal com.albunyaan.tube.security.FirebaseUserDetails actor) {
         try {
             String reason = body != null ? body.getReason() : null;
-            authService.revokeSessions(uid, actor.getUid(), reason);
+            authService.revokeSessions(uid, actor, reason);
             return ResponseEntity.noContent().build();
         } catch (com.google.firebase.auth.FirebaseAuthException e) {
             log.error("revoke-sessions failed uid={}", uid, e);
@@ -991,6 +996,8 @@ Identify the success branch (where the transaction commits and the user is retur
 
 - [ ] **Step 2: Fire async auto-revoke after the commit**
 
+> **AuditLogService signature note (post-T9 amendment):** `auditLogService.log(...)` takes a `FirebaseUserDetails` actor, not separate `(actorUid, actorEmail)` strings. The deep-stack location here has only the `String actorUid` (Plan A's pre-existing `updateUserRoleAsActor` signature). We construct a synthetic `FirebaseUserDetails(actorUid, null, "admin")` solely for the audit call — this preserves the structured `details` Map (which T12's IT asserts) and the admin's UID in the audit row; the only loss is `actorDisplayName` (null instead of the admin's email). Acceptable trade vs. rippling a `FirebaseUserDetails actor` parameter through Plan A's API.
+
 Inside `updateUserRoleAsActor`, after the existing `auditLogService.log("USER_ROLE_UPDATED", ...)` call (find it by grep — should already exist from Plan A), append:
 
 ```java
@@ -998,12 +1005,14 @@ Inside `updateUserRoleAsActor`, after the existing `auditLogService.log("USER_RO
         // takes effect immediately rather than after the existing JWT expires.
         // Errors are absorbed: the role change has already committed. Audit entry
         // distinguishes the auto-fire from an admin-triggered revoke.
+        com.albunyaan.tube.security.FirebaseUserDetails actor =
+                new com.albunyaan.tube.security.FirebaseUserDetails(actorUid, null, "admin");
         try {
             firebaseAuth.revokeRefreshTokens(uid);
             auditLogService.log(
                     "USER_SESSIONS_REVOKED_AUTO",
                     "user", uid,
-                    actorUid, actorUid,
+                    actor,
                     java.util.Map.of(
                             "oldRole", existingRole == null ? "" : existingRole,
                             "newRole", newRoleStr,
@@ -1014,7 +1023,7 @@ Inside `updateUserRoleAsActor`, after the existing `auditLogService.log("USER_RO
             auditLogService.log(
                     "USER_SESSIONS_REVOKED_AUTO_FAILED",
                     "user", uid,
-                    actorUid, actorUid,
+                    actor,
                     java.util.Map.of("error", e.getClass().getSimpleName()));
         }
 ```
