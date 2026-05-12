@@ -7,6 +7,7 @@ import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import com.albunyaan.tube.repository.CategoryRepository;
 import com.albunyaan.tube.repository.ApprovalRepository;
+import com.albunyaan.tube.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -50,6 +51,9 @@ class ApprovalServiceRequestChangesTest {
     @Mock
     private StreamIndexService streamIndexService;
 
+    @Mock
+    private UserRepository userRepository;
+
     private ApprovalService approvalService;
 
     @BeforeEach
@@ -62,7 +66,8 @@ class ApprovalServiceRequestChangesTest {
                 approvalRepository,
                 auditLogService,
                 sortOrderService,
-                streamIndexService
+                streamIndexService,
+                userRepository
         );
     }
 

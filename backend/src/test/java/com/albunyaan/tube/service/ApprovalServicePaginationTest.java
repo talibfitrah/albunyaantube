@@ -13,6 +13,7 @@ import com.albunyaan.tube.repository.CategoryRepository;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
+import com.albunyaan.tube.repository.UserRepository;
 import com.albunyaan.tube.service.StreamIndexService;
 import com.albunyaan.tube.util.CursorUtils;
 import com.google.cloud.Timestamp;
@@ -60,6 +61,9 @@ class ApprovalServicePaginationTest {
     @Mock
     private StreamIndexService streamIndexService;
 
+    @Mock
+    private UserRepository userRepository;
+
     private ApprovalService approvalService;
 
     @BeforeEach
@@ -72,7 +76,8 @@ class ApprovalServicePaginationTest {
                 approvalRepository,
                 auditLogService,
                 sortOrderService,
-                streamIndexService
+                streamIndexService,
+                userRepository
         );
     }
 
