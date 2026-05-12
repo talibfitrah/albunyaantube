@@ -6,6 +6,11 @@ rules_version = '2';
 //
 // WARNING: These rules should ONLY be used with the Firestore emulator.
 // Never deploy these rules to production.
+//
+// Note: This permissive ruleset covers all collections including:
+// - categories, channels, playlists, videos (public content)
+// - users, audit_logs, download_events
+// - Plan D sync subcollections: users/{uid}/subscriptions, users/{uid}/playlists, users/{uid}/favorites
 
 service cloud.firestore {
   match /databases/{database}/documents {

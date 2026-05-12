@@ -1,5 +1,8 @@
 package com.albunyaan.tube.data.local
 
+import com.albunyaan.tube.auth.AccountRepository
+import com.albunyaan.tube.auth.currentUid
+import com.albunyaan.tube.data.sync.SyncManager
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -68,22 +71,28 @@ interface FavoritesRepository {
 
 /**
  * Default implementation of FavoritesRepository using Room DAO.
+ *
+ * Plan D T26: all DAO calls now source the uid from [AccountRepository.currentUid].
+ * When no user is signed in this returns "" (anon-era sentinel), matching prior
+ * behaviour. SyncManager.bind() tags those rows with the real uid on first sign-in.
  */
 @Singleton
 class FavoritesRepositoryImpl @Inject constructor(
-    private val favoriteVideoDao: FavoriteVideoDao
+    private val favoriteVideoDao: FavoriteVideoDao,
+    private val accountRepository: AccountRepository,
+    private val syncManager: SyncManager,
 ) : FavoritesRepository {
 
     override fun getAllFavorites(): Flow<List<FavoriteVideo>> {
-        return favoriteVideoDao.getAllFavorites()
+        return favoriteVideoDao.getAllFavorites(uid = accountRepository.currentUid())
     }
 
     override fun isFavorite(videoId: String): Flow<Boolean> {
-        return favoriteVideoDao.isFavorite(videoId)
+        return favoriteVideoDao.isFavorite(uid = accountRepository.currentUid(), videoId = videoId)
     }
 
     override suspend fun isFavoriteOnce(videoId: String): Boolean {
-        return favoriteVideoDao.isFavoriteOnce(videoId)
+        return favoriteVideoDao.isFavoriteOnce(uid = accountRepository.currentUid(), videoId = videoId)
     }
 
     override suspend fun addFavorite(
@@ -93,19 +102,25 @@ class FavoritesRepositoryImpl @Inject constructor(
         thumbnailUrl: String?,
         durationSeconds: Int
     ) {
+        val uid = accountRepository.currentUid()
         val favorite = FavoriteVideo(
             videoId = videoId,
             title = title,
             channelName = channelName,
             thumbnailUrl = thumbnailUrl,
-            durationSeconds = durationSeconds
+            durationSeconds = durationSeconds,
+            user_id = uid,
+            dirty = true,
         )
         // Use upsert to update metadata while preserving addedAt for existing favorites
         favoriteVideoDao.upsertFavorite(favorite)
+        syncManager.pushDirtyAsync(uid)
     }
 
     override suspend fun removeFavorite(videoId: String) {
-        favoriteVideoDao.removeFavorite(videoId)
+        val uid = accountRepository.currentUid()
+        favoriteVideoDao.softDelete(uid = uid, videoId = videoId)
+        syncManager.pushDirtyAsync(uid)
     }
 
     override suspend fun toggleFavorite(
@@ -115,21 +130,26 @@ class FavoritesRepositoryImpl @Inject constructor(
         thumbnailUrl: String?,
         durationSeconds: Int
     ): Boolean {
+        val uid = accountRepository.currentUid()
         val video = FavoriteVideo(
             videoId = videoId,
             title = title,
             channelName = channelName,
             thumbnailUrl = thumbnailUrl,
-            durationSeconds = durationSeconds
+            durationSeconds = durationSeconds,
+            user_id = uid,
+            dirty = true,
         )
-        return favoriteVideoDao.toggleFavorite(video)
+        val result = favoriteVideoDao.toggleFavorite(video)
+        syncManager.pushDirtyAsync(uid)
+        return result
     }
 
     override fun getFavoriteCount(): Flow<Int> {
-        return favoriteVideoDao.getFavoriteCount()
+        return favoriteVideoDao.getFavoriteCount(uid = accountRepository.currentUid())
     }
 
     override suspend fun clearAll() {
-        favoriteVideoDao.clearAll()
+        favoriteVideoDao.clearAll(uid = accountRepository.currentUid())
     }
 }

@@ -46,6 +46,24 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // Plan D — per-user sync subcollections
+    function allowsAuth(uid) {
+      let u = get(/databases/$(database)/documents/users/$(uid)).data;
+      return u.status in ['ACTIVE', 'PENDING_PROFILE'];
+    }
+
+    match /users/{uid}/subscriptions/{channelId} {
+      allow read, write: if isAuthenticated() && request.auth.uid == uid && allowsAuth(uid);
+    }
+
+    match /users/{uid}/playlists/{playlistId} {
+      allow read, write: if isAuthenticated() && request.auth.uid == uid && allowsAuth(uid);
+    }
+
+    match /users/{uid}/favorites/{videoId} {
+      allow read, write: if isAuthenticated() && request.auth.uid == uid && allowsAuth(uid);
+    }
+
     match /audit_logs/{logId} {
       allow read: if isModerator();
       allow create: if false; // Only backend services should write audit logs

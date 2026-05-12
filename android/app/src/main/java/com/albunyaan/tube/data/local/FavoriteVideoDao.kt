@@ -1,7 +1,6 @@
 package com.albunyaan.tube.data.local
 
 import androidx.room.Dao
-import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
@@ -11,48 +10,35 @@ import kotlinx.coroutines.flow.Flow
 /**
  * Data Access Object for favorite videos.
  *
- * Provides reactive access to favorites via Flow, enabling
- * automatic UI updates when favorites change.
+ * All reads scope to current user (uid) and exclude soft-deleted rows.
+ * All writes set sync metadata (user_id, dirty). Hard deletes are reserved
+ * for account-switch via [wipeForUid].
  */
 @Dao
 interface FavoriteVideoDao {
 
-    /**
-     * Get all favorite videos ordered by most recently added.
-     */
-    @Query("SELECT * FROM favorite_videos ORDER BY addedAt DESC")
-    fun getAllFavorites(): Flow<List<FavoriteVideo>>
+    @Query("SELECT * FROM favorite_videos WHERE user_id = :uid AND deleted = 0 ORDER BY addedAt DESC")
+    fun getAllFavorites(uid: String): Flow<List<FavoriteVideo>>
 
-    /**
-     * Check if a video is favorited.
-     */
-    @Query("SELECT EXISTS(SELECT 1 FROM favorite_videos WHERE videoId = :videoId)")
-    fun isFavorite(videoId: String): Flow<Boolean>
+    @Query("SELECT * FROM favorite_videos WHERE user_id = :uid AND deleted = 0 ORDER BY addedAt DESC")
+    suspend fun getAll(uid: String): List<FavoriteVideo>
 
-    /**
-     * Check if a video is favorited (one-shot, not reactive).
-     */
-    @Query("SELECT EXISTS(SELECT 1 FROM favorite_videos WHERE videoId = :videoId)")
-    suspend fun isFavoriteOnce(videoId: String): Boolean
+    @Query("SELECT EXISTS(SELECT 1 FROM favorite_videos WHERE videoId = :videoId AND user_id = :uid AND deleted = 0)")
+    fun isFavorite(uid: String, videoId: String): Flow<Boolean>
 
-    /**
-     * Add a video to favorites.
-     * Uses IGNORE strategy to prevent overwriting an existing favorite's addedAt timestamp.
-     * For updating metadata on an existing favorite, use upsertFavorite() instead.
-     */
+    @Query("SELECT EXISTS(SELECT 1 FROM favorite_videos WHERE videoId = :videoId AND user_id = :uid AND deleted = 0)")
+    suspend fun isFavoriteOnce(uid: String, videoId: String): Boolean
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun addFavorite(video: FavoriteVideo)
 
-    /**
-     * Update metadata for an existing favorite without changing addedAt.
-     * This preserves the original "favorited at" timestamp.
-     */
     @Query("""
         UPDATE favorite_videos
-        SET title = :title, channelName = :channelName, thumbnailUrl = :thumbnailUrl, durationSeconds = :durationSeconds
-        WHERE videoId = :videoId
+        SET title = :title, channelName = :channelName, thumbnailUrl = :thumbnailUrl, durationSeconds = :durationSeconds, dirty = 1
+        WHERE videoId = :videoId AND user_id = :uid
     """)
     suspend fun updateMetadata(
+        uid: String,
         videoId: String,
         title: String,
         channelName: String,
@@ -60,60 +46,79 @@ interface FavoriteVideoDao {
         durationSeconds: Int
     )
 
-    /**
-     * Insert or update a favorite video.
-     * - If the video is new: inserts with current timestamp
-     * - If already exists: updates only metadata, preserving original addedAt
-     */
     @Transaction
     suspend fun upsertFavorite(video: FavoriteVideo) {
-        val exists = isFavoriteOnce(video.videoId)
+        val exists = isFavoriteOnce(video.user_id, video.videoId)
         if (exists) {
-            updateMetadata(video.videoId, video.title, video.channelName, video.thumbnailUrl, video.durationSeconds)
+            updateMetadata(video.user_id, video.videoId, video.title, video.channelName, video.thumbnailUrl, video.durationSeconds)
         } else {
             addFavorite(video)
         }
     }
 
-    /**
-     * Remove a video from favorites by ID.
-     */
-    @Query("DELETE FROM favorite_videos WHERE videoId = :videoId")
-    suspend fun removeFavorite(videoId: String)
+    @Query("UPDATE favorite_videos SET deleted = 1, dirty = 1 WHERE videoId = :videoId AND user_id = :uid")
+    suspend fun softDelete(uid: String, videoId: String)
+
+    /** Returns the row regardless of [deleted] flag — used by [toggleFavorite] re-add path. */
+    @Query("SELECT * FROM favorite_videos WHERE videoId = :videoId AND user_id = :uid LIMIT 1")
+    suspend fun getById(uid: String, videoId: String): FavoriteVideo?
 
     /**
-     * Remove a video from favorites.
+     * Resurrects a soft-deleted row in place (deleted=0, dirty=1).
+     * Plan D: [toggleFavorite]'s re-add path calls this BEFORE [upsertFavorite] so
+     * the latter's [isFavoriteOnce] check (which excludes deleted=1 rows) sees
+     * the row, takes the [updateMetadata] branch, and refreshes title/channel/
+     * thumbnail/durationSeconds in addition to the dirty=1 + deleted=0 we set
+     * here. [updateMetadata] also stamps dirty=1, so the sync push fires
+     * regardless of whether the metadata actually changed.
      */
-    @Delete
-    suspend fun removeFavorite(video: FavoriteVideo)
+    @Query("UPDATE favorite_videos SET deleted = 0, dirty = 1 WHERE videoId = :videoId AND user_id = :uid")
+    suspend fun clearSoftDelete(uid: String, videoId: String)
 
     /**
-     * Toggle favorite status for a video.
-     * Returns true if the video is now a favorite, false if removed.
+     * Toggle favorite status.
      *
-     * @Transaction ensures the check-then-insert/delete is atomic,
-     * preventing race conditions from rapid taps or concurrent calls.
+     * The re-add path uses [clearSoftDelete] + [upsertFavorite] instead of plain
+     * [addFavorite] so that a previously soft-deleted row is resurrected rather
+     * than silently skipped by the IGNORE conflict strategy.
      */
     @Transaction
     suspend fun toggleFavorite(video: FavoriteVideo): Boolean {
-        val isFav = isFavoriteOnce(video.videoId)
-        if (isFav) {
-            removeFavorite(video.videoId)
+        val existing = getById(video.user_id, video.videoId)
+        if (existing != null && !existing.deleted) {
+            softDelete(video.user_id, video.videoId)
+            return false
         } else {
-            addFavorite(video)
+            // Fresh add OR re-add of a previously soft-deleted row.
+            clearSoftDelete(video.user_id, video.videoId)
+            upsertFavorite(video)
+            return true
         }
-        return !isFav
     }
 
-    /**
-     * Get count of favorites.
-     */
-    @Query("SELECT COUNT(*) FROM favorite_videos")
-    fun getFavoriteCount(): Flow<Int>
+    @Query("SELECT COUNT(*) FROM favorite_videos WHERE user_id = :uid AND deleted = 0")
+    fun getFavoriteCount(uid: String): Flow<Int>
 
-    /**
-     * Clear all favorites.
-     */
-    @Query("DELETE FROM favorite_videos")
-    suspend fun clearAll()
+    @Query("DELETE FROM favorite_videos WHERE user_id = :uid")
+    suspend fun clearAll(uid: String)
+
+    // ── Sync surface ──────────────────────────────────────────────────
+
+    @Query("UPDATE favorite_videos SET user_id = :uid, dirty = 1 WHERE user_id = ''")
+    suspend fun tagAnonRowsToUid(uid: String): Int
+
+    @Query("SELECT * FROM favorite_videos WHERE user_id = :uid AND dirty = 1")
+    suspend fun selectDirty(uid: String): List<FavoriteVideo>
+
+    @Query("UPDATE favorite_videos SET updated_at = :ts, dirty = 0 WHERE videoId = :videoId AND user_id = :uid")
+    suspend fun clearDirty(uid: String, videoId: String, ts: Long)
+
+    @Query("DELETE FROM favorite_videos WHERE user_id = :uid")
+    suspend fun wipeForUid(uid: String)
+
+    @Query("UPDATE favorite_videos SET deleted = 1, dirty = 0, updated_at = :ts WHERE videoId = :videoId AND user_id = :uid")
+    suspend fun applyTombstone(uid: String, videoId: String, ts: Long)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertFromServer(video: FavoriteVideo)
 }

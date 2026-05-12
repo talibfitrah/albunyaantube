@@ -16,8 +16,10 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import com.albunyaan.tube.R
 import com.albunyaan.tube.auth.AccountRepository
+import com.albunyaan.tube.auth.AccountState
 import com.albunyaan.tube.auth.AccountStatus
 import com.albunyaan.tube.auth.AuthRepository
+import com.albunyaan.tube.data.sync.SyncManager
 import com.albunyaan.tube.preferences.SettingsPreferences
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.AndroidEntryPoint
@@ -64,6 +66,9 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
      */
     @Inject lateinit var authRepository: AuthRepository
 
+    /** Plan D T26: bind is fired in background once uid is confirmed. */
+    @Inject lateinit var syncManager: SyncManager
+
     /** Track running animators for cleanup on fragment destruction */
     private val runningAnimators = mutableListOf<Animator>()
 
@@ -95,9 +100,18 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
 
             // Plan C T7: fetch /api/account/me in parallel. If signed out or fetch
             // fails, status is null — SplashRouter treats null as "route to sign-in".
+            // Plan D T26: on success, fire syncManager.bind(uid) in background so
+            // the merge/pull/push cycle starts without blocking the route decision.
             val accountStatusDeferred: Deferred<AccountStatus?> = async {
                 if (firebaseAuth.currentUser == null) null
-                else accountRepository.fetchMe().getOrNull()?.status
+                else {
+                    val loaded = accountRepository.fetchMe().getOrNull()
+                    if (loaded != null) {
+                        // Fire bind in a separate coroutine — don't block routing.
+                        launch { syncManager.bind(loaded.uid) }
+                    }
+                    loaded?.status
+                }
             }
 
             // Check if this is a deep link launch - if so, skip splash entirely

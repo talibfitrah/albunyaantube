@@ -24,5 +24,10 @@ data class FavoriteVideo(
     val channelName: String,
     val thumbnailUrl: String?,
     val durationSeconds: Int,
-    val addedAt: Long = System.currentTimeMillis()
+    val addedAt: Long = System.currentTimeMillis(),
+    // Plan D — sync metadata
+    val user_id: String = "",
+    val updated_at: Long = 0L,
+    val deleted: Boolean = false,
+    val dirty: Boolean = false,
 )

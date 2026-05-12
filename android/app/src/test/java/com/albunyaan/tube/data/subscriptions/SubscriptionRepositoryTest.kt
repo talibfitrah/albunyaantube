@@ -2,9 +2,13 @@ package com.albunyaan.tube.data.subscriptions
 
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.albunyaan.tube.auth.AccountRepository
+import com.albunyaan.tube.auth.AccountState
 import com.albunyaan.tube.data.local.AppDatabase
 import com.albunyaan.tube.data.local.SavedPlaylist
 import com.albunyaan.tube.data.local.SubscribedChannel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -14,8 +18,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.kotlin.mock
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.time.LocalDate
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [31])
@@ -36,6 +42,8 @@ class SubscriptionRepositoryTest {
             playlists = db.savedPlaylistDao(),
             cache = db.channelVideoCacheDao(),
             refreshState = db.channelFeedRefreshStateDao(),
+            accountRepository = FakeAccountRepository(),
+            syncManager = mock(),
         )
     }
 
@@ -51,7 +59,8 @@ class SubscriptionRepositoryTest {
 
         repo.subscribe(sub)
         assertTrue(repo.isChannelSubscribed("UC1").first())
-        assertEquals(listOf(sub), repo.observeSubscribedChannels().first())
+        // compare by channelId — dirty/user_id are set by the repo on write
+        assertEquals(listOf("UC1"), repo.observeSubscribedChannels().first().map { it.channelId })
 
         repo.unsubscribe("UC1")
         assertFalse(repo.isChannelSubscribed("UC1").first())
@@ -65,7 +74,8 @@ class SubscriptionRepositoryTest {
 
         repo.savePlaylist(pl)
         assertTrue(repo.isPlaylistSaved("PL1").first())
-        assertEquals(listOf(pl), repo.observeSavedPlaylists().first())
+        // compare by playlistId — dirty/user_id are set by the repo on write
+        assertEquals(listOf("PL1"), repo.observeSavedPlaylists().first().map { it.playlistId })
 
         repo.unsavePlaylist("PL1")
         assertFalse(repo.isPlaylistSaved("PL1").first())
@@ -77,5 +87,14 @@ class SubscriptionRepositoryTest {
         repo.subscribe(SubscribedChannel("UC2", "u", "B", null, 3L))
         repo.subscribe(SubscribedChannel("UC3", "u", "C", null, 2L))
         assertEquals(listOf("UC2", "UC3", "UC1"), repo.getSubscribedChannels().map { it.channelId })
+    }
+
+    private class FakeAccountRepository : AccountRepository {
+        override val accountState: StateFlow<AccountState> =
+            MutableStateFlow(AccountState.NotSignedIn)
+        override suspend fun fetchMe() = Result.failure<AccountState.Loaded>(RuntimeException("stub"))
+        override suspend fun completeProfile(displayName: String, dateOfBirth: LocalDate) =
+            Result.failure<AccountState.Loaded>(RuntimeException("stub"))
+        override fun signOut() {}
     }
 }

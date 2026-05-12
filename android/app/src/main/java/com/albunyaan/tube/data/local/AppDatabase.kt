@@ -20,6 +20,9 @@ import androidx.room.RoomDatabase
  *     different schema — [MIGRATION_1_2] drops it before creating the v2
  *     subscribed_channels table, so by the time MIGRATION_6_7 runs the
  *     table is gone and can be safely re-created with the new schema.
+ * v8: Plan D account sync — adds user_id/updated_at/deleted/dirty columns to
+ *     subscribed_channels, saved_playlists, favorite_videos; creates
+ *     sync_state and account_binding tables. See [MIGRATION_7_8].
  */
 @Database(
     entities = [
@@ -29,8 +32,10 @@ import androidx.room.RoomDatabase
         ChannelVideoCache::class,
         ChannelFeedRefreshState::class,
         FollowedChannel::class,
+        SyncStateEntity::class,
+        AccountBindingEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -40,6 +45,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun channelVideoCacheDao(): ChannelVideoCacheDao
     abstract fun channelFeedRefreshStateDao(): ChannelFeedRefreshStateDao
     abstract fun followedChannelDao(): FollowedChannelDao
+    abstract fun syncStateDao(): SyncStateDao
+    abstract fun accountBindingDao(): AccountBindingDao
 
     companion object {
         const val DATABASE_NAME = "albunyaan_tube_db"

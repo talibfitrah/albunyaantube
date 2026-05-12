@@ -272,3 +272,64 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
         )
     }
 }
+
+/**
+ * MIGRATION_7_8 — Plan D sync engine.
+ *
+ * Adds four sync metadata columns (user_id, updated_at, deleted, dirty) to
+ * the three account-scoped tables (subscribed_channels, saved_playlists,
+ * favorite_videos), and creates the two new sync tables (sync_state,
+ * account_binding).
+ *
+ * All ALTER TABLE ADD COLUMN statements use NOT NULL DEFAULT 0 / '' so that
+ * existing rows acquire safe defaults without needing rewrites. Rows whose
+ * user_id is '' after this migration are "anon-era" — the bind/runMerge flow
+ * in SyncManager tags them with the user's uid and marks them dirty for push.
+ *
+ * Defensive self-heal: CREATE TABLE IF NOT EXISTS mirrors the existing
+ * migration style. ALTER TABLE … ADD COLUMN does NOT support IF NOT EXISTS
+ * in SQLite, so re-applying this migration will throw if the columns are
+ * already present — Room never re-applies a successful migration, so this
+ * is acceptable.
+ */
+val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // subscribed_channels
+        db.execSQL("ALTER TABLE subscribed_channels ADD COLUMN user_id    TEXT    NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE subscribed_channels ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE subscribed_channels ADD COLUMN deleted    INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE subscribed_channels ADD COLUMN dirty      INTEGER NOT NULL DEFAULT 0")
+
+        // saved_playlists
+        db.execSQL("ALTER TABLE saved_playlists ADD COLUMN user_id    TEXT    NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE saved_playlists ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE saved_playlists ADD COLUMN deleted    INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE saved_playlists ADD COLUMN dirty      INTEGER NOT NULL DEFAULT 0")
+
+        // favorite_videos
+        db.execSQL("ALTER TABLE favorite_videos ADD COLUMN user_id    TEXT    NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE favorite_videos ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE favorite_videos ADD COLUMN deleted    INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE favorite_videos ADD COLUMN dirty      INTEGER NOT NULL DEFAULT 0")
+
+        // sync_state — composite PK (entityType, user_id)
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS sync_state (
+              entityType   TEXT    NOT NULL,
+              user_id      TEXT    NOT NULL,
+              last_cursor  INTEGER NOT NULL,
+              last_sync_at INTEGER NOT NULL,
+              PRIMARY KEY (entityType, user_id)
+            )
+        """.trimIndent())
+
+        // account_binding — single-row table
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS account_binding (
+              user_id            TEXT    NOT NULL PRIMARY KEY,
+              bound_at           INTEGER NOT NULL,
+              initial_merge_done INTEGER NOT NULL
+            )
+        """.trimIndent())
+    }
+}

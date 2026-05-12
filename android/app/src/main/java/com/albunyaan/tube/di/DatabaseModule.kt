@@ -7,8 +7,10 @@ import com.albunyaan.tube.data.local.AppDatabase
 import com.albunyaan.tube.data.local.ChannelFeedRefreshStateDao
 import com.albunyaan.tube.data.local.ChannelVideoCacheDao
 import com.albunyaan.tube.data.local.FavoriteVideoDao
+import com.albunyaan.tube.auth.AccountRepository
 import com.albunyaan.tube.data.local.FavoritesRepository
 import com.albunyaan.tube.data.local.FavoritesRepositoryImpl
+import com.albunyaan.tube.data.sync.SyncManager
 import com.albunyaan.tube.data.local.FollowedChannelDao
 import com.albunyaan.tube.data.local.FollowedChannelsRepository
 import com.albunyaan.tube.data.local.FollowedChannelsRepositoryImpl
@@ -17,7 +19,10 @@ import com.albunyaan.tube.data.local.MIGRATION_2_3
 import com.albunyaan.tube.data.local.MIGRATION_3_4
 import com.albunyaan.tube.data.local.MIGRATION_4_5
 import com.albunyaan.tube.data.local.MIGRATION_5_6
+import com.albunyaan.tube.data.local.AccountBindingDao
 import com.albunyaan.tube.data.local.MIGRATION_6_7
+import com.albunyaan.tube.data.local.MIGRATION_7_8
+import com.albunyaan.tube.data.local.SyncStateDao
 import com.albunyaan.tube.data.local.SavedPlaylistDao
 import com.albunyaan.tube.data.local.SubscribedChannelDao
 import dagger.Module
@@ -46,7 +51,8 @@ object DatabaseModule {
         )
             .addMigrations(
                 MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
-                MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7
+                MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
+                MIGRATION_7_8,
             )
 
         // SAFETY: Only allow destructive migration in debug builds as a
@@ -68,9 +74,11 @@ object DatabaseModule {
     @Provides
     @Singleton
     fun provideFavoritesRepository(
-        favoriteVideoDao: FavoriteVideoDao
+        favoriteVideoDao: FavoriteVideoDao,
+        accountRepository: AccountRepository,
+        syncManager: SyncManager,
     ): FavoritesRepository {
-        return FavoritesRepositoryImpl(favoriteVideoDao)
+        return FavoritesRepositoryImpl(favoriteVideoDao, accountRepository, syncManager)
     }
 
     @Provides
@@ -106,4 +114,12 @@ object DatabaseModule {
     ): FollowedChannelsRepository {
         return FollowedChannelsRepositoryImpl(followedChannelDao)
     }
+
+    @Provides
+    @Singleton
+    fun provideSyncStateDao(database: AppDatabase): SyncStateDao = database.syncStateDao()
+
+    @Provides
+    @Singleton
+    fun provideAccountBindingDao(database: AppDatabase): AccountBindingDao = database.accountBindingDao()
 }

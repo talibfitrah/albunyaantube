@@ -2,17 +2,29 @@ package com.albunyaan.tube
 
 import android.app.Application
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
 import android.util.Log
 import androidx.hilt.work.HiltWorkerFactory
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.Configuration
 import com.albunyaan.tube.app.AppLifecycleTracker
+import com.albunyaan.tube.auth.AccountRepository
+import com.albunyaan.tube.auth.currentUid
 import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
 import com.albunyaan.tube.data.me.work.RefreshScheduler
+import com.albunyaan.tube.data.sync.SyncManager
 import com.albunyaan.tube.download.DownloadScheduler
 import com.albunyaan.tube.BuildConfig
 import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
@@ -22,7 +34,7 @@ import javax.inject.Inject
  * Implements Configuration.Provider for WorkManager with HiltWorkerFactory.
  */
 @HiltAndroidApp
-class AlBunyaanApplication : Application(), Configuration.Provider {
+class AlBunyaanApplication : Application(), Configuration.Provider, DefaultLifecycleObserver {
 
     @Inject
     lateinit var workerFactory: HiltWorkerFactory
@@ -38,6 +50,15 @@ class AlBunyaanApplication : Application(), Configuration.Provider {
 
     @Inject
     lateinit var refreshScheduler: RefreshScheduler
+
+    @Inject
+    lateinit var syncManager: SyncManager
+
+    @Inject
+    lateinit var accountRepository: AccountRepository
+
+    /** Application-scoped coroutine scope for lifecycle-triggered sync work. */
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /**
      * Plan B (ANDROID-AUTH-01) T3: initialize FirebaseApp BEFORE Hilt's
@@ -79,11 +100,15 @@ class AlBunyaanApplication : Application(), Configuration.Provider {
     }
 
     override fun onCreate() {
-        super.onCreate()
+        super<Application>.onCreate()
         Log.d(TAG, "Application initialized with Hilt DI")
 
         // Register process-level foreground tracker (ANDROID-PERSONAL-02 T8)
         lifecycleTracker.register()
+
+        // Plan D T26: sync on app resume + connectivity restore
+        ProcessLifecycleOwner.get().lifecycle.addObserver(this)
+        registerConnectivityCallback()
 
         // ANDROID-PERSONAL-02 / T9: arm hourly Me-feed refresh worker.
         // KEEP semantics — safe to call on every cold start.
@@ -93,6 +118,28 @@ class AlBunyaanApplication : Application(), Configuration.Provider {
         // Schedule periodic download expiry cleanup (P4-T3)
         downloadScheduler.scheduleExpiryCleanup()
         Log.d(TAG, "Download expiry cleanup scheduled")
+    }
+
+    /** Plan D T26: pull + push on every app foreground resume. */
+    override fun onResume(owner: LifecycleOwner) {
+        val uid = accountRepository.currentUid()
+        if (uid.isNotEmpty()) {
+            appScope.launch {
+                syncManager.pullAll(uid)
+                syncManager.pushDirty(uid)
+            }
+        }
+    }
+
+    /** Plan D T26: push dirty rows whenever connectivity is restored. */
+    private fun registerConnectivityCallback() {
+        val cm = getSystemService(ConnectivityManager::class.java)
+        cm.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                val uid = accountRepository.currentUid()
+                if (uid.isNotEmpty()) syncManager.pushDirtyAsync(uid)
+            }
+        })
     }
 
     override val workManagerConfiguration: Configuration

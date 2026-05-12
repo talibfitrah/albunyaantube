@@ -2,6 +2,8 @@ package com.albunyaan.tube.ui.me
 
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.albunyaan.tube.auth.AccountRepository
+import com.albunyaan.tube.auth.AccountState
 import com.albunyaan.tube.data.local.AppDatabase
 import com.albunyaan.tube.data.local.FavoriteVideo
 import com.albunyaan.tube.data.local.FavoritesRepository
@@ -16,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.runBlocking
@@ -28,8 +31,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.kotlin.mock
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.time.LocalDate
 
 /**
  * Tests MeViewModel via real-time Room so the Room InvalidationTracker's
@@ -59,6 +64,8 @@ class MeViewModelTest {
             playlists = db.savedPlaylistDao(),
             cache = db.channelVideoCacheDao(),
             refreshState = db.channelFeedRefreshStateDao(),
+            accountRepository = FakeAccountRepository(),
+            syncManager = mock(),
         )
         feed = MeFeedRepository(
             subscriptions = subs,
@@ -532,5 +539,14 @@ class MeViewModelTest {
         }
         override fun getFavoriteCount(): Flow<Int> = state.map { it.size }
         override suspend fun clearAll() { state.value = emptyList() }
+    }
+
+    private class FakeAccountRepository : AccountRepository {
+        override val accountState: StateFlow<AccountState> =
+            MutableStateFlow(AccountState.NotSignedIn)
+        override suspend fun fetchMe() = Result.failure<AccountState.Loaded>(RuntimeException("stub"))
+        override suspend fun completeProfile(displayName: String, dateOfBirth: LocalDate) =
+            Result.failure<AccountState.Loaded>(RuntimeException("stub"))
+        override fun signOut() {}
     }
 }

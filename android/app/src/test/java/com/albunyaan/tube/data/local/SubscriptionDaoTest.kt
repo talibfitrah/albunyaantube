@@ -43,25 +43,25 @@ class SubscriptionDaoTest {
         channels.upsert(SubscribedChannel("UC2", "u2", "B", null, 2_000L))
         channels.upsert(SubscribedChannel("UC3", "u3", "C", null, 3_000L))
 
-        val ordered = channels.observeAll().first().map { it.channelId }
+        val ordered = channels.observeAll(uid = "").first().map { it.channelId }
         assertEquals(listOf("UC3", "UC2", "UC1"), ordered)
     }
 
     @Test
     fun `observeIsSubscribed flips on insert and delete`() = runTest {
-        assertFalse(channels.observeIsSubscribed("UCx").first())
+        assertFalse(channels.observeIsSubscribed(uid = "", id = "UCx").first())
 
         channels.upsert(SubscribedChannel("UCx", "u", "N", null, 0L))
-        assertTrue(channels.observeIsSubscribed("UCx").first())
+        assertTrue(channels.observeIsSubscribed(uid = "", id = "UCx").first())
 
-        channels.delete("UCx")
-        assertFalse(channels.observeIsSubscribed("UCx").first())
+        channels.softDelete(uid = "", id = "UCx")
+        assertFalse(channels.observeIsSubscribed(uid = "", id = "UCx").first())
     }
 
     @Test
     fun `delete is idempotent on missing id`() = runTest {
-        channels.delete("UCnone")
-        assertFalse(channels.observeIsSubscribed("UCnone").first())
+        channels.softDelete(uid = "", id = "UCnone")
+        assertFalse(channels.observeIsSubscribed(uid = "", id = "UCnone").first())
     }
 
     @Test
@@ -69,7 +69,7 @@ class SubscriptionDaoTest {
         channels.upsert(SubscribedChannel("UC1", "u", "Original", null, 1L))
         channels.upsert(SubscribedChannel("UC1", "u", "Renamed", "avatar", 1L))
 
-        val rows = channels.getAll()
+        val rows = channels.getAll(uid = "")
         assertEquals(1, rows.size)
         assertEquals("Renamed", rows[0].name)
         assertEquals("avatar", rows[0].avatarUrl)
@@ -77,14 +77,14 @@ class SubscriptionDaoTest {
 
     @Test
     fun `saved playlist upsert and remove`() = runTest {
-        assertFalse(playlists.observeIsSaved("PL1").first())
+        assertFalse(playlists.observeIsSaved(uid = "", id = "PL1").first())
 
         playlists.upsert(SavedPlaylist("PL1", "url", "Name", null, "Up", 10L))
-        assertTrue(playlists.observeIsSaved("PL1").first())
-        assertEquals(1, playlists.getAll().size)
+        assertTrue(playlists.observeIsSaved(uid = "", id = "PL1").first())
+        assertEquals(1, playlists.getAll(uid = "").size)
 
-        playlists.delete("PL1")
-        assertFalse(playlists.observeIsSaved("PL1").first())
+        playlists.softDelete(uid = "", id = "PL1")
+        assertFalse(playlists.observeIsSaved(uid = "", id = "PL1").first())
     }
 
     @Test
@@ -93,7 +93,7 @@ class SubscriptionDaoTest {
         playlists.upsert(SavedPlaylist("PL2", "u", "B", null, null, 3_000L))
         playlists.upsert(SavedPlaylist("PL3", "u", "C", null, null, 2_000L))
 
-        val ordered = playlists.observeAll().first().map { it.playlistId }
+        val ordered = playlists.observeAll(uid = "").first().map { it.playlistId }
         assertEquals(listOf("PL2", "PL3", "PL1"), ordered)
     }
 }
