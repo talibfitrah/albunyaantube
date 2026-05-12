@@ -6,6 +6,7 @@ import com.albunyaan.tube.data.source.api.ContentApi
 import com.albunyaan.tube.data.source.api.DownloadApi
 import com.albunyaan.tube.data.source.api.IndexApi
 import com.albunyaan.tube.data.source.api.ReportApi
+import com.albunyaan.tube.data.sync.SyncApi
 import com.squareup.moshi.FromJson
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.ToJson
@@ -165,6 +166,11 @@ object NetworkModule {
     @Singleton
     fun provideAccountService(retrofit: Retrofit): com.albunyaan.tube.data.account.AccountService =
         retrofit.create(com.albunyaan.tube.data.account.AccountService::class.java)
+
+    @Provides
+    @Singleton
+    fun provideSyncApi(retrofit: Retrofit): SyncApi =
+        retrofit.create(SyncApi::class.java)
 }
 
 /** Moshi adapter for java.time.OffsetDateTime used in OpenAPI-generated models. */
