@@ -2,6 +2,7 @@ package com.albunyaan.tube.service;
 
 import com.albunyaan.tube.config.FirestoreTimeoutProperties;
 import com.albunyaan.tube.exception.LastAdminException;
+import com.albunyaan.tube.security.FirebaseUserDetails;
 import com.albunyaan.tube.model.AuditLog;
 import com.albunyaan.tube.model.Role;
 import com.albunyaan.tube.model.User;
@@ -507,6 +508,25 @@ public class AuthService {
 
         logger.info("Recovered user uid={} actor={} transitioned={}",
                 uid, actorUid, transitioned);
+    }
+
+    /**
+     * Plan F (ADMIN-USER-01, F6) — stand-alone refresh-token revocation.
+     * Extracted from the inline calls in {@link #blockUser} / {@link #softDeleteUser}
+     * so admins can force-logout a user without changing their account state.
+     */
+    public void revokeSessions(String uid,
+                               FirebaseUserDetails actor,
+                               String reason)
+            throws FirebaseAuthException {
+        firebaseAuth.revokeRefreshTokens(uid);
+        Map<String, Object> details = new HashMap<>();
+        if (reason != null && !reason.isBlank()) details.put("reason", reason);
+        auditLogService.log(
+                "USER_SESSIONS_REVOKED",
+                "user", uid,
+                actor,
+                details);
     }
 
     /**
