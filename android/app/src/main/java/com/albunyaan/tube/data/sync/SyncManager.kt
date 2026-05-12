@@ -39,8 +39,47 @@ class SyncManager @Inject constructor(
     private val pullMutex = Mutex()
     private val pushMutex = Mutex()
 
-    suspend fun bind(uid: String) { /* Task 22 */ }
-    suspend fun runMerge(uid: String) { /* Task 22 */ }
+    suspend fun bind(uid: String) {
+        val b = binding.get()
+        when {
+            b == null -> {
+                binding.upsert(AccountBindingEntity(user_id = uid, bound_at = System.currentTimeMillis(), initial_merge_done = false))
+                runMerge(uid)
+            }
+            b.user_id == uid && b.initial_merge_done -> {
+                pullAll(uid)
+                pushDirty(uid)
+            }
+            b.user_id == uid && !b.initial_merge_done -> {
+                // Prior merge crashed mid-way — re-enter
+                runMerge(uid)
+            }
+            else -> {
+                // Account switch: wipe old uid's rows
+                subs.wipeForUid(b.user_id)
+                playlists.wipeForUid(b.user_id)
+                favorites.wipeForUid(b.user_id)
+                syncState.clearForUid(b.user_id)
+                binding.clear()
+                binding.upsert(AccountBindingEntity(uid, System.currentTimeMillis(), false))
+                runMerge(uid)
+            }
+        }
+    }
+
+    suspend fun runMerge(uid: String) {
+        // Step 1: tag anon rows
+        subs.tagAnonRowsToUid(uid)
+        playlists.tagAnonRowsToUid(uid)
+        favorites.tagAnonRowsToUid(uid)
+        // Step 2: pull server — collisions overwrite local, clearing dirty
+        pullAll(uid)
+        // Step 3: push remaining local-only rows
+        pushDirty(uid)
+        // Step 4: mark merge done
+        binding.markMergeDone(uid)
+    }
+
     suspend fun pullAll(uid: String) { /* Task 23 */ }
     suspend fun pushDirty(uid: String) { /* Task 24 */ }
     fun unbind() { /* in-memory clear; nothing persistent to flush */ }
