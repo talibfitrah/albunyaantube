@@ -195,3 +195,14 @@ download:
     # NEVER commit production secrets to version control
     secret-key: ${DOWNLOAD_TOKEN_SECRET_KEY:albunyaan-download-secret-key-change-in-production}
 
+# Plan F (ADMIN-USER-01) — outbound mail via Microsoft Graph
+mail:
+  enabled: ${MAIL_ENABLED:true}
+  from-address: ${MAIL_FROM_ADDRESS:noreply@fitrahtube.com}
+  from-display-name: ${MAIL_FROM_DISPLAY_NAME:FitrahTube}
+
+azure:
+  tenant-id: ${AZURE_TENANT_ID:}
+  client-id: ${AZURE_CLIENT_ID:}
+  client-secret: ${AZURE_CLIENT_SECRET:}
+
