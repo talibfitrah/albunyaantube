@@ -149,6 +149,17 @@ public class RegistryController {
         if (channel.getYoutubeId() != null) {
             var existing = channelRepository.findByYoutubeId(channel.getYoutubeId());
             if (existing.isPresent()) {
+                Channel ex = existing.get();
+                if ("REQUEST_CHANGES".equals(ex.getStatus()) && user.getUid().equals(ex.getSubmittedBy())) {
+                    // Plan E: re-submit of an admin-bounced row. Flip back to PENDING.
+                    ex.setStatus("PENDING");
+                    ex.setApprovalMetadata(null);
+                    ex.setUpdatedAt(com.google.cloud.Timestamp.now());
+                    if (channel.getCategoryIds() != null) ex.setCategoryIds(channel.getCategoryIds());
+                    channelRepository.save(ex);
+                    auditLogService.log("channel_resubmitted_after_changes", "channel", ex.getId(), user);
+                    return ResponseEntity.ok(ex);
+                }
                 return ResponseEntity.status(HttpStatus.CONFLICT).build();
             }
         }
@@ -327,6 +338,17 @@ public class RegistryController {
         if (playlist.getYoutubeId() != null) {
             var existing = playlistRepository.findByYoutubeId(playlist.getYoutubeId());
             if (existing.isPresent()) {
+                Playlist ex = existing.get();
+                if ("REQUEST_CHANGES".equals(ex.getStatus()) && user.getUid().equals(ex.getSubmittedBy())) {
+                    // Plan E: re-submit of an admin-bounced row. Flip back to PENDING.
+                    ex.setStatus("PENDING");
+                    ex.setApprovalMetadata(null);
+                    ex.setUpdatedAt(com.google.cloud.Timestamp.now());
+                    if (playlist.getCategoryIds() != null) ex.setCategoryIds(playlist.getCategoryIds());
+                    playlistRepository.save(ex);
+                    auditLogService.log("playlist_resubmitted_after_changes", "playlist", ex.getId(), user);
+                    return ResponseEntity.ok(ex);
+                }
                 return ResponseEntity.status(HttpStatus.CONFLICT).build();
             }
         }
@@ -597,6 +619,17 @@ public class RegistryController {
         if (video.getYoutubeId() != null) {
             var existing = videoRepository.findByYoutubeId(video.getYoutubeId());
             if (existing.isPresent()) {
+                Video ex = existing.get();
+                if ("REQUEST_CHANGES".equals(ex.getStatus()) && user.getUid().equals(ex.getSubmittedBy())) {
+                    // Plan E: re-submit of an admin-bounced row. Flip back to PENDING.
+                    ex.setStatus("PENDING");
+                    ex.setApprovalMetadata(null);
+                    ex.setUpdatedAt(com.google.cloud.Timestamp.now());
+                    if (video.getCategoryIds() != null) ex.setCategoryIds(video.getCategoryIds());
+                    videoRepository.save(ex);
+                    auditLogService.log("video_resubmitted_after_changes", "video", ex.getId(), user);
+                    return ResponseEntity.ok(ex);
+                }
                 return ResponseEntity.status(HttpStatus.CONFLICT).build();
             }
         }
