@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.*;
 
 class MailServiceTest {
 
@@ -54,5 +55,33 @@ class MailServiceTest {
         assertEquals(1, msg.getToRecipients().size());
         assertEquals("user@example.com",
                 msg.getToRecipients().get(0).getEmailAddress().getAddress());
+    }
+
+    @Test
+    void enabledMail_whenSendThrows_logsCountsAndAudits() {
+        MailProperties mail = new MailProperties();
+        mail.setEnabled(false); // skip Graph init in constructor
+        mail.setFromAddress("noreply@fitrahtube.com");
+        mail.setFromDisplayName("FitrahTube");
+        AzureProperties azure = new AzureProperties();
+        MeterRegistry meters = new SimpleMeterRegistry();
+        AuditLogService auditLog = mock(AuditLogService.class);
+
+        class TestableMailService extends MailService {
+            TestableMailService() { super(mail, azure, meters, auditLog); }
+            void simulateFailure(String to) {
+                handleSendFailure(to, new RuntimeException("graph 503"));
+            }
+        }
+        TestableMailService svc = new TestableMailService();
+
+        svc.simulateFailure("user@example.com");
+
+        assertEquals(1.0, meters.counter("email.send.failure", "type", "password_reset").count());
+        verify(auditLog).logSystem(
+                eq("USER_PASSWORD_RESET_EMAIL_FAILED"),
+                eq("user"),
+                eq("user@example.com"),
+                anyString());
     }
 }

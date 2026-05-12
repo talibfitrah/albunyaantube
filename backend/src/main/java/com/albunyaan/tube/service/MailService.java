@@ -69,10 +69,19 @@ public class MailService {
             meters.counter("email.send.success", "type", "password_reset").increment();
             log.info("password_reset_email.sent to={}", to);
         } catch (Exception e) {
-            // Implemented fully in T5.
-            log.error("password_reset_email.failed to={}", to, e);
-            meters.counter("email.send.failure", "type", "password_reset").increment();
+            handleSendFailure(to, e);
         }
+    }
+
+    /** Package-private for unit test override. */
+    void handleSendFailure(String to, Exception e) {
+        log.error("password_reset_email.failed to={}", to, e);
+        meters.counter("email.send.failure", "type", "password_reset").increment();
+        auditLog.logSystem(
+                "USER_PASSWORD_RESET_EMAIL_FAILED",
+                "user",
+                to,
+                "mail-service: error=" + e.getClass().getSimpleName());
     }
 
     /** Package-private for unit-testability. */
