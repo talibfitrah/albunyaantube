@@ -262,9 +262,16 @@ azure:
 3. **Certificates & secrets** → **New client secret** → 24-month expiry → **Copy the Value field immediately** (it never displays again). Save to deployment vault.
 4. **API permissions** → **Add a permission** → **Microsoft Graph** → **Application permissions** → check `Mail.Send` → **Add**.
 5. Click **Grant admin consent for <tenant>**. (Requires Global Admin role on the tenant.)
-6. **Critical security step** — restrict the app to send ONLY from `noreply@fitrahtube.com`. Otherwise it could send mail as ANY user in the tenant.
+6. **Mail.Send mailbox scoping — DEFERRED (2026-05-12, Path A decision)**.
+   Original intent: restrict the app to send ONLY from `noreply@fitrahtube.com` via `New-ApplicationAccessPolicy`. Without this, the `Mail.Send` application permission allows sending mail as ANY mailbox in the tenant.
 
-   Open Exchange Online PowerShell and run:
+   **Why deferred:** Connecting Exchange Online PowerShell from this Linux host (the only environment available to the operator) is blocked by Microsoft Entra Conditional Access / Security Defaults on unregistered devices (error AADSTS53003). After extended troubleshooting (multiple device-code attempts, CA policy inspection, Security Defaults blade 404), we accepted the trade-off rather than burn further hours.
+
+   **Risk acceptance rationale:** Tenant is single-admin and small (one production mailbox `noreply@fitrahtube.com` exists; one shared mailbox is configured). Blast radius if the client secret leaks is bounded by what little mail exists in the tenant. Scoping can be applied later as a single PowerShell command run from a registered Windows device or after CA exclusions are configured — no code change required.
+
+   **Mandatory follow-up:** Apply `New-ApplicationAccessPolicy` (commands below) before opening the tenant to additional mailboxes or onboarding additional staff. Track as a deployment TODO in `docs/deployment/azure-app-registration.md`.
+
+   When ready, run:
    ```powershell
    Connect-ExchangeOnline
    New-DistributionGroup -Name "FitrahTubeAppSenders" -Members "noreply@fitrahtube.com"
@@ -274,7 +281,7 @@ azure:
        -AccessRight RestrictAccess `
        -Description "FitrahTube Backend may only send from noreply mailbox"
    ```
-7. Verify with `Test-ApplicationAccessPolicy -AppId <client-id> -Identity noreply@fitrahtube.com` → `AccessCheckResult: Granted`.
+7. Verify (after step 6 is eventually applied) with `Test-ApplicationAccessPolicy -AppId <client-id> -Identity noreply@fitrahtube.com` → `AccessCheckResult: Granted`.
 
 The deployment doc `docs/deployment/azure-app-registration.md` repeats this verbatim plus screenshots.
 
@@ -637,7 +644,7 @@ Run against Firebase emulator with `mail.enabled=false` and a stub `GraphService
 
 1. **Microsoft Graph SDK 6.x is breaking-change-prone** — major version bumps in `microsoft-graph` Java SDK have happened with little warning. Mitigation: pin to `6.+` minor in spec, lock exact resolved version via Gradle dependency-lock once stable.
 2. **Azure client secret expiry** — secrets cap at 24 months. If forgotten, password resets silently fail. Mitigation: a Spring `@Scheduled` health check runs daily, calls Graph `/me` with the cached token, fails loudly (logs + counter `azure.token.invalid`) when token acquisition errors. Also `docs/deployment/azure-secret-rotation.md` documents the 30-day-before-expiry rotation procedure.
-3. **Mail.Send scoping** — if step 6 in §6 is skipped, the app can send mail as ANY mailbox in the tenant. Spec marks this as a deployment blocker. Backend startup should refuse to start if the configured `from-address` mailbox isn't reachable (a one-shot startup check calling `graph.users(fromAddress).get()`).
+3. **Mail.Send scoping — accepted unscoped (2026-05-12, Path A)**. App can technically send mail as ANY mailbox in the tenant because `New-ApplicationAccessPolicy` is deferred (see §6 step 6). Blast radius is bounded: tenant has one production mailbox + one shared mailbox, single admin, no end-user mailboxes. Mitigation: backend startup probes `graph.users(fromAddress).get()` and refuses to start if `noreply@fitrahtube.com` is unreachable (catches misconfiguration but does NOT enforce scoping). Mandatory follow-up: apply `New-ApplicationAccessPolicy` before tenant grows beyond current state. Tracked in `docs/deployment/azure-app-registration.md`.
 4. **Bulk-revoke latency** — 100 sequential `revokeRefreshTokens` calls take ~3–6s. Within controller timeout (default 30s) but visibly slow. Acceptable for an admin bulk operation; if it becomes a problem, parallelize in a Plan-G follow-up.
 5. **Audit log unbounded growth** — `audit_logs` collection has no retention today. With Plan E + F, it grows ~10–50 rows/day at current scale. Out of scope for Plan F. Documented as Plan G entry point.
 6. **Race on auto-revoke during role change** — if `revokeRefreshTokens` errors out, role change still commits (per F6 design). User keeps elevated access until JWT expires (≤1h). Tradeoff explicitly chosen: never block a role change on async cleanup. Audit log captures the auto-revoke failure if it occurs.
