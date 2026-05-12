@@ -9,5 +9,10 @@ data class SubscribedChannel(
     val channelUrl: String,
     val name: String,
     val avatarUrl: String?,
-    val subscribedAt: Long = System.currentTimeMillis()
+    val subscribedAt: Long = System.currentTimeMillis(),
+    // Plan D — sync metadata
+    val user_id: String = "",
+    val updated_at: Long = 0L,
+    val deleted: Boolean = false,
+    val dirty: Boolean = false,
 )
