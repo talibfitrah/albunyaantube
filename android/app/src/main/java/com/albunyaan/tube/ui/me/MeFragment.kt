@@ -8,6 +8,7 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.core.view.isVisible
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.ConcatAdapter
 import androidx.recyclerview.widget.GridLayoutManager
@@ -15,6 +16,8 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.work.WorkManager
 import com.albunyaan.tube.R
+import com.albunyaan.tube.auth.AccountRepository
+import com.albunyaan.tube.auth.AccountState
 import com.albunyaan.tube.data.local.FavoriteVideo
 import com.albunyaan.tube.data.local.FavoritesRepository
 import com.albunyaan.tube.data.me.ChipItem
@@ -40,6 +43,11 @@ class MeFragment : Fragment(R.layout.fragment_me) {
     // here flows back through state.favorites and the row updates without
     // an extra round-trip.
     @Inject lateinit var favoritesRepository: FavoritesRepository
+
+    // E-T12: role gate for the My Submissions entry. One-shot read at
+    // onViewCreated; role cannot change without a sign-out which recreates
+    // the fragment stack, so no live observation is needed.
+    @Inject lateinit var accountRepository: AccountRepository
 
     @Inject lateinit var prefetchService: com.albunyaan.tube.player.StreamPrefetchService
     @Inject lateinit var playbackFeatureFlags: com.albunyaan.tube.player.PlaybackFeatureFlags
@@ -129,6 +137,18 @@ class MeFragment : Fragment(R.layout.fragment_me) {
         b.meEmpty.meEmptyCta.setOnClickListener {
             if (findNavController().currentDestination?.id == R.id.meFragment) {
                 findNavController().navigate(R.id.channelsFragment)
+            }
+        }
+
+        // E-T12: show "My Submissions" entry only for moderator/admin.
+        // Role is stable for the lifetime of this fragment (sign-out
+        // recreates the stack), so a one-shot read is sufficient.
+        val role = (accountRepository.accountState.value as? AccountState.Loaded)?.role ?: "user"
+        val showSubmissions = role == "moderator" || role == "admin"
+        b.mySubmissionsEntry?.isVisible = showSubmissions
+        b.mySubmissionsEntry?.setOnClickListener {
+            if (findNavController().currentDestination?.id == R.id.meFragment) {
+                findNavController().navigate(R.id.action_me_to_mySubmissions)
             }
         }
 
