@@ -13,7 +13,6 @@
           type="search"
           class="input"
           :placeholder="t('audit.filters.actorPlaceholder')"
-          @input="scheduleReload"
         />
         <label class="sr-only" for="audit-action-filter">{{ t('audit.filters.actionLabel') }}</label>
         <input
@@ -22,7 +21,6 @@
           type="search"
           class="input"
           :placeholder="t('audit.filters.actionPlaceholder')"
-          @input="scheduleReload"
         />
       </div>
     </header>
@@ -54,7 +52,7 @@
           <tr v-else-if="!entries.length">
             <td :colspan="5" class="empty-state">{{ t('audit.table.empty') }}</td>
           </tr>
-          <tr v-for="entry in entries" :key="entry.id">
+          <tr v-for="entry in entries" :key="entry.id" data-testid="audit-row">
             <td>
               <div class="actor-email">{{ entry.actorUid }}</div>
               <div class="actor-roles">{{ entry.actorDisplayName || t('audit.roles.none') }}</div>
@@ -76,15 +74,19 @@
     </div>
 
     <footer class="table-footer">
-      <button type="button" class="pager" :disabled="!hasPrevious || isLoading" @click="previous">
-        {{ t('audit.pagination.previous') }}
-      </button>
       <div class="footer-status">
         <span v-if="isLoading">{{ t('audit.table.loading') }}</span>
         <span v-else>{{ paginationSummary }}</span>
       </div>
-      <button type="button" class="pager" :disabled="!hasNext || isLoading" @click="next">
-        {{ t('audit.pagination.next') }}
+      <button
+        v-if="nextCursor !== null"
+        type="button"
+        class="pager"
+        :disabled="isLoading"
+        data-testid="audit-load-more"
+        @click="loadMore"
+      >
+        {{ t('audit.pagination.loadMore') }}
       </button>
     </footer>
   </section>
@@ -93,7 +95,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useCursorPagination } from '@/composables/useCursorPagination';
 import { fetchAuditLogPage } from '@/services/adminAudit';
 import type { AuditEntry } from '@/types/admin';
 import { formatDateTime as baseFormatDateTime } from '@/utils/formatters';
@@ -105,17 +106,40 @@ const actorFilter = ref('');
 const actionFilter = ref('');
 const errorMessage = ref<string | null>(null);
 
-const pagination = useCursorPagination<AuditEntry>(async (cursor, limit) => {
-  return fetchAuditLogPage({
-    cursor,
-    limit,
-    actorId: actorFilter.value.trim() || undefined,
-    action: actionFilter.value.trim() || undefined
-  });
-});
+// Local cursor-append state (replaces useCursorPagination page-button model)
+const entries = ref<AuditEntry[]>([]);
+const nextCursor = ref<string | null>(null);
+const isLoading = ref(false);
 
-const { items, isLoading, error, load, next, previous, hasNext, hasPrevious, pageInfo } = pagination;
-const entries = items;
+async function load(reset = false) {
+  if (reset) {
+    entries.value = [];
+    nextCursor.value = null;
+  }
+  isLoading.value = true;
+  errorMessage.value = null;
+  try {
+    const page = await fetchAuditLogPage({
+      cursor: reset ? null : nextCursor.value,
+      actorId: actorFilter.value.trim() || undefined,
+      action: actionFilter.value.trim() || undefined
+    });
+    entries.value = reset ? page.data : [...entries.value, ...page.data];
+    nextCursor.value = page.pageInfo.nextCursor ?? null;
+  } catch (err) {
+    errorMessage.value = err instanceof Error ? err.message : t('audit.table.error');
+  } finally {
+    isLoading.value = false;
+  }
+}
+
+async function loadMore() {
+  await load(false);
+}
+
+async function reload() {
+  await load(true);
+}
 
 let reloadTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -124,21 +148,17 @@ function scheduleReload() {
     clearTimeout(reloadTimeout);
   }
   reloadTimeout = setTimeout(() => {
-    void load(null, 'reset');
+    void load(true);
   }, 300);
 }
 
-async function reload() {
-  errorMessage.value = null;
-  await load(null, 'reset');
-}
-
-onMounted(async () => {
-  await load(null, 'reset');
+// Reset + refetch when filters change
+watch([actorFilter, actionFilter], () => {
+  scheduleReload();
 });
 
-watch(error, (value) => {
-  errorMessage.value = value;
+onMounted(async () => {
+  await load(true);
 });
 
 onBeforeUnmount(() => {
@@ -160,13 +180,9 @@ function formatDateTime(value: string) {
 }
 
 const paginationSummary = computed(() => {
-  if (!pageInfo.value) {
-    return '';
-  }
   const formatter = new Intl.NumberFormat(currentLocale.value);
   const count = formatter.format(entries.value.length);
-  const limit = formatter.format(pageInfo.value.limit ?? entries.value.length);
-  return t('audit.pagination.showing', { count, limit });
+  return t('audit.pagination.showing', { count, limit: count });
 });
 </script>
 

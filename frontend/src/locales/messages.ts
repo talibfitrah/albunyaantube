@@ -934,7 +934,8 @@ export const messages = {
       pagination: {
         previous: 'Previous',
         next: 'Next',
-        showing: 'Showing {count} of {limit} events'
+        showing: 'Showing {count} of {limit} events',
+        loadMore: 'Load more'
       }
     },
     activity: {
@@ -2319,7 +2320,8 @@ export const messages = {
       pagination: {
         previous: 'السابق',
         next: 'التالي',
-        showing: 'عرض {count} من {limit} أحداث'
+        showing: 'عرض {count} من {limit} أحداث',
+        loadMore: 'تحميل المزيد'
       }
     },
     activity: {
@@ -3535,7 +3537,8 @@ export const messages = {
       pagination: {
         previous: 'Vorige',
         next: 'Volgende',
-        showing: '{count} van {limit} gebeurtenissen'
+        showing: '{count} van {limit} gebeurtenissen',
+        loadMore: 'Meer laden'
       }
     },
     activity: {
