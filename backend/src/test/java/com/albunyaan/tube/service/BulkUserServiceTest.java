@@ -50,6 +50,31 @@ class BulkUserServiceTest {
                         && Integer.valueOf(0).equals(m.get("failures"))));
     }
 
+    @Test
+    void selfAction_isBucketedAsFailure_andDoesNotCallAuth() throws Exception {
+        AuthService authService = mock(AuthService.class);
+        UserRepository userRepo = mock(UserRepository.class);
+        AuditLogService auditLog = mock(AuditLogService.class);
+
+        when(userRepo.findByUid("other-uid")).thenReturn(Optional.of(userWithRole("user")));
+
+        BulkUserService svc = new BulkUserService(authService, userRepo, auditLog);
+
+        BulkUserActionResult result = svc.execute(
+                BulkAction.BLOCK,
+                List.of("admin-uid", "other-uid"),
+                ADMIN_ACTOR,
+                null);
+
+        assertEquals(List.of("other-uid"), result.getSuccesses());
+        assertEquals(1, result.getFailures().size());
+        assertEquals("admin-uid", result.getFailures().get(0).uid());
+        assertEquals("self_action_forbidden", result.getFailures().get(0).reason());
+
+        verify(authService, never()).blockUser(eq("admin-uid"), any(), any());
+        verify(authService).blockUser("other-uid", "admin-uid", null);
+    }
+
     private static User userWithRole(String role) {
         User u = new User();
         u.setRole(role);

@@ -40,6 +40,10 @@ public class BulkUserService {
         List<FailureEntry> failures = new ArrayList<>();
 
         for (String uid : uids) {
+            if (uid.equals(actorUid)) {
+                failures.add(new FailureEntry(uid, "self_action_forbidden"));
+                continue;
+            }
             try {
                 switch (action) {
                     case BLOCK            -> authService.blockUser(uid, actorUid, reason);
