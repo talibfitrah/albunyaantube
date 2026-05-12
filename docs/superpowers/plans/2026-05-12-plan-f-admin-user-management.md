@@ -1068,66 +1068,88 @@ git commit -m "[FEAT-ADMIN-USER-01-T11]: auto-revoke refresh tokens on role chan
 
 **Files:** create `backend/src/test/java/com/albunyaan/tube/integration/AutoRevokeOnRoleChangeIT.java`
 
-Per spec §10 — PUT role from USER → MODERATOR; assert audit entry with details.
+Per spec §10 — admin updates role from USER → MODERATOR; assert auto-revoke fires + audit entry with details.
+
+> **IT-style amendment (2026-05-12, post-recon):** the existing integration tests in this codebase (see `AuthServiceBlockIntegrationTest`, `AuthServiceLastAdminIntegrationTest`) call `AuthService` methods directly instead of going through HTTP/MockMvc, and mock `FirebaseAuth` via `@MockBean` since the Firebase Auth Admin SDK isn't available in the test env. T12 follows that convention. The auto-revoke fires synchronously inside `updateUserRoleAsActor` (no `@Async`), so no `Thread.sleep` is needed. The IT verifies behaviour reachable from any caller of the service method; the HTTP layer is covered separately (Plan A's existing tests).
 
 - [ ] **Step 1: Write the integration test**
 
 ```java
 package com.albunyaan.tube.integration;
 
+import com.albunyaan.tube.model.User;
+import com.albunyaan.tube.model.UserStatus;
+import com.albunyaan.tube.repository.UserRepository;
+import com.albunyaan.tube.service.AuthService;
+import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.google.cloud.firestore.QuerySnapshot;
+import com.google.firebase.auth.FirebaseAuth;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.boot.test.mock.mockito.MockBean;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.mockito.Mockito.verify;
 
 /**
- * Plan F (ADMIN-USER-01) — verify that PUT /api/admin/users/{uid}/role fires
+ * Plan F (ADMIN-USER-01) — verify that updating a user's role fires
  * USER_SESSIONS_REVOKED_AUTO with the role transition details.
  */
-public class AutoRevokeOnRoleChangeIT extends BaseIntegrationTest {
+class AutoRevokeOnRoleChangeIT extends BaseIntegrationTest {
+
+    @Autowired
+    AuthService authService;
+
+    @MockBean
+    FirebaseAuth firebaseAuth;
 
     @Test
-    void putRole_firesAutoRevoke_andAudits() throws Exception {
-        String adminUid = seedAdmin("admin@test.com", "Admin");
-        String targetUid = seedUser("target@test.com", "Target", "user", "active");
-        String adminToken = stubIdToken(adminUid);
+    void updateRole_firesAutoRevoke_andAudits() throws Exception {
+        String adminUid = seedUser("admin-aroc@test.com", "admin");
+        seedUser("admin-aroc-2@test.com", "admin"); // not last admin
+        String targetUid = seedUser("target-aroc@test.com", "user");
 
-        MvcResult result = mvc.perform(put("/api/admin/users/" + targetUid + "/role")
-                        .header("Authorization", "Bearer " + adminToken)
-                        .contentType("application/json")
-                        .content("{\"role\":\"moderator\"}"))
-                .andExpect(status().isOk())
-                .andReturn();
+        authService.updateUserRoleAsActor(targetUid, "moderator", adminUid);
 
-        // Allow async + post-commit work to complete.
-        Thread.sleep(500);
+        // FirebaseAuth.revokeRefreshTokens(uid) called via the auto-revoke block.
+        verify(firebaseAuth).revokeRefreshTokens(targetUid);
 
-        // Assert audit entry written.
+        // Assert audit row written.
         QuerySnapshot snap = firestore.collection("audit_logs")
                 .whereEqualTo("action", "USER_SESSIONS_REVOKED_AUTO")
                 .whereEqualTo("entityId", targetUid)
                 .get().get();
 
         List<QueryDocumentSnapshot> docs = snap.getDocuments();
-        assertEquals(1, docs.size(), "expected exactly one USER_SESSIONS_REVOKED_AUTO entry");
+        assertEquals(1, docs.size(),
+                "expected exactly one USER_SESSIONS_REVOKED_AUTO entry for " + targetUid);
 
-        java.util.Map<String, Object> details =
-                (java.util.Map<String, Object>) docs.get(0).get("details");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> details = (Map<String, Object>) docs.get(0).get("details");
+        assertNotNull(details, "audit details should be present");
         assertEquals("user", details.get("oldRole"));
         assertEquals("moderator", details.get("newRole"));
         assertEquals("role_change", details.get("trigger"));
     }
+
+    private String seedUser(String email, String role) throws Exception {
+        String uid = "test-" + email.replace("@", "-at-").replace(".", "-");
+        User u = new User();
+        u.setUid(uid);
+        u.setEmail(email);
+        u.setRole(role);
+        u.setStatusEnum(UserStatus.ACTIVE);
+        u.setCreatedAt(Timestamp.now());
+        u.setUpdatedAt(Timestamp.now());
+        userRepository.save(u);
+        return uid;
+    }
 }
 ```
-
-> **Helper assumptions:** `seedAdmin`, `seedUser`, `stubIdToken` follow patterns from `AccountStatusFilterIntegrationTest`. If signatures differ in this codebase, adapt accordingly — the spec test description in §10 is the authoritative behaviour: "PUT role from USER → MODERATOR. Assert role updated, revoke fired, `USER_SESSIONS_REVOKED_AUTO` audit with `details.oldRole=user, newRole=moderator`."
 
 - [ ] **Step 2: Run the IT**
 
