@@ -44,6 +44,21 @@ public class BulkUserService {
                 failures.add(new FailureEntry(uid, "self_action_forbidden"));
                 continue;
             }
+
+            if (action != BulkAction.RECOVER) {
+                try {
+                    Optional<User> u = userRepository.findByUid(uid);
+                    if (u.isPresent() && "admin".equalsIgnoreCase(u.get().getRole())) {
+                        failures.add(new FailureEntry(uid, "admin_target_forbidden"));
+                        continue;
+                    }
+                } catch (Exception e) {
+                    log.error("admin.target.check.error uid={}", uid, e);
+                    failures.add(new FailureEntry(uid, "firebase_error"));
+                    continue;
+                }
+            }
+
             try {
                 switch (action) {
                     case BLOCK            -> authService.blockUser(uid, actorUid, reason);

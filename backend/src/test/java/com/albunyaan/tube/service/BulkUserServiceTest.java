@@ -75,6 +75,50 @@ class BulkUserServiceTest {
         verify(authService).blockUser("other-uid", "admin-uid", null);
     }
 
+    @Test
+    void blockAdminTarget_isRejected_withAdminTargetForbidden() throws Exception {
+        AuthService authService = mock(AuthService.class);
+        UserRepository userRepo = mock(UserRepository.class);
+        AuditLogService auditLog = mock(AuditLogService.class);
+
+        when(userRepo.findByUid("admin-target")).thenReturn(Optional.of(userWithRole("admin")));
+        when(userRepo.findByUid("user-target")).thenReturn(Optional.of(userWithRole("user")));
+
+        BulkUserService svc = new BulkUserService(authService, userRepo, auditLog);
+
+        BulkUserActionResult result = svc.execute(
+                BulkAction.BLOCK,
+                List.of("admin-target", "user-target"),
+                ADMIN_ACTOR,
+                null);
+
+        assertEquals(List.of("user-target"), result.getSuccesses());
+        assertEquals(1, result.getFailures().size());
+        assertEquals("admin_target_forbidden", result.getFailures().get(0).reason());
+        verify(authService, never()).blockUser(eq("admin-target"), any(), any());
+    }
+
+    @Test
+    void recoverAdminTarget_isAllowed() throws Exception {
+        AuthService authService = mock(AuthService.class);
+        UserRepository userRepo = mock(UserRepository.class);
+        AuditLogService auditLog = mock(AuditLogService.class);
+
+        when(userRepo.findByUid("admin-target")).thenReturn(Optional.of(userWithRole("admin")));
+
+        BulkUserService svc = new BulkUserService(authService, userRepo, auditLog);
+
+        BulkUserActionResult result = svc.execute(
+                BulkAction.RECOVER,
+                List.of("admin-target"),
+                ADMIN_ACTOR,
+                null);
+
+        assertEquals(List.of("admin-target"), result.getSuccesses());
+        assertTrue(result.getFailures().isEmpty());
+        verify(authService).recoverUser("admin-target", "admin-uid");
+    }
+
     private static User userWithRole(String role) {
         User u = new User();
         u.setRole(role);
