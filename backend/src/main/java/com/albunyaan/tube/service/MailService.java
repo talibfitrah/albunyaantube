@@ -112,4 +112,10 @@ public class MailService {
 
         return m;
     }
+
+    /** Plan F risk §11.3 — Graph users.byUserId(fromAddress).get() smoke call. */
+    public void verifyFromMailboxReachable() {
+        if (!enabled) return;
+        graph.users().byUserId(fromAddress).get();
+    }
 }
