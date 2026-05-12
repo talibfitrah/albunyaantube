@@ -20,15 +20,15 @@ class SubscriptionRepository @Inject constructor(
     private val cache: ChannelVideoCacheDao,
     private val refreshState: ChannelFeedRefreshStateDao,
 ) {
-    fun observeSubscribedChannels(): Flow<List<SubscribedChannel>> = channels.observeAll()
+    fun observeSubscribedChannels(): Flow<List<SubscribedChannel>> = channels.observeAll(uid = "")
 
-    fun observeSavedPlaylists(): Flow<List<SavedPlaylist>> = playlists.observeAll()
+    fun observeSavedPlaylists(): Flow<List<SavedPlaylist>> = playlists.observeAll(uid = "")
 
-    suspend fun getSubscribedChannels(): List<SubscribedChannel> = channels.getAll()
+    suspend fun getSubscribedChannels(): List<SubscribedChannel> = channels.getAll(uid = "")
 
-    fun isChannelSubscribed(id: String): Flow<Boolean> = channels.observeIsSubscribed(id)
+    fun isChannelSubscribed(id: String): Flow<Boolean> = channels.observeIsSubscribed(uid = "", id = id)
 
-    fun isPlaylistSaved(id: String): Flow<Boolean> = playlists.observeIsSaved(id)
+    fun isPlaylistSaved(id: String): Flow<Boolean> = playlists.observeIsSaved(uid = "", id = id)
 
     /**
      * Direct DAO upsert. **Bypasses the 30-channel cap** enforced by
@@ -49,7 +49,7 @@ class SubscriptionRepository @Inject constructor(
      */
     suspend fun unsubscribe(channelId: String) {
         db.withTransaction {
-            channels.delete(channelId)
+            channels.softDelete(uid = "", id = channelId)
             cache.deleteForChannel(channelId)
             refreshState.delete(channelId)
         }
@@ -57,5 +57,5 @@ class SubscriptionRepository @Inject constructor(
 
     suspend fun savePlaylist(playlist: SavedPlaylist) = playlists.upsert(playlist)
 
-    suspend fun unsavePlaylist(playlistId: String) = playlists.delete(playlistId)
+    suspend fun unsavePlaylist(playlistId: String) = playlists.softDelete(uid = "", id = playlistId)
 }

@@ -41,7 +41,7 @@ class SubscriptionLimitGuardTest {
         repeat(SubscriptionLimitGuard.CAP - 1) { db.subscribedChannelDao().upsert(channel("UC$it")) }
         val result = guard.trySubscribe(channel("UCnew"))
         assertEquals(SubscribeResult.Success, result)
-        assertEquals(SubscriptionLimitGuard.CAP, db.subscribedChannelDao().getAll().size)
+        assertEquals(SubscriptionLimitGuard.CAP, db.subscribedChannelDao().getAll(uid = "").size)
     }
 
     @Test
@@ -50,7 +50,7 @@ class SubscriptionLimitGuardTest {
         val result = guard.trySubscribe(channel("UCnew"))
         assertTrue(result is SubscribeResult.LimitReached)
         assertEquals(SubscriptionLimitGuard.CAP, (result as SubscribeResult.LimitReached).current)
-        assertEquals(SubscriptionLimitGuard.CAP, db.subscribedChannelDao().getAll().size) // not added
+        assertEquals(SubscriptionLimitGuard.CAP, db.subscribedChannelDao().getAll(uid = "").size) // not added
     }
 
     @Test
@@ -58,7 +58,7 @@ class SubscriptionLimitGuardTest {
         repeat(SubscriptionLimitGuard.CAP) { db.subscribedChannelDao().upsert(channel("UC$it")) }
         val result = guard.trySubscribe(channel("UC0")) // already exists
         assertEquals(SubscribeResult.Success, result)
-        assertEquals(SubscriptionLimitGuard.CAP, db.subscribedChannelDao().getAll().size)
+        assertEquals(SubscriptionLimitGuard.CAP, db.subscribedChannelDao().getAll(uid = "").size)
     }
 
     @Test
@@ -77,8 +77,8 @@ class SubscriptionLimitGuardTest {
         val result = guard.trySubscribe(channel("UCnew"))
 
         assertEquals(SubscribeResult.Success, result)
-        assertEquals(SubscriptionLimitGuard.CAP, db.subscribedChannelDao().getAll().size)
-        assertEquals(100, db.savedPlaylistDao().getAll().size)
+        assertEquals(SubscriptionLimitGuard.CAP, db.subscribedChannelDao().getAll(uid = "").size)
+        assertEquals(100, db.savedPlaylistDao().getAll(uid = "").size)
     }
 
     private fun channel(id: String) = SubscribedChannel(

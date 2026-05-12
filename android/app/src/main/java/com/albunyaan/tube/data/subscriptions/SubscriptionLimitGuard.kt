@@ -37,12 +37,12 @@ class SubscriptionLimitGuard @Inject constructor(
 ) {
     suspend fun trySubscribe(channel: SubscribedChannel): SubscribeResult =
         db.withTransaction {
-            val existing = channels.getById(channel.channelId)
+            val existing = channels.getById(uid = "", id = channel.channelId)
             if (existing != null) {
                 channels.upsert(channel) // idempotent metadata refresh
                 return@withTransaction SubscribeResult.Success
             }
-            val current = channels.count()
+            val current = channels.count(uid = "")
             if (current >= CAP) return@withTransaction SubscribeResult.LimitReached(current, CAP)
             channels.upsert(channel)
             SubscribeResult.Success

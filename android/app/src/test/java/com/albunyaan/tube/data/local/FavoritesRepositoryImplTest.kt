@@ -82,7 +82,7 @@ class FavoritesRepositoryImplTest {
             durationSeconds = 300
         )
 
-        val favorites = fakeDao.getAllFavorites().first()
+        val favorites = fakeDao.getAllFavorites(uid = "").first()
         assertEquals(1, favorites.size)
 
         val added = favorites[0]
@@ -103,7 +103,7 @@ class FavoritesRepositoryImplTest {
             durationSeconds = 300
         )
 
-        val favorites = fakeDao.getAllFavorites().first()
+        val favorites = fakeDao.getAllFavorites(uid = "").first()
         assertEquals(1, favorites.size)
         assertNull(favorites[0].thumbnailUrl)
     }
@@ -112,11 +112,11 @@ class FavoritesRepositoryImplTest {
     fun `removeFavorite delegates to DAO`() = runTest {
         val video = FavoriteVideo("v1", "Title", "Channel", null, 100)
         fakeDao.addFavorite(video)
-        assertTrue(fakeDao.isFavoriteOnce("v1"))
+        assertTrue(fakeDao.isFavoriteOnce(uid = "", videoId = "v1"))
 
         repository.removeFavorite("v1")
 
-        assertFalse(fakeDao.isFavoriteOnce("v1"))
+        assertFalse(fakeDao.isFavoriteOnce(uid = "", videoId = "v1"))
     }
 
     @Test
@@ -192,28 +192,36 @@ class FavoritesRepositoryImplTest {
 
     /**
      * Fake DAO implementation for testing FavoritesRepositoryImpl.
+     * All queries scope to uid="" (anon-era sentinel) matching production behaviour
+     * before T26 wires real FirebaseAuth UIDs.
      */
     private class FakeFavoriteVideoDao : FavoriteVideoDao {
         private val favoritesFlow = MutableStateFlow<List<FavoriteVideo>>(emptyList())
 
-        override fun getAllFavorites(): Flow<List<FavoriteVideo>> = favoritesFlow
+        private fun rows(uid: String) = favoritesFlow.value.filter { it.user_id == uid && !it.deleted }
 
-        override fun isFavorite(videoId: String): Flow<Boolean> =
-            favoritesFlow.map { list -> list.any { it.videoId == videoId } }
+        override fun getAllFavorites(uid: String): Flow<List<FavoriteVideo>> =
+            favoritesFlow.map { list -> list.filter { it.user_id == uid && !it.deleted } }
 
-        override suspend fun isFavoriteOnce(videoId: String): Boolean =
-            favoritesFlow.value.any { it.videoId == videoId }
+        override suspend fun getAll(uid: String): List<FavoriteVideo> = rows(uid)
+
+        override fun isFavorite(uid: String, videoId: String): Flow<Boolean> =
+            favoritesFlow.map { list -> list.any { it.videoId == videoId && it.user_id == uid && !it.deleted } }
+
+        override suspend fun isFavoriteOnce(uid: String, videoId: String): Boolean =
+            favoritesFlow.value.any { it.videoId == videoId && it.user_id == uid && !it.deleted }
 
         override suspend fun addFavorite(video: FavoriteVideo) {
             val current = favoritesFlow.value.toMutableList()
             // IGNORE behavior - don't add if already exists
-            if (current.none { it.videoId == video.videoId }) {
+            if (current.none { it.videoId == video.videoId && it.user_id == video.user_id }) {
                 current.add(video)
                 favoritesFlow.value = current
             }
         }
 
         override suspend fun updateMetadata(
+            uid: String,
             videoId: String,
             title: String,
             channelName: String,
@@ -221,52 +229,59 @@ class FavoritesRepositoryImplTest {
             durationSeconds: Int
         ) {
             val current = favoritesFlow.value.toMutableList()
-            val index = current.indexOfFirst { it.videoId == videoId }
+            val index = current.indexOfFirst { it.videoId == videoId && it.user_id == uid }
             if (index >= 0) {
                 val existing = current[index]
                 current[index] = existing.copy(
                     title = title,
                     channelName = channelName,
                     thumbnailUrl = thumbnailUrl,
-                    durationSeconds = durationSeconds
-                    // addedAt is preserved from existing
+                    durationSeconds = durationSeconds,
+                    dirty = true,
                 )
                 favoritesFlow.value = current
             }
         }
 
         override suspend fun upsertFavorite(video: FavoriteVideo) {
-            val exists = isFavoriteOnce(video.videoId)
+            val exists = isFavoriteOnce(video.user_id, video.videoId)
             if (exists) {
-                updateMetadata(video.videoId, video.title, video.channelName, video.thumbnailUrl, video.durationSeconds)
+                updateMetadata(video.user_id, video.videoId, video.title, video.channelName, video.thumbnailUrl, video.durationSeconds)
             } else {
                 addFavorite(video)
             }
         }
 
-        override suspend fun removeFavorite(videoId: String) {
-            favoritesFlow.value = favoritesFlow.value.filter { it.videoId != videoId }
-        }
-
-        override suspend fun removeFavorite(video: FavoriteVideo) {
-            removeFavorite(video.videoId)
+        override suspend fun softDelete(uid: String, videoId: String) {
+            val current = favoritesFlow.value.toMutableList()
+            val index = current.indexOfFirst { it.videoId == videoId && it.user_id == uid }
+            if (index >= 0) current[index] = current[index].copy(deleted = true, dirty = true)
+            favoritesFlow.value = current
         }
 
         override suspend fun toggleFavorite(video: FavoriteVideo): Boolean {
-            val isFav = isFavoriteOnce(video.videoId)
+            val isFav = isFavoriteOnce(video.user_id, video.videoId)
             if (isFav) {
-                removeFavorite(video.videoId)
+                softDelete(video.user_id, video.videoId)
             } else {
                 addFavorite(video)
             }
             return !isFav
         }
 
-        override fun getFavoriteCount(): Flow<Int> =
-            favoritesFlow.map { it.size }
+        override fun getFavoriteCount(uid: String): Flow<Int> =
+            favoritesFlow.map { list -> list.count { it.user_id == uid && !it.deleted } }
 
-        override suspend fun clearAll() {
-            favoritesFlow.value = emptyList()
+        override suspend fun clearAll(uid: String) {
+            favoritesFlow.value = favoritesFlow.value.filter { it.user_id != uid }
         }
+
+        // ── Sync surface stubs (not exercised by repo tests) ──────────────────
+        override suspend fun tagAnonRowsToUid(uid: String): Int = 0
+        override suspend fun selectDirty(uid: String): List<FavoriteVideo> = emptyList()
+        override suspend fun clearDirty(uid: String, videoId: String, ts: Long) {}
+        override suspend fun wipeForUid(uid: String) { favoritesFlow.value = favoritesFlow.value.filter { it.user_id != uid } }
+        override suspend fun applyTombstone(uid: String, videoId: String, ts: Long) {}
+        override suspend fun upsertFromServer(video: FavoriteVideo) { addFavorite(video) }
     }
 }

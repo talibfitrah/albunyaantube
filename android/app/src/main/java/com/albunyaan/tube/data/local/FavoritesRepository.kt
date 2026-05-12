@@ -68,6 +68,10 @@ interface FavoritesRepository {
 
 /**
  * Default implementation of FavoritesRepository using Room DAO.
+ *
+ * NOTE: Until T26 wires real FirebaseAuth UIDs, all DAO calls pass uid=""
+ * (the anon-era sentinel). SyncManager.bind() will tag these rows with the
+ * real uid on first sign-in. Do not replace "" with a hardcoded string here.
  */
 @Singleton
 class FavoritesRepositoryImpl @Inject constructor(
@@ -75,15 +79,15 @@ class FavoritesRepositoryImpl @Inject constructor(
 ) : FavoritesRepository {
 
     override fun getAllFavorites(): Flow<List<FavoriteVideo>> {
-        return favoriteVideoDao.getAllFavorites()
+        return favoriteVideoDao.getAllFavorites(uid = "")
     }
 
     override fun isFavorite(videoId: String): Flow<Boolean> {
-        return favoriteVideoDao.isFavorite(videoId)
+        return favoriteVideoDao.isFavorite(uid = "", videoId = videoId)
     }
 
     override suspend fun isFavoriteOnce(videoId: String): Boolean {
-        return favoriteVideoDao.isFavoriteOnce(videoId)
+        return favoriteVideoDao.isFavoriteOnce(uid = "", videoId = videoId)
     }
 
     override suspend fun addFavorite(
@@ -98,14 +102,15 @@ class FavoritesRepositoryImpl @Inject constructor(
             title = title,
             channelName = channelName,
             thumbnailUrl = thumbnailUrl,
-            durationSeconds = durationSeconds
+            durationSeconds = durationSeconds,
+            user_id = "",
         )
         // Use upsert to update metadata while preserving addedAt for existing favorites
         favoriteVideoDao.upsertFavorite(favorite)
     }
 
     override suspend fun removeFavorite(videoId: String) {
-        favoriteVideoDao.removeFavorite(videoId)
+        favoriteVideoDao.softDelete(uid = "", videoId = videoId)
     }
 
     override suspend fun toggleFavorite(
@@ -120,16 +125,17 @@ class FavoritesRepositoryImpl @Inject constructor(
             title = title,
             channelName = channelName,
             thumbnailUrl = thumbnailUrl,
-            durationSeconds = durationSeconds
+            durationSeconds = durationSeconds,
+            user_id = "",
         )
         return favoriteVideoDao.toggleFavorite(video)
     }
 
     override fun getFavoriteCount(): Flow<Int> {
-        return favoriteVideoDao.getFavoriteCount()
+        return favoriteVideoDao.getFavoriteCount(uid = "")
     }
 
     override suspend fun clearAll() {
-        favoriteVideoDao.clearAll()
+        favoriteVideoDao.clearAll(uid = "")
     }
 }
