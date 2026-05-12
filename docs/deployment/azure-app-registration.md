@@ -28,10 +28,20 @@ On the new app's Overview page, copy:
 5. **Copy the Value field immediately** — it never displays again.
 6. Save as `AZURE_CLIENT_SECRET` in the deployment secret vault.
 
-## Step 4 — Grant Mail.Send (Application permission)
+## Step 4 — Grant Microsoft Graph permissions
 1. **API permissions** → **Add a permission** → **Microsoft Graph** → **Application permissions**.
-2. Search `Mail.Send`, check it, click **Add permissions**.
-3. Click **Grant admin consent for <tenant>** (requires Global Admin).
+2. Search `Mail.Send`, check it.
+3. In the SAME picker, search `User.Read.All`, check it.
+4. Click **Add permissions**.
+5. Click **Grant admin consent for <tenant>** (requires Global Admin).
+
+> **Why both:** `Mail.Send` lets the backend send password-reset emails.
+> `User.Read.All` is required by the startup health check in Step 8 — it calls
+> `GET /users/{fromAddress}` via the Graph SDK to prove the configured `noreply@`
+> mailbox is reachable. Without `User.Read.All`, that probe returns HTTP 403 and
+> the backend refuses to start.
+>
+> Both are Application permissions (no signed-in user). Both require admin consent.
 
 ## Step 5 — Restrict scope to the noreply mailbox (DEFERRED — Path A, 2026-05-12)
 

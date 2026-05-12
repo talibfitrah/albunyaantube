@@ -796,6 +796,7 @@ async function handleBulkBlock() {
       expand: false
     };
     selected.value = new Set();
+    await reload();
   } catch (err) {
     actionError.value = err instanceof Error ? err.message : 'Bulk block failed';
   }
@@ -816,6 +817,7 @@ async function handleBulkDelete() {
       expand: false
     };
     selected.value = new Set();
+    await reload();
   } catch (err) {
     actionError.value = err instanceof Error ? err.message : 'Bulk delete failed';
   }
@@ -833,6 +835,7 @@ async function handleBulkRecover() {
       expand: false
     };
     selected.value = new Set();
+    await reload();
   } catch (err) {
     actionError.value = err instanceof Error ? err.message : 'Bulk recover failed';
   }
@@ -850,6 +853,7 @@ async function handleBulkRevokeSessions() {
       expand: false
     };
     selected.value = new Set();
+    await reload();
   } catch (err) {
     actionError.value = err instanceof Error ? err.message : 'Bulk revoke sessions failed';
   }

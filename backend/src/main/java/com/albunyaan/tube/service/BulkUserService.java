@@ -69,6 +69,17 @@ public class BulkUserService {
                 successes.add(uid);
             } catch (com.albunyaan.tube.service.UserNotFoundException e) {
                 failures.add(new FailureEntry(uid, "user_not_found"));
+            } catch (IllegalArgumentException e) {
+                // AuthService throws IllegalArgumentException("User not found: ...") rather
+                // than the typed UserNotFoundException for several lifecycle paths. Surface
+                // these as user_not_found rather than firebase_error.
+                String msg = e.getMessage();
+                if (msg != null && msg.toLowerCase().contains("not found")) {
+                    failures.add(new FailureEntry(uid, "user_not_found"));
+                } else {
+                    log.error("bulk.action.error uid={} action={}", uid, action, e);
+                    failures.add(new FailureEntry(uid, "firebase_error"));
+                }
             } catch (IllegalStateException e) {
                 failures.add(new FailureEntry(uid, classify(e.getMessage())));
             } catch (Exception e) {

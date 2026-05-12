@@ -40,14 +40,16 @@ public class AuditLogController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<com.albunyaan.tube.dto.PaginatedAuditLog> getAuditLogs(
             @RequestParam(required = false) String cursor,
-            @RequestParam(required = false, defaultValue = "50") int limit
+            @RequestParam(required = false, defaultValue = "50") int limit,
+            @RequestParam(required = false) String actorId,
+            @RequestParam(required = false) String action
     ) {
         try {
-            return ResponseEntity.ok(auditLogService.findPaginated(null, null, limit, cursor));
+            return ResponseEntity.ok(auditLogService.findPaginated(actorId, action, limit, cursor));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().build();
         } catch (Exception e) {
-            log.error("audit.list failed", e);
+            log.error("audit.list failed actorId={} action={}", actorId, action, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
