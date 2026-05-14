@@ -153,6 +153,32 @@ class NewPipeExtractorClient(
         } catch (c: CancellationException) {
             throw c
         } catch (throwable: Throwable) {
+            // YouTube's InnerTube API sometimes omits visitorData on the first request
+            // from a fresh session (new IP, no prior cookies). One transparent retry
+            // with a fresh extractor instance usually succeeds because the second
+            // request to YouTube gets a response that includes the field.
+            if (throwable is ExtractionException &&
+                throwable.message?.contains("visitorData", ignoreCase = true) == true
+            ) {
+                try {
+                    val retryHandler = streamLinkHandlerFactory.fromId(videoId)
+                    val retryExtractor = youtubeService.getStreamExtractor(retryHandler)
+                    retryExtractor.fetchPage()
+                    val retryInfo = StreamInfo.getInfo(retryExtractor)
+                    val urlGeneratedAt = clock()
+                    val resolved = retryInfo.toResolvedStreams(videoId, urlGeneratedAt)
+                    if (resolved != null) {
+                        synchronized(streamCacheLock) {
+                            streamCache[videoId] = CacheEntry(resolved, urlGeneratedAt)
+                        }
+                        clientRotator.reset(videoId)
+                        metrics.onStreamResolveSuccess(videoId, clock() - start)
+                        return@withContext resolved
+                    }
+                } catch (_: Throwable) {
+                    // Retry also failed; fall through to normal error handling
+                }
+            }
             metrics.onStreamResolveFailure(videoId, throwable)
             if (throwable is IOException || throwable is ExtractionException) {
                 throw throwable
