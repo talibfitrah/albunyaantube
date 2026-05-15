@@ -46,7 +46,12 @@ class AccountStatusInterceptorTest {
 
     @After fun tearDown() { server.shutdown() }
 
-    private fun call() = client.newCall(Request.Builder().url(server.url("/x")).build()).execute()
+    // Cubic R7 P0 — interceptor now filters by URL path; only /api/admin/
+    // and /api/v1/ trigger the 403-envelope handling. Existing test URL
+    // updated to match the admin namespace so the lifecycle paths are
+    // exercised. A separate test below covers the URL-prefix guard itself.
+    private fun call(path: String = "/api/admin/x") =
+        client.newCall(Request.Builder().url(server.url(path)).build()).execute()
 
     @Test fun `200 response is passed through unchanged`() {
         server.enqueue(MockResponse().setResponseCode(200).setBody("ok"))
@@ -126,6 +131,23 @@ class AccountStatusInterceptorTest {
      * event. Reversing the order creates a transient "blocked + still SignedIn"
      * state in the UI.
      */
+    /**
+     * Cubic R7 P0 — the URL-prefix guard limits the interceptor to our
+     * backend's lifecycle namespaces. A 403 on any other path (third-party
+     * hop, future endpoint outside /api/admin/ + /api/v1/) MUST NOT trigger
+     * signOut even if the body matches the envelope shape.
+     */
+    @Test fun `403 outside admin or v1 prefix does NOT emit or signOut`() {
+        server.enqueue(MockResponse().setResponseCode(403).setBody(
+            """{"code":"ACCOUNT_BLOCKED","message":"x"}"""
+        ))
+
+        call(path = "/some/other/path").close()
+
+        verify(emitter, never()).emit(org.mockito.kotlin.any())
+        verify(firebaseAuth, never()).signOut()
+    }
+
     @Test fun `signOut is called before emit`() {
         server.enqueue(MockResponse().setResponseCode(403).setBody(
             """{"code":"ACCOUNT_BLOCKED","message":"x"}"""

@@ -932,6 +932,8 @@ export const messages = {
         bulk: 'Soft-delete {n} users? They can be recovered later.'
       },
       forceLogout: {
+        button: 'Force Logout',
+        busy: 'Logging out…',
         confirm: 'Force logout {email}? They will be signed out within an hour.',
         success: 'Force logout sent for {email}'
       }
@@ -2351,6 +2353,8 @@ export const messages = {
         bulk: 'حذف {n} مستخدمين مبدئياً؟ يمكن استعادتهم لاحقاً.'
       },
       forceLogout: {
+        button: 'تسجيل خروج إجباري',
+        busy: 'جارٍ تسجيل الخروج…',
         confirm: 'تسجيل خروج إجباري لـ {email}؟ سيتم تسجيل خروجه خلال ساعة.',
         success: 'تم إرسال تسجيل الخروج الإجباري لـ {email}'
       }
@@ -3601,6 +3605,8 @@ export const messages = {
         bulk: '{n} gebruikers tijdelijk verwijderen? Ze kunnen later worden hersteld.'
       },
       forceLogout: {
+        button: 'Geforceerd afmelden',
+        busy: 'Bezig met afmelden…',
         confirm: 'Geforceerd afmelden van {email}? Ze worden binnen een uur uitgelogd.',
         success: 'Geforceerd afmelden verzonden voor {email}'
       }

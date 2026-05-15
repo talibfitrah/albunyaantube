@@ -39,8 +39,22 @@ class AccountStatusInterceptor @Inject constructor(
     private val adapter = moshi.adapter(ApiErrorEnvelope::class.java)
 
     override fun intercept(chain: Interceptor.Chain): Response {
-        val response = chain.proceed(chain.request())
+        val request = chain.request()
+        val response = chain.proceed(request)
         if (response.code != 403) return response
+
+        // Cubic R7 P0 — restrict to our backend's admin/v1 namespaces.
+        //
+        // Pre-fix the interceptor matched the ACCOUNT_BLOCKED/ACCOUNT_DELETED
+        // envelope on ANY 403 the OkHttp pipeline ever produced. A future
+        // third-party endpoint, proxy, or any path returning the matching
+        // JSON shape would forcibly log the user out across the entire app.
+        // Pinning the URL prefix to /api/admin/ and /api/v1/ scopes the
+        // sign-out to our backend's lifecycle envelopes only.
+        val path = request.url.encodedPath
+        if (!path.startsWith("/api/admin/") && !path.startsWith("/api/v1/")) {
+            return response
+        }
 
         // peekBody(N) bounds the read so a malicious / huge response body
         // cannot OOM us; 1024 bytes is comfortably larger than Plan A's

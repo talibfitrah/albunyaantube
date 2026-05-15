@@ -154,15 +154,63 @@ class AlBunyaanApplication : Application(), Configuration.Provider, DefaultLifec
         }
     }
 
-    /** Plan D T26: push dirty rows whenever connectivity is restored. */
+    /**
+     * Plan D T26: push dirty rows whenever connectivity is restored.
+     *
+     * Cubic R7 P0 — defensive registration.
+     *
+     * Pre-fix the registration ran inside [onCreate] with no try/catch, so a
+     * [SecurityException] on OEM-restricted profiles without
+     * `ACCESS_NETWORK_STATE` crashed app startup outright. The callback
+     * reference was also discarded, leaving no path to [unregisterNetworkCallback]
+     * — under test-process restarts the callback survived past the test
+     * lifetime, firing sync coroutines into the next test's state.
+     *
+     * Now: catch the SecurityException (sync still works on connectivity
+     * change via the periodic refresh worker), retain the callback so
+     * [onTerminate] (and tests via [unregisterConnectivityCallback]) can
+     * detach it deterministically.
+     */
+    private var connectivityCallback: ConnectivityManager.NetworkCallback? = null
+
     private fun registerConnectivityCallback() {
         val cm = getSystemService(ConnectivityManager::class.java)
-        cm.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
+        val cb = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 val uid = accountRepository.currentUid()
                 if (uid.isNotEmpty()) syncManager.pushDirtyAsync(uid)
             }
-        })
+        }
+        try {
+            cm.registerDefaultNetworkCallback(cb)
+            connectivityCallback = cb
+        } catch (e: SecurityException) {
+            // OEM-restricted profile or work profile without
+            // ACCESS_NETWORK_STATE. App startup must not crash here — the
+            // periodic refresh worker still services sync on a coarser cadence.
+            Log.w(TAG, "registerDefaultNetworkCallback denied (${e.message}); falling back to periodic sync")
+        }
+    }
+
+    private fun unregisterConnectivityCallback() {
+        val cb = connectivityCallback ?: return
+        val cm = getSystemService(ConnectivityManager::class.java)
+        try {
+            cm.unregisterNetworkCallback(cb)
+        } catch (e: IllegalArgumentException) {
+            // Already unregistered (race with platform teardown). Swallow.
+            Log.d(TAG, "unregisterNetworkCallback no-op: ${e.message}")
+        }
+        connectivityCallback = null
+    }
+
+    override fun onTerminate() {
+        // onTerminate is a no-op in production (Android process kills bypass
+        // it) but instrumentation tests DO invoke it; without unregister the
+        // callback leaks into the next test's ConnectivityManager state and
+        // sync coroutines fire past the test boundary.
+        unregisterConnectivityCallback()
+        super.onTerminate()
     }
 
     override val workManagerConfiguration: Configuration

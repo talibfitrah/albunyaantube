@@ -45,7 +45,7 @@
         </button>
         <ul v-if="lastResult.expand" class="toast-failures">
           <li v-for="f in lastResult.failures" :key="f.uid">
-            {{ f.uid }}: {{ t('users.bulk.reason.' + f.reason, t('users.bulk.reason.unknown')) }}
+            {{ f.uid }}: {{ t('users.bulk.reason.' + reasonKey(f.reason), t('users.bulk.reason.unknown')) }}
           </li>
         </ul>
       </div>
@@ -205,7 +205,7 @@
                 :disabled="isLoading || forcingLogoutUserId === user.id"
                 @click="handleForceLogout(user)"
               >
-                {{ forcingLogoutUserId === user.id ? 'Logging out…' : 'Force Logout' }}
+                {{ forcingLogoutUserId === user.id ? t('users.forceLogout.busy') : t('users.forceLogout.button') }}
               </button>
             </td>
           </tr>
@@ -415,6 +415,31 @@ import { formatDateTime as baseFormatDateTime } from '@/utils/formatters';
 
 const { t, locale } = useI18n();
 const currentLocale = computed(() => locale.value);
+
+// Cubic R7 P0 — whitelist of reason codes accepted from the backend bulk-action
+// response. Without this guard, `t('users.bulk.reason.' + f.reason)` builds the
+// i18n key from a backend-supplied string. A reason containing dots/spaces or
+// colliding key paths could silently resolve to an unrelated translation, or
+// (worse) walk into other i18n namespaces. Mapping through this whitelist
+// pins the resolved keys to the closed set that messages.ts actually defines.
+const KNOWN_BULK_REASONS: ReadonlySet<string> = new Set([
+  'user_not_found',
+  'already_blocked',
+  'not_blocked',
+  'already_deleted',
+  'not_deleted',
+  'self_action_forbidden',
+  'admin_target_forbidden',
+  'blocked_cannot_delete',
+  'deleted_cannot_block',
+  'deleted_cannot_role_change',
+  'firebase_error',
+  'invalid_state',
+  'unknown',
+]);
+function reasonKey(raw: string | null | undefined): string {
+  return raw != null && KNOWN_BULK_REASONS.has(raw) ? raw : 'unknown';
+}
 
 const roleOptions: AdminRole[] = ['ADMIN', 'MODERATOR'];
 

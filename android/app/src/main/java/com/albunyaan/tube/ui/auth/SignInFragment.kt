@@ -126,16 +126,29 @@ class SignInFragment : Fragment(R.layout.fragment_sign_in) {
         // makes the final routing decision based on /api/account/me status (ACTIVE → main,
         // PENDING_PROFILE → bootstrap, BLOCKED/DELETED → signIn). This is the single
         // routing decision point — keeps PENDING_PROFILE/AGE_INELIGIBLE logic out of
-        // SignInFragment. Wait for the first SignedIn emission, pop SignInFragment off
-        // the back stack into SplashFragment, then exit the collector (one-shot). first()
-        // terminates the flow after the first match; we never want to re-navigate from
-        // this fragment after a back nav lands the user here again (a fresh STARTED
-        // restart picks up the next SignedIn cleanly).
+        // SignInFragment.
+        //
+        // Cubic R7 P0 — drop the repeatOnLifecycle wrapper.
+        //
+        // Pre-fix the collector lived inside `repeatOnLifecycle(STARTED)` which
+        // re-runs the inner block on every STARTED transition. A rotation
+        // mid-navigation would tear down the previous collector while the
+        // popUpTo nav was still in flight, and the next STARTED rebuilt the
+        // collector, observed the stale SignedIn emission, and fired
+        // `nav.navigate(...)` a second time. The currentDestination guard
+        // helped but races on the dispatch boundary.
+        //
+        // Plain `lifecycleScope.launch` (bound to viewLifecycleOwner) is the
+        // right shape: cancelled on view destroy, never restarted on STARTED,
+        // and `.first()` completes the flow as soon as the first SignedIn
+        // arrives. A `hasNavigated` field gates the navigate call so a stale
+        // emission that races process-side cannot re-fire.
         viewLifecycleOwner.lifecycleScope.launch {
-            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                authRepository.authState
-                    .filterIsInstance<AuthState.SignedIn>()
-                    .first()
+            authRepository.authState
+                .filterIsInstance<AuthState.SignedIn>()
+                .first()
+            if (!hasNavigatedFromSignIn) {
+                hasNavigatedFromSignIn = true
                 val nav = findNavController()
                 if (nav.currentDestination?.id == R.id.signInFragment) {
                     nav.navigate(R.id.action_signIn_to_splash)
@@ -143,6 +156,8 @@ class SignInFragment : Fragment(R.layout.fragment_sign_in) {
             }
         }
     }
+
+    private var hasNavigatedFromSignIn: Boolean = false
 
     private fun bindViews(root: View) {
         emailField = root.findViewById(R.id.emailField)

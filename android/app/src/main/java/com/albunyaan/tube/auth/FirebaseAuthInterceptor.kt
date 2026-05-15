@@ -3,6 +3,7 @@ package com.albunyaan.tube.auth
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Interceptor
 import okhttp3.Request
 import okhttp3.Response
@@ -44,8 +45,15 @@ class FirebaseAuthInterceptor @Inject constructor(
         // through the OkHttp chain — send the request unsigned. The backend
         // will respond 401/403 which propagates cleanly through the rest of
         // the stack.
+        // Cubic R7 P0 — bound the blocking duration on the OkHttp dispatcher
+        // thread. Pre-fix, `getIdToken(false)` could pile up dispatcher threads
+        // under post-sign-in cache misses (each thread blocked on the same
+        // task bridge). Capping at TOKEN_FETCH_TIMEOUT_MS ensures a single
+        // saturated SDK call cannot stall the entire dispatcher pool. On
+        // timeout we send unsigned and let the backend's 401 trigger the
+        // explicit refresh path below — same outcome, predictable bound.
         val token = try {
-            runBlocking { user.getIdToken(false).await().token }
+            runBlocking { withTimeoutOrNull(TOKEN_FETCH_TIMEOUT_MS) { user.getIdToken(false).await().token } }
         } catch (ie: InterruptedException) {
             // Don't swallow interrupts (cubic R5 P2). Propagate so OkHttp's
             // dispatcher can abort cleanly instead of proceeding unsigned
@@ -62,7 +70,7 @@ class FirebaseAuthInterceptor @Inject constructor(
         if (response.code == 401 && response.isFirebaseUnauthorized()) {
             response.close()
             val refreshed = try {
-                runBlocking { user.getIdToken(true).await().token }
+                runBlocking { withTimeoutOrNull(TOKEN_REFRESH_TIMEOUT_MS) { user.getIdToken(true).await().token } }
             } catch (_: Exception) {
                 null
             }
@@ -84,4 +92,12 @@ class FirebaseAuthInterceptor @Inject constructor(
 
     private fun Response.isFirebaseUnauthorized(): Boolean =
         header("WWW-Authenticate")?.contains("Bearer", ignoreCase = true) == true
+
+    companion object {
+        // Cubic R7 P0 — dispatcher-thread blocking caps. Generous on the
+        // happy-path getIdToken(false) (cached → returns near-instantly),
+        // longer on the force-refresh retry since it always hits the network.
+        private const val TOKEN_FETCH_TIMEOUT_MS = 3_000L
+        private const val TOKEN_REFRESH_TIMEOUT_MS = 5_000L
+    }
 }
