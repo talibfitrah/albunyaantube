@@ -1,0 +1,19 @@
+backend/src/main/java/com/albunyaan/tube/service/AuthService.java
+  s_dac267759ff6fd::t_57ab9be02c0814 352-379,388,390,395-397
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "e9f0941cac6f9d99b28982aa88451757b2f0f54a",
+  "prompts": {},
+  "sessions": {
+    "s_dac267759ff6fd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0b0f266a-3a36-4b49-a3bd-0b9fa66207c2",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Farouq Abou Umar <info@fitrahmedia.nl>"
+    }
+  }
+}
